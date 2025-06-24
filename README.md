@@ -54,13 +54,20 @@ docker compose -f docker-compose-dev.yml up -d
 
 ### Production
 
-Build the application for production:
+#### Build the application for production:
 
 ```bash
 yarn build
 ```
 
-Preview the production build locally:
+#### Configure the PostgreSQL database
+
+Edit ```.env``` to add database credentials.
+Database will start along with the other services when running 
+```bash
+docker compose up -d
+ ```
+#### Preview the production build locally:
 
 ```bash
 yarn preview
