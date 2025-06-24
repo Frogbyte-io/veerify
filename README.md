@@ -48,9 +48,8 @@ yarn dev
 
 #### Start the development PostgreSQL database
 
-Edit ```.env``` to add your database credentials.
 ```bash
-docker compose up -d 
+docker compose -f docker-compose-dev.yml up -d
 ```
 
 ### Production
