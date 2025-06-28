@@ -7,7 +7,11 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@nuxt/fonts": "0.11.4",
@@ -17,6 +21,7 @@
     "@tailwindcss/vite": "^4.1.8",
     "@types/pg": "^8.15.4",
     "@vueuse/core": "^13.3.0",
+    "better-auth": "^1.2.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "^16.5.0",
@@ -33,7 +38,9 @@
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
   "devDependencies": {
+    "drizzle-kit": "^0.31.4",
     "shadcn-nuxt": "^2.2.0",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }
 }

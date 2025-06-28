@@ -52,6 +52,13 @@ yarn dev
 docker compose -f docker-compose-dev.yml up -d
 ```
 
+
+#### Visualize the database using drizzle studio
+
+```bash
+yarn db:studio
+```
+
 ### Production
 
 #### Build the application for production:
