@@ -13,20 +13,6 @@ const props = withDefaults(defineProps<SidebarProps>(), {
   collapsible: 'icon',
 })
 
-// Define teams data
-const teams = [
-  {
-    name: "Veerify",
-    logo: "lucide:zap",
-    plan: "Pro",
-  },
-  {
-    name: "Product Team",
-    logo: "lucide:users",
-    plan: "Team",
-  },
-]
-
 // Define navigation items
 const feedbackItems = [
   {
@@ -86,7 +72,7 @@ const supportItems = [
 <template>
   <Sidebar v-bind="props">
     <SidebarHeader>
-      <TeamSwitcher :teams="teams" />
+      <TeamSwitcher />
     </SidebarHeader>
 
     <SidebarContent>
