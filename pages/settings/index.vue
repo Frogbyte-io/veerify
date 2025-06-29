@@ -55,16 +55,16 @@
               </li>
               <li>
                 <button 
-                  @click="setActiveTab('organization')"
+                  @click="setActiveTab('team')"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === 'organization'
+                    activeTab === 'team'
                       ? 'bg-accent text-accent-foreground font-medium' 
                       : 'text-muted-foreground hover:bg-accent/50'
                   ]"
                 >
-                  <Icon name="lucide:building" class="w-4 h-4 mr-2" />
-                  Organization
+                  <Icon name="lucide:users" class="w-4 h-4 mr-2" />
+                  Team
                 </button>
               </li>
               <li>
@@ -112,7 +112,7 @@
 import SettingsProfile from '~/components/settings/SettingsProfile.vue'
 import SettingsSecurity from '~/components/settings/SettingsSecurity.vue'
 import SettingsNotifications from '~/components/settings/SettingsNotifications.vue'
-import SettingsOrganization from '~/components/settings/SettingsOrganization.vue'
+import SettingsTeam from '~/components/settings/SettingsTeam.vue'
 import SettingsBilling from '~/components/settings/SettingsBilling.vue'
 import SettingsAppearance from '~/components/settings/SettingsAppearance.vue'
 
@@ -122,7 +122,7 @@ export default {
     SettingsProfile,
     SettingsSecurity,
     SettingsNotifications,
-    SettingsOrganization,
+    SettingsTeam,
     SettingsBilling,
     SettingsAppearance
   },
@@ -137,7 +137,7 @@ export default {
         profile: 'SettingsProfile',
         security: 'SettingsSecurity',
         notifications: 'SettingsNotifications',
-        organization: 'SettingsOrganization',
+        team: 'SettingsTeam',
         billing: 'SettingsBilling',
         appearance: 'SettingsAppearance'
       }
@@ -147,7 +147,7 @@ export default {
   mounted() {
     // Check for hash in URL to set initial tab
     const hash = window.location.hash.replace('#', '')
-    if (hash && ['profile', 'security', 'notifications', 'organization', 'billing', 'appearance'].includes(hash)) {
+    if (hash && ['profile', 'security', 'notifications', 'team', 'billing', 'appearance'].includes(hash)) {
       this.activeTab = hash
     }
   },

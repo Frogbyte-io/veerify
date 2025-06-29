@@ -1,7 +1,8 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { db } from "~/server/database/drizzle";
-import * as schema from "~/server/database/schema/index";
+import { organization } from "better-auth/plugins";
+import { db } from "../server/database/drizzle";
+import * as schema from "../server/database/schema/index";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -11,6 +12,9 @@ export const auth = betterAuth({
       session: schema.session,
       account: schema.account,
       verification: schema.verification,
+      organization: schema.organization,
+      member: schema.member,
+      invitation: schema.invitation,
     },
   }),
   emailAndPassword: {
@@ -23,4 +27,11 @@ export const auth = betterAuth({
     //   clientSecret: process.env.GITHUB_CLIENT_SECRET as string,
     // },
   },
+  plugins: [
+    organization({
+      allowUserToCreateOrganization: true,
+      organizationLimit: 5,
+      membershipLimit: 50,
+    }),
+  ],
 }); 
