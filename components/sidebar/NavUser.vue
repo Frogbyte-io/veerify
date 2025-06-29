@@ -158,7 +158,7 @@ export default {
     async handleLogout() {
       try {
         await authClient.signOut()
-        await navigateTo('/auth')
+        await navigateTo('/login')
       } catch (error) {
         console.error('Error signing out:', error)
       }
