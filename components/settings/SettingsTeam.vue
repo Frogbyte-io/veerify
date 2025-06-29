@@ -12,7 +12,7 @@
         </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
-        <div v-if="isLoading" class="space-y-4">
+        <div v-if="isLoadingOrganizations || isLoading" class="space-y-4">
           <Skeleton class="h-4 w-48" />
           <Skeleton class="h-10 w-full" />
           <Skeleton class="h-10 w-full" />
@@ -369,6 +369,16 @@ import { toast } from 'vue-sonner'
 
 export default {
   name: 'SettingsTeam',
+  setup() {
+    // Use the organizations composable
+    const organizations = authClient.useListOrganizations()
+    const activeOrganization = authClient.useActiveOrganization()
+    
+    return { 
+      organizations,
+      activeOrganization
+    }
+  },
   data() {
     return {
       // Current team data
@@ -403,6 +413,21 @@ export default {
   },
   
   computed: {
+    // Loading states from composables
+    isLoadingOrganizations() {
+      return this.organizations.isPending || this.activeOrganization.isPending
+    },
+    
+    // Get current team from active organization
+    currentTeamFromComposable() {
+      return this.activeOrganization.data || null
+    },
+    
+    // Check if user has organizations
+    hasOrganizations() {
+      return this.organizations.data && this.organizations.data.length > 0
+    },
+    
     canManageTeam() {
       return this.userRole === 'owner' || this.userRole === 'admin'
     },
@@ -437,27 +462,58 @@ export default {
     }
   },
   
+  watch: {
+    // Watch for changes in active organization from composable
+    'activeOrganization.data': {
+      handler(newOrg, oldOrg) {
+        if (newOrg !== oldOrg && !this.activeOrganization.isPending) {
+          this.currentTeam = newOrg
+          if (newOrg) {
+            this.teamName = newOrg.name
+            this.teamSlug = newOrg.slug
+            this.loadTeamDetails()
+          }
+        }
+      },
+      immediate: true
+    }
+  },
+  
   methods: {
+    async loadTeamDetails() {
+      if (!this.currentTeam) return
+      
+      try {
+        // Get user's role in the organization
+        const { data: membership } = await authClient.organization.getMembership({
+          organizationId: this.currentTeam.id
+        })
+        this.userRole = membership?.role
+        
+        await this.loadMembers()
+        await this.loadPendingInvitations()
+      } catch (error) {
+        console.error('Error loading team details:', error)
+        toast.error('Failed to load team details')
+      }
+    },
+    
     async loadTeamData() {
       try {
         this.isLoading = true
         
-        // Get current user's active organization
-        const { data: activeOrg } = await authClient.organization.getActiveOrganization()
-        this.currentTeam = activeOrg
+        // Wait for organizations to load
+        while (this.organizations.isPending || this.activeOrganization.isPending) {
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        
+        // Get current team from composable
+        this.currentTeam = this.currentTeamFromComposable
         
         if (this.currentTeam) {
           this.teamName = this.currentTeam.name
           this.teamSlug = this.currentTeam.slug
-          
-          // Get user's role in the organization
-          const { data: membership } = await authClient.organization.getMembership({
-            organizationId: this.currentTeam.id
-          })
-          this.userRole = membership?.role
-          
-          await this.loadMembers()
-          await this.loadPendingInvitations()
+          await this.loadTeamDetails()
         }
       } catch (error) {
         console.error('Error loading team data:', error)
@@ -505,16 +561,24 @@ export default {
       
       try {
         this.isCreatingTeam = true
-        await authClient.organization.create({
+        const newTeam = await authClient.organization.create({
           name: this.newTeamName,
           slug: this.newTeamSlug || this.newTeamName.toLowerCase().replace(/\s+/g, '-')
         })
+        
+        // Set the new team as active
+        if (newTeam.data) {
+          await authClient.organization.setActive({ organizationId: newTeam.data.id })
+        }
         
         toast.success('Team created successfully')
         this.showCreateTeamDialog = false
         this.newTeamName = ''
         this.newTeamSlug = ''
-        await this.loadTeamData()
+        
+        // Refresh organizations list
+        await this.organizations.refresh?.()
+        await this.activeOrganization.refresh?.()
       } catch (error) {
         console.error('Error creating team:', error)
         toast.error('Failed to create team')
@@ -535,7 +599,10 @@ export default {
         })
         
         toast.success('Team updated successfully')
-        await this.loadTeamData()
+        
+        // Refresh organizations to reflect the changes
+        await this.organizations.refresh?.()
+        await this.activeOrganization.refresh?.()
       } catch (error) {
         console.error('Error updating team:', error)
         toast.error('Failed to update team')
@@ -641,7 +708,18 @@ export default {
         toast.success('Team deleted successfully')
         this.showDeleteTeamDialog = false
         this.deleteConfirmation = ''
-        await navigateTo('/dashboard')
+        
+        // Refresh organizations list
+        await this.organizations.refresh?.()
+        await this.activeOrganization.refresh?.()
+        
+        // Wait a moment for the data to update
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Navigate to dashboard if no teams left
+        if (!this.organizations.data || this.organizations.data.length === 0) {
+          await navigateTo('/dashboard')
+        }
       } catch (error) {
         console.error('Error deleting team:', error)
         toast.error('Failed to delete team')
@@ -665,8 +743,10 @@ export default {
     }
   },
   
-  async mounted() {
-    await this.loadTeamData()
+  mounted() {
+    // The watcher will handle loading when organizations are ready
+    // Set initial loading state
+    this.isLoading = this.isLoadingOrganizations
   }
 }
 </script> 
