@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization } from "better-auth/plugins";
+import { organization, twoFactor } from "better-auth/plugins";
 import { db } from "../server/database/drizzle";
 import * as schema from "../server/database/schema/index";
 
@@ -15,6 +15,7 @@ export const auth = betterAuth({
       organization: schema.organization,
       member: schema.member,
       invitation: schema.invitation,
+      twoFactor: schema.twoFactor,
     },
   }),
   emailAndPassword: {
@@ -32,6 +33,9 @@ export const auth = betterAuth({
       allowUserToCreateOrganization: true,
       organizationLimit: 5,
       membershipLimit: 50,
+    }),
+    twoFactor({
+      issuer: "Veerify", // Your app name for the authenticator app
     }),
   ],
 }); 

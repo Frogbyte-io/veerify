@@ -7,7 +7,8 @@ export const user = pgTable("user", {
  emailVerified: boolean('email_verified').$defaultFn(() => false).notNull(),
  image: text('image'),
  createdAt: timestamp('created_at').$defaultFn(() => /* @__PURE__ */ new Date()).notNull(),
- updatedAt: timestamp('updated_at').$defaultFn(() => /* @__PURE__ */ new Date()).notNull()
+ updatedAt: timestamp('updated_at').$defaultFn(() => /* @__PURE__ */ new Date()).notNull(),
+ twoFactorEnabled: boolean('two_factor_enabled').$defaultFn(() => false)
 				});
 
 export const session = pgTable("session", {
@@ -72,4 +73,13 @@ export const invitation = pgTable("invitation", {
  status: text('status').default("pending").notNull(),
  expiresAt: timestamp('expires_at').notNull(),
  inviterId: text('inviter_id').notNull().references(()=> user.id, { onDelete: 'cascade' })
+				});
+
+export const twoFactor = pgTable("two_factor", {
+					id: text('id').primaryKey(),
+					userId: text('user_id').notNull().references(()=> user.id, { onDelete: 'cascade' }),
+ secret: text('secret'),
+ backupCodes: text('backup_codes'),
+ createdAt: timestamp('created_at').$defaultFn(() => /* @__PURE__ */ new Date()).notNull(),
+ updatedAt: timestamp('updated_at').$defaultFn(() => /* @__PURE__ */ new Date()).notNull()
 				});
