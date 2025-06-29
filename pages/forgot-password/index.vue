@@ -84,7 +84,6 @@ export default {
         const result = await authClient.requestPasswordReset({
           email: this.email,
         });
-        console.log(result);
 
         
         this.success = 'If an account with that email exists, we\'ve sent you a password reset link.';

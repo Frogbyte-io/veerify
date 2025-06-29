@@ -59,7 +59,6 @@ export default {
           html: '<p>Hello, this is a test email</p>'
         })
       })
-      console.log(event.target.checked)
     }
   }
 }

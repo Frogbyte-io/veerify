@@ -69,7 +69,6 @@ export async function sendEmailVerificationEmail(options: EmailVerificationOptio
 
 export async function sendPasswordResetEmail(options: PasswordResetOptions) {
   const template = getPasswordResetTemplate(options)
-  console.log(template)
 
   const result = await sendEmail({
     to: options.to,
