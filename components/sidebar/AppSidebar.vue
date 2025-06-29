@@ -39,18 +39,8 @@ const feedbackItems = [
 
 const managementItems = [
   {
-    title: "Users",
-    url: "/users",
-    icon: "lucide:users",
-  },
-  {
-    title: "Analytics",
-    url: "/reports",
-    icon: "lucide:bar-chart-3",
-  },
-  {
     title: "Team",
-    url: "/team",
+    url: "/settings#team",
     icon: "lucide:user-plus",
   },
 ]

@@ -50,24 +50,12 @@
               </div>
             </div>
           </DropdownMenuLabel>
-          <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuItem>
-              <Icon name="lucide:sparkles" />
-              Upgrade to Pro
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuItem>
+            <DropdownMenuItem @click="navigateTo('/settings#profile')">
               <Icon name="lucide:badge-check" />
-              Account
+              Profile
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Icon name="lucide:credit-card" />
-              Billing
-            </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem @click="navigateTo('/settings#notifications')">
               <Icon name="lucide:bell" />
               Notifications
             </DropdownMenuItem>
