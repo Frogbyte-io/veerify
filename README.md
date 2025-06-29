@@ -52,6 +52,25 @@ yarn dev
 docker compose -f docker-compose-dev.yml up -d
 ```
 
+#### Email Testing with Mailpit
+
+The development environment includes [Mailpit](https://mailpit.axllent.io/), a local SMTP server and web interface for testing emails during development.
+
+When you run the development docker compose, Mailpit will be available at:
+
+- **Web Interface**: [http://localhost:8025](http://localhost:8025) - View sent emails in a web UI
+- **SMTP Server**: `localhost:1025` - Configure your app to send emails here
+
+**SMTP Configuration for Development:**
+```env
+SMTP_HOST=localhost
+SMTP_PORT=1025
+SMTP_SECURE=false
+SMTP_USER= # Leave empty for development
+SMTP_PASS= # Leave empty for development
+```
+
+All emails sent by your application during development will be captured by Mailpit and displayed in the web interface, making it easy to test email verification, password resets, and other email functionality without sending real emails.
 
 #### Visualize the database using drizzle studio
 
