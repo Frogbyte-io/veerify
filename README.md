@@ -62,12 +62,17 @@ When you run the development docker compose, Mailpit will be available at:
 - **SMTP Server**: `localhost:1025` - Configure your app to send emails here
 
 **SMTP Configuration for Development:**
+
+Create a `.env` file in your project root with these settings:
+
 ```env
+# Email Configuration for Mailpit (Development)
+MAIL_FROM="noreply@veerify.local"
 SMTP_HOST=localhost
 SMTP_PORT=1025
 SMTP_SECURE=false
-SMTP_USER= # Leave empty for development
-SMTP_PASS= # Leave empty for development
+SMTP_USER=
+SMTP_PASS=
 ```
 
 All emails sent by your application during development will be captured by Mailpit and displayed in the web interface, making it easy to test email verification, password resets, and other email functionality without sending real emails.
