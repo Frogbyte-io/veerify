@@ -41,8 +41,11 @@
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
   "devDependencies": {
+    "@types/nodemailer": "^6.4.17",
     "@types/qrcode": "^1.5.5",
     "drizzle-kit": "^0.31.4",
+    "nodemailer": "^7.0.4",
+    "nuxt-nodemailer": "^1.1.2",
     "shadcn-nuxt": "^2.2.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
