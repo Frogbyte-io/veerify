@@ -1,5 +1,6 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client } from 'pg';
+import * as schema from './schema/index';
 import 'dotenv/config';
 
 const client = new Client({
@@ -8,10 +9,16 @@ const client = new Client({
   user: process.env.PGUSER || 'veerify',
   password: process.env.PGPASSWORD || 'veerifypassword',
   database: process.env.PGDATABASE || 'veerifydb',
+  ssl: false,
 });
 
-export const dbPromise = (async () => {
-  await client.connect();
+// Initialize connection
+client.connect().then(() => {
   console.log('Connected to PostgreSQL');
-  return drizzle(client);
-})();
+}).catch(console.error);
+
+// Export the drizzle instance with schema
+export const db = drizzle(client, { schema });
+
+// Export the promise version for backwards compatibility
+export const dbPromise = Promise.resolve(db);

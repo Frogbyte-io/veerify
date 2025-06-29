@@ -1,21 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { Client } from 'pg';
+import { db } from "~/server/database/drizzle";
 import * as schema from "~/server/database/schema/index";
-
-const client = new Client({
-  host: process.env.PGHOST || 'localhost',
-  port: Number(process.env.PGPORT) || 5432,
-  user: process.env.PGUSER || 'veerify',
-  password: process.env.PGPASSWORD || 'veerifypassword',
-  database: process.env.PGDATABASE || 'veerifydb',
-  ssl: false,
-});
-
-// Initialize the database connection
-client.connect().catch(console.error);
-const db = drizzle(client, { schema });
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
