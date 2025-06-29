@@ -58,7 +58,7 @@
               :class="[
                 'relative p-4 border-2 rounded-lg transition-all',
                 isClient && currentTheme === 'system'
-                  ? 'border-blue-500 bg-blue-100'
+                  ? 'border-blue-500 bg-blue-900/20'
                   : 'border hover:border-gray-400'
               ]"
             >
