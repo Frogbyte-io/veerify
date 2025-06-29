@@ -1,0 +1,83 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Veerify Project Rules
+
+::callout{type="info"}
+This is a Nuxt 3 application for feedback management and verification
+::
+
+## Project Stack
+
+- **Framework**: Nuxt 3 with Vue 3 options api
+- **Authentication**: Better-Auth with Drizzle ORM
+- **UI**: shadcn-vue components with Tailwind CSS
+- **Database**: PostgreSQL with Drizzle ORM
+- **Icons**: Nuxt Icon (Lucide icons)
+
+## Architecture
+
+```mermaid
+graph TD
+    A[Nuxt 3 App] --> B[Vue 3 Components]
+    A --> C[Better-Auth]
+    A --> D[Server API]
+    C --> E[Drizzle ORM]
+    D --> E
+    E --> F[PostgreSQL]
+    B --> G[shadcn-vue + Tailwind]
+```
+
+## Common Patterns
+
+::callout{type="warning"}
+Always follow these core patterns across the entire codebase
+::
+
+### Authentication & Security
+- Always validate auth on server routes
+- Use `import.meta.client` for client-side checks
+- Handle errors gracefully with retry options
+
+### Loading & Error States
+- Use shadcn Skeleton components for loading states
+- NO fallback data - show proper error states
+- Show error messages with retry options
+
+### Code Style
+- Prefer Vue 3 Options API over Composition API
+- Use template-first component structure
+- Leverage Nuxt auto-imports for cleaner code
+
+## Migration Notes
+
+::callout{type="note"}
+Key changes made during project evolution
+::
+
+- **Migrated from**: Composition API to Options API
+- **Updated**: `process.client` to `import.meta.client`
+- **Enhanced**: Error handling without fallback data
+- **Improved**: Loading states with shadcn Skeleton
+
+## Security Guidelines
+
+::callout{type="danger"}
+Critical security requirements
+::
+
+- **Session validation**: Always check auth on protected routes
+- **CSRF protection**: Handled by better-auth
+- **Cookie security**: Sealed cookies with session password
+- **Database**: Use parameterized queries (Drizzle handles this)
+
+## Development Workflow
+
+When working on this project, prioritize:
+1. Consistency with established patterns
+2. Authentication and authorization
+3. Error handling and user experience
+4. Performance and accessibility 

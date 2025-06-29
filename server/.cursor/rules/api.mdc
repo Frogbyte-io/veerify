@@ -1,0 +1,164 @@
+---
+title: Server API Rules
+description: Backend patterns for API routes, database operations, and server-side authentication
+---
+
+# Server API Rules
+
+::callout{type="info"}
+Guidelines for server-side code in the `/server` directory
+::
+
+## Database & ORM
+
+### Drizzle Configuration
+- **ORM**: Drizzle with PostgreSQL
+- **Schema location**: `~/server/database/schema/`
+- **Migrations**: `~/server/database/migrations/`
+
+### Schema Patterns
+```typescript
+// Use these imports for schema definitions
+import { pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core'
+
+// Standard table structure
+export const users = pgTable('users', {
+  id: text('id').primaryKey(),
+  name: text('name'),
+  email: text('email').unique(),
+  emailVerified: timestamp('email_verified'),
+  image: text('image'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow()
+})
+```
+
+## API Route Patterns
+
+### Protected Routes Template
+
+::code-group
+
+```typescript [Protected API Route]
+import { auth } from "~/lib/auth"
+
+export default defineEventHandler(async (event) => {
+  const session = await auth.api.getSession({
+    headers: event.headers as any
+  })
+  
+  if (!session?.user) {
+    throw createError({
+      statusCode: 401,
+      statusMessage: 'Unauthorized'
+    })
+  }
+  
+  // Your API logic here
+  return {
+    success: true,
+    data: {}
+  }
+})
+```
+
+```typescript [Public API Route]
+export default defineEventHandler(async (event) => {
+  // Handle GET, POST, etc.
+  const method = getMethod(event)
+  
+  if (method === 'POST') {
+    const body = await readBody(event)
+    // Process request
+  }
+  
+  return {
+    success: true,
+    data: {}
+  }
+})
+```
+
+::
+
+### Error Handling
+
+::callout{type="warning"}
+Always use proper HTTP status codes and error messages
+::
+
+```typescript
+// Bad
+throw new Error('Something went wrong')
+
+// Good
+throw createError({
+  statusCode: 400,
+  statusMessage: 'Invalid request parameters'
+})
+
+// With details
+throw createError({
+  statusCode: 422,
+  statusMessage: 'Validation failed',
+  data: { field: 'email', message: 'Invalid email format' }
+})
+```
+
+## Better-Auth Integration
+
+### Server Configuration
+- **Server config**: `~/lib/auth.ts`
+- **API route**: `~/server/api/auth/[...all].ts`
+- **Session validation**: `auth.api.getSession({ headers: event.headers as any })`
+
+### Authentication Middleware
+```typescript
+// ~/middleware/auth.global.ts
+export default defineNuxtRouteMiddleware((to) => {
+  // Server-side auth logic
+})
+```
+
+## Environment & Configuration
+
+::callout{type="note"}
+Required environment variables for server operation
+::
+
+### Required Variables
+- `BETTER_AUTH_URL`: Authentication service URL
+- `DATABASE_URL`: PostgreSQL connection string
+- `BETTER_AUTH_SECRET`: Session encryption key
+
+### Database Commands
+```bash
+# Apply migrations
+npx @better-auth/cli migrate
+
+# Generate schema
+npx drizzle-kit generate
+
+# Push schema changes
+npx drizzle-kit push
+```
+
+## Server-Side Best Practices
+
+### Security
+- Always validate user sessions on protected routes
+- Use environment variables for sensitive data
+- Implement proper CORS headers
+- Validate and sanitize all inputs
+
+### Performance
+- Use database indexes appropriately
+- Implement proper caching strategies
+- Handle database connections efficiently
+- Use appropriate HTTP status codes
+
+### Error Handling
+- Log errors appropriately
+- Return user-friendly error messages
+- Implement proper retry mechanisms
+- Use structured error responses 

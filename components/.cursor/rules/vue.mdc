@@ -1,0 +1,353 @@
+---
+title: Vue Component Rules
+description: Frontend patterns for Vue 3 components, UI, and client-side code
+---
+
+# Vue Component Rules
+
+::callout{type="info"}
+Guidelines for Vue 3 components using Options API and shadcn-vue
+::
+
+## Vue 3 Options API
+
+::callout{type="warning"}
+ALWAYS use Vue 3 Options API (not Composition API)
+::
+
+### Component Structure
+- **Template-first**: `<template>` at the top, then `<script>`
+- **Options API syntax**: `data()`, `computed`, `methods`, `mounted()`, etc.
+- **Auto-imports**: Rely on Nuxt's auto-import for components and composables
+
+::code-group
+
+```vue [Standard Component]
+<template>
+  <div v-if="isLoading">
+    <Skeleton class="h-4 w-20" />
+  </div>
+  <div v-else-if="data">
+    <!-- Content -->
+  </div>
+  <div v-else>
+    <!-- Error state -->
+  </div>
+</template>
+
+<script>
+export default {
+  name: 'ComponentName',
+  data() {
+    return {
+      isLoading: false,
+      data: null,
+      error: null
+    }
+  },
+  computed: {
+    // computed properties
+  },
+  methods: {
+    // methods
+  },
+  async mounted() {
+    // lifecycle hooks
+  }
+}
+</script>
+```
+
+```vue [With Authentication]
+<template>
+  <div v-if="user">
+    <h1>Welcome, {{ user.name }}!</h1>
+    <Button @click="handleLogout">Sign Out</Button>
+  </div>
+  <div v-else>
+    <NuxtLink to="/auth">Sign In</NuxtLink>
+  </div>
+</template>
+
+<script>
+import { authClient } from '~/lib/auth-client'
+
+export default {
+  name: 'UserComponent',
+  data() {
+    return {
+      session: null,
+      isLoading: true
+    }
+  },
+  computed: {
+    user() {
+      return this.session?.user || null
+    }
+  },
+  methods: {
+    async handleLogout() {
+      await authClient.signOut()
+      await navigateTo('/auth')
+    }
+  },
+  async mounted() {
+    const { data: session, isPending } = await authClient.useSession(useFetch)
+    this.session = session.value
+    this.isLoading = isPending.value
+  }
+}
+</script>
+```
+
+::
+
+## Component Imports
+
+::callout{type="note"}
+Leverage Nuxt's auto-imports for cleaner code
+::
+
+### Auto-Imported Components
+- **NO manual imports** for UI components
+- **shadcn-vue components**: Button, Input, Skeleton, etc.
+- **Only import when necessary**: auth clients, external libraries
+
+```vue
+<template>
+  <!-- ✅ Auto-imported shadcn-vue components -->
+  <Button variant="primary">Click me</Button>
+  <Input v-model="inputValue" />
+  <Skeleton class="h-4 w-20" />
+  
+  <!-- ✅ Auto-imported Nuxt components -->
+  <NuxtLink to="/dashboard">Dashboard</NuxtLink>
+  <Icon name="lucide:user" />
+</template>
+
+<script>
+// ✅ Only import external libraries
+import { authClient } from '~/lib/auth-client'
+
+export default {
+  // Component logic
+}
+</script>
+```
+
+## UI Components (shadcn-vue)
+
+::callout{type="info"}
+Always use shadcn-vue components when available
+::
+
+### Common Components
+
+::code-group
+
+```vue [Loading States]
+<template>
+  <div v-if="isLoading">
+    <Skeleton class="h-8 w-48 mb-2" />
+    <Skeleton class="h-4 w-32" />
+  </div>
+  <div v-else>
+    <!-- Content -->
+  </div>
+</template>
+```
+
+```vue [Sidebar Components]
+<template>
+  <SidebarMenu>
+    <SidebarMenuItem>
+      <SidebarMenuButton>
+        <Icon name="lucide:home" />
+        Dashboard
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  </SidebarMenu>
+</template>
+```
+
+```vue [Dropdown Menu]
+<template>
+  <DropdownMenu>
+    <DropdownMenuTrigger as-child>
+      <Button variant="outline">Options</Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent>
+      <DropdownMenuItem>
+        <Icon name="lucide:user" />
+        Profile
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem @click="handleLogout">
+        <Icon name="lucide:log-out" />
+        Sign out
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+</template>
+```
+
+```vue [Avatar Component]
+<template>
+  <Avatar class="h-8 w-8">
+    <AvatarImage :src="user.avatar" :alt="user.name" />
+    <AvatarFallback>
+      {{ getInitials(user.name) }}
+    </AvatarFallback>
+  </Avatar>
+</template>
+```
+
+::
+
+## Icons & Styling
+
+### Lucide Icons
+```vue
+<template>
+  <!-- Standard pattern -->
+  <Icon name="lucide:icon-name" class="h-4 w-4" />
+  
+  <!-- Common icons -->
+  <Icon name="lucide:zap" />
+  <Icon name="lucide:users" />
+  <Icon name="lucide:chevrons-up-down" />
+  <Icon name="lucide:log-out" />
+  <Icon name="lucide:building" />
+</template>
+```
+
+### Tailwind CSS
+- **Framework**: Tailwind CSS with shadcn-vue theme
+- **Responsive**: Mobile-first (`sm:`, `md:`, `lg:`)
+- **Dark mode**: Automatic support via shadcn-vue
+
+```vue
+<template>
+  <div class="flex items-center gap-2 p-4 rounded-lg bg-background border">
+    <Icon name="lucide:info" class="h-4 w-4 text-blue-500" />
+    <span class="text-sm font-medium">Info message</span>
+  </div>
+</template>
+```
+
+## Client-Side Patterns
+
+### Client Detection
+::callout{type="warning"}
+Use `import.meta.client` (NOT `process.client` - deprecated)
+::
+
+```javascript
+// ✅ Correct
+if (import.meta.client) {
+  // client-only code
+  localStorage.setItem('key', 'value')
+}
+
+// ❌ Deprecated
+if (process.client) {
+  // Don't use this
+}
+```
+
+### Navigation
+```vue
+<script>
+export default {
+  methods: {
+    // Programmatic navigation
+    async goToDashboard() {
+      await navigateTo('/dashboard')
+    },
+    
+    // External navigation
+    openExternal() {
+      if (import.meta.client) {
+        window.open('https://example.com', '_blank')
+      }
+    }
+  }
+}
+</script>
+
+<template>
+  <!-- Declarative navigation -->
+  <NuxtLink to="/dashboard" class="hover:underline">
+    Dashboard
+  </NuxtLink>
+</template>
+```
+
+## Authentication Patterns
+
+### Client-Side Auth
+```vue
+<script>
+import { authClient } from '~/lib/auth-client'
+
+export default {
+  data() {
+    return {
+      session: null,
+      organizations: [],
+      activeOrganization: null
+    }
+  },
+  
+  async mounted() {
+    // Session management
+    const { data: session } = await authClient.useSession(useFetch)
+    this.session = session.value
+    
+    // Organization management (if using org plugin)
+    const { data: orgs } = authClient.useListOrganizations()
+    const { data: activeOrg } = authClient.useActiveOrganization()
+    
+    this.organizations = orgs.value || []
+    this.activeOrganization = activeOrg.value
+  },
+  
+  methods: {
+    async logout() {
+      await authClient.signOut()
+      await navigateTo('/auth')
+    },
+    
+    async setActiveOrg(orgId) {
+      await authClient.organization.setActive({ organizationId: orgId })
+    }
+  }
+}
+</script>
+```
+
+## Error Handling
+
+::callout{type="danger"}
+NO fallback data - show proper error states
+::
+
+```vue
+<template>
+  <div v-if="error" class="p-4 border border-red-200 rounded-lg bg-red-50">
+    <div class="flex items-center gap-2 text-red-600">
+      <Icon name="lucide:alert-circle" class="h-4 w-4" />
+      <span class="font-medium">{{ error }}</span>
+    </div>
+    <Button 
+      variant="outline" 
+      size="sm" 
+      class="mt-2"
+      @click="retryOperation"
+    >
+      <Icon name="lucide:refresh-cw" class="h-4 w-4 mr-2" />
+      Retry
+    </Button>
+  </div>
+</template>
+``` 
