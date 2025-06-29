@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Client } from 'pg';
-import * as schema from "~/server/api/auth/auth-schema";
+import * as schema from "~/server/database/schema/index";
 
 const client = new Client({
   host: process.env.PGHOST || 'localhost',
