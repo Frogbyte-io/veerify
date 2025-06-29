@@ -1,4 +1,3 @@
-// Example of using useNodeMailer directly in an API route
 export default defineEventHandler(async (event) => {
   let body = await readBody(event)
   const { sendMail } = useNodeMailer()

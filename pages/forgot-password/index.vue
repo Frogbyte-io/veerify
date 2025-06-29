@@ -33,7 +33,7 @@
               </form>
               
               <!-- Success Message -->
-              <div v-if="success" class="mt-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-md text-sm">
+              <div v-if="success" class="mt-4 p-3 bg-background border border-label text-label-foreground rounded-md text-sm">
                 {{ success }}
               </div>
               
@@ -57,6 +57,8 @@
 </template>
 
 <script>
+import { authClient } from '~/lib/auth-client';
+
 export default {
   name: 'ForgotPasswordPage',
   data() {
@@ -79,9 +81,11 @@ export default {
       this.success = '';
 
       try {
-        // For now, just show a success message
-        // In a real implementation, you would call the forgot password API
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate API call
+        const result = await authClient.requestPasswordReset({
+          email: this.email,
+        });
+        console.log(result);
+
         
         this.success = 'If an account with that email exists, we\'ve sent you a password reset link.';
         this.email = '';

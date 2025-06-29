@@ -3,6 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization, twoFactor } from "better-auth/plugins";
 import { db } from "../server/database/drizzle";
 import * as schema from "../server/database/schema/index";
+import { sendEmailVerificationEmail, sendPasswordResetEmail } from "./email";
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {
@@ -20,6 +21,15 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    sendVerificationEmail: sendEmailVerificationEmail,
+    sendResetPassword: async ({ user, url, token }, request) => {
+      console.log(user, url, token)
+      await sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        resetUrl: url
+      })
+    },
   },
   socialProviders: {
     // Uncomment and configure when you have OAuth credentials
@@ -35,7 +45,7 @@ export const auth = betterAuth({
       membershipLimit: 50,
     }),
     twoFactor({
-      issuer: "Veerify", // Your app name for the authenticator app
+      issuer: "Veerify",
     }),
   ],
 }); 
