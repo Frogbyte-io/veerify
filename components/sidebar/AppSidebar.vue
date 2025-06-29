@@ -27,13 +27,6 @@ const teams = [
   },
 ]
 
-// Define user data
-const user = {
-  name: "Mikal",
-  email: "m@example.com",
-  avatar: "/avatars/mikal.jpg",
-}
-
 // Define navigation items
 const feedbackItems = [
   {
@@ -150,7 +143,7 @@ const supportItems = [
     </SidebarContent>
 
     <SidebarFooter>
-      <NavUser :user="user" />
+      <NavUser />
     </SidebarFooter>
     <SidebarRail />
   </Sidebar>

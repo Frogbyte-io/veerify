@@ -1,27 +1,17 @@
-<script setup lang="ts">
-
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  useSidebar,
-} from '@/components/ui/sidebar'
-
-const props = defineProps<{
-  user: {
-    name: string
-    email: string
-    avatar: string
-  }
-}>()
-
-const { isMobile } = useSidebar()
-</script>
-
 <template>
   <SidebarMenu>
     <SidebarMenuItem>
-      <DropdownMenu>
+      <!-- Show loading state while checking auth -->
+      <div v-if="isLoading" class="flex items-center space-x-2 p-2">
+        <div class="h-8 w-8 bg-gray-200 rounded-lg animate-pulse"></div>
+        <div class="space-y-1">
+          <div class="h-4 w-20 bg-gray-200 rounded animate-pulse"></div>
+          <div class="h-3 w-16 bg-gray-200 rounded animate-pulse"></div>
+        </div>
+      </div>
+
+      <!-- Show user dropdown when authenticated -->
+      <DropdownMenu v-else-if="user">
         <DropdownMenuTrigger as-child>
           <SidebarMenuButton
             size="lg"
@@ -30,7 +20,7 @@ const { isMobile } = useSidebar()
             <Avatar class="h-8 w-8 rounded-lg">
               <AvatarImage :src="user.avatar" :alt="user.name" />
               <AvatarFallback class="rounded-lg">
-                {{ user.name.split(' ').map(n => n[0]).join('').toUpperCase() }}
+                {{ getInitials(user.name) }}
               </AvatarFallback>
             </Avatar>
             <div class="grid flex-1 text-left text-sm leading-tight">
@@ -51,7 +41,7 @@ const { isMobile } = useSidebar()
               <Avatar class="h-8 w-8 rounded-lg">
                 <AvatarImage :src="user.avatar" :alt="user.name" />
                 <AvatarFallback class="rounded-lg">
-                  {{ user.name.split(' ').map(n => n[0]).join('').toUpperCase() }}
+                  {{ getInitials(user.name) }}
                 </AvatarFallback>
               </Avatar>
               <div class="grid flex-1 text-left text-sm leading-tight">
@@ -83,12 +73,96 @@ const { isMobile } = useSidebar()
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>
+          <DropdownMenuItem @click="handleLogout">
             <Icon name="lucide:log-out" />
             Log out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <!-- Show sign in prompt when not authenticated -->
+      <div v-else class="p-2 text-sm text-muted-foreground">
+        <NuxtLink to="/auth" class="hover:underline">
+          Sign in to continue
+        </NuxtLink>
+      </div>
     </SidebarMenuItem>
   </SidebarMenu>
-</template> 
+</template>
+
+<script>
+import { authClient } from '~/lib/auth-client'
+
+export default {
+  name: 'NavUser',
+  
+  data() {
+    return {
+      session: null,
+      isPending: true
+    }
+  },
+
+  async mounted() {
+    // Get current user session from better-auth
+    try {
+      const { data: session, isPending } = await authClient.useSession(useFetch)
+      this.session = session.value
+      this.isPending = isPending.value
+      
+      // Watch for changes
+      watch(session, (newSession) => {
+        this.session = newSession
+      })
+      
+      watch(isPending, (newPending) => {
+        this.isPending = newPending
+      })
+    } catch (error) {
+      console.error('Error fetching session:', error)
+      this.isPending = false
+    }
+  },
+
+  computed: {
+    user() {
+      if (this.session?.user) {
+        return {
+          name: this.session.user.name || 'User',
+          email: this.session.user.email || '',
+          avatar: this.session.user.image || '',
+        }
+      }
+      return null
+    },
+    
+    isLoading() {
+      return this.isPending
+    },
+    
+    isMobile() {
+      // Simple viewport check - you can enhance this
+      if (process.client) {
+        return window.innerWidth < 768
+      }
+      return false
+    }
+  },
+
+  methods: {
+    getInitials(name) {
+      if (!name) return ''
+      return name.split(' ').map(n => n[0]).join('').toUpperCase()
+    },
+
+    async handleLogout() {
+      try {
+        await authClient.signOut()
+        await navigateTo('/auth')
+      } catch (error) {
+        console.error('Error signing out:', error)
+      }
+    }
+  }
+}
+</script> 
