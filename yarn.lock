@@ -612,6 +612,13 @@
   resolved "https://registry.yarnpkg.com/@hexagon/base64/-/base64-1.1.28.tgz#7d306a97f1423829be5b27c9d388fe50e3099d48"
   integrity sha512-lhqDEAvWixy3bZ+UOYbPwUbBkwBq5C1LAJ/xPC8Oi+lL54oyakv/npbA0aU2hgCsx/1NUd4IBvV03+aUBWxerw==
 
+"@iconify-json/lucide@^1.2.53":
+  version "1.2.53"
+  resolved "https://registry.yarnpkg.com/@iconify-json/lucide/-/lucide-1.2.53.tgz#4a77127b0d46361a83f8fcceb4017f3518abd2fc"
+  integrity sha512-LAdOrHp70uYqf/Q9g13qPafF6qjg4XEez7C/0Np5oLSOzfEF49lpMk3xa6ysYTPoWdPYE0qSc/NP3ebJWg3aJg==
+  dependencies:
+    "@iconify/types" "*"
+
 "@iconify/collections@^1.0.548":
   version "1.0.557"
   resolved "https://registry.npmjs.org/@iconify/collections/-/collections-1.0.557.tgz"
