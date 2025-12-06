@@ -13,12 +13,16 @@
               <Skeleton class="size-8 rounded-lg" />
             </div>
             <!-- Active organization -->
-            <div v-else-if="activeOrganization" class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <div v-else-if="activeOrg" class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
               <Icon name="lucide:building" class="size-4" />
             </div>
             <!-- Error state -->
-            <div v-else class="flex aspect-square size-8 items-center justify-center rounded-lg bg-red-500 text-white">
+            <div v-else-if="organizationsError" class="flex aspect-square size-8 items-center justify-center rounded-lg bg-red-500 text-white">
               <Icon name="lucide:alert-circle" class="size-4" />
+            </div>
+            <!-- No organization (valid state) -->
+            <div v-else class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+              <Icon name="lucide:building" class="size-4" />
             </div>
             
             <div class="grid flex-1 text-left text-sm leading-tight">
@@ -33,19 +37,27 @@
               </template>
               
               <!-- Active organization -->
-              <template v-else-if="activeOrganization">
+              <template v-else-if="activeOrg">
                 <span class="truncate font-semibold">
-                  {{ activeOrganization.name }}
+                  {{ activeOrg.name }}
                 </span>
-                <span class="truncate text-xs">{{ activeOrganization.slug }}</span>
+                <span class="truncate text-xs">{{ activeOrg.slug }}</span>
               </template>
               
               <!-- Error state -->
-              <template v-else>
+              <template v-else-if="organizationsError">
                 <span class="truncate font-semibold text-red-500">
                   Error loading organizations
                 </span>
                 <span class="truncate text-xs text-red-400">Please refresh</span>
+              </template>
+              
+              <!-- No organization selected (valid state) -->
+              <template v-else>
+                <span class="truncate font-semibold">
+                  Select organization
+                </span>
+                <span class="truncate text-xs text-muted-foreground">No organization active</span>
               </template>
             </div>
             <Icon name="lucide:chevrons-up-down" class="ml-auto" />
@@ -84,7 +96,7 @@
           <!-- Show organizations -->
           <DropdownMenuItem
             v-else
-            v-for="(organization, index) in organizations"
+            v-for="(organization, index) in organizationsList"
             :key="organization.id"
             class="gap-2 p-2"
             @click="setActiveOrganization(organization)"
@@ -117,22 +129,36 @@ import { authClient } from '~/lib/auth-client'
 export default {
   name: 'TeamSwitcher',
   
-  data() {
+  setup() {
+    // Use the organizations composables
+    const organizations = authClient.useListOrganizations()
+    const activeOrganization = authClient.useActiveOrganization()
+    
     return {
-      organizations: [],
-      activeOrganization: null,
-      isLoadingOrganizations: true,
-      organizationsError: null,
-      isLoadingActiveOrg: true,
-      activeOrgError: null
+      organizations,
+      activeOrganization
     }
   },
 
-  async mounted() {
-    await this.initializeOrganizations()
+  data() {
+    return {
+      organizationsError: null
+    }
   },
 
   computed: {
+    isLoadingOrganizations() {
+      return this.organizations.isPending || this.activeOrganization.isPending
+    },
+    
+    organizationsList() {
+      return this.organizations.data || []
+    },
+    
+    activeOrg() {
+      return this.activeOrganization.data || null
+    },
+    
     isMobile() {
       if (import.meta.client) {
         return window.innerWidth < 768
@@ -141,40 +167,17 @@ export default {
     }
   },
 
+
   methods: {
     async initializeOrganizations() {
+      // Composables handle loading automatically
+      // Just refresh if needed
       try {
-        // Initialize organizations list
-        const { data: organizations } = authClient.useListOrganizations()
-        this.organizations = organizations.value || []
-        
-        // Watch for changes in organizations
-        watch(organizations, (newOrganizations) => {
-          this.organizations = newOrganizations || []
-          this.isLoadingOrganizations = false
-          this.organizationsError = null
-        })
-
-        // Initialize active organization
-        const { data: activeOrganization } = authClient.useActiveOrganization()
-        this.activeOrganization = activeOrganization.value
-        
-        // Watch for changes in active organization
-        watch(activeOrganization, (newActiveOrganization) => {
-          this.activeOrganization = newActiveOrganization
-          this.isLoadingActiveOrg = false
-          this.activeOrgError = null
-        })
-
-        // Set loading to false after initial load
-        this.isLoadingOrganizations = false
-        this.isLoadingActiveOrg = false
-        
+        await this.organizations.refresh?.()
+        await this.activeOrganization.refresh?.()
       } catch (error) {
-        console.error('Error initializing organizations:', error)
+        console.error('Error refreshing organizations:', error)
         this.organizationsError = 'Failed to load organizations'
-        this.isLoadingOrganizations = false
-        this.isLoadingActiveOrg = false
       }
     },
 
@@ -206,7 +209,6 @@ export default {
 
     async refreshOrganizations() {
       this.organizationsError = null
-      this.isLoadingOrganizations = true
       await this.initializeOrganizations()
     }
   }

@@ -21,15 +21,29 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
-    sendVerificationEmail: sendEmailVerificationEmail,
     sendResetPassword: async ({ user, url, token }, request) => {
-      console.log(user, url, token)
-      await sendPasswordResetEmail({
+      // Use void to avoid blocking the request
+      void sendPasswordResetEmail({
         to: user.email,
-        name: user.name,
+        name: user.name || user.email.split('@')[0],
         resetUrl: url
-      })
+      }).catch((error) => {
+        console.error('Failed to send password reset email:', error);
+      });
     },
+  },
+  emailVerification: {
+    sendVerificationEmail: async ({ user, url, token }, request) => {
+      // Use void to avoid blocking the request - Better-Auth will continue even if email fails
+      void sendEmailVerificationEmail({
+        to: user.email,
+        name: user.name || user.email.split('@')[0],
+        verificationUrl: url
+      }).catch((error) => {
+        console.error('Failed to send verification email:', error);
+      });
+    },
+    sendOnSignUp: true, // Automatically send verification email on sign-up
   },
   socialProviders: {
     // Uncomment and configure when you have OAuth credentials

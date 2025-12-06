@@ -84,6 +84,16 @@ import { authClient } from '~/lib/auth-client'
 export default {
   name: 'NavUser',
   
+  setup() {
+    // Use the session composable at the top level
+    // This ensures proper reactivity
+    const sessionComposable = authClient.useSession()
+    
+    return {
+      sessionComposable
+    }
+  },
+
   data() {
     return {
       session: null,
@@ -91,21 +101,42 @@ export default {
     }
   },
 
-  async mounted() {
-    // Get current user session from better-auth
+  mounted() {
+    if (!import.meta.client) return
+    
     try {
-      const { data: session, isPending } = await authClient.useSession(useFetch)
-      this.session = session.value
-      this.isPending = isPending.value
+      // Access the composable result
+      const sessionRef = this.sessionComposable?.data || this.sessionComposable
+      const isPendingRef = this.sessionComposable?.isPending
       
-      // Watch for changes
-      watch(session, (newSession) => {
-        this.session = newSession
-      })
+      // Set initial values
+      if (sessionRef && typeof sessionRef === 'object' && 'value' in sessionRef) {
+        this.session = sessionRef.value
+      } else if (sessionRef) {
+        this.session = sessionRef
+      }
       
-      watch(isPending, (newPending) => {
-        this.isPending = newPending
-      })
+      if (isPendingRef && typeof isPendingRef === 'object' && 'value' in isPendingRef) {
+        this.isPending = isPendingRef.value ?? false
+      }
+      
+      // Watch for changes - only watch if it's a ref
+      if (sessionRef && typeof sessionRef === 'object' && 'value' in sessionRef) {
+        watch(sessionRef, (newSession) => {
+          this.session = newSession
+        }, { immediate: false })
+      }
+      
+      if (isPendingRef && typeof isPendingRef === 'object' && 'value' in isPendingRef) {
+        watch(isPendingRef, (newPending) => {
+          // Only update isPending if we don't have a session yet
+          // This prevents white flash when switching tabs if session already exists
+          if (!this.session || newPending === false) {
+            this.isPending = newPending
+          }
+        }, { immediate: false })
+      }
+      
     } catch (error) {
       console.error('Error fetching session:', error)
       this.isPending = false
@@ -125,12 +156,13 @@ export default {
     },
     
     isLoading() {
-      return this.isPending
+      // Only show loading if we don't have a session yet
+      // This prevents white flash when switching tabs if session already exists
+      return this.isPending && !this.session
     },
     
     isMobile() {
-      // Simple viewport check - you can enhance this
-      if (process.client) {
+      if (import.meta.client) {
         return window.innerWidth < 768
       }
       return false

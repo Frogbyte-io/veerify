@@ -26,12 +26,19 @@ export async function sendEmail(options: EmailOptions) {
     const { sendMail } = useNodeMailer()
     
     try {
-      const result = await sendMail({
+      // Add timeout to prevent hanging (10 seconds)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Email sending timeout after 10 seconds')), 10000);
+      });
+
+      const sendPromise = sendMail({
         to: options.to,
         subject: options.subject,
         html: options.html || `<p>${options.text || 'Hello from Veerify!'}</p>`,
         text: options.text || 'Hello from Veerify!'
-      })
+      });
+
+      const result = await Promise.race([sendPromise, timeoutPromise]) as Awaited<ReturnType<typeof sendMail>>;
       
       return { 
         success: true, 
@@ -40,7 +47,12 @@ export async function sendEmail(options: EmailOptions) {
       }
     } catch (error) {
       console.error('Email sending error:', error)
-      throw error
+      // Don't throw - let the caller handle it gracefully
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to send email',
+        error: error
+      }
     }
   } else {
     // Use API endpoint on client side
