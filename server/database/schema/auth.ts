@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, jsonb } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
 					id: text('id').primaryKey(),
@@ -8,7 +8,11 @@ export const user = pgTable("user", {
  image: text('image'),
  createdAt: timestamp('created_at').$defaultFn(() => /* @__PURE__ */ new Date()).notNull(),
  updatedAt: timestamp('updated_at').$defaultFn(() => /* @__PURE__ */ new Date()).notNull(),
- twoFactorEnabled: boolean('two_factor_enabled').$defaultFn(() => false)
+ twoFactorEnabled: boolean('two_factor_enabled').$defaultFn(() => false),
+ // GitHub authentication fields
+ githubId: text('github_id').unique(),
+ githubLogin: text('github_login'),
+ avatarUrl: text('avatar_url')
 				});
 
 export const session = pgTable("session", {
@@ -54,7 +58,8 @@ export const organization = pgTable("organization", {
  slug: text('slug').unique(),
  logo: text('logo'),
  createdAt: timestamp('created_at').notNull(),
- metadata: text('metadata')
+ metadata: text('metadata'),
+ settings: jsonb('settings').$type<Record<string, any>>()
 				});
 
 export const member = pgTable("member", {
