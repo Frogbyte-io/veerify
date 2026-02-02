@@ -91,18 +91,58 @@ yarn db:studio
 yarn build
 ```
 
+The build automatically runs migrations and seeds test data via the `postbuild` script. Seed is skipped on production (`VERCEL_ENV=production`).
+
 #### Configure the PostgreSQL database
 
-Edit ```.env``` to add database credentials.
-Database will start along with the other services when running 
+You can connect to PostgreSQL in two ways:
+
+**Option A — single connection string (recommended for hosted databases like Neon):**
+
+```env
+DATABASE_URL=postgres://user:password@host:5432/dbname?sslmode=require
+```
+
+**Option B — individual variables (used by local Docker setup):**
+
+```env
+PGHOST=localhost
+PGPORT=5432
+PGUSER=veerify
+PGPASSWORD=veerifypassword
+PGDATABASE=veerifydb
+```
+
+`DATABASE_URL` takes precedence when both are set.
+
+For local development, start the database with Docker Compose:
+
 ```bash
 docker compose up -d
- ```
+```
+
 #### Preview the production build locally:
 
 ```bash
 yarn preview
 ```
+
+### PR Previews
+
+PR preview deployments are handled by **Vercel + Neon**. Every PR automatically gets:
+
+- Its own isolated Neon database branch (copy-on-write snapshot of main)
+- Migrations applied during the build
+- A seeded test user for immediate testing
+
+No GitHub Actions or per-PR configuration required — the Neon Vercel integration handles the full lifecycle. See the [setup PR](https://github.com/Frogbyte-io/veerify/pulls) for one-time setup instructions.
+
+**Test credentials on preview deployments:**
+
+| Field | Value |
+|---|---|
+| Email | `test@preview.local` |
+| Password | `password123` |
 
 ## 📁 Project Structure
 
@@ -121,6 +161,8 @@ veerify/
 │   ├── reports/         # Analytics and reporting
 │   ├── help/            # Help center
 │   └── settings/        # Application settings
+├── scripts/
+│   └── seed.ts          # Preview database seed (test user + org)
 └── assets/css/          # Global styles
 ```
 
