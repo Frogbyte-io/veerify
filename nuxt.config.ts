@@ -7,7 +7,7 @@ export default defineNuxtConfig({
   vite: {
     plugins: [tailwindcss()],
   },
-  modules: ['@nuxt/fonts', '@nuxt/icon', '@nuxt/test-utils', 'shadcn-nuxt', '@nuxtjs/color-mode', 'nuxt-nodemailer'],
+  modules: ['@nuxt/fonts', '@nuxt/icon', '@nuxt/test-utils', 'shadcn-nuxt', '@nuxtjs/color-mode', 'nuxt-nodemailer', '@scalar/nuxt'],
   runtimeConfig: {
     nodemailer: {
       from: process.env.MAIL_FROM,
@@ -53,5 +53,13 @@ export default defineNuxtConfig({
       prefix: 'ScaffoldDesigner',
       pathPrefix: false,
     },
-  ]
+  ],
+  scalar: {
+    spec: {
+      url: '/api/openapi.json'
+    },
+    proxy: {
+      path: '/api-docs'
+    }
+  }
 })
