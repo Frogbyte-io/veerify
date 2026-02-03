@@ -3,10 +3,10 @@
     <SidebarMenuItem>
       <!-- Show loading state while checking auth -->
       <div v-if="isLoading" class="flex items-center space-x-2 p-2">
-        <div class="h-8 w-8 bg-gray-200 rounded-lg animate-pulse"></div>
+        <div class="h-8 w-8 bg-gray-200 rounded-lg animate-pulse" />
         <div class="space-y-1">
-          <div class="h-4 w-20 bg-gray-200 rounded animate-pulse"></div>
-          <div class="h-3 w-16 bg-gray-200 rounded animate-pulse"></div>
+          <div class="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+          <div class="h-3 w-16 bg-gray-200 rounded animate-pulse" />
         </div>
       </div>
 
@@ -70,9 +70,7 @@
 
       <!-- Show sign in prompt when not authenticated -->
       <div v-else class="p-2 text-sm text-muted-foreground">
-        <NuxtLink to="/auth" class="hover:underline">
-          Sign in to continue
-        </NuxtLink>
+        <NuxtLink to="/auth" class="hover:underline"> Sign in to continue </NuxtLink>
       </div>
     </SidebarMenuItem>
   </SidebarMenu>
@@ -83,32 +81,11 @@ import { authClient } from '~/lib/auth-client'
 
 export default {
   name: 'NavUser',
-  
+
   data() {
     return {
       session: null,
-      isPending: true
-    }
-  },
-
-  async mounted() {
-    // Get current user session from better-auth
-    try {
-      const { data: session, isPending } = await authClient.useSession(useFetch)
-      this.session = session.value
-      this.isPending = isPending.value
-      
-      // Watch for changes
-      watch(session, (newSession) => {
-        this.session = newSession
-      })
-      
-      watch(isPending, (newPending) => {
-        this.isPending = newPending
-      })
-    } catch (error) {
-      console.error('Error fetching session:', error)
-      this.isPending = false
+      isPending: true,
     }
   },
 
@@ -123,24 +100,49 @@ export default {
       }
       return null
     },
-    
+
     isLoading() {
       return this.isPending
     },
-    
+
     isMobile() {
       // Simple viewport check - you can enhance this
-      if (process.client) {
+      if (import.meta.client) {
         return window.innerWidth < 768
       }
       return false
+    },
+  },
+
+  async mounted() {
+    // Get current user session from better-auth
+    try {
+      const { data: session, isPending } = await authClient.useSession(useFetch)
+      this.session = session.value
+      this.isPending = isPending.value
+
+      // Watch for changes
+      watch(session, (newSession) => {
+        this.session = newSession
+      })
+
+      watch(isPending, (newPending) => {
+        this.isPending = newPending
+      })
+    } catch (error) {
+      console.error('Error fetching session:', error)
+      this.isPending = false
     }
   },
 
   methods: {
     getInitials(name) {
       if (!name) return ''
-      return name.split(' ').map(n => n[0]).join('').toUpperCase()
+      return name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
     },
 
     async handleLogout() {
@@ -150,7 +152,7 @@ export default {
       } catch (error) {
         console.error('Error signing out:', error)
       }
-    }
-  }
+    },
+  },
 }
-</script> 
+</script>

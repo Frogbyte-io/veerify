@@ -1,5 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import tailwindcss from "@tailwindcss/vite";
+import tailwindcss from '@tailwindcss/vite'
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
   devtools: { enabled: true },
@@ -19,7 +19,7 @@ export default defineNuxtConfig({
         pass: process.env.SMTP_PASS,
       },
     },
-    public: {}
+    public: {},
   },
   colorMode: {
     preference: 'system', // default value of $colorMode.preference
@@ -30,7 +30,7 @@ export default defineNuxtConfig({
     classPrefix: '',
     classSuffix: '',
     storage: 'localStorage', // or 'sessionStorage' or 'cookie'
-    storageKey: 'nuxt-color-mode'
+    storageKey: 'nuxt-color-mode',
   },
   shadcn: {
     /**
@@ -41,7 +41,7 @@ export default defineNuxtConfig({
      * Directory that the component lives in.
      * @default "./components/ui"
      */
-    componentDir: './components/ui'
+    componentDir: './components/ui',
   },
   components: [
     {
@@ -53,5 +53,5 @@ export default defineNuxtConfig({
       prefix: 'ScaffoldDesigner',
       pathPrefix: false,
     },
-  ]
+  ],
 })

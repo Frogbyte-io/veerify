@@ -12,7 +12,11 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "postbuild": "drizzle-kit migrate && tsx scripts/seed.ts"
+    "postbuild": "drizzle-kit migrate && tsx scripts/seed.ts",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.53",
@@ -42,13 +46,19 @@
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
   "devDependencies": {
+    "@nuxt/eslint-config": "^1.13.0",
     "@types/nodemailer": "^6.4.17",
     "@types/qrcode": "^1.5.5",
     "drizzle-kit": "^0.31.4",
+    "eslint": "^9.25.0",
+    "eslint-config-prettier": "^10.1.0",
     "nodemailer": "^7.0.4",
     "nuxt-nodemailer": "^1.1.2",
+    "prettier": "^3.4.2",
     "shadcn-nuxt": "^2.2.0",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.18",
+    "vue-tsc": "^3.2.4"
   }
 }

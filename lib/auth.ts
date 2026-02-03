@@ -1,15 +1,16 @@
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization, twoFactor } from "better-auth/plugins";
-import { db } from "../server/database/drizzle";
-import * as schema from "../server/database/schema/index";
-import { sendEmailVerificationEmail, sendPasswordResetEmail } from "./email";
+import { betterAuth } from 'better-auth'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { organization, twoFactor } from 'better-auth/plugins'
+import { db } from '../server/database/drizzle'
+import * as schema from '../server/database/schema/index'
+import { sendEmailVerificationEmail, sendPasswordResetEmail } from './email'
 
 export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
+  baseURL:
+    process.env.BETTER_AUTH_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
   database: drizzleAdapter(db, {
-    provider: "pg",
+    provider: 'pg',
     schema: {
       user: schema.user,
       session: schema.session,
@@ -24,12 +25,12 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     sendVerificationEmail: sendEmailVerificationEmail,
-    sendResetPassword: async ({ user, url, token }, request) => {
+    sendResetPassword: async ({ user, url, token }, _request) => {
       console.log(user, url, token)
       await sendPasswordResetEmail({
         to: user.email,
         name: user.name,
-        resetUrl: url
+        resetUrl: url,
       })
     },
   },
@@ -47,7 +48,7 @@ export const auth = betterAuth({
       membershipLimit: 50,
     }),
     twoFactor({
-      issuer: "Veerify",
+      issuer: 'Veerify',
     }),
   ],
-}); 
+})

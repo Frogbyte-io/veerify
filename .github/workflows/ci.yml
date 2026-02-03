@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Lint (ESLint + Prettier) ──────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      - run: yarn lint
+
+      - run: yarn format:check
+
+  # ── Type check (vue-tsc) ──────────────────────────────────────────
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+        # postinstall runs `nuxt prepare`, which generates .nuxt/tsconfig.json
+
+      - run: yarn typecheck
+
+  # ── Unit tests (Vitest) ───────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      - run: yarn test
+
+  # ── Production build ──────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+        # Run nuxt build directly (not `yarn build`) to skip the
+        # postbuild lifecycle hook, which runs db migrations and
+        # requires a live PostgreSQL connection.
+      - run: npx nuxt build

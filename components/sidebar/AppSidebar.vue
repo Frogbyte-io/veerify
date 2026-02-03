@@ -16,45 +16,45 @@ const props = withDefaults(defineProps<SidebarProps>(), {
 // Define navigation items
 const feedbackItems = [
   {
-    title: "Dashboard",
-    url: "/dashboard",
-    icon: "lucide:layout-dashboard",
+    title: 'Dashboard',
+    url: '/dashboard',
+    icon: 'lucide:layout-dashboard',
   },
   {
-    title: "Feedback",
-    url: "/feedback",
-    icon: "lucide:message-square",
+    title: 'Feedback',
+    url: '/feedback',
+    icon: 'lucide:message-square',
   },
   {
-    title: "Roadmap",
-    url: "/roadmap",
-    icon: "lucide:map",
+    title: 'Roadmap',
+    url: '/roadmap',
+    icon: 'lucide:map',
   },
   {
-    title: "Changelog",
-    url: "/changelog",
-    icon: "lucide:scroll-text",
+    title: 'Changelog',
+    url: '/changelog',
+    icon: 'lucide:scroll-text',
   },
 ]
 
 const managementItems = [
   {
-    title: "Team",
-    url: "/settings#team",
-    icon: "lucide:user-plus",
+    title: 'Team',
+    url: '/settings#team',
+    icon: 'lucide:user-plus',
   },
 ]
 
 const supportItems = [
   {
-    title: "Help Center",
-    url: "/help",
-    icon: "lucide:help-circle",
+    title: 'Help Center',
+    url: '/help',
+    icon: 'lucide:help-circle',
   },
   {
-    title: "Settings",
-    url: "/settings",
-    icon: "lucide:settings",
+    title: 'Settings',
+    url: '/settings',
+    icon: 'lucide:settings',
   },
 ]
 </script>
@@ -123,4 +123,4 @@ const supportItems = [
     </SidebarFooter>
     <SidebarRail />
   </Sidebar>
-</template> 
+</template>

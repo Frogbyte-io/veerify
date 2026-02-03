@@ -24,19 +24,19 @@ export async function sendEmail(options: EmailOptions) {
   if (import.meta.server) {
     // Directly use NodeMailer on server side
     const { sendMail } = useNodeMailer()
-    
+
     try {
       const result = await sendMail({
         to: options.to,
         subject: options.subject,
         html: options.html || `<p>${options.text || 'Hello from Veerify!'}</p>`,
-        text: options.text || 'Hello from Veerify!'
+        text: options.text || 'Hello from Veerify!',
       })
-      
-      return { 
-        success: true, 
+
+      return {
+        success: true,
         message: 'Email sent successfully',
-        messageId: result.messageId 
+        messageId: result.messageId,
       }
     } catch (error) {
       console.error('Email sending error:', error)
@@ -47,13 +47,13 @@ export async function sendEmail(options: EmailOptions) {
     const result = await fetch('/api/mail/send-mail', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(options)
+      body: JSON.stringify(options),
     })
     return result
   }
-} 
+}
 
 export async function sendEmailVerificationEmail(options: EmailVerificationOptions) {
   const template = getEmailVerificationTemplate(options)
@@ -62,9 +62,9 @@ export async function sendEmailVerificationEmail(options: EmailVerificationOptio
     to: options.to,
     subject: template.subject,
     html: template.html,
-    text: template.text
+    text: template.text,
   })
-  return result 
+  return result
 }
 
 export async function sendPasswordResetEmail(options: PasswordResetOptions) {
@@ -74,7 +74,7 @@ export async function sendPasswordResetEmail(options: PasswordResetOptions) {
     to: options.to,
     subject: template.subject,
     html: template.html,
-    text: template.text
+    text: template.text,
   })
   return result
 }

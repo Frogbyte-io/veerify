@@ -10,7 +10,7 @@ interface PasswordResetOptions {
 
 export function getEmailVerificationTemplate({ name, verificationUrl }: EmailVerificationOptions) {
   const subject = 'Verify your email address'
-  
+
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #333;">Welcome to Veerify!</h1>
@@ -31,7 +31,7 @@ export function getEmailVerificationTemplate({ name, verificationUrl }: EmailVer
       </p>
     </div>
   `
-  
+
   const text = `
 Welcome to Veerify!
 
@@ -44,13 +44,13 @@ This link will expire in 24 hours.
 
 If you didn't create an account with Veerify, please ignore this email.
   `
-  
+
   return { subject, html, text }
 }
 
 export function getPasswordResetTemplate({ name, resetUrl }: PasswordResetOptions) {
   const subject = 'Reset your password'
-  
+
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #333;">Reset Your Password</h1>
@@ -71,7 +71,7 @@ export function getPasswordResetTemplate({ name, resetUrl }: PasswordResetOption
       </p>
     </div>
   `
-  
+
   const text = `
 Reset Your Password
 
@@ -86,6 +86,6 @@ This link will expire in 1 hour.
 
 If you didn't request a password reset, please ignore this email.
   `
-  
+
   return { subject, html, text }
-} 
+}

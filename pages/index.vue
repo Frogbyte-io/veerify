@@ -12,28 +12,28 @@
 </template>
 
 <script>
-import { authClient } from "~/lib/auth-client";
+import { authClient } from '~/lib/auth-client'
 
 export default {
   name: 'IndexPage',
   async mounted() {
     if (import.meta.client) {
       try {
-        const { data: session } = await authClient.useSession(useFetch);
-        
+        const { data: session } = await authClient.useSession(useFetch)
+
         if (session.value?.user) {
           // User is authenticated, redirect to dashboard
-          await navigateTo('/dashboard');
+          await navigateTo('/dashboard')
         } else {
           // User is not authenticated, redirect to login
-          await navigateTo('/login');
+          await navigateTo('/login')
         }
       } catch (error) {
         // If there's an error, default to login
-        console.error('Auth check error:', error);
-        await navigateTo('/login');
+        console.error('Auth check error:', error)
+        await navigateTo('/login')
       }
     }
-  }
+  },
 }
-</script> 
+</script>

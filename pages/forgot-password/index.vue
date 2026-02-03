@@ -5,9 +5,7 @@
         <div class="flex flex-col gap-6">
           <Card>
             <CardHeader class="text-center">
-              <CardTitle class="text-xl">
-                Reset your password
-              </CardTitle>
+              <CardTitle class="text-xl"> Reset your password </CardTitle>
               <CardDescription>
                 Enter your email address and we'll send you a link to reset your password
               </CardDescription>
@@ -31,22 +29,26 @@
                   </Button>
                 </div>
               </form>
-              
+
               <!-- Success Message -->
-              <div v-if="success" class="mt-4 p-3 bg-background border border-label text-label-foreground rounded-md text-sm">
+              <div
+                v-if="success"
+                class="mt-4 p-3 bg-background border border-label text-label-foreground rounded-md text-sm"
+              >
                 {{ success }}
               </div>
-              
+
               <!-- Error Message -->
-              <div v-if="error" class="mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm">
+              <div
+                v-if="error"
+                class="mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
+              >
                 {{ error }}
               </div>
-              
+
               <!-- Back to login link -->
               <div class="mt-6 text-center text-sm">
-                <NuxtLink to="/login" class="underline underline-offset-4">
-                  Back to sign in
-                </NuxtLink>
+                <NuxtLink to="/login" class="underline underline-offset-4"> Back to sign in </NuxtLink>
               </div>
             </CardContent>
           </Card>
@@ -57,7 +59,7 @@
 </template>
 
 <script>
-import { authClient } from '~/lib/auth-client';
+import { authClient } from '~/lib/auth-client'
 
 export default {
   name: 'ForgotPasswordPage',
@@ -66,35 +68,34 @@ export default {
       email: '',
       isLoading: false,
       error: '',
-      success: ''
+      success: '',
     }
   },
   methods: {
     async handleSubmit() {
       if (!this.email) {
-        this.error = 'Please enter your email address';
-        return;
+        this.error = 'Please enter your email address'
+        return
       }
 
-      this.isLoading = true;
-      this.error = '';
-      this.success = '';
+      this.isLoading = true
+      this.error = ''
+      this.success = ''
 
       try {
-        const result = await authClient.requestPasswordReset({
+        await authClient.requestPasswordReset({
           email: this.email,
-        });
+        })
 
-        
-        this.success = 'If an account with that email exists, we\'ve sent you a password reset link.';
-        this.email = '';
+        this.success = "If an account with that email exists, we've sent you a password reset link."
+        this.email = ''
       } catch (err) {
-        this.error = 'An unexpected error occurred';
-        console.error('Forgot password error:', err);
+        this.error = 'An unexpected error occurred'
+        console.error('Forgot password error:', err)
       } finally {
-        this.isLoading = false;
+        this.isLoading = false
       }
-    }
-  }
+    },
+  },
 }
-</script> 
+</script>
