@@ -10,7 +10,7 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     const { data: session } = await authClient.useSession(useFetch)
 
     // Protected routes that require authentication
-    const protectedRoutes = ['/dashboard', '/settings', '/team', '/reports', '/feedback', '/help']
+    const protectedRoutes = ['/dashboard', '/settings', '/team', '/reports', '/feedback', '/help', '/products']
 
     // Auth routes that should redirect to dashboard if user is already logged in
     const authRoutes = ['/login', '/signup', '/auth']

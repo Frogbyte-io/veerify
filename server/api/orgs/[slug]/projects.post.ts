@@ -1,157 +1,113 @@
-/**
- * Create Project Endpoint
- * Creates a new project within an organization
- *
- * @openapi
- * /api/orgs/{slug}/projects:
- *   post:
- *     tags: [Projects]
- *     summary: Create project
- *     description: Creates a new project within the specified organization
- *     operationId: createProject
- *     security:
- *       - cookieAuth: []
- *     parameters:
- *       - name: slug
- *         in: path
- *         description: Organization slug
- *         required: true
- *         schema:
- *           type: string
- *           pattern: ^[a-z0-9-]+$
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - name
- *               - slug
- *             properties:
- *               name:
- *                 type: string
- *                 description: Project name
- *                 example: My Awesome App
- *               slug:
- *                 type: string
- *                 description: URL-friendly unique identifier
- *                 pattern: ^[a-z0-9-]+$
- *                 example: my-awesome-app
- *               description:
- *                 type: string
- *                 description: Project description
- *                 nullable: true
- *               githubRepoUrl:
- *                 type: string
- *                 format: uri
- *                 description: GitHub repository URL
- *                 example: https://github.com/org/repo
- *                 nullable: true
- *     responses:
- *       201:
- *         description: Project created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/Project'
- *       400:
- *         description: Validation error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       403:
- *         description: Insufficient permissions (requires admin or owner role)
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       404:
- *         description: Organization not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       409:
- *         description: Project slug already exists in this organization
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       501:
- *         description: Not implemented
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-
 import { z } from 'zod'
+import { eq, and } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody, commonSchemas } from '~/server/utils/validation'
-import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
+import { db } from '~/server/database/drizzle'
+import { project, feedbackCategory } from '~/server/database/schema/feedback'
+import { organization, member } from '~/server/database/schema/auth'
 
 const createProjectSchema = z.object({
-  name: z.string()
-    .min(1, 'Project name is required')
-    .max(100, 'Project name too long'),
+  name: z.string().min(1, 'Project name is required').max(100, 'Project name too long'),
   slug: commonSchemas.slug,
   description: z.string().max(1000, 'Description too long').optional().nullable(),
-  githubRepoUrl: z.string().url('Invalid GitHub repository URL').optional().nullable()
+  customDomain: z.string().max(253, 'Domain too long').optional().nullable(),
 })
 
 export default defineEventHandler(async (event) => {
-  // Require authentication
   const session = await requireAuth(event)
 
-  // Rate limiting
-  await requireRateLimit(event, rateLimits.standard)
-
-  // Get org slug from route params
   const orgSlug = getRouterParam(event, 'slug')
-
   if (!orgSlug) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        'Organization slug is required'
-      )
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Organization slug is required'),
     })
   }
 
-  // Validate request body
   const body = await validateBody(event, createProjectSchema)
 
-  // TODO: Implement project creation
-  // 1. Verify organization exists
-  // 2. Check user has admin/owner role in organization
-  // 3. Check if project slug is unique within organization
-  // 4. If githubRepoUrl provided, validate it's a valid GitHub URL
-  // 5. Create project record
-  // 6. Return created project
+  // Find organization by slug
+  const [org] = await db.select().from(organization).where(eq(organization.slug, orgSlug)).limit(1)
+  if (!org) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Organization not found'),
+    })
+  }
 
-  throw createError({
-    statusCode: 501,
-    statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'Project creation is not yet implemented'
-    )
-  })
+  // Verify user is a member of the org
+  const [membership] = await db
+    .select()
+    .from(member)
+    .where(and(eq(member.organizationId, org.id), eq(member.userId, session.user.id)))
+    .limit(1)
+
+  if (!membership) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden',
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You are not a member of this organization'),
+    })
+  }
+
+  // Check slug uniqueness within org
+  const [existing] = await db
+    .select()
+    .from(project)
+    .where(and(eq(project.organizationId, org.id), eq(project.slug, body.slug)))
+    .limit(1)
+
+  if (existing) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: createErrorResponse(ErrorCode.CONFLICT, 'A project with this slug already exists in this organization'),
+    })
+  }
+
+  const projectId = crypto.randomUUID()
+  const now = new Date()
+
+  // Create the project
+  const [created] = await db
+    .insert(project)
+    .values({
+      id: projectId,
+      organizationId: org.id,
+      slug: body.slug,
+      name: body.name,
+      description: body.description || null,
+      customDomain: body.customDomain || null,
+      isPublic: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning()
+
+  // Create default categories
+  const defaultCategories = [
+    { name: 'Feature Request', slug: 'feature-request', icon: 'lucide:lightbulb', color: '#10b981', isDefault: true },
+    { name: 'Bug Report', slug: 'bug-report', icon: 'lucide:bug', color: '#ef4444', isDefault: false },
+    { name: 'Improvement', slug: 'improvement', icon: 'lucide:trending-up', color: '#8b5cf6', isDefault: false },
+  ]
+
+  await db.insert(feedbackCategory).values(
+    defaultCategories.map((cat, i) => ({
+      id: crypto.randomUUID(),
+      projectId: projectId,
+      name: cat.name,
+      slug: cat.slug,
+      icon: cat.icon,
+      color: cat.color,
+      isDefault: cat.isDefault,
+      sortOrder: i,
+      createdAt: now,
+    }))
+  )
+
+  setResponseStatus(event, 201)
+  return createSuccessResponse(created)
 })

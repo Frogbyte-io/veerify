@@ -4,7 +4,10 @@
  */
 
 import type { H3Event } from 'h3'
+import { eq, and } from 'drizzle-orm'
 import { auth } from '~/lib/auth'
+import { db } from '~/server/database/drizzle'
+import { member } from '~/server/database/schema/auth'
 import { ErrorCode, createErrorResponse } from './response'
 
 export interface AuthSession {
@@ -87,9 +90,14 @@ export async function hasOrganizationRole(
   organizationId: string,
   allowedRoles: string[] = ['admin', 'owner']
 ): Promise<boolean> {
-  // This will be implemented once we have the member table queries
-  // For now, return false as a placeholder
-  return false
+  const [membership] = await db
+    .select()
+    .from(member)
+    .where(and(eq(member.organizationId, organizationId), eq(member.userId, session.user.id)))
+    .limit(1)
+
+  if (!membership) return false
+  return allowedRoles.includes(membership.role)
 }
 
 /**

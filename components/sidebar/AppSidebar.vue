@@ -39,6 +39,11 @@ const feedbackItems = [
 
 const managementItems = [
   {
+    title: 'Products',
+    url: '/products',
+    icon: 'lucide:package',
+  },
+  {
     title: 'Team',
     url: '/settings#team',
     icon: 'lucide:user-plus',

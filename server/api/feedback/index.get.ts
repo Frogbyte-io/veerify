@@ -1,135 +1,92 @@
-/**
- * List Feedback Endpoint
- * Retrieves a paginated list of feedback items with filtering and sorting
- *
- * @openapi
- * /api/feedback:
- *   get:
- *     tags: [Feedback]
- *     summary: List feedback
- *     description: Retrieves a paginated list of feedback items with optional filtering and sorting
- *     operationId: listFeedback
- *     parameters:
- *       - name: projectId
- *         in: query
- *         description: Filter by project ID
- *         schema:
- *           type: string
- *       - name: status
- *         in: query
- *         description: Filter by status
- *         schema:
- *           type: string
- *           enum: [open, in_progress, completed, closed]
- *       - name: priority
- *         in: query
- *         description: Filter by priority
- *         schema:
- *           type: string
- *           enum: [low, medium, high]
- *       - name: page
- *         in: query
- *         description: Page number (starts at 1)
- *         schema:
- *           type: integer
- *           minimum: 1
- *           default: 1
- *       - name: limit
- *         in: query
- *         description: Items per page (max 100)
- *         schema:
- *           type: integer
- *           minimum: 1
- *           maximum: 100
- *           default: 20
- *       - name: sortBy
- *         in: query
- *         description: Sort field
- *         schema:
- *           type: string
- *           enum: [createdAt, updatedAt, voteCount, title]
- *           default: voteCount
- *       - name: sortOrder
- *         in: query
- *         description: Sort direction
- *         schema:
- *           type: string
- *           enum: [asc, desc]
- *           default: desc
- *     responses:
- *       200:
- *         description: List of feedback items
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   type: object
- *                   properties:
- *                     items:
- *                       type: array
- *                       items:
- *                         $ref: '#/components/schemas/Feedback'
- *                     pagination:
- *                       $ref: '#/components/schemas/Pagination'
- *       400:
- *         description: Invalid query parameters
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       501:
- *         description: Not implemented
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-
 import { z } from 'zod'
+import { eq, and, desc, asc, count, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
-import { validateQuery, commonSchemas } from '~/server/utils/validation'
-import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
+import { validateQuery } from '~/server/utils/validation'
+import { db } from '~/server/database/drizzle'
+import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
+import { user } from '~/server/database/schema/auth'
 
 const listFeedbackQuerySchema = z.object({
   projectId: z.string().optional(),
-  status: z.enum(['open', 'in_progress', 'completed', 'closed']).optional(),
-  priority: z.enum(['low', 'medium', 'high']).optional(),
+  status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']).optional(),
+  categoryId: z.string().optional(),
+  search: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   sortBy: z.enum(['createdAt', 'updatedAt', 'voteCount', 'title']).default('voteCount'),
-  sortOrder: z.enum(['asc', 'desc']).default('desc')
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
 })
 
 export default defineEventHandler(async (event) => {
-  // Optional authentication - public endpoint
   const session = await optionalAuth(event)
-
-  // Rate limiting (relaxed for public read endpoint)
-  await requireRateLimit(event, rateLimits.relaxed)
-
-  // Validate query parameters
   const query = validateQuery(event, listFeedbackQuerySchema)
 
-  // TODO: Implement feedback listing
-  // 1. Build query with filters (projectId, status, priority)
-  // 2. Apply sorting (sortBy, sortOrder)
-  // 3. Apply pagination (page, limit)
-  // 4. Count total items for pagination
-  // 5. If authenticated, include user vote status for each item
-  // 6. Return paginated results
+  // Build conditions
+  const conditions = []
+  if (query.projectId) conditions.push(eq(feedback.projectId, query.projectId))
+  if (query.status) conditions.push(eq(feedback.status, query.status))
+  if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
 
-  throw createError({
-    statusCode: 501,
-    statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'Feedback listing is not yet implemented'
-    )
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined
+
+  // Sort
+  const sortColumn = {
+    createdAt: feedback.createdAt,
+    updatedAt: feedback.updatedAt,
+    voteCount: feedback.voteCount,
+    title: feedback.title,
+  }[query.sortBy]
+  const orderFn = query.sortOrder === 'asc' ? asc : desc
+
+  // Get total count
+  const [totalResult] = await db
+    .select({ count: count() })
+    .from(feedback)
+    .where(whereClause)
+
+  const total = totalResult?.count || 0
+  const offset = (query.page - 1) * query.limit
+
+  // Get feedback items with category info
+  const items = await db
+    .select({
+      feedback: feedback,
+      category: feedbackCategory,
+    })
+    .from(feedback)
+    .leftJoin(feedbackCategory, eq(feedback.categoryId, feedbackCategory.id))
+    .where(whereClause)
+    .orderBy(orderFn(sortColumn))
+    .limit(query.limit)
+    .offset(offset)
+
+  // If authenticated, check which items the user has voted on
+  let userVotes: Set<string> = new Set()
+  if (session?.user) {
+    const feedbackIds = items.map((i) => i.feedback.id)
+    if (feedbackIds.length > 0) {
+      const votes = await db
+        .select({ feedbackId: vote.feedbackId })
+        .from(vote)
+        .where(and(eq(vote.voterUserId, session.user.id)))
+      userVotes = new Set(votes.map((v) => v.feedbackId))
+    }
+  }
+
+  const result = items.map((item) => ({
+    ...item.feedback,
+    category: item.category,
+    hasVoted: session?.user ? userVotes.has(item.feedback.id) : undefined,
+  }))
+
+  return createSuccessResponse({
+    items: result,
+    pagination: {
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages: Math.ceil(total / query.limit),
+    },
   })
 })

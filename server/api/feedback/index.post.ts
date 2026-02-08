@@ -1,122 +1,91 @@
-/**
- * Create Feedback Endpoint
- * Creates a new feedback item for a project
- *
- * @openapi
- * /api/feedback:
- *   post:
- *     tags: [Feedback]
- *     summary: Create feedback
- *     description: Creates a new feedback item (feature request or bug report) for a project
- *     operationId: createFeedback
- *     security:
- *       - cookieAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - title
- *               - description
- *               - projectId
- *             properties:
- *               title:
- *                 type: string
- *                 description: Feedback title
- *                 example: Add dark mode support
- *               description:
- *                 type: string
- *                 description: Detailed description of the feedback
- *                 example: Would love to have a dark mode option for the dashboard
- *               projectId:
- *                 type: string
- *                 description: ID of the project this feedback is for
- *               priority:
- *                 type: string
- *                 enum: [low, medium, high]
- *                 default: medium
- *                 description: Priority level
- *     responses:
- *       201:
- *         description: Feedback created successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/Feedback'
- *       400:
- *         description: Validation error
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       401:
- *         description: Unauthorized
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       404:
- *         description: Project not found
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       501:
- *         description: Not implemented
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-
 import { z } from 'zod'
+import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuth } from '~/server/utils/auth-middleware'
+import { optionalAuth } from '~/server/utils/auth-middleware'
 import { validateBody } from '~/server/utils/validation'
-import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
+import { db } from '~/server/database/drizzle'
+import { feedback, project, feedbackCategory } from '~/server/database/schema/feedback'
 
 const createFeedbackSchema = z.object({
-  title: z.string()
-    .min(1, 'Title is required')
-    .max(200, 'Title too long'),
-  description: z.string()
-    .min(1, 'Description is required')
-    .max(5000, 'Description too long'),
+  title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
+  body: z.string().min(1, 'Description is required').max(5000, 'Description too long'),
   projectId: z.string().min(1, 'Project ID is required'),
-  priority: z.enum(['low', 'medium', 'high']).default('medium')
+  categoryId: z.string().optional().nullable(),
+  authorName: z.string().min(1).max(100).optional(),
+  authorEmail: z.string().email().optional(),
 })
 
 export default defineEventHandler(async (event) => {
-  // Require authentication
-  const session = await requireAuth(event)
+  // Optional auth — allows anonymous submissions
+  const session = await optionalAuth(event)
 
-  // Rate limiting
-  await requireRateLimit(event, rateLimits.standard)
-
-  // Validate request body
   const body = await validateBody(event, createFeedbackSchema)
 
-  // TODO: Implement feedback creation
-  // 1. Verify project exists
-  // 2. Create feedback record with status 'open'
-  // 3. Initialize vote count to 0
-  // 4. Optionally auto-vote from creator
-  // 5. Return created feedback
+  // Verify project exists and is public
+  const [proj] = await db.select().from(project).where(eq(project.id, body.projectId)).limit(1)
+  if (!proj) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Project not found'),
+    })
+  }
 
-  throw createError({
-    statusCode: 501,
-    statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'Feedback creation is not yet implemented'
-    )
-  })
+  if (!proj.isPublic && !session?.user) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden',
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'This project does not accept public feedback'),
+    })
+  }
+
+  // Verify category if provided
+  if (body.categoryId) {
+    const [cat] = await db
+      .select()
+      .from(feedbackCategory)
+      .where(eq(feedbackCategory.id, body.categoryId))
+      .limit(1)
+    if (!cat || cat.projectId !== proj.id) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Bad Request',
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid category for this project'),
+      })
+    }
+  }
+
+  // For anonymous submissions, require name
+  if (!session?.user && !body.authorName) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Name is required for anonymous submissions'),
+    })
+  }
+
+  const now = new Date()
+  const [created] = await db
+    .insert(feedback)
+    .values({
+      id: crypto.randomUUID(),
+      projectId: body.projectId,
+      categoryId: body.categoryId || null,
+      title: body.title,
+      body: body.body,
+      status: 'open',
+      authorUserId: session?.user?.id || null,
+      authorName: session?.user ? session.user.name : body.authorName || null,
+      authorEmail: session?.user ? session.user.email : body.authorEmail || null,
+      voteCount: 0,
+      commentCount: 0,
+      isPinned: false,
+      isLocked: false,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning()
+
+  setResponseStatus(event, 201)
+  return createSuccessResponse(created)
 })

@@ -15,6 +15,7 @@ export const project = pgTable(
     isPublic: boolean('is_public')
       .$defaultFn(() => false)
       .notNull(),
+    customDomain: text('custom_domain'),
     settings: jsonb('settings').$type<Record<string, any>>(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
@@ -30,6 +31,8 @@ export const project = pgTable(
     orgIdx: index('project_org_idx').on(table.organizationId),
     // Index for public projects
     publicIdx: index('project_public_idx').on(table.isPublic),
+    // Unique custom domain per project
+    customDomainIdx: uniqueIndex('project_custom_domain_idx').on(table.customDomain),
   })
 )
 
