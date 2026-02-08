@@ -3,10 +3,10 @@
     <SidebarMenuItem>
       <!-- Show loading state while checking auth -->
       <div v-if="isLoading" class="flex items-center space-x-2 p-2">
-        <div class="h-8 w-8 bg-gray-200 rounded-lg animate-pulse"></div>
+        <div class="h-8 w-8 bg-gray-200 rounded-lg animate-pulse" />
         <div class="space-y-1">
-          <div class="h-4 w-20 bg-gray-200 rounded animate-pulse"></div>
-          <div class="h-3 w-16 bg-gray-200 rounded animate-pulse"></div>
+          <div class="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+          <div class="h-3 w-16 bg-gray-200 rounded animate-pulse" />
         </div>
       </div>
 
@@ -70,9 +70,7 @@
 
       <!-- Show sign in prompt when not authenticated -->
       <div v-else class="p-2 text-sm text-muted-foreground">
-        <NuxtLink to="/auth" class="hover:underline">
-          Sign in to continue
-        </NuxtLink>
+        <NuxtLink to="/auth" class="hover:underline"> Sign in to continue </NuxtLink>
       </div>
     </SidebarMenuItem>
   </SidebarMenu>
@@ -83,63 +81,11 @@ import { authClient } from '~/lib/auth-client'
 
 export default {
   name: 'NavUser',
-  
-  setup() {
-    // Use the session composable at the top level
-    // This ensures proper reactivity
-    const sessionComposable = authClient.useSession()
-    
-    return {
-      sessionComposable
-    }
-  },
 
   data() {
     return {
       session: null,
-      isPending: true
-    }
-  },
-
-  mounted() {
-    if (!import.meta.client) return
-    
-    try {
-      // Access the composable result
-      const sessionRef = this.sessionComposable?.data || this.sessionComposable
-      const isPendingRef = this.sessionComposable?.isPending
-      
-      // Set initial values
-      if (sessionRef && typeof sessionRef === 'object' && 'value' in sessionRef) {
-        this.session = sessionRef.value
-      } else if (sessionRef) {
-        this.session = sessionRef
-      }
-      
-      if (isPendingRef && typeof isPendingRef === 'object' && 'value' in isPendingRef) {
-        this.isPending = isPendingRef.value ?? false
-      }
-      
-      // Watch for changes - only watch if it's a ref
-      if (sessionRef && typeof sessionRef === 'object' && 'value' in sessionRef) {
-        watch(sessionRef, (newSession) => {
-          this.session = newSession
-        }, { immediate: false })
-      }
-      
-      if (isPendingRef && typeof isPendingRef === 'object' && 'value' in isPendingRef) {
-        watch(isPendingRef, (newPending) => {
-          // Only update isPending if we don't have a session yet
-          // This prevents white flash when switching tabs if session already exists
-          if (!this.session || newPending === false) {
-            this.isPending = newPending
-          }
-        }, { immediate: false })
-      }
-      
-    } catch (error) {
-      console.error('Error fetching session:', error)
-      this.isPending = false
+      isPending: true,
     }
   },
 
@@ -154,25 +100,46 @@ export default {
       }
       return null
     },
-    
+
     isLoading() {
-      // Only show loading if we don't have a session yet
-      // This prevents white flash when switching tabs if session already exists
       return this.isPending && !this.session
     },
-    
+
     isMobile() {
       if (import.meta.client) {
         return window.innerWidth < 768
       }
       return false
+    },
+  },
+
+  async mounted() {
+    try {
+      const { data: session, isPending } = await authClient.useSession(useFetch)
+      this.session = session.value
+      this.isPending = isPending.value
+
+      watch(session, (newSession) => {
+        this.session = newSession
+      })
+
+      watch(isPending, (newPending) => {
+        this.isPending = newPending
+      })
+    } catch (error) {
+      console.error('Error fetching session:', error)
+      this.isPending = false
     }
   },
 
   methods: {
     getInitials(name) {
       if (!name) return ''
-      return name.split(' ').map(n => n[0]).join('').toUpperCase()
+      return name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
     },
 
     async handleLogout() {
@@ -182,7 +149,7 @@ export default {
       } catch (error) {
         console.error('Error signing out:', error)
       }
-    }
-  }
+    },
+  },
 }
-</script> 
+</script>

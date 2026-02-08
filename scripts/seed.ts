@@ -8,12 +8,7 @@ const scryptAsync = promisify(scrypt)
 // format: salt:hex(scrypt(password, salt, { N: 16384, r: 16, p: 1, dkLen: 64 }))
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex')
-  const key = await scryptAsync(
-    Buffer.from(password.normalize('NFKC')),
-    salt,
-    64,
-    { N: 16384, r: 16, p: 1 }
-  )
+  const key = await scryptAsync(Buffer.from(password.normalize('NFKC')), salt, 64, { N: 16384, r: 16, p: 1 })
   return `${salt}:${key.toString('hex')}`
 }
 
@@ -38,10 +33,7 @@ async function main() {
 
   await client.connect()
 
-  const { rows } = await client.query(
-    'SELECT id FROM "user" WHERE email = $1',
-    [TEST_EMAIL]
-  )
+  const { rows } = await client.query('SELECT id FROM "user" WHERE email = $1', [TEST_EMAIL])
 
   if (rows.length > 0) {
     console.log('[seed] Test data already exists, skipping.')

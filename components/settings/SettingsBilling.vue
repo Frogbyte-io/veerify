@@ -26,9 +26,7 @@
               </div>
               <span>•••• •••• •••• 4242</span>
             </div>
-            <button class="text-blue-600 hover:text-blue-700">
-              Change
-            </button>
+            <button class="text-blue-600 hover:text-blue-700">Change</button>
           </div>
         </div>
       </div>
@@ -38,6 +36,6 @@
 
 <script>
 export default {
-  name: 'SettingsBilling'
+  name: 'SettingsBilling',
 }
-</script> 
+</script>

@@ -8,15 +8,15 @@ services:
       POSTGRES_PASSWORD: veerifypassword
       POSTGRES_DB: veerifydb
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - db_data:/var/lib/postgresql/data
   mail-tester:
     container_name: veerify-mail-tester
     image: axllent/mailpit:latest
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - '1025:1025'
+      - '8025:8025'
 
 volumes:
   db_data:

@@ -7,9 +7,7 @@
           <Icon name="lucide:users" class="h-5 w-5" />
           Team Settings
         </CardTitle>
-        <CardDescription>
-          Manage your team settings and basic information.
-        </CardDescription>
+        <CardDescription> Manage your team settings and basic information. </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div v-if="isLoadingOrganizations || isLoading" class="space-y-4">
@@ -20,27 +18,14 @@
         <div v-else-if="currentTeam" class="space-y-4">
           <div>
             <Label class="pb-2" for="team-name">Team Name</Label>
-            <Input
-              id="team-name"
-              v-model="teamName"
-              :disabled="!canManageTeam"
-              placeholder="Enter team name"
-            />
+            <Input id="team-name" v-model="teamName" :disabled="!canManageTeam" placeholder="Enter team name" />
           </div>
           <div>
             <Label class="pb-2" for="team-slug">Team Slug</Label>
-            <Input
-              id="team-slug"
-              v-model="teamSlug"
-              :disabled="!canManageTeam"
-              placeholder="team-slug"
-            />
+            <Input id="team-slug" v-model="teamSlug" :disabled="!canManageTeam" placeholder="team-slug" />
           </div>
           <div class="flex justify-end">
-            <Button 
-              @click="updateTeam" 
-              :disabled="!canManageTeam || isUpdating"
-            >
+            <Button :disabled="!canManageTeam || isUpdating" @click="updateTeam">
               <Icon v-if="isUpdating" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
               Save Changes
             </Button>
@@ -49,7 +34,7 @@
         <div v-else class="text-center py-6">
           <Icon name="lucide:users-x" class="h-12 w-12 mx-auto text-muted-foreground mb-4" />
           <p class="text-muted-foreground">No team found. Create a team to get started.</p>
-          <Button @click="showCreateTeamDialog = true" class="mt-4">
+          <Button class="mt-4" @click="showCreateTeamDialog = true">
             <Icon name="lucide:plus" class="h-4 w-4 mr-2" />
             Create Team
           </Button>
@@ -64,25 +49,17 @@
           <Icon name="lucide:user-plus" class="h-5 w-5" />
           Team Members
         </CardTitle>
-        <CardDescription>
-          Manage team members and their roles.
-        </CardDescription>
+        <CardDescription> Manage team members and their roles. </CardDescription>
       </CardHeader>
       <CardContent>
         <div class="flex justify-between items-center mb-4">
-          <p class="text-sm text-muted-foreground">
-            {{ members.length }} of {{ membershipLimit }} members
-          </p>
-          <Button 
-            @click="showInviteDialog = true" 
-            :disabled="!canInviteUsers"
-            size="sm"
-          >
+          <p class="text-sm text-muted-foreground">{{ members.length }} of {{ membershipLimit }} members</p>
+          <Button :disabled="!canInviteUsers" size="sm" @click="showInviteDialog = true">
             <Icon name="lucide:user-plus" class="h-4 w-4 mr-2" />
             Invite Member
           </Button>
         </div>
-        
+
         <div v-if="isLoadingMembers" class="space-y-3">
           <div v-for="n in 3" :key="n" class="flex items-center justify-between p-3 border rounded-lg">
             <div class="flex items-center gap-3">
@@ -95,10 +72,10 @@
             <Skeleton class="h-8 w-20" />
           </div>
         </div>
-        
+
         <div v-else class="space-y-3">
-          <div 
-            v-for="member in members" 
+          <div
+            v-for="member in members"
             :key="member.id"
             class="flex items-center justify-between p-3 border rounded-lg"
           >
@@ -117,12 +94,8 @@
                 <Icon name="lucide:crown" class="h-3 w-3 mr-1" />
                 Owner
               </Badge>
-              <Badge v-else-if="member.role === 'admin'" variant="secondary">
-                Admin
-              </Badge>
-              <Badge v-else variant="outline">
-                Member
-              </Badge>
+              <Badge v-else-if="member.role === 'admin'" variant="secondary"> Admin </Badge>
+              <Badge v-else variant="outline"> Member </Badge>
             </div>
             <DropdownMenu v-if="canManageMember(member)">
               <DropdownMenuTrigger as-child>
@@ -131,14 +104,14 @@
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   v-if="member.role !== 'owner' && canPromoteToAdmin(member)"
                   @click="updateMemberRole(member.id, 'admin')"
                 >
                   <Icon name="lucide:user-check" class="h-4 w-4 mr-2" />
                   Make Admin
                 </DropdownMenuItem>
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   v-if="member.role === 'admin' && canDemoteFromAdmin(member)"
                   @click="updateMemberRole(member.id, 'member')"
                 >
@@ -146,11 +119,7 @@
                   Remove Admin
                 </DropdownMenuItem>
                 <DropdownMenuSeparator v-if="canRemoveMember(member)" />
-                <DropdownMenuItem 
-                  v-if="canRemoveMember(member)"
-                  @click="removeMember(member.id)"
-                  class="text-red-600"
-                >
+                <DropdownMenuItem v-if="canRemoveMember(member)" class="text-red-600" @click="removeMember(member.id)">
                   <Icon name="lucide:user-x" class="h-4 w-4 mr-2" />
                   Remove Member
                 </DropdownMenuItem>
@@ -168,14 +137,12 @@
           <Icon name="lucide:mail" class="h-5 w-5" />
           Pending Invitations
         </CardTitle>
-        <CardDescription>
-          Team invitations waiting for responses.
-        </CardDescription>
+        <CardDescription> Team invitations waiting for responses. </CardDescription>
       </CardHeader>
       <CardContent>
         <div class="space-y-3">
-          <div 
-            v-for="invitation in pendingInvitations" 
+          <div
+            v-for="invitation in pendingInvitations"
             :key="invitation.id"
             class="flex items-center justify-between p-3 border rounded-lg bg-yellow-50 border-yellow-200"
           >
@@ -189,19 +156,15 @@
               </div>
             </div>
             <div class="flex items-center gap-2">
-              <Button 
-                variant="outline" 
-                size="sm"
-                @click="resendInvitation(invitation.id)"
-              >
+              <Button variant="outline" size="sm" @click="resendInvitation(invitation.id)">
                 <Icon name="lucide:send" class="h-4 w-4 mr-2" />
                 Resend
               </Button>
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 size="sm"
-                @click="cancelInvitation(invitation.id)"
                 class="text-red-600 hover:text-red-700"
+                @click="cancelInvitation(invitation.id)"
               >
                 <Icon name="lucide:x" class="h-4 w-4" />
               </Button>
@@ -218,25 +181,16 @@
           <Icon name="lucide:alert-triangle" class="h-5 w-5" />
           Danger Zone
         </CardTitle>
-        <CardDescription>
-          Irreversible and destructive actions.
-        </CardDescription>
+        <CardDescription> Irreversible and destructive actions. </CardDescription>
       </CardHeader>
       <CardContent>
         <div class="space-y-4">
           <div class="flex items-center justify-between p-4 border border-red-200 rounded-lg bg-red-50">
             <div>
               <h4 class="font-medium text-red-900">Delete Team</h4>
-              <p class="text-sm text-red-700">
-                Permanently delete this team and all associated data.
-              </p>
+              <p class="text-sm text-red-700">Permanently delete this team and all associated data.</p>
             </div>
-            <Button 
-              variant="destructive"
-              @click="showDeleteTeamDialog = true"
-            >
-              Delete Team
-            </Button>
+            <Button variant="destructive" @click="showDeleteTeamDialog = true"> Delete Team </Button>
           </div>
         </div>
       </CardContent>
@@ -247,33 +201,21 @@
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create New Team</DialogTitle>
-          <DialogDescription>
-            Create a new team to collaborate with others.
-          </DialogDescription>
+          <DialogDescription> Create a new team to collaborate with others. </DialogDescription>
         </DialogHeader>
         <div class="space-y-4 py-4">
           <div>
             <Label class="pb-2" for="new-team-name">Team Name</Label>
-            <Input
-              id="new-team-name"
-              v-model="newTeamName"
-              placeholder="Enter team name"
-            />
+            <Input id="new-team-name" v-model="newTeamName" placeholder="Enter team name" />
           </div>
           <div>
             <Label class="pb-2" for="new-team-slug">Team Slug</Label>
-            <Input
-              id="new-team-slug"
-              v-model="newTeamSlug"
-              placeholder="team-slug"
-            />
+            <Input id="new-team-slug" v-model="newTeamSlug" placeholder="team-slug" />
           </div>
         </div>
         <DialogFooter>
-          <Button @click="showCreateTeamDialog = false" variant="outline">
-            Cancel
-          </Button>
-          <Button @click="createTeam" :disabled="isCreatingTeam">
+          <Button variant="outline" @click="showCreateTeamDialog = false"> Cancel </Button>
+          <Button :disabled="isCreatingTeam" @click="createTeam">
             <Icon v-if="isCreatingTeam" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
             Create Team
           </Button>
@@ -286,19 +228,12 @@
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Invite Team Member</DialogTitle>
-          <DialogDescription>
-            Send an invitation to join your team.
-          </DialogDescription>
+          <DialogDescription> Send an invitation to join your team. </DialogDescription>
         </DialogHeader>
         <div class="space-y-4 py-4">
           <div>
             <Label class="pb-2" for="invite-email">Email Address</Label>
-            <Input
-              id="invite-email"
-              v-model="inviteEmail"
-              type="email"
-              placeholder="colleague@example.com"
-            />
+            <Input id="invite-email" v-model="inviteEmail" type="email" placeholder="colleague@example.com" />
           </div>
           <div>
             <Label class="pb-2" for="invite-role">Role</Label>
@@ -313,10 +248,8 @@
           </div>
         </div>
         <DialogFooter>
-          <Button @click="showInviteDialog = false" variant="outline">
-            Cancel
-          </Button>
-          <Button @click="inviteMember" :disabled="isInviting">
+          <Button variant="outline" @click="showInviteDialog = false"> Cancel </Button>
+          <Button :disabled="isInviting" @click="inviteMember">
             <Icon v-if="isInviting" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
             Send Invitation
           </Button>
@@ -346,13 +279,11 @@
           </div>
         </div>
         <DialogFooter>
-          <Button @click="showDeleteTeamDialog = false" variant="outline">
-            Cancel
-          </Button>
-          <Button 
-            @click="deleteTeam" 
+          <Button variant="outline" @click="showDeleteTeamDialog = false"> Cancel </Button>
+          <Button
             variant="destructive"
             :disabled="deleteConfirmation !== currentTeam?.name || isDeleting"
+            @click="deleteTeam"
           >
             <Icon v-if="isDeleting" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
             Delete Team
@@ -373,10 +304,10 @@ export default {
     // Use the organizations composable
     const organizations = authClient.useListOrganizations()
     const activeOrganization = authClient.useActiveOrganization()
-    
-    return { 
+
+    return {
       organizations,
-      activeOrganization
+      activeOrganization,
     }
   },
   data() {
@@ -387,7 +318,7 @@ export default {
       pendingInvitations: [],
       userRole: null,
       membershipLimit: 50,
-      
+
       // Loading states
       isLoading: true,
       isLoadingMembers: false,
@@ -395,7 +326,7 @@ export default {
       isCreatingTeam: false,
       isInviting: false,
       isDeleting: false,
-      
+
       // Form data
       teamName: '',
       teamSlug: '',
@@ -404,38 +335,38 @@ export default {
       inviteEmail: '',
       inviteRole: 'member',
       deleteConfirmation: '',
-      
+
       // Dialog states
       showCreateTeamDialog: false,
       showInviteDialog: false,
       showDeleteTeamDialog: false,
     }
   },
-  
+
   computed: {
     // Loading states from composables
     isLoadingOrganizations() {
       return this.organizations.isPending || this.activeOrganization.isPending
     },
-    
+
     // Get current team from active organization
     currentTeamFromComposable() {
       return this.activeOrganization.data || null
     },
-    
+
     // Check if user has organizations
     hasOrganizations() {
       return this.organizations.data && this.organizations.data.length > 0
     },
-    
+
     canManageTeam() {
       return this.userRole === 'owner' || this.userRole === 'admin'
     },
-    
+
     canInviteUsers() {
       return this.canManageTeam && this.members.length < this.membershipLimit
     },
-    
+
     canManageMember() {
       return (member) => {
         if (this.userRole === 'owner') return member.role !== 'owner'
@@ -443,15 +374,15 @@ export default {
         return false
       }
     },
-    
+
     canPromoteToAdmin() {
       return (member) => this.userRole === 'owner' && member.role === 'member'
     },
-    
+
     canDemoteFromAdmin() {
       return (member) => this.userRole === 'owner' && member.role === 'admin'
     },
-    
+
     canRemoveMember() {
       return (member) => {
         if (member.role === 'owner') return false
@@ -459,9 +390,9 @@ export default {
         if (this.userRole === 'admin') return member.role === 'member'
         return false
       }
-    }
+    },
   },
-  
+
   watch: {
     // Watch for changes in active organization from composable
     'activeOrganization.data': {
@@ -475,21 +406,27 @@ export default {
           }
         }
       },
-      immediate: true
-    }
+      immediate: true,
+    },
   },
-  
+
+  mounted() {
+    // The watcher will handle loading when organizations are ready
+    // Set initial loading state
+    this.isLoading = this.isLoadingOrganizations
+  },
+
   methods: {
     async loadTeamDetails() {
       if (!this.currentTeam) return
-      
+
       try {
         // Get user's role in the organization
         const { data: membership } = await authClient.organization.getMembership({
-          organizationId: this.currentTeam.id
+          organizationId: this.currentTeam.id,
         })
         this.userRole = membership?.role
-        
+
         await this.loadMembers()
         await this.loadPendingInvitations()
       } catch (error) {
@@ -497,19 +434,19 @@ export default {
         toast.error('Failed to load team details')
       }
     },
-    
+
     async loadTeamData() {
       try {
         this.isLoading = true
-        
+
         // Wait for organizations to load
         while (this.organizations.isPending || this.activeOrganization.isPending) {
-          await new Promise(resolve => setTimeout(resolve, 100))
+          await new Promise((resolve) => setTimeout(resolve, 100))
         }
-        
+
         // Get current team from composable
         this.currentTeam = this.currentTeamFromComposable
-        
+
         if (this.currentTeam) {
           this.teamName = this.currentTeam.name
           this.teamSlug = this.currentTeam.slug
@@ -522,14 +459,14 @@ export default {
         this.isLoading = false
       }
     },
-    
+
     async loadMembers() {
       if (!this.currentTeam) return
-      
+
       try {
         this.isLoadingMembers = true
         const { data: members } = await authClient.organization.listMembers({
-          organizationId: this.currentTeam.id
+          organizationId: this.currentTeam.id,
         })
         this.members = members || []
       } catch (error) {
@@ -539,43 +476,43 @@ export default {
         this.isLoadingMembers = false
       }
     },
-    
+
     async loadPendingInvitations() {
       if (!this.currentTeam) return
-      
+
       try {
         const { data: invitations } = await authClient.organization.listInvitations({
-          organizationId: this.currentTeam.id
+          organizationId: this.currentTeam.id,
         })
-        this.pendingInvitations = invitations?.filter(inv => inv.status === 'pending') || []
+        this.pendingInvitations = invitations?.filter((inv) => inv.status === 'pending') || []
       } catch (error) {
         console.error('Error loading invitations:', error)
       }
     },
-    
+
     async createTeam() {
       if (!this.newTeamName.trim()) {
         toast.error('Team name is required')
         return
       }
-      
+
       try {
         this.isCreatingTeam = true
         const newTeam = await authClient.organization.create({
           name: this.newTeamName,
-          slug: this.newTeamSlug || this.newTeamName.toLowerCase().replace(/\s+/g, '-')
+          slug: this.newTeamSlug || this.newTeamName.toLowerCase().replace(/\s+/g, '-'),
         })
-        
+
         // Set the new team as active
         if (newTeam.data) {
           await authClient.organization.setActive({ organizationId: newTeam.data.id })
         }
-        
+
         toast.success('Team created successfully')
         this.showCreateTeamDialog = false
         this.newTeamName = ''
         this.newTeamSlug = ''
-        
+
         // Refresh organizations list
         await this.organizations.refresh?.()
         await this.activeOrganization.refresh?.()
@@ -586,20 +523,20 @@ export default {
         this.isCreatingTeam = false
       }
     },
-    
+
     async updateTeam() {
       if (!this.currentTeam) return
-      
+
       try {
         this.isUpdating = true
         await authClient.organization.update({
           organizationId: this.currentTeam.id,
           name: this.teamName,
-          slug: this.teamSlug
+          slug: this.teamSlug,
         })
-        
+
         toast.success('Team updated successfully')
-        
+
         // Refresh organizations to reflect the changes
         await this.organizations.refresh?.()
         await this.activeOrganization.refresh?.()
@@ -610,21 +547,21 @@ export default {
         this.isUpdating = false
       }
     },
-    
+
     async inviteMember() {
       if (!this.inviteEmail.trim()) {
         toast.error('Email address is required')
         return
       }
-      
+
       try {
         this.isInviting = true
         await authClient.organization.inviteMember({
           organizationId: this.currentTeam.id,
           email: this.inviteEmail,
-          role: this.inviteRole
+          role: this.inviteRole,
         })
-        
+
         toast.success('Invitation sent successfully')
         this.showInviteDialog = false
         this.inviteEmail = ''
@@ -637,15 +574,15 @@ export default {
         this.isInviting = false
       }
     },
-    
+
     async updateMemberRole(memberId, newRole) {
       try {
         await authClient.organization.updateMemberRole({
           organizationId: this.currentTeam.id,
           memberId,
-          role: newRole
+          role: newRole,
         })
-        
+
         toast.success('Member role updated successfully')
         await this.loadMembers()
       } catch (error) {
@@ -653,14 +590,14 @@ export default {
         toast.error('Failed to update member role')
       }
     },
-    
+
     async removeMember(memberId) {
       try {
         await authClient.organization.removeMember({
           organizationId: this.currentTeam.id,
-          memberId
+          memberId,
         })
-        
+
         toast.success('Member removed successfully')
         await this.loadMembers()
       } catch (error) {
@@ -668,26 +605,26 @@ export default {
         toast.error('Failed to remove member')
       }
     },
-    
+
     async resendInvitation(invitationId) {
       try {
         await authClient.organization.resendInvitation({
-          invitationId
+          invitationId,
         })
-        
+
         toast.success('Invitation resent successfully')
       } catch (error) {
         console.error('Error resending invitation:', error)
         toast.error('Failed to resend invitation')
       }
     },
-    
+
     async cancelInvitation(invitationId) {
       try {
         await authClient.organization.cancelInvitation({
-          invitationId
+          invitationId,
         })
-        
+
         toast.success('Invitation cancelled')
         await this.loadPendingInvitations()
       } catch (error) {
@@ -695,27 +632,27 @@ export default {
         toast.error('Failed to cancel invitation')
       }
     },
-    
+
     async deleteTeam() {
       if (!this.currentTeam) return
-      
+
       try {
         this.isDeleting = true
         await authClient.organization.delete({
-          organizationId: this.currentTeam.id
+          organizationId: this.currentTeam.id,
         })
-        
+
         toast.success('Team deleted successfully')
         this.showDeleteTeamDialog = false
         this.deleteConfirmation = ''
-        
+
         // Refresh organizations list
         await this.organizations.refresh?.()
         await this.activeOrganization.refresh?.()
-        
+
         // Wait a moment for the data to update
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
+        await new Promise((resolve) => setTimeout(resolve, 500))
+
         // Navigate to dashboard if no teams left
         if (!this.organizations.data || this.organizations.data.length === 0) {
           await navigateTo('/dashboard')
@@ -727,26 +664,20 @@ export default {
         this.isDeleting = false
       }
     },
-    
+
     getInitials(name) {
       if (!name) return '?'
       return name
         .split(' ')
-        .map(n => n[0])
+        .map((n) => n[0])
         .join('')
         .toUpperCase()
         .slice(0, 2)
     },
-    
+
     formatDate(date) {
       return new Date(date).toLocaleDateString()
-    }
+    },
   },
-  
-  mounted() {
-    // The watcher will handle loading when organizations are ready
-    // Set initial loading state
-    this.isLoading = this.isLoadingOrganizations
-  }
 }
-</script> 
+</script>

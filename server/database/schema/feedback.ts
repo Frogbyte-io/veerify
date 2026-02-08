@@ -1,190 +1,293 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, uniqueIndex, index } from "drizzle-orm/pg-core";
-import { user, organization } from "./auth";
+import { pgTable, text, timestamp, boolean, integer, jsonb, uniqueIndex, index } from 'drizzle-orm/pg-core'
+import { user, organization } from './auth'
 
 // Projects table - feedback boards within an organization
-export const project = pgTable("project", {
-	id: text('id').primaryKey(),
-	organizationId: text('organization_id').notNull().references(() => organization.id, { onDelete: 'cascade' }),
-	slug: text('slug').notNull(),
-	name: text('name').notNull(),
-	description: text('description'),
-	isPublic: boolean('is_public').$defaultFn(() => false).notNull(),
-	settings: jsonb('settings').$type<Record<string, any>>(),
-	createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull(),
-	updatedAt: timestamp('updated_at').$defaultFn(() => new Date()).notNull()
-}, (table) => ({
-	// Unique slug within an organization
-	uniqueOrgSlug: uniqueIndex('project_org_slug_idx').on(table.organizationId, table.slug),
-	// Index for querying projects by organization
-	orgIdx: index('project_org_idx').on(table.organizationId),
-	// Index for public projects
-	publicIdx: index('project_public_idx').on(table.isPublic)
-}));
+export const project = pgTable(
+  'project',
+  {
+    id: text('id').primaryKey(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    isPublic: boolean('is_public')
+      .$defaultFn(() => false)
+      .notNull(),
+    settings: jsonb('settings').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique slug within an organization
+    uniqueOrgSlug: uniqueIndex('project_org_slug_idx').on(table.organizationId, table.slug),
+    // Index for querying projects by organization
+    orgIdx: index('project_org_idx').on(table.organizationId),
+    // Index for public projects
+    publicIdx: index('project_public_idx').on(table.isPublic),
+  })
+)
 
 // Anonymous sessions - persistent session tokens for anonymous users
-export const anonymousSession = pgTable("anonymous_session", {
-	id: text('id').primaryKey(),
-	token: text('token').notNull().unique(),
-	ipAddress: text('ip_address'),
-	userAgent: text('user_agent'),
-	createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull(),
-	lastSeenAt: timestamp('last_seen_at').$defaultFn(() => new Date()).notNull(),
-	expiresAt: timestamp('expires_at').notNull()
-}, (table) => ({
-	// Index for token lookups
-	tokenIdx: index('anon_session_token_idx').on(table.token),
-	// Index for cleanup of expired sessions
-	expiresIdx: index('anon_session_expires_idx').on(table.expiresAt)
-}));
+export const anonymousSession = pgTable(
+  'anonymous_session',
+  {
+    id: text('id').primaryKey(),
+    token: text('token').notNull().unique(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    lastSeenAt: timestamp('last_seen_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+  },
+  (table) => ({
+    // Index for token lookups
+    tokenIdx: index('anon_session_token_idx').on(table.token),
+    // Index for cleanup of expired sessions
+    expiresIdx: index('anon_session_expires_idx').on(table.expiresAt),
+  })
+)
 
 // Feedback categories - per-project categories (Bug, Feature, etc.)
-export const feedbackCategory = pgTable("feedback_category", {
-	id: text('id').primaryKey(),
-	projectId: text('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }),
-	name: text('name').notNull(),
-	slug: text('slug').notNull(),
-	icon: text('icon'), // Lucide icon name
-	color: text('color'), // Hex color code
-	description: text('description'),
-	sortOrder: integer('sort_order').$defaultFn(() => 0).notNull(),
-	isDefault: boolean('is_default').$defaultFn(() => false).notNull(),
-	createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull()
-}, (table) => ({
-	// Unique slug within a project
-	uniqueProjectSlug: uniqueIndex('category_project_slug_idx').on(table.projectId, table.slug),
-	// Index for querying categories by project
-	projectIdx: index('category_project_idx').on(table.projectId),
-	// Index for default categories
-	defaultIdx: index('category_default_idx').on(table.isDefault)
-}));
+export const feedbackCategory = pgTable(
+  'feedback_category',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    icon: text('icon'), // Lucide icon name
+    color: text('color'), // Hex color code
+    description: text('description'),
+    sortOrder: integer('sort_order')
+      .$defaultFn(() => 0)
+      .notNull(),
+    isDefault: boolean('is_default')
+      .$defaultFn(() => false)
+      .notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique slug within a project
+    uniqueProjectSlug: uniqueIndex('category_project_slug_idx').on(table.projectId, table.slug),
+    // Index for querying categories by project
+    projectIdx: index('category_project_idx').on(table.projectId),
+    // Index for default categories
+    defaultIdx: index('category_default_idx').on(table.isDefault),
+  })
+)
 
 // Feedback items - individual feedback submissions
-export const feedback = pgTable("feedback", {
-	id: text('id').primaryKey(),
-	projectId: text('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }),
-	categoryId: text('category_id').references(() => feedbackCategory.id, { onDelete: 'set null' }),
-	title: text('title').notNull(),
-	body: text('body'),
-	status: text('status').$defaultFn(() => 'open').notNull(), // open, in_progress, planned, completed, closed, declined
-	// Author can be either a user or an anonymous session
-	authorUserId: text('author_user_id').references(() => user.id, { onDelete: 'set null' }),
-	authorSessionId: text('author_session_id').references(() => anonymousSession.id, { onDelete: 'set null' }),
-	authorName: text('author_name'), // Display name for anonymous users
-	authorEmail: text('author_email'), // Optional email for anonymous users
-	voteCount: integer('vote_count').$defaultFn(() => 0).notNull(),
-	commentCount: integer('comment_count').$defaultFn(() => 0).notNull(),
-	isPinned: boolean('is_pinned').$defaultFn(() => false).notNull(),
-	isLocked: boolean('is_locked').$defaultFn(() => false).notNull(),
-	metadata: jsonb('metadata').$type<Record<string, any>>(),
-	createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull(),
-	updatedAt: timestamp('updated_at').$defaultFn(() => new Date()).notNull()
-}, (table) => ({
-	// Index for querying feedback by project
-	projectIdx: index('feedback_project_idx').on(table.projectId),
-	// Index for querying by category
-	categoryIdx: index('feedback_category_idx').on(table.categoryId),
-	// Index for querying by status
-	statusIdx: index('feedback_status_idx').on(table.status),
-	// Index for querying by author (user)
-	authorUserIdx: index('feedback_author_user_idx').on(table.authorUserId),
-	// Index for querying by author (session)
-	authorSessionIdx: index('feedback_author_session_idx').on(table.authorSessionId),
-	// Index for sorting by vote count
-	voteCountIdx: index('feedback_vote_count_idx').on(table.voteCount),
-	// Index for pinned items
-	pinnedIdx: index('feedback_pinned_idx').on(table.isPinned),
-	// Composite index for project + status queries
-	projectStatusIdx: index('feedback_project_status_idx').on(table.projectId, table.status)
-}));
+export const feedback = pgTable(
+  'feedback',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    categoryId: text('category_id').references(() => feedbackCategory.id, { onDelete: 'set null' }),
+    title: text('title').notNull(),
+    body: text('body'),
+    status: text('status')
+      .$defaultFn(() => 'open')
+      .notNull(), // open, in_progress, planned, completed, closed, declined
+    // Author can be either a user or an anonymous session
+    authorUserId: text('author_user_id').references(() => user.id, { onDelete: 'set null' }),
+    authorSessionId: text('author_session_id').references(() => anonymousSession.id, { onDelete: 'set null' }),
+    authorName: text('author_name'), // Display name for anonymous users
+    authorEmail: text('author_email'), // Optional email for anonymous users
+    voteCount: integer('vote_count')
+      .$defaultFn(() => 0)
+      .notNull(),
+    commentCount: integer('comment_count')
+      .$defaultFn(() => 0)
+      .notNull(),
+    isPinned: boolean('is_pinned')
+      .$defaultFn(() => false)
+      .notNull(),
+    isLocked: boolean('is_locked')
+      .$defaultFn(() => false)
+      .notNull(),
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Index for querying feedback by project
+    projectIdx: index('feedback_project_idx').on(table.projectId),
+    // Index for querying by category
+    categoryIdx: index('feedback_category_idx').on(table.categoryId),
+    // Index for querying by status
+    statusIdx: index('feedback_status_idx').on(table.status),
+    // Index for querying by author (user)
+    authorUserIdx: index('feedback_author_user_idx').on(table.authorUserId),
+    // Index for querying by author (session)
+    authorSessionIdx: index('feedback_author_session_idx').on(table.authorSessionId),
+    // Index for sorting by vote count
+    voteCountIdx: index('feedback_vote_count_idx').on(table.voteCount),
+    // Index for pinned items
+    pinnedIdx: index('feedback_pinned_idx').on(table.isPinned),
+    // Composite index for project + status queries
+    projectStatusIdx: index('feedback_project_status_idx').on(table.projectId, table.status),
+  })
+)
 
 // Votes - one per user/session per feedback item
-export const vote = pgTable("vote", {
-	id: text('id').primaryKey(),
-	feedbackId: text('feedback_id').notNull().references(() => feedback.id, { onDelete: 'cascade' }),
-	// Voter can be either a user or an anonymous session
-	voterUserId: text('voter_user_id').references(() => user.id, { onDelete: 'cascade' }),
-	voterSessionId: text('voter_session_id').references(() => anonymousSession.id, { onDelete: 'cascade' }),
-	createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull()
-}, (table) => ({
-	// Unique constraint: one vote per user per feedback
-	uniqueUserVote: uniqueIndex('vote_user_feedback_idx').on(table.feedbackId, table.voterUserId),
-	// Unique constraint: one vote per session per feedback
-	uniqueSessionVote: uniqueIndex('vote_session_feedback_idx').on(table.feedbackId, table.voterSessionId),
-	// Index for querying votes by feedback
-	feedbackIdx: index('vote_feedback_idx').on(table.feedbackId),
-	// Index for querying votes by user
-	userIdx: index('vote_user_idx').on(table.voterUserId),
-	// Index for querying votes by session
-	sessionIdx: index('vote_session_idx').on(table.voterSessionId)
-}));
+export const vote = pgTable(
+  'vote',
+  {
+    id: text('id').primaryKey(),
+    feedbackId: text('feedback_id')
+      .notNull()
+      .references(() => feedback.id, { onDelete: 'cascade' }),
+    // Voter can be either a user or an anonymous session
+    voterUserId: text('voter_user_id').references(() => user.id, { onDelete: 'cascade' }),
+    voterSessionId: text('voter_session_id').references(() => anonymousSession.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique constraint: one vote per user per feedback
+    uniqueUserVote: uniqueIndex('vote_user_feedback_idx').on(table.feedbackId, table.voterUserId),
+    // Unique constraint: one vote per session per feedback
+    uniqueSessionVote: uniqueIndex('vote_session_feedback_idx').on(table.feedbackId, table.voterSessionId),
+    // Index for querying votes by feedback
+    feedbackIdx: index('vote_feedback_idx').on(table.feedbackId),
+    // Index for querying votes by user
+    userIdx: index('vote_user_idx').on(table.voterUserId),
+    // Index for querying votes by session
+    sessionIdx: index('vote_session_idx').on(table.voterSessionId),
+  })
+)
 
 // Roadmap items - roadmap entries, optionally linked to feedback
-export const roadmapItem = pgTable("roadmap_item", {
-	id: text('id').primaryKey(),
-	projectId: text('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }),
-	title: text('title').notNull(),
-	description: text('description'),
-	status: text('status').$defaultFn(() => 'planned').notNull(), // planned, in_progress, completed, cancelled
-	priority: text('priority'), // low, medium, high, critical
-	quarter: text('quarter'), // e.g., "Q1 2024", "Q2 2024"
-	startDate: timestamp('start_date'),
-	targetDate: timestamp('target_date'),
-	completedDate: timestamp('completed_date'),
-	sortOrder: integer('sort_order').$defaultFn(() => 0).notNull(),
-	linkedFeedbackIds: jsonb('linked_feedback_ids').$type<string[]>(), // Array of feedback IDs
-	metadata: jsonb('metadata').$type<Record<string, any>>(),
-	createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull(),
-	updatedAt: timestamp('updated_at').$defaultFn(() => new Date()).notNull()
-}, (table) => ({
-	// Index for querying roadmap items by project
-	projectIdx: index('roadmap_project_idx').on(table.projectId),
-	// Index for querying by status
-	statusIdx: index('roadmap_status_idx').on(table.status),
-	// Index for querying by priority
-	priorityIdx: index('roadmap_priority_idx').on(table.priority),
-	// Composite index for project + status queries
-	projectStatusIdx: index('roadmap_project_status_idx').on(table.projectId, table.status)
-}));
+export const roadmapItem = pgTable(
+  'roadmap_item',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    description: text('description'),
+    status: text('status')
+      .$defaultFn(() => 'planned')
+      .notNull(), // planned, in_progress, completed, cancelled
+    priority: text('priority'), // low, medium, high, critical
+    quarter: text('quarter'), // e.g., "Q1 2024", "Q2 2024"
+    startDate: timestamp('start_date'),
+    targetDate: timestamp('target_date'),
+    completedDate: timestamp('completed_date'),
+    sortOrder: integer('sort_order')
+      .$defaultFn(() => 0)
+      .notNull(),
+    linkedFeedbackIds: jsonb('linked_feedback_ids').$type<string[]>(), // Array of feedback IDs
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Index for querying roadmap items by project
+    projectIdx: index('roadmap_project_idx').on(table.projectId),
+    // Index for querying by status
+    statusIdx: index('roadmap_status_idx').on(table.status),
+    // Index for querying by priority
+    priorityIdx: index('roadmap_priority_idx').on(table.priority),
+    // Composite index for project + status queries
+    projectStatusIdx: index('roadmap_project_status_idx').on(table.projectId, table.status),
+  })
+)
 
 // GitHub integrations - per-project GitHub repo configuration
-export const githubIntegration = pgTable("github_integration", {
-	id: text('id').primaryKey(),
-	projectId: text('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }).unique(),
-	owner: text('owner').notNull(), // GitHub repo owner/org
-	repo: text('repo').notNull(), // GitHub repo name
-	installationId: text('installation_id'), // GitHub App installation ID
-	accessToken: text('access_token'), // Encrypted access token
-	webhookSecret: text('webhook_secret'), // Webhook secret for verification
-	syncEnabled: boolean('sync_enabled').$defaultFn(() => true).notNull(),
-	autoCreateIssues: boolean('auto_create_issues').$defaultFn(() => false).notNull(),
-	autoSyncStatus: boolean('auto_sync_status').$defaultFn(() => true).notNull(),
-	lastSyncAt: timestamp('last_sync_at'),
-	settings: jsonb('settings').$type<Record<string, any>>(),
-	createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull(),
-	updatedAt: timestamp('updated_at').$defaultFn(() => new Date()).notNull()
-}, (table) => ({
-	// Index for querying by project
-	projectIdx: index('github_integration_project_idx').on(table.projectId),
-	// Index for querying by owner and repo
-	repoIdx: index('github_integration_repo_idx').on(table.owner, table.repo)
-}));
+export const githubIntegration = pgTable(
+  'github_integration',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' })
+      .unique(),
+    owner: text('owner').notNull(), // GitHub repo owner/org
+    repo: text('repo').notNull(), // GitHub repo name
+    installationId: text('installation_id'), // GitHub App installation ID
+    accessToken: text('access_token'), // Encrypted access token
+    webhookSecret: text('webhook_secret'), // Webhook secret for verification
+    syncEnabled: boolean('sync_enabled')
+      .$defaultFn(() => true)
+      .notNull(),
+    autoCreateIssues: boolean('auto_create_issues')
+      .$defaultFn(() => false)
+      .notNull(),
+    autoSyncStatus: boolean('auto_sync_status')
+      .$defaultFn(() => true)
+      .notNull(),
+    lastSyncAt: timestamp('last_sync_at'),
+    settings: jsonb('settings').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Index for querying by project
+    projectIdx: index('github_integration_project_idx').on(table.projectId),
+    // Index for querying by owner and repo
+    repoIdx: index('github_integration_repo_idx').on(table.owner, table.repo),
+  })
+)
 
 // GitHub issue links - maps feedback ID to GitHub issue number
-export const githubIssueLink = pgTable("github_issue_link", {
-	id: text('id').primaryKey(),
-	feedbackId: text('feedback_id').notNull().references(() => feedback.id, { onDelete: 'cascade' }),
-	githubIntegrationId: text('github_integration_id').notNull().references(() => githubIntegration.id, { onDelete: 'cascade' }),
-	issueNumber: integer('issue_number').notNull(),
-	issueUrl: text('issue_url').notNull(),
-	issueState: text('issue_state'), // open, closed
-	lastSyncAt: timestamp('last_sync_at'),
-	createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull(),
-	updatedAt: timestamp('updated_at').$defaultFn(() => new Date()).notNull()
-}, (table) => ({
-	// Unique constraint: one link per feedback item
-	uniqueFeedback: uniqueIndex('github_link_feedback_idx').on(table.feedbackId),
-	// Index for querying links by GitHub integration
-	integrationIdx: index('github_link_integration_idx').on(table.githubIntegrationId),
-	// Index for querying by issue number within an integration
-	issueIdx: index('github_link_issue_idx').on(table.githubIntegrationId, table.issueNumber)
-}));
+export const githubIssueLink = pgTable(
+  'github_issue_link',
+  {
+    id: text('id').primaryKey(),
+    feedbackId: text('feedback_id')
+      .notNull()
+      .references(() => feedback.id, { onDelete: 'cascade' }),
+    githubIntegrationId: text('github_integration_id')
+      .notNull()
+      .references(() => githubIntegration.id, { onDelete: 'cascade' }),
+    issueNumber: integer('issue_number').notNull(),
+    issueUrl: text('issue_url').notNull(),
+    issueState: text('issue_state'), // open, closed
+    lastSyncAt: timestamp('last_sync_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique constraint: one link per feedback item
+    uniqueFeedback: uniqueIndex('github_link_feedback_idx').on(table.feedbackId),
+    // Index for querying links by GitHub integration
+    integrationIdx: index('github_link_integration_idx').on(table.githubIntegrationId),
+    // Index for querying by issue number within an integration
+    issueIdx: index('github_link_issue_idx').on(table.githubIntegrationId, table.issueNumber),
+  })
+)

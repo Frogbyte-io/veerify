@@ -12,19 +12,19 @@ Veerify is a feedback management and verification platform built with **Nuxt 3**
 
 ## Technology Stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Nuxt 3 (Vue 3) |
-| Language | TypeScript |
-| UI Components | shadcn-vue (New York style) |
-| Styling | Tailwind CSS v4 (`@tailwindcss/vite`) |
-| Icons | Nuxt Icon — Lucide icon set |
-| Authentication | Better-Auth v1.2+ |
-| ORM | Drizzle ORM |
-| Database | PostgreSQL 17.5 |
-| Email | Nodemailer via `nuxt-nodemailer` |
-| Dark Mode | `@nuxtjs/color-mode` (system preference, dark fallback) |
-| Package Manager | Yarn |
+| Layer           | Technology                                              |
+| --------------- | ------------------------------------------------------- |
+| Framework       | Nuxt 3 (Vue 3)                                          |
+| Language        | TypeScript                                              |
+| UI Components   | shadcn-vue (New York style)                             |
+| Styling         | Tailwind CSS v4 (`@tailwindcss/vite`)                   |
+| Icons           | Nuxt Icon — Lucide icon set                             |
+| Authentication  | Better-Auth v1.2+                                       |
+| ORM             | Drizzle ORM                                             |
+| Database        | PostgreSQL 17.5                                         |
+| Email           | Nodemailer via `nuxt-nodemailer`                        |
+| Dark Mode       | `@nuxtjs/color-mode` (system preference, dark fallback) |
+| Package Manager | Yarn                                                    |
 
 ---
 
@@ -85,6 +85,7 @@ Veerify is a feedback management and verification platform built with **Nuxt 3**
 ## Development Setup
 
 ### Prerequisites
+
 - Node.js 18+
 - Yarn
 - Docker (for local PostgreSQL + Mailpit)
@@ -131,15 +132,15 @@ During development, emails are captured by Mailpit — they are never sent to re
 
 ## NPM Scripts
 
-| Script | Purpose |
-|---|---|
-| `yarn dev` | Start Nuxt dev server |
-| `yarn build` | Production build |
-| `yarn preview` | Preview production build locally |
-| `yarn db:generate` | Generate a new Drizzle migration from schema changes |
-| `yarn db:migrate` | Run pending migrations against the database |
-| `yarn db:push` | Push schema directly (no migration file — dev use only) |
-| `yarn db:studio` | Open Drizzle Studio UI |
+| Script             | Purpose                                                 |
+| ------------------ | ------------------------------------------------------- |
+| `yarn dev`         | Start Nuxt dev server                                   |
+| `yarn build`       | Production build                                        |
+| `yarn preview`     | Preview production build locally                        |
+| `yarn db:generate` | Generate a new Drizzle migration from schema changes    |
+| `yarn db:migrate`  | Run pending migrations against the database             |
+| `yarn db:push`     | Push schema directly (no migration file — dev use only) |
+| `yarn db:studio`   | Open Drizzle Studio UI                                  |
 
 ---
 
@@ -199,11 +200,11 @@ import { authClient, signIn, signUp, signOut, useSession } from '~/lib/auth-clie
 
 Runs on the **client only** (`process.server` check skips SSR/build). Categorises routes:
 
-| Category | Routes | Behaviour |
-|---|---|---|
-| Protected | `/dashboard`, `/settings`, `/team`, `/reports`, `/feedback`, `/help` | Redirect to `/login` if no session |
-| Auth | `/login`, `/signup`, `/auth` | Redirect to `/dashboard` if session exists |
-| Public | everything else | No redirect |
+| Category  | Routes                                                               | Behaviour                                  |
+| --------- | -------------------------------------------------------------------- | ------------------------------------------ |
+| Protected | `/dashboard`, `/settings`, `/team`, `/reports`, `/feedback`, `/help` | Redirect to `/login` if no session         |
+| Auth      | `/login`, `/signup`, `/auth`                                         | Redirect to `/dashboard` if session exists |
+| Public    | everything else                                                      | No redirect                                |
 
 ---
 
@@ -217,16 +218,16 @@ Uses `drizzle-orm/node-postgres` with a raw `pg` `Client`. Connection parameters
 
 Eight tables, all defined with `pgTable` from `drizzle-orm/pg-core`:
 
-| Table | Key Columns | Notes |
-|---|---|---|
-| `user` | id, name, email (unique), emailVerified, twoFactorEnabled | Core identity |
-| `session` | id, token (unique), userId (FK→user), expiresAt, activeOrganizationId | Auth sessions |
-| `account` | id, accountId, providerId, userId (FK→user), password | Stores credential per provider |
-| `verification` | id, identifier, value, expiresAt | Email verification & password reset tokens |
-| `organization` | id, name, slug (unique), logo | Multi-tenant orgs |
-| `member` | id, organizationId (FK→organization), userId (FK→user), role | Org membership |
-| `invitation` | id, organizationId, email, role, status, inviterId, expiresAt | Pending invites |
-| `twoFactor` | id, userId (FK→user), secret, backupCodes | TOTP 2FA |
+| Table          | Key Columns                                                           | Notes                                      |
+| -------------- | --------------------------------------------------------------------- | ------------------------------------------ |
+| `user`         | id, name, email (unique), emailVerified, twoFactorEnabled             | Core identity                              |
+| `session`      | id, token (unique), userId (FK→user), expiresAt, activeOrganizationId | Auth sessions                              |
+| `account`      | id, accountId, providerId, userId (FK→user), password                 | Stores credential per provider             |
+| `verification` | id, identifier, value, expiresAt                                      | Email verification & password reset tokens |
+| `organization` | id, name, slug (unique), logo                                         | Multi-tenant orgs                          |
+| `member`       | id, organizationId (FK→organization), userId (FK→user), role          | Org membership                             |
+| `invitation`   | id, organizationId, email, role, status, inviterId, expiresAt         | Pending invites                            |
+| `twoFactor`    | id, userId (FK→user), secret, backupCodes                             | TOTP 2FA                                   |
 
 ### Migration Workflow
 
@@ -280,11 +281,19 @@ The project **migrated away from Composition API**. All components must use the 
 export default {
   name: 'ComponentName',
   data() {
-    return { /* reactive state */ }
+    return {
+      /* reactive state */
+    }
   },
-  computed: { /* derived state */ },
-  methods: { /* actions */ },
-  async mounted() { /* lifecycle */ }
+  computed: {
+    /* derived state */
+  },
+  methods: {
+    /* actions */
+  },
+  async mounted() {
+    /* lifecycle */
+  },
 }
 </script>
 ```
@@ -294,6 +303,7 @@ export default {
 ### Auto-Imports
 
 Nuxt auto-imports components from `components/` and `components/ui/`. You do **not** need to manually import:
+
 - Any shadcn-vue UI component (`Button`, `Input`, `Card`, `Skeleton`, `Avatar`, etc.)
 - Any component inside `components/` (e.g. `AppSidebar`, `SettingsProfile`)
 - Nuxt built-ins (`NuxtLink`, `navigateTo`)
@@ -319,8 +329,12 @@ Always use the Nuxt Icon component with Lucide:
 Use `import.meta.client` (not the deprecated `process.client`):
 
 ```js
-if (import.meta.client) { /* browser-only code */ }
-if (import.meta.server) { /* server-only code */ }
+if (import.meta.client) {
+  /* browser-only code */
+}
+if (import.meta.server) {
+  /* server-only code */
+}
 ```
 
 ### Tailwind & Theming
@@ -337,11 +351,11 @@ if (import.meta.server) { /* server-only code */ }
 
 Nuxt maps files under `server/api/` directly to routes. Method-specific files use suffixes:
 
-| File | Route | Method |
-|---|---|---|
-| `server/api/auth/[...all].ts` | `/api/auth/*` | All (Better-Auth catch-all) |
-| `server/api/mail/send-mail.post.ts` | `/api/mail/send-mail` | POST |
-| `server/api/user/profile.put.ts` | `/api/user/profile` | PUT |
+| File                                | Route                 | Method                      |
+| ----------------------------------- | --------------------- | --------------------------- |
+| `server/api/auth/[...all].ts`       | `/api/auth/*`         | All (Better-Auth catch-all) |
+| `server/api/mail/send-mail.post.ts` | `/api/mail/send-mail` | POST                        |
+| `server/api/user/profile.put.ts`    | `/api/user/profile`   | PUT                         |
 
 ### Protected Route Template
 
@@ -397,11 +411,11 @@ throw createError({ statusCode: 500, statusMessage: 'Internal server error' })
 
 ### Route Categories
 
-| Route | Layout | Auth State |
-|---|---|---|
-| `/` | — | Redirects based on session |
-| `/login`, `/signup`, `/forgot-password` | `clean` | Public (redirects away if authed) |
-| `/dashboard`, `/feedback`, `/reports`, `/settings`, `/help` | `dashboard` | Protected |
+| Route                                                       | Layout      | Auth State                        |
+| ----------------------------------------------------------- | ----------- | --------------------------------- |
+| `/`                                                         | —           | Redirects based on session        |
+| `/login`, `/signup`, `/forgot-password`                     | `clean`     | Public (redirects away if authed) |
+| `/dashboard`, `/feedback`, `/reports`, `/settings`, `/help` | `dashboard` | Protected                         |
 
 ---
 
@@ -409,10 +423,10 @@ throw createError({ statusCode: 500, statusMessage: 'Internal server error' })
 
 The project ships context-aware Cursor rules in MDC format:
 
-| File | Scope |
-|---|---|
-| `.cursor/rules/project.mdc` | Project-wide patterns, security, architecture |
-| `server/.cursor/rules/api.mdc` | API routes, database, server auth |
+| File                               | Scope                                         |
+| ---------------------------------- | --------------------------------------------- |
+| `.cursor/rules/project.mdc`        | Project-wide patterns, security, architecture |
+| `server/.cursor/rules/api.mdc`     | API routes, database, server auth             |
 | `components/.cursor/rules/vue.mdc` | Vue components, UI patterns, client-side auth |
 
 These mirror the conventions in this file. Keep them in sync when making architectural changes.

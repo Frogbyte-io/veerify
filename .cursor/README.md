@@ -8,7 +8,7 @@ This project uses the new Cursor project rules structure with **MDC format** for
 .cursor/rules/           # Project-wide rules and overview
   project.md            # General patterns, security, architecture
 
-server/.cursor/rules/    # Backend-specific rules  
+server/.cursor/rules/    # Backend-specific rules
   api.md               # API patterns, database, server-side auth
 
 components/.cursor/rules/ # Frontend-specific rules
@@ -18,18 +18,21 @@ components/.cursor/rules/ # Frontend-specific rules
 ## Rule Categories
 
 ### Project-wide (`.cursor/rules/`)
+
 - Project overview and architecture with Mermaid diagrams
 - Common patterns across the entire codebase
 - Security guidelines and migration notes
 - Development workflow and best practices
 
 ### Server (`server/.cursor/rules/`)
+
 - API route patterns and error handling
 - Database schema and Drizzle ORM usage
 - Better-Auth server-side integration
 - Environment configuration and security
 
 ### Components (`components/.cursor/rules/`)
+
 - Vue 3 Options API patterns with examples
 - shadcn-vue component usage and styling
 - Client-side authentication and navigation
@@ -58,7 +61,7 @@ The rules files use **MDC (Markdown Components)** format with:
 When working in different directories, Cursor automatically applies the most relevant rules:
 
 - **Root directory**: General project patterns and architecture
-- **`/server/` directory**: Backend API and database patterns  
+- **`/server/` directory**: Backend API and database patterns
 - **`/components/` directory**: Vue component and UI patterns
 
-This ensures you get contextual AI assistance based on what part of the application you're working on. 
+This ensures you get contextual AI assistance based on what part of the application you're working on.

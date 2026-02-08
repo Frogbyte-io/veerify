@@ -1,5 +1,7 @@
 # Veerify
 
+[![CI](https://github.com/Frogbyte-io/veerify/actions/workflows/ci.yml/badge.svg)](https://github.com/Frogbyte-io/veerify/actions/workflows/ci.yml)
+
 A modern feedback management platform built with Nuxt 3, TypeScript, and shadcn-vue. Veerify helps you collect, organize, and prioritize user feedback to build better products - similar to Sleekplan, Canny, and Featurebase.
 
 ## 🌟 Features
@@ -27,7 +29,7 @@ A modern feedback management platform built with Nuxt 3, TypeScript, and shadcn-
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - Yarn package manager
 
 ### Installation
@@ -139,10 +141,10 @@ No GitHub Actions or per-PR configuration required — the Neon Vercel integrati
 
 **Test credentials on preview deployments:**
 
-| Field | Value |
-|---|---|
-| Email | `test@preview.local` |
-| Password | `password123` |
+| Field    | Value                |
+| -------- | -------------------- |
+| Email    | `test@preview.local` |
+| Password | `password123`        |
 
 ## 📁 Project Structure
 

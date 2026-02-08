@@ -5,37 +5,33 @@
         <div class="flex flex-col gap-6">
           <Card>
             <CardHeader class="text-center">
-              <CardTitle class="text-xl">
-                Welcome back
-              </CardTitle>
-              <CardDescription>
-                Sign in to your account to continue
-              </CardDescription>
+              <CardTitle class="text-xl"> Welcome back </CardTitle>
+              <CardDescription> Sign in to your account to continue </CardDescription>
             </CardHeader>
             <CardContent>
               <form @submit.prevent="handleSubmit">
                 <div class="grid gap-6">
                   <!-- Social Sign In Buttons -->
                   <div class="flex flex-col gap-4">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
+                    <Button
+                      type="button"
+                      variant="outline"
                       class="w-full"
-                      @click="handleGitHubSignIn"
                       :disabled="isLoading"
+                      @click="handleGitHubSignIn"
                     >
                       <Icon name="lucide:github" class="w-4 h-4 mr-2" />
                       Continue with GitHub
                     </Button>
                   </div>
-                  
+
                   <!-- Divider -->
-                  <div class="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t">
-                    <span class="bg-card text-muted-foreground relative z-10 px-2">
-                      Or continue with email
-                    </span>
+                  <div
+                    class="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t"
+                  >
+                    <span class="bg-card text-muted-foreground relative z-10 px-2"> Or continue with email </span>
                   </div>
-                  
+
                   <!-- Email/Password Form -->
                   <div class="grid gap-6">
                     <div class="grid gap-3">
@@ -52,46 +48,38 @@
                     <div class="grid gap-3">
                       <div class="flex items-center">
                         <Label for="password">Password</Label>
-                        <NuxtLink
-                          to="/forgot-password"
-                          class="ml-auto text-sm underline-offset-4 hover:underline"
-                        >
+                        <NuxtLink to="/forgot-password" class="ml-auto text-sm underline-offset-4 hover:underline">
                           Forgot your password?
                         </NuxtLink>
                       </div>
-                      <Input 
-                        id="password" 
-                        v-model="password"
-                        type="password" 
-                        required 
-                        :disabled="isLoading"
-                      />
+                      <Input id="password" v-model="password" type="password" required :disabled="isLoading" />
                     </div>
                     <Button type="submit" class="w-full" :disabled="isLoading">
                       {{ isLoading ? 'Signing in...' : 'Sign in' }}
                     </Button>
                   </div>
-                  
+
                   <!-- Sign Up Link -->
                   <div class="text-center text-sm">
                     Don't have an account?
-                    <NuxtLink to="/signup" class="underline underline-offset-4">
-                      Sign up
-                    </NuxtLink>
+                    <NuxtLink to="/signup" class="underline underline-offset-4"> Sign up </NuxtLink>
                   </div>
                 </div>
               </form>
-              
+
               <!-- Error Message -->
-              <div v-if="error" class="mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm">
+              <div
+                v-if="error"
+                class="mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
+              >
                 {{ error }}
               </div>
             </CardContent>
           </Card>
           <div class="text-muted-foreground text-center text-xs text-balance">
-            By clicking continue, you agree to our 
+            By clicking continue, you agree to our
             <NuxtLink to="/terms" class="underline underline-offset-4 hover:text-primary">Terms of Service</NuxtLink>
-            and 
+            and
             <NuxtLink to="/privacy" class="underline underline-offset-4 hover:text-primary">Privacy Policy</NuxtLink>.
           </div>
         </div>
@@ -101,7 +89,7 @@
 </template>
 
 <script>
-import { authClient } from "~/lib/auth-client";
+import { authClient } from '~/lib/auth-client'
 
 export default {
   name: 'LoginPage',
@@ -110,53 +98,53 @@ export default {
       email: '',
       password: '',
       isLoading: false,
-      error: ''
+      error: '',
     }
   },
   methods: {
     async handleSubmit() {
       if (!this.email || !this.password) {
-        this.error = 'Please enter both email and password';
-        return;
+        this.error = 'Please enter both email and password'
+        return
       }
 
-      this.isLoading = true;
-      this.error = '';
+      this.isLoading = true
+      this.error = ''
 
       try {
         const result = await authClient.signIn.email({
           email: this.email,
           password: this.password,
-        });
+        })
 
         if (result.error) {
-          this.error = result.error.message || 'Sign in failed';
+          this.error = result.error.message || 'Sign in failed'
         } else {
           // Success - redirect to dashboard
-          await navigateTo('/dashboard');
+          await navigateTo('/dashboard')
         }
       } catch (err) {
-        this.error = 'An unexpected error occurred';
-        console.error('Sign in error:', err);
+        this.error = 'An unexpected error occurred'
+        console.error('Sign in error:', err)
       } finally {
-        this.isLoading = false;
+        this.isLoading = false
       }
     },
 
     async handleGitHubSignIn() {
-      this.isLoading = true;
-      this.error = '';
+      this.isLoading = true
+      this.error = ''
 
       try {
         await authClient.signIn.social({
           provider: 'github',
-        });
+        })
       } catch (err) {
-        this.error = 'GitHub sign in failed';
-        console.error('GitHub sign in error:', err);
-        this.isLoading = false;
+        this.error = 'GitHub sign in failed'
+        console.error('GitHub sign in error:', err)
+        this.isLoading = false
       }
-    }
-  }
+    },
+  },
 }
-</script> 
+</script>

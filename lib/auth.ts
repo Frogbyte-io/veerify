@@ -1,15 +1,16 @@
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization, twoFactor } from "better-auth/plugins";
-import { db } from "../server/database/drizzle";
-import * as schema from "../server/database/schema/index";
-import { sendEmailVerificationEmail, sendPasswordResetEmail } from "./email";
+import { betterAuth } from 'better-auth'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { organization, twoFactor } from 'better-auth/plugins'
+import { db } from '../server/database/drizzle'
+import * as schema from '../server/database/schema/index'
+import { sendEmailVerificationEmail, sendPasswordResetEmail } from './email'
 
 export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
+  baseURL:
+    process.env.BETTER_AUTH_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'),
   database: drizzleAdapter(db, {
-    provider: "pg",
+    provider: 'pg',
     schema: {
       user: schema.user,
       session: schema.session,
@@ -23,29 +24,26 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
-    sendResetPassword: async ({ user, url, token }, request) => {
-      // Use void to avoid blocking the request
-      void sendPasswordResetEmail({
+    sendVerificationEmail: sendEmailVerificationEmail,
+    sendResetPassword: async ({ user, url, token }, _request) => {
+      await sendPasswordResetEmail({
         to: user.email,
-        name: user.name || user.email.split('@')[0],
-        resetUrl: url
-      }).catch((error) => {
-        console.error('Failed to send password reset email:', error);
-      });
+        name: user.name,
+        resetUrl: url,
+      })
     },
   },
   emailVerification: {
-    sendVerificationEmail: async ({ user, url, token }, request) => {
-      // Use void to avoid blocking the request - Better-Auth will continue even if email fails
+    sendVerificationEmail: async ({ user, url, token }, _request) => {
       void sendEmailVerificationEmail({
         to: user.email,
         name: user.name || user.email.split('@')[0],
-        verificationUrl: url
+        verificationUrl: url,
       }).catch((error) => {
-        console.error('Failed to send verification email:', error);
-      });
+        console.error('Failed to send verification email:', error)
+      })
     },
-    sendOnSignUp: true, // Automatically send verification email on sign-up
+    sendOnSignUp: true,
   },
   socialProviders: {
     // Uncomment and configure when you have OAuth credentials
@@ -61,7 +59,7 @@ export const auth = betterAuth({
       membershipLimit: 50,
     }),
     twoFactor({
-      issuer: "Veerify",
+      issuer: 'Veerify',
     }),
   ],
-}); 
+})

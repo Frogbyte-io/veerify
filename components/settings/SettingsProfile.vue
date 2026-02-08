@@ -11,22 +11,18 @@
         <Skeleton class="h-12 w-full" />
         <Skeleton class="h-10 w-20" />
       </div>
-      
+
       <!-- Error state -->
       <div v-else-if="!user" class="text-center py-8">
         <p class="text-muted-foreground">Unable to load profile information</p>
-        <Button variant="outline" @click="loadProfile" class="mt-4">
-          Try Again
-        </Button>
+        <Button variant="outline" class="mt-4" @click="loadProfile"> Try Again </Button>
       </div>
-      
+
       <!-- Profile form -->
-      <form v-else @submit.prevent="handleSubmit" class="space-y-6">
+      <form v-else class="space-y-6" @submit.prevent="handleSubmit">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div class="md:col-span-2">
-            <Label for="name" :class="{ 'text-destructive': fieldErrors.name }">
-              Full Name
-            </Label>
+            <Label for="name" :class="{ 'text-destructive': fieldErrors.name }"> Full Name </Label>
             <Input
               id="name"
               v-model="formData.name"
@@ -34,9 +30,9 @@
               placeholder="Enter your full name"
               required
               :disabled="isSaving"
-              :class="{ 
+              :class="{
                 'border-destructive focus:border-destructive focus:ring-destructive': fieldErrors.name,
-                'mt-2': true
+                'mt-2': true,
               }"
               @input="clearFieldError('name')"
             />
@@ -44,11 +40,9 @@
               {{ fieldErrors.name }}
             </p>
           </div>
-          
+
           <div class="md:col-span-2">
-            <Label for="email" :class="{ 'text-destructive': fieldErrors.email }">
-              Email Address
-            </Label>
+            <Label for="email" :class="{ 'text-destructive': fieldErrors.email }"> Email Address </Label>
             <Input
               id="email"
               v-model="formData.email"
@@ -56,9 +50,9 @@
               placeholder="Enter your email address"
               required
               :disabled="isSaving"
-              :class="{ 
+              :class="{
                 'border-destructive focus:border-destructive focus:ring-destructive': fieldErrors.email,
-                'mt-2': true
+                'mt-2': true,
               }"
               @input="clearFieldError('email')"
             />
@@ -67,27 +61,17 @@
             </p>
           </div>
         </div>
-        
+
         <div class="flex justify-end space-x-3">
-          <Button
-            type="button"
-            variant="outline"
-            @click="resetForm"
-            :disabled="isSaving || !hasChanges"
-          >
+          <Button type="button" variant="outline" :disabled="isSaving || !hasChanges" @click="resetForm">
             Reset
           </Button>
-          <Button
-            type="submit"
-            :disabled="isSaving || !hasChanges"
-          >
+          <Button type="submit" :disabled="isSaving || !hasChanges">
             <template v-if="isSaving">
               <Icon name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
               Saving...
             </template>
-            <template v-else>
-              Save Changes
-            </template>
+            <template v-else> Save Changes </template>
           </Button>
         </div>
       </form>
@@ -101,79 +85,77 @@ import { toast } from 'vue-sonner'
 
 export default {
   name: 'SettingsProfile',
-  
+
   data() {
     return {
       session: null,
       isPending: true,
       formData: {
         name: '',
-        email: ''
+        email: '',
       },
       originalData: {
         name: '',
-        email: ''
+        email: '',
       },
       fieldErrors: {
         name: '',
-        email: ''
+        email: '',
       },
-      isSaving: false
+      isSaving: false,
     }
-  },
-
-  async mounted() {
-    await this.loadProfile()
   },
 
   computed: {
     user() {
       return this.session?.user || null
     },
-    
+
     isLoading() {
       return this.isPending
     },
-    
+
     hasChanges() {
-      return this.formData.name !== this.originalData.name || 
-             this.formData.email !== this.originalData.email
-    }
+      return this.formData.name !== this.originalData.name || this.formData.email !== this.originalData.email
+    },
+  },
+
+  async mounted() {
+    await this.loadProfile()
   },
 
   methods: {
     async loadProfile() {
       try {
         this.isPending = true
-        
+
         const { data: session, isPending } = await authClient.useSession(useFetch)
         this.session = session.value
         this.isPending = isPending.value
-        
+
         if (this.session?.user) {
           this.formData = {
             name: this.session.user.name || '',
-            email: this.session.user.email || ''
+            email: this.session.user.email || '',
           }
           this.originalData = { ...this.formData }
         }
-        
+
         // Watch for changes
         watch(session, (newSession) => {
           this.session = newSession
           if (newSession?.user) {
             this.formData = {
               name: newSession.user.name || '',
-              email: newSession.user.email || ''
+              email: newSession.user.email || '',
             }
             this.originalData = { ...this.formData }
           }
         })
-        
+
         watch(isPending, (newPending) => {
           this.isPending = newPending
         })
-        
       } catch (error) {
         console.error('Error loading profile:', error)
         toast.error('Failed to load profile information')
@@ -234,23 +216,22 @@ export default {
           method: 'PUT',
           body: {
             name: this.formData.name.trim(),
-            email: this.formData.email.trim()
-          }
+            email: this.formData.email.trim(),
+          },
         })
 
         if (response.success) {
           toast.success('Profile updated successfully')
           this.originalData = { ...this.formData }
         }
-
       } catch (error) {
         console.error('Error updating profile:', error)
-        
+
         let errorMessage = 'Failed to update profile. Please try again.'
-        
+
         if (error.data?.statusMessage) {
           errorMessage = error.data.statusMessage
-          
+
           // Handle specific field errors from server
           if (errorMessage.includes('email')) {
             this.fieldErrors.email = errorMessage
@@ -260,7 +241,7 @@ export default {
         } else if (error.statusMessage) {
           errorMessage = error.statusMessage
         }
-        
+
         toast.error(errorMessage)
       } finally {
         this.isSaving = false
@@ -270,7 +251,7 @@ export default {
     resetForm() {
       this.formData = { ...this.originalData }
       this.clearAllErrors()
-    }
-  }
+    },
+  },
 }
-</script> 
+</script>

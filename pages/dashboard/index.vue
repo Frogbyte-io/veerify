@@ -5,7 +5,7 @@
         <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
         <p class="text-gray-600">Welcome to your Veerify feedback management dashboard</p>
       </div>
-      
+
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Stats Cards -->
         <div class="bg-white p-6 rounded-lg border border-gray-200">
@@ -17,7 +17,7 @@
             </div>
           </div>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg border border-gray-200">
           <div class="flex items-center">
             <Icon name="lucide:users" class="w-8 h-8 text-green-600" />
@@ -27,7 +27,7 @@
             </div>
           </div>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg border border-gray-200">
           <div class="flex items-center">
             <Icon name="lucide:trending-up" class="w-8 h-8 text-purple-600" />
@@ -114,7 +114,9 @@
                 </div>
               </div>
               <div class="flex items-center space-x-2">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                <span
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                >
                   In Progress
                 </span>
                 <span class="text-sm font-medium text-gray-900">45 votes</span>
@@ -132,7 +134,9 @@
                 </div>
               </div>
               <div class="flex items-center space-x-2">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                <span
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"
+                >
                   Planned
                 </span>
                 <span class="text-sm font-medium text-gray-900">32 votes</span>
@@ -150,7 +154,9 @@
                 </div>
               </div>
               <div class="flex items-center space-x-2">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                <span
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                >
                   Under Review
                 </span>
                 <span class="text-sm font-medium text-gray-900">28 votes</span>
@@ -161,4 +167,4 @@
       </div>
     </div>
   </NuxtLayout>
-</template> 
+</template>
