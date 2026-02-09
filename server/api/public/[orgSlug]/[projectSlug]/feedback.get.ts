@@ -1,9 +1,11 @@
 import { z } from 'zod'
 import { eq, and, desc, asc, count } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { optionalAuth } from '~/server/utils/auth-middleware'
+import { getAnonSession } from '~/server/utils/anonymous-session'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { project, feedback, feedbackCategory } from '~/server/database/schema/feedback'
+import { project, feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
 import { organization } from '~/server/database/schema/auth'
 
 const querySchema = z.object({
@@ -27,6 +29,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const session = await optionalAuth(event)
+  const anonSession = !session?.user ? await getAnonSession(event) : null
   const query = validateQuery(event, querySchema)
 
   // Resolve org + project
@@ -81,6 +85,25 @@ export default defineEventHandler(async (event) => {
     .limit(query.limit)
     .offset(offset)
 
+  // Check which items the viewer has voted on (authenticated user or anonymous session)
+  let voterVotes: Set<string> = new Set()
+  const feedbackIds = items.map((i) => i.feedback.id)
+  if (feedbackIds.length > 0) {
+    if (session?.user) {
+      const votes = await db
+        .select({ feedbackId: vote.feedbackId })
+        .from(vote)
+        .where(eq(vote.voterUserId, session.user.id))
+      voterVotes = new Set(votes.map((v) => v.feedbackId))
+    } else if (anonSession) {
+      const votes = await db
+        .select({ feedbackId: vote.feedbackId })
+        .from(vote)
+        .where(eq(vote.voterSessionId, anonSession.id))
+      voterVotes = new Set(votes.map((v) => v.feedbackId))
+    }
+  }
+
   const result = items.map((item) => ({
     id: item.feedback.id,
     title: item.feedback.title,
@@ -91,6 +114,12 @@ export default defineEventHandler(async (event) => {
     authorName: item.feedback.authorName,
     isPinned: item.feedback.isPinned,
     createdAt: item.feedback.createdAt,
+    hasVoted: voterVotes.has(item.feedback.id),
+    isOwn: session?.user
+      ? item.feedback.authorUserId === session.user.id
+      : anonSession
+        ? item.feedback.authorSessionId === anonSession.id
+        : false,
     category: item.category
       ? {
           id: item.category.id,

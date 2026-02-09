@@ -121,6 +121,7 @@
           v-for="item in feedbackItems"
           :key="item.id"
           class="rounded-lg border bg-card hover:shadow-sm transition-shadow"
+          :class="item.isOwn ? 'ring-2 ring-primary/30' : ''"
         >
           <div class="flex items-start gap-4 p-4">
             <!-- Vote Button -->
@@ -162,7 +163,11 @@
                 {{ item.body }}
               </p>
               <div class="flex items-center gap-4 text-xs text-muted-foreground">
-                <span v-if="item.authorName">
+                <span v-if="item.isOwn" class="text-primary font-medium">
+                  <Icon name="lucide:star" class="w-3 h-3 inline" />
+                  Your submission
+                </span>
+                <span v-else-if="item.authorName">
                   <Icon name="lucide:user" class="w-3 h-3 inline" />
                   {{ item.authorName }}
                 </span>
@@ -267,6 +272,9 @@
                 type="email"
                 placeholder="you@example.com"
               />
+              <p class="text-xs text-muted-foreground">
+                Provide your email to receive updates on comments and status changes.
+              </p>
             </div>
           </div>
           <DialogFooter>
@@ -428,16 +436,14 @@ export default {
     },
 
     async handleVote(item) {
-      // Voting requires auth — redirect or show message
       try {
         const response = await $fetch(`/api/feedback/${item.id}/vote`, { method: 'POST' })
         const data = response?.data
         item.voteCount = data.voteCount
         item.hasVoted = data.voted
       } catch (err) {
-        if (err?.statusCode === 401) {
-          alert('Please sign in to vote on feedback.')
-        }
+        console.error('Error voting:', err)
+        alert('Failed to vote. Please try again.')
       }
     },
 

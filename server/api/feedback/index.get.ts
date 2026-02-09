@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { eq, and, desc, asc, count, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
+import { getAnonSession } from '~/server/utils/anonymous-session'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
@@ -20,6 +21,7 @@ const listFeedbackQuerySchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
+  const anonSession = !session?.user ? await getAnonSession(event) : null
   const query = validateQuery(event, listFeedbackQuerySchema)
 
   // Build conditions
@@ -61,23 +63,34 @@ export default defineEventHandler(async (event) => {
     .limit(query.limit)
     .offset(offset)
 
-  // If authenticated, check which items the user has voted on
-  let userVotes: Set<string> = new Set()
-  if (session?.user) {
-    const feedbackIds = items.map((i) => i.feedback.id)
-    if (feedbackIds.length > 0) {
+  // Check which items the viewer has voted on (authenticated user or anonymous session)
+  let voterVotes: Set<string> = new Set()
+  const feedbackIds = items.map((i) => i.feedback.id)
+  if (feedbackIds.length > 0) {
+    if (session?.user) {
       const votes = await db
         .select({ feedbackId: vote.feedbackId })
         .from(vote)
-        .where(and(eq(vote.voterUserId, session.user.id)))
-      userVotes = new Set(votes.map((v) => v.feedbackId))
+        .where(eq(vote.voterUserId, session.user.id))
+      voterVotes = new Set(votes.map((v) => v.feedbackId))
+    } else if (anonSession) {
+      const votes = await db
+        .select({ feedbackId: vote.feedbackId })
+        .from(vote)
+        .where(eq(vote.voterSessionId, anonSession.id))
+      voterVotes = new Set(votes.map((v) => v.feedbackId))
     }
   }
 
   const result = items.map((item) => ({
     ...item.feedback,
     category: item.category,
-    hasVoted: session?.user ? userVotes.has(item.feedback.id) : undefined,
+    hasVoted: voterVotes.has(item.feedback.id),
+    isOwn: session?.user
+      ? item.feedback.authorUserId === session.user.id
+      : anonSession
+        ? item.feedback.authorSessionId === anonSession.id
+        : false,
   }))
 
   return createSuccessResponse({

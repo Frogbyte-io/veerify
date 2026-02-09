@@ -1,11 +1,12 @@
 import { eq, and, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuth } from '~/server/utils/auth-middleware'
+import { optionalAuth } from '~/server/utils/auth-middleware'
+import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
 import { feedback, vote } from '~/server/database/schema/feedback'
 
 export default defineEventHandler(async (event) => {
-  const session = await requireAuth(event)
+  const session = await optionalAuth(event)
 
   const id = getRouterParam(event, 'id')
   if (!id) {
@@ -26,15 +27,24 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Check if user already voted
-  const [existingVote] = await db
-    .select()
-    .from(vote)
-    .where(and(eq(vote.feedbackId, id), eq(vote.voterUserId, session.user.id)))
-    .limit(1)
+  // Determine voter identity: authenticated user or anonymous session
+  const userId = session?.user?.id || null
+  let anonSessionId: string | null = null
+
+  if (!userId) {
+    const anonSession = await getOrCreateAnonSession(event)
+    anonSessionId = anonSession.id
+  }
+
+  // Build the condition for finding an existing vote
+  const voteCondition = userId
+    ? and(eq(vote.feedbackId, id), eq(vote.voterUserId, userId))
+    : and(eq(vote.feedbackId, id), eq(vote.voterSessionId, anonSessionId!))
+
+  const [existingVote] = await db.select().from(vote).where(voteCondition).limit(1)
 
   if (existingVote) {
-    // Remove vote
+    // Remove vote (toggle off)
     await db.delete(vote).where(eq(vote.id, existingVote.id))
     await db
       .update(feedback)
@@ -48,7 +58,8 @@ export default defineEventHandler(async (event) => {
     await db.insert(vote).values({
       id: crypto.randomUUID(),
       feedbackId: id,
-      voterUserId: session.user.id,
+      voterUserId: userId,
+      voterSessionId: anonSessionId,
       createdAt: new Date(),
     })
     await db
