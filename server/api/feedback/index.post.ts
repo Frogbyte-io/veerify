@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
+import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedback, project, feedbackCategory } from '~/server/database/schema/feedback'
@@ -64,6 +65,13 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // For anonymous users, get or create an anonymous session
+  let anonSessionId: string | null = null
+  if (!session?.user) {
+    const anonSession = await getOrCreateAnonSession(event)
+    anonSessionId = anonSession.id
+  }
+
   const now = new Date()
   const [created] = await db
     .insert(feedback)
@@ -75,6 +83,7 @@ export default defineEventHandler(async (event) => {
       body: body.body,
       status: 'open',
       authorUserId: session?.user?.id || null,
+      authorSessionId: anonSessionId,
       authorName: session?.user ? session.user.name : body.authorName || null,
       authorEmail: session?.user ? session.user.email : body.authorEmail || null,
       voteCount: 0,
