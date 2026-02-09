@@ -49,7 +49,7 @@ export const auth = betterAuth({
     sendOnSignUp: true,
   },
   socialProviders: {
-    // Uncomment and configure when you have OAuth credentials
+    // TODO: uncomment and add OAuth credentials
     // github: {
     //   clientId: process.env.GITHUB_CLIENT_ID as string,
     //   clientSecret: process.env.GITHUB_CLIENT_SECRET as string,

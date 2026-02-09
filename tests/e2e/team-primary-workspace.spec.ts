@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import type { APIRequestContext } from '@playwright/test'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -15,9 +16,7 @@ function withAuthHeaders(sessionCookie: string, refererPath = '/products') {
   }
 }
 
-test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces duplicate slug conflict', async ({
-  request,
-}) => {
+async function signInAndGetSessionCookie(request: APIRequestContext) {
   const signInResponse = await request.post('/api/auth/sign-in/email', {
     headers: {
       origin: BASE_URL,
@@ -34,7 +33,13 @@ test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces 
 
   const setCookie = signInResponse.headers()['set-cookie']
   expect(setCookie, 'Sign-in response missing Set-Cookie').toBeTruthy()
-  const sessionCookie = setCookie!.split(';')[0]
+  return setCookie!.split(';')[0]
+}
+
+test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces duplicate slug conflict', async ({
+  request,
+}) => {
+  const sessionCookie = await signInAndGetSessionCookie(request)
 
   const activeTeamResponse = await request.get('/api/teams/active', {
     headers: withAuthHeaders(sessionCookie),
@@ -87,4 +92,19 @@ test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces 
       JSON.stringify(duplicatePayload)
   )
   expect(duplicateMessage).toMatch(/workspace URL namespace|conflict/i)
+})
+
+test('authenticated user can access products UI workflow', async ({ request, page }) => {
+  await signInAndGetSessionCookie(request)
+  const authCookies = (await request.storageState()).cookies.filter((cookie) =>
+    cookie.name.startsWith('better-auth')
+  )
+  expect(authCookies.length).toBeGreaterThan(0)
+  await page.context().addCookies(authCookies)
+
+  await page.goto('/products', { waitUntil: 'commit', timeout: 180_000 })
+  await expect(page).toHaveURL(/\/products/)
+  await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'New Product' })).toBeVisible()
+  await expect(page.getByText('Manage your products and their public feedback pages')).toBeVisible()
 })
