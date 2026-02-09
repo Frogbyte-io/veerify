@@ -28,6 +28,7 @@ export interface AuthSession {
     ipAddress?: string
     userAgent?: string
     activeOrganizationId?: string
+    activeTeamId?: string
   }
 }
 

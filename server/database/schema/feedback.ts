@@ -1,7 +1,8 @@
 import { pgTable, text, timestamp, boolean, integer, jsonb, uniqueIndex, index } from 'drizzle-orm/pg-core'
-import { user, organization } from './auth'
+import { user, organization, team } from './auth'
 
-// Projects table - feedback boards within an organization
+// Projects table - operational workspaces scoped to teams.
+// organizationId is retained for public URL resolution and org governance.
 export const project = pgTable(
   'project',
   {
@@ -9,6 +10,9 @@ export const project = pgTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'restrict' }),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
     description: text('description'),
@@ -25,10 +29,14 @@ export const project = pgTable(
       .notNull(),
   },
   (table) => ({
-    // Unique slug within an organization
+    // Unique slug within an organization URL namespace
     uniqueOrgSlug: uniqueIndex('project_org_slug_idx').on(table.organizationId, table.slug),
-    // Index for querying projects by organization
+    // Index for governance/public URL lookups by organization
     orgIdx: index('project_org_idx').on(table.organizationId),
+    // Index for querying projects by team
+    teamIdx: index('project_team_idx').on(table.teamId),
+    // Index for team timelines
+    teamCreatedAtIdx: index('project_team_created_at_idx').on(table.teamId, table.createdAt),
     // Index for public projects
     publicIdx: index('project_public_idx').on(table.isPublic),
     // Unique custom domain per project

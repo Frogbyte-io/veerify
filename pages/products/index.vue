@@ -178,6 +178,7 @@ export default {
       error: null,
       showCreateDialog: false,
       isCreating: false,
+      activeTeamId: '',
       activeOrgSlug: '',
       form: {
         name: '',
@@ -196,40 +197,57 @@ export default {
   },
 
   async mounted() {
-    await this.initOrganization()
+    await this.initTeamContext()
   },
 
   methods: {
-    async initOrganization() {
+    async initTeamContext() {
       try {
+        // Resolve deterministic active team server-side.
+        await $fetch('/api/teams/active')
+
+        const { data: activeTeam } = authClient.useActiveTeam()
         const { data: activeOrg } = authClient.useActiveOrganization()
+
+        if (activeTeam.value?.id) {
+          this.activeTeamId = activeTeam.value.id
+        }
 
         if (activeOrg.value?.slug) {
           this.activeOrgSlug = activeOrg.value.slug
+        }
+
+        if (this.activeTeamId) {
           await this.loadProducts()
         }
+
+        watch(activeTeam, async (newTeam) => {
+          if (newTeam?.id) {
+            this.activeTeamId = newTeam.id
+            await this.loadProducts()
+          }
+        })
 
         watch(activeOrg, async (newOrg) => {
           if (newOrg?.slug) {
             this.activeOrgSlug = newOrg.slug
-            await this.loadProducts()
           }
         })
       } catch (err) {
-        console.error('Error initializing organization:', err)
-        this.error = 'Failed to load organization'
+        console.error('Error initializing team context:', err)
+        this.error = 'Failed to load team context'
         this.isLoading = false
       }
     },
 
     async loadProducts() {
-      if (!this.activeOrgSlug) return
+      if (!this.activeTeamId) return
 
       this.isLoading = true
       this.error = null
 
       try {
-        const response = await $fetch(`/api/orgs/${this.activeOrgSlug}/projects`)
+        const response = await $fetch(`/api/teams/${this.activeTeamId}/projects`)
         this.products = response?.data || []
       } catch (err) {
         console.error('Error loading products:', err)
@@ -249,12 +267,12 @@ export default {
     },
 
     async createProduct() {
-      if (!this.activeOrgSlug || !this.form.name || !this.form.slug) return
+      if (!this.activeTeamId || !this.form.name || !this.form.slug) return
 
       this.isCreating = true
 
       try {
-        await $fetch(`/api/orgs/${this.activeOrgSlug}/projects`, {
+        await $fetch(`/api/teams/${this.activeTeamId}/projects`, {
           method: 'POST',
           body: {
             name: this.form.name,

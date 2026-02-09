@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import { eq, and } from 'drizzle-orm'
-import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuth } from '~/server/utils/auth-middleware'
-import { validateBody, commonSchemas } from '~/server/utils/validation'
+import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project, feedbackCategory } from '~/server/database/schema/feedback'
-import { organization, member } from '~/server/database/schema/auth'
+import { team, teamMember } from '~/server/database/schema/auth'
+import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { commonSchemas, validateBody } from '~/server/utils/validation'
 
 const createProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(100, 'Project name too long'),
@@ -15,68 +15,69 @@ const createProjectSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const session = await requireAuth(event)
+  const { session } = await requireAuthWithResolvedTeam(event)
 
-  const orgSlug = getRouterParam(event, 'slug')
-  if (!orgSlug) {
+  const teamId = getRouterParam(event, 'teamId')
+  if (!teamId) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Organization slug is required'),
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Team ID is required'),
     })
   }
 
   const body = await validateBody(event, createProjectSchema)
 
-  // Find organization by slug
-  const [org] = await db.select().from(organization).where(eq(organization.slug, orgSlug)).limit(1)
-  if (!org) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Organization not found'),
-    })
-  }
-
-  // Verify user is a member of the org
   const [membership] = await db
     .select()
-    .from(member)
-    .where(and(eq(member.organizationId, org.id), eq(member.userId, session.user.id)))
+    .from(teamMember)
+    .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, session.user.id)))
     .limit(1)
 
   if (!membership) {
     throw createError({
       statusCode: 403,
       statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You are not a member of this organization'),
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You are not a member of this team'),
     })
   }
 
-  // Check slug uniqueness within org
+  const [selectedTeam] = await db.select().from(team).where(eq(team.id, teamId)).limit(1)
+  if (!selectedTeam) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Team not found'),
+    })
+  }
+
+  // Slugs stay unique at org URL namespace scope so public URLs remain /p/{orgSlug}/{projectSlug}.
   const [existing] = await db
     .select()
     .from(project)
-    .where(and(eq(project.organizationId, org.id), eq(project.slug, body.slug)))
+    .where(and(eq(project.organizationId, selectedTeam.organizationId), eq(project.slug, body.slug)))
     .limit(1)
 
   if (existing) {
     throw createError({
       statusCode: 409,
       statusMessage: 'Conflict',
-      data: createErrorResponse(ErrorCode.CONFLICT, 'A project with this slug already exists in this organization'),
+      data: createErrorResponse(
+        ErrorCode.CONFLICT,
+        'A project with this slug already exists in your workspace URL namespace'
+      ),
     })
   }
 
-  const projectId = crypto.randomUUID()
   const now = new Date()
+  const projectId = crypto.randomUUID()
 
-  // Create the project
   const [created] = await db
     .insert(project)
     .values({
       id: projectId,
-      organizationId: org.id,
+      organizationId: selectedTeam.organizationId,
+      teamId: selectedTeam.id,
       slug: body.slug,
       name: body.name,
       description: body.description || null,
@@ -87,7 +88,6 @@ export default defineEventHandler(async (event) => {
     })
     .returning()
 
-  // Create default categories
   const defaultCategories = [
     { name: 'Feature Request', slug: 'feature-request', icon: 'lucide:lightbulb', color: '#10b981', isDefault: true },
     { name: 'Bug Report', slug: 'bug-report', icon: 'lucide:bug', color: '#ef4444', isDefault: false },
@@ -95,15 +95,15 @@ export default defineEventHandler(async (event) => {
   ]
 
   await db.insert(feedbackCategory).values(
-    defaultCategories.map((cat, i) => ({
+    defaultCategories.map((category, index) => ({
       id: crypto.randomUUID(),
-      projectId: projectId,
-      name: cat.name,
-      slug: cat.slug,
-      icon: cat.icon,
-      color: cat.color,
-      isDefault: cat.isDefault,
-      sortOrder: i,
+      projectId,
+      name: category.name,
+      slug: category.slug,
+      icon: category.icon,
+      color: category.color,
+      isDefault: category.isDefault,
+      sortOrder: index,
       createdAt: now,
     }))
   )

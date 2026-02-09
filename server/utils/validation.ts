@@ -29,7 +29,7 @@ export async function validateBody<T extends z.ZodType>(
         data: createErrorResponse(
           ErrorCode.VALIDATION_ERROR,
           'Request validation failed',
-          result.error.errors
+          result.error.issues
         )
       })
     }
@@ -74,7 +74,7 @@ export function validateQuery<T extends z.ZodType>(
       data: createErrorResponse(
         ErrorCode.VALIDATION_ERROR,
         'Query parameter validation failed',
-        result.error.errors
+        result.error.issues
       )
     })
   }

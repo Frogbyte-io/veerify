@@ -54,5 +54,5 @@ export default defineNuxtConfig({
     proxy: {
       path: '/api-docs',
     },
-  },
+  } as any,
 })

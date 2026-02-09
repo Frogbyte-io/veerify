@@ -24,6 +24,7 @@ export default defineEventHandler((event) => {
     tags: [
       { name: 'Authentication', description: 'Authentication and session management' },
       { name: 'Organizations', description: 'Organization management' },
+      { name: 'Teams', description: 'Team workspace management' },
       { name: 'Projects', description: 'Project management' },
       { name: 'Feedback', description: 'Feedback and feature request management' },
       { name: 'GitHub', description: 'GitHub integration endpoints' }
@@ -82,7 +83,8 @@ export default defineEventHandler((event) => {
                 id: { type: 'string' },
                 userId: { type: 'string' },
                 expiresAt: { type: 'string', format: 'date-time' },
-                activeOrganizationId: { type: 'string', nullable: true }
+                activeOrganizationId: { type: 'string', nullable: true },
+                activeTeamId: { type: 'string', nullable: true }
               }
             }
           }
@@ -105,6 +107,7 @@ export default defineEventHandler((event) => {
             slug: { type: 'string', example: 'my-project' },
             description: { type: 'string', nullable: true },
             organizationId: { type: 'string' },
+            teamId: { type: 'string' },
             githubRepoUrl: { type: 'string', format: 'uri', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' }

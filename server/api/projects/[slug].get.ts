@@ -1,12 +1,12 @@
-import { eq, count } from 'drizzle-orm'
+import { and, count, eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { optionalAuth } from '~/server/utils/auth-middleware'
+import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { db } from '~/server/database/drizzle'
 import { project, feedback, feedbackCategory } from '~/server/database/schema/feedback'
-import { organization } from '~/server/database/schema/auth'
+import { organization, teamMember } from '~/server/database/schema/auth'
 
 export default defineEventHandler(async (event) => {
-  const session = await optionalAuth(event)
+  const { session, activeTeam } = await requireAuthWithResolvedTeam(event)
 
   const slug = getRouterParam(event, 'slug')
   if (!slug) {
@@ -17,34 +17,29 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Find project by slug - need to also handle org context
-  // Query param orgSlug can disambiguate when same project slug exists in multiple orgs
-  const orgSlug = getQuery(event).orgSlug as string | undefined
+  const requestedTeamId = getQuery(event).teamId as string | undefined
+  const teamId = requestedTeamId || activeTeam.id
 
-  let projects
-  if (orgSlug) {
-    const [org] = await db.select().from(organization).where(eq(organization.slug, orgSlug)).limit(1)
-    if (!org) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Not Found',
-        data: createErrorResponse(ErrorCode.NOT_FOUND, 'Organization not found'),
-      })
-    }
-    projects = await db
-      .select()
-      .from(project)
-      .where(eq(project.slug, slug))
-      .innerJoin(organization, eq(project.organizationId, organization.id))
-      .limit(1)
-  } else {
-    projects = await db
-      .select()
-      .from(project)
-      .where(eq(project.slug, slug))
-      .innerJoin(organization, eq(project.organizationId, organization.id))
-      .limit(1)
+  const [membership] = await db
+    .select()
+    .from(teamMember)
+    .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, session.user.id)))
+    .limit(1)
+
+  if (!membership) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden',
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You are not a member of this team'),
+    })
   }
+
+  const projects = await db
+    .select()
+    .from(project)
+    .where(and(eq(project.teamId, teamId), eq(project.slug, slug)))
+    .innerJoin(organization, eq(project.organizationId, organization.id))
+    .limit(1)
 
   if (!projects.length) {
     throw createError({

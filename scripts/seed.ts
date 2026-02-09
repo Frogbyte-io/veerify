@@ -8,7 +8,7 @@ const scryptAsync = promisify(scrypt)
 // format: salt:hex(scrypt(password, salt, { N: 16384, r: 16, p: 1, dkLen: 64 }))
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16).toString('hex')
-  const key = await scryptAsync(Buffer.from(password.normalize('NFKC')), salt, 64, {
+  const key = await (scryptAsync as any)(Buffer.from(password.normalize('NFKC')), salt, 64, {
     N: 16384,
     r: 16,
     p: 1,
@@ -26,6 +26,8 @@ const IDS = {
   account: 'seed_preview_account',
   org: 'seed_preview_org',
   member: 'seed_preview_member',
+  team: 'seed_preview_team',
+  teamMember: 'seed_preview_team_member',
   project: 'seed_preview_project',
 }
 
@@ -45,6 +47,8 @@ async function clean(client: Client) {
   // Delete in FK-safe order (children first)
   const tables: [string, string][] = [
     ['project', IDS.project],
+    ['team_member', IDS.teamMember],
+    ['team', IDS.team],
     ['member', IDS.member],
     ['account', IDS.account],
     ['organization', IDS.org],
@@ -97,13 +101,26 @@ async function seed(client: Client) {
   )
 
   await client.query(
-    `INSERT INTO "project" (id, organization_id, slug, name, description, is_public, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, true, $6, $6)`,
-    [IDS.project, IDS.org, 'demo', 'Demo Project', 'A sample project for testing feedback flows', now]
+    `INSERT INTO "team" (id, name, organization_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $4)`,
+    [IDS.team, 'Default', IDS.org, now]
+  )
+
+  await client.query(
+    `INSERT INTO "team_member" (id, team_id, user_id, created_at)
+     VALUES ($1, $2, $3, $4)`,
+    [IDS.teamMember, IDS.team, IDS.user, now]
+  )
+
+  await client.query(
+    `INSERT INTO "project" (id, organization_id, team_id, slug, name, description, is_public, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, true, $7, $7)`,
+    [IDS.project, IDS.org, IDS.team, 'demo', 'Demo Project', 'A sample project for testing feedback flows', now]
   )
 
   console.log(`[seed] Created test user: ${TEST_EMAIL} / ${TEST_PASSWORD}`)
   console.log('[seed] Created org: Preview Org (preview-org)')
+  console.log('[seed] Created team: Default')
   console.log('[seed] Created project: Demo Project (demo)')
 }
 

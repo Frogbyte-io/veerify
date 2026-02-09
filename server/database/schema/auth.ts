@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, boolean, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -33,6 +33,7 @@ export const session = pgTable('session', {
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   activeOrganizationId: text('active_organization_id'),
+  activeTeamId: text('active_team_id'),
 })
 
 export const account = pgTable('account', {
@@ -67,7 +68,12 @@ export const organization = pgTable('organization', {
   name: text('name').notNull(),
   slug: text('slug').unique(),
   logo: text('logo'),
-  createdAt: timestamp('created_at').notNull(),
+  createdAt: timestamp('created_at')
+    .$defaultFn(() => /* @__PURE__ */ new Date())
+    .notNull(),
+  updatedAt: timestamp('updated_at')
+    .$defaultFn(() => /* @__PURE__ */ new Date())
+    .notNull(),
   metadata: text('metadata'),
   settings: jsonb('settings').$type<Record<string, any>>(),
 })
@@ -81,8 +87,53 @@ export const member = pgTable('member', {
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   role: text('role').default('member').notNull(),
-  createdAt: timestamp('created_at').notNull(),
+  createdAt: timestamp('created_at')
+    .$defaultFn(() => /* @__PURE__ */ new Date())
+    .notNull(),
+  updatedAt: timestamp('updated_at')
+    .$defaultFn(() => /* @__PURE__ */ new Date())
+    .notNull(),
 })
+
+export const team = pgTable(
+  'team',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    organizationId: text('organization_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => ({
+    orgIdx: index('team_org_idx').on(table.organizationId),
+  })
+)
+
+export const teamMember = pgTable(
+  'team_member',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamUserUnique: uniqueIndex('team_member_team_user_unique').on(table.teamId, table.userId),
+    userIdx: index('team_member_user_idx').on(table.userId),
+  })
+)
 
 export const invitation = pgTable('invitation', {
   id: text('id').primaryKey(),
@@ -90,12 +141,19 @@ export const invitation = pgTable('invitation', {
     .notNull()
     .references(() => organization.id, { onDelete: 'cascade' }),
   email: text('email').notNull(),
-  role: text('role'),
+  role: text('role').default('member').notNull(),
+  teamId: text('team_id').references(() => team.id, { onDelete: 'set null' }),
   status: text('status').default('pending').notNull(),
   expiresAt: timestamp('expires_at').notNull(),
   inviterId: text('inviter_id')
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at')
+    .$defaultFn(() => /* @__PURE__ */ new Date())
+    .notNull(),
+  updatedAt: timestamp('updated_at')
+    .$defaultFn(() => /* @__PURE__ */ new Date())
+    .notNull(),
 })
 
 export const twoFactor = pgTable('two_factor', {
