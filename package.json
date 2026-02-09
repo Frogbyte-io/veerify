@@ -12,6 +12,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:seed:clean": "tsx scripts/seed.ts --clean",
     "postbuild": "drizzle-kit migrate && tsx scripts/seed.ts",
     "lint": "eslint .",
     "format:check": "prettier --check .",

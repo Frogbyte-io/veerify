@@ -20,7 +20,24 @@ client
   .then(() => {
     console.log('Connected to PostgreSQL')
   })
-  .catch(console.error)
+  .catch((err: { code?: string }) => {
+    if (err.code === 'ECONNREFUSED') {
+      console.error(
+        '\n' +
+        '╔══════════════════════════════════════════════════════════════╗\n' +
+        '║  ❌ Could not connect to PostgreSQL                        ║\n' +
+        '║                                                            ║\n' +
+        '║  Make sure the database is running:                        ║\n' +
+        '║    docker compose -f docker-compose-dev.yml up -d          ║\n' +
+        '║                                                            ║\n' +
+        '║  Then restart the dev server:                              ║\n' +
+        '║    yarn dev                                                ║\n' +
+        '╚══════════════════════════════════════════════════════════════╝\n'
+      )
+    } else {
+      console.error('Failed to connect to PostgreSQL:', err)
+    }
+  })
 
 // Export the drizzle instance with schema
 export const db = drizzle(client, { schema })
