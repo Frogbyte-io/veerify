@@ -7,12 +7,12 @@
 
 <script>
 import { Toaster } from '~/components/ui/sonner'
-import 'vue-sonner/style.css' 
+import 'vue-sonner/style.css'
 
 export default {
   name: 'App',
   components: {
-    Toaster
-  }
+    Toaster,
+  },
 }
 </script>

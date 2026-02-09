@@ -24,34 +24,26 @@ export async function sendEmail(options: EmailOptions) {
   if (import.meta.server) {
     // Directly use NodeMailer on server side
     const { sendMail } = useNodeMailer()
-    
-    try {
-      // Add timeout to prevent hanging (10 seconds)
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Email sending timeout after 10 seconds')), 10000);
-      });
 
-      const sendPromise = sendMail({
+    try {
+      const result = await sendMail({
         to: options.to,
         subject: options.subject,
         html: options.html || `<p>${options.text || 'Hello from Veerify!'}</p>`,
-        text: options.text || 'Hello from Veerify!'
-      });
+        text: options.text || 'Hello from Veerify!',
+      })
 
-      const result = await Promise.race([sendPromise, timeoutPromise]) as Awaited<ReturnType<typeof sendMail>>;
-      
-      return { 
-        success: true, 
+      return {
+        success: true,
         message: 'Email sent successfully',
-        messageId: result.messageId 
+        messageId: result.messageId,
       }
     } catch (error) {
       console.error('Email sending error:', error)
-      // Don't throw - let the caller handle it gracefully
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Failed to send email',
-        error: error
+        error: error,
       }
     }
   } else {
@@ -59,13 +51,13 @@ export async function sendEmail(options: EmailOptions) {
     const result = await fetch('/api/mail/send-mail', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(options)
+      body: JSON.stringify(options),
     })
     return result
   }
-} 
+}
 
 export async function sendEmailVerificationEmail(options: EmailVerificationOptions) {
   const template = getEmailVerificationTemplate(options)
@@ -74,9 +66,9 @@ export async function sendEmailVerificationEmail(options: EmailVerificationOptio
     to: options.to,
     subject: template.subject,
     html: template.html,
-    text: template.text
+    text: template.text,
   })
-  return result 
+  return result
 }
 
 export async function sendPasswordResetEmail(options: PasswordResetOptions) {
@@ -86,7 +78,7 @@ export async function sendPasswordResetEmail(options: PasswordResetOptions) {
     to: options.to,
     subject: template.subject,
     html: template.html,
-    text: template.text
+    text: template.text,
   })
   return result
 }

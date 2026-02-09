@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   if (!body.to || !body.subject) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Missing required fields: to, subject'
+      statusMessage: 'Missing required fields: to, subject',
     })
   }
 
@@ -19,22 +19,22 @@ export default defineEventHandler(async (event) => {
       to: body.to,
       subject: body.subject,
       html: body.html || `<p>${body.text || 'Hello from Veerify!'}</p>`,
-      text: body.text || 'Hello from Veerify!'
+      text: body.text || 'Hello from Veerify!',
     })
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       message: 'Email sent successfully',
-      messageId: result.messageId 
+      messageId: result.messageId,
     }
   } catch (error) {
     console.error('Email sending error:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-    
+
     throw createError({
       statusCode: 500,
       statusMessage: 'Failed to send email',
-      data: { error: errorMessage }
+      data: { error: errorMessage },
     })
   }
-}) 
+})

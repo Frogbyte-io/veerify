@@ -7,13 +7,15 @@
             <h1 class="text-3xl font-bold text-gray-900">Feedback</h1>
             <p class="text-gray-600">Manage and respond to user feedback and feature requests</p>
           </div>
-          <button class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+          <button
+            class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
             Add Feedback
           </button>
         </div>
       </div>
-      
+
       <!-- Filters -->
       <div class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
         <div class="flex flex-wrap items-center gap-4">
@@ -50,12 +52,15 @@
           <div class="flex-1">
             <label class="block text-sm text-gray-600 mb-1">Search</label>
             <div class="relative">
-              <Icon name="lucide:search" class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input 
-                type="text" 
-                placeholder="Search feedback..." 
+              <Icon
+                name="lucide:search"
+                class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
+              />
+              <input
+                type="text"
+                placeholder="Search feedback..."
                 class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
+              />
             </div>
           </div>
         </div>
@@ -72,7 +77,7 @@
             </div>
           </div>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg border border-gray-200">
           <div class="flex items-center">
             <Icon name="lucide:clock" class="w-8 h-8 text-orange-600" />
@@ -82,7 +87,7 @@
             </div>
           </div>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg border border-gray-200">
           <div class="flex items-center">
             <Icon name="lucide:play" class="w-8 h-8 text-blue-600" />
@@ -92,7 +97,7 @@
             </div>
           </div>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg border border-gray-200">
           <div class="flex items-center">
             <Icon name="lucide:check-circle" class="w-8 h-8 text-green-600" />
@@ -123,7 +128,10 @@
                 <div class="flex items-start justify-between">
                   <div>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">Dark mode support</h3>
-                    <p class="text-gray-600 mb-3">It would be great to have a dark mode option for better usability during night hours. Many users have requested this feature.</p>
+                    <p class="text-gray-600 mb-3">
+                      It would be great to have a dark mode option for better usability during night hours. Many users
+                      have requested this feature.
+                    </p>
                     <div class="flex items-center space-x-4 text-sm text-gray-500">
                       <div class="flex items-center space-x-1">
                         <Icon name="lucide:user" class="w-4 h-4" />
@@ -140,10 +148,14 @@
                     </div>
                   </div>
                   <div class="flex items-center space-x-2">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                    >
                       In Progress
                     </span>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                    >
                       Feature Request
                     </span>
                   </div>
@@ -165,7 +177,9 @@
                 <div class="flex items-start justify-between">
                   <div>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">Mobile app for iOS and Android</h3>
-                    <p class="text-gray-600 mb-3">A native mobile application would make it much easier to submit and track feedback on the go.</p>
+                    <p class="text-gray-600 mb-3">
+                      A native mobile application would make it much easier to submit and track feedback on the go.
+                    </p>
                     <div class="flex items-center space-x-4 text-sm text-gray-500">
                       <div class="flex items-center space-x-1">
                         <Icon name="lucide:user" class="w-4 h-4" />
@@ -182,10 +196,14 @@
                     </div>
                   </div>
                   <div class="flex items-center space-x-2">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800"
+                    >
                       Planned
                     </span>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                    >
                       Feature Request
                     </span>
                   </div>
@@ -207,7 +225,9 @@
                 <div class="flex items-start justify-between">
                   <div>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">Email notifications for status updates</h3>
-                    <p class="text-gray-600 mb-3">Users should receive email notifications when the status of their submitted feedback changes.</p>
+                    <p class="text-gray-600 mb-3">
+                      Users should receive email notifications when the status of their submitted feedback changes.
+                    </p>
                     <div class="flex items-center space-x-4 text-sm text-gray-500">
                       <div class="flex items-center space-x-1">
                         <Icon name="lucide:user" class="w-4 h-4" />
@@ -224,10 +244,14 @@
                     </div>
                   </div>
                   <div class="flex items-center space-x-2">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
+                    >
                       Under Review
                     </span>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                    >
                       Improvement
                     </span>
                   </div>
@@ -249,7 +273,10 @@
                 <div class="flex items-start justify-between">
                   <div>
                     <h3 class="text-lg font-medium text-gray-900 mb-2">Search functionality is slow</h3>
-                    <p class="text-gray-600 mb-3">The search feature takes too long to return results, especially when searching through large amounts of feedback.</p>
+                    <p class="text-gray-600 mb-3">
+                      The search feature takes too long to return results, especially when searching through large
+                      amounts of feedback.
+                    </p>
                     <div class="flex items-center space-x-4 text-sm text-gray-500">
                       <div class="flex items-center space-x-1">
                         <Icon name="lucide:user" class="w-4 h-4" />
@@ -266,10 +293,14 @@
                     </div>
                   </div>
                   <div class="flex items-center space-x-2">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                    >
                       Bug Report
                     </span>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                    <span
+                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800"
+                    >
                       High Priority
                     </span>
                   </div>
@@ -282,9 +313,7 @@
         <!-- Pagination -->
         <div class="p-6 border-t border-gray-200">
           <div class="flex items-center justify-between">
-            <div class="text-sm text-gray-500">
-              Showing 1 to 10 of 247 results
-            </div>
+            <div class="text-sm text-gray-500">Showing 1 to 10 of 247 results</div>
             <div class="flex items-center space-x-2">
               <button class="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50" disabled>
                 Previous
@@ -292,13 +321,11 @@
               <button class="px-3 py-2 text-sm bg-blue-600 text-white rounded-md">1</button>
               <button class="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">2</button>
               <button class="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">3</button>
-              <button class="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">
-                Next
-              </button>
+              <button class="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">Next</button>
             </div>
           </div>
         </div>
       </div>
     </div>
   </NuxtLayout>
-</template> 
+</template>

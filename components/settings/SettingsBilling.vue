@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-card rounded-lg border">
+  <div data-testid="settings-billing-panel" class="bg-card rounded-lg border">
     <div class="p-6 border-b">
       <h2 class="text-lg font-semibold">Billing</h2>
       <p class="text-sm text-muted-foreground">Manage your subscription and billing information.</p>
@@ -26,9 +26,7 @@
               </div>
               <span>•••• •••• •••• 4242</span>
             </div>
-            <button class="text-blue-600 hover:text-blue-700">
-              Change
-            </button>
+            <button class="text-blue-600 hover:text-blue-700">Change</button>
           </div>
         </div>
       </div>
@@ -38,6 +36,6 @@
 
 <script>
 export default {
-  name: 'SettingsBilling'
+  name: 'SettingsBilling',
 }
-</script> 
+</script>

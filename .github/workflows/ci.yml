@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Lint (ESLint + Prettier) ──────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      - run: yarn lint
+
+      - run: yarn format:check
+
+  # ── Type check (vue-tsc) ──────────────────────────────────────────
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+        # postinstall runs `nuxt prepare`, which generates .nuxt/tsconfig.json
+
+      - run: yarn typecheck
+
+  # ── Unit tests (Vitest) ───────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      - run: yarn test
+
+  # ── Production build ──────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+        # Run nuxt build directly (not `yarn build`) to skip the
+        # postbuild lifecycle hook, which runs db migrations and
+        # requires a live PostgreSQL connection.
+      - run: npx nuxt build
+
+  e2e:
+    name: E2E (Playwright)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: veerify
+          POSTGRES_PASSWORD: veerifypassword
+          POSTGRES_DB: veerifydb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U veerify -d veerifydb"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: veerify
+      PGPASSWORD: veerifypassword
+      PGDATABASE: veerifydb
+      BETTER_AUTH_URL: http://localhost:4173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run migrations
+        run: yarn db:migrate
+
+      - name: Seed test data
+        run: yarn db:seed:clean && yarn db:seed
+
+      - name: Run Playwright (guarded)
+        run: yarn test:e2e:if-available
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7

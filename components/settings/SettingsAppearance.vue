@@ -9,73 +9,78 @@
         <div>
           <h3 class="font-medium mb-4">Theme</h3>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <button 
-              @click="setColorMode('light')"
+            <button
               :class="[
                 'relative p-4 border-2 rounded-lg transition-all',
-                isClient && currentTheme === 'light'
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border hover:border-gray-400'
+                isClient && currentTheme === 'light' ? 'border-blue-500 bg-blue-50' : 'border hover:border-gray-400',
               ]"
+              @click="setColorMode('light')"
             >
               <div class="absolute top-2 right-2">
-                <div v-if="isClient && currentTheme === 'light'" class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                <div
+                  v-if="isClient && currentTheme === 'light'"
+                  class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center"
+                >
                   <Icon name="lucide:check" class="w-2 h-2 text-white" />
                 </div>
               </div>
               <div class="space-y-2">
-                <div class="w-full h-8 bg-white border border-gray-200 rounded"></div>
-                <div class="w-full h-4 bg-gray-100 rounded"></div>
-                <div class="w-2/3 h-4 bg-gray-100 rounded"></div>
+                <div class="w-full h-8 bg-white border border-gray-200 rounded" />
+                <div class="w-full h-4 bg-gray-100 rounded" />
+                <div class="w-2/3 h-4 bg-gray-100 rounded" />
               </div>
               <p class="text-sm font-medium mt-3">Light</p>
             </button>
 
-            <button 
-              @click="setColorMode('dark')"
+            <button
               :class="[
                 'relative p-4 border-2 rounded-lg transition-all',
-                isClient && currentTheme === 'dark'
-                  ? 'border-blue-500 bg-blue-900/20'
-                  : 'border hover:border-gray-400'
+                isClient && currentTheme === 'dark' ? 'border-blue-500 bg-blue-900/20' : 'border hover:border-gray-400',
               ]"
+              @click="setColorMode('dark')"
             >
               <div class="absolute top-2 right-2">
-                <div v-if="isClient && currentTheme === 'dark'" class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                <div
+                  v-if="isClient && currentTheme === 'dark'"
+                  class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center"
+                >
                   <Icon name="lucide:check" class="w-2 h-2 text-white" />
                 </div>
               </div>
               <div class="space-y-2">
-                <div class="w-full h-8 bg-gray-800 border border-gray-700 rounded"></div>
-                <div class="w-full h-4 bg-gray-700 rounded"></div>
-                <div class="w-2/3 h-4 bg-gray-700 rounded"></div>
+                <div class="w-full h-8 bg-gray-800 border border-gray-700 rounded" />
+                <div class="w-full h-4 bg-gray-700 rounded" />
+                <div class="w-2/3 h-4 bg-gray-700 rounded" />
               </div>
               <p class="text-sm font-medium mt-3">Dark</p>
             </button>
 
-            <button 
-              @click="setColorMode('system')"
+            <button
               :class="[
                 'relative p-4 border-2 rounded-lg transition-all',
                 isClient && currentTheme === 'system'
                   ? 'border-blue-500 bg-blue-900/20'
-                  : 'border hover:border-gray-400'
+                  : 'border hover:border-gray-400',
               ]"
+              @click="setColorMode('system')"
             >
               <div class="absolute top-2 right-2">
-                <div v-if="isClient && currentTheme === 'system'" class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                <div
+                  v-if="isClient && currentTheme === 'system'"
+                  class="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center"
+                >
                   <Icon name="lucide:check" class="w-2 h-2 text-white" />
                 </div>
               </div>
               <div class="space-y-2">
-                <div class="w-full h-8 bg-gradient-to-r from-white to-gray-800 border border-gray-300 rounded"></div>
-                <div class="w-full h-4 bg-gradient-to-r from-gray-100 to-gray-700 rounded"></div>
-                <div class="w-2/3 h-4 bg-gradient-to-r from-gray-100 to-gray-700 rounded"></div>
+                <div class="w-full h-8 bg-gradient-to-r from-white to-gray-800 border border-gray-300 rounded" />
+                <div class="w-full h-4 bg-gradient-to-r from-gray-100 to-gray-700 rounded" />
+                <div class="w-2/3 h-4 bg-gradient-to-r from-gray-100 to-gray-700 rounded" />
               </div>
               <p class="text-sm font-medium mt-3">System</p>
             </button>
           </div>
-          
+
           <div class="mt-4 p-4 bg-muted rounded-lg">
             <div class="flex items-start space-x-3">
               <Icon name="lucide:info" class="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
@@ -91,9 +96,7 @@
                   <span v-else-if="isClient && currentTheme === 'dark'">
                     Always use dark mode regardless of system preference.
                   </span>
-                  <span v-else-if="!isClient">
-                    Loading theme preferences...
-                  </span>
+                  <span v-else-if="!isClient"> Loading theme preferences... </span>
                 </p>
               </div>
             </div>
@@ -110,13 +113,13 @@ export default {
   data() {
     return {
       isClient: false,
-      colorMode: null
+      colorMode: null,
     }
   },
   computed: {
     currentTheme() {
       return this.colorMode?.preference || 'system'
-    }
+    },
   },
   mounted() {
     this.isClient = true
@@ -127,7 +130,7 @@ export default {
       if (this.colorMode) {
         this.colorMode.preference = mode
       }
-    }
-  }
+    },
+  },
 }
-</script> 
+</script>

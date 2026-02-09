@@ -5,7 +5,7 @@
         <h1 class="text-3xl font-bold text-gray-900">Analytics</h1>
         <p class="text-gray-600">Insights and analytics for your feedback management</p>
       </div>
-      
+
       <!-- Report Filters -->
       <div class="bg-white rounded-lg border border-gray-200 p-6 mb-6">
         <div class="flex flex-wrap items-center gap-4">
@@ -57,7 +57,7 @@
           <p class="text-2xl font-bold text-gray-900">1,247</p>
           <p class="text-sm text-blue-600 mt-1">+15.2% from last month</p>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg border border-gray-200">
           <div class="flex items-center justify-between mb-2">
             <h3 class="text-sm font-medium text-gray-600">Active Users</h3>
@@ -66,7 +66,7 @@
           <p class="text-2xl font-bold text-gray-900">3,284</p>
           <p class="text-sm text-green-600 mt-1">+8.1% from last month</p>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg border border-gray-200">
           <div class="flex items-center justify-between mb-2">
             <h3 class="text-sm font-medium text-gray-600">Completion Rate</h3>
@@ -75,7 +75,7 @@
           <p class="text-2xl font-bold text-gray-900">78.5%</p>
           <p class="text-sm text-purple-600 mt-1">+12.3% from last month</p>
         </div>
-        
+
         <div class="bg-white p-6 rounded-lg border border-gray-200">
           <div class="flex items-center justify-between mb-2">
             <h3 class="text-sm font-medium text-gray-600">Avg Response Time</h3>
@@ -200,7 +200,7 @@
               </div>
               <div class="flex items-center space-x-2">
                 <div class="w-24 bg-gray-200 rounded-full h-2">
-                  <div class="bg-blue-600 h-2 rounded-full" style="width: 65%"></div>
+                  <div class="bg-blue-600 h-2 rounded-full" style="width: 65%" />
                 </div>
                 <span class="text-sm text-gray-600">65%</span>
               </div>
@@ -214,7 +214,7 @@
               </div>
               <div class="flex items-center space-x-2">
                 <div class="w-24 bg-gray-200 rounded-full h-2">
-                  <div class="bg-red-600 h-2 rounded-full" style="width: 25%"></div>
+                  <div class="bg-red-600 h-2 rounded-full" style="width: 25%" />
                 </div>
                 <span class="text-sm text-gray-600">25%</span>
               </div>
@@ -228,7 +228,7 @@
               </div>
               <div class="flex items-center space-x-2">
                 <div class="w-24 bg-gray-200 rounded-full h-2">
-                  <div class="bg-green-600 h-2 rounded-full" style="width: 10%"></div>
+                  <div class="bg-green-600 h-2 rounded-full" style="width: 10%" />
                 </div>
                 <span class="text-sm text-gray-600">10%</span>
               </div>
@@ -242,7 +242,9 @@
         <div class="p-6 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-gray-900">Export Reports</h2>
-            <button class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+            <button
+              class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
               <Icon name="lucide:download" class="w-4 h-4 mr-2" />
               Generate Report
             </button>
@@ -314,4 +316,4 @@
       </div>
     </div>
   </NuxtLayout>
-</template> 
+</template>

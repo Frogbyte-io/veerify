@@ -16,51 +16,56 @@ const props = withDefaults(defineProps<SidebarProps>(), {
 // Define navigation items
 const feedbackItems = [
   {
-    title: "Dashboard",
-    url: "/dashboard",
-    icon: "lucide:layout-dashboard",
+    title: 'Dashboard',
+    url: '/dashboard',
+    icon: 'lucide:layout-dashboard',
   },
   {
-    title: "Feedback",
-    url: "/feedback",
-    icon: "lucide:message-square",
+    title: 'Feedback',
+    url: '/feedback',
+    icon: 'lucide:message-square',
   },
   {
-    title: "Roadmap",
-    url: "/roadmap",
-    icon: "lucide:map",
+    title: 'Roadmap',
+    url: '/roadmap',
+    icon: 'lucide:map',
   },
   {
-    title: "Changelog",
-    url: "/changelog",
-    icon: "lucide:scroll-text",
+    title: 'Changelog',
+    url: '/changelog',
+    icon: 'lucide:scroll-text',
   },
 ]
 
 const managementItems = [
   {
-    title: "Team",
-    url: "/settings#team",
-    icon: "lucide:user-plus",
+    title: 'Products',
+    url: '/products',
+    icon: 'lucide:package',
+  },
+  {
+    title: 'Team',
+    url: '/settings#team',
+    icon: 'lucide:user-plus',
   },
 ]
 
 const supportItems = [
   {
-    title: "Help Center",
-    url: "/help",
-    icon: "lucide:help-circle",
+    title: 'Help Center',
+    url: '/help',
+    icon: 'lucide:help-circle',
   },
   {
-    title: "Settings",
-    url: "/settings",
-    icon: "lucide:settings",
+    title: 'Settings',
+    url: '/settings',
+    icon: 'lucide:settings',
   },
 ]
 </script>
 
 <template>
-  <Sidebar v-bind="props">
+  <Sidebar data-testid="app-sidebar" v-bind="props">
     <SidebarHeader>
       <TeamSwitcher />
     </SidebarHeader>
@@ -123,4 +128,4 @@ const supportItems = [
     </SidebarFooter>
     <SidebarRail />
   </Sidebar>
-</template> 
+</template>

@@ -1,5 +1,5 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import tailwindcss from "@tailwindcss/vite";
+import tailwindcss from '@tailwindcss/vite'
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
   devtools: { enabled: true },
@@ -7,7 +7,7 @@ export default defineNuxtConfig({
   vite: {
     plugins: [tailwindcss()],
   },
-  modules: ['@nuxt/fonts', '@nuxt/icon', '@nuxt/test-utils', 'shadcn-nuxt', '@nuxtjs/color-mode', 'nuxt-nodemailer'],
+  modules: ['@nuxt/fonts', '@nuxt/icon', '@nuxt/test-utils', 'shadcn-nuxt', '@nuxtjs/color-mode', 'nuxt-nodemailer', '@scalar/nuxt'],
   runtimeConfig: {
     nodemailer: {
       from: process.env.MAIL_FROM,
@@ -19,29 +19,22 @@ export default defineNuxtConfig({
         pass: process.env.SMTP_PASS,
       },
     },
-    public: {}
+    public: {},
   },
   colorMode: {
-    preference: 'system', // default value of $colorMode.preference
-    fallback: 'dark', // fallback value if not system preference found
+    preference: 'system',
+    fallback: 'dark',
     hid: 'nuxt-color-mode-script',
     globalName: '__NUXT_COLOR_MODE__',
     componentName: 'ColorScheme',
     classPrefix: '',
     classSuffix: '',
-    storage: 'localStorage', // or 'sessionStorage' or 'cookie'
-    storageKey: 'nuxt-color-mode'
+    storage: 'localStorage',
+    storageKey: 'nuxt-color-mode',
   },
   shadcn: {
-    /**
-     * Prefix for all the imported component
-     */
     prefix: '',
-    /**
-     * Directory that the component lives in.
-     * @default "./components/ui"
-     */
-    componentDir: './components/ui'
+    componentDir: './components/ui',
   },
   components: [
     {
@@ -53,5 +46,13 @@ export default defineNuxtConfig({
       prefix: 'ScaffoldDesigner',
       pathPrefix: false,
     },
-  ]
+  ],
+  scalar: {
+    spec: {
+      url: '/api/openapi.json',
+    },
+    proxy: {
+      path: '/api-docs',
+    },
+  } as any,
 })

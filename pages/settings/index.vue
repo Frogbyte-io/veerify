@@ -5,91 +5,97 @@
         <h1 class="text-3xl font-bold">Settings</h1>
         <p class="text-muted-foreground">Manage your account and application preferences</p>
       </div>
-      
+
       <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <!-- Settings Navigation -->
         <div class="lg:col-span-1">
           <nav class="bg-card rounded-lg border p-4">
             <ul class="space-y-2">
               <li>
-                <button 
-                  @click="setActiveTab('profile')"
+                <button
+                  data-testid="settings-tab-profile"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'profile'
-                      ? 'bg-accent text-accent-foreground font-medium' 
-                      : 'text-muted-foreground hover:bg-accent/50'
+                      ? 'bg-accent text-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent/50',
                   ]"
+                  @click="setActiveTab('profile')"
                 >
                   <Icon name="lucide:user" class="w-4 h-4 mr-2" />
                   Profile
                 </button>
               </li>
               <li>
-                <button 
-                  @click="setActiveTab('security')"
+                <button
+                  data-testid="settings-tab-security"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'security'
-                      ? 'bg-accent text-accent-foreground font-medium' 
-                      : 'text-muted-foreground hover:bg-accent/50'
+                      ? 'bg-accent text-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent/50',
                   ]"
+                  @click="setActiveTab('security')"
                 >
                   <Icon name="lucide:shield" class="w-4 h-4 mr-2" />
                   Security
                 </button>
               </li>
               <li>
-                <button 
-                  @click="setActiveTab('notifications')"
+                <button
+                  data-testid="settings-tab-notifications"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'notifications'
-                      ? 'bg-accent text-accent-foreground font-medium' 
-                      : 'text-muted-foreground hover:bg-accent/50'
+                      ? 'bg-accent text-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent/50',
                   ]"
+                  @click="setActiveTab('notifications')"
                 >
                   <Icon name="lucide:bell" class="w-4 h-4 mr-2" />
                   Notifications
                 </button>
               </li>
               <li>
-                <button 
-                  @click="setActiveTab('team')"
+                <button
+                  data-testid="settings-tab-team"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'team'
-                      ? 'bg-accent text-accent-foreground font-medium' 
-                      : 'text-muted-foreground hover:bg-accent/50'
+                      ? 'bg-accent text-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent/50',
                   ]"
+                  @click="setActiveTab('team')"
                 >
                   <Icon name="lucide:users" class="w-4 h-4 mr-2" />
                   Team
                 </button>
               </li>
               <li>
-                <button 
-                  @click="setActiveTab('billing')"
+                <button
+                  data-testid="settings-tab-billing"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'billing'
-                      ? 'bg-accent text-accent-foreground font-medium' 
-                      : 'text-muted-foreground hover:bg-accent/50'
+                      ? 'bg-accent text-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent/50',
                   ]"
+                  @click="setActiveTab('billing')"
                 >
                   <Icon name="lucide:credit-card" class="w-4 h-4 mr-2" />
                   Billing
                 </button>
               </li>
               <li>
-                <button 
-                  @click="setActiveTab('appearance')"
+                <button
+                  data-testid="settings-tab-appearance"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'appearance'
-                      ? 'bg-accent text-accent-foreground font-medium' 
-                      : 'text-muted-foreground hover:bg-accent/50'
+                      ? 'bg-accent text-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent/50',
                   ]"
+                  @click="setActiveTab('appearance')"
                 >
                   <Icon name="lucide:palette" class="w-4 h-4 mr-2" />
                   Appearance
@@ -124,11 +130,11 @@ export default {
     SettingsNotifications,
     SettingsTeam,
     SettingsBilling,
-    SettingsAppearance
+    SettingsAppearance,
   },
   data() {
     return {
-      activeTab: 'profile'
+      activeTab: 'profile',
     }
   },
   computed: {
@@ -139,10 +145,10 @@ export default {
         notifications: 'SettingsNotifications',
         team: 'SettingsTeam',
         billing: 'SettingsBilling',
-        appearance: 'SettingsAppearance'
+        appearance: 'SettingsAppearance',
       }
       return componentMap[this.activeTab] || 'SettingsProfile'
-    }
+    },
   },
   mounted() {
     // Check for hash in URL to set initial tab
@@ -156,7 +162,7 @@ export default {
       this.activeTab = tab
       // Update URL hash for direct linking
       window.history.replaceState(null, null, `#${tab}`)
-    }
-  }
+    },
+  },
 }
-</script> 
+</script>
