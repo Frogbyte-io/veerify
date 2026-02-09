@@ -65,7 +65,7 @@ const supportItems = [
 </script>
 
 <template>
-  <Sidebar v-bind="props">
+  <Sidebar data-testid="app-sidebar" v-bind="props">
     <SidebarHeader>
       <TeamSwitcher />
     </SidebarHeader>

@@ -13,6 +13,7 @@
             <ul class="space-y-2">
               <li>
                 <button
+                  data-testid="settings-tab-profile"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'profile'
@@ -27,6 +28,7 @@
               </li>
               <li>
                 <button
+                  data-testid="settings-tab-security"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'security'
@@ -41,6 +43,7 @@
               </li>
               <li>
                 <button
+                  data-testid="settings-tab-notifications"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'notifications'
@@ -55,6 +58,7 @@
               </li>
               <li>
                 <button
+                  data-testid="settings-tab-team"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'team'
@@ -69,6 +73,7 @@
               </li>
               <li>
                 <button
+                  data-testid="settings-tab-billing"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'billing'
@@ -83,6 +88,7 @@
               </li>
               <li>
                 <button
+                  data-testid="settings-tab-appearance"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === 'appearance'

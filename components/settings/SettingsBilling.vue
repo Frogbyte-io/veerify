@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-card rounded-lg border">
+  <div data-testid="settings-billing-panel" class="bg-card rounded-lg border">
     <div class="p-6 border-b">
       <h2 class="text-lg font-semibold">Billing</h2>
       <p class="text-sm text-muted-foreground">Manage your subscription and billing information.</p>

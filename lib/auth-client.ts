@@ -1,9 +1,10 @@
 import { createAuthClient } from 'better-auth/vue' // make sure to import from better-auth/vue
 import { organizationClient, twoFactorClient } from 'better-auth/client/plugins'
 
+const configuredBaseURL = process.env.BETTER_AUTH_URL
+
 export const authClient = createAuthClient({
-  // The base URL is optional if you're using the same domain
-  baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
+  ...(configuredBaseURL ? { baseURL: configuredBaseURL } : {}),
   plugins: [organizationClient({ teams: { enabled: true } }), twoFactorClient()],
 })
 

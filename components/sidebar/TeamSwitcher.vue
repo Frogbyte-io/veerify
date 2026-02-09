@@ -4,9 +4,10 @@
       <DropdownMenu>
         <DropdownMenuTrigger as-child>
           <SidebarMenuButton
+            data-testid="team-switcher-trigger"
             size="lg"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            :disabled="isLoadingTeams || !!teamsError"
+            :disabled="isLoadingTeams"
           >
             <div
               class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
@@ -22,8 +23,8 @@
               </template>
 
               <template v-else-if="activeTeam">
-                <span class="truncate font-semibold">{{ activeTeam.name }}</span>
-                <span class="truncate text-xs text-muted-foreground">
+                <span data-testid="team-switcher-active-name" class="truncate font-semibold">{{ activeTeam.name }}</span>
+                <span data-testid="team-switcher-active-org" class="truncate text-xs text-muted-foreground">
                   {{ activeOrganization?.name || 'No governance context' }}
                 </span>
               </template>
@@ -72,11 +73,11 @@
               <div class="flex size-6 items-center justify-center rounded-sm border">
                 <Icon name="lucide:users" class="size-4 shrink-0" />
               </div>
-              {{ team.name }}
+              <span :data-testid="`team-switcher-item-${team.id}`">{{ team.name }}</span>
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
-            <DropdownMenuItem class="gap-2 p-2" @click="goToTeamSettings">
+            <DropdownMenuItem data-testid="team-switcher-manage" class="gap-2 p-2" @click="goToTeamSettings">
               <div class="flex size-6 items-center justify-center rounded-md border bg-background">
                 <Icon name="lucide:settings" class="size-4" />
               </div>
@@ -90,8 +91,6 @@
 </template>
 
 <script>
-import { authClient } from '~/lib/auth-client'
-
 export default {
   name: 'TeamSwitcher',
 
@@ -119,31 +118,36 @@ export default {
   },
 
   methods: {
+    async loadActiveTeam() {
+      const response = await $fetch('/api/teams/active')
+      this.activeTeam = response?.data || null
+      return this.activeTeam
+    },
+
+    async loadTeams() {
+      const response = await $fetch('/api/auth/organization/list-user-teams')
+      this.teams = Array.isArray(response) ? response : response?.data || []
+      return this.teams
+    },
+
+    async loadActiveOrganization() {
+      try {
+        const response = await $fetch('/api/auth/organization/get-full-organization')
+        this.activeOrganization = response || null
+      } catch {
+        this.activeOrganization = null
+      }
+      return this.activeOrganization
+    },
+
     async initializeTeams() {
       try {
-        await $fetch('/api/teams/active')
-
-        const { data: teams } = authClient.useListUserTeams()
-        this.teams = teams.value || []
-        watch(teams, (newTeams) => {
-          this.teams = newTeams || []
-          this.isLoadingTeams = false
-          this.teamsError = null
-        })
-
-        const { data: activeTeam } = authClient.useActiveTeam()
-        this.activeTeam = activeTeam.value
-        watch(activeTeam, (newActiveTeam) => {
-          this.activeTeam = newActiveTeam || null
-        })
-
-        const { data: activeOrganization } = authClient.useActiveOrganization()
-        this.activeOrganization = activeOrganization.value
-        watch(activeOrganization, (newActiveOrganization) => {
-          this.activeOrganization = newActiveOrganization || null
-        })
+        await this.loadActiveTeam()
+        await this.loadTeams()
+        await this.loadActiveOrganization()
 
         this.isLoadingTeams = false
+        this.teamsError = null
       } catch (error) {
         console.error('Error loading teams:', error)
         this.teamsError = 'Failed to load teams'
@@ -157,6 +161,7 @@ export default {
           method: 'POST',
           body: { teamId: team.id },
         })
+        await this.initializeTeams()
       } catch (error) {
         console.error('Error setting active team:', error)
         this.teamsError = 'Failed to switch team'

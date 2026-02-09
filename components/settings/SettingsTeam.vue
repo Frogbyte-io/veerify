@@ -4,7 +4,7 @@
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:users" class="h-5 w-5" />
-          Team Settings
+          <span data-testid="team-title">Team Settings</span>
         </CardTitle>
         <CardDescription> Teams are your operational workspace. </CardDescription>
       </CardHeader>
@@ -19,7 +19,7 @@
             <Input id="team-name" v-model="teamName" placeholder="Team name" />
           </div>
           <div class="flex justify-between gap-2">
-            <Button variant="outline" @click="showCreateTeamDialog = true">
+            <Button data-testid="team-open-create-dialog" variant="outline" @click="showCreateTeamDialog = true">
               <Icon name="lucide:plus" class="h-4 w-4 mr-2" />
               New Team
             </Button>
@@ -31,7 +31,9 @@
         </template>
         <div v-else class="text-center py-6">
           <p class="text-muted-foreground">No active team. Create a team to continue.</p>
-          <Button class="mt-3" @click="showCreateTeamDialog = true">Create Team</Button>
+          <Button data-testid="team-open-create-dialog" class="mt-3" @click="showCreateTeamDialog = true">
+            Create Team
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -46,7 +48,7 @@
       </CardHeader>
       <CardContent>
         <div class="flex justify-between items-center mb-4">
-          <p class="text-sm text-muted-foreground">{{ teamMembers.length }} members</p>
+          <p data-testid="team-members-count" class="text-sm text-muted-foreground">{{ teamMembers.length }} members</p>
           <Button size="sm" @click="showInviteDialog = true">
             <Icon name="lucide:user-plus" class="h-4 w-4 mr-2" />
             Invite to Team
@@ -101,12 +103,16 @@
         <div class="space-y-4 py-4">
           <div class="space-y-2">
             <Label for="new-team-name">Team Name</Label>
-            <Input id="new-team-name" v-model="newTeamName" placeholder="Platform Team" />
+            <Input id="new-team-name" data-testid="team-create-name" v-model="newTeamName" placeholder="Platform Team" />
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" @click="showCreateTeamDialog = false">Cancel</Button>
-          <Button :disabled="isCreatingTeam || !newTeamName.trim()" @click="createTeam">
+          <Button
+            data-testid="team-create-submit"
+            :disabled="isCreatingTeam || !newTeamName.trim()"
+            @click="createTeam"
+          >
             <Icon v-if="isCreatingTeam" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
             Create Team
           </Button>
@@ -196,6 +202,23 @@ export default {
   },
 
   methods: {
+    async resolveOrganizationId() {
+      if (this.activeOrganization?.id) {
+        return this.activeOrganization.id
+      }
+
+      if (this.currentTeam?.organizationId) {
+        return this.currentTeam.organizationId
+      }
+
+      try {
+        const response = await $fetch('/api/teams/active')
+        return response?.data?.organizationId || null
+      } catch (_error) {
+        return null
+      }
+    },
+
     async initialize() {
       try {
         await $fetch('/api/teams/active')
@@ -270,15 +293,29 @@ export default {
     },
 
     async createTeam() {
-      if (!this.activeOrganization?.id || !this.newTeamName.trim()) return
+      if (!this.newTeamName.trim()) return
+
+      const organizationId = await this.resolveOrganizationId()
+      if (!organizationId) {
+        toast.error('No active organization context')
+        return
+      }
+
       try {
         this.isCreatingTeam = true
         const result = await authClient.organization.createTeam({
           name: this.newTeamName.trim(),
-          organizationId: this.activeOrganization.id,
+          organizationId,
         })
 
         if (result?.data?.id) {
+          if (this.session?.user?.id) {
+            await authClient.organization.addTeamMember({
+              teamId: result.data.id,
+              userId: this.session.user.id,
+            })
+          }
+
           await $fetch('/api/teams/active', {
             method: 'POST',
             body: { teamId: result.data.id },

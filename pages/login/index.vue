@@ -38,6 +38,7 @@
                       <Label for="email">Email</Label>
                       <Input
                         id="email"
+                        data-testid="login-email"
                         v-model="email"
                         type="email"
                         placeholder="m@example.com"
@@ -52,9 +53,16 @@
                           Forgot your password?
                         </NuxtLink>
                       </div>
-                      <Input id="password" v-model="password" type="password" required :disabled="isLoading" />
+                      <Input
+                        id="password"
+                        data-testid="login-password"
+                        v-model="password"
+                        type="password"
+                        required
+                        :disabled="isLoading"
+                      />
                     </div>
-                    <Button type="submit" class="w-full" :disabled="isLoading">
+                    <Button data-testid="login-submit" type="submit" class="w-full" :disabled="isLoading">
                       {{ isLoading ? 'Signing in...' : 'Sign in' }}
                     </Button>
                   </div>
@@ -70,6 +78,7 @@
               <!-- Error Message -->
               <div
                 v-if="error"
+                data-testid="login-error"
                 class="mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
               >
                 {{ error }}
