@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ needs.create_neon_branch.outputs.db_url_with_pooler }}
-      BETTER_AUTH_URL: http://127.0.0.1:4173
+      BETTER_AUTH_URL: http://localhost:4173
     steps:
       - uses: actions/checkout@v4
 
