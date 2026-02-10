@@ -72,41 +72,45 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   const projectId = crypto.randomUUID()
 
-  const [created] = await db
-    .insert(project)
-    .values({
-      id: projectId,
-      organizationId: selectedTeam.organizationId,
-      teamId: selectedTeam.id,
-      slug: body.slug,
-      name: body.name,
-      description: body.description || null,
-      customDomain: body.customDomain || null,
-      isPublic: true,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning()
-
   const defaultCategories = [
-    { name: 'Feature Request', slug: 'feature-request', icon: 'lucide:lightbulb', color: '#10b981', isDefault: true },
-    { name: 'Bug Report', slug: 'bug-report', icon: 'lucide:bug', color: '#ef4444', isDefault: false },
-    { name: 'Improvement', slug: 'improvement', icon: 'lucide:trending-up', color: '#8b5cf6', isDefault: false },
+    { name: 'Bug', slug: 'bug', icon: '🐛', color: '#ef4444', isDefault: true, description: 'Something isn’t working' },
+    { name: 'Feature', slug: 'feature', icon: '✨', color: '#10b981', isDefault: true, description: 'A new capability or improvement' },
   ]
 
-  await db.insert(feedbackCategory).values(
-    defaultCategories.map((category, index) => ({
-      id: crypto.randomUUID(),
-      projectId,
-      name: category.name,
-      slug: category.slug,
-      icon: category.icon,
-      color: category.color,
-      isDefault: category.isDefault,
-      sortOrder: index,
-      createdAt: now,
-    }))
-  )
+  const created = await db.transaction(async (tx) => {
+    const [newProject] = await tx
+      .insert(project)
+      .values({
+        id: projectId,
+        organizationId: selectedTeam.organizationId,
+        teamId: selectedTeam.id,
+        slug: body.slug,
+        name: body.name,
+        description: body.description || null,
+        customDomain: body.customDomain || null,
+        isPublic: true,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+
+    await tx.insert(feedbackCategory).values(
+      defaultCategories.map((category, index) => ({
+        id: crypto.randomUUID(),
+        projectId,
+        name: category.name,
+        slug: category.slug,
+        icon: category.icon,
+        color: category.color,
+        description: category.description,
+        isDefault: category.isDefault,
+        sortOrder: index,
+        createdAt: now,
+      }))
+    )
+
+    return newProject
+  })
 
   setResponseStatus(event, 201)
   return createSuccessResponse(created)
