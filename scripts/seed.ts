@@ -29,6 +29,17 @@ const IDS = {
   team: 'seed_preview_team',
   teamMember: 'seed_preview_team_member',
   project: 'seed_preview_project',
+  project2: 'seed_preview_project_2',
+  project3: 'seed_preview_project_3',
+  catDemoBug: 'seed_preview_cat_demo_bug',
+  catDemoFeature: 'seed_preview_cat_demo_feature',
+  catMobileBug: 'seed_preview_cat_mobile_bug',
+  catMobileFeature: 'seed_preview_cat_mobile_feature',
+  catApiBug: 'seed_preview_cat_api_bug',
+  catApiFeature: 'seed_preview_cat_api_feature',
+  feedback1: 'seed_preview_feedback_1',
+  feedback2: 'seed_preview_feedback_2',
+  feedback3: 'seed_preview_feedback_3',
 }
 
 function createClient() {
@@ -166,10 +177,58 @@ async function seed(client: Client) {
     [IDS.project, IDS.org, IDS.team, 'demo', 'Demo Project', 'A sample project for testing feedback flows', now]
   )
 
+  // Additional test projects
+  await client.query(
+    `INSERT INTO "project" (id, organization_id, team_id, slug, name, description, is_public, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, true, $7, $7)`,
+    [IDS.project2, IDS.org, IDS.team, 'mobile-app', 'Mobile App', 'iOS and Android mobile application', now]
+  )
+
+  await client.query(
+    `INSERT INTO "project" (id, organization_id, team_id, slug, name, description, is_public, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, true, $7, $7)`,
+    [IDS.project3, IDS.org, IDS.team, 'api-platform', 'API Platform', 'REST and GraphQL API services', now]
+  )
+
+  // Categories for each project (Bug + Feature)
+  const categories = [
+    [IDS.catDemoBug, IDS.project, 'Bug', 'bug', '🐛', '#ef4444', "Something isn't working", 0, true],
+    [IDS.catDemoFeature, IDS.project, 'Feature', 'feature', '✨', '#10b981', 'A new capability or improvement', 1, true],
+    [IDS.catMobileBug, IDS.project2, 'Bug', 'bug', '🐛', '#ef4444', "Something isn't working", 0, true],
+    [IDS.catMobileFeature, IDS.project2, 'Feature', 'feature', '✨', '#10b981', 'A new capability or improvement', 1, true],
+    [IDS.catApiBug, IDS.project3, 'Bug', 'bug', '🐛', '#ef4444', "Something isn't working", 0, true],
+    [IDS.catApiFeature, IDS.project3, 'Feature', 'feature', '✨', '#10b981', 'A new capability or improvement', 1, true],
+  ]
+
+  for (const [id, projectId, name, slug, icon, color, description, sortOrder, isDefault] of categories) {
+    await client.query(
+      `INSERT INTO "feedback_category" (id, project_id, name, slug, icon, color, description, sort_order, is_default, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      [id, projectId, name, slug, icon, color, description, sortOrder, isDefault, now]
+    )
+  }
+
+  // Sample feedback for Demo Project
+  const feedbackItems = [
+    [IDS.feedback1, IDS.project, IDS.catDemoFeature, 'Dark mode support', 'It would be great to have a dark mode option for better usability during night hours.', 'open', 5],
+    [IDS.feedback2, IDS.project, IDS.catDemoBug, 'Login page crashes on Safari', 'The login form throws an error when submitting on Safari 17.', 'in_progress', 2],
+    [IDS.feedback3, IDS.project, IDS.catDemoFeature, 'Add keyboard shortcuts', 'Power users would benefit from keyboard shortcuts for common actions.', 'planned', 8],
+  ]
+
+  for (const [id, projectId, categoryId, title, body, status, voteCount] of feedbackItems) {
+    await client.query(
+      `INSERT INTO "feedback" (id, project_id, category_id, title, body, status, author_user_id, author_name, vote_count, comment_count, is_pinned, is_locked, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, false, false, $10, $10)`,
+      [id, projectId, categoryId, title, body, status, IDS.user, 'Preview User', voteCount, now]
+    )
+  }
+
   console.log(`[seed] Created test user: ${TEST_EMAIL} / ${TEST_PASSWORD}`)
   console.log('[seed] Created org: Preview Org (preview-org)')
   console.log('[seed] Created team: Default')
-  console.log('[seed] Created project: Demo Project (demo)')
+  console.log('[seed] Created projects: Demo Project, Mobile App, API Platform')
+  console.log('[seed] Created categories: Bug + Feature for each project')
+  console.log('[seed] Created 3 feedback items for Demo Project')
 }
 
 async function main() {

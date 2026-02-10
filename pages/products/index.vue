@@ -203,15 +203,14 @@ export default {
   methods: {
     async initTeamContext() {
       try {
-        // Resolve deterministic active team server-side.
-        await $fetch('/api/teams/active')
+        const teamResponse = await $fetch('/api/teams/active')
+        const activeTeamData = teamResponse?.data
 
-        const { data: activeTeam } = authClient.useActiveTeam()
-        const { data: activeOrg } = authClient.useActiveOrganization()
-
-        if (activeTeam.value?.id) {
-          this.activeTeamId = activeTeam.value.id
+        if (activeTeamData?.id) {
+          this.activeTeamId = activeTeamData.id
         }
+
+        const { data: activeOrg } = authClient.useActiveOrganization()
 
         if (activeOrg.value?.slug) {
           this.activeOrgSlug = activeOrg.value.slug
@@ -220,13 +219,6 @@ export default {
         if (this.activeTeamId) {
           await this.loadProducts()
         }
-
-        watch(activeTeam, async (newTeam) => {
-          if (newTeam?.id) {
-            this.activeTeamId = newTeam.id
-            await this.loadProducts()
-          }
-        })
 
         watch(activeOrg, async (newOrg) => {
           if (newOrg?.slug) {
