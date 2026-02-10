@@ -19,7 +19,7 @@ export function toCategorySlug(name: string) {
 export async function requireProjectCategoryAccess(event: H3Event) {
   const { session, activeTeam } = await requireAuthWithResolvedTeam(event)
 
-  const projectSlug = getRouterParam(event, 'projectSlug')
+  const projectSlug = getRouterParam(event, 'slug') ?? getRouterParam(event, 'projectSlug')
   if (!projectSlug) {
     throw createError({
       statusCode: 400,

@@ -45,21 +45,69 @@ function createClient() {
 
 async function clean(client: Client) {
   // Delete in FK-safe order (children first)
-  const tables: [string, string][] = [
-    ['project', IDS.project],
-    ['team_member', IDS.teamMember],
-    ['team', IDS.team],
-    ['member', IDS.member],
-    ['account', IDS.account],
-    ['organization', IDS.org],
-    ['user', IDS.user],
-  ]
+  // Note: Some deletions use specific IDs, others delete by foreign key reference
 
-  for (const [table, id] of tables) {
-    const { rowCount } = await client.query(`DELETE FROM "${table}" WHERE id = $1`, [id])
-    if (rowCount && rowCount > 0) {
-      console.log(`[seed:clean] Deleted ${table} (${id})`)
-    }
+  // 1. Delete ALL projects that reference the seed team (not just the seed project)
+  const { rowCount: projectCount } = await client.query(
+    `DELETE FROM "project" WHERE team_id = $1`,
+    [IDS.team]
+  )
+  if (projectCount && projectCount > 0) {
+    console.log(`[seed:clean] Deleted ${projectCount} project(s) referencing seed team`)
+  }
+
+  // 2. Delete team member
+  const { rowCount: teamMemberCount } = await client.query(
+    `DELETE FROM "team_member" WHERE id = $1`,
+    [IDS.teamMember]
+  )
+  if (teamMemberCount && teamMemberCount > 0) {
+    console.log(`[seed:clean] Deleted team_member (${IDS.teamMember})`)
+  }
+
+  // 3. Delete team
+  const { rowCount: teamCount } = await client.query(
+    `DELETE FROM "team" WHERE id = $1`,
+    [IDS.team]
+  )
+  if (teamCount && teamCount > 0) {
+    console.log(`[seed:clean] Deleted team (${IDS.team})`)
+  }
+
+  // 4. Delete organization member
+  const { rowCount: memberCount } = await client.query(
+    `DELETE FROM "member" WHERE id = $1`,
+    [IDS.member]
+  )
+  if (memberCount && memberCount > 0) {
+    console.log(`[seed:clean] Deleted member (${IDS.member})`)
+  }
+
+  // 5. Delete account
+  const { rowCount: accountCount } = await client.query(
+    `DELETE FROM "account" WHERE id = $1`,
+    [IDS.account]
+  )
+  if (accountCount && accountCount > 0) {
+    console.log(`[seed:clean] Deleted account (${IDS.account})`)
+  }
+
+  // 6. Delete organization
+  const { rowCount: orgCount } = await client.query(
+    `DELETE FROM "organization" WHERE id = $1`,
+    [IDS.org]
+  )
+  if (orgCount && orgCount > 0) {
+    console.log(`[seed:clean] Deleted organization (${IDS.org})`)
+  }
+
+  // 7. Delete user
+  const { rowCount: userCount } = await client.query(
+    `DELETE FROM "user" WHERE id = $1`,
+    [IDS.user]
+  )
+  if (userCount && userCount > 0) {
+    console.log(`[seed:clean] Deleted user (${IDS.user})`)
   }
 
   console.log('[seed:clean] Done.')

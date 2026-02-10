@@ -15,6 +15,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:clean": "tsx scripts/seed.ts --clean",
     "postbuild": "drizzle-kit migrate && tsx scripts/seed.ts",
+    "vercel-build": "drizzle-kit migrate && nuxt build",
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "typecheck": "vue-tsc --noEmit",

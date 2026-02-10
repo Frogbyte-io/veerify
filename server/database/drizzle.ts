@@ -4,7 +4,10 @@ import * as schema from './schema/index'
 import 'dotenv/config'
 
 const client = process.env.DATABASE_URL
-  ? new Client({ connectionString: process.env.DATABASE_URL })
+  ? new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    })
   : new Client({
       host: process.env.PGHOST || 'localhost',
       port: Number(process.env.PGPORT) || 5432,

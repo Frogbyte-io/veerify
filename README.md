@@ -129,15 +129,6 @@ docker compose up -d
 yarn preview
 ```
 
-### PR Previews
-
-PR preview deployments are handled by **Vercel + Neon**. Every PR automatically gets:
-
-- Its own isolated Neon database branch (copy-on-write snapshot of main)
-- Migrations applied during the build
-- A seeded test user for immediate testing
-
-No GitHub Actions or per-PR configuration required — the Neon Vercel integration handles the full lifecycle. See the [setup PR](https://github.com/Frogbyte-io/veerify/pulls) for one-time setup instructions.
 
 **Test credentials on preview deployments:**
 
