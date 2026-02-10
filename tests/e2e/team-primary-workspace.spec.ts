@@ -108,3 +108,99 @@ test('authenticated user can access products UI workflow', async ({ request, pag
   await expect(page.getByRole('button', { name: 'New Product' })).toBeVisible()
   await expect(page.getByText('Manage your products and their public feedback pages')).toBeVisible()
 })
+
+test('project categories API supports create/update/reorder/delete with reassignment rules', async ({ request }) => {
+  const sessionCookie = await signInAndGetSessionCookie(request)
+
+  const activeTeamResponse = await request.get('/api/teams/active', {
+    headers: withAuthHeaders(sessionCookie),
+  })
+  const activeTeamPayload = await activeTeamResponse.json()
+  expect(activeTeamResponse.ok()).toBeTruthy()
+  const teamId = activeTeamPayload.data.id as string
+
+  const projectSlug = `e2e-cats-${Date.now()}`
+  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+    headers: withAuthHeaders(sessionCookie),
+    data: {
+      name: 'Categories Product',
+      slug: projectSlug,
+      description: null,
+      customDomain: null,
+    },
+  })
+  expect(createProjectResponse.status()).toBe(201)
+  const createProjectPayload = await createProjectResponse.json()
+  const projectId = createProjectPayload?.data?.id as string
+
+  const listDefaultsResponse = await request.get(`/api/projects/${projectSlug}/categories`, {
+    headers: withAuthHeaders(sessionCookie),
+  })
+  const listDefaultsPayload = await listDefaultsResponse.json()
+  expect(listDefaultsResponse.ok()).toBeTruthy()
+  const defaults = listDefaultsPayload.data as Array<{ id: string; name: string; slug: string }>
+  expect(defaults.map((c) => c.name)).toEqual(['Bug', 'Feature'])
+
+  const createCategoryResponse = await request.post(`/api/projects/${projectSlug}/categories`, {
+    headers: withAuthHeaders(sessionCookie),
+    data: {
+      name: 'UX',
+      icon: '🎨',
+      color: '#7c3aed',
+      description: 'Interface and usability feedback',
+    },
+  })
+  const createCategoryPayload = await createCategoryResponse.json()
+  expect(createCategoryResponse.status()).toBe(201)
+  const customCategoryId = createCategoryPayload.data.id as string
+
+  const updateCategoryResponse = await request.put(`/api/projects/${projectSlug}/categories/${customCategoryId}`, {
+    headers: withAuthHeaders(sessionCookie),
+    data: {
+      name: 'User Experience',
+      sortOrder: 0,
+      color: '#9333ea',
+    },
+  })
+  const updateCategoryPayload = await updateCategoryResponse.json()
+  expect(updateCategoryResponse.ok()).toBeTruthy()
+  expect(updateCategoryPayload.data.name).toBe('User Experience')
+  expect(updateCategoryPayload.data.sortOrder).toBe(0)
+
+  const createFeedbackResponse = await request.post('/api/feedback', {
+    headers: withAuthHeaders(sessionCookie, '/feedback'),
+    data: {
+      title: 'Navigation feels confusing',
+      body: 'Users cannot find settings quickly',
+      projectId,
+      categoryId: customCategoryId,
+    },
+  })
+  const createFeedbackPayload = await createFeedbackResponse.json()
+  expect(createFeedbackResponse.status()).toBe(201)
+  expect(createFeedbackPayload?.data?.categoryId).toBe(customCategoryId)
+
+  const deleteWithoutReplacement = await request.delete(`/api/projects/${projectSlug}/categories/${customCategoryId}`, {
+    headers: withAuthHeaders(sessionCookie),
+    data: {},
+  })
+  expect(deleteWithoutReplacement.status()).toBe(409)
+
+  const bugCategory = defaults.find((category) => category.slug === 'bug')
+  expect(bugCategory?.id).toBeTruthy()
+  if (!bugCategory) throw new Error('Expected default bug category to exist')
+
+  const deleteWithReplacement = await request.delete(`/api/projects/${projectSlug}/categories/${customCategoryId}`, {
+    headers: withAuthHeaders(sessionCookie),
+    data: {
+      replacementCategoryId: bugCategory.id,
+    },
+  })
+  expect(deleteWithReplacement.ok()).toBeTruthy()
+
+  const deleteDefault = await request.delete(`/api/projects/${projectSlug}/categories/${bugCategory.id}`, {
+    headers: withAuthHeaders(sessionCookie),
+    data: {},
+  })
+  expect(deleteDefault.status()).toBe(403)
+})
