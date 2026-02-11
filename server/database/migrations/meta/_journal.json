@@ -43,6 +43,13 @@
       "when": 1770685200000,
       "tag": "0005_team_primary_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1770806700000,
+      "tag": "0006_add_team_member_role",
+      "breakpoints": true
     }
   ]
 }
