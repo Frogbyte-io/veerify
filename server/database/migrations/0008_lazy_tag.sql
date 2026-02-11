@@ -1,0 +1,1 @@
+ALTER TABLE "feedback_comment" ALTER COLUMN "is_internal" DROP DEFAULT;

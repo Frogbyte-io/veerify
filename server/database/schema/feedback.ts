@@ -319,7 +319,7 @@ export const feedbackComment = pgTable(
     authorName: text('author_name'), // Display name for anonymous users
     authorEmail: text('author_email'), // Optional email for anonymous users
     isInternal: boolean('is_internal')
-      .default(false)
+      .$defaultFn(() => false)
       .notNull(), // Internal team notes vs public comments
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
