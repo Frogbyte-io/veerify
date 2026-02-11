@@ -9,7 +9,7 @@ import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedb
 import { user } from '~/server/database/schema/auth'
 
 const listFeedbackQuerySchema = z.object({
-  projectId: z.string().optional(),
+  projectId: z.string().min(1, 'Project ID is required'),
   status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']).optional(),
   categoryId: z.string().optional(),
   search: z.string().optional(),
@@ -24,13 +24,12 @@ export default defineEventHandler(async (event) => {
   const anonSession = !session?.user ? await getAnonSession(event) : null
   const query = validateQuery(event, listFeedbackQuerySchema)
 
-  // Build conditions
-  const conditions = []
-  if (query.projectId) conditions.push(eq(feedback.projectId, query.projectId))
+  // Build conditions - projectId is now required
+  const conditions = [eq(feedback.projectId, query.projectId)]
   if (query.status) conditions.push(eq(feedback.status, query.status))
   if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined
+  const whereClause = and(...conditions)
 
   // Sort
   const sortColumn = {

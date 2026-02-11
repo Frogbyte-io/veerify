@@ -4,6 +4,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
+import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
 import { feedback, project, feedbackCategory } from '~/server/database/schema/feedback'
 
@@ -22,21 +23,21 @@ export default defineEventHandler(async (event) => {
 
   const body = await validateBody(event, createFeedbackSchema)
 
-  // Verify project exists and is public
+  // For authenticated users submitting to private projects, verify team access
+  if (session?.user) {
+    await requireProjectAccess(body.projectId, session.user.id)
+  } else {
+    // Anonymous user - project must be public
+    await requirePublicProject(body.projectId)
+  }
+
+  // Fetch project for category validation (already verified access above)
   const [proj] = await db.select().from(project).where(eq(project.id, body.projectId)).limit(1)
   if (!proj) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Not Found',
       data: createErrorResponse(ErrorCode.NOT_FOUND, 'Project not found'),
-    })
-  }
-
-  if (!proj.isPublic && !session?.user) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'This project does not accept public feedback'),
     })
   }
 

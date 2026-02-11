@@ -2,6 +2,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
+import { requirePublicProject } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
 import { feedback, vote } from '~/server/database/schema/feedback'
 
@@ -26,6 +27,9 @@ export default defineEventHandler(async (event) => {
       data: createErrorResponse(ErrorCode.NOT_FOUND, 'Feedback not found'),
     })
   }
+
+  // Verify the feedback's project is public (voting is public-facing feature)
+  await requirePublicProject(fb.projectId)
 
   // Determine voter identity: authenticated user or anonymous session
   const userId = session?.user?.id || null
