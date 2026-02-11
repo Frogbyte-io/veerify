@@ -75,10 +75,16 @@
  */
 
 import { z } from 'zod'
+import { randomUUID } from 'node:crypto'
+import { and, eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
+import { db } from '~/server/database/drizzle'
+import { member, organization, session as sessionTable, team, teamMember } from '~/server/database/schema/auth'
+import { assertOrganizationSlugAvailable } from '~/server/utils/organization-access'
+import { DEFAULT_TEAM_NAME } from '~/server/utils/team-context'
 
 const createOrganizationSchema = z.object({
   name: z.string()
@@ -89,29 +95,85 @@ const createOrganizationSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  // Require authentication
   const session = await requireAuth(event)
-
-  // Rate limiting
   await requireRateLimit(event, rateLimits.standard)
-
-  // Validate request body
   const body = await validateBody(event, createOrganizationSchema)
 
-  // TODO: Implement organization creation
-  // 1. Check if slug is already taken
-  // 2. Check if user has reached max organizations limit (5)
-  // 3. Create organization record in database
-  // 4. Create member record with role 'owner' for current user
-  // 5. Set activeOrganizationId in session
-  // 6. Return created organization
+  await assertOrganizationSlugAvailable(body.slug)
 
-  throw createError({
-    statusCode: 501,
-    statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'Organization creation is not yet implemented'
-    )
+  const ownedOrganizations = await db
+    .select()
+    .from(member)
+    .where(and(eq(member.userId, session.user.id), eq(member.role, 'owner')))
+
+  const ORGANIZATION_LIMIT = 5
+  if (ownedOrganizations.length >= ORGANIZATION_LIMIT) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: createErrorResponse(
+        ErrorCode.CONFLICT,
+        `Organization limit reached (${ORGANIZATION_LIMIT}).`
+      )
+    })
+  }
+
+  const now = new Date()
+  const organizationId = randomUUID()
+  const defaultTeamId = randomUUID()
+
+  const createdOrganization = await db.transaction(async (tx) => {
+    const [org] = await tx
+      .insert(organization)
+      .values({
+        id: organizationId,
+        name: body.name.trim(),
+        slug: body.slug,
+        logo: body.logo ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+
+    await tx.insert(member).values({
+      id: randomUUID(),
+      organizationId,
+      userId: session.user.id,
+      role: 'owner',
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await tx.insert(team).values({
+      id: defaultTeamId,
+      name: DEFAULT_TEAM_NAME,
+      organizationId,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await tx.insert(teamMember).values({
+      id: randomUUID(),
+      teamId: defaultTeamId,
+      userId: session.user.id,
+      createdAt: now,
+    })
+
+    await tx
+      .update(sessionTable)
+      .set({
+        activeOrganizationId: organizationId,
+        activeTeamId: defaultTeamId,
+      })
+      .where(eq(sessionTable.token, session.session.token))
+
+    return org
+  })
+
+  setResponseStatus(event, 201)
+
+  return createSuccessResponse({
+    ...createdOrganization,
+    defaultTeamId,
   })
 })

@@ -3,8 +3,6 @@ import { expectRedirectToLogin, loginViaUi } from './helpers/auth'
 import { selectors } from './helpers/selectors'
 import { createTeamFromSettings, getActiveTeamViaApi, switchTeamFromSidebar } from './helpers/teams'
 
-// TODO: add org-settings e2e when dedicated organization governance page exists.
-
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
@@ -38,6 +36,10 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await page.locator(selectors.settingsTabNotifications).click()
   await expect(page).toHaveURL(/#notifications/)
   await expect(page.getByRole('heading', { name: 'Notification Preferences' })).toBeVisible()
+
+  await page.locator(selectors.settingsTabOrganization).click()
+  await expect(page).toHaveURL(/#organization/)
+  await expect(page.locator(selectors.organizationTitle)).toBeVisible()
 
   await page.locator(selectors.settingsTabTeam).click()
   await expect(page).toHaveURL(/#team/)
@@ -79,4 +81,22 @@ test('user can switch teams using sidebar team switcher', async ({ page }) => {
   const activeTeam = await getActiveTeamViaApi(page.request)
   expect(activeTeam.id).toBe(createdTeam.id)
   expect(activeTeam.name).toBe(createdTeam.name)
+})
+
+test('settings team panel tracks active team selected in sidebar', async ({ page }) => {
+  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  const createdTeamName = `E2E Settings Team ${Date.now()}`
+  const createdTeam = await createTeamFromSettings(page, createdTeamName)
+
+  await expect(page.locator(selectors.teamNameInput)).toBeVisible()
+  await expect(page.getByText('No active team. Create a team to continue.')).toHaveCount(0)
+
+  await switchTeamFromSidebar(page, { teamName: 'Default' })
+  await expect(page.locator(selectors.teamNameInput)).toHaveValue('Default')
+  await expect(page.getByText('No active team. Create a team to continue.')).toHaveCount(0)
+
+  await switchTeamFromSidebar(page, { teamId: createdTeam.id, expectedName: createdTeam.name })
+  await expect(page.locator(selectors.teamNameInput)).toHaveValue(createdTeam.name)
+  await expect(page.getByText('No active team. Create a team to continue.')).toHaveCount(0)
 })

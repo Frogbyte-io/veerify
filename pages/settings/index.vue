@@ -58,6 +58,21 @@
               </li>
               <li>
                 <button
+                  data-testid="settings-tab-organization"
+                  :class="[
+                    'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
+                    activeTab === 'organization'
+                      ? 'bg-accent text-accent-foreground font-medium'
+                      : 'text-muted-foreground hover:bg-accent/50',
+                  ]"
+                  @click="setActiveTab('organization')"
+                >
+                  <Icon name="lucide:building-2" class="w-4 h-4 mr-2" />
+                  Organization
+                </button>
+              </li>
+              <li>
+                <button
                   data-testid="settings-tab-team"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
@@ -118,6 +133,7 @@
 import SettingsProfile from '~/components/settings/SettingsProfile.vue'
 import SettingsSecurity from '~/components/settings/SettingsSecurity.vue'
 import SettingsNotifications from '~/components/settings/SettingsNotifications.vue'
+import SettingsOrganization from '~/components/settings/SettingsOrganization.vue'
 import SettingsTeam from '~/components/settings/SettingsTeam.vue'
 import SettingsBilling from '~/components/settings/SettingsBilling.vue'
 import SettingsAppearance from '~/components/settings/SettingsAppearance.vue'
@@ -128,6 +144,7 @@ export default {
     SettingsProfile,
     SettingsSecurity,
     SettingsNotifications,
+    SettingsOrganization,
     SettingsTeam,
     SettingsBilling,
     SettingsAppearance,
@@ -143,6 +160,7 @@ export default {
         profile: 'SettingsProfile',
         security: 'SettingsSecurity',
         notifications: 'SettingsNotifications',
+        organization: 'SettingsOrganization',
         team: 'SettingsTeam',
         billing: 'SettingsBilling',
         appearance: 'SettingsAppearance',
@@ -153,7 +171,10 @@ export default {
   mounted() {
     // Check for hash in URL to set initial tab
     const hash = window.location.hash.replace('#', '')
-    if (hash && ['profile', 'security', 'notifications', 'team', 'billing', 'appearance'].includes(hash)) {
+    if (
+      hash &&
+      ['profile', 'security', 'notifications', 'organization', 'team', 'billing', 'appearance'].includes(hash)
+    ) {
       this.activeTab = hash
     }
   },

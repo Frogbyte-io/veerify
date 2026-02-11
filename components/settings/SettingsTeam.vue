@@ -173,6 +173,8 @@
 import { authClient } from '~/lib/auth-client'
 import { toast } from 'vue-sonner'
 
+const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+
 export default {
   name: 'SettingsTeam',
   data() {
@@ -199,9 +201,50 @@ export default {
 
   async mounted() {
     await this.initialize()
+
+    if (import.meta.client) {
+      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
+  },
+
+  beforeUnmount() {
+    if (import.meta.client) {
+      window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
   },
 
   methods: {
+    async fetchActiveTeam() {
+      try {
+        const response = await $fetch('/api/teams/active')
+        return response?.data || null
+      } catch (error) {
+        if (error?.statusCode === 409 || error?.status === 409) {
+          return null
+        }
+        throw error
+      }
+    },
+
+    async syncActiveTeamContext() {
+      this.currentTeam = await this.fetchActiveTeam()
+      this.teamName = this.currentTeam?.name || ''
+    },
+
+    async fetchActiveOrganization() {
+      try {
+        const response = await $fetch('/api/auth/organization/get-full-organization')
+        return response || null
+      } catch {
+        return null
+      }
+    },
+
+    async handleActiveTeamChanged() {
+      await this.syncActiveTeamContext()
+      await this.loadTeamMembers()
+    },
+
     async resolveOrganizationId() {
       if (this.activeOrganization?.id) {
         return this.activeOrganization.id
@@ -221,7 +264,7 @@ export default {
 
     async initialize() {
       try {
-        await $fetch('/api/teams/active')
+        await this.syncActiveTeamContext()
 
         const { data: session } = authClient.useSession()
         this.session = session.value
@@ -229,19 +272,8 @@ export default {
           this.session = newSession || null
         })
 
-        const { data: activeTeam } = authClient.useActiveTeam()
-        this.currentTeam = activeTeam.value
-        if (this.currentTeam?.name) {
-          this.teamName = this.currentTeam.name
-        }
-        watch(activeTeam, async (newTeam) => {
-          this.currentTeam = newTeam || null
-          this.teamName = newTeam?.name || ''
-          await this.loadTeamMembers()
-        })
-
         const { data: activeOrganization } = authClient.useActiveOrganization()
-        this.activeOrganization = activeOrganization.value
+        this.activeOrganization = activeOrganization.value || (await this.fetchActiveOrganization())
         watch(activeOrganization, (newOrg) => {
           this.activeOrganization = newOrg || null
         })
@@ -320,6 +352,9 @@ export default {
             method: 'POST',
             body: { teamId: result.data.id },
           })
+
+          await this.syncActiveTeamContext()
+          await this.loadTeamMembers()
         }
 
         this.showCreateTeamDialog = false
@@ -376,8 +411,8 @@ export default {
         await authClient.organization.removeTeam({ teamId: this.currentTeam.id })
         this.showDeleteTeamDialog = false
         this.deleteConfirmation = ''
-        this.currentTeam = null
-        this.teamMembers = []
+        await this.syncActiveTeamContext()
+        await this.loadTeamMembers()
         toast.success('Team deleted')
       } catch (error) {
         console.error('Error deleting team:', error)

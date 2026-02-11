@@ -71,15 +71,11 @@
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
+import { getOrganizationDetails, requireOrganizationMembershipBySlug } from '~/server/utils/organization-access'
 
 export default defineEventHandler(async (event) => {
-  // Require authentication
   const session = await requireAuth(event)
-
-  // Rate limiting
   await requireRateLimit(event, rateLimits.standard)
-
-  // Get slug from route params
   const slug = getRouterParam(event, 'slug')
 
   if (!slug) {
@@ -93,20 +89,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // TODO: Implement organization retrieval
-  // 1. Query organization by slug
-  // 2. Check if user is a member of the organization
-  // 3. If not a member, throw 403 Forbidden
-  // 4. Get member count
-  // 5. Get current user's role
-  // 6. Return organization with additional metadata
+  const { org } = await requireOrganizationMembershipBySlug(session, slug)
+  const data = await getOrganizationDetails(org.id, session.user.id)
 
-  throw createError({
-    statusCode: 501,
-    statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'Organization retrieval is not yet implemented'
-    )
-  })
+  return createSuccessResponse(data)
 })

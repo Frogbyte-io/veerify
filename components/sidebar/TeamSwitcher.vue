@@ -91,6 +91,8 @@
 </template>
 
 <script>
+const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+
 export default {
   name: 'TeamSwitcher',
 
@@ -118,6 +120,16 @@ export default {
   },
 
   methods: {
+    emitActiveTeamChanged() {
+      if (!import.meta.client) return
+
+      window.dispatchEvent(
+        new CustomEvent(ACTIVE_TEAM_CHANGED_EVENT, {
+          detail: { teamId: this.activeTeam?.id || null },
+        })
+      )
+    },
+
     async loadActiveTeam() {
       const response = await $fetch('/api/teams/active')
       this.activeTeam = response?.data || null
@@ -162,6 +174,7 @@ export default {
           body: { teamId: team.id },
         })
         await this.initializeTeams()
+        this.emitActiveTeamChanged()
       } catch (error) {
         console.error('Error setting active team:', error)
         this.teamsError = 'Failed to switch team'

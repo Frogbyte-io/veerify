@@ -132,6 +132,10 @@ test.describe('Admin feedback workflow', () => {
     const teamId = await getActiveTeamId(request, sessionCookie)
     const slug = `e2e-fb-ui-${Date.now()}`
     const projectId = await createTestProject(request, sessionCookie, teamId, slug)
+    const setActiveTeamResponse = await page.request.post('/api/teams/active', {
+      data: { teamId },
+    })
+    expect(setActiveTeamResponse.ok()).toBeTruthy()
 
     // Navigate to feedback page
     await page.goto('/feedback', { waitUntil: 'commit', timeout: 180_000 })
@@ -150,6 +154,8 @@ test.describe('Admin feedback workflow', () => {
       await projectSelector.selectOption({ value: projectId })
       await page.waitForTimeout(2000)
     }
+
+    await expect(page.locator(selectors.feedbackAddButton)).toBeEnabled({ timeout: 20_000 })
 
     // Click Add Feedback
     await page.locator(selectors.feedbackAddButton).click()

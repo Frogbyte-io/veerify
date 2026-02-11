@@ -359,7 +359,6 @@
 </template>
 
 <script>
-import { authClient } from '~/lib/auth-client'
 
 export default {
   name: 'FeedbackPage',
@@ -415,21 +414,14 @@ export default {
           this.activeTeamId = activeTeamData.id
         }
 
-        const { data: activeOrg } = authClient.useActiveOrganization()
-
-        if (activeOrg.value?.slug) {
-          this.activeOrgSlug = activeOrg.value.slug
+        const activeOrganization = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
+        if (activeOrganization?.slug) {
+          this.activeOrgSlug = activeOrganization.slug
         }
 
         if (this.activeTeamId) {
           await this.loadProducts()
         }
-
-        watch(activeOrg, async (newOrg) => {
-          if (newOrg?.slug) {
-            this.activeOrgSlug = newOrg.slug
-          }
-        })
       } catch (err) {
         console.error('Error initializing team context:', err)
         this.error = 'Failed to load team context'
