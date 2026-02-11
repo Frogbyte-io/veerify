@@ -397,6 +397,41 @@ throw createError({ statusCode: 500, statusMessage: 'Internal server error' })
 
 ---
 
+## Authorization Patterns
+
+### Multi-Tenant Data Isolation
+
+All feedback, votes, and comments are scoped to projects, which belong to teams, which belong to organizations. API endpoints enforce isolation at each level.
+
+### Project Access Utilities (`server/utils/project-access.ts`)
+
+| Function | Purpose | Throws |
+|----------|---------|--------|
+| `requireProjectAccess(projectId, userId)` | Verify user is team member | 404 if project not found, 403 if no access |
+| `requireFeedbackAccess(feedbackId, userId)` | Verify user has access to feedback's project | 404 if not found, 403 if no access |
+| `requirePublicProject(projectId)` | Verify project is public (for anonymous) | 404 if not found, 403 if not public |
+| `resolvePublicProject(orgSlug, projectSlug)` | Resolve public project by slugs | 404 if not found, 403 if not public |
+
+### Endpoint Authorization Rules
+
+| Endpoint | Auth | Access Rule |
+|----------|------|-------------|
+| `GET /api/feedback` | Optional | Requires `projectId` parameter (mandatory) |
+| `POST /api/feedback` | Optional | Authenticated: requires team membership for private projects. Anonymous: requires public project |
+| `GET /api/feedback/[id]` | Optional | Authenticated: requires team membership. Anonymous: requires public project |
+| `DELETE /api/feedback/[id]` | Required | Author OR team member of project's team |
+| `POST /api/feedback/[id]/vote` | Optional | Project must be public (voting is public-facing) |
+
+### Team Member Roles
+
+The `teamMember` table includes a `role` column:
+- `admin` - Team administrator (future: can manage team settings, add/remove members)
+- `member` - Regular team member (can create feedback, manage team projects)
+
+Currently, both roles have equivalent permissions. Future features will differentiate them.
+
+---
+
 ## Page & Layout Conventions
 
 ### Layouts
@@ -448,3 +483,5 @@ These mirror the conventions in this file. Keep them in sync when making archite
 11. **Icons are always `<Icon name="lucide:*" />`** — do not import from `lucide-vue-next` directly.
 12. **`cn()` for class merging.** Import from `~/lib/utils` — do not add new utility functions for this.
 13. **Do not remove or rename `auth-schema.ts`** at the project root — it exists as a BetterAuth schema reference and is imported by the auth configuration.
+14. **Always use project access utilities** when implementing new endpoints that interact with projects or feedback. Never rely solely on `projectId` parameter presence.
+15. **Public vs Private projects** — Public projects accept anonymous feedback/votes. Private projects require team membership for all operations.
