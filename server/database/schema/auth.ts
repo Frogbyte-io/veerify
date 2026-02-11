@@ -126,7 +126,7 @@ export const teamMember = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     role: text('role')
-      .$defaultFn(() => 'member')
+      .default('member')
       .notNull(), // admin, member
     createdAt: timestamp('created_at')
       .$defaultFn(() => /* @__PURE__ */ new Date())
