@@ -50,6 +50,13 @@
       "when": 1770806700000,
       "tag": "0006_add_team_member_role",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1770807217792,
+      "tag": "0007_calm_greymalkin",
+      "breakpoints": true
     }
   ]
 }

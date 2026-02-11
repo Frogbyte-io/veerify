@@ -302,3 +302,42 @@ export const githubIssueLink = pgTable(
     issueIdx: index('github_link_issue_idx').on(table.githubIntegrationId, table.issueNumber),
   })
 )
+
+// Feedback comments - threaded discussions on feedback items
+export const feedbackComment = pgTable(
+  'feedback_comment',
+  {
+    id: text('id').primaryKey(),
+    feedbackId: text('feedback_id')
+      .notNull()
+      .references(() => feedback.id, { onDelete: 'cascade' }),
+    parentCommentId: text('parent_comment_id').references(() => feedbackComment.id, { onDelete: 'cascade' }),
+    body: text('body').notNull(),
+    // Author can be either a user or an anonymous session
+    authorUserId: text('author_user_id').references(() => user.id, { onDelete: 'set null' }),
+    authorSessionId: text('author_session_id').references(() => anonymousSession.id, { onDelete: 'set null' }),
+    authorName: text('author_name'), // Display name for anonymous users
+    authorEmail: text('author_email'), // Optional email for anonymous users
+    isInternal: boolean('is_internal')
+      .default(false)
+      .notNull(), // Internal team notes vs public comments
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Index for querying comments by feedback
+    feedbackIdx: index('comment_feedback_idx').on(table.feedbackId),
+    // Index for querying by author (user)
+    authorUserIdx: index('comment_author_user_idx').on(table.authorUserId),
+    // Index for querying by author (session)
+    authorSessionIdx: index('comment_author_session_idx').on(table.authorSessionId),
+    // Index for threaded replies
+    parentIdx: index('comment_parent_idx').on(table.parentCommentId),
+    // Index for internal vs public comments
+    internalIdx: index('comment_internal_idx').on(table.isInternal),
+  })
+)
