@@ -11,6 +11,7 @@ const isCloudEnvironment = Boolean(
     process.env.CI
 )
 const isForced = process.env.PLAYWRIGHT_FORCE === '1'
+const canRunByEnvironment = isCloudEnvironment || isForced
 
 const skipReasons = []
 
@@ -40,6 +41,17 @@ function getDbClient() {
   })
 }
 
+function hasDbConfiguration() {
+  return Boolean(
+    process.env.DATABASE_URL ||
+      process.env.PGHOST ||
+      process.env.PGPORT ||
+      process.env.PGUSER ||
+      process.env.PGPASSWORD ||
+      process.env.PGDATABASE
+  )
+}
+
 async function verifyDatabaseAvailable() {
   const client = getDbClient()
   try {
@@ -55,17 +67,23 @@ async function verifyDatabaseAvailable() {
   }
 }
 
-const dbAvailable = await verifyDatabaseAvailable()
+if (!canRunByEnvironment) {
+  skipReasons.push('not running in cloud/CI and PLAYWRIGHT_FORCE is not set to 1')
+}
 
-if (!dbAvailable && !isForced) {
-  if (!isCloudEnvironment) {
-    skipReasons.push('not running in cloud/CI and local DB is unavailable')
-  }
+const dbConfigured = hasDbConfiguration()
+if (!dbConfigured) {
+  skipReasons.push('database connection is not configured (set DATABASE_URL or PG* variables)')
+}
+
+const dbAvailable = dbConfigured ? await verifyDatabaseAvailable() : false
+if (dbConfigured && !dbAvailable) {
+  skipReasons.push('database connection check failed')
 }
 
 if (skipReasons.length > 0) {
   console.log(`[playwright] Skipping e2e run: ${skipReasons.join('; ')}.`)
-  console.log('[playwright] Local runs require a reachable Postgres instance (or set DATABASE_URL).')
+  console.log('[playwright] Runs require cloud/CI or PLAYWRIGHT_FORCE=1 and a reachable configured database.')
   process.exit(0)
 }
 

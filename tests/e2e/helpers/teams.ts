@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test'
 import { selectors, teamSwitcherItemSelector } from './selectors'
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:4173'
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
 
 export type ActiveTeam = {
   id: string
