@@ -1,6 +1,7 @@
 import { Client } from 'pg'
 import { scrypt, randomBytes } from 'crypto'
 import { promisify } from 'util'
+import 'dotenv/config'
 
 const scryptAsync = promisify(scrypt)
 

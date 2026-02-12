@@ -39,7 +39,7 @@ async function confirmReset() {
 
   try {
     const answer = await rl.question(
-      `This will permanently delete all data in database "${dbName}" by dropping and recreating schema "public". Are you sure? (y/N): `
+      `This will permanently delete all data in database "${dbName}" by dropping and recreating schemas "public" and "drizzle". Are you sure? (y/N): `
     )
 
     return answer.trim().toLowerCase() === 'y'
@@ -62,6 +62,7 @@ async function main() {
   try {
     await client.query('BEGIN')
     await client.query('DROP SCHEMA IF EXISTS public CASCADE;')
+    await client.query('DROP SCHEMA IF EXISTS drizzle CASCADE;')
     await client.query('CREATE SCHEMA public;')
     await client.query('COMMIT')
     console.log('[db:reset] Database schema reset completed.')

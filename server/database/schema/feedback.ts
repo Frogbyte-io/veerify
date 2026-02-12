@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, uniqueIndex, index } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, boolean, integer, jsonb, uniqueIndex, index, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { user, organization, team } from './auth'
 
 // Projects table - operational workspaces scoped to teams.
@@ -311,7 +311,7 @@ export const feedbackComment = pgTable(
     feedbackId: text('feedback_id')
       .notNull()
       .references(() => feedback.id, { onDelete: 'cascade' }),
-    parentCommentId: text('parent_comment_id').references(() => feedbackComment.id, { onDelete: 'cascade' }),
+    parentCommentId: text('parent_comment_id').references((): AnyPgColumn => feedbackComment.id, { onDelete: 'cascade' }),
     body: text('body').notNull(),
     // Author can be either a user or an anonymous session
     authorUserId: text('author_user_id').references(() => user.id, { onDelete: 'set null' }),
