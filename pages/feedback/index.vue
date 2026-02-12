@@ -359,6 +359,7 @@
 </template>
 
 <script>
+const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 
 export default {
   name: 'FeedbackPage',
@@ -402,9 +403,23 @@ export default {
 
   async mounted() {
     await this.initTeamContext()
+
+    if (import.meta.client) {
+      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
+  },
+
+  beforeUnmount() {
+    if (import.meta.client) {
+      window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
   },
 
   methods: {
+    async handleActiveTeamChanged() {
+      await this.initTeamContext()
+    },
+
     async initTeamContext() {
       this.isLoading = true
       this.error = null

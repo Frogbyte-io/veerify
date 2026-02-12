@@ -51,10 +51,11 @@
 
       <!-- Products Grid -->
       <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div
+        <NuxtLink
           v-for="product in products"
           :key="product.id"
-          class="rounded-lg border bg-card hover:shadow-md transition-shadow"
+          :to="`/products/${product.slug}`"
+          class="rounded-lg border bg-card hover:shadow-md transition-shadow block"
         >
           <div class="p-6">
             <div class="flex items-start justify-between mb-3">
@@ -84,22 +85,21 @@
             </div>
           </div>
           <div class="border-t px-6 py-3 flex items-center justify-between">
-            <NuxtLink
-              :to="`/p/${activeOrgSlug}/${product.slug}`"
-              target="_blank"
+            <span
               class="text-sm text-primary hover:underline flex items-center gap-1"
+              @click.prevent="openPublicPage(product)"
             >
               <Icon name="lucide:external-link" class="w-3 h-3" />
               View Public Page
-            </NuxtLink>
+            </span>
             <button
               class="text-sm text-muted-foreground hover:text-foreground"
-              @click="copyPublicUrl(product)"
+              @click.prevent="copyPublicUrl(product)"
             >
               <Icon name="lucide:copy" class="w-4 h-4" />
             </button>
           </div>
-        </div>
+        </NuxtLink>
       </div>
 
       <!-- Create Product Dialog -->
@@ -166,6 +166,10 @@
 </template>
 
 <script>
+import { toast } from 'vue-sonner'
+
+const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+
 export default {
   name: 'ProductsPage',
 
@@ -196,9 +200,23 @@ export default {
 
   async mounted() {
     await this.initTeamContext()
+
+    if (import.meta.client) {
+      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
+  },
+
+  beforeUnmount() {
+    if (import.meta.client) {
+      window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
   },
 
   methods: {
+    async handleActiveTeamChanged() {
+      await this.initTeamContext()
+    },
+
     async initTeamContext() {
       this.isLoading = true
       this.error = null
@@ -277,10 +295,14 @@ export default {
         await this.loadProducts()
       } catch (err) {
         console.error('Error creating product:', err)
-        alert(err?.data?.error?.message || 'Failed to create product')
+        toast.error(err?.data?.error?.message || 'Failed to create product')
       } finally {
         this.isCreating = false
       }
+    },
+
+    openPublicPage(product) {
+      window.open(`/p/${this.activeOrgSlug}/${product.slug}`, '_blank')
     },
 
     copyPublicUrl(product) {

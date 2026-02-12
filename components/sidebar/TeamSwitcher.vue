@@ -73,7 +73,8 @@
               <div class="flex size-6 items-center justify-center rounded-sm border">
                 <Icon name="lucide:users" class="size-4 shrink-0" />
               </div>
-              <span :data-testid="`team-switcher-item-${team.id}`">{{ team.name }}</span>
+              <span :data-testid="`team-switcher-item-${team.id}`" class="flex-1">{{ team.name }}</span>
+              <Icon v-if="activeTeam?.id === team.id" name="lucide:check" class="size-4 text-primary" />
             </DropdownMenuItem>
 
             <DropdownMenuSeparator />
@@ -91,6 +92,8 @@
 </template>
 
 <script>
+import { authClient } from '~/lib/auth-client'
+
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 const TEAM_SWITCHER_CACHE_MAX_AGE_MS = 5 * 60 * 1000
 
@@ -229,7 +232,10 @@ export default {
     },
 
     async setActiveTeam(team) {
+      if (team.id === this.activeTeam?.id) return
+
       const previousActiveTeam = this.activeTeam
+      const previousActiveOrganization = this.activeOrganization
 
       try {
         this.teamsError = null
@@ -241,11 +247,21 @@ export default {
           body: { teamId: team.id },
         })
 
+        // Sync Better-Auth client-side organization context
+        if (team.organizationId && team.organizationId !== previousActiveTeam?.organizationId) {
+          await authClient.organization.setActive({
+            organizationId: team.organizationId,
+          })
+        }
+
+        clearTeamContextCache()
         this.emitActiveTeamChanged()
-        void this.initializeTeams({ force: true, silent: true })
+        await this.initializeTeams({ force: true, silent: true })
       } catch (error) {
         this.activeTeam = previousActiveTeam
+        this.activeOrganization = previousActiveOrganization
         teamSwitcherCache.activeTeam = previousActiveTeam
+        teamSwitcherCache.activeOrganization = previousActiveOrganization
         this.teamsError = 'Failed to switch team'
         console.error('Error setting active team:', error)
       }

@@ -1,50 +1,93 @@
 <template>
   <div class="space-y-6">
+    <!-- Your Teams -->
     <Card>
       <CardHeader>
-        <CardTitle class="flex items-center gap-2">
-          <Icon name="lucide:users" class="h-5 w-5" />
-          <span data-testid="team-title">Team Settings</span>
-        </CardTitle>
-        <CardDescription> Teams are your operational workspace. </CardDescription>
-      </CardHeader>
-      <CardContent class="space-y-4">
-        <div v-if="isLoading" class="space-y-3">
-          <Skeleton class="h-10 w-full" />
-          <Skeleton class="h-10 w-full" />
+        <div class="flex items-center justify-between">
+          <div>
+            <CardTitle class="flex items-center gap-2">
+              <Icon name="lucide:users" class="h-5 w-5" />
+              <span data-testid="team-title">Your Teams</span>
+            </CardTitle>
+            <CardDescription>All teams you belong to across organizations.</CardDescription>
+          </div>
+          <Button data-testid="team-open-create-dialog" size="sm" @click="showCreateTeamDialog = true">
+            <Icon name="lucide:plus" class="h-4 w-4 mr-2" />
+            New Team
+          </Button>
         </div>
-        <template v-else-if="currentTeam">
-          <div class="space-y-2">
-            <Label for="team-name">Team Name</Label>
-            <Input id="team-name" v-model="teamName" placeholder="Team name" />
-          </div>
-          <div class="flex justify-between gap-2">
-            <Button data-testid="team-open-create-dialog" variant="outline" @click="showCreateTeamDialog = true">
-              <Icon name="lucide:plus" class="h-4 w-4 mr-2" />
-              New Team
-            </Button>
-            <Button :disabled="isSavingTeam" @click="updateTeam">
-              <Icon v-if="isSavingTeam" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
-              Save Team
-            </Button>
-          </div>
-        </template>
-        <div v-else class="text-center py-6">
-          <p class="text-muted-foreground">No active team. Create a team to continue.</p>
+      </CardHeader>
+      <CardContent>
+        <div v-if="isLoading" class="space-y-3">
+          <Skeleton class="h-14 w-full" />
+          <Skeleton class="h-14 w-full" />
+        </div>
+
+        <div v-else-if="allTeams.length === 0" class="text-center py-6">
+          <p class="text-muted-foreground">No teams found. Create a team to get started.</p>
           <Button data-testid="team-open-create-dialog" class="mt-3" @click="showCreateTeamDialog = true">
             Create Team
+          </Button>
+        </div>
+
+        <div v-else class="space-y-2">
+          <button
+            v-for="team in allTeams"
+            :key="team.id"
+            :data-testid="`team-list-item-${team.id}`"
+            class="w-full flex items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
+            :class="{ 'border-primary bg-accent/30': currentTeam?.id === team.id }"
+            @click="switchToTeam(team)"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="flex size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground shrink-0">
+                <Icon name="lucide:users" class="size-4" />
+              </div>
+              <div class="min-w-0">
+                <p class="font-medium truncate">{{ team.name }}</p>
+                <p class="text-xs text-muted-foreground truncate">{{ getTeamOrganizationName(team) }}</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <Badge v-if="currentTeam?.id === team.id" variant="default" class="text-xs">Active</Badge>
+              <Icon v-if="switchingTeamId === team.id" name="lucide:loader-2" class="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <!-- Active Team Settings -->
+    <Card v-if="currentTeam">
+      <CardHeader>
+        <CardTitle class="flex items-center gap-2">
+          <Icon name="lucide:settings" class="h-5 w-5" />
+          Team Settings
+        </CardTitle>
+        <CardDescription>Configure the active team: {{ currentTeam.name }}</CardDescription>
+      </CardHeader>
+      <CardContent class="space-y-4">
+        <div class="space-y-2">
+          <Label for="team-name">Team Name</Label>
+          <Input id="team-name" v-model="teamName" placeholder="Team name" />
+        </div>
+        <div class="flex justify-end">
+          <Button :disabled="isSavingTeam || !teamName.trim() || teamName.trim() === currentTeam.name" @click="updateTeam">
+            <Icon v-if="isSavingTeam" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
+            Save Team
           </Button>
         </div>
       </CardContent>
     </Card>
 
+    <!-- Team Members -->
     <Card v-if="currentTeam">
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:user-plus" class="h-5 w-5" />
           Team Members
         </CardTitle>
-        <CardDescription> Members of the active team workspace. </CardDescription>
+        <CardDescription>Members of {{ currentTeam.name }}.</CardDescription>
       </CardHeader>
       <CardContent>
         <div class="flex justify-between items-center mb-4">
@@ -56,8 +99,8 @@
         </div>
 
         <div v-if="isLoadingMembers" class="space-y-2">
-          <Skeleton class="h-10 w-full" />
-          <Skeleton class="h-10 w-full" />
+          <Skeleton class="h-14 w-full" />
+          <Skeleton class="h-14 w-full" />
         </div>
         <div v-else class="space-y-2">
           <div
@@ -65,23 +108,34 @@
             :key="member.id"
             class="flex items-center justify-between rounded-lg border p-3"
           >
-            <div>
-              <p class="font-medium">{{ member.userId }}</p>
-              <p class="text-xs text-muted-foreground">Joined {{ formatDate(member.createdAt) }}</p>
+            <div class="flex items-center gap-3">
+              <Avatar class="h-8 w-8">
+                <AvatarImage v-if="member.userImage" :src="member.userImage" :alt="member.userName" />
+                <AvatarFallback>{{ getInitials(member.userName) }}</AvatarFallback>
+              </Avatar>
+              <div class="min-w-0">
+                <p class="font-medium truncate">{{ member.userName || 'Unknown User' }}</p>
+                <p class="text-xs text-muted-foreground truncate">{{ member.userEmail || member.userId }}</p>
+              </div>
             </div>
-            <Button
-              v-if="session?.user?.id !== member.userId"
-              variant="ghost"
-              class="text-red-600 hover:text-red-700"
-              @click="removeTeamMember(member.userId)"
-            >
-              Remove
-            </Button>
+            <div class="flex items-center gap-2">
+              <Badge variant="secondary" class="text-xs uppercase">{{ member.role || 'member' }}</Badge>
+              <Button
+                v-if="session?.user?.id !== member.userId"
+                variant="ghost"
+                size="sm"
+                class="text-red-600 hover:text-red-700"
+                @click="removeTeamMember(member.userId)"
+              >
+                Remove
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>
     </Card>
 
+    <!-- Danger Zone -->
     <Card v-if="currentTeam" class="border-red-200">
       <CardHeader>
         <CardTitle class="flex items-center gap-2 text-red-600">
@@ -94,6 +148,7 @@
       </CardContent>
     </Card>
 
+    <!-- Create Team Dialog -->
     <Dialog :open="showCreateTeamDialog" @update:open="showCreateTeamDialog = $event">
       <DialogContent>
         <DialogHeader>
@@ -120,6 +175,7 @@
       </DialogContent>
     </Dialog>
 
+    <!-- Invite Dialog -->
     <Dialog :open="showInviteDialog" @update:open="showInviteDialog = $event">
       <DialogContent>
         <DialogHeader>
@@ -142,6 +198,7 @@
       </DialogContent>
     </Dialog>
 
+    <!-- Delete Team Dialog -->
     <Dialog :open="showDeleteTeamDialog" @update:open="showDeleteTeamDialog = $event">
       <DialogContent>
         <DialogHeader>
@@ -182,6 +239,8 @@ export default {
       session: null,
       currentTeam: null,
       activeOrganization: null,
+      allTeams: [],
+      organizations: [],
       teamName: '',
       teamMembers: [],
       isLoading: true,
@@ -190,6 +249,7 @@ export default {
       isCreatingTeam: false,
       isInviting: false,
       isDeletingTeam: false,
+      switchingTeamId: null,
       showCreateTeamDialog: false,
       showInviteDialog: false,
       showDeleteTeamDialog: false,
@@ -235,14 +295,32 @@ export default {
       try {
         const { data } = await authClient.organization.getFullOrganization({})
         return data || null
-      } catch (error) {
-        console.error('[SettingsTeam] Error fetching active organization:', error)
+      } catch (_error) {
         return null
+      }
+    },
+
+    async fetchAllTeams() {
+      try {
+        const response = await $fetch('/api/auth/organization/list-user-teams')
+        return Array.isArray(response) ? response : response?.data || []
+      } catch (_error) {
+        return []
+      }
+    },
+
+    async fetchOrganizations() {
+      try {
+        const { data } = await authClient.organization.list()
+        return Array.isArray(data) ? data : []
+      } catch (_error) {
+        return []
       }
     },
 
     async handleActiveTeamChanged() {
       await this.syncActiveTeamContext()
+      this.allTeams = await this.fetchAllTeams()
       await this.loadTeamMembers()
     },
 
@@ -263,36 +341,39 @@ export default {
       }
     },
 
+    getTeamOrganizationName(team) {
+      const org = this.organizations.find((o) => o.id === team.organizationId)
+      return org?.name || ''
+    },
+
+    getInitials(name) {
+      if (!name) return '?'
+      return name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    },
+
     async initialize() {
       try {
-        console.log('[SettingsTeam] Starting initialization...')
+        const [_activeTeam, sessionResult, activeOrganization, allTeams, organizations] = await Promise.all([
+          this.syncActiveTeamContext(),
+          authClient.useSession(useFetch),
+          this.fetchActiveOrganization(),
+          this.fetchAllTeams(),
+          this.fetchOrganizations(),
+        ])
 
-        console.log('[SettingsTeam] Step 1: Syncing active team context')
-        await this.syncActiveTeamContext()
-        console.log('[SettingsTeam] Active team synced:', this.currentTeam)
+        this.session = sessionResult.data.value
+        this.activeOrganization = activeOrganization
+        this.allTeams = allTeams
+        this.organizations = organizations
 
-        console.log('[SettingsTeam] Step 2: Getting session')
-        const { data: session } = await authClient.useSession(useFetch)
-        this.session = session.value
-        console.log('[SettingsTeam] Session loaded:', this.session?.user?.email)
-
-        console.log('[SettingsTeam] Step 3: Getting active organization')
-        this.activeOrganization = await this.fetchActiveOrganization()
-        console.log('[SettingsTeam] Active organization:', this.activeOrganization)
-
-        console.log('[SettingsTeam] Step 4: Loading team members')
         await this.loadTeamMembers()
-        console.log('[SettingsTeam] Team members loaded:', this.teamMembers.length)
-
-        console.log('[SettingsTeam] Initialization complete!')
       } catch (error) {
-        console.error('[SettingsTeam] Error during initialization:', error)
-        console.error('[SettingsTeam] Error details:', {
-          message: error.message,
-          statusCode: error.statusCode,
-          status: error.status,
-          data: error.data,
-        })
+        console.error('Error during team settings initialization:', error)
         toast.error('Failed to load team settings')
       } finally {
         this.isLoading = false
@@ -307,15 +388,74 @@ export default {
 
       try {
         this.isLoadingMembers = true
-        const { data } = await authClient.organization.listTeamMembers({
-          teamId: this.currentTeam.id,
+        const response = await $fetch('/api/teams/members', {
+          params: { teamId: this.currentTeam.id },
         })
-        this.teamMembers = data || []
-      } catch (error) {
-        console.error('Error loading team members:', error)
-        toast.error('Failed to load team members')
+        this.teamMembers = response?.data || []
+      } catch (_error) {
+        // Fall back to Better-Auth API (returns userId only)
+        try {
+          const { data } = await authClient.organization.listTeamMembers({
+            teamId: this.currentTeam.id,
+          })
+          this.teamMembers = (data || []).map((m) => ({
+            ...m,
+            userName: null,
+            userEmail: null,
+            userImage: null,
+          }))
+        } catch (error) {
+          console.error('Error loading team members:', error)
+          toast.error('Failed to load team members')
+        }
       } finally {
         this.isLoadingMembers = false
+      }
+    },
+
+    async switchToTeam(team) {
+      if (team.id === this.currentTeam?.id || this.switchingTeamId) return
+
+      try {
+        this.switchingTeamId = team.id
+
+        await $fetch('/api/teams/active', {
+          method: 'POST',
+          body: { teamId: team.id },
+        })
+
+        // Sync Better-Auth client-side organization context
+        if (team.organizationId && team.organizationId !== this.currentTeam?.organizationId) {
+          await authClient.organization.setActive({
+            organizationId: team.organizationId,
+          })
+        }
+
+        this.currentTeam = { ...team, organization: null }
+        this.teamName = team.name
+
+        // Refresh organization context if org changed
+        if (team.organizationId !== this.activeOrganization?.id) {
+          this.activeOrganization = await this.fetchActiveOrganization()
+        }
+
+        await this.loadTeamMembers()
+
+        // Notify other components (sidebar TeamSwitcher, pages)
+        if (import.meta.client) {
+          window.dispatchEvent(
+            new CustomEvent(ACTIVE_TEAM_CHANGED_EVENT, {
+              detail: { teamId: team.id },
+            })
+          )
+        }
+
+        toast.success(`Switched to ${team.name}`)
+      } catch (error) {
+        console.error('Error switching team:', error)
+        toast.error('Failed to switch team')
+      } finally {
+        this.switchingTeamId = null
       }
     },
 
@@ -327,6 +467,12 @@ export default {
           teamId: this.currentTeam.id,
           data: { name: this.teamName.trim() },
         })
+
+        // Update local state
+        this.currentTeam.name = this.teamName.trim()
+        const teamInList = this.allTeams.find((t) => t.id === this.currentTeam.id)
+        if (teamInList) teamInList.name = this.teamName.trim()
+
         toast.success('Team updated')
       } catch (error) {
         console.error('Error updating team:', error)
@@ -366,7 +512,17 @@ export default {
           })
 
           await this.syncActiveTeamContext()
+          this.allTeams = await this.fetchAllTeams()
           await this.loadTeamMembers()
+
+          // Notify other components
+          if (import.meta.client) {
+            window.dispatchEvent(
+              new CustomEvent(ACTIVE_TEAM_CHANGED_EVENT, {
+                detail: { teamId: result.data.id },
+              })
+            )
+          }
         }
 
         this.showCreateTeamDialog = false
@@ -381,11 +537,18 @@ export default {
     },
 
     async inviteToTeam() {
-      if (!this.currentTeam?.id || !this.activeOrganization?.id || !this.inviteEmail.trim()) return
+      if (!this.currentTeam?.id || !this.inviteEmail.trim()) return
+
+      const organizationId = await this.resolveOrganizationId()
+      if (!organizationId) {
+        toast.error('No active organization context')
+        return
+      }
+
       try {
         this.isInviting = true
         await authClient.organization.inviteMember({
-          organizationId: this.activeOrganization.id,
+          organizationId,
           email: this.inviteEmail.trim(),
           role: 'member',
           teamId: this.currentTeam.id,
@@ -420,11 +583,26 @@ export default {
       if (!this.currentTeam?.id) return
       try {
         this.isDeletingTeam = true
-        await authClient.organization.removeTeam({ teamId: this.currentTeam.id })
+        const deletedTeamId = this.currentTeam.id
+        await authClient.organization.removeTeam({ teamId: deletedTeamId })
         this.showDeleteTeamDialog = false
         this.deleteConfirmation = ''
+
+        // Remove from local list
+        this.allTeams = this.allTeams.filter((t) => t.id !== deletedTeamId)
+
         await this.syncActiveTeamContext()
         await this.loadTeamMembers()
+
+        // Notify other components
+        if (import.meta.client) {
+          window.dispatchEvent(
+            new CustomEvent(ACTIVE_TEAM_CHANGED_EVENT, {
+              detail: { teamId: this.currentTeam?.id || null },
+            })
+          )
+        }
+
         toast.success('Team deleted')
       } catch (error) {
         console.error('Error deleting team:', error)
