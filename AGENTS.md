@@ -1,5 +1,9 @@
 # Agent Memory
 
+## Startup rule
+- Before starting any task, read `CLAUDE.md` in full.
+- Treat `CLAUDE.md` as the repository's authoritative agent instruction file (`AGENTS.md` equivalent).
+
 ## Post-change validation checklist
 - Run `yarn typecheck`.
 - Run `yarn test`.
