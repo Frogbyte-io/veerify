@@ -268,15 +268,9 @@ export default {
 
         const { data: session } = authClient.useSession()
         this.session = session.value
-        watch(session, (newSession) => {
-          this.session = newSession || null
-        })
 
         const { data: activeOrganization } = authClient.useActiveOrganization()
         this.activeOrganization = activeOrganization.value || (await this.fetchActiveOrganization())
-        watch(activeOrganization, (newOrg) => {
-          this.activeOrganization = newOrg || null
-        })
 
         await this.loadTeamMembers()
       } catch (error) {
