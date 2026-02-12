@@ -92,16 +92,41 @@
 
 <script>
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+const TEAM_SWITCHER_CACHE_MAX_AGE_MS = 5 * 60 * 1000
+
+const teamSwitcherCache = {
+  teams: [],
+  activeTeam: null,
+  activeOrganization: null,
+  loadedAt: 0,
+  pendingRequest: null,
+}
+
+function hasCachedTeamContext() {
+  return import.meta.client && teamSwitcherCache.loadedAt > 0
+}
+
+function isTeamContextCacheFresh() {
+  return hasCachedTeamContext() && Date.now() - teamSwitcherCache.loadedAt < TEAM_SWITCHER_CACHE_MAX_AGE_MS
+}
+
+function clearTeamContextCache() {
+  teamSwitcherCache.teams = []
+  teamSwitcherCache.activeTeam = null
+  teamSwitcherCache.activeOrganization = null
+  teamSwitcherCache.loadedAt = 0
+}
 
 export default {
   name: 'TeamSwitcher',
 
   data() {
+    const hasCachedData = hasCachedTeamContext()
     return {
-      teams: [],
-      activeTeam: null,
-      activeOrganization: null,
-      isLoadingTeams: true,
+      teams: hasCachedData ? teamSwitcherCache.teams : [],
+      activeTeam: hasCachedData ? teamSwitcherCache.activeTeam : null,
+      activeOrganization: hasCachedData ? teamSwitcherCache.activeOrganization : null,
+      isLoadingTeams: !hasCachedData,
       teamsError: null,
     }
   },
@@ -120,6 +145,45 @@ export default {
   },
 
   methods: {
+    applyTeamContextFromCache() {
+      this.teams = teamSwitcherCache.teams
+      this.activeTeam = teamSwitcherCache.activeTeam
+      this.activeOrganization = teamSwitcherCache.activeOrganization
+      this.isLoadingTeams = false
+    },
+
+    async fetchTeamContext() {
+      const [activeTeamResponse, teamsResponse, activeOrganizationResponse] = await Promise.all([
+        $fetch('/api/teams/active'),
+        $fetch('/api/auth/organization/list-user-teams'),
+        $fetch('/api/auth/organization/get-full-organization').catch(() => null),
+      ])
+
+      return {
+        activeTeam: activeTeamResponse?.data || null,
+        teams: Array.isArray(teamsResponse) ? teamsResponse : teamsResponse?.data || [],
+        activeOrganization: activeOrganizationResponse || null,
+      }
+    },
+
+    async fetchAndCacheTeamContext() {
+      if (!teamSwitcherCache.pendingRequest) {
+        teamSwitcherCache.pendingRequest = this.fetchTeamContext()
+          .then((context) => {
+            teamSwitcherCache.activeTeam = context.activeTeam
+            teamSwitcherCache.teams = context.teams
+            teamSwitcherCache.activeOrganization = context.activeOrganization
+            teamSwitcherCache.loadedAt = Date.now()
+            return context
+          })
+          .finally(() => {
+            teamSwitcherCache.pendingRequest = null
+          })
+      }
+
+      return teamSwitcherCache.pendingRequest
+    },
+
     emitActiveTeamChanged() {
       if (!import.meta.client) return
 
@@ -130,54 +194,60 @@ export default {
       )
     },
 
-    async loadActiveTeam() {
-      const response = await $fetch('/api/teams/active')
-      this.activeTeam = response?.data || null
-      return this.activeTeam
-    },
+    async initializeTeams(options = {}) {
+      const { force = false, silent = false } = options
+      const hasCachedData = hasCachedTeamContext()
 
-    async loadTeams() {
-      const response = await $fetch('/api/auth/organization/list-user-teams')
-      this.teams = Array.isArray(response) ? response : response?.data || []
-      return this.teams
-    },
-
-    async loadActiveOrganization() {
-      try {
-        const response = await $fetch('/api/auth/organization/get-full-organization')
-        this.activeOrganization = response || null
-      } catch {
-        this.activeOrganization = null
-      }
-      return this.activeOrganization
-    },
-
-    async initializeTeams() {
-      try {
-        await this.loadActiveTeam()
-        await this.loadTeams()
-        await this.loadActiveOrganization()
-
-        this.isLoadingTeams = false
+      if (!force && hasCachedData) {
+        this.applyTeamContextFromCache()
         this.teamsError = null
-      } catch (error) {
-        console.error('Error loading teams:', error)
-        this.teamsError = 'Failed to load teams'
+
+        if (!isTeamContextCacheFresh() && !teamSwitcherCache.pendingRequest) {
+          // Revalidate stale cache in the background without showing loading UI.
+          void this.initializeTeams({ force: true, silent: true })
+        }
+        return
+      }
+
+      try {
+        if (!silent || !hasCachedData) {
+          this.isLoadingTeams = true
+        }
+        this.teamsError = null
+        await this.fetchAndCacheTeamContext()
+        this.applyTeamContextFromCache()
+        this.teamsError = null
         this.isLoadingTeams = false
+      } catch (error) {
+        if (!hasCachedData) {
+          clearTeamContextCache()
+          this.teamsError = 'Failed to load teams'
+        }
+        this.isLoadingTeams = false
+        console.error('Error loading teams:', error)
       }
     },
 
     async setActiveTeam(team) {
+      const previousActiveTeam = this.activeTeam
+
       try {
+        this.teamsError = null
+        this.activeTeam = team
+        teamSwitcherCache.activeTeam = team
+
         await $fetch('/api/teams/active', {
           method: 'POST',
           body: { teamId: team.id },
         })
-        await this.initializeTeams()
+
         this.emitActiveTeamChanged()
+        void this.initializeTeams({ force: true, silent: true })
       } catch (error) {
-        console.error('Error setting active team:', error)
+        this.activeTeam = previousActiveTeam
+        teamSwitcherCache.activeTeam = previousActiveTeam
         this.teamsError = 'Failed to switch team'
+        console.error('Error setting active team:', error)
       }
     },
 
@@ -187,8 +257,7 @@ export default {
 
     async refreshTeams() {
       this.teamsError = null
-      this.isLoadingTeams = true
-      await this.initializeTeams()
+      await this.initializeTeams({ force: true, silent: false })
     },
   },
 }

@@ -2,7 +2,7 @@
   <SidebarMenu>
     <SidebarMenuItem>
       <!-- Show loading state while checking auth -->
-      <div v-if="isLoading" class="flex items-center space-x-2 p-2">
+      <div v-if="isLoading" data-testid="nav-user-loading" class="flex items-center space-x-2 p-2">
         <div class="h-8 w-8 bg-gray-200 rounded-lg animate-pulse" />
         <div class="space-y-1">
           <div class="h-4 w-20 bg-gray-200 rounded animate-pulse" />
@@ -14,6 +14,7 @@
       <DropdownMenu v-else-if="user">
         <DropdownMenuTrigger as-child>
           <SidebarMenuButton
+            data-testid="nav-user-trigger"
             size="lg"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
           >
@@ -24,8 +25,8 @@
               </AvatarFallback>
             </Avatar>
             <div class="grid flex-1 text-left text-sm leading-tight">
-              <span class="truncate font-semibold">{{ user.name }}</span>
-              <span class="truncate text-xs">{{ user.email }}</span>
+              <span data-testid="nav-user-name" class="truncate font-semibold">{{ user.name }}</span>
+              <span data-testid="nav-user-email" class="truncate text-xs">{{ user.email }}</span>
             </div>
             <Icon name="lucide:chevrons-up-down" class="ml-auto size-4" />
           </SidebarMenuButton>
@@ -79,13 +80,39 @@
 <script>
 import { authClient } from '~/lib/auth-client'
 
+const NAV_USER_CACHE_MAX_AGE_MS = 5 * 60 * 1000
+
+const navUserCache = {
+  session: null,
+  loadedAt: 0,
+  initialized: false,
+  pendingRequest: null,
+}
+
+function hasCachedNavUserSession() {
+  return import.meta.client && navUserCache.initialized
+}
+
+function isNavUserSessionCacheFresh() {
+  return hasCachedNavUserSession() && Date.now() - navUserCache.loadedAt < NAV_USER_CACHE_MAX_AGE_MS
+}
+
+function clearNavUserSessionCache() {
+  navUserCache.session = null
+  navUserCache.loadedAt = 0
+  navUserCache.initialized = false
+  navUserCache.pendingRequest = null
+}
+
 export default {
   name: 'NavUser',
 
   data() {
+    const hasCachedSession = hasCachedNavUserSession()
     return {
-      session: null,
-      isPending: true,
+      session: hasCachedSession ? navUserCache.session : null,
+      isPending: !hasCachedSession,
+      stopSessionWatcher: null,
     }
   },
 
@@ -114,25 +141,87 @@ export default {
   },
 
   async mounted() {
-    try {
-      const { data: session, isPending } = await authClient.useSession(useFetch)
-      this.session = session.value
-      this.isPending = isPending.value
+    await this.initializeSession()
+  },
 
-      watch(session, (newSession) => {
-        this.session = newSession
-      })
-
-      watch(isPending, (newPending) => {
-        this.isPending = newPending
-      })
-    } catch (error) {
-      console.error('Error fetching session:', error)
-      this.isPending = false
-    }
+  beforeUnmount() {
+    this.stopSessionWatcher?.()
+    this.stopSessionWatcher = null
   },
 
   methods: {
+    applySessionFromCache() {
+      this.session = navUserCache.session
+      this.isPending = false
+    },
+
+    async fetchSessionState() {
+      const { data: session } = await authClient.useSession(useFetch)
+      return {
+        session: session.value || null,
+        sessionRef: session,
+      }
+    },
+
+    async fetchAndCacheSession() {
+      if (!navUserCache.pendingRequest) {
+        navUserCache.pendingRequest = this.fetchSessionState()
+          .then((sessionState) => {
+            navUserCache.session = sessionState.session
+            navUserCache.loadedAt = Date.now()
+            navUserCache.initialized = true
+            return sessionState
+          })
+          .finally(() => {
+            navUserCache.pendingRequest = null
+          })
+      }
+
+      return navUserCache.pendingRequest
+    },
+
+    startSessionWatcher(sessionRef) {
+      this.stopSessionWatcher?.()
+      this.stopSessionWatcher = watch(sessionRef, (nextSession) => {
+        navUserCache.session = nextSession || null
+        navUserCache.loadedAt = Date.now()
+        navUserCache.initialized = true
+        this.session = navUserCache.session
+      })
+    },
+
+    async initializeSession(options = {}) {
+      const { force = false, silent = false } = options
+      const hasCachedSession = hasCachedNavUserSession()
+
+      if (!force && hasCachedSession) {
+        this.applySessionFromCache()
+
+        if (!isNavUserSessionCacheFresh() && !navUserCache.pendingRequest) {
+          void this.initializeSession({ force: true, silent: true })
+        }
+        return
+      }
+
+      try {
+        if (!silent || !hasCachedSession) {
+          this.isPending = true
+        }
+
+        const sessionState = await this.fetchAndCacheSession()
+        this.session = sessionState.session
+        this.isPending = false
+        this.startSessionWatcher(sessionState.sessionRef)
+      } catch (error) {
+        if (!hasCachedSession) {
+          clearNavUserSessionCache()
+          this.session = null
+        }
+        this.isPending = false
+        console.error('Error fetching session:', error)
+      }
+    },
+
     getInitials(name) {
       if (!name) return ''
       return name
@@ -145,6 +234,9 @@ export default {
     async handleLogout() {
       try {
         await authClient.signOut()
+        clearNavUserSessionCache()
+        this.session = null
+        this.isPending = false
         await navigateTo('/login')
       } catch (error) {
         console.error('Error signing out:', error)
