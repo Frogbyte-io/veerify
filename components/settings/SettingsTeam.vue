@@ -233,9 +233,10 @@ export default {
 
     async fetchActiveOrganization() {
       try {
-        const response = await $fetch('/api/auth/organization/get-full-organization')
-        return response || null
-      } catch {
+        const { data } = await authClient.organization.getFullOrganization({})
+        return data || null
+      } catch (error) {
+        console.error('[SettingsTeam] Error fetching active organization:', error)
         return null
       }
     },
@@ -264,17 +265,34 @@ export default {
 
     async initialize() {
       try {
+        console.log('[SettingsTeam] Starting initialization...')
+
+        console.log('[SettingsTeam] Step 1: Syncing active team context')
         await this.syncActiveTeamContext()
+        console.log('[SettingsTeam] Active team synced:', this.currentTeam)
 
-        const { data: session } = authClient.useSession()
+        console.log('[SettingsTeam] Step 2: Getting session')
+        const { data: session } = await authClient.useSession(useFetch)
         this.session = session.value
+        console.log('[SettingsTeam] Session loaded:', this.session?.user?.email)
 
-        const { data: activeOrganization } = authClient.useActiveOrganization()
-        this.activeOrganization = activeOrganization.value || (await this.fetchActiveOrganization())
+        console.log('[SettingsTeam] Step 3: Getting active organization')
+        this.activeOrganization = await this.fetchActiveOrganization()
+        console.log('[SettingsTeam] Active organization:', this.activeOrganization)
 
+        console.log('[SettingsTeam] Step 4: Loading team members')
         await this.loadTeamMembers()
+        console.log('[SettingsTeam] Team members loaded:', this.teamMembers.length)
+
+        console.log('[SettingsTeam] Initialization complete!')
       } catch (error) {
-        console.error('Error initializing team settings:', error)
+        console.error('[SettingsTeam] Error during initialization:', error)
+        console.error('[SettingsTeam] Error details:', {
+          message: error.message,
+          statusCode: error.statusCode,
+          status: error.status,
+          data: error.data,
+        })
         toast.error('Failed to load team settings')
       } finally {
         this.isLoading = false
@@ -290,7 +308,7 @@ export default {
       try {
         this.isLoadingMembers = true
         const { data } = await authClient.organization.listTeamMembers({
-          query: { teamId: this.currentTeam.id },
+          teamId: this.currentTeam.id,
         })
         this.teamMembers = data || []
       } catch (error) {
