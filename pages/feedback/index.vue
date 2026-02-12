@@ -406,25 +406,30 @@ export default {
 
   methods: {
     async initTeamContext() {
+      this.isLoading = true
+      this.error = null
+
       try {
         const teamResponse = await $fetch('/api/teams/active')
         const activeTeamData = teamResponse?.data
 
-        if (activeTeamData?.id) {
-          this.activeTeamId = activeTeamData.id
+        if (!activeTeamData?.id) {
+          this.error = 'No active team found'
+          this.isLoading = false
+          return
         }
 
-        const activeOrganization = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
-        if (activeOrganization?.slug) {
-          this.activeOrgSlug = activeOrganization.slug
+        this.activeTeamId = activeTeamData.id
+
+        // Extract organization slug from the response
+        if (activeTeamData.organization?.slug) {
+          this.activeOrgSlug = activeTeamData.organization.slug
         }
 
-        if (this.activeTeamId) {
-          await this.loadProducts()
-        }
+        await this.loadProducts()
       } catch (err) {
         console.error('Error initializing team context:', err)
-        this.error = 'Failed to load team context'
+        this.error = err?.data?.message || 'Failed to load team context'
         this.isLoading = false
       }
     },

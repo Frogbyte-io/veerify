@@ -166,8 +166,6 @@
 </template>
 
 <script>
-import { authClient } from '~/lib/auth-client'
-
 export default {
   name: 'ProductsPage',
 
@@ -202,32 +200,32 @@ export default {
 
   methods: {
     async initTeamContext() {
+      this.isLoading = true
+      this.error = null
+
       try {
+        // Load active team with organization data
         const teamResponse = await $fetch('/api/teams/active')
         const activeTeamData = teamResponse?.data
 
-        if (activeTeamData?.id) {
-          this.activeTeamId = activeTeamData.id
+        if (!activeTeamData?.id) {
+          this.error = 'No active team found'
+          this.isLoading = false
+          return
         }
 
-        const { data: activeOrg } = authClient.useActiveOrganization()
+        this.activeTeamId = activeTeamData.id
 
-        if (activeOrg.value?.slug) {
-          this.activeOrgSlug = activeOrg.value.slug
+        // Extract organization slug from the response
+        if (activeTeamData.organization?.slug) {
+          this.activeOrgSlug = activeTeamData.organization.slug
         }
 
-        if (this.activeTeamId) {
-          await this.loadProducts()
-        }
-
-        watch(activeOrg, async (newOrg) => {
-          if (newOrg?.slug) {
-            this.activeOrgSlug = newOrg.slug
-          }
-        })
+        // Load products
+        await this.loadProducts()
       } catch (err) {
         console.error('Error initializing team context:', err)
-        this.error = 'Failed to load team context'
+        this.error = err?.data?.message || 'Failed to load team context'
         this.isLoading = false
       }
     },
