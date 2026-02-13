@@ -11,109 +11,19 @@
         <div class="lg:col-span-1">
           <nav class="bg-card rounded-lg border p-4">
             <ul class="space-y-2">
-              <li>
+              <li v-for="tab in availableTabs" :key="tab.key">
                 <button
-                  data-testid="settings-tab-profile"
+                  :data-testid="`settings-tab-${tab.key}`"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === 'profile'
+                    activeTab === tab.key
                       ? 'bg-accent text-accent-foreground font-medium'
                       : 'text-muted-foreground hover:bg-accent/50',
                   ]"
-                  @click="setActiveTab('profile')"
+                  @click="setActiveTab(tab.key)"
                 >
-                  <Icon name="lucide:user" class="w-4 h-4 mr-2" />
-                  Profile
-                </button>
-              </li>
-              <li>
-                <button
-                  data-testid="settings-tab-security"
-                  :class="[
-                    'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === 'security'
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab('security')"
-                >
-                  <Icon name="lucide:shield" class="w-4 h-4 mr-2" />
-                  Security
-                </button>
-              </li>
-              <li>
-                <button
-                  data-testid="settings-tab-notifications"
-                  :class="[
-                    'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === 'notifications'
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab('notifications')"
-                >
-                  <Icon name="lucide:bell" class="w-4 h-4 mr-2" />
-                  Notifications
-                </button>
-              </li>
-              <li>
-                <button
-                  data-testid="settings-tab-organization"
-                  :class="[
-                    'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === 'organization'
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab('organization')"
-                >
-                  <Icon name="lucide:building-2" class="w-4 h-4 mr-2" />
-                  Organization
-                </button>
-              </li>
-              <li>
-                <button
-                  data-testid="settings-tab-team"
-                  :class="[
-                    'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === 'team'
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab('team')"
-                >
-                  <Icon name="lucide:users" class="w-4 h-4 mr-2" />
-                  Team
-                </button>
-              </li>
-              <li>
-                <button
-                  data-testid="settings-tab-billing"
-                  :class="[
-                    'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === 'billing'
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab('billing')"
-                >
-                  <Icon name="lucide:credit-card" class="w-4 h-4 mr-2" />
-                  Billing
-                </button>
-              </li>
-              <li>
-                <button
-                  data-testid="settings-tab-appearance"
-                  :class="[
-                    'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === 'appearance'
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab('appearance')"
-                >
-                  <Icon name="lucide:palette" class="w-4 h-4 mr-2" />
-                  Appearance
+                  <Icon :name="tab.icon" class="w-4 h-4 mr-2" />
+                  {{ tab.label }}
                 </button>
               </li>
             </ul>
@@ -138,6 +48,26 @@ import SettingsTeam from '~/components/settings/SettingsTeam.vue'
 import SettingsBilling from '~/components/settings/SettingsBilling.vue'
 import SettingsAppearance from '~/components/settings/SettingsAppearance.vue'
 
+const allTabs = [
+  { key: 'profile', label: 'Profile', icon: 'lucide:user' },
+  { key: 'security', label: 'Security', icon: 'lucide:shield' },
+  { key: 'notifications', label: 'Notifications', icon: 'lucide:bell' },
+  { key: 'organization', label: 'Organization', icon: 'lucide:building-2' },
+  { key: 'team', label: 'Team', icon: 'lucide:users' },
+  { key: 'billing', label: 'Billing', icon: 'lucide:credit-card' },
+  { key: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
+]
+
+const componentMap = {
+  profile: 'SettingsProfile',
+  security: 'SettingsSecurity',
+  notifications: 'SettingsNotifications',
+  organization: 'SettingsOrganization',
+  team: 'SettingsTeam',
+  billing: 'SettingsBilling',
+  appearance: 'SettingsAppearance',
+}
+
 export default {
   name: 'SettingsPage',
   components: {
@@ -152,36 +82,61 @@ export default {
   data() {
     return {
       activeTab: 'profile',
+      currentOrgRole: null,
     }
   },
   computed: {
+    availableTabs() {
+      return allTabs.filter((tab) => {
+        if (tab.key === 'billing') {
+          return this.currentOrgRole === 'owner'
+        }
+        return true
+      })
+    },
     currentComponent() {
-      const componentMap = {
-        profile: 'SettingsProfile',
-        security: 'SettingsSecurity',
-        notifications: 'SettingsNotifications',
-        organization: 'SettingsOrganization',
-        team: 'SettingsTeam',
-        billing: 'SettingsBilling',
-        appearance: 'SettingsAppearance',
-      }
       return componentMap[this.activeTab] || 'SettingsProfile'
     },
   },
-  mounted() {
-    // Check for hash in URL to set initial tab
+  async mounted() {
+    await this.loadOrgRole()
+
     const hash = window.location.hash.replace('#', '')
-    if (
-      hash &&
-      ['profile', 'security', 'notifications', 'organization', 'team', 'billing', 'appearance'].includes(hash)
-    ) {
+    const validKeys = this.availableTabs.map((t) => t.key)
+    if (hash && validKeys.includes(hash)) {
       this.activeTab = hash
+    } else if (hash === 'billing' && !validKeys.includes('billing')) {
+      this.activeTab = 'profile'
+      window.history.replaceState(null, null, '#profile')
     }
   },
   methods: {
+    async loadOrgRole() {
+      try {
+        const activeOrg = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
+        if (!activeOrg?.id && !activeOrg?.name) {
+          this.currentOrgRole = null
+          return
+        }
+
+        let slug = activeOrg.slug || null
+        if (!slug) {
+          const listedOrgs = await $fetch('/api/auth/organization/list').catch(() => null)
+          const organizations = Array.isArray(listedOrgs) ? listedOrgs : listedOrgs?.data || []
+          const matched = organizations.find((org) => org.id === activeOrg.id)
+          slug = matched?.slug || null
+        }
+
+        if (slug) {
+          const response = await $fetch(`/api/orgs/${slug}`).catch(() => null)
+          this.currentOrgRole = response?.data?.currentUserRole || null
+        }
+      } catch (_error) {
+        this.currentOrgRole = null
+      }
+    },
     setActiveTab(tab) {
       this.activeTab = tab
-      // Update URL hash for direct linking
       window.history.replaceState(null, null, `#${tab}`)
     },
   },

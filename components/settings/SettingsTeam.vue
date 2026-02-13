@@ -71,8 +71,15 @@
           <Label for="team-name">Team Name</Label>
           <Input id="team-name" v-model="teamName" placeholder="Team name" />
         </div>
+        <div class="space-y-2">
+          <Label for="team-slug">Subdomain Slug</Label>
+          <Input id="team-slug" v-model="teamSlug" placeholder="my-team" />
+          <p class="text-xs text-muted-foreground">
+            Public URL: {{ teamSlugPreview }}
+          </p>
+        </div>
         <div class="flex justify-end">
-          <Button :disabled="isSavingTeam || !teamName.trim() || teamName.trim() === currentTeam.name" @click="updateTeam">
+          <Button :disabled="isSavingTeam || !hasTeamChanges" @click="updateTeam">
             <Icon v-if="isSavingTeam" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
             Save Team
           </Button>
@@ -158,14 +165,21 @@
         <div class="space-y-4 py-4">
           <div class="space-y-2">
             <Label for="new-team-name">Team Name</Label>
-            <Input id="new-team-name" data-testid="team-create-name" v-model="newTeamName" placeholder="Platform Team" />
+            <Input id="new-team-name" data-testid="team-create-name" v-model="newTeamName" placeholder="Platform Team" @input="generateNewTeamSlug" />
+          </div>
+          <div class="space-y-2">
+            <Label for="new-team-slug">Subdomain Slug</Label>
+            <Input id="new-team-slug" v-model="newTeamSlug" placeholder="platform-team" />
+            <p class="text-xs text-muted-foreground">
+              Your public feedback boards will live at <span class="font-medium">{{ newTeamSlug || 'slug' }}.{{ appDomain }}</span>
+            </p>
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" @click="showCreateTeamDialog = false">Cancel</Button>
           <Button
             data-testid="team-create-submit"
-            :disabled="isCreatingTeam || !newTeamName.trim()"
+            :disabled="isCreatingTeam || !newTeamName.trim() || !newTeamSlug.trim()"
             @click="createTeam"
           >
             <Icon v-if="isCreatingTeam" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
@@ -242,6 +256,7 @@ export default {
       allTeams: [],
       organizations: [],
       teamName: '',
+      teamSlug: '',
       teamMembers: [],
       isLoading: true,
       isLoadingMembers: false,
@@ -254,9 +269,26 @@ export default {
       showInviteDialog: false,
       showDeleteTeamDialog: false,
       newTeamName: '',
+      newTeamSlug: '',
       inviteEmail: '',
       deleteConfirmation: '',
     }
+  },
+
+  computed: {
+    appDomain() {
+      return useRuntimeConfig().public.appDomain || 'localhost'
+    },
+    teamSlugPreview() {
+      const slug = this.teamSlug || '...'
+      return `${slug}.${this.appDomain}`
+    },
+    hasTeamChanges() {
+      return (
+        (this.teamName.trim() && this.teamName.trim() !== this.currentTeam?.name) ||
+        (this.teamSlug.trim() && this.teamSlug.trim() !== this.currentTeam?.slug)
+      )
+    },
   },
 
   async mounted() {
@@ -289,6 +321,7 @@ export default {
     async syncActiveTeamContext() {
       this.currentTeam = await this.fetchActiveTeam()
       this.teamName = this.currentTeam?.name || ''
+      this.teamSlug = this.currentTeam?.slug || ''
     },
 
     async fetchActiveOrganization() {
@@ -460,30 +493,53 @@ export default {
     },
 
     async updateTeam() {
-      if (!this.currentTeam?.id || !this.teamName.trim()) return
+      if (!this.currentTeam?.id) return
       try {
         this.isSavingTeam = true
-        await authClient.organization.updateTeam({
-          teamId: this.currentTeam.id,
-          data: { name: this.teamName.trim() },
-        })
 
-        // Update local state
-        this.currentTeam.name = this.teamName.trim()
-        const teamInList = this.allTeams.find((t) => t.id === this.currentTeam.id)
-        if (teamInList) teamInList.name = this.teamName.trim()
+        const nameChanged = this.teamName.trim() && this.teamName.trim() !== this.currentTeam.name
+        const slugChanged = this.teamSlug.trim() && this.teamSlug.trim() !== this.currentTeam.slug
+
+        if (nameChanged) {
+          await authClient.organization.updateTeam({
+            teamId: this.currentTeam.id,
+            data: { name: this.teamName.trim() },
+          })
+          this.currentTeam.name = this.teamName.trim()
+          const teamInList = this.allTeams.find((t) => t.id === this.currentTeam.id)
+          if (teamInList) teamInList.name = this.teamName.trim()
+        }
+
+        if (slugChanged) {
+          await $fetch(`/api/teams/${this.currentTeam.id}/slug`, {
+            method: 'PUT',
+            body: { slug: this.teamSlug.trim() },
+          })
+          this.currentTeam.slug = this.teamSlug.trim()
+          const teamInList = this.allTeams.find((t) => t.id === this.currentTeam.id)
+          if (teamInList) teamInList.slug = this.teamSlug.trim()
+        }
 
         toast.success('Team updated')
       } catch (error) {
         console.error('Error updating team:', error)
-        toast.error('Failed to update team')
+        toast.error(error?.data?.error?.message || 'Failed to update team')
       } finally {
         this.isSavingTeam = false
       }
     },
 
+    generateNewTeamSlug() {
+      this.newTeamSlug = this.newTeamName
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+    },
+
     async createTeam() {
-      if (!this.newTeamName.trim()) return
+      if (!this.newTeamName.trim() || !this.newTeamSlug.trim()) return
 
       const organizationId = await this.resolveOrganizationId()
       if (!organizationId) {
@@ -493,22 +549,20 @@ export default {
 
       try {
         this.isCreatingTeam = true
-        const result = await authClient.organization.createTeam({
-          name: this.newTeamName.trim(),
-          organizationId,
+        const result = await $fetch('/api/teams/create', {
+          method: 'POST',
+          body: {
+            name: this.newTeamName.trim(),
+            slug: this.newTeamSlug.trim(),
+            organizationId,
+          },
         })
 
-        if (result?.data?.id) {
-          if (this.session?.user?.id) {
-            await authClient.organization.addTeamMember({
-              teamId: result.data.id,
-              userId: this.session.user.id,
-            })
-          }
-
+        const newTeamId = result?.data?.id
+        if (newTeamId) {
           await $fetch('/api/teams/active', {
             method: 'POST',
-            body: { teamId: result.data.id },
+            body: { teamId: newTeamId },
           })
 
           await this.syncActiveTeamContext()
@@ -519,7 +573,7 @@ export default {
           if (import.meta.client) {
             window.dispatchEvent(
               new CustomEvent(ACTIVE_TEAM_CHANGED_EVENT, {
-                detail: { teamId: result.data.id },
+                detail: { teamId: newTeamId },
               })
             )
           }
@@ -527,10 +581,11 @@ export default {
 
         this.showCreateTeamDialog = false
         this.newTeamName = ''
+        this.newTeamSlug = ''
         toast.success('Team created')
       } catch (error) {
         console.error('Error creating team:', error)
-        toast.error('Failed to create team')
+        toast.error(error?.data?.error?.message || 'Failed to create team')
       } finally {
         this.isCreatingTeam = false
       }

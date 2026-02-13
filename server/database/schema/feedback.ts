@@ -29,8 +29,8 @@ export const project = pgTable(
       .notNull(),
   },
   (table) => ({
-    // Unique slug within an organization URL namespace
-    uniqueOrgSlug: uniqueIndex('project_org_slug_idx').on(table.organizationId, table.slug),
+    // Unique slug within a team URL namespace
+    uniqueTeamSlug: uniqueIndex('project_team_slug_idx').on(table.teamId, table.slug),
     // Index for governance/public URL lookups by organization
     orgIdx: index('project_org_idx').on(table.organizationId),
     // Index for querying projects by team

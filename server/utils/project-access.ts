@@ -1,10 +1,8 @@
 import { eq, and } from 'drizzle-orm'
-import type { H3Event } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { project, feedback } from '~/server/database/schema/feedback'
-import { teamMember, organization } from '~/server/database/schema/auth'
+import { teamMember, team } from '~/server/database/schema/auth'
 import { createErrorResponse, ErrorCode } from './response'
-import type { AuthSession } from './auth-middleware'
 
 /**
  * Verifies user has access to a project via team membership.
@@ -81,22 +79,23 @@ export async function requirePublicProject(projectId: string) {
 }
 
 /**
- * Resolves project by org slug and project slug, verifying it's public.
+ * Resolves a public project by team slug and project slug.
+ * Throws 404 if team/project not found, 403 if project is not public.
  */
-export async function resolvePublicProject(orgSlug: string, projectSlug: string) {
-  const [org] = await db.select().from(organization).where(eq(organization.slug, orgSlug)).limit(1)
-  if (!org) {
+export async function resolvePublicProjectByTeam(teamSlug: string, projectSlug: string) {
+  const [t] = await db.select().from(team).where(eq(team.slug, teamSlug)).limit(1)
+  if (!t) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Organization not found'),
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Team not found'),
     })
   }
 
   const [proj] = await db
     .select()
     .from(project)
-    .where(and(eq(project.organizationId, org.id), eq(project.slug, projectSlug)))
+    .where(and(eq(project.teamId, t.id), eq(project.slug, projectSlug)))
     .limit(1)
 
   if (!proj) {
@@ -115,5 +114,5 @@ export async function resolvePublicProject(orgSlug: string, projectSlug: string)
     })
   }
 
-  return { organization: org, project: proj }
+  return { team: t, project: proj }
 }

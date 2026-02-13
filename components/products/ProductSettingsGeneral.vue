@@ -22,12 +22,11 @@
           <Label for="project-slug">URL Slug</Label>
           <Input
             id="project-slug"
-            :model-value="project.slug"
-            disabled
-            class="opacity-60"
+            v-model="form.slug"
+            placeholder="my-product"
           />
           <p class="text-xs text-muted-foreground">
-            Slug cannot be changed after creation.
+            Used in your public feedback URL.
           </p>
         </div>
 
@@ -78,7 +77,7 @@
           />
         </div>
 
-        <div v-if="project.organization" class="rounded-md bg-muted p-3">
+        <div v-if="publicUrl" class="rounded-md bg-muted p-3">
           <p class="text-sm">
             <span class="font-medium">Public URL:</span>
             <span class="ml-1 text-muted-foreground">{{ publicUrl }}</span>
@@ -112,6 +111,7 @@ export default {
     return {
       form: {
         name: this.project.name || '',
+        slug: this.project.slug || '',
         description: this.project.description || '',
         customDomain: this.project.customDomain || '',
         isPublic: this.project.isPublic ?? true,
@@ -123,21 +123,29 @@ export default {
     hasChanges() {
       return (
         this.form.name !== (this.project.name || '') ||
+        this.form.slug !== (this.project.slug || '') ||
         this.form.description !== (this.project.description || '') ||
         this.form.customDomain !== (this.project.customDomain || '') ||
         this.form.isPublic !== this.project.isPublic
       )
     },
     publicUrl() {
-      const origin = import.meta.client ? window.location.origin : ''
-      const orgSlug = this.project.organization?.slug || '...'
-      return `${origin}/p/${orgSlug}/${this.project.slug}`
+      if (!import.meta.client) return ''
+      const teamSlug = this.project.team?.slug
+      if (!teamSlug) return ''
+      const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
+      const protocol = window.location.protocol
+      const port = window.location.port
+      const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : ''
+      const productSlug = this.form.slug || this.project.slug || '...'
+      return `${protocol}//${teamSlug}.${appDomain}${portSuffix}/${productSlug}`
     },
   },
   watch: {
     project: {
       handler(newProject) {
         this.form.name = newProject.name || ''
+        this.form.slug = newProject.slug || ''
         this.form.description = newProject.description || ''
         this.form.customDomain = newProject.customDomain || ''
         this.form.isPublic = newProject.isPublic ?? true
@@ -155,6 +163,7 @@ export default {
           method: 'PUT',
           body: {
             name: this.form.name,
+            slug: this.form.slug !== this.project.slug ? this.form.slug : undefined,
             description: this.form.description || null,
             customDomain: this.form.customDomain || null,
             isPublic: this.form.isPublic,

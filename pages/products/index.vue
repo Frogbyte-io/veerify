@@ -181,6 +181,7 @@ export default {
       showCreateDialog: false,
       isCreating: false,
       activeTeamId: '',
+      activeTeamSlug: '',
       activeOrgSlug: '',
       form: {
         name: '',
@@ -193,8 +194,13 @@ export default {
 
   computed: {
     publicUrlPreview() {
-      const base = import.meta.client ? window.location.origin : ''
-      return `${base}/p/${this.activeOrgSlug}/${this.form.slug || '...'}`
+      if (!import.meta.client) return ''
+      const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
+      const teamSlug = this.activeTeamSlug || '...'
+      const protocol = window.location.protocol
+      const port = window.location.port
+      const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : ''
+      return `${protocol}//${teamSlug}.${appDomain}${portSuffix}/${this.form.slug || '...'}`
     },
   },
 
@@ -233,6 +239,7 @@ export default {
         }
 
         this.activeTeamId = activeTeamData.id
+        this.activeTeamSlug = activeTeamData.slug || ''
 
         // Extract organization slug from the response
         if (activeTeamData.organization?.slug) {
@@ -301,13 +308,21 @@ export default {
       }
     },
 
+    getProductPublicUrl(product) {
+      const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
+      const teamSlug = this.activeTeamSlug || '...'
+      const protocol = window.location.protocol
+      const port = window.location.port
+      const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : ''
+      return `${protocol}//${teamSlug}.${appDomain}${portSuffix}/${product.slug}`
+    },
+
     openPublicPage(product) {
-      window.open(`/p/${this.activeOrgSlug}/${product.slug}`, '_blank')
+      window.open(this.getProductPublicUrl(product), '_blank')
     },
 
     copyPublicUrl(product) {
-      const url = `${window.location.origin}/p/${this.activeOrgSlug}/${product.slug}`
-      navigator.clipboard.writeText(url).catch(() => {})
+      navigator.clipboard.writeText(this.getProductPublicUrl(product)).catch(() => {})
     },
   },
 }

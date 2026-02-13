@@ -3,7 +3,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { db } from '~/server/database/drizzle'
 import { project, feedback, feedbackCategory } from '~/server/database/schema/feedback'
-import { organization, teamMember } from '~/server/database/schema/auth'
+import { organization, team, teamMember } from '~/server/database/schema/auth'
 
 export default defineEventHandler(async (event) => {
   const { session, activeTeam } = await requireAuthWithResolvedTeam(event)
@@ -39,6 +39,7 @@ export default defineEventHandler(async (event) => {
     .from(project)
     .where(and(eq(project.teamId, teamId), eq(project.slug, slug)))
     .innerJoin(organization, eq(project.organizationId, organization.id))
+    .innerJoin(team, eq(project.teamId, team.id))
     .limit(1)
 
   if (!projects.length) {
@@ -61,6 +62,7 @@ export default defineEventHandler(async (event) => {
     ...p.project,
     feedbackCount: feedbackCount?.count || 0,
     organization: p.organization,
+    team: { id: p.team.id, name: p.team.name, slug: p.team.slug },
     categories,
   })
 })

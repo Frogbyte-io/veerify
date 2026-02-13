@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { eq, and } from 'drizzle-orm'
-import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { createSuccessResponse } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
+import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
+import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { db } from '~/server/database/drizzle'
-import { project, feedback, feedbackCategory } from '~/server/database/schema/feedback'
-import { organization } from '~/server/database/schema/auth'
+import { feedback, feedbackCategory } from '~/server/database/schema/feedback'
 
 const submitFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
@@ -17,45 +18,14 @@ const submitFeedbackSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const orgSlug = getRouterParam(event, 'orgSlug')
+  const teamSlug = getRouterParam(event, 'teamSlug')
   const projectSlug = getRouterParam(event, 'projectSlug')
-
-  if (!orgSlug || !projectSlug) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Organization and project slugs are required'),
-    })
-  }
 
   const session = await optionalAuth(event)
   const body = await validateBody(event, submitFeedbackSchema)
 
-  // Resolve org + project
-  const [org] = await db.select().from(organization).where(eq(organization.slug, orgSlug)).limit(1)
-  if (!org) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Organization not found'),
-    })
-  }
+  const { project: proj } = await resolvePublicProjectByTeam(teamSlug!, projectSlug!)
 
-  const [proj] = await db
-    .select()
-    .from(project)
-    .where(and(eq(project.organizationId, org.id), eq(project.slug, projectSlug)))
-    .limit(1)
-
-  if (!proj || !proj.isPublic) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Project not found'),
-    })
-  }
-
-  // Validate category
   if (body.categoryId) {
     const [cat] = await db
       .select()
@@ -71,7 +41,6 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // For anonymous submissions, require name
   if (!session?.user && !body.authorName) {
     throw createError({
       statusCode: 400,
@@ -80,7 +49,6 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // For anonymous users, get or create an anonymous session
   let anonSessionId: string | null = null
   if (!session?.user) {
     const anonSession = await getOrCreateAnonSession(event)

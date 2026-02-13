@@ -51,11 +51,11 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Slugs stay unique at org URL namespace scope so public URLs remain /p/{orgSlug}/{projectSlug}.
+  // Slugs are unique within a team so public URLs remain {teamSlug}.domain/{projectSlug}.
   const [existing] = await db
     .select()
     .from(project)
-    .where(and(eq(project.organizationId, selectedTeam.organizationId), eq(project.slug, body.slug)))
+    .where(and(eq(project.teamId, selectedTeam.id), eq(project.slug, body.slug)))
     .limit(1)
 
   if (existing) {
@@ -64,7 +64,7 @@ export default defineEventHandler(async (event) => {
       statusMessage: 'Conflict',
       data: createErrorResponse(
         ErrorCode.CONFLICT,
-        'A project with this slug already exists in your workspace URL namespace'
+        'A project with this slug already exists in this team'
       ),
     })
   }

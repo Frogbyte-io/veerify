@@ -6,6 +6,16 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     return
   }
 
+  // On team subdomains, all routes are public. Redirect app routes to team root.
+  const teamSubdomain = useState('teamSubdomain')
+  if (teamSubdomain.value) {
+    const appRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products', '/login', '/signup', '/auth']
+    if (appRoutes.some((r) => to.path.startsWith(r))) {
+      return navigateTo('/')
+    }
+    return
+  }
+
   try {
     const { data: session } = await authClient.useSession(useFetch)
 

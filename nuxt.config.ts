@@ -19,7 +19,9 @@ export default defineNuxtConfig({
         pass: process.env.SMTP_PASS,
       },
     },
-    public: {},
+    public: {
+      appDomain: process.env.APP_DOMAIN || 'localhost',
+    },
   },
   colorMode: {
     preference: 'system',

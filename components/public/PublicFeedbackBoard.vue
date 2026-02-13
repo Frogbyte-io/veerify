@@ -24,7 +24,7 @@
       <!-- Header -->
       <div class="mb-8">
         <div class="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-          <span>{{ projectData.organization.name }}</span>
+          <span>{{ projectData.team.name }}</span>
         </div>
         <h1 class="text-3xl font-bold mb-2">{{ projectData.project.name }}</h1>
         <p v-if="projectData.project.description" class="text-muted-foreground text-lg">
@@ -55,7 +55,6 @@
       <!-- Actions Bar -->
       <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div class="flex flex-wrap items-center gap-2">
-          <!-- Status Filter -->
           <select
             v-model="filters.status"
             class="px-3 py-2 rounded-md border bg-background text-sm"
@@ -68,23 +67,17 @@
             <option value="completed">Completed</option>
           </select>
 
-          <!-- Category Filter -->
           <select
             v-model="filters.categoryId"
             class="px-3 py-2 rounded-md border bg-background text-sm"
             @change="loadFeedback"
           >
             <option value="">All Categories</option>
-            <option
-              v-for="cat in projectData.categories"
-              :key="cat.id"
-              :value="cat.id"
-            >
+            <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">
               {{ cat.name }}
             </option>
           </select>
 
-          <!-- Sort -->
           <select
             v-model="filters.sortBy"
             class="px-3 py-2 rounded-md border bg-background text-sm"
@@ -124,7 +117,6 @@
           :class="item.isOwn ? 'ring-2 ring-primary/30' : ''"
         >
           <div class="flex items-start gap-4 p-4">
-            <!-- Vote Button -->
             <div class="flex flex-col items-center min-w-[48px]">
               <button
                 class="flex flex-col items-center p-2 rounded-lg hover:bg-accent transition-colors"
@@ -138,8 +130,6 @@
                 <span class="text-sm font-semibold">{{ item.voteCount }}</span>
               </button>
             </div>
-
-            <!-- Content -->
             <div class="flex-1 min-w-0">
               <div class="flex items-start justify-between gap-2 mb-1">
                 <h3 class="font-medium">{{ item.title }}</h3>
@@ -184,29 +174,13 @@
           </div>
         </div>
 
-        <!-- Pagination -->
         <div v-if="pagination.totalPages > 1" class="flex items-center justify-between pt-4">
           <p class="text-sm text-muted-foreground">
-            Page {{ pagination.page }} of {{ pagination.totalPages }}
-            ({{ pagination.total }} total)
+            Page {{ pagination.page }} of {{ pagination.totalPages }} ({{ pagination.total }} total)
           </p>
           <div class="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="pagination.page <= 1"
-              @click="changePage(pagination.page - 1)"
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="pagination.page >= pagination.totalPages"
-              @click="changePage(pagination.page + 1)"
-            >
-              Next
-            </Button>
+            <Button variant="outline" size="sm" :disabled="pagination.page <= 1" @click="changePage(pagination.page - 1)">Previous</Button>
+            <Button variant="outline" size="sm" :disabled="pagination.page >= pagination.totalPages" @click="changePage(pagination.page + 1)">Next</Button>
           </div>
         </div>
       </div>
@@ -216,18 +190,12 @@
         <DialogContent class="sm:max-w-[500px]">
           <DialogHeader>
             <h2 class="text-lg font-semibold">Submit Feedback</h2>
-            <p class="text-sm text-muted-foreground">
-              Share your ideas, report bugs, or suggest improvements.
-            </p>
+            <p class="text-sm text-muted-foreground">Share your ideas, report bugs, or suggest improvements.</p>
           </DialogHeader>
           <div class="space-y-4 py-4">
             <div class="space-y-2">
               <Label for="fb-title">Title</Label>
-              <Input
-                id="fb-title"
-                v-model="submitForm.title"
-                placeholder="Brief summary of your feedback"
-              />
+              <Input id="fb-title" v-model="submitForm.title" placeholder="Brief summary of your feedback" />
             </div>
             <div class="space-y-2">
               <Label for="fb-body">Description</Label>
@@ -241,48 +209,24 @@
             </div>
             <div class="space-y-2">
               <Label for="fb-category">Category</Label>
-              <select
-                id="fb-category"
-                v-model="submitForm.categoryId"
-                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
+              <select id="fb-category" v-model="submitForm.categoryId" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
                 <option value="">Select a category</option>
-                <option
-                  v-for="cat in projectData.categories"
-                  :key="cat.id"
-                  :value="cat.id"
-                >
-                  {{ cat.name }}
-                </option>
+                <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
               </select>
             </div>
             <div class="space-y-2">
               <Label for="fb-name">Your Name</Label>
-              <Input
-                id="fb-name"
-                v-model="submitForm.authorName"
-                placeholder="John Doe"
-              />
+              <Input id="fb-name" v-model="submitForm.authorName" placeholder="John Doe" />
             </div>
             <div class="space-y-2">
               <Label for="fb-email">Email (optional)</Label>
-              <Input
-                id="fb-email"
-                v-model="submitForm.authorEmail"
-                type="email"
-                placeholder="you@example.com"
-              />
-              <p class="text-xs text-muted-foreground">
-                Provide your email to receive updates on comments and status changes.
-              </p>
+              <Input id="fb-email" v-model="submitForm.authorEmail" type="email" placeholder="you@example.com" />
+              <p class="text-xs text-muted-foreground">Provide your email to receive updates on comments and status changes.</p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" @click="showSubmitDialog = false">Cancel</Button>
-            <Button
-              :disabled="isSubmitting || !submitForm.title || !submitForm.body || !submitForm.authorName"
-              @click="submitFeedback"
-            >
+            <Button :disabled="isSubmitting || !submitForm.title || !submitForm.body || !submitForm.authorName" @click="submitFeedback">
               <Icon v-if="isSubmitting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
               Submit
             </Button>
@@ -300,9 +244,11 @@
 
 <script>
 export default {
-  name: 'PublicFeedbackPage',
-  layout: false,
-
+  name: 'PublicFeedbackBoard',
+  props: {
+    teamSlug: { type: String, required: true },
+    projectSlug: { type: String, required: true },
+  },
   data() {
     return {
       projectData: null,
@@ -312,24 +258,9 @@ export default {
       feedbackLoading: false,
       showSubmitDialog: false,
       isSubmitting: false,
-      filters: {
-        status: '',
-        categoryId: '',
-        sortBy: 'voteCount',
-      },
-      pagination: {
-        page: 1,
-        limit: 20,
-        total: 0,
-        totalPages: 0,
-      },
-      submitForm: {
-        title: '',
-        body: '',
-        categoryId: '',
-        authorName: '',
-        authorEmail: '',
-      },
+      filters: { status: '', categoryId: '', sortBy: 'voteCount' },
+      pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+      submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
       statusClasses: {
         open: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
         in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -340,20 +271,9 @@ export default {
       },
     }
   },
-
   async mounted() {
-    const route = useRoute()
-    const orgSlug = route.params.orgSlug
-    const projectSlug = route.params.projectSlug
-
-    if (!orgSlug || !projectSlug) {
-      this.error = 'Invalid URL'
-      this.isLoading = false
-      return
-    }
-
     try {
-      const response = await $fetch(`/api/public/${orgSlug}/${projectSlug}`)
+      const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`)
       this.projectData = response?.data
       await this.loadFeedback()
     } catch (err) {
@@ -363,17 +283,10 @@ export default {
       this.isLoading = false
     }
   },
-
   methods: {
     async loadFeedback() {
       if (!this.projectData) return
-
-      const route = useRoute()
-      const orgSlug = route.params.orgSlug
-      const projectSlug = route.params.projectSlug
-
       this.feedbackLoading = true
-
       try {
         const params = new URLSearchParams()
         params.set('page', String(this.pagination.page))
@@ -382,10 +295,7 @@ export default {
         params.set('sortOrder', 'desc')
         if (this.filters.status) params.set('status', this.filters.status)
         if (this.filters.categoryId) params.set('categoryId', this.filters.categoryId)
-
-        const response = await $fetch(
-          `/api/public/${orgSlug}/${projectSlug}/feedback?${params.toString()}`
-        )
+        const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback?${params.toString()}`)
         const data = response?.data
         this.feedbackItems = data?.items || []
         this.pagination = data?.pagination || this.pagination
@@ -395,18 +305,11 @@ export default {
         this.feedbackLoading = false
       }
     },
-
     async submitFeedback() {
       if (!this.submitForm.title || !this.submitForm.body || !this.submitForm.authorName) return
-
-      const route = useRoute()
-      const orgSlug = route.params.orgSlug
-      const projectSlug = route.params.projectSlug
-
       this.isSubmitting = true
-
       try {
-        await $fetch(`/api/public/${orgSlug}/${projectSlug}/feedback`, {
+        await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback`, {
           method: 'POST',
           body: {
             title: this.submitForm.title,
@@ -416,16 +319,12 @@ export default {
             authorEmail: this.submitForm.authorEmail || undefined,
           },
         })
-
         this.showSubmitDialog = false
         this.submitForm = { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' }
-        // Reload to show new feedback
         this.pagination.page = 1
         this.filters.sortBy = 'createdAt'
         await this.loadFeedback()
-
-        // Also reload project data for updated stats
-        const projectResponse = await $fetch(`/api/public/${orgSlug}/${projectSlug}`)
+        const projectResponse = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`)
         this.projectData = projectResponse?.data
       } catch (err) {
         console.error('Error submitting feedback:', err)
@@ -434,7 +333,6 @@ export default {
         this.isSubmitting = false
       }
     },
-
     async handleVote(item) {
       try {
         const response = await $fetch(`/api/feedback/${item.id}/vote`, { method: 'POST' })
@@ -446,31 +344,20 @@ export default {
         alert('Failed to vote. Please try again.')
       }
     },
-
     changePage(page) {
       this.pagination.page = page
       this.loadFeedback()
     },
-
     formatStatus(status) {
-      const map = {
-        open: 'Open',
-        in_progress: 'In Progress',
-        planned: 'Planned',
-        completed: 'Completed',
-        closed: 'Closed',
-        declined: 'Declined',
-      }
+      const map = { open: 'Open', in_progress: 'In Progress', planned: 'Planned', completed: 'Completed', closed: 'Closed', declined: 'Declined' }
       return map[status] || status
     },
-
     formatDate(date) {
       if (!date) return ''
       const d = new Date(date)
       const now = new Date()
       const diffMs = now.getTime() - d.getTime()
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
       if (diffDays === 0) return 'Today'
       if (diffDays === 1) return 'Yesterday'
       if (diffDays < 7) return `${diffDays} days ago`

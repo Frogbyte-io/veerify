@@ -66,11 +66,34 @@ export const auth = betterAuth({
           enabled: true,
           customCreateDefaultTeam: async (org) => {
             const now = new Date()
+
+            // Derive a slug from the org slug
+            let baseSlug = (org.slug || org.id.slice(0, 8))
+              .toLowerCase()
+              .replace(/[^a-z0-9-]/g, '-')
+              .replace(/-+/g, '-')
+              .replace(/^-|-$/g, '')
+
+            // Ensure uniqueness — append random suffix on conflict
+            let slug = baseSlug
+            let attempt = 0
+            while (attempt < 5) {
+              const [existing] = await db
+                .select()
+                .from(schema.team)
+                .where(eq(schema.team.slug, slug))
+                .limit(1)
+              if (!existing) break
+              slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`
+              attempt++
+            }
+
             const [created] = await db
               .insert(schema.team)
               .values({
                 id: crypto.randomUUID(),
                 name: 'Default',
+                slug,
                 organizationId: org.id,
                 createdAt: now,
                 updatedAt: now,
