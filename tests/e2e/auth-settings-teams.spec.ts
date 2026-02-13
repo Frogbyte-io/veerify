@@ -133,6 +133,19 @@ test('sidebar user section stays hydrated across client-side route changes', asy
   await expect(page.locator(selectors.navUserLoading)).toHaveCount(0)
 })
 
+test('roadmap and changelog sidebar buttons are disabled', async ({ page }) => {
+  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  const sidebar = page.locator('[data-testid="app-sidebar"]')
+  const roadmapButton = sidebar.getByRole('button', { name: 'Roadmap' })
+  const changelogButton = sidebar.getByRole('button', { name: 'Changelog' })
+
+  await expect(roadmapButton).toBeDisabled()
+  await expect(changelogButton).toBeDisabled()
+  await expect(sidebar.locator('a[href="/roadmap"]')).toHaveCount(0)
+  await expect(sidebar.locator('a[href="/changelog"]')).toHaveCount(0)
+})
+
 test('settings team panel tracks active team selected in sidebar', async ({ page }) => {
   await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 

@@ -9,12 +9,19 @@ interface SidebarProps {
   class?: string
 }
 
+interface SidebarNavItem {
+  title: string
+  url: string
+  icon: string
+  disabled?: boolean
+}
+
 const props = withDefaults(defineProps<SidebarProps>(), {
   collapsible: 'icon',
 })
 
 // Define navigation items
-const feedbackItems = [
+const feedbackItems: SidebarNavItem[] = [
   {
     title: 'Dashboard',
     url: '/dashboard',
@@ -29,11 +36,13 @@ const feedbackItems = [
     title: 'Roadmap',
     url: '/roadmap',
     icon: 'lucide:map',
+    disabled: true,
   },
   {
     title: 'Changelog',
     url: '/changelog',
     icon: 'lucide:scroll-text',
+    disabled: true,
   },
 ]
 
@@ -77,7 +86,11 @@ const supportItems = [
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem v-for="item in feedbackItems" :key="item.title">
-              <SidebarMenuButton as-child :tooltip="item.title">
+              <SidebarMenuButton v-if="item.disabled" :tooltip="item.title" disabled aria-disabled="true">
+                <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
+                <span>{{ item.title }}</span>
+              </SidebarMenuButton>
+              <SidebarMenuButton v-else as-child :tooltip="item.title">
                 <NuxtLink :to="item.url">
                   <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
                   <span>{{ item.title }}</span>
