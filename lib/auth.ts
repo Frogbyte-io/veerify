@@ -68,7 +68,7 @@ export const auth = betterAuth({
             const now = new Date()
 
             // Derive a slug from the org slug
-            let baseSlug = (org.slug || org.id.slice(0, 8))
+            const baseSlug = (org.slug || org.id.slice(0, 8))
               .toLowerCase()
               .replace(/[^a-z0-9-]/g, '-')
               .replace(/-+/g, '-')

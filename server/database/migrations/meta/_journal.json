@@ -64,6 +64,13 @@
       "when": 1770807496134,
       "tag": "0008_lazy_tag",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1770998033020,
+      "tag": "0009_colossal_vulcan",
+      "breakpoints": true
     }
   ]
 }

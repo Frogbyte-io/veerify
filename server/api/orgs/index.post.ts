@@ -147,6 +147,7 @@ export default defineEventHandler(async (event) => {
     await tx.insert(team).values({
       id: defaultTeamId,
       name: DEFAULT_TEAM_NAME,
+      slug: body.slug,
       organizationId,
       createdAt: now,
       updatedAt: now,

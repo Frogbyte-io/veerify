@@ -43,6 +43,8 @@ const IDS = {
   feedback3: 'seed_preview_feedback_3',
 }
 
+const SEED_TEAM_SLUG = 'preview-org'
+
 function createClient() {
   return process.env.DATABASE_URL
     ? new Client({ connectionString: process.env.DATABASE_URL })
@@ -161,9 +163,9 @@ async function seed(client: Client) {
   )
 
   await client.query(
-    `INSERT INTO "team" (id, name, organization_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $4)`,
-    [IDS.team, 'Default', IDS.org, now]
+    `INSERT INTO "team" (id, name, slug, organization_id, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $5)`,
+    [IDS.team, 'Default', SEED_TEAM_SLUG, IDS.org, now]
   )
 
   await client.query(
