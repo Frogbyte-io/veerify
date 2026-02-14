@@ -4,7 +4,8 @@ import { optionalAuth } from '~/server/utils/auth-middleware'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
+import { feedback, feedbackCategory, vote, project } from '~/server/database/schema/feedback'
+import { user } from '~/server/database/schema/auth'
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
@@ -45,6 +46,34 @@ export default defineEventHandler(async (event) => {
     await requirePublicProject(item.feedback.projectId)
   }
 
+  // Get author info if feedback was created by a registered user
+  let author = null
+  if (item.feedback.authorUserId) {
+    const [authorUser] = await db
+      .select({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+      })
+      .from(user)
+      .where(eq(user.id, item.feedback.authorUserId))
+      .limit(1)
+    author = authorUser || null
+  }
+
+  // Get project info
+  const [proj] = await db
+    .select({
+      id: project.id,
+      name: project.name,
+      slug: project.slug,
+      isPublic: project.isPublic,
+    })
+    .from(project)
+    .where(eq(project.id, item.feedback.projectId))
+    .limit(1)
+
   // Check if viewer has voted
   let hasVoted = false
   if (session?.user) {
@@ -72,6 +101,8 @@ export default defineEventHandler(async (event) => {
   return createSuccessResponse({
     ...item.feedback,
     category: item.category,
+    author,
+    project: proj,
     hasVoted,
     isOwn,
   })

@@ -192,11 +192,12 @@
             </h2>
           </div>
           <div class="divide-y divide-border">
-            <div
+            <NuxtLink
               v-for="item in feedbackItems"
               :key="item.id"
+              :to="`/feedback/${item.id}`"
               :data-testid="`feedback-item-${item.id}`"
-              class="p-6 hover:bg-muted transition-colors"
+              class="block p-6 hover:bg-muted transition-colors cursor-pointer"
             >
               <div class="flex items-start space-x-4">
                 <div class="flex flex-col items-center space-y-1">
@@ -208,7 +209,7 @@
                 <div class="flex-1 min-w-0">
                   <div class="flex items-start justify-between gap-4">
                     <div class="min-w-0">
-                      <h3 class="text-lg font-medium text-card-foreground mb-1">{{ item.title }}</h3>
+                      <h3 class="text-lg font-medium text-card-foreground mb-1 group-hover:text-primary">{{ item.title }}</h3>
                       <p v-if="item.body" class="text-muted-foreground mb-3 line-clamp-2">{{ item.body }}</p>
                       <div class="flex items-center flex-wrap gap-3 text-sm text-muted-foreground">
                         <div v-if="item.authorName" class="flex items-center gap-1">
@@ -236,7 +237,7 @@
                         :data-testid="`feedback-item-delete-${item.id}`"
                         class="p-1 text-muted-foreground hover:text-destructive transition-colors"
                         title="Delete feedback"
-                        @click="confirmDelete(item)"
+                        @click.prevent="confirmDelete(item)"
                       >
                         <Icon name="lucide:trash-2" class="w-4 h-4" />
                       </button>
@@ -244,7 +245,7 @@
                   </div>
                 </div>
               </div>
-            </div>
+            </NuxtLink>
           </div>
 
           <!-- Pagination -->
