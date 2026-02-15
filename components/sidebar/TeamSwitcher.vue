@@ -13,30 +13,32 @@
               class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
             >
               <Icon v-if="isLoadingTeams" name="lucide:loader-2" class="size-4 animate-spin" />
-              <Icon v-else name="lucide:users" class="size-4" />
+              <Icon v-else name="lucide:building-2" class="size-4" />
             </div>
 
             <div class="grid flex-1 text-left text-sm leading-tight">
               <template v-if="isLoadingTeams">
-                <span class="truncate">Loading teams...</span>
+                <span class="truncate">Loading...</span>
                 <span class="truncate text-xs text-muted-foreground">Please wait</span>
               </template>
 
-              <template v-else-if="activeTeam">
-                <span data-testid="team-switcher-active-name" class="truncate font-semibold">{{ activeTeam.name }}</span>
+              <template v-else-if="activeOrganization">
+                <span data-testid="team-switcher-active-name" class="truncate font-semibold">
+                  {{ displayName }}
+                </span>
                 <span data-testid="team-switcher-active-org" class="truncate text-xs text-muted-foreground">
-                  {{ activeOrganization?.name || 'No governance context' }}
+                  {{ displaySubtitle }}
                 </span>
               </template>
 
               <template v-else-if="teamsError">
-                <span class="truncate font-semibold text-red-500"> Error loading teams </span>
+                <span class="truncate font-semibold text-red-500"> Error loading </span>
                 <span class="truncate text-xs text-red-400">Please refresh</span>
               </template>
 
               <template v-else>
-                <span class="truncate font-semibold"> Select team </span>
-                <span class="truncate text-xs text-muted-foreground">No team active</span>
+                <span class="truncate font-semibold"> Select workspace </span>
+                <span class="truncate text-xs text-muted-foreground">No workspace active</span>
               </template>
             </div>
             <Icon name="lucide:chevrons-up-down" class="ml-auto" />
@@ -48,12 +50,10 @@
           :side="isMobile ? 'bottom' : 'right'"
           :side-offset="4"
         >
-          <DropdownMenuLabel class="text-xs text-muted-foreground"> Teams </DropdownMenuLabel>
-
           <div v-if="isLoadingTeams" class="p-2">
             <div class="flex items-center gap-2 text-muted-foreground">
               <Icon name="lucide:loader-2" class="size-4 animate-spin" />
-              <span class="text-sm">Loading teams...</span>
+              <span class="text-sm">Loading...</span>
             </div>
           </div>
 
@@ -69,13 +69,28 @@
           </div>
 
           <template v-else>
-            <DropdownMenuItem v-for="team in teams" :key="team.id" class="gap-2 p-2" @click="setActiveTeam(team)">
+            <!-- Workspace (default) option -->
+            <DropdownMenuLabel class="text-xs text-muted-foreground"> Workspace </DropdownMenuLabel>
+            <DropdownMenuItem class="gap-2 p-2" @click="switchToDefaultTeam">
               <div class="flex size-6 items-center justify-center rounded-sm border">
-                <Icon name="lucide:users" class="size-4 shrink-0" />
+                <Icon name="lucide:building-2" class="size-4 shrink-0" />
               </div>
-              <span :data-testid="`team-switcher-item-${team.id}`" class="flex-1">{{ team.name }}</span>
-              <Icon v-if="activeTeam?.id === team.id" name="lucide:check" class="size-4 text-primary" />
+              <span class="flex-1">{{ activeOrganization?.name || 'Workspace' }}</span>
+              <Icon v-if="isOnDefaultTeam" name="lucide:check" class="size-4 text-primary" />
             </DropdownMenuItem>
+
+            <!-- Additional teams -->
+            <template v-if="additionalTeams.length > 0">
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel class="text-xs text-muted-foreground"> Teams </DropdownMenuLabel>
+              <DropdownMenuItem v-for="team in additionalTeams" :key="team.id" class="gap-2 p-2" @click="setActiveTeam(team)">
+                <div class="flex size-6 items-center justify-center rounded-sm border">
+                  <Icon name="lucide:users" class="size-4 shrink-0" />
+                </div>
+                <span :data-testid="`team-switcher-item-${team.id}`" class="flex-1">{{ team.name }}</span>
+                <Icon v-if="activeTeam?.id === team.id" name="lucide:check" class="size-4 text-primary" />
+              </DropdownMenuItem>
+            </template>
 
             <DropdownMenuSeparator />
             <DropdownMenuItem data-testid="team-switcher-manage" class="gap-2 p-2" @click="goToTeamSettings">
@@ -140,6 +155,29 @@ export default {
         return window.innerWidth < 768
       }
       return false
+    },
+
+    additionalTeams() {
+      return this.teams.filter((t) => t.name !== 'Default')
+    },
+
+    isOnDefaultTeam() {
+      if (!this.activeTeam) return true
+      return this.activeTeam.name === 'Default'
+    },
+
+    displayName() {
+      if (!this.activeTeam || this.activeTeam.name === 'Default') {
+        return this.activeOrganization?.name || 'Workspace'
+      }
+      return this.activeTeam.name
+    },
+
+    displaySubtitle() {
+      if (!this.activeTeam || this.activeTeam.name === 'Default') {
+        return this.additionalTeams.length > 0 ? 'All projects' : 'Workspace'
+      }
+      return this.activeOrganization?.name || ''
     },
   },
 
@@ -229,6 +267,12 @@ export default {
         this.isLoadingTeams = false
         console.error('Error loading teams:', error)
       }
+    },
+
+    async switchToDefaultTeam() {
+      const defaultTeam = this.teams.find((t) => t.name === 'Default')
+      if (!defaultTeam || defaultTeam.id === this.activeTeam?.id) return
+      await this.setActiveTeam(defaultTeam)
     },
 
     async setActiveTeam(team) {

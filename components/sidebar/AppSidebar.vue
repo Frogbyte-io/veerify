@@ -53,8 +53,8 @@ const managementItems = [
     icon: 'lucide:package',
   },
   {
-    title: 'Team',
-    url: '/settings#team',
+    title: 'Members',
+    url: '/settings#organization',
     icon: 'lucide:user-plus',
   },
 ]

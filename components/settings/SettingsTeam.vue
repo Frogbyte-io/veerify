@@ -1,15 +1,17 @@
 <template>
   <div class="space-y-6">
-    <!-- Your Teams -->
+    <!-- Explanation -->
     <Card>
       <CardHeader>
         <div class="flex items-center justify-between">
           <div>
             <CardTitle class="flex items-center gap-2">
               <Icon name="lucide:users" class="h-5 w-5" />
-              <span data-testid="team-title">Your Teams</span>
+              <span data-testid="team-title">Teams</span>
             </CardTitle>
-            <CardDescription>All teams you belong to across organizations.</CardDescription>
+            <CardDescription>
+              Your workspace operates as a single shared space by default. Create additional teams to organize different projects or departments separately.
+            </CardDescription>
           </div>
           <Button data-testid="team-open-create-dialog" size="sm" @click="showCreateTeamDialog = true">
             <Icon name="lucide:plus" class="h-4 w-4 mr-2" />
@@ -23,16 +25,25 @@
           <Skeleton class="h-14 w-full" />
         </div>
 
-        <div v-else-if="allTeams.length === 0" class="text-center py-6">
-          <p class="text-muted-foreground">No teams found. Create a team to get started.</p>
-          <Button data-testid="team-open-create-dialog" class="mt-3" @click="showCreateTeamDialog = true">
-            Create Team
+        <div v-else-if="additionalTeams.length === 0" class="text-center py-8">
+          <div class="flex justify-center mb-4">
+            <div class="flex items-center justify-center w-12 h-12 rounded-full bg-muted">
+              <Icon name="lucide:users" class="w-6 h-6 text-muted-foreground" />
+            </div>
+          </div>
+          <p class="font-medium mb-1">No additional teams</p>
+          <p class="text-sm text-muted-foreground max-w-sm mx-auto">
+            All workspace members share access to projects. Create a team when you need separate groups for different projects or departments.
+          </p>
+          <Button data-testid="team-open-create-dialog" class="mt-4" variant="outline" @click="showCreateTeamDialog = true">
+            <Icon name="lucide:plus" class="h-4 w-4 mr-2" />
+            Create your first team
           </Button>
         </div>
 
         <div v-else class="space-y-2">
           <button
-            v-for="team in allTeams"
+            v-for="team in additionalTeams"
             :key="team.id"
             :data-testid="`team-list-item-${team.id}`"
             class="w-full flex items-center justify-between rounded-lg border p-3 text-left transition-colors hover:bg-accent/50"
@@ -58,7 +69,7 @@
     </Card>
 
     <!-- Active Team Settings -->
-    <Card v-if="currentTeam">
+    <Card v-if="currentTeam && !isDefaultTeam(currentTeam)">
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:settings" class="h-5 w-5" />
@@ -88,7 +99,7 @@
     </Card>
 
     <!-- Team Members -->
-    <Card v-if="currentTeam">
+    <Card v-if="currentTeam && !isDefaultTeam(currentTeam)">
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:user-plus" class="h-5 w-5" />
@@ -143,7 +154,7 @@
     </Card>
 
     <!-- Danger Zone -->
-    <Card v-if="currentTeam" class="border-red-200">
+    <Card v-if="currentTeam && !isDefaultTeam(currentTeam)" class="border-red-200">
       <CardHeader>
         <CardTitle class="flex items-center gap-2 text-red-600">
           <Icon name="lucide:alert-triangle" class="h-5 w-5" />
@@ -160,7 +171,7 @@
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create Team</DialogTitle>
-          <DialogDescription>Create a new operational team in your current organization.</DialogDescription>
+          <DialogDescription>Create a new team to organize a separate group of projects. Team members will have their own workspace context.</DialogDescription>
         </DialogHeader>
         <div class="space-y-4 py-4">
           <div class="space-y-2">
@@ -194,7 +205,7 @@
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Invite to Team</DialogTitle>
-          <DialogDescription>Invite a user directly into this team workspace.</DialogDescription>
+          <DialogDescription>Invite a user directly into this team.</DialogDescription>
         </DialogHeader>
         <div class="space-y-4 py-4">
           <div class="space-y-2">
@@ -289,6 +300,9 @@ export default {
         (this.teamSlug.trim() && this.teamSlug.trim() !== this.currentTeam?.slug)
       )
     },
+    additionalTeams() {
+      return this.allTeams.filter((t) => !this.isDefaultTeam(t))
+    },
   },
 
   async mounted() {
@@ -306,6 +320,11 @@ export default {
   },
 
   methods: {
+    isDefaultTeam(team) {
+      if (!team) return false
+      return team.name === 'Default'
+    },
+
     async fetchActiveTeam() {
       try {
         const response = await $fetch('/api/teams/active')
@@ -414,7 +433,7 @@ export default {
     },
 
     async loadTeamMembers() {
-      if (!this.currentTeam?.id) {
+      if (!this.currentTeam?.id || this.isDefaultTeam(this.currentTeam)) {
         this.teamMembers = []
         return
       }
@@ -543,7 +562,7 @@ export default {
 
       const organizationId = await this.resolveOrganizationId()
       if (!organizationId) {
-        toast.error('No active organization context')
+        toast.error('No active workspace context')
         return
       }
 
@@ -596,7 +615,7 @@ export default {
 
       const organizationId = await this.resolveOrganizationId()
       if (!organizationId) {
-        toast.error('No active organization context')
+        toast.error('No active workspace context')
         return
       }
 

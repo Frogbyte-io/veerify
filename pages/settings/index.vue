@@ -52,8 +52,8 @@ const allTabs = [
   { key: 'profile', label: 'Profile', icon: 'lucide:user' },
   { key: 'security', label: 'Security', icon: 'lucide:shield' },
   { key: 'notifications', label: 'Notifications', icon: 'lucide:bell' },
-  { key: 'organization', label: 'Organization', icon: 'lucide:building-2' },
-  { key: 'team', label: 'Team', icon: 'lucide:users' },
+  { key: 'organization', label: 'Workspace', icon: 'lucide:building-2' },
+  { key: 'team', label: 'Teams', icon: 'lucide:users' },
   { key: 'billing', label: 'Billing', icon: 'lucide:credit-card' },
   { key: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
 ]

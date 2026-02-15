@@ -5,9 +5,9 @@
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:building-2" class="h-5 w-5" />
-          <span data-testid="organization-title">Organization Settings</span>
+          <span data-testid="organization-title">Workspace Settings</span>
         </CardTitle>
-        <CardDescription>Manage your organization profile and URL namespace.</CardDescription>
+        <CardDescription>Manage your workspace profile and URL namespace. Your workspace is the shared space where your team collaborates.</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div v-if="isLoading" class="space-y-3">
@@ -17,12 +17,12 @@
         </div>
 
         <div v-else-if="!organizationDetails" class="text-sm text-muted-foreground">
-          No active organization context is available.
+          No active workspace context is available.
         </div>
 
         <template v-else>
           <div class="space-y-2">
-            <Label for="organization-name">Organization Name</Label>
+            <Label for="organization-name">Workspace Name</Label>
             <Input
               id="organization-name"
               data-testid="organization-name-input"
@@ -33,7 +33,7 @@
           </div>
 
           <div class="space-y-2">
-            <Label for="organization-slug">Organization Slug</Label>
+            <Label for="organization-slug">Workspace URL</Label>
             <Input
               id="organization-slug"
               data-testid="organization-slug-input"
@@ -59,7 +59,7 @@
 
           <div class="flex items-center justify-between gap-3">
             <p v-if="!canEditOrganization" class="text-sm text-muted-foreground">
-              Only owners and admins can update organization details.
+              Only owners and admins can update workspace details.
             </p>
             <div class="ml-auto">
               <Button
@@ -68,7 +68,7 @@
                 @click="updateOrganization"
               >
                 <Icon v-if="isSaving" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
-                Save Organization
+                Save Changes
               </Button>
             </div>
           </div>
@@ -85,7 +85,7 @@
               <Icon name="lucide:users" class="h-5 w-5" />
               Members
             </CardTitle>
-            <CardDescription>Manage organization members and their roles.</CardDescription>
+            <CardDescription>Manage workspace members and their roles. All members have access to shared projects.</CardDescription>
           </div>
           <Button v-if="canManageMembers" size="sm" @click="showInviteDialog = true">
             <Icon name="lucide:user-plus" class="h-4 w-4 mr-2" />
@@ -120,9 +120,9 @@
                   <span v-if="m.userId === currentUserId" class="text-xs text-muted-foreground">(you)</span>
                 </p>
                 <p class="text-xs text-muted-foreground truncate">{{ m.email }}</p>
-                <div v-if="m.teams && m.teams.length > 0" class="flex flex-wrap gap-1 mt-1">
+                <div v-if="nonDefaultTeams(m.teams).length > 0" class="flex flex-wrap gap-1 mt-1">
                   <Badge
-                    v-for="t in m.teams"
+                    v-for="t in nonDefaultTeams(m.teams)"
                     :key="t.id"
                     variant="outline"
                     class="text-xs"
@@ -229,11 +229,11 @@
           <Icon name="lucide:alert-triangle" class="h-5 w-5" />
           Danger Zone
         </CardTitle>
-        <CardDescription>Permanently delete this organization and all related data.</CardDescription>
+        <CardDescription>Permanently delete this workspace and all related data.</CardDescription>
       </CardHeader>
       <CardContent>
         <p v-if="!canDeleteOrganization" class="text-sm text-muted-foreground mb-3">
-          Only organization owners can delete the organization.
+          Only workspace owners can delete the workspace.
         </p>
         <Button
           data-testid="organization-open-delete-dialog"
@@ -241,7 +241,7 @@
           :disabled="!canDeleteOrganization"
           @click="showDeleteDialog = true"
         >
-          Delete Organization
+          Delete Workspace
         </Button>
       </CardContent>
     </Card>
@@ -254,7 +254,7 @@
           <DialogDescription>
             Are you sure you want to remove
             <strong>{{ memberToRemove?.name || memberToRemove?.email }}</strong>
-            from this organization? They will lose access to all organization resources.
+            from this workspace? They will lose access to all workspace resources.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -276,7 +276,7 @@
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Invite Member</DialogTitle>
-          <DialogDescription>Send an invitation to join this organization.</DialogDescription>
+          <DialogDescription>Send an invitation to join this workspace.</DialogDescription>
         </DialogHeader>
         <div class="space-y-4 py-4">
           <div class="space-y-2">
@@ -316,7 +316,7 @@
     <Dialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
       <DialogContent>
         <DialogHeader>
-          <DialogTitle class="text-red-600">Delete Organization</DialogTitle>
+          <DialogTitle class="text-red-600">Delete Workspace</DialogTitle>
           <DialogDescription>
             Type <strong>{{ organizationDetails?.slug }}</strong> to confirm permanent deletion.
           </DialogDescription>
@@ -337,7 +337,7 @@
             @click="deleteOrganization"
           >
             <Icon v-if="isDeleting" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
-            Delete Organization
+            Delete Workspace
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -445,7 +445,7 @@ export default {
         }
       } catch (error) {
         console.error('Error loading organization settings:', error)
-        toast.error('Failed to load organization settings')
+        toast.error('Failed to load workspace settings')
       } finally {
         this.isLoading = false
       }
@@ -456,6 +456,11 @@ export default {
       this.organizationName = this.organizationDetails.name || ''
       this.organizationSlug = this.organizationDetails.slug || ''
       this.organizationLogo = this.organizationDetails.logo || ''
+    },
+
+    nonDefaultTeams(teams) {
+      if (!teams || !Array.isArray(teams)) return []
+      return teams.filter((t) => t.name !== 'Default')
     },
 
     getInitials(name) {
@@ -593,7 +598,7 @@ export default {
         this.organizationDetails.memberCount--
         this.showRemoveMemberDialog = false
         this.memberToRemove = null
-        toast.success('Member removed from organization')
+        toast.success('Member removed from workspace')
       } catch (error) {
         console.error('Error removing member:', error)
         toast.error(error?.data?.error?.message || 'Failed to remove member')
@@ -653,10 +658,10 @@ export default {
         })
         this.organizationDetails = response.data
         this.setFormValues()
-        toast.success('Organization updated')
+        toast.success('Workspace updated')
       } catch (error) {
         console.error('Error updating organization:', error)
-        toast.error(error?.data?.error?.message || error?.statusMessage || 'Failed to update organization')
+        toast.error(error?.data?.error?.message || error?.statusMessage || 'Failed to update workspace')
       } finally {
         this.isSaving = false
       }
@@ -675,11 +680,11 @@ export default {
         this.showDeleteDialog = false
         this.deleteConfirmation = ''
         this.organizationDetails = null
-        toast.success('Organization deleted')
+        toast.success('Workspace deleted')
         await navigateTo('/settings#team')
       } catch (error) {
         console.error('Error deleting organization:', error)
-        toast.error(error?.data?.error?.message || error?.statusMessage || 'Failed to delete organization')
+        toast.error(error?.data?.error?.message || error?.statusMessage || 'Failed to delete workspace')
       } finally {
         this.isDeleting = false
       }
