@@ -245,8 +245,6 @@ export default {
       inviteError: '',
       inviteSuccess: '',
 
-      // Page state
-      isCheckingOrgs: true,
     }
   },
 
@@ -257,27 +255,7 @@ export default {
     },
   },
 
-  async mounted() {
-    await this.checkExistingOrganizations()
-  },
-
   methods: {
-    async checkExistingOrganizations() {
-      try {
-        this.isCheckingOrgs = true
-        const { data } = await authClient.organization.list()
-        const orgs = Array.isArray(data) ? data : []
-        if (orgs.length > 0) {
-          // User already has an org, skip onboarding
-          await navigateTo('/dashboard')
-        }
-      } catch (_error) {
-        // If check fails, show onboarding anyway
-      } finally {
-        this.isCheckingOrgs = false
-      }
-    },
-
     generateSlug() {
       this.orgSlug = this.orgName
         .toLowerCase()
@@ -394,11 +372,6 @@ export default {
     },
 
     async goToDashboard() {
-      // Clear the onboarding check cache so middleware doesn't redirect back
-      if (import.meta.client) {
-        useState('onboarding-checked').value = true
-        useState('needs-onboarding').value = false
-      }
       await navigateTo('/dashboard')
     },
   },

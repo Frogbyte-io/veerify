@@ -20,6 +20,20 @@ const props = withDefaults(defineProps<SidebarProps>(), {
   collapsible: 'icon',
 })
 
+// Always-visible personal items
+const personalItems: SidebarNavItem[] = [
+  {
+    title: 'My Submissions',
+    url: '/submissions',
+    icon: 'lucide:list',
+  },
+  {
+    title: 'Notifications',
+    url: '/settings#notifications',
+    icon: 'lucide:bell',
+  },
+]
+
 // Define navigation items
 const feedbackItems: SidebarNavItem[] = [
   {
@@ -80,6 +94,23 @@ const supportItems = [
     </SidebarHeader>
 
     <SidebarContent>
+      <!-- Personal Section (always visible) -->
+      <SidebarGroup>
+        <SidebarGroupLabel>Personal</SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            <SidebarMenuItem v-for="item in personalItems" :key="item.title">
+              <SidebarMenuButton as-child :tooltip="item.title">
+                <NuxtLink :to="item.url">
+                  <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
+                  <span>{{ item.title }}</span>
+                </NuxtLink>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroupContent>
+      </SidebarGroup>
+
       <!-- Feedback Section -->
       <SidebarGroup>
         <SidebarGroupLabel>Feedback</SidebarGroupLabel>

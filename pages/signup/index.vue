@@ -140,8 +140,7 @@ export default {
         if (result.error) {
           this.error = result.error.message || 'Sign up failed'
         } else {
-          // Success - redirect to onboarding to set up workspace
-          await navigateTo('/onboarding')
+          await navigateTo('/dashboard')
         }
       } catch (err) {
         this.error = 'An unexpected error occurred'

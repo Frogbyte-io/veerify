@@ -129,17 +129,6 @@ export default {
         if (result.error) {
           this.error = result.error.message || 'Sign in failed'
         } else {
-          // Check if user has an organization; if not, redirect to onboarding
-          try {
-            const orgs = await authClient.organization.list()
-            const orgList = Array.isArray(orgs.data) ? orgs.data : []
-            if (orgList.length === 0) {
-              await navigateTo('/onboarding')
-              return
-            }
-          } catch (_e) {
-            // If check fails, proceed to dashboard
-          }
           await navigateTo('/dashboard')
         }
       } catch (err) {
