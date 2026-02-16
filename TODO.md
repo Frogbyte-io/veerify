@@ -1,7 +1,6 @@
 - Send email when domain has been connected
 - Create user
 - add API with API docs
-- Update color picker to use new design
 - Notifications infrastructure 
 - Anonymous feedback claiming
 - Create widgets for users to embed on their website
