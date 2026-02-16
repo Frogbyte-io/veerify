@@ -71,6 +71,13 @@
       "when": 1770998033020,
       "tag": "0009_colossal_vulcan",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1771240930530,
+      "tag": "0010_thick_yellow_claw",
+      "breakpoints": true
     }
   ]
 }

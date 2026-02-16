@@ -1,0 +1,1 @@
+ALTER TABLE "project" ADD COLUMN "submission_mode" text DEFAULT 'anonymous' NOT NULL;
