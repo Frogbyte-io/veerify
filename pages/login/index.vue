@@ -70,7 +70,7 @@
                   <!-- Sign Up Link -->
                   <div class="text-center text-sm">
                     Don't have an account?
-                    <NuxtLink to="/signup" class="underline underline-offset-4"> Sign up </NuxtLink>
+                    <NuxtLink :to="signupLink" class="underline underline-offset-4"> Sign up </NuxtLink>
                   </div>
                 </div>
               </form>
@@ -110,6 +110,12 @@ export default {
       error: '',
     }
   },
+  computed: {
+    signupLink() {
+      const redirect = this.$route.query.redirect
+      return redirect ? `/signup?redirect=${encodeURIComponent(redirect)}` : '/signup'
+    },
+  },
   methods: {
     async handleSubmit() {
       if (!this.email || !this.password) {
@@ -129,7 +135,8 @@ export default {
         if (result.error) {
           this.error = result.error.message || 'Sign in failed'
         } else {
-          await navigateTo('/dashboard')
+          const redirect = this.$route.query.redirect
+          await navigateTo(redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard')
         }
       } catch (err) {
         this.error = 'An unexpected error occurred'

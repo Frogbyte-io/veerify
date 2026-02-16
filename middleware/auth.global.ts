@@ -9,7 +9,7 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
   // On team subdomains, all routes are public. Redirect app routes to team root.
   const teamSubdomain = useState('teamSubdomain')
   if (teamSubdomain.value) {
-    const appRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products', '/login', '/signup', '/auth', '/onboarding', '/submissions']
+    const appRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products', '/login', '/signup', '/auth', '/onboarding', '/submissions', '/get-started']
     if (appRoutes.some((r) => to.path.startsWith(r))) {
       return navigateTo('/')
     }
@@ -34,6 +34,10 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     }
 
     if (isAuthRoute && session.value?.user) {
+      const redirect = to.query.redirect
+      if (redirect && typeof redirect === 'string' && redirect.startsWith('/')) {
+        return navigateTo(redirect)
+      }
       return navigateTo('/dashboard')
     }
   } catch (error) {

@@ -191,6 +191,11 @@ export default {
       this.activeTeam = teamSwitcherCache.activeTeam
       this.activeOrganization = teamSwitcherCache.activeOrganization
       this.isLoadingTeams = false
+
+      // Share org state with the sidebar and other components
+      if (import.meta.client) {
+        useState('hasActiveOrganization').value = !!this.activeOrganization
+      }
     },
 
     async fetchTeamContext() {

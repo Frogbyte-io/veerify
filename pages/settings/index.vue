@@ -83,11 +83,16 @@ export default {
     return {
       activeTab: 'profile',
       currentOrgRole: null,
+      hasOrganization: false,
     }
   },
   computed: {
     availableTabs() {
       return allTabs.filter((tab) => {
+        // Workspace-only tabs: hide when user has no org
+        if (['organization', 'team', 'billing'].includes(tab.key) && !this.hasOrganization) {
+          return false
+        }
         if (tab.key === 'billing') {
           return this.currentOrgRole === 'owner'
         }
@@ -105,7 +110,7 @@ export default {
     const validKeys = this.availableTabs.map((t) => t.key)
     if (hash && validKeys.includes(hash)) {
       this.activeTab = hash
-    } else if (hash === 'billing' && !validKeys.includes('billing')) {
+    } else if (hash && !validKeys.includes(hash)) {
       this.activeTab = 'profile'
       window.history.replaceState(null, null, '#profile')
     }
@@ -116,8 +121,11 @@ export default {
         const activeOrg = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
         if (!activeOrg?.id && !activeOrg?.name) {
           this.currentOrgRole = null
+          this.hasOrganization = false
           return
         }
+
+        this.hasOrganization = true
 
         let slug = activeOrg.slug || null
         if (!slug) {
