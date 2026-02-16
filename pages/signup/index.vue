@@ -146,6 +146,7 @@ export default {
         if (result.error) {
           this.error = result.error.message || 'Sign up failed'
         } else {
+          $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
           const redirect = this.$route.query.redirect
           await navigateTo(redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard')
         }
