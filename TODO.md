@@ -5,5 +5,4 @@
 - click to access feedback details for items in personal feedback list
 - Notifications infrastructure 
 - Anonymous feedback claiming
-- Email verification nudge 
 - Create widgets for users to embed on their website
