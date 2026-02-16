@@ -4,5 +4,4 @@
 - Create user
 - add API with API docs
 - Notifications infrastructure 
-- Anonymous feedback claiming
 - Create widgets for users to embed on their website
