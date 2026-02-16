@@ -21,6 +21,7 @@ export default defineNuxtConfig({
     },
     public: {
       appDomain: process.env.APP_DOMAIN || 'localhost',
+      cnameTarget: process.env.CNAME_TARGET || 'cname.veerify.com',
     },
   },
   colorMode: {
