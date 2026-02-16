@@ -4,5 +4,4 @@
 - Update color picker to use new design
 - Notifications infrastructure 
 - Anonymous feedback claiming
-- Email verification nudge 
 - Create widgets for users to embed on their website
