@@ -114,7 +114,7 @@
             <div class="h-10 rounded-md bg-muted" />
           </div>
           <div v-if="form.showPoweredBy" class="border-t px-4 py-2 text-center">
-            <p class="text-xs text-muted-foreground">Powered by Veerify</p>
+            <a href="https://veerify.com" target="_blank" rel="noopener noreferrer" class="text-xs text-muted-foreground hover:underline">Powered by Veerify</a>
           </div>
         </div>
       </CardContent>
