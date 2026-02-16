@@ -10,20 +10,8 @@
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="space-y-2">
-          <Label for="accent-color">Accent Color</Label>
-          <div class="flex items-center gap-2">
-            <input
-              type="color"
-              :value="form.accentColor"
-              class="w-8 h-8 rounded border cursor-pointer"
-              @input="form.accentColor = $event.target.value"
-            />
-            <Input
-              id="accent-color"
-              v-model="form.accentColor"
-              placeholder="#3b82f6"
-            />
-          </div>
+          <Label>Accent Color</Label>
+          <ColorPicker v-model="form.accentColor" />
           <p class="text-xs text-muted-foreground">
             Used for buttons and links on your public board.
           </p>

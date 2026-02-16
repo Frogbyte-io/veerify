@@ -7,6 +7,11 @@ export default defineNuxtConfig({
   vite: {
     plugins: [tailwindcss()],
   },
+  vue: {
+    compilerOptions: {
+      isCustomElement: (tag: string) => tag === 'hex-color-picker',
+    },
+  },
   modules: ['@nuxt/fonts', '@nuxt/icon', '@nuxt/test-utils', 'shadcn-nuxt', '@nuxtjs/color-mode', 'nuxt-nodemailer', '@scalar/nuxt'],
   runtimeConfig: {
     nodemailer: {

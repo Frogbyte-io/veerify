@@ -86,10 +86,11 @@
                   </p>
                 </div>
                 <div v-else class="space-y-3">
-                  <div
+                  <NuxtLink
                     v-for="item in recentSubmissions"
                     :key="item.id"
-                    class="flex items-center justify-between rounded-lg border p-3"
+                    :to="`/feedback/${item.id}`"
+                    class="flex items-center justify-between rounded-lg border p-3 hover:bg-muted transition-colors"
                   >
                     <div class="min-w-0 flex-1">
                       <p class="font-medium truncate">{{ item.title }}</p>
@@ -106,7 +107,7 @@
                         {{ item.voteCount }}
                       </span>
                     </div>
-                  </div>
+                  </NuxtLink>
                 </div>
               </CardContent>
             </Card>

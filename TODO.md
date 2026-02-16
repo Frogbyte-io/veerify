@@ -1,8 +1,7 @@
 - Send email when domain has been connected
+- Add preview link to top of products settings page
+- In products settings page, the powered by veerify is not togglabled. When toggled it does not activate the save button. It should also be on by default.
 - Create user
 - add API with API docs
-- Update color picker to use new design
-- click to access feedback details for items in personal feedback list
 - Notifications infrastructure 
-- Email verification nudge 
 - Create widgets for users to embed on their website
