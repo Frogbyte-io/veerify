@@ -334,14 +334,20 @@ export default {
 
         for (const email of validEmails) {
           try {
-            await authClient.organization.inviteMember({
-              organizationId: this.createdOrgId,
-              email,
-              role: 'member',
+            await $fetch('/api/organizations/invite', {
+              method: 'POST',
+              body: {
+                organizationId: this.createdOrgId,
+                email,
+                role: 'member',
+              },
             })
             successCount++
           } catch (error) {
-            errors.push(`${email}: ${error?.message || 'Failed to send'}`)
+            const statusMessage = error?.data?.statusMessage || error?.message || 'Failed to send'
+            const steps = error?.data?.data?.recommendedSteps
+            const detail = steps ? ` — ${steps[0]}` : ''
+            errors.push(`${email}: ${statusMessage}${detail}`)
           }
         }
 

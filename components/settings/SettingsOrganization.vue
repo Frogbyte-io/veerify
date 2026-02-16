@@ -16,8 +16,22 @@
           <Skeleton class="h-10 w-full" />
         </div>
 
-        <div v-else-if="!organizationDetails" class="text-sm text-muted-foreground">
-          No active workspace context is available.
+        <div v-else-if="!organizationDetails" class="flex flex-col items-center gap-4 py-8 text-center">
+          <div class="flex items-center justify-center w-12 h-12 rounded-full bg-muted">
+            <Icon name="lucide:building-2" class="h-6 w-6 text-muted-foreground" />
+          </div>
+          <div>
+            <p class="font-medium">No workspace yet</p>
+            <p class="text-sm text-muted-foreground mt-1">
+              Create a workspace to collect feedback, manage your roadmap, and collaborate with your team.
+            </p>
+          </div>
+          <Button as-child>
+            <NuxtLink to="/get-started">
+              <Icon name="lucide:plus" class="h-4 w-4 mr-2" />
+              Create a workspace
+            </NuxtLink>
+          </Button>
         </div>
 
         <template v-else>
@@ -611,10 +625,13 @@ export default {
       if (!this.inviteEmail.trim() || !this.organizationDetails?.id) return
       try {
         this.isInviting = true
-        await authClient.organization.inviteMember({
-          organizationId: this.organizationDetails.id,
-          email: this.inviteEmail.trim(),
-          role: this.inviteRole,
+        await $fetch('/api/organizations/invite', {
+          method: 'POST',
+          body: {
+            organizationId: this.organizationDetails.id,
+            email: this.inviteEmail.trim(),
+            role: this.inviteRole,
+          },
         })
         this.showInviteDialog = false
         this.inviteEmail = ''
@@ -623,7 +640,10 @@ export default {
         toast.success('Invitation sent')
       } catch (error) {
         console.error('Error inviting member:', error)
-        toast.error(error?.data?.error?.message || 'Failed to send invitation')
+        const message = error?.data?.statusMessage || error?.data?.error?.message || 'Failed to send invitation'
+        const steps = error?.data?.data?.recommendedSteps
+        const hint = steps ? `\n${steps[0]}` : ''
+        toast.error(message + hint)
       } finally {
         this.isInviting = false
       }

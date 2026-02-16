@@ -621,18 +621,24 @@ export default {
 
       try {
         this.isInviting = true
-        await authClient.organization.inviteMember({
-          organizationId,
-          email: this.inviteEmail.trim(),
-          role: 'member',
-          teamId: this.currentTeam.id,
+        await $fetch('/api/organizations/invite', {
+          method: 'POST',
+          body: {
+            organizationId,
+            email: this.inviteEmail.trim(),
+            role: 'member',
+            teamId: this.currentTeam.id,
+          },
         })
         this.showInviteDialog = false
         this.inviteEmail = ''
         toast.success('Invitation sent')
       } catch (error) {
         console.error('Error inviting team member:', error)
-        toast.error('Failed to send invitation')
+        const message = error?.data?.statusMessage || 'Failed to send invitation'
+        const steps = error?.data?.data?.recommendedSteps
+        const hint = steps ? `\n${steps[0]}` : ''
+        toast.error(message + hint)
       } finally {
         this.isInviting = false
       }
