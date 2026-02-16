@@ -36,10 +36,7 @@
               Display a small attribution badge on your public board.
             </p>
           </div>
-          <Switch
-            :checked="form.showPoweredBy"
-            @update:checked="form.showPoweredBy = $event"
-          />
+          <Switch v-model="form.showPoweredBy" />
         </div>
 
         <div class="flex justify-end">

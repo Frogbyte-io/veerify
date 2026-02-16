@@ -1,8 +1,7 @@
 - Send email when domain has been connected (is curl needed to periodically check? How does this work?)
 - Add preview link to top of products settings page
-- In products settings page, the powered by veerify is not togglabled. When toggled it does not activate the save button. It should also be on by default.
-- Create user
+- Allow users to create a user in login in page, and on public feedback boards. Should be a create user/log in button in top right.
 - add API with API docs
-- Notifications infrastructure 
+- Notifications infrastructure
 - Add Magic Link as log in option
 - Create widgets for users to embed on their website
