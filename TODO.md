@@ -4,6 +4,5 @@
 - Create user
 - add API with API docs
 - Notifications infrastructure 
-- Anonymous feedback claiming
-- Create widgets for users to embed on their website
 - Add Magic Link as log in option
+- Create widgets for users to embed on their website

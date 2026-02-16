@@ -282,6 +282,10 @@ export default {
       try {
         this.isLoading = true
 
+        // Merge any anonymous feedback/votes into the authenticated account.
+        // This covers the OAuth redirect flow where login/signup pages aren't involved.
+        $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
+
         const [sessionResult, orgsResult] = await Promise.all([
           authClient.useSession(useFetch),
           authClient.organization.list().catch(() => ({ data: [] })),
