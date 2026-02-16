@@ -199,8 +199,11 @@ export default {
     },
 
     async fetchTeamContext() {
-      const [activeTeamResponse, teamsResponse, activeOrganizationResponse] = await Promise.all([
-        $fetch('/api/teams/active'),
+      // Resolve the active team first — this may update session.activeOrganizationId
+      // so that the subsequent get-full-organization call sees the correct session state.
+      const activeTeamResponse = await $fetch('/api/teams/active').catch(() => null)
+
+      const [teamsResponse, activeOrganizationResponse] = await Promise.all([
         $fetch('/api/auth/organization/list-user-teams'),
         $fetch('/api/auth/organization/get-full-organization').catch(() => null),
       ])

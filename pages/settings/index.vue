@@ -89,8 +89,8 @@ export default {
   computed: {
     availableTabs() {
       return allTabs.filter((tab) => {
-        // Workspace-only tabs: hide when user has no org
-        if (['organization', 'team', 'billing'].includes(tab.key) && !this.hasOrganization) {
+        // Teams and billing are only visible in workspace context
+        if (['team', 'billing'].includes(tab.key) && !this.hasOrganization) {
           return false
         }
         if (tab.key === 'billing') {
@@ -110,6 +110,9 @@ export default {
     const validKeys = this.availableTabs.map((t) => t.key)
     if (hash && validKeys.includes(hash)) {
       this.activeTab = hash
+    } else if (hash === 'organization') {
+      // Workspace tab is always available — navigate to it
+      this.activeTab = 'organization'
     } else if (hash && !validKeys.includes(hash)) {
       this.activeTab = 'profile'
       window.history.replaceState(null, null, '#profile')

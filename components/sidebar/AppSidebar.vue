@@ -23,7 +23,7 @@ const props = withDefaults(defineProps<SidebarProps>(), {
 // Shared state set by TeamSwitcher — defaults to true to avoid flash of missing content
 const hasActiveOrganization = useState('hasActiveOrganization', () => true)
 
-// Always-visible personal items
+// All personal nav items
 const personalItems: SidebarNavItem[] = [
   {
     title: 'Dashboard',
@@ -41,6 +41,13 @@ const personalItems: SidebarNavItem[] = [
     icon: 'lucide:bell',
   },
 ]
+
+// Dashboard is only relevant in workspace context
+const personalNavItems = computed(() =>
+  hasActiveOrganization.value
+    ? personalItems
+    : personalItems.filter((item) => item.title !== 'Dashboard')
+)
 
 // Workspace navigation items (only shown when org is active)
 const feedbackItems: SidebarNavItem[] = [
@@ -92,26 +99,8 @@ const supportItems: SidebarNavItem[] = [
 
 <template>
   <Sidebar data-testid="app-sidebar" v-bind="props">
-    <SidebarHeader>
-      <!-- Show TeamSwitcher when user has an org, otherwise show a Create Workspace CTA -->
-      <TeamSwitcher v-if="hasActiveOrganization" />
-      <SidebarMenu v-else>
-        <SidebarMenuItem>
-          <SidebarMenuButton as-child size="lg" tooltip="Create a workspace">
-            <NuxtLink to="/get-started">
-              <div
-                class="flex aspect-square size-8 items-center justify-center rounded-lg border-2 border-dashed border-sidebar-border text-sidebar-foreground/60"
-              >
-                <Icon name="lucide:plus" class="size-4" />
-              </div>
-              <div class="grid flex-1 text-left text-sm leading-tight">
-                <span class="truncate font-semibold">Create workspace</span>
-                <span class="truncate text-xs text-muted-foreground">Get started</span>
-              </div>
-            </NuxtLink>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
+    <SidebarHeader v-if="hasActiveOrganization">
+      <TeamSwitcher />
     </SidebarHeader>
 
     <SidebarContent>
@@ -120,7 +109,7 @@ const supportItems: SidebarNavItem[] = [
         <SidebarGroupLabel>Personal</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            <SidebarMenuItem v-for="item in personalItems" :key="item.title">
+            <SidebarMenuItem v-for="item in personalNavItems" :key="item.title">
               <SidebarMenuButton as-child :tooltip="item.title">
                 <NuxtLink :to="item.url">
                   <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
