@@ -1,4 +1,4 @@
-import { getEmailVerificationTemplate, getPasswordResetTemplate } from './email-templates'
+import { getEmailVerificationTemplate, getMagicLinkTemplate, getPasswordResetTemplate } from './email-templates'
 
 interface EmailOptions {
   to: string
@@ -11,6 +11,11 @@ interface EmailVerificationOptions {
   to: string
   name: string
   verificationUrl: string
+}
+
+interface MagicLinkEmailOptions {
+  to: string
+  magicLinkUrl: string
 }
 
 interface PasswordResetOptions {
@@ -61,6 +66,18 @@ export async function sendEmail(options: EmailOptions) {
 
 export async function sendEmailVerificationEmail(options: EmailVerificationOptions) {
   const template = getEmailVerificationTemplate(options)
+
+  const result = await sendEmail({
+    to: options.to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+  })
+  return result
+}
+
+export async function sendMagicLinkEmail(options: MagicLinkEmailOptions) {
+  const template = getMagicLinkTemplate(options)
 
   const result = await sendEmail({
     to: options.to,

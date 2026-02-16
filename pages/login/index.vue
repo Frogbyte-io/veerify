@@ -9,30 +9,50 @@
               <CardDescription> Sign in to your account to continue </CardDescription>
             </CardHeader>
             <CardContent>
-              <form @submit.prevent="handleSubmit">
-                <div class="grid gap-6">
-                  <!-- Social Sign In Buttons -->
-                  <div class="flex flex-col gap-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      class="w-full"
-                      :disabled="isLoading"
-                      @click="handleGitHubSignIn"
-                    >
-                      <Icon name="lucide:github" class="w-4 h-4 mr-2" />
-                      Continue with GitHub
-                    </Button>
-                  </div>
-
-                  <!-- Divider -->
-                  <div
-                    class="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t"
+              <div class="grid gap-6">
+                <!-- Social Sign In Buttons -->
+                <div class="flex flex-col gap-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    class="w-full"
+                    :disabled="isLoading"
+                    @click="handleGitHubSignIn"
                   >
-                    <span class="bg-card text-muted-foreground relative z-10 px-2"> Or continue with email </span>
-                  </div>
+                    <Icon name="lucide:github" class="w-4 h-4 mr-2" />
+                    Continue with GitHub
+                  </Button>
+                </div>
 
-                  <!-- Email/Password Form -->
+                <!-- Divider -->
+                <div
+                  class="after:border-border relative text-center text-sm after:absolute after:inset-0 after:top-1/2 after:z-0 after:flex after:items-center after:border-t"
+                >
+                  <span class="bg-card text-muted-foreground relative z-10 px-2"> Or continue with email </span>
+                </div>
+
+                <!-- Login Method Toggle -->
+                <div class="flex rounded-lg border border-border p-1">
+                  <button
+                    type="button"
+                    class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                    :class="loginMethod === 'password' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
+                    @click="loginMethod = 'password'"
+                  >
+                    Password
+                  </button>
+                  <button
+                    type="button"
+                    class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                    :class="loginMethod === 'magic-link' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
+                    @click="loginMethod = 'magic-link'"
+                  >
+                    Magic Link
+                  </button>
+                </div>
+
+                <!-- Password Form -->
+                <form v-if="loginMethod === 'password'" @submit.prevent="handleSubmit">
                   <div class="grid gap-6">
                     <div class="grid gap-3">
                       <Label for="email">Email</Label>
@@ -66,14 +86,54 @@
                       {{ isLoading ? 'Signing in...' : 'Sign in' }}
                     </Button>
                   </div>
+                </form>
 
-                  <!-- Sign Up Link -->
-                  <div class="text-center text-sm">
-                    Don't have an account?
-                    <NuxtLink :to="signupLink" class="underline underline-offset-4"> Sign up </NuxtLink>
+                <!-- Magic Link Form -->
+                <form v-else @submit.prevent="handleMagicLink">
+                  <div class="grid gap-6">
+                    <div v-if="magicLinkSent" class="rounded-md border border-border bg-muted/50 p-4 text-center">
+                      <Icon name="lucide:mail-check" class="mx-auto mb-2 h-8 w-8 text-primary" />
+                      <p class="text-sm font-medium">Check your email</p>
+                      <p class="mt-1 text-xs text-muted-foreground">
+                        We sent a sign-in link to <strong>{{ email }}</strong>. Click the link in the email to sign in.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        class="mt-3"
+                        :disabled="isLoading"
+                        @click="magicLinkSent = false"
+                      >
+                        Use a different email
+                      </Button>
+                    </div>
+                    <template v-else>
+                      <div class="grid gap-3">
+                        <Label for="magic-email">Email</Label>
+                        <Input
+                          id="magic-email"
+                          v-model="email"
+                          type="email"
+                          placeholder="m@example.com"
+                          required
+                          :disabled="isLoading"
+                        />
+                      </div>
+                      <Button type="submit" class="w-full" :disabled="isLoading">
+                        <Icon name="lucide:wand-sparkles" class="w-4 h-4 mr-2" />
+                        {{ isLoading ? 'Sending link...' : 'Send magic link' }}
+                      </Button>
+                    </template>
                   </div>
+                </form>
+
+                <!-- Sign Up Link -->
+                <div class="text-center text-sm">
+                  Don't have an account?
+                  <NuxtLink :to="signupLink" class="underline underline-offset-4"> Sign up </NuxtLink>
                 </div>
-              </form>
+              </div>
 
               <!-- Error Message -->
               <div
@@ -108,6 +168,8 @@ export default {
       password: '',
       isLoading: false,
       error: '',
+      loginMethod: 'password',
+      magicLinkSent: false,
     }
   },
   computed: {
@@ -142,6 +204,37 @@ export default {
       } catch (err) {
         this.error = 'An unexpected error occurred'
         console.error('Sign in error:', err)
+      } finally {
+        this.isLoading = false
+      }
+    },
+
+    async handleMagicLink() {
+      if (!this.email) {
+        this.error = 'Please enter your email'
+        return
+      }
+
+      this.isLoading = true
+      this.error = ''
+
+      try {
+        const redirect = this.$route.query.redirect
+        const callbackURL = redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard'
+
+        const result = await authClient.signIn.magicLink({
+          email: this.email,
+          callbackURL,
+        })
+
+        if (result.error) {
+          this.error = result.error.message || 'Failed to send magic link'
+        } else {
+          this.magicLinkSent = true
+        }
+      } catch (err) {
+        this.error = 'An unexpected error occurred'
+        console.error('Magic link error:', err)
       } finally {
         this.isLoading = false
       }

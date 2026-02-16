@@ -1,3 +1,7 @@
+interface MagicLinkOptions {
+  magicLinkUrl: string
+}
+
 interface EmailVerificationOptions {
   name: string
   verificationUrl: string
@@ -85,6 +89,45 @@ ${resetUrl}
 This link will expire in 1 hour.
 
 If you didn't request a password reset, please ignore this email.
+  `
+
+  return { subject, html, text }
+}
+
+export function getMagicLinkTemplate({ magicLinkUrl }: MagicLinkOptions) {
+  const subject = 'Your sign-in link for Veerify'
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #333;">Sign in to Veerify</h1>
+      <p>You requested a magic link to sign in to your Veerify account. Click the button below to continue:</p>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${magicLinkUrl}"
+           style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+          Sign In
+        </a>
+      </div>
+      <p>If the button doesn't work, you can also copy and paste this link in your browser:</p>
+      <p style="word-break: break-all; color: #666;">${magicLinkUrl}</p>
+      <p>This link will expire in 5 minutes.</p>
+      <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+      <p style="color: #666; font-size: 12px;">
+        If you didn't request this link, please ignore this email.
+      </p>
+    </div>
+  `
+
+  const text = `
+Sign in to Veerify
+
+You requested a magic link to sign in to your Veerify account.
+
+Sign in by visiting this link:
+${magicLinkUrl}
+
+This link will expire in 5 minutes.
+
+If you didn't request this link, please ignore this email.
   `
 
   return { subject, html, text }

@@ -1,10 +1,10 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { organization, twoFactor } from 'better-auth/plugins'
+import { magicLink, organization, twoFactor } from 'better-auth/plugins'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
-import { sendEmailVerificationEmail, sendPasswordResetEmail } from './email'
+import { sendEmailVerificationEmail, sendMagicLinkEmail, sendPasswordResetEmail } from './email'
 
 export const auth = betterAuth({
   baseURL:
@@ -136,6 +136,11 @@ export const auth = betterAuth({
             })
           }
         },
+      },
+    }),
+    magicLink({
+      sendMagicLink: async ({ email, url }) => {
+        await sendMagicLinkEmail({ to: email, magicLinkUrl: url })
       },
     }),
     twoFactor({
