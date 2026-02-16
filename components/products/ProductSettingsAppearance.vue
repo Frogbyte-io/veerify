@@ -9,19 +9,62 @@
         <CardDescription>Customize how your public feedback board looks.</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
-        <div class="space-y-2">
-          <Label for="accent-color">Accent Color</Label>
+        <div class="space-y-3">
+          <Label>Accent Color</Label>
+          <!-- Preset swatches -->
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="swatch in presetColors"
+              :key="swatch.value"
+              type="button"
+              :title="swatch.label"
+              class="relative w-8 h-8 rounded-full border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              :class="form.accentColor === swatch.value ? 'border-foreground scale-110' : 'border-transparent hover:scale-105'"
+              :style="{ backgroundColor: swatch.value }"
+              @click="form.accentColor = swatch.value"
+            >
+              <Icon
+                v-if="form.accentColor === swatch.value"
+                name="lucide:check"
+                class="absolute inset-0 m-auto w-3.5 h-3.5 text-white drop-shadow"
+              />
+            </button>
+            <!-- Custom color trigger -->
+            <label
+              class="relative w-8 h-8 rounded-full border-2 cursor-pointer flex items-center justify-center transition-all hover:scale-105 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2"
+              :class="isCustomColor ? 'border-foreground scale-110' : 'border-dashed border-muted-foreground'"
+              :style="isCustomColor ? { backgroundColor: form.accentColor } : {}"
+              title="Custom color"
+            >
+              <Icon
+                v-if="isCustomColor"
+                name="lucide:check"
+                class="absolute inset-0 m-auto w-3.5 h-3.5 text-white drop-shadow"
+              />
+              <Icon
+                v-else
+                name="lucide:pipette"
+                class="w-3.5 h-3.5 text-muted-foreground"
+              />
+              <input
+                type="color"
+                :value="form.accentColor"
+                class="sr-only"
+                @input="form.accentColor = $event.target.value"
+              />
+            </label>
+          </div>
+          <!-- Hex input for custom / fine-tune -->
           <div class="flex items-center gap-2">
-            <input
-              type="color"
-              :value="form.accentColor"
-              class="w-8 h-8 rounded border cursor-pointer"
-              @input="form.accentColor = $event.target.value"
+            <div
+              class="w-6 h-6 rounded border shrink-0"
+              :style="{ backgroundColor: form.accentColor || '#3b82f6' }"
             />
             <Input
               id="accent-color"
               v-model="form.accentColor"
               placeholder="#3b82f6"
+              class="font-mono text-sm max-w-40"
             />
           </div>
           <p class="text-xs text-muted-foreground">
@@ -143,9 +186,26 @@ export default {
         showPoweredBy: settings.showPoweredBy !== false,
       },
       isSaving: false,
+      presetColors: [
+        { label: 'Blue', value: '#3b82f6' },
+        { label: 'Indigo', value: '#6366f1' },
+        { label: 'Violet', value: '#8b5cf6' },
+        { label: 'Pink', value: '#ec4899' },
+        { label: 'Red', value: '#ef4444' },
+        { label: 'Orange', value: '#f97316' },
+        { label: 'Amber', value: '#f59e0b' },
+        { label: 'Emerald', value: '#10b981' },
+        { label: 'Teal', value: '#14b8a6' },
+        { label: 'Slate', value: '#64748b' },
+        { label: 'Dark', value: '#1e293b' },
+        { label: 'Black', value: '#000000' },
+      ],
     }
   },
   computed: {
+    isCustomColor() {
+      return this.form.accentColor && !this.presetColors.some(c => c.value === this.form.accentColor)
+    },
     currentSettings() {
       const settings = this.project.settings || {}
       return {
