@@ -52,8 +52,8 @@ const allTabs = [
   { key: 'profile', label: 'Profile', icon: 'lucide:user' },
   { key: 'security', label: 'Security', icon: 'lucide:shield' },
   { key: 'notifications', label: 'Notifications', icon: 'lucide:bell' },
-  { key: 'organization', label: 'Organization', icon: 'lucide:building-2' },
-  { key: 'team', label: 'Team', icon: 'lucide:users' },
+  { key: 'organization', label: 'Workspace', icon: 'lucide:building-2' },
+  { key: 'team', label: 'Teams', icon: 'lucide:users' },
   { key: 'billing', label: 'Billing', icon: 'lucide:credit-card' },
   { key: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
 ]
@@ -83,11 +83,16 @@ export default {
     return {
       activeTab: 'profile',
       currentOrgRole: null,
+      hasOrganization: false,
     }
   },
   computed: {
     availableTabs() {
       return allTabs.filter((tab) => {
+        // Workspace-only tabs: hide when user has no org
+        if (['organization', 'team', 'billing'].includes(tab.key) && !this.hasOrganization) {
+          return false
+        }
         if (tab.key === 'billing') {
           return this.currentOrgRole === 'owner'
         }
@@ -105,7 +110,7 @@ export default {
     const validKeys = this.availableTabs.map((t) => t.key)
     if (hash && validKeys.includes(hash)) {
       this.activeTab = hash
-    } else if (hash === 'billing' && !validKeys.includes('billing')) {
+    } else if (hash && !validKeys.includes(hash)) {
       this.activeTab = 'profile'
       window.history.replaceState(null, null, '#profile')
     }
@@ -116,8 +121,11 @@ export default {
         const activeOrg = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
         if (!activeOrg?.id && !activeOrg?.name) {
           this.currentOrgRole = null
+          this.hasOrganization = false
           return
         }
+
+        this.hasOrganization = true
 
         let slug = activeOrg.slug || null
         if (!slug) {

@@ -9,7 +9,7 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
   // On team subdomains, all routes are public. Redirect app routes to team root.
   const teamSubdomain = useState('teamSubdomain')
   if (teamSubdomain.value) {
-    const appRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products', '/login', '/signup', '/auth']
+    const appRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products', '/login', '/signup', '/auth', '/onboarding', '/submissions', '/get-started']
     if (appRoutes.some((r) => to.path.startsWith(r))) {
       return navigateTo('/')
     }
@@ -20,7 +20,7 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     const { data: session } = await authClient.useSession(useFetch)
 
     // Protected routes that require authentication
-    const protectedRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products']
+    const protectedRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products', '/onboarding', '/submissions']
 
     // Auth routes that should redirect to dashboard if user is already logged in
     const authRoutes = ['/login', '/signup', '/auth']
@@ -30,16 +30,17 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     const isAuthRoute = authRoutes.some((route) => to.path.startsWith(route))
 
     if (isProtectedRoute && !session.value?.user) {
-      // Redirect to login page if trying to access protected route without being logged in
       return navigateTo('/login')
     }
 
-    // If user is logged in and trying to access auth routes, redirect to dashboard
     if (isAuthRoute && session.value?.user) {
+      const redirect = to.query.redirect
+      if (redirect && typeof redirect === 'string' && redirect.startsWith('/')) {
+        return navigateTo(redirect)
+      }
       return navigateTo('/dashboard')
     }
   } catch (error) {
-    // If there's an error checking session, allow access but log the error
     console.error('Auth middleware error:', error)
   }
 })

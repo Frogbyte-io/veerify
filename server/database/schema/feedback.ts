@@ -19,6 +19,10 @@ export const project = pgTable(
     isPublic: boolean('is_public')
       .$defaultFn(() => false)
       .notNull(),
+    // Controls who can submit feedback: 'anonymous' allows anonymous + optional email, 'account_required' requires login
+    submissionMode: text('submission_mode')
+      .$defaultFn(() => 'anonymous')
+      .notNull(),
     customDomain: text('custom_domain'),
     settings: jsonb('settings').$type<Record<string, any>>(),
     createdAt: timestamp('created_at')
