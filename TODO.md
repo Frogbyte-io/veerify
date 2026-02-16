@@ -1,5 +1,4 @@
 - Send email when domain has been connected (is curl needed to periodically check? How does this work?)
-- Add preview link to top of products settings page
 - Allow users to create a user in login in page, and on public feedback boards. Should be a create user/log in button in top right.
 - add API with API docs
 - Notifications infrastructure
