@@ -4,6 +4,7 @@
 - Notifications infrastructure
 - Create widgets for users to embed on their website
 - Migrate to nuxt 4
+- Set up full test infrastructure
 - ### 8.3 Anti-Spam Measures
     - IP-based rate limiting
     - Cookie/localStorage tracking
