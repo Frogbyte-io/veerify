@@ -49,7 +49,7 @@
       </div>
 
       <div class="mt-12 pt-6 border-t text-center text-sm text-muted-foreground">
-        Powered by <span class="font-medium">Veerify</span>
+        Powered by <a href="https://veerify.com" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">Veerify</a>
       </div>
     </div>
   </div>
