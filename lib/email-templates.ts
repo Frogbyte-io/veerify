@@ -1,3 +1,58 @@
+interface FeedbackConfirmationOptions {
+  authorName: string
+  feedbackTitle: string
+  projectName: string
+  editUrl: string
+}
+
+export function getFeedbackConfirmationTemplate({ authorName, feedbackTitle, projectName, editUrl }: FeedbackConfirmationOptions) {
+  const subject = `Your feedback for ${projectName} has been received`
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #333;">Feedback Received</h1>
+      <p>Hi ${authorName},</p>
+      <p>Thank you for submitting feedback to <strong>${projectName}</strong>. We've received your submission:</p>
+      <div style="background: #f5f5f5; border-left: 4px solid #007bff; padding: 12px 16px; margin: 20px 0; border-radius: 0 4px 4px 0;">
+        <p style="margin: 0; font-weight: bold; color: #333;">${feedbackTitle}</p>
+      </div>
+      <p>If you need to make changes to your submission, you can edit it using the link below:</p>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${editUrl}"
+           style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+          Edit Your Feedback
+        </a>
+      </div>
+      <p>If the button doesn't work, you can also copy and paste this link in your browser:</p>
+      <p style="word-break: break-all; color: #666;">${editUrl}</p>
+      <p>This edit link will expire in 7 days.</p>
+      <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+      <p style="color: #666; font-size: 12px;">
+        If you didn't submit this feedback, please ignore this email.
+      </p>
+    </div>
+  `
+
+  const text = `
+Feedback Received
+
+Hi ${authorName},
+
+Thank you for submitting feedback to ${projectName}. We've received your submission:
+
+"${feedbackTitle}"
+
+If you need to make changes, edit your feedback at:
+${editUrl}
+
+This edit link will expire in 7 days.
+
+If you didn't submit this feedback, please ignore this email.
+  `
+
+  return { subject, html, text }
+}
+
 interface MagicLinkOptions {
   magicLinkUrl: string
 }

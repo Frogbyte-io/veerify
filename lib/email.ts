@@ -1,4 +1,4 @@
-import { getEmailVerificationTemplate, getMagicLinkTemplate, getPasswordResetTemplate } from './email-templates'
+import { getEmailVerificationTemplate, getFeedbackConfirmationTemplate, getMagicLinkTemplate, getPasswordResetTemplate } from './email-templates'
 
 interface EmailOptions {
   to: string
@@ -22,6 +22,14 @@ interface PasswordResetOptions {
   to: string
   name: string
   resetUrl: string
+}
+
+interface FeedbackConfirmationEmailOptions {
+  to: string
+  authorName: string
+  feedbackTitle: string
+  projectName: string
+  editUrl: string
 }
 
 export async function sendEmail(options: EmailOptions) {
@@ -90,6 +98,18 @@ export async function sendMagicLinkEmail(options: MagicLinkEmailOptions) {
 
 export async function sendPasswordResetEmail(options: PasswordResetOptions) {
   const template = getPasswordResetTemplate(options)
+
+  const result = await sendEmail({
+    to: options.to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+  })
+  return result
+}
+
+export async function sendFeedbackConfirmationEmail(options: FeedbackConfirmationEmailOptions) {
+  const template = getFeedbackConfirmationTemplate(options)
 
   const result = await sendEmail({
     to: options.to,

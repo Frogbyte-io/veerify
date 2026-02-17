@@ -7,6 +7,7 @@ import { validateBody } from '~/server/utils/validation'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
 import { feedback, project, feedbackCategory } from '~/server/database/schema/feedback'
+import { sendFeedbackConfirmationEmail } from '~/lib/email'
 
 const createFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
@@ -73,6 +74,10 @@ export default defineEventHandler(async (event) => {
     anonSessionId = anonSession.id
   }
 
+  // Generate a tokenized edit link for the submitter
+  const editToken = crypto.randomUUID()
+  const editTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+
   const now = new Date()
   const [created] = await db
     .insert(feedback)
@@ -91,10 +96,28 @@ export default defineEventHandler(async (event) => {
       commentCount: 0,
       isPinned: false,
       isLocked: false,
+      metadata: { editToken, editTokenExpiry },
       createdAt: now,
       updatedAt: now,
     })
     .returning()
+
+  // Send confirmation email if the submitter provided an email address
+  const recipientEmail = session?.user ? session.user.email : body.authorEmail
+  const recipientName = session?.user ? session.user.name : body.authorName
+
+  if (recipientEmail && recipientName) {
+    const origin = getRequestURL(event).origin
+    const editUrl = `${origin}/feedback/${created.id}/edit?token=${editToken}`
+
+    sendFeedbackConfirmationEmail({
+      to: recipientEmail,
+      authorName: recipientName,
+      feedbackTitle: created.title,
+      projectName: proj.name,
+      editUrl,
+    }).catch((err) => console.error('Failed to send feedback confirmation email:', err))
+  }
 
   setResponseStatus(event, 201)
   return createSuccessResponse(created)
