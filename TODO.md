@@ -48,7 +48,7 @@ MVP
 - [ ] Allow product admins to add and change status tags (e.g. "planned", "in progress", "completed")
 - [ ] Show icon besides the feedback category on the public board (e.g. a bug icon for bug reports, a lightbulb for feature requests, etc.) when icon is added to the category
 - [ ] In public feedback board, it should be possible to click a feedback to see more details (description, comments, etc.) in a modal or separate page without leaving the board
-- [ ] Move powered by verify to the very bottom of the page and make it smaller. Change domain to veerify.io
+- [x] Move powered by verify to the very bottom of the page and make it smaller. Change domain to veerify.io
 - [ ] Add a GitHub mention link to the footer of the public board for users to easily report issues with the board itself, and to see the source code. Mention that it is open source and contributions are welcome.
 - [ ] Add a link to veerify's own public feedback board in the footer of the public board, so users can see an example of a feedback board and submit feedback about veerify itself. 
 

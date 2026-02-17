@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-background relative">
+  <div class="min-h-screen bg-background relative flex flex-col">
     <!-- Top-right controls: always visible -->
     <div class="absolute top-4 right-4 z-10 flex items-center gap-2">
       <button
@@ -45,7 +45,7 @@
     </div>
 
     <!-- Main Content -->
-    <div v-else-if="projectData">
+    <div v-else-if="projectData" class="flex-1 flex flex-col">
       <!-- Banner -->
       <img
         v-if="projectData.project.settings?.bannerUrl"
@@ -269,10 +269,10 @@
         </DialogContent>
       </Dialog>
 
-      <!-- Footer -->
-      <div v-if="!projectData?.settings || projectData.settings.showPoweredBy !== false" class="mt-12 pt-6 border-t text-center text-sm text-muted-foreground">
-        Powered by <a href="https://veerify.com" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">Veerify</a>
-      </div>
+    </div>
+    <!-- Footer -->
+    <div v-if="!projectData?.settings || projectData.settings.showPoweredBy !== false" class="mt-auto py-3 text-center text-xs text-muted-foreground">
+      Powered by <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="hover:underline">Veerify</a>
     </div>
     </div>
   </div>

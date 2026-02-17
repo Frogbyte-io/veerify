@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-background">
+  <div class="min-h-screen bg-background flex flex-col">
     <div v-if="isLoading" class="max-w-3xl mx-auto px-4 py-12 space-y-4">
       <Skeleton class="h-10 w-48" />
       <Skeleton class="h-5 w-64" />
@@ -14,7 +14,7 @@
       <p class="text-muted-foreground">{{ error }}</p>
     </div>
 
-    <div v-else-if="teamData" class="max-w-3xl mx-auto px-4 py-8">
+    <div v-else-if="teamData" class="flex-1 flex flex-col max-w-3xl mx-auto px-4 py-8 w-full">
       <div class="mb-8">
         <h1 class="text-3xl font-bold mb-2">{{ teamData.team.name }}</h1>
         <p class="text-muted-foreground">Public feedback boards</p>
@@ -48,8 +48,8 @@
         </NuxtLink>
       </div>
 
-      <div class="mt-12 pt-6 border-t text-center text-sm text-muted-foreground">
-        Powered by <a href="https://veerify.com" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">Veerify</a>
+      <div class="mt-auto py-3 text-center text-xs text-muted-foreground">
+        Powered by <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="hover:underline">Veerify</a>
       </div>
     </div>
   </div>

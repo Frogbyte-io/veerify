@@ -133,7 +133,7 @@
             <div class="h-10 rounded-md bg-muted" />
           </div>
           <div v-if="form.showPoweredBy" class="border-t px-4 py-2 text-center">
-            <a href="https://veerify.com" target="_blank" rel="noopener noreferrer" class="text-xs text-muted-foreground hover:underline">Powered by Veerify</a>
+            <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="text-xs text-muted-foreground hover:underline">Powered by Veerify</a>
           </div>
         </div>
       </CardContent>
