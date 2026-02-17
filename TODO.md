@@ -54,3 +54,4 @@ MVP
 
 - [ ] When refreshing in a personal account, the sidebar renders the items for the organization instead of the personal account. This is because the sidebar is rendered before we fetch the user data and determine if it's a personal or org account. We should either fetch the user data earlier or make the sidebar more resilient to this case.
 
+- [ ] Add hover effect to products in products page to indicate they are clickable
