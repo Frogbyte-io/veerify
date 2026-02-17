@@ -132,10 +132,12 @@ yarn preview
 
 **Test credentials on preview deployments:**
 
-| Field    | Value                |
-| -------- | -------------------- |
-| Email    | `test@preview.local` |
-| Password | `password123`        |
+Two seed accounts are available — one with a full org/team/project setup, one standalone personal account with no org affiliation:
+
+| Account  | Email                    | Password      | Has org? |
+| -------- | ------------------------ | ------------- | -------- |
+| Org user | `test@preview.local`     | `password123` | Yes      |
+| Personal | `personal@preview.local` | `password123` | No       |
 
 ## 📁 Project Structure
 
@@ -155,7 +157,7 @@ veerify/
 │   ├── help/            # Help center
 │   └── settings/        # Application settings
 ├── scripts/
-│   └── seed.ts          # Preview database seed (test user + org)
+│   └── seed.ts          # Preview database seed (org user + personal user)
 └── assets/css/          # Global styles
 ```
 

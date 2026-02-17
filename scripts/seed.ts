@@ -21,10 +21,15 @@ async function hashPassword(password: string): Promise<string> {
 const TEST_EMAIL = 'test@preview.local'
 const TEST_PASSWORD = 'password123'
 
+const PERSONAL_EMAIL = 'personal@preview.local'
+const PERSONAL_PASSWORD = 'password123'
+
 // All seeded row IDs use this prefix so --clean can target them precisely
 const IDS = {
   user: 'seed_preview_user',
   account: 'seed_preview_account',
+  personalUser: 'seed_preview_personal_user',
+  personalAccount: 'seed_preview_personal_account',
   org: 'seed_preview_org',
   member: 'seed_preview_member',
   team: 'seed_preview_team',
@@ -124,6 +129,23 @@ async function clean(client: Client) {
     console.log(`[seed:clean] Deleted user (${IDS.user})`)
   }
 
+  // 8. Delete personal user account + user
+  const { rowCount: personalAccountCount } = await client.query(
+    `DELETE FROM "account" WHERE id = $1`,
+    [IDS.personalAccount]
+  )
+  if (personalAccountCount && personalAccountCount > 0) {
+    console.log(`[seed:clean] Deleted personal account (${IDS.personalAccount})`)
+  }
+
+  const { rowCount: personalUserCount } = await client.query(
+    `DELETE FROM "user" WHERE id = $1`,
+    [IDS.personalUser]
+  )
+  if (personalUserCount && personalUserCount > 0) {
+    console.log(`[seed:clean] Deleted personal user (${IDS.personalUser})`)
+  }
+
   console.log('[seed:clean] Done.')
 }
 
@@ -137,6 +159,7 @@ async function seed(client: Client) {
 
   const now = new Date().toISOString()
   const passwordHash = await hashPassword(TEST_PASSWORD)
+  const personalPasswordHash = await hashPassword(PERSONAL_PASSWORD)
 
   await client.query(
     `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at, two_factor_enabled)
@@ -148,6 +171,19 @@ async function seed(client: Client) {
     `INSERT INTO "account" (id, account_id, provider_id, user_id, password, created_at, updated_at)
      VALUES ($1, $2, 'credential', $3, $4, $5, $5)`,
     [IDS.account, TEST_EMAIL, IDS.user, passwordHash, now]
+  )
+
+  // Personal user — no org, team, or project affiliation
+  await client.query(
+    `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at, two_factor_enabled)
+     VALUES ($1, $2, $3, true, $4, $4, false)`,
+    [IDS.personalUser, 'Personal User', PERSONAL_EMAIL, now]
+  )
+
+  await client.query(
+    `INSERT INTO "account" (id, account_id, provider_id, user_id, password, created_at, updated_at)
+     VALUES ($1, $2, 'credential', $3, $4, $5, $5)`,
+    [IDS.personalAccount, PERSONAL_EMAIL, IDS.personalUser, personalPasswordHash, now]
   )
 
   await client.query(
@@ -226,7 +262,8 @@ async function seed(client: Client) {
     )
   }
 
-  console.log(`[seed] Created test user: ${TEST_EMAIL} / ${TEST_PASSWORD}`)
+  console.log(`[seed] Created org user:      ${TEST_EMAIL} / ${TEST_PASSWORD}`)
+  console.log(`[seed] Created personal user: ${PERSONAL_EMAIL} / ${PERSONAL_PASSWORD}`)
   console.log('[seed] Created org: Preview Org (preview-org)')
   console.log('[seed] Created team: Default')
   console.log('[seed] Created projects: Demo Project, Mobile App, API Platform')
