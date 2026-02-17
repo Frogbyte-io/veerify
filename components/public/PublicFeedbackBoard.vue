@@ -1,5 +1,30 @@
 <template>
-  <div class="min-h-screen bg-background">
+  <div class="min-h-screen bg-background relative">
+    <!-- Top-right controls: always visible -->
+    <div class="absolute top-4 right-4 z-10 flex items-center gap-2">
+      <button
+        v-if="showThemeToggle"
+        class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
+        @click="toggleTheme"
+      >
+        <Icon :name="currentThemeIcon" class="w-4 h-4" />
+        {{ currentThemeLabel }}
+      </button>
+      <a
+        :href="mainAppUrl + '/login'"
+        class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
+      >
+        <Icon name="lucide:log-in" class="w-4 h-4" />
+        Log in
+      </a>
+      <a
+        :href="mainAppUrl + '/signup'"
+        class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+      >
+        Sign up
+      </a>
+    </div>
+
     <!-- Loading State -->
     <div v-if="isLoading" class="max-w-4xl mx-auto px-4 py-12">
       <div class="space-y-4">
@@ -60,30 +85,6 @@
           <p class="text-sm text-muted-foreground">Completed</p>
           <p class="text-2xl font-bold text-green-600">{{ projectData.stats.completed }}</p>
         </div>
-      </div>
-
-      <!-- Top Bar: Theme Toggle + Auth Links -->
-      <div class="flex items-center justify-end gap-2 mb-4">
-        <button
-          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors"
-          @click="toggleTheme"
-        >
-          <Icon :name="currentThemeIcon" class="w-4 h-4" />
-          {{ currentThemeLabel }}
-        </button>
-        <a
-          :href="mainAppUrl + '/login'"
-          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors"
-        >
-          <Icon name="lucide:log-in" class="w-4 h-4" />
-          Log in
-        </a>
-        <a
-          :href="mainAppUrl + '/signup'"
-          class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        >
-          Sign up
-        </a>
       </div>
 
       <!-- Actions Bar -->
@@ -326,6 +327,10 @@ export default {
       if (this.activeTheme === 'dark') return 'Dark'
       if (this.activeTheme === 'light') return 'Light'
       return 'System'
+    },
+    showThemeToggle() {
+      const forced = this.projectData?.project?.settings?.themeMode
+      return !forced || forced === 'system'
     },
   },
   beforeUnmount() {
