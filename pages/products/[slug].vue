@@ -112,6 +112,7 @@ import ProductSettingsGeneral from '~/components/products/ProductSettingsGeneral
 import ProductSettingsCategories from '~/components/products/ProductSettingsCategories.vue'
 import ProductSettingsAppearance from '~/components/products/ProductSettingsAppearance.vue'
 import ProductSettingsDomain from '~/components/products/ProductSettingsDomain.vue'
+import ProductSettingsEmbed from '~/components/products/ProductSettingsEmbed.vue'
 import ProductSettingsDanger from '~/components/products/ProductSettingsDanger.vue'
 
 export default {
@@ -121,6 +122,7 @@ export default {
     ProductSettingsCategories,
     ProductSettingsAppearance,
     ProductSettingsDomain,
+    ProductSettingsEmbed,
     ProductSettingsDanger,
   },
   data() {
@@ -134,6 +136,7 @@ export default {
         { id: 'categories', label: 'Categories', icon: 'lucide:tags' },
         { id: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
         { id: 'domain', label: 'Custom Domain', icon: 'lucide:globe' },
+        { id: 'embed', label: 'Embed', icon: 'lucide:code-2' },
         { id: 'danger', label: 'Danger Zone', icon: 'lucide:alert-triangle' },
       ],
     }
@@ -155,6 +158,7 @@ export default {
         categories: 'ProductSettingsCategories',
         appearance: 'ProductSettingsAppearance',
         domain: 'ProductSettingsDomain',
+        embed: 'ProductSettingsEmbed',
         danger: 'ProductSettingsDanger',
       }
       return componentMap[this.activeTab] || 'ProductSettingsGeneral'
@@ -162,7 +166,7 @@ export default {
   },
   async mounted() {
     const hash = window.location.hash.replace('#', '')
-    if (hash && ['general', 'categories', 'appearance', 'domain', 'danger'].includes(hash)) {
+    if (hash && ['general', 'categories', 'appearance', 'domain', 'embed', 'danger'].includes(hash)) {
       this.activeTab = hash
     }
     await this.loadProject()
