@@ -27,7 +27,7 @@ MVP
 
 - [ ] Set up full test infrastructure
 - [ ] Send email when custom domain has been verified/connected
-- [ ] Allow users to create an account or log in directly from the public feedback board (top-right button)
+- [x] Allow users to create an account or log in directly from the public feedback board (top-right button)
 - [ ] Add REST API docs UI (`/api/openapi.json` exists; add Scalar or Swagger UI)
 - [ ] Notifications infrastructure (real-time or polling for in-app notifications)
 - [ ] Create embeddable widgets for customers to add to their own website

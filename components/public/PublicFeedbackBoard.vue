@@ -62,8 +62,8 @@
         </div>
       </div>
 
-      <!-- Theme Toggle -->
-      <div class="flex justify-end mb-4">
+      <!-- Top Bar: Theme Toggle + Auth Links -->
+      <div class="flex items-center justify-end gap-2 mb-4">
         <button
           class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors"
           @click="toggleTheme"
@@ -71,6 +71,19 @@
           <Icon :name="currentThemeIcon" class="w-4 h-4" />
           {{ currentThemeLabel }}
         </button>
+        <a
+          :href="mainAppUrl + '/login'"
+          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors"
+        >
+          <Icon name="lucide:log-in" class="w-4 h-4" />
+          Log in
+        </a>
+        <a
+          :href="mainAppUrl + '/signup'"
+          class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          Sign up
+        </a>
       </div>
 
       <!-- Actions Bar -->
@@ -296,6 +309,14 @@ export default {
     }
   },
   computed: {
+    mainAppUrl() {
+      if (!import.meta.client) return ''
+      const config = useRuntimeConfig()
+      const appDomain = config.public.appDomain || 'localhost'
+      const protocol = window.location.protocol
+      const port = appDomain === 'localhost' ? ':' + window.location.port : ''
+      return `${protocol}//${appDomain}${port}`
+    },
     currentThemeIcon() {
       if (this.activeTheme === 'dark') return 'lucide:moon'
       if (this.activeTheme === 'light') return 'lucide:sun'
