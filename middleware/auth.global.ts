@@ -25,7 +25,9 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     // Auth routes that should redirect to dashboard if user is already logged in
     const authRoutes = ['/login', '/signup', '/auth']
 
-    const isProtectedRoute = protectedRoutes.some((route) => to.path.startsWith(route))
+    // Token-based feedback edit page is public even though /feedback is a protected prefix
+    const isFeedbackEditPage = /^\/feedback\/[^/]+\/edit$/.test(to.path)
+    const isProtectedRoute = !isFeedbackEditPage && protectedRoutes.some((route) => to.path.startsWith(route))
 
     const isAuthRoute = authRoutes.some((route) => to.path.startsWith(route))
 
