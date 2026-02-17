@@ -7,7 +7,7 @@ import { validateBody } from '~/server/utils/validation'
 import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory } from '~/server/database/schema/feedback'
+import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
 
 const submitFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
       authorSessionId: anonSessionId,
       authorName: session?.user ? session.user.name : body.authorName || null,
       authorEmail: session?.user ? session.user.email : body.authorEmail || null,
-      voteCount: 0,
+      voteCount: 1,
       commentCount: 0,
       isPinned: false,
       isLocked: false,
@@ -77,6 +77,15 @@ export default defineEventHandler(async (event) => {
       updatedAt: now,
     })
     .returning()
+
+  // Auto-upvote by the submitter so the item appears ranked without a second click
+  await db.insert(vote).values({
+    id: crypto.randomUUID(),
+    feedbackId: created.id,
+    voterUserId: session?.user?.id || null,
+    voterSessionId: anonSessionId,
+    createdAt: now,
+  })
 
   setResponseStatus(event, 201)
   return createSuccessResponse({

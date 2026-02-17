@@ -43,7 +43,7 @@ MVP
 - [ ] Roadmap page — public timeline view based on feedback status tags
 - [ ] Sync roadmaps to GitHub Projects
 - [ ] Customizable vote style (thumbs, arrows, ducks, rockets, etc.)
-- [ ] When creating a feedback item, it should be automatically upvoted by the submitter (if anonymous, use the session; if logged in, use their user ID) so it appears in the board without needing a second click
+- [x] When creating a feedback item, it should be automatically upvoted by the submitter (if anonymous, use the session; if logged in, use their user ID) so it appears in the board without needing a second click
 - [ ] Add a "Feedback" tab to the product settings page that shows a list of all feedback items with filters (status, tags, etc.) and search
 - [ ] Allow product admins to add and change status tags (e.g. "planned", "in progress", "completed")
 - [ ] Show icon besides the feedback category on the public board (e.g. a bug icon for bug reports, a lightbulb for feature requests, etc.) when icon is added to the category

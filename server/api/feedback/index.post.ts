@@ -6,7 +6,7 @@ import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
-import { feedback, project, feedbackCategory } from '~/server/database/schema/feedback'
+import { feedback, project, feedbackCategory, vote } from '~/server/database/schema/feedback'
 import { sendFeedbackConfirmationEmail } from '~/lib/email'
 
 const createFeedbackSchema = z.object({
@@ -92,7 +92,7 @@ export default defineEventHandler(async (event) => {
       authorSessionId: anonSessionId,
       authorName: session?.user ? session.user.name : body.authorName || null,
       authorEmail: session?.user ? session.user.email : body.authorEmail || null,
-      voteCount: 0,
+      voteCount: 1,
       commentCount: 0,
       isPinned: false,
       isLocked: false,
@@ -101,6 +101,15 @@ export default defineEventHandler(async (event) => {
       updatedAt: now,
     })
     .returning()
+
+  // Auto-upvote by the submitter so the item appears ranked without a second click
+  await db.insert(vote).values({
+    id: crypto.randomUUID(),
+    feedbackId: created.id,
+    voterUserId: session?.user?.id || null,
+    voterSessionId: anonSessionId,
+    createdAt: now,
+  })
 
   // Send confirmation email if the submitter provided an email address
   const recipientEmail = session?.user ? session.user.email : body.authorEmail
