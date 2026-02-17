@@ -41,7 +41,10 @@ export default defineEventHandler(async (event) => {
 
   // Verify access to project
   if (session?.user) {
-    await requireProjectAccess(item.feedback.projectId, session.user.id)
+    // Authors can always view their own feedback; non-authors require team membership
+    if (item.feedback.authorUserId !== session.user.id) {
+      await requireProjectAccess(item.feedback.projectId, session.user.id)
+    }
   } else {
     await requirePublicProject(item.feedback.projectId)
   }

@@ -62,10 +62,11 @@
 
         <!-- List -->
         <div class="space-y-3">
-          <div
+          <NuxtLink
             v-for="item in filteredSubmissions"
             :key="item.id"
-            class="flex items-center justify-between rounded-lg border bg-card p-4"
+            :to="`/feedback/${item.id}`"
+            class="flex items-center justify-between rounded-lg border bg-card p-4 cursor-pointer hover:bg-accent/50 transition-colors"
           >
             <div class="min-w-0 flex-1">
               <p class="font-medium">{{ item.title }}</p>
@@ -93,7 +94,7 @@
                 <span class="font-medium">{{ item.voteCount }}</span>
               </div>
             </div>
-          </div>
+          </NuxtLink>
         </div>
 
         <!-- Pagination -->
