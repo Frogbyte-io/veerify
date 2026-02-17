@@ -99,8 +99,20 @@ const supportItems: SidebarNavItem[] = [
 
 <template>
   <Sidebar data-testid="app-sidebar" v-bind="props">
-    <SidebarHeader v-if="hasActiveOrganization">
-      <TeamSwitcher />
+    <SidebarHeader>
+      <TeamSwitcher v-if="hasActiveOrganization" />
+      <SidebarMenu v-else>
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg" as-child class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1">
+            <NuxtLink to="/dashboard">
+              <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Icon name="lucide:check-circle" class="size-4" />
+              </div>
+              <span class="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Veerify</span>
+            </NuxtLink>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
     </SidebarHeader>
 
     <SidebarContent>
@@ -110,10 +122,10 @@ const supportItems: SidebarNavItem[] = [
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem v-for="item in personalNavItems" :key="item.title">
-              <SidebarMenuButton as-child :tooltip="item.title">
+              <SidebarMenuButton as-child :tooltip="item.title" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
                 <NuxtLink :to="item.url">
-                  <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
-                  <span>{{ item.title }}</span>
+                  <Icon :name="item.icon" class="!size-5 shrink-0" />
+                  <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                 </NuxtLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -129,14 +141,14 @@ const supportItems: SidebarNavItem[] = [
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem v-for="item in feedbackItems" :key="item.title">
-                <SidebarMenuButton v-if="item.disabled" :tooltip="item.title" disabled aria-disabled="true">
-                  <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
-                  <span>{{ item.title }}</span>
+                <SidebarMenuButton v-if="item.disabled" :tooltip="item.title" disabled aria-disabled="true" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
+                  <Icon :name="item.icon" class="!size-5 shrink-0" />
+                  <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                 </SidebarMenuButton>
-                <SidebarMenuButton v-else as-child :tooltip="item.title">
+                <SidebarMenuButton v-else as-child :tooltip="item.title" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
                   <NuxtLink :to="item.url">
-                    <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
-                    <span>{{ item.title }}</span>
+                    <Icon :name="item.icon" class="!size-5 shrink-0" />
+                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                   </NuxtLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -150,10 +162,10 @@ const supportItems: SidebarNavItem[] = [
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem v-for="item in managementItems" :key="item.title">
-                <SidebarMenuButton as-child :tooltip="item.title">
+                <SidebarMenuButton as-child :tooltip="item.title" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
                   <NuxtLink :to="item.url">
-                    <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
-                    <span>{{ item.title }}</span>
+                    <Icon :name="item.icon" class="!size-5 shrink-0" />
+                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                   </NuxtLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -168,10 +180,10 @@ const supportItems: SidebarNavItem[] = [
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem v-for="item in supportItems" :key="item.title">
-              <SidebarMenuButton as-child :tooltip="item.title">
+              <SidebarMenuButton as-child :tooltip="item.title" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
                 <NuxtLink :to="item.url">
-                  <Icon :name="item.icon" class="w-5 h-5 shrink-0" />
-                  <span>{{ item.title }}</span>
+                  <Icon :name="item.icon" class="!size-5 shrink-0" />
+                  <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                 </NuxtLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
