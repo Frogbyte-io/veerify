@@ -44,7 +44,7 @@
           <div class="flex items-center gap-2 text-sm text-muted-foreground mb-4">
             <NuxtLink to="/feedback" class="hover:text-foreground transition-colors">Feedback</NuxtLink>
             <Icon name="lucide:chevron-right" class="w-4 h-4" />
-            <span v-if="item.project" class="hover:text-foreground">{{ item.project.name }}</span>
+            <NuxtLink v-if="item.project" :to="`/feedback?projectId=${item.project.id}`" class="hover:text-foreground transition-colors">{{ item.project.name }}</NuxtLink>
             <Icon v-if="item.project" name="lucide:chevron-right" class="w-4 h-4" />
             <span class="text-foreground">{{ item.title }}</span>
           </div>

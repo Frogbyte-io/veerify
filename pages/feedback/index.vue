@@ -461,7 +461,10 @@ export default {
         this.products = response?.data || []
 
         if (this.products.length > 0) {
-          if (!this.selectedProjectId || !this.products.find((p) => p.id === this.selectedProjectId)) {
+          const queryProjectId = this.$route.query.projectId
+          if (queryProjectId && this.products.find((p) => p.id === queryProjectId)) {
+            this.selectedProjectId = queryProjectId
+          } else if (!this.selectedProjectId || !this.products.find((p) => p.id === this.selectedProjectId)) {
             this.selectedProjectId = this.products[0].id
           }
           await this.onProjectChange()
