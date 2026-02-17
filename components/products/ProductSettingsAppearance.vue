@@ -41,6 +41,21 @@
           </p>
         </div>
 
+        <div class="space-y-2">
+          <Label>Theme Mode</Label>
+          <select
+            v-model="form.themeMode"
+            class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <option value="system">System (follow visitor's preference)</option>
+            <option value="light">Always Light</option>
+            <option value="dark">Always Dark</option>
+          </select>
+          <p class="text-xs text-muted-foreground">
+            Controls the default theme for your public feedback board.
+          </p>
+        </div>
+
         <div class="flex items-center justify-between">
           <div>
             <p class="font-medium text-sm">Show "Powered by Veerify"</p>
@@ -70,7 +85,7 @@
         <CardDescription>A preview of your public board header.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div class="rounded-lg border overflow-hidden">
+        <div class="rounded-lg border overflow-hidden" :class="previewThemeClass">
           <img
             v-if="form.bannerUrl"
             :src="form.bannerUrl"
@@ -146,6 +161,7 @@ export default {
         logoUrl: settings.logoUrl || '',
         bannerUrl: settings.bannerUrl || '',
         showPoweredBy: settings.showPoweredBy !== false,
+        themeMode: settings.themeMode || 'system',
       },
       isSaving: false,
     }
@@ -158,14 +174,21 @@ export default {
         logoUrl: settings.logoUrl || '',
         bannerUrl: settings.bannerUrl || '',
         showPoweredBy: settings.showPoweredBy !== false,
+        themeMode: settings.themeMode || 'system',
       }
+    },
+    previewThemeClass() {
+      if (this.form.themeMode === 'dark') return 'dark'
+      if (this.form.themeMode === 'light') return ''
+      return ''
     },
     hasChanges() {
       return (
         this.form.accentColor !== this.currentSettings.accentColor ||
         this.form.logoUrl !== this.currentSettings.logoUrl ||
         this.form.bannerUrl !== this.currentSettings.bannerUrl ||
-        this.form.showPoweredBy !== this.currentSettings.showPoweredBy
+        this.form.showPoweredBy !== this.currentSettings.showPoweredBy ||
+        this.form.themeMode !== this.currentSettings.themeMode
       )
     },
   },
@@ -177,6 +200,7 @@ export default {
         this.form.logoUrl = settings.logoUrl || ''
         this.form.bannerUrl = settings.bannerUrl || ''
         this.form.showPoweredBy = settings.showPoweredBy !== false
+        this.form.themeMode = settings.themeMode || 'system'
       },
       deep: true,
     },
@@ -197,6 +221,7 @@ export default {
               logoUrl: this.form.logoUrl || null,
               bannerUrl: this.form.bannerUrl || null,
               showPoweredBy: this.form.showPoweredBy,
+              themeMode: this.form.themeMode,
             },
           },
         })

@@ -62,6 +62,17 @@
         </div>
       </div>
 
+      <!-- Theme Toggle -->
+      <div class="flex justify-end mb-4">
+        <button
+          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors"
+          @click="toggleTheme"
+        >
+          <Icon :name="currentThemeIcon" class="w-4 h-4" />
+          {{ currentThemeLabel }}
+        </button>
+      </div>
+
       <!-- Actions Bar -->
       <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div class="flex flex-wrap items-center gap-2">
@@ -272,6 +283,8 @@ export default {
       filters: { status: '', categoryId: '', sortBy: 'voteCount' },
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
       submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
+      previousColorMode: null,
+      activeTheme: 'system',
       statusClasses: {
         open: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
         in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -282,10 +295,31 @@ export default {
       },
     }
   },
+  computed: {
+    currentThemeIcon() {
+      if (this.activeTheme === 'dark') return 'lucide:moon'
+      if (this.activeTheme === 'light') return 'lucide:sun'
+      return 'lucide:monitor'
+    },
+    currentThemeLabel() {
+      if (this.activeTheme === 'dark') return 'Dark'
+      if (this.activeTheme === 'light') return 'Light'
+      return 'System'
+    },
+  },
+  beforeUnmount() {
+    if (import.meta.client && this.previousColorMode) {
+      this.$colorMode.preference = this.previousColorMode
+    }
+  },
   async mounted() {
+    if (import.meta.client) {
+      this.previousColorMode = this.$colorMode.preference
+    }
     try {
       const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`)
       this.projectData = response?.data
+      this.applyTheme(this.projectData?.project?.settings?.themeMode || 'system')
       await this.loadFeedback()
     } catch (err) {
       console.error('Error loading project:', err)
@@ -295,6 +329,16 @@ export default {
     }
   },
   methods: {
+    applyTheme(mode) {
+      this.activeTheme = mode
+      if (import.meta.client) {
+        this.$colorMode.preference = mode
+      }
+    },
+    toggleTheme() {
+      const cycle = { system: 'light', light: 'dark', dark: 'system' }
+      this.applyTheme(cycle[this.activeTheme] || 'system')
+    },
     async loadFeedback() {
       if (!this.projectData) return
       this.feedbackLoading = true
