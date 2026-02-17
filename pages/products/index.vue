@@ -55,7 +55,7 @@
           v-for="product in products"
           :key="product.id"
           :to="`/products/${product.slug}`"
-          class="rounded-lg border bg-card hover:shadow-md transition-shadow block"
+          class="rounded-lg border bg-card hover:shadow-md hover:border-primary/50 transition-all cursor-pointer block"
         >
           <div class="p-6">
             <div class="flex items-start justify-between mb-3">
