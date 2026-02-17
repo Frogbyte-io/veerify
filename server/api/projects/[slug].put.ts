@@ -9,6 +9,7 @@ import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
 const projectSettingsSchema = z.object({
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Invalid color').optional(),
   logoUrl: z.string().url().max(500).startsWith('https://').optional().nullable(),
+  bannerUrl: z.string().url().max(500).startsWith('https://').optional().nullable(),
   showPoweredBy: z.boolean().optional(),
 }).passthrough().nullable().optional()
 

@@ -20,7 +20,17 @@
     </div>
 
     <!-- Main Content -->
-    <div v-else-if="projectData" class="max-w-4xl mx-auto px-4 py-8">
+    <div v-else-if="projectData">
+      <!-- Banner -->
+      <img
+        v-if="projectData.project.settings?.bannerUrl"
+        :src="projectData.project.settings.bannerUrl"
+        alt=""
+        class="w-full h-48 md:h-64 object-cover"
+        @error="$event.target.style.display = 'none'"
+      />
+
+      <div class="max-w-4xl mx-auto px-4 py-8">
       <!-- Header -->
       <div class="mb-8">
         <div class="flex items-center gap-2 text-sm text-muted-foreground mb-2">
@@ -238,6 +248,7 @@
       <div v-if="!projectData?.settings || projectData.settings.showPoweredBy !== false" class="mt-12 pt-6 border-t text-center text-sm text-muted-foreground">
         Powered by <a href="https://veerify.com" target="_blank" rel="noopener noreferrer" class="font-medium hover:underline">Veerify</a>
       </div>
+    </div>
     </div>
   </div>
 </template>

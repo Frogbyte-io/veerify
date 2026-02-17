@@ -3,7 +3,7 @@ MVP
 
 ### Customers (Dashboard)
 
-- [ ] **Banner customization** — Add banner image/URL field to `ProductSettingsAppearance` and render it on the public board header
+- [x] **Banner customization** — Add banner image/URL field to `ProductSettingsAppearance` and render it on the public board header
 - [ ] **Dark/Light mode toggle for public board** — Add theme mode setting (dark/light/system) to `ProductSettingsAppearance`; apply it to the public feedback board page
 - [ ] **GitHub issue creation from feedback** — `POST /api/github/issues` is a 501 stub; implement full flow: verify feedback, get GitHub token, create issue with labels, store link in `githubIssueLink` table
 - [ ] **GitHub settings in product settings** — Add a "GitHub" tab to `pages/products/[slug].vue`; allow user to connect a GitHub repo (OAuth token, owner/repo); save to `githubIntegration` table

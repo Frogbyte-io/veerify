@@ -29,6 +29,18 @@
           </p>
         </div>
 
+        <div class="space-y-2">
+          <Label for="banner-url">Banner Image URL</Label>
+          <Input
+            id="banner-url"
+            v-model="form.bannerUrl"
+            placeholder="https://example.com/banner.jpg"
+          />
+          <p class="text-xs text-muted-foreground">
+            Displayed as a hero banner at the top of your public board. Recommended size: 1200×300px.
+          </p>
+        </div>
+
         <div class="flex items-center justify-between">
           <div>
             <p class="font-medium text-sm">Show "Powered by Veerify"</p>
@@ -59,6 +71,13 @@
       </CardHeader>
       <CardContent>
         <div class="rounded-lg border overflow-hidden">
+          <img
+            v-if="form.bannerUrl"
+            :src="form.bannerUrl"
+            alt="Banner"
+            class="w-full h-32 object-cover"
+            @error="$event.target.style.display = 'none'"
+          />
           <div
             class="p-4 flex items-center gap-3"
             :style="{ backgroundColor: form.accentColor || '#3b82f6' }"
@@ -125,6 +144,7 @@ export default {
       form: {
         accentColor: settings.accentColor || '#3b82f6',
         logoUrl: settings.logoUrl || '',
+        bannerUrl: settings.bannerUrl || '',
         showPoweredBy: settings.showPoweredBy !== false,
       },
       isSaving: false,
@@ -136,6 +156,7 @@ export default {
       return {
         accentColor: settings.accentColor || '#3b82f6',
         logoUrl: settings.logoUrl || '',
+        bannerUrl: settings.bannerUrl || '',
         showPoweredBy: settings.showPoweredBy !== false,
       }
     },
@@ -143,6 +164,7 @@ export default {
       return (
         this.form.accentColor !== this.currentSettings.accentColor ||
         this.form.logoUrl !== this.currentSettings.logoUrl ||
+        this.form.bannerUrl !== this.currentSettings.bannerUrl ||
         this.form.showPoweredBy !== this.currentSettings.showPoweredBy
       )
     },
@@ -153,6 +175,7 @@ export default {
         const settings = newProject.settings || {}
         this.form.accentColor = settings.accentColor || '#3b82f6'
         this.form.logoUrl = settings.logoUrl || ''
+        this.form.bannerUrl = settings.bannerUrl || ''
         this.form.showPoweredBy = settings.showPoweredBy !== false
       },
       deep: true,
@@ -172,6 +195,7 @@ export default {
               ...existingSettings,
               accentColor: this.form.accentColor,
               logoUrl: this.form.logoUrl || null,
+              bannerUrl: this.form.bannerUrl || null,
               showPoweredBy: this.form.showPoweredBy,
             },
           },
