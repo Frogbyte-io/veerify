@@ -20,8 +20,8 @@ const props = withDefaults(defineProps<SidebarProps>(), {
   collapsible: 'icon',
 })
 
-// Shared state set by TeamSwitcher — defaults to true to avoid flash of missing content
-const hasActiveOrganization = useState('hasActiveOrganization', () => true)
+// Shared state set by TeamSwitcher — null = loading, true = has org, false = personal account
+const hasActiveOrganization = useState('hasActiveOrganization', () => null)
 
 // All personal nav items
 const personalItems: SidebarNavItem[] = [
@@ -42,9 +42,9 @@ const personalItems: SidebarNavItem[] = [
   },
 ]
 
-// Dashboard is only relevant in workspace context
+// Dashboard is only relevant in workspace context; show it while loading (null) too
 const personalNavItems = computed(() =>
-  hasActiveOrganization.value
+  hasActiveOrganization.value !== false
     ? personalItems
     : personalItems.filter((item) => item.title !== 'Dashboard')
 )
@@ -100,7 +100,18 @@ const supportItems: SidebarNavItem[] = [
 <template>
   <Sidebar data-testid="app-sidebar" v-bind="props">
     <SidebarHeader>
-      <TeamSwitcher v-if="hasActiveOrganization" />
+      <TeamSwitcher v-if="hasActiveOrganization === true" />
+      <SidebarMenu v-else-if="hasActiveOrganization === null">
+        <SidebarMenuItem>
+          <SidebarMenuButton size="lg" disabled class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1">
+            <Skeleton class="size-8 rounded-lg shrink-0" />
+            <div class="grid flex-1 gap-1 group-data-[collapsible=icon]:hidden">
+              <Skeleton class="h-3.5 w-24 rounded" />
+              <Skeleton class="h-3 w-16 rounded" />
+            </div>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
       <SidebarMenu v-else>
         <SidebarMenuItem>
           <SidebarMenuButton size="lg" as-child class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1">
@@ -134,7 +145,7 @@ const supportItems: SidebarNavItem[] = [
       </SidebarGroup>
 
       <!-- Workspace sections (only when org is active) -->
-      <template v-if="hasActiveOrganization">
+      <template v-if="hasActiveOrganization === true">
         <!-- Feedback Section -->
         <SidebarGroup>
           <SidebarGroupLabel>Feedback</SidebarGroupLabel>
