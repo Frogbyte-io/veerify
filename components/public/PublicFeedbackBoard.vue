@@ -352,7 +352,7 @@ export default {
         if (this.filters.categoryId) params.set('categoryId', this.filters.categoryId)
         const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback?${params.toString()}`)
         const data = response?.data
-        this.feedbackItems = data?.items || []
+        this.feedbackItems = this.mergeWithLocalVotes(data?.items || [])
         this.pagination = data?.pagination || this.pagination
       } catch (err) {
         console.error('Error loading feedback:', err)
@@ -389,14 +389,63 @@ export default {
       }
     },
     async handleVote(item) {
+      // Optimistic update for instant feedback
+      const wasVoted = item.hasVoted
+      item.hasVoted = !wasVoted
+      item.voteCount += wasVoted ? -1 : 1
       try {
         const response = await $fetch(`/api/feedback/${item.id}/vote`, { method: 'POST' })
         const data = response?.data
         item.voteCount = data.voteCount
         item.hasVoted = data.voted
+        this.saveLocalVote(item.id, data.voted)
       } catch (err) {
+        // Revert optimistic update
+        item.hasVoted = wasVoted
+        item.voteCount += wasVoted ? 1 : -1
         console.error('Error voting:', err)
         alert('Failed to vote. Please try again.')
+      }
+    },
+    getLocalVotedIds() {
+      if (!import.meta.client) return new Set()
+      try {
+        const data = JSON.parse(localStorage.getItem('veerify_votes') || '[]')
+        return new Set(Array.isArray(data) ? data : [])
+      } catch {
+        return new Set()
+      }
+    },
+    saveLocalVote(feedbackId, voted) {
+      if (!import.meta.client) return
+      try {
+        const votes = this.getLocalVotedIds()
+        if (voted) {
+          votes.add(feedbackId)
+        } else {
+          votes.delete(feedbackId)
+        }
+        localStorage.setItem('veerify_votes', JSON.stringify([...votes]))
+      } catch {
+        // localStorage might be unavailable (e.g. private browsing with storage blocked)
+      }
+    },
+    mergeWithLocalVotes(items) {
+      if (!import.meta.client) return items
+      try {
+        const localVotes = this.getLocalVotedIds()
+        // Sync localStorage with any server-confirmed votes
+        items.forEach((item) => {
+          if (item.hasVoted) localVotes.add(item.id)
+        })
+        localStorage.setItem('veerify_votes', JSON.stringify([...localVotes]))
+        // Apply localStorage state — if local says voted and server doesn't (e.g. cookie cleared), show as voted
+        return items.map((item) => ({
+          ...item,
+          hasVoted: item.hasVoted || localVotes.has(item.id),
+        }))
+      } catch {
+        return items
       }
     },
     changePage(page) {
