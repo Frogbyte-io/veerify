@@ -60,7 +60,7 @@ MVP
 
 - [ ] For the billing page, please add a contacts section where it is possible to add additional emails that will be on copy when the bill/receipt is sent out.
 
-- [ ] Workspace icon for when the sidebar is collapsed is not centered in the sidebar. Please center it.
+- [x] Workspace icon for when the sidebar is collapsed is not centered in the sidebar. Please center it.
 
 
 - [ ] When on a public board on a custom domain or subdomain but I am logged in to the dashboard on the main domain, it should show that I am logged in and allow me to access the dashboard from the public board. Currently, it shows that I am not logged in and when I click the login button, it takes me to the main domain login page instead of showing a login modal on the public board. We should either show a login modal on the public board or redirect to the main domain login page and then back to the public board after login.

@@ -21,12 +21,12 @@
           <SidebarMenuButton
             data-testid="team-switcher-trigger"
             size="lg"
-            class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+            class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1 group-data-[collapsible=icon]:justify-center"
           >
             <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
               <Icon name="lucide:building-2" class="size-4" />
             </div>
-            <div class="grid flex-1 text-left text-sm leading-tight">
+            <div class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
               <template v-if="activeOrganization">
                 <span data-testid="team-switcher-active-name" class="truncate font-semibold">
                   {{ displayName }}
@@ -40,7 +40,7 @@
                 <span class="truncate text-xs text-red-400">Please refresh</span>
               </template>
             </div>
-            <Icon name="lucide:chevrons-up-down" class="ml-auto" />
+            <Icon name="lucide:chevrons-up-down" class="ml-auto group-data-[collapsible=icon]:hidden" />
           </SidebarMenuButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent
