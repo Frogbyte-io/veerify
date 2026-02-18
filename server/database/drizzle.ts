@@ -1,32 +1,28 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
-import { Client } from 'pg'
+import { Pool, type PoolConfig } from 'pg'
 import * as schema from './schema/index'
 import 'dotenv/config'
 
-const client = process.env.DATABASE_URL
-  ? new Client({
+const poolConfig: PoolConfig = process.env.DATABASE_URL
+  ? {
       connectionString: process.env.DATABASE_URL,
       ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    })
-  : new Client({
+    }
+  : {
       host: process.env.PGHOST || 'localhost',
       port: Number(process.env.PGPORT) || 5432,
       user: process.env.PGUSER || 'veerify',
       password: process.env.PGPASSWORD || 'veerifypassword',
       database: process.env.PGDATABASE || 'veerifydb',
       ssl: false,
-    })
+    }
 
-// Initialize connection
-client
-  .connect()
-  .then(() => {
-    console.log('Connected to PostgreSQL')
-  })
-  .catch((err: { code?: string }) => {
-    if (err.code === 'ECONNREFUSED') {
-      console.error(
-        '\n' +
+const pool = new Pool(poolConfig)
+
+pool.on('error', (err: Error & { code?: string }) => {
+  if (err.code === 'ECONNREFUSED') {
+    console.error(
+      '\n' +
         '╔══════════════════════════════════════════════════════════════╗\n' +
         '║  ❌ Could not connect to PostgreSQL                        ║\n' +
         '║                                                            ║\n' +
@@ -36,14 +32,14 @@ client
         '║  Then restart the dev server:                              ║\n' +
         '║    yarn dev                                                ║\n' +
         '╚══════════════════════════════════════════════════════════════╝\n'
-      )
-    } else {
-      console.error('Failed to connect to PostgreSQL:', err)
-    }
-  })
+    )
+  } else {
+    console.error('PostgreSQL pool error:', err)
+  }
+})
 
 // Export the drizzle instance with schema
-export const db = drizzle(client, { schema })
+export const db = drizzle(pool, { schema })
 
 // Export the promise version for backwards compatibility
 export const dbPromise = Promise.resolve(db)
