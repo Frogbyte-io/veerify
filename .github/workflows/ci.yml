@@ -21,6 +21,8 @@ jobs:
 
       - run: yarn install --frozen-lockfile
 
+      - run: yarn harness:docs
+
       - run: yarn lint
 
       - run: yarn format:check

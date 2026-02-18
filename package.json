@@ -22,7 +22,15 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:if-available": "node scripts/run-playwright-if-available.mjs"
+    "test:e2e:if-available": "node scripts/run-playwright-if-available.mjs",
+    "harness:context": "node scripts/harness-context.mjs",
+    "harness:docs": "node scripts/harness-docs-check.mjs",
+    "harness:verify": "node scripts/harness-verify.mjs",
+    "worktree:env": "node scripts/worktree-env.mjs",
+    "dev:worktree": "node scripts/worktree-run.mjs yarn dev --host 127.0.0.1",
+    "test:e2e:worktree": "node scripts/worktree-run.mjs yarn test:e2e",
+    "codex:mcp:chrome:setup": "node scripts/setup-codex-chrome-mcp.mjs",
+    "codex:mcp:chrome:status": "codex mcp get chrome-devtools"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.53",

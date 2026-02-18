@@ -40,6 +40,37 @@ Install dependencies using yarn:
 yarn install
 ```
 
+### Agent harness (Codex/Claude)
+
+The repository includes an explicit AI harness so coding agents can bootstrap context and run deterministic checks.
+
+```bash
+# Print key context and git snapshot
+yarn harness:context
+
+# Validate agent docs map + run quality gates
+yarn harness:verify
+```
+
+`yarn harness:verify` runs:
+- `yarn typecheck`
+- `yarn test`
+- `yarn lint`
+- `yarn test:e2e:if-available` (guarded Playwright runner)
+
+Chrome DevTools MCP for Codex:
+
+```bash
+# One-time local setup
+yarn codex:mcp:chrome:setup
+
+# Deterministic per-worktree app URL/port
+yarn worktree:env
+
+# Run app bound to the worktree-specific port
+yarn dev:worktree
+```
+
 ### Development
 
 #### Start the development server on `http://localhost:3000`:

@@ -1,19 +1,47 @@
-# Agent Memory
+# Agent Harness: Veerify
 
-## Startup rule
-- Before starting any task, read `CLAUDE.md` in full.
-- Treat `CLAUDE.md` as the repository's authoritative agent instruction file (`AGENTS.md` equivalent).
+This file is the agent entrypoint and map, not the full manual.
 
-## Post-change validation checklist
-- Run `yarn typecheck`.
-- Run `yarn test`.
-- Run `yarn lint`.
-- Run `yarn test:e2e:if-available`.
+## Startup
+- Read `CLAUDE.md` first.
+- Follow the chain to `.agents/CLAUDE.md` and treat it as the authoritative instruction set.
+- Run `yarn harness:context` to collect current repository and git context.
 
-## Playwright execution rule
-- `yarn test:e2e:if-available` must run Playwright only when the environment is available (cloud/CI or explicitly forced with `PLAYWRIGHT_FORCE=1`) and a database connection is configured.
-- If the guarded Playwright command skips, include the skip reason in the update/final response.
+## Knowledge Map
+- Authoritative project conventions: `.agents/CLAUDE.md`
+- Context and file map: `docs/agent/context-map.md`
+- Deterministic workflows and validation loop: `docs/agent/workflows.md`
+- Chrome MCP browser verification workflow: `docs/agent/chrome-mcp.md`
+- Active implementation plans and design notes: `docs/plans/`
+- CI truth for enforced checks: `.github/workflows/ci.yml`
 
-## UI change policy
-- For any task that adds or changes user-facing UI behavior, create or update Playwright coverage for the affected workflow before considering the task complete.
-- Run Playwright repeatedly until the updated UI workflow tests pass (not just a single run).
+## Required Validation Gates
+Run these after every change:
+- `yarn typecheck`
+- `yarn test`
+- `yarn lint`
+- `yarn test:e2e:if-available`
+
+Or run the harness command:
+- `yarn harness:verify`
+
+## UI Legibility Runtime
+- Set up Chrome DevTools MCP: `yarn codex:mcp:chrome:setup`
+- Start app with deterministic worktree runtime: `yarn dev:worktree`
+- Inspect resolved worktree URL/port: `yarn worktree:env`
+
+## Commit Format
+- Use Conventional Commits: `type(scope): subject` (or `type: subject` when no scope is needed).
+- Preferred types: `feat`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`, `build`, `perf`, `revert`.
+
+## Playwright Guard
+- `yarn test:e2e:if-available` must run Playwright only when environment is cloud/CI or `PLAYWRIGHT_FORCE=1`, and a database is configured and reachable.
+- If the guarded Playwright command skips, report the skip reason in updates/final output.
+
+## UI Change Rule
+- Any user-facing UI behavior change requires Playwright coverage updates for the affected workflow.
+- Re-run Playwright until the updated UI workflow tests pass, not just once.
+
+## Maintenance Rule
+- Keep `AGENTS.md` short and stable.
+- Move detailed guidance into `docs/agent/*` and link from here.
