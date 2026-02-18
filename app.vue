@@ -1,6 +1,8 @@
 <template>
   <div class="min-h-screen bg-background">
-    <NuxtPage />
+    <NuxtLayout>
+      <NuxtPage />
+    </NuxtLayout>
     <Toaster />
   </div>
 </template>
