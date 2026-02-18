@@ -40,6 +40,7 @@ MVP
 - [ ] Polls / feature suggestions with yay-or-nay vote
 - [ ] Integrations with form providers (Tally, Jotform, Google Forms, etc.)
 - [ ] Simple form website for collecting feedback publicly and adding it to the board without a public board (for internal use or private feedback collection)
+- [ ] For the new product form, add options between what type of product to create, like public feedback board, private feedback collection form, or in the future roadmaps/etc.. Make it a multi-step guide that explains the different options and helps users choose the right one for their needs. Different features can be combined based on the product type (e.g. a public feedback board would have voting and commenting enabled, while a private feedback form would just collect submissions from a third party form without showing them publicly).
 - [ ] Export feedback to Google Sheets / Excel / Airtable
 - [ ] Roadmap page — public timeline view based on feedback status tags
 - [ ] Sync roadmaps to GitHub Projects
@@ -58,3 +59,13 @@ MVP
 - [x] Add hover effect to products in products page to indicate they are clickable
 
 - [ ] For the billing page, please add a contacts section where it is possible to add additional emails that will be on copy when the bill/receipt is sent out.
+
+- [ ] Workspace icon for when the sidebar is collapsed is not centered in the sidebar. Please center it.
+
+
+- [ ] When on a public board on a custom domain or subdomain but I am logged in to the dashboard on the main domain, it should show that I am logged in and allow me to access the dashboard from the public board. Currently, it shows that I am not logged in and when I click the login button, it takes me to the main domain login page instead of showing a login modal on the public board. We should either show a login modal on the public board or redirect to the main domain login page and then back to the public board after login.
+
+
+- [ ] The toggle in product settings to show or not show the powered by veerify badge on the public board is currently updating on public boards. It should hide the badge when toggled off and show it when toggled on. Please also add option to toggle Github footer as well. 
+
+- [ ] Add option to create a custom footer for public feedback boards, where customers can add their own text, links, and branding instead of the default "Powered by Veerify" badge. This would allow customers to fully white-label the public board experience if they choose to.
