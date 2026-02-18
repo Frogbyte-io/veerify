@@ -1,28 +1,33 @@
 <template>
   <SidebarMenu>
     <SidebarMenuItem>
-      <DropdownMenu>
+      <!-- Loading state -->
+      <SidebarMenuButton
+        v-if="isLoadingTeams"
+        size="lg"
+        disabled
+        class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1"
+      >
+        <Skeleton class="size-8 rounded-lg shrink-0" />
+        <div class="grid flex-1 gap-1 group-data-[collapsible=icon]:hidden">
+          <Skeleton class="h-3.5 w-24 rounded" />
+          <Skeleton class="h-3 w-16 rounded" />
+        </div>
+      </SidebarMenuButton>
+
+      <!-- Has active organization or error — show dropdown -->
+      <DropdownMenu v-else-if="activeOrganization || teamsError">
         <DropdownMenuTrigger as-child>
           <SidebarMenuButton
             data-testid="team-switcher-trigger"
             size="lg"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            :disabled="isLoadingTeams"
           >
-            <div
-              class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
-            >
-              <Icon v-if="isLoadingTeams" name="lucide:loader-2" class="size-4 animate-spin" />
-              <Icon v-else name="lucide:building-2" class="size-4" />
+            <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+              <Icon name="lucide:building-2" class="size-4" />
             </div>
-
             <div class="grid flex-1 text-left text-sm leading-tight">
-              <template v-if="isLoadingTeams">
-                <span class="truncate">Loading...</span>
-                <span class="truncate text-xs text-muted-foreground">Please wait</span>
-              </template>
-
-              <template v-else-if="activeOrganization">
+              <template v-if="activeOrganization">
                 <span data-testid="team-switcher-active-name" class="truncate font-semibold">
                   {{ displayName }}
                 </span>
@@ -30,15 +35,9 @@
                   {{ displaySubtitle }}
                 </span>
               </template>
-
-              <template v-else-if="teamsError">
-                <span class="truncate font-semibold text-red-500"> Error loading </span>
-                <span class="truncate text-xs text-red-400">Please refresh</span>
-              </template>
-
               <template v-else>
-                <span class="truncate font-semibold"> Select workspace </span>
-                <span class="truncate text-xs text-muted-foreground">No workspace active</span>
+                <span class="truncate font-semibold text-red-500">Error loading</span>
+                <span class="truncate text-xs text-red-400">Please refresh</span>
               </template>
             </div>
             <Icon name="lucide:chevrons-up-down" class="ml-auto" />
@@ -50,14 +49,7 @@
           :side="isMobile ? 'bottom' : 'right'"
           :side-offset="4"
         >
-          <div v-if="isLoadingTeams" class="p-2">
-            <div class="flex items-center gap-2 text-muted-foreground">
-              <Icon name="lucide:loader-2" class="size-4 animate-spin" />
-              <span class="text-sm">Loading...</span>
-            </div>
-          </div>
-
-          <div v-else-if="teamsError" class="p-2">
+          <div v-if="teamsError" class="p-2">
             <div class="flex items-center gap-2 text-red-500">
               <Icon name="lucide:alert-circle" class="size-4" />
               <span class="text-sm">{{ teamsError }}</span>
@@ -67,10 +59,8 @@
               <span class="text-sm">Retry</span>
             </DropdownMenuItem>
           </div>
-
           <template v-else>
-            <!-- Workspace (default) option -->
-            <DropdownMenuLabel class="text-xs text-muted-foreground"> Workspace </DropdownMenuLabel>
+            <DropdownMenuLabel class="text-xs text-muted-foreground">Workspace</DropdownMenuLabel>
             <DropdownMenuItem class="gap-2 p-2" @click="switchToDefaultTeam">
               <div class="flex size-6 items-center justify-center rounded-sm border">
                 <Icon name="lucide:building-2" class="size-4 shrink-0" />
@@ -78,11 +68,9 @@
               <span class="flex-1">{{ activeOrganization?.name || 'Workspace' }}</span>
               <Icon v-if="isOnDefaultTeam" name="lucide:check" class="size-4 text-primary" />
             </DropdownMenuItem>
-
-            <!-- Additional teams -->
             <template v-if="additionalTeams.length > 0">
               <DropdownMenuSeparator />
-              <DropdownMenuLabel class="text-xs text-muted-foreground"> Teams </DropdownMenuLabel>
+              <DropdownMenuLabel class="text-xs text-muted-foreground">Teams</DropdownMenuLabel>
               <DropdownMenuItem v-for="team in additionalTeams" :key="team.id" class="gap-2 p-2" @click="setActiveTeam(team)">
                 <div class="flex size-6 items-center justify-center rounded-sm border">
                   <Icon name="lucide:users" class="size-4 shrink-0" />
@@ -91,7 +79,6 @@
                 <Icon v-if="activeTeam?.id === team.id" name="lucide:check" class="size-4 text-primary" />
               </DropdownMenuItem>
             </template>
-
             <DropdownMenuSeparator />
             <DropdownMenuItem data-testid="team-switcher-manage" class="gap-2 p-2" @click="goToTeamSettings">
               <div class="flex size-6 items-center justify-center rounded-md border bg-background">
@@ -102,6 +89,21 @@
           </template>
         </DropdownMenuContent>
       </DropdownMenu>
+
+      <!-- Personal account — show Veerify logo -->
+      <SidebarMenuButton
+        v-else
+        size="lg"
+        as-child
+        class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1"
+      >
+        <NuxtLink to="/dashboard">
+          <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Icon name="lucide:check-circle" class="size-4" />
+          </div>
+          <span class="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Veerify</span>
+        </NuxtLink>
+      </SidebarMenuButton>
     </SidebarMenuItem>
   </SidebarMenu>
 </template>

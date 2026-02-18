@@ -100,30 +100,7 @@ const supportItems: SidebarNavItem[] = [
 <template>
   <Sidebar data-testid="app-sidebar" v-bind="props">
     <SidebarHeader>
-      <TeamSwitcher v-if="hasActiveOrganization === true" />
-      <SidebarMenu v-else-if="hasActiveOrganization === null">
-        <SidebarMenuItem>
-          <SidebarMenuButton size="lg" disabled class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1">
-            <Skeleton class="size-8 rounded-lg shrink-0" />
-            <div class="grid flex-1 gap-1 group-data-[collapsible=icon]:hidden">
-              <Skeleton class="h-3.5 w-24 rounded" />
-              <Skeleton class="h-3 w-16 rounded" />
-            </div>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
-      <SidebarMenu v-else>
-        <SidebarMenuItem>
-          <SidebarMenuButton size="lg" as-child class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1">
-            <NuxtLink to="/dashboard">
-              <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Icon name="lucide:check-circle" class="size-4" />
-              </div>
-              <span class="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Veerify</span>
-            </NuxtLink>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
+      <TeamSwitcher />
     </SidebarHeader>
 
     <SidebarContent>
