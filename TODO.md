@@ -39,6 +39,7 @@ MVP
 - [ ] Discord Bot — notify on new feedback; submit feedback via `/feedback` slash command
 - [ ] Polls / feature suggestions with yay-or-nay vote
 - [ ] Integrations with form providers (Tally, Jotform, Google Forms, etc.)
+- [ ] Simple form website for collecting feedback publicly and adding it to the board without a public board (for internal use or private feedback collection)
 - [ ] Export feedback to Google Sheets / Excel / Airtable
 - [ ] Roadmap page — public timeline view based on feedback status tags
 - [ ] Sync roadmaps to GitHub Projects
@@ -49,7 +50,7 @@ MVP
 - [ ] Show icon besides the feedback category on the public board (e.g. a bug icon for bug reports, a lightbulb for feature requests, etc.) when icon is added to the category
 - [ ] In public feedback board, it should be possible to click a feedback to see more details (description, comments, etc.) in a modal or separate page without leaving the board
 - [x] Move powered by verify to the very bottom of the page and make it smaller. Change domain to veerify.io
-- [ ] Add a GitHub mention link to the footer of the public board for users to easily report issues with the board itself, and to see the source code. Mention that it is open source and contributions are welcome.
+- [x] Add a GitHub mention link to the footer of the public board for users to easily report issues with the board itself, and to see the source code. Mention that it is open source and contributions are welcome.
 - [ ] Add a link to veerify's own public feedback board in the footer of the public board, so users can see an example of a feedback board and submit feedback about veerify itself. 
 
 - [x] When refreshing in a personal account, the sidebar renders the items for the organization instead of the personal account. This is because the sidebar is rendered before we fetch the user data and determine if it's a personal or org account. We should either fetch the user data earlier or make the sidebar more resilient to this case.
