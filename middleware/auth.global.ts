@@ -36,6 +36,10 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     }
 
     if (isAuthRoute && session.value?.user) {
+      // Allow adding a new account without being redirected away
+      if (to.query.addAccount === 'true') {
+        return
+      }
       const redirect = to.query.redirect
       if (redirect && typeof redirect === 'string' && redirect.startsWith('/')) {
         return navigateTo(redirect)

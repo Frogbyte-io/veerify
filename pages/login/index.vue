@@ -199,7 +199,13 @@ export default {
         } else {
           $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
           const redirect = this.$route.query.redirect
-          await navigateTo(redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard')
+          const target = redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard'
+          // Hard reload when adding an account to clear all in-memory session caches
+          if (this.$route.query.addAccount === 'true') {
+            window.location.href = target
+          } else {
+            await navigateTo(target)
+          }
         }
       } catch (err) {
         this.error = 'An unexpected error occurred'
@@ -220,7 +226,7 @@ export default {
 
       try {
         const redirect = this.$route.query.redirect
-        const callbackURL = redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard'
+        let callbackURL = redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard'
 
         const result = await authClient.signIn.magicLink({
           email: this.email,

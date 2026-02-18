@@ -51,6 +51,32 @@
               </div>
             </div>
           </DropdownMenuLabel>
+          <template v-if="otherAccounts.length > 0">
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel class="text-xs text-muted-foreground">Switch account</DropdownMenuLabel>
+            <DropdownMenuItem
+              v-for="account in otherAccounts"
+              :key="account.session.id"
+              class="gap-2 py-1.5"
+              @click="switchAccount(account.session.token)"
+            >
+              <Avatar class="h-6 w-6 rounded-lg">
+                <AvatarImage :src="account.user.image" :alt="account.user.name" />
+                <AvatarFallback class="rounded-lg text-xs">
+                  {{ getInitials(account.user.name) }}
+                </AvatarFallback>
+              </Avatar>
+              <div class="grid flex-1 text-left text-sm leading-tight">
+                <span class="truncate text-sm">{{ account.user.name || 'User' }}</span>
+                <span class="truncate text-xs text-muted-foreground">{{ account.user.email }}</span>
+              </div>
+            </DropdownMenuItem>
+          </template>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem @click="navigateTo('/login?addAccount=true')">
+            <Icon name="lucide:plus" />
+            Add account
+          </DropdownMenuItem>
           <DropdownMenuGroup>
             <DropdownMenuItem @click="navigateTo('/settings#profile')">
               <Icon name="lucide:badge-check" />
@@ -113,6 +139,8 @@ export default {
       session: hasCachedSession ? navUserCache.session : null,
       isPending: !hasCachedSession,
       stopSessionWatcher: null,
+      otherAccounts: [],
+      switchingAccount: false,
     }
   },
 
@@ -142,6 +170,7 @@ export default {
 
   async mounted() {
     await this.initializeSession()
+    this.loadOtherAccounts()
   },
 
   beforeUnmount() {
@@ -219,6 +248,31 @@ export default {
         }
         this.isPending = false
         console.error('Error fetching session:', error)
+      }
+    },
+
+    async loadOtherAccounts() {
+      try {
+        const { data } = await authClient.multiSession.listDeviceSessions()
+        if (!data || !this.session?.user) return
+        this.otherAccounts = data.filter(
+          (entry) => entry.user.id !== this.session.user.id,
+        )
+      } catch (error) {
+        console.error('Error loading device sessions:', error)
+      }
+    },
+
+    async switchAccount(sessionToken) {
+      if (this.switchingAccount) return
+      this.switchingAccount = true
+      try {
+        await authClient.multiSession.setActive({ sessionToken })
+        clearNavUserSessionCache()
+        window.location.reload()
+      } catch (error) {
+        console.error('Error switching account:', error)
+        this.switchingAccount = false
       }
     },
 

@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { magicLink, organization, twoFactor } from 'better-auth/plugins'
+import { magicLink, multiSession, organization, twoFactor } from 'better-auth/plugins'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
@@ -146,5 +146,6 @@ export const auth = betterAuth({
     twoFactor({
       issuer: 'Veerify',
     }),
+    multiSession(),
   ],
 })

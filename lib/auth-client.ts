@@ -1,11 +1,21 @@
 import { createAuthClient } from 'better-auth/vue' // make sure to import from better-auth/vue
-import { magicLinkClient, organizationClient, twoFactorClient } from 'better-auth/client/plugins'
+import {
+  magicLinkClient,
+  multiSessionClient,
+  organizationClient,
+  twoFactorClient,
+} from 'better-auth/client/plugins'
 
 const configuredBaseURL = process.env.BETTER_AUTH_URL
 
 export const authClient = createAuthClient({
   ...(configuredBaseURL ? { baseURL: configuredBaseURL } : {}),
-  plugins: [magicLinkClient(), organizationClient({ teams: { enabled: true } }), twoFactorClient()],
+  plugins: [
+    magicLinkClient(),
+    multiSessionClient(),
+    organizationClient({ teams: { enabled: true } }),
+    twoFactorClient(),
+  ],
 })
 
 // Export commonly used methods for convenience
