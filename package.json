@@ -29,6 +29,7 @@
     "worktree:env": "node scripts/worktree-env.mjs",
     "dev:worktree": "node scripts/worktree-run.mjs yarn dev --host 127.0.0.1",
     "test:e2e:worktree": "node scripts/worktree-run.mjs yarn test:e2e",
+    "snapshot:dashboard": "node scripts/snapshot-dashboard.mjs",
     "codex:mcp:chrome:setup": "node scripts/setup-codex-chrome-mcp.mjs",
     "codex:mcp:chrome:status": "codex mcp get chrome-devtools"
   },

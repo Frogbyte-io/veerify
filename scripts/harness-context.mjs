@@ -19,6 +19,7 @@ const requiredScripts = [
   'harness:verify',
   'worktree:env',
   'dev:worktree',
+  'snapshot:dashboard',
   'codex:mcp:chrome:setup',
   'typecheck',
   'test',

@@ -33,6 +33,24 @@ The worktree scripts set:
 - `PLAYWRIGHT_BASE_URL`
 - `BETTER_AUTH_URL`
 
+## Fast Dashboard Snapshot
+Capture a dashboard screenshot with one command:
+```bash
+yarn snapshot:dashboard
+```
+
+Output path:
+- `test-results/manual/dashboard-snapshot.png`
+
+Useful options:
+```bash
+# Use an already-running app instead of booting one
+yarn snapshot:dashboard -- --running
+
+# Override target URL or output file
+yarn snapshot:dashboard -- --base-url http://127.0.0.1:4564 --output test-results/manual/dash.png
+```
+
 ## Agent Validation Loop
 1. Start app: `yarn dev:worktree`
 2. Run Codex with Chrome MCP available.
