@@ -107,6 +107,16 @@ test('authenticated user can access products UI workflow', async ({ request, pag
   await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'New Product' })).toBeVisible()
   await expect(page.getByText('Manage your products and their public feedback pages')).toBeVisible()
+  await expect(page.getByText('Custom Domain (optional)')).toHaveCount(0)
+  await expect(page.getByText('Point a CNAME record to veerify to use a custom domain.')).toHaveCount(0)
+
+  const firstProductLink = page.locator('a[href^="/products/"]').first()
+  await expect(firstProductLink).toBeVisible()
+  await firstProductLink.click()
+  await expect(page).toHaveURL(/\/products\/[^/]+/)
+  await expect(page.getByText('General Settings')).toBeVisible()
+  await expect(page.locator('label[for="project-domain"]')).toHaveCount(0)
+  await expect(page.getByText('Point a CNAME record to Veerify to use a custom domain.')).toHaveCount(0)
 })
 
 test('project categories API supports create/update/reorder/delete with reassignment rules', async ({ request }) => {

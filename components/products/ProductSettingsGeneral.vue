@@ -39,19 +39,6 @@
             rows="3"
           />
         </div>
-
-        <div class="space-y-2">
-          <Label for="project-domain">Custom Domain</Label>
-          <Input
-            id="project-domain"
-            v-model="form.customDomain"
-            placeholder="feedback.yourapp.com"
-          />
-          <p class="text-xs text-muted-foreground">
-            Point a CNAME record to Veerify to use a custom domain.
-          </p>
-        </div>
-
       </CardContent>
     </Card>
 
@@ -110,7 +97,6 @@ export default {
         name: this.project.name || '',
         slug: this.project.slug || '',
         description: this.project.description || '',
-        customDomain: this.project.customDomain || '',
         isPublic: this.project.isPublic ?? true,
       },
       isSaving: false,
@@ -122,7 +108,6 @@ export default {
         this.form.name !== (this.project.name || '') ||
         this.form.slug !== (this.project.slug || '') ||
         this.form.description !== (this.project.description || '') ||
-        this.form.customDomain !== (this.project.customDomain || '') ||
         this.form.isPublic !== this.project.isPublic
       )
     },
@@ -144,7 +129,6 @@ export default {
         this.form.name = newProject.name || ''
         this.form.slug = newProject.slug || ''
         this.form.description = newProject.description || ''
-        this.form.customDomain = newProject.customDomain || ''
         this.form.isPublic = newProject.isPublic ?? true
       },
       deep: true,
@@ -162,7 +146,6 @@ export default {
             name: this.form.name,
             slug: this.form.slug !== this.project.slug ? this.form.slug : undefined,
             description: this.form.description || null,
-            customDomain: this.form.customDomain || null,
             isPublic: this.form.isPublic,
           },
         })

@@ -140,17 +140,6 @@
                 placeholder="A brief description of your product"
               />
             </div>
-            <div class="space-y-2">
-              <Label for="customDomain">Custom Domain (optional)</Label>
-              <Input
-                id="customDomain"
-                v-model="form.customDomain"
-                placeholder="feedback.yourapp.com"
-              />
-              <p class="text-xs text-muted-foreground">
-                Point a CNAME record to veerify to use a custom domain.
-              </p>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" @click="showCreateDialog = false">Cancel</Button>
@@ -187,7 +176,6 @@ export default {
         name: '',
         slug: '',
         description: '',
-        customDomain: '',
       },
     }
   },
@@ -293,12 +281,11 @@ export default {
             name: this.form.name,
             slug: this.form.slug,
             description: this.form.description || null,
-            customDomain: this.form.customDomain || null,
           },
         })
 
         this.showCreateDialog = false
-        this.form = { name: '', slug: '', description: '', customDomain: '' }
+        this.form = { name: '', slug: '', description: '' }
         await this.loadProducts()
       } catch (err) {
         console.error('Error creating product:', err)
