@@ -1,3 +1,7 @@
+## 📥 Inbox
+*New ideas land here automatically from Discord #veerify-ideas. Move them to the right section when triaged.*
+
+
 MVP
 
 
