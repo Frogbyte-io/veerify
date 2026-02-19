@@ -6,7 +6,7 @@ const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const TEMP_ORG_SLUG_PREFIX = 'org-e2e-'
 
-test.setTimeout(120_000)
+test.setTimeout(60_000)
 
 async function createOrganization(request: APIRequestContext, name: string, slug: string) {
   const response = await request.post('/api/orgs', {

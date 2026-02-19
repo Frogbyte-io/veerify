@@ -7,12 +7,19 @@ export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  retries: 0,
   workers: process.env.CI ? 1 : undefined,
+  maxFailures: process.env.CI ? 1 : undefined,
+  timeout: process.env.CI ? 60_000 : 90_000,
+  globalTimeout: process.env.CI ? 20 * 60_000 : undefined,
+  expect: {
+    timeout: process.env.CI ? 10_000 : 15_000,
+  },
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : [['list']],
+  globalSetup: './tests/e2e/global.setup.ts',
   use: {
     baseURL,
-    trace: 'on-first-retry',
+    trace: process.env.CI ? 'retain-on-failure' : 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
@@ -21,7 +28,7 @@ export default defineConfig({
     : {
         command: `yarn dev --host 127.0.0.1 --port ${PORT}`,
         url: `${baseURL}/login`,
-        timeout: 180_000,
+        timeout: 120_000,
         reuseExistingServer: !process.env.CI,
         env: {
           ...process.env,

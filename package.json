@@ -15,6 +15,7 @@
     "db:reset": "tsx scripts/db-reset.ts",
     "db:seed": "yarn db:migrate && tsx scripts/seed.ts",
     "db:seed:clean": "yarn db:migrate && tsx scripts/seed.ts --clean",
+    "db:seed:e2e": "tsx scripts/seed.ts --clean && tsx scripts/seed.ts",
     "postbuild": "drizzle-kit migrate && tsx scripts/seed.ts",
     "vercel-build": "drizzle-kit migrate && nuxt build",
     "lint": "eslint .",

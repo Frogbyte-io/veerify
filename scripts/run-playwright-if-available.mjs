@@ -14,6 +14,8 @@ const isForced = process.env.PLAYWRIGHT_FORCE === '1'
 const canRunByEnvironment = isCloudEnvironment || isForced
 
 const skipReasons = []
+const requiredSeedUserEmail = process.env.E2E_USER_EMAIL || 'test@preview.local'
+const dbConnectionTimeoutMs = Number(process.env.E2E_DB_CONNECT_TIMEOUT_MS) || 4_000
 
 try {
   require.resolve('@playwright/test')
@@ -25,7 +27,7 @@ function getDbClient() {
   if (process.env.DATABASE_URL) {
     return new Client({
       connectionString: process.env.DATABASE_URL,
-      connectionTimeoutMillis: 4000,
+      connectionTimeoutMillis: dbConnectionTimeoutMs,
     })
   }
 
@@ -37,19 +39,29 @@ function getDbClient() {
     password: process.env.PGPASSWORD || 'veerifypassword',
     database: process.env.PGDATABASE || 'veerifydb',
     ssl: false,
-    connectionTimeoutMillis: 4000,
+    connectionTimeoutMillis: dbConnectionTimeoutMs,
   })
 }
 
 function hasDbConfiguration() {
-  return Boolean(
-    process.env.DATABASE_URL ||
-      process.env.PGHOST ||
-      process.env.PGPORT ||
-      process.env.PGUSER ||
-      process.env.PGPASSWORD ||
-      process.env.PGDATABASE
-  )
+  if (process.env.DATABASE_URL) {
+    return true
+  }
+
+  const requiredPgVars = ['PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE']
+  const presentPgVars = requiredPgVars.filter((name) => Boolean(process.env[name]))
+
+  if (presentPgVars.length === 0) {
+    return false
+  }
+
+  const missingPgVars = requiredPgVars.filter((name) => !process.env[name])
+  if (missingPgVars.length > 0) {
+    skipReasons.push(`database configuration is incomplete (missing ${missingPgVars.join(', ')})`)
+    return false
+  }
+
+  return true
 }
 
 async function verifyDatabaseAvailable() {
@@ -57,6 +69,21 @@ async function verifyDatabaseAvailable() {
   try {
     await client.connect()
     await client.query('SELECT 1')
+
+    const schemaCheck = await client.query("SELECT to_regclass('public.user') AS user_table")
+    if (!schemaCheck.rows[0]?.user_table) {
+      skipReasons.push('database schema is missing required tables (run yarn db:migrate)')
+      return false
+    }
+
+    const seededUserCheck = await client.query('SELECT 1 FROM "user" WHERE email = $1 LIMIT 1', [
+      requiredSeedUserEmail,
+    ])
+    if ((seededUserCheck.rowCount ?? 0) === 0) {
+      skipReasons.push(`e2e seed user "${requiredSeedUserEmail}" was not found (run yarn db:seed)`)
+      return false
+    }
+
     return true
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -76,9 +103,8 @@ if (!dbConfigured) {
   skipReasons.push('database connection is not configured (set DATABASE_URL or PG* variables)')
 }
 
-const dbAvailable = dbConfigured ? await verifyDatabaseAvailable() : false
-if (dbConfigured && !dbAvailable) {
-  skipReasons.push('database connection check failed')
+if (dbConfigured) {
+  await verifyDatabaseAvailable()
 }
 
 if (skipReasons.length > 0) {

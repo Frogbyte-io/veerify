@@ -83,6 +83,7 @@ jobs:
     name: E2E (Playwright)
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine
@@ -121,7 +122,7 @@ jobs:
         run: yarn db:migrate
 
       - name: Seed test data
-        run: yarn db:seed:clean && yarn db:seed
+        run: yarn db:seed:e2e
 
       - name: Run Playwright (guarded)
         run: yarn test:e2e:if-available

@@ -6,7 +6,7 @@ const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
 
-test.setTimeout(120_000)
+test.setTimeout(60_000)
 
 function withAuthHeaders(sessionCookie: string, refererPath = '/feedback') {
   return {

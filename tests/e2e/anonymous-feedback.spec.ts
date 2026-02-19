@@ -13,7 +13,7 @@ const PUBLIC_PAGE = '/p/preview-org/demo'
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-test.setTimeout(120_000)
+test.setTimeout(60_000)
 
 // ---------------------------------------------------------------------------
 // Helpers
