@@ -280,32 +280,62 @@
     <!-- Footer -->
     <div class="mt-auto py-3 text-center text-xs text-muted-foreground space-y-1">
       <div
-        v-if="projectData?.project?.settings?.showPoweredBy !== false"
-        data-testid="public-footer-powered-by"
+        v-if="showCustomFooter"
+        data-testid="public-footer-custom"
+        class="space-y-1"
       >
-        Powered by <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="hover:underline">Veerify</a>
-      </div>
-      <div
-        v-if="projectData?.project?.settings?.showGithubFooter !== false"
-        data-testid="public-footer-github"
-      >
-        Open source &amp; contributions welcome &mdash;
-        <a href="https://github.com/Frogbyte-io/veerify" target="_blank" rel="noopener noreferrer" class="hover:underline inline-flex items-center gap-1">
-          <Icon name="lucide:github" class="h-3 w-3" />GitHub
-        </a>
-        &middot;
-        <a href="https://github.com/Frogbyte-io/veerify/issues" target="_blank" rel="noopener noreferrer" class="hover:underline">report an issue</a>
-        &middot;
-        <a
-          data-testid="public-footer-veerify-board"
-          href="https://feedback.veerify.io"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="hover:underline"
+        <p v-if="customFooterBranding" class="text-xs font-medium text-foreground">
+          {{ customFooterBranding }}
+        </p>
+        <p v-if="customFooterText" class="text-xs text-muted-foreground">
+          {{ customFooterText }}
+        </p>
+        <div
+          v-if="customFooterLinks.length > 0"
+          class="flex items-center justify-center gap-3 text-xs text-muted-foreground"
         >
-          Veerify feedback board
-        </a>
+          <a
+            v-for="(link, index) in customFooterLinks"
+            :key="`${link.label}-${link.url}`"
+            :data-testid="`public-footer-custom-link-${index}`"
+            :href="link.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="hover:underline"
+          >
+            {{ link.label }}
+          </a>
+        </div>
       </div>
+      <template v-else>
+        <div
+          v-if="projectData?.project?.settings?.showPoweredBy !== false"
+          data-testid="public-footer-powered-by"
+        >
+          Powered by <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="hover:underline">Veerify</a>
+        </div>
+        <div
+          v-if="projectData?.project?.settings?.showGithubFooter !== false"
+          data-testid="public-footer-github"
+        >
+          Open source &amp; contributions welcome &mdash;
+          <a href="https://github.com/Frogbyte-io/veerify" target="_blank" rel="noopener noreferrer" class="hover:underline inline-flex items-center gap-1">
+            <Icon name="lucide:github" class="h-3 w-3" />GitHub
+          </a>
+          &middot;
+          <a href="https://github.com/Frogbyte-io/veerify/issues" target="_blank" rel="noopener noreferrer" class="hover:underline">report an issue</a>
+          &middot;
+          <a
+            data-testid="public-footer-veerify-board"
+            href="https://feedback.veerify.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="hover:underline"
+          >
+            Veerify feedback board
+          </a>
+        </div>
+      </template>
     </div>
     </div>
   </div>
@@ -368,6 +398,30 @@ export default {
     authRedirectTarget() {
       if (!import.meta.client) return encodeURIComponent('/')
       return encodeURIComponent(window.location.href)
+    },
+    customFooterBranding() {
+      return this.projectData?.project?.settings?.customFooterBranding?.trim() || ''
+    },
+    customFooterText() {
+      return this.projectData?.project?.settings?.customFooterText?.trim() || ''
+    },
+    customFooterLinks() {
+      const settings = this.projectData?.project?.settings || {}
+      const links = [
+        {
+          label: settings.customFooterPrimaryLabel?.trim(),
+          url: settings.customFooterPrimaryUrl?.trim(),
+        },
+        {
+          label: settings.customFooterSecondaryLabel?.trim(),
+          url: settings.customFooterSecondaryUrl?.trim(),
+        },
+      ]
+      return links.filter((link) => link.label && link.url)
+    },
+    showCustomFooter() {
+      return this.projectData?.project?.settings?.customFooterEnabled === true
+        && (this.customFooterBranding || this.customFooterText || this.customFooterLinks.length > 0)
     },
   },
   beforeUnmount() {

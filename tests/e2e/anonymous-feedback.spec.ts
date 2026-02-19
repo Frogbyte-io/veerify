@@ -387,4 +387,75 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(page.locator('[data-testid="public-footer-veerify-board"]')).toHaveCount(1)
     }
   })
+
+  test('custom footer replaces default public board footer links', async ({ page }) => {
+    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await page.goto('/products/demo#appearance')
+    await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
+
+    const customFooterToggle = page.locator('[data-testid="appearance-toggle-custom-footer"]')
+    const customFooterBranding = page.locator('[data-testid="appearance-custom-footer-branding"]')
+    const customFooterText = page.locator('[data-testid="appearance-custom-footer-text"]')
+    const customFooterPrimaryLabel = page.locator('[data-testid="appearance-custom-footer-primary-label"]')
+    const customFooterPrimaryUrl = page.locator('[data-testid="appearance-custom-footer-primary-url"]')
+    const customFooterSecondaryLabel = page.locator('[data-testid="appearance-custom-footer-secondary-label"]')
+    const customFooterSecondaryUrl = page.locator('[data-testid="appearance-custom-footer-secondary-url"]')
+    const saveButton = page.getByRole('button', { name: 'Save Changes' })
+
+    try {
+      await setSwitchState(customFooterToggle, true)
+      await customFooterBranding.fill('Acme Labs')
+      await customFooterText.fill('Product updates powered by Acme Labs.')
+      await customFooterPrimaryLabel.fill('Acme Home')
+      await customFooterPrimaryUrl.fill('https://acme.example')
+      await customFooterSecondaryLabel.fill('Support')
+      await customFooterSecondaryUrl.fill('https://acme.example/support')
+
+      const saveResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+        { timeout: 20_000 }
+      )
+      await saveButton.click()
+      const saveResponse = await saveResponsePromise
+      expect(saveResponse.ok()).toBe(true)
+
+      await gotoPublicPage(page)
+
+      await expect(page.locator('[data-testid="public-footer-custom"]')).toBeVisible()
+      await expect(page.locator('[data-testid="public-footer-custom"]')).toContainText('Acme Labs')
+      await expect(page.locator('[data-testid="public-footer-custom"]')).toContainText(
+        'Product updates powered by Acme Labs.'
+      )
+      await expect(page.locator('[data-testid="public-footer-custom-link-0"]')).toHaveAttribute(
+        'href',
+        'https://acme.example'
+      )
+      await expect(page.locator('[data-testid="public-footer-custom-link-1"]')).toHaveAttribute(
+        'href',
+        'https://acme.example/support'
+      )
+      await expect(page.locator('[data-testid="public-footer-powered-by"]')).toHaveCount(0)
+      await expect(page.locator('[data-testid="public-footer-github"]')).toHaveCount(0)
+      await expect(page.locator('[data-testid="public-footer-veerify-board"]')).toHaveCount(0)
+    } finally {
+      await page.goto('/products/demo#appearance')
+      await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
+
+      const resetCustomFooterToggle = page.locator('[data-testid="appearance-toggle-custom-footer"]')
+      const resetSaveButton = page.getByRole('button', { name: 'Save Changes' })
+      await setSwitchState(resetCustomFooterToggle, false)
+
+      if (await resetSaveButton.isEnabled()) {
+        const resetSaveResponsePromise = page.waitForResponse(
+          (response) =>
+            response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+          { timeout: 20_000 }
+        )
+        await resetSaveButton.click()
+        const resetSaveResponse = await resetSaveResponsePromise
+        expect(resetSaveResponse.ok()).toBe(true)
+      }
+    }
+  })
 })

@@ -14,6 +14,13 @@ const projectSettingsSchema = z.object({
   showPoweredBy: z.boolean().optional(),
   showGithubFooter: z.boolean().optional(),
   themeMode: z.enum(['system', 'light', 'dark']).optional(),
+  customFooterEnabled: z.boolean().optional(),
+  customFooterBranding: z.string().max(120).optional().nullable(),
+  customFooterText: z.string().max(500).optional().nullable(),
+  customFooterPrimaryLabel: z.string().max(80).optional().nullable(),
+  customFooterPrimaryUrl: z.string().url().max(500).optional().nullable(),
+  customFooterSecondaryLabel: z.string().max(80).optional().nullable(),
+  customFooterSecondaryUrl: z.string().url().max(500).optional().nullable(),
 }).passthrough().nullable().optional()
 
 const updateProjectSchema = z.object({
