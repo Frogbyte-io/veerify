@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Delegate to Better-Auth
-  const result = await auth.api.inviteMember({
+  const result = await auth.api.createInvitation({
     headers: event.node.req.headers as any,
     body: {
       organizationId,
