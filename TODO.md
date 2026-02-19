@@ -1,6 +1,9 @@
 ## 📥 Inbox
 *New ideas land here automatically from Discord #veerify-ideas. Move them to the right section when triaged.*
 
+- [ ] Add language selection using i18n *(from Discord, 2026-02-19)*
+
+
 
 MVP
 
