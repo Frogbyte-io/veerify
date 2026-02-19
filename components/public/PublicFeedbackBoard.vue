@@ -11,14 +11,14 @@
         {{ currentThemeLabel }}
       </button>
       <a
-        :href="mainAppUrl + '/login'"
+        :href="mainAppUrl + '/login?redirect=' + authRedirectTarget"
         class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
       >
         <Icon name="lucide:log-in" class="w-4 h-4" />
         Log in
       </a>
       <a
-        :href="mainAppUrl + '/signup'"
+        :href="mainAppUrl + '/signup?redirect=' + authRedirectTarget"
         class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
       >
         Sign up
@@ -357,6 +357,10 @@ export default {
     showThemeToggle() {
       const forced = this.projectData?.project?.settings?.themeMode
       return !forced || forced === 'system'
+    },
+    authRedirectTarget() {
+      if (!import.meta.client) return encodeURIComponent('/')
+      return encodeURIComponent(window.location.href)
     },
   },
   beforeUnmount() {

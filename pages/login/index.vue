@@ -179,6 +179,41 @@ export default {
     },
   },
   methods: {
+    resolveRedirectTarget(rawRedirect, fallback = '/dashboard') {
+      if (!rawRedirect || typeof rawRedirect !== 'string') {
+        return fallback
+      }
+
+      if (rawRedirect.startsWith('/')) {
+        return rawRedirect
+      }
+
+      if (!import.meta.client) {
+        return fallback
+      }
+
+      try {
+        const parsed = new URL(rawRedirect)
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          return fallback
+        }
+
+        const config = useRuntimeConfig()
+        const appDomain = String(config.public.appDomain || 'localhost').toLowerCase()
+        const redirectHost = parsed.hostname.toLowerCase()
+        const currentHost = window.location.hostname.toLowerCase()
+
+        const isAllowedHost =
+          redirectHost === currentHost ||
+          redirectHost === appDomain ||
+          redirectHost.endsWith(`.${appDomain}`)
+
+        return isAllowedHost ? parsed.toString() : fallback
+      } catch {
+        return fallback
+      }
+    },
+
     async handleSubmit() {
       if (!this.email || !this.password) {
         this.error = 'Please enter both email and password'
@@ -198,10 +233,11 @@ export default {
           this.error = result.error.message || 'Sign in failed'
         } else {
           $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
-          const redirect = this.$route.query.redirect
-          const target = redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard'
+          const target = this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
           // Hard reload when adding an account to clear all in-memory session caches
           if (this.$route.query.addAccount === 'true') {
+            window.location.href = target
+          } else if (target.startsWith('http://') || target.startsWith('https://')) {
             window.location.href = target
           } else {
             await navigateTo(target)
@@ -225,9 +261,7 @@ export default {
       this.error = ''
 
       try {
-        const redirect = this.$route.query.redirect
-        const callbackURL =
-          redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard'
+        const callbackURL = this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
 
         const result = await authClient.signIn.magicLink({
           email: this.email,
