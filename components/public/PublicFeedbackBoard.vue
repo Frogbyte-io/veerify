@@ -346,10 +346,10 @@ export default {
     mainAppUrl() {
       if (!import.meta.client) return ''
       const config = useRuntimeConfig()
-      const appDomain = config.public.appDomain || 'localhost'
+      const dashboardDomain = config.public.dashboardDomain || config.public.appDomain || 'localhost'
       const protocol = window.location.protocol
-      const port = appDomain === 'localhost' ? ':' + window.location.port : ''
-      return `${protocol}//${appDomain}${port}`
+      const port = dashboardDomain === 'localhost' ? ':' + window.location.port : ''
+      return `${protocol}//${dashboardDomain}${port}`
     },
     currentThemeIcon() {
       if (this.activeTheme === 'dark') return 'lucide:moon'
