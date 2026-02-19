@@ -99,12 +99,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      # Set CI_DATABASE_URL to run e2e against an external DB (for example Neon).
+      # When empty, the local postgres service variables below are used.
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
       PGHOST: localhost
       PGPORT: 5432
       PGUSER: veerify
       PGPASSWORD: veerifypassword
       PGDATABASE: veerifydb
       BETTER_AUTH_URL: http://localhost:4173
+      PLAYWRIGHT_SKIP_IS_FAILURE: '1'
     steps:
       - uses: actions/checkout@v4
 

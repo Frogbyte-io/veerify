@@ -11,6 +11,7 @@ const projectSettingsSchema = z.object({
   logoUrl: z.string().url().max(500).startsWith('https://').optional().nullable(),
   bannerUrl: z.string().url().max(500).startsWith('https://').optional().nullable(),
   showPoweredBy: z.boolean().optional(),
+  showGithubFooter: z.boolean().optional(),
   themeMode: z.enum(['system', 'light', 'dark']).optional(),
 }).passthrough().nullable().optional()
 

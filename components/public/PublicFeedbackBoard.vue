@@ -272,10 +272,16 @@
     </div>
     <!-- Footer -->
     <div class="mt-auto py-3 text-center text-xs text-muted-foreground space-y-1">
-      <div v-if="!projectData?.settings || projectData.settings.showPoweredBy !== false">
+      <div
+        v-if="projectData?.project?.settings?.showPoweredBy !== false"
+        data-testid="public-footer-powered-by"
+      >
         Powered by <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="hover:underline">Veerify</a>
       </div>
-      <div>
+      <div
+        v-if="projectData?.project?.settings?.showGithubFooter !== false"
+        data-testid="public-footer-github"
+      >
         Open source &amp; contributions welcome &mdash;
         <a href="https://github.com/Frogbyte-io/veerify" target="_blank" rel="noopener noreferrer" class="hover:underline inline-flex items-center gap-1">
           <Icon name="lucide:github" class="h-3 w-3" />GitHub

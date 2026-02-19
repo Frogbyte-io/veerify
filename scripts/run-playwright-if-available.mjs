@@ -12,6 +12,9 @@ const isCloudEnvironment = Boolean(
 )
 const isForced = process.env.PLAYWRIGHT_FORCE === '1'
 const canRunByEnvironment = isCloudEnvironment || isForced
+const failOnPreflightSkip =
+  process.env.PLAYWRIGHT_SKIP_IS_FAILURE === '1' ||
+  (isCloudEnvironment && process.env.PLAYWRIGHT_SKIP_IS_FAILURE !== '0')
 
 const skipReasons = []
 const requiredSeedUserEmail = process.env.E2E_USER_EMAIL || 'test@preview.local'
@@ -108,7 +111,14 @@ if (dbConfigured) {
 }
 
 if (skipReasons.length > 0) {
-  console.log(`[playwright] Skipping e2e run: ${skipReasons.join('; ')}.`)
+  const reasonSummary = skipReasons.join('; ')
+
+  if (failOnPreflightSkip) {
+    console.error(`[playwright] E2E preflight failed: ${reasonSummary}.`)
+    process.exit(1)
+  }
+
+  console.log(`[playwright] Skipping e2e run: ${reasonSummary}.`)
   console.log('[playwright] Runs require cloud/CI or PLAYWRIGHT_FORCE=1 and a reachable configured database.')
   process.exit(0)
 }

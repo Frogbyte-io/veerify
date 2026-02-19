@@ -1,4 +1,4 @@
-import { expect, test, type Page, type APIRequestContext } from '@playwright/test'
+import { expect, test, type Page, type Locator } from '@playwright/test'
 import { loginViaUi } from './helpers/auth'
 
 /**
@@ -53,6 +53,15 @@ async function fillAndSubmitFeedback(
 
 function getAnonCookie(page: Page) {
   return page.context().cookies().then((cookies) => cookies.find((c) => c.name === 'veerify_anon_session'))
+}
+
+async function setSwitchState(toggle: Locator, enabled: boolean) {
+  await expect(toggle).toBeVisible()
+  const isChecked = (await toggle.getAttribute('aria-checked')) === 'true'
+  if (isChecked !== enabled) {
+    await toggle.click()
+  }
+  await expect(toggle).toHaveAttribute('aria-checked', enabled ? 'true' : 'false')
 }
 
 // ---------------------------------------------------------------------------
@@ -259,5 +268,56 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(
       page.getByText('Provide your email to receive updates on comments and status changes.')
     ).toBeVisible()
+  })
+
+  test('appearance footer toggles control public board footer visibility', async ({ page }) => {
+    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await page.goto('/products/demo#appearance')
+    await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
+
+    const poweredByToggle = page.locator('[data-testid="appearance-toggle-powered-by"]')
+    const githubFooterToggle = page.locator('[data-testid="appearance-toggle-github-footer"]')
+    const saveButton = page.getByRole('button', { name: 'Save Changes' })
+
+    try {
+      await setSwitchState(poweredByToggle, false)
+      await setSwitchState(githubFooterToggle, false)
+
+      const saveResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+        { timeout: 20_000 }
+      )
+      await saveButton.click()
+      const saveResponse = await saveResponsePromise
+      expect(saveResponse.ok()).toBe(true)
+
+      await page.goto(PUBLIC_PAGE)
+      await waitForPageReady(page)
+
+      await expect(page.locator('[data-testid="public-footer-powered-by"]')).toHaveCount(0)
+      await expect(page.locator('[data-testid="public-footer-github"]')).toHaveCount(0)
+    } finally {
+      await page.goto('/products/demo#appearance')
+      await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
+
+      const resetPoweredByToggle = page.locator('[data-testid="appearance-toggle-powered-by"]')
+      const resetGithubFooterToggle = page.locator('[data-testid="appearance-toggle-github-footer"]')
+      const resetSaveButton = page.getByRole('button', { name: 'Save Changes' })
+
+      await setSwitchState(resetPoweredByToggle, true)
+      await setSwitchState(resetGithubFooterToggle, true)
+
+      if (await resetSaveButton.isEnabled()) {
+        const resetSaveResponsePromise = page.waitForResponse(
+          (response) =>
+            response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+          { timeout: 20_000 }
+        )
+        await resetSaveButton.click()
+        const resetSaveResponse = await resetSaveResponsePromise
+        expect(resetSaveResponse.ok()).toBe(true)
+      }
+    }
   })
 })

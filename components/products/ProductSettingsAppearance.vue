@@ -63,7 +63,17 @@
               Display a small attribution badge on your public board.
             </p>
           </div>
-          <Switch v-model="form.showPoweredBy" />
+          <Switch v-model="form.showPoweredBy" data-testid="appearance-toggle-powered-by" />
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="font-medium text-sm">Show GitHub footer links</p>
+            <p class="text-xs text-muted-foreground">
+              Display open-source and issue-report links in the public board footer.
+            </p>
+          </div>
+          <Switch v-model="form.showGithubFooter" data-testid="appearance-toggle-github-footer" />
         </div>
 
         <div class="flex justify-end">
@@ -132,8 +142,19 @@
             </div>
             <div class="h-10 rounded-md bg-muted" />
           </div>
-          <div v-if="form.showPoweredBy" class="border-t px-4 py-2 text-center">
-            <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="text-xs text-muted-foreground hover:underline">Powered by Veerify</a>
+          <div class="border-t px-4 py-2 text-center space-y-1">
+            <a
+              v-if="form.showPoweredBy"
+              href="https://veerify.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="block text-xs text-muted-foreground hover:underline"
+            >
+              Powered by Veerify
+            </a>
+            <p v-if="form.showGithubFooter" class="text-xs text-muted-foreground">
+              Open source &amp; contributions welcome
+            </p>
           </div>
         </div>
       </CardContent>
@@ -161,6 +182,7 @@ export default {
         logoUrl: settings.logoUrl || '',
         bannerUrl: settings.bannerUrl || '',
         showPoweredBy: settings.showPoweredBy !== false,
+        showGithubFooter: settings.showGithubFooter !== false,
         themeMode: settings.themeMode || 'system',
       },
       isSaving: false,
@@ -174,6 +196,7 @@ export default {
         logoUrl: settings.logoUrl || '',
         bannerUrl: settings.bannerUrl || '',
         showPoweredBy: settings.showPoweredBy !== false,
+        showGithubFooter: settings.showGithubFooter !== false,
         themeMode: settings.themeMode || 'system',
       }
     },
@@ -188,6 +211,7 @@ export default {
         this.form.logoUrl !== this.currentSettings.logoUrl ||
         this.form.bannerUrl !== this.currentSettings.bannerUrl ||
         this.form.showPoweredBy !== this.currentSettings.showPoweredBy ||
+        this.form.showGithubFooter !== this.currentSettings.showGithubFooter ||
         this.form.themeMode !== this.currentSettings.themeMode
       )
     },
@@ -200,6 +224,7 @@ export default {
         this.form.logoUrl = settings.logoUrl || ''
         this.form.bannerUrl = settings.bannerUrl || ''
         this.form.showPoweredBy = settings.showPoweredBy !== false
+        this.form.showGithubFooter = settings.showGithubFooter !== false
         this.form.themeMode = settings.themeMode || 'system'
       },
       deep: true,
@@ -221,6 +246,7 @@ export default {
               logoUrl: this.form.logoUrl || null,
               bannerUrl: this.form.bannerUrl || null,
               showPoweredBy: this.form.showPoweredBy,
+              showGithubFooter: this.form.showGithubFooter,
               themeMode: this.form.themeMode,
             },
           },
