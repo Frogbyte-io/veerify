@@ -33,7 +33,8 @@ MVP
 ### Infrastructure
 
 - [ ] Set up full test infrastructure
-- [ ] Send email when custom domain has been verified/connected
+- [x] Send email when custom domain has been verified/connected
+  - Added connected/verified domain email templates and wired notifications in `server/api/projects/[slug].put.ts` and `server/api/projects/[slug]/verify-domain.get.ts` with per-domain dedupe markers in project settings.
 - [x] Allow users to create an account or log in directly from the public feedback board (top-right button)
 - [x] Add REST API docs UI (`/api/openapi.json` exists; add Scalar or Swagger UI)
   - Added Scalar docs route at `/api-docs` via `nuxt.config.ts`, documented in `README.md`, and covered by `tests/e2e/api-docs.spec.ts`.
