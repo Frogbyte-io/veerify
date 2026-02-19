@@ -83,7 +83,8 @@ MVP
 - [x] Add option to create a custom footer for public feedback boards, where customers can add their own text, links, and branding instead of the default "Powered by Veerify" badge. This would allow customers to fully white-label the public board experience if they choose to.
   - Added custom footer settings and rendering in `components/products/ProductSettingsAppearance.vue` and `components/public/PublicFeedbackBoard.vue`, with API validation in `server/api/projects/[slug].put.ts` and e2e coverage in `tests/e2e/anonymous-feedback.spec.ts`.
 
-- [ ] Feedback page for a product should default to a Kanban style board instead
+- [x] Feedback page for a product should default to a Kanban style board instead
+  - Replaced list rendering in `pages/feedback/index.vue` with a Kanban-first board and updated e2e selectors/assertions in `tests/e2e/helpers/selectors.ts` and `tests/e2e/admin-feedback.spec.ts`.
 
 
 
