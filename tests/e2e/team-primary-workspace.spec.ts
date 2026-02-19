@@ -4,7 +4,7 @@ import type { APIRequestContext } from '@playwright/test'
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
-const ORG_SLUG = process.env.E2E_ORG_SLUG || 'preview-org'
+const TEAM_SLUG = process.env.E2E_TEAM_SLUG || 'preview-org'
 
 test.setTimeout(60_000)
 
@@ -67,11 +67,11 @@ test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces 
   expect(createPayload?.data?.slug).toBe(uniqueSlug)
 
   // Public contract stays orgSlug + projectSlug; team ownership is internal.
-  const publicProjectResponse = await request.get(`/api/public/${ORG_SLUG}/${uniqueSlug}`)
+  const publicProjectResponse = await request.get(`/api/public/t/${TEAM_SLUG}/${uniqueSlug}`)
   const publicProjectPayload = await publicProjectResponse.json()
   expect(publicProjectResponse.ok()).toBeTruthy()
   expect(publicProjectPayload?.data?.project?.slug).toBe(uniqueSlug)
-  expect(publicProjectPayload?.data?.organization?.slug).toBe(ORG_SLUG)
+  expect(publicProjectPayload?.data?.team?.slug).toBe(TEAM_SLUG)
 
   const duplicateResponse = await request.post(`/api/teams/${teamId}/projects`, {
     headers: withAuthHeaders(sessionCookie),

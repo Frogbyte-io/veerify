@@ -58,6 +58,10 @@ export default defineNuxtConfig({
       pathPrefix: false,
     },
   ],
+  routeRules: {
+    '/api-docs/**': { ssr: false },
+    '/api-docs': { ssr: false },
+  },
   scalar: {
     url: '/api/openapi.json',
     pathRouting: {

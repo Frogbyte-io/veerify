@@ -4,12 +4,17 @@ import { loginViaUi } from './helpers/auth'
 /**
  * Anonymous feedback e2e tests.
  *
- * These tests exercise the public feedback page at /p/preview-org/demo
+ * These tests exercise the public feedback page on the team subdomain:
+ * http://{team}.localhost:{port}/{project}
  * which is seeded by the db:seed script. The anonymous session is managed
  * through an HttpOnly cookie `veerify_anon_session`.
  */
 
-const PUBLIC_PAGE = '/p/preview-org/demo'
+const PORT = Number(process.env.PLAYWRIGHT_PORT || 4173)
+const TEAM_SLUG = process.env.E2E_TEAM_SLUG || 'preview-org'
+const PROJECT_SLUG = process.env.E2E_PROJECT_SLUG || 'demo'
+const PUBLIC_PAGE =
+  process.env.E2E_PUBLIC_PAGE_URL || `http://${TEAM_SLUG}.localhost:${PORT}/${PROJECT_SLUG}`
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
@@ -22,6 +27,23 @@ test.setTimeout(60_000)
 async function waitForPageReady(page: Page) {
   // Wait for the public feedback page to load project data
   await page.waitForSelector('h1', { timeout: 30_000 })
+}
+
+async function gotoPublicPage(page: Page) {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await page.goto(PUBLIC_PAGE, { waitUntil: 'domcontentloaded' })
+      await waitForPageReady(page)
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < 3) {
+        await page.waitForTimeout(1000)
+      }
+    }
+  }
+  throw lastError
 }
 
 async function openSubmitDialog(page: Page) {
@@ -64,14 +86,36 @@ async function setSwitchState(toggle: Locator, enabled: boolean) {
   await expect(toggle).toHaveAttribute('aria-checked', enabled ? 'true' : 'false')
 }
 
+async function sortFeedbackByNewest(page: Page) {
+  const sortSelect = page.locator('select:has(option[value="createdAt"])').first()
+  await expect(sortSelect).toBeVisible()
+  await sortSelect.selectOption('createdAt')
+}
+
+async function signInOnPublicHost(page: Page, opts: { email: string; password: string }) {
+  const result = await page.evaluate(
+    async ({ email, password }) => {
+      const response = await fetch('/api/auth/sign-in/email', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const body = await response.text().catch(() => '')
+      return { ok: response.ok, status: response.status, body }
+    },
+    { email: opts.email, password: opts.password }
+  )
+
+  expect(result.ok, `Public-host sign-in failed (${result.status}): ${result.body}`).toBe(true)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 test.describe('Anonymous feedback sessions', () => {
   test('public feedback page loads for unauthenticated users', async ({ page }) => {
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     // Project header should render
     await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
@@ -80,8 +124,7 @@ test.describe('Anonymous feedback sessions', () => {
   })
 
   test('anonymous user can submit feedback and gets a session cookie', async ({ page }) => {
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     // No anonymous cookie before submission
     let cookie = await getAnonCookie(page)
@@ -105,8 +148,7 @@ test.describe('Anonymous feedback sessions', () => {
   })
 
   test('anonymous user can submit feedback with optional email', async ({ page }) => {
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     const title = `Anon With Email ${Date.now()}`
     await fillAndSubmitFeedback(page, {
@@ -120,8 +162,7 @@ test.describe('Anonymous feedback sessions', () => {
   })
 
   test('anonymous user sees own submissions highlighted', async ({ page }) => {
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     const title = `Own Submission ${Date.now()}`
     await fillAndSubmitFeedback(page, {
@@ -138,8 +179,7 @@ test.describe('Anonymous feedback sessions', () => {
   })
 
   test('anonymous user can vote on feedback', async ({ page }) => {
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     // First submit a feedback item to ensure there's something to vote on
     const title = `Votable Feedback ${Date.now()}`
@@ -159,18 +199,23 @@ test.describe('Anonymous feedback sessions', () => {
     const voteCountEl = voteButton.locator('span.text-sm.font-semibold').first()
     const initialCount = parseInt((await voteCountEl.textContent()) || '0', 10)
 
-    // Click to vote (upvote)
-    await voteButton.click()
-    await page.waitForTimeout(1000) // Wait for API response
+    expect(initialCount).toBeGreaterThan(0)
 
-    // Vote count should have increased
-    const newCount = parseInt((await voteCountEl.textContent()) || '0', 10)
-    expect(newCount).toBe(initialCount + 1)
+    // New submissions are auto-upvoted by the submitter, so first click removes the vote.
+    await voteButton.click()
+    await expect
+      .poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10))
+      .toBe(initialCount - 1)
+
+    // Second click adds the vote back.
+    await voteButton.click()
+    await expect
+      .poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10))
+      .toBe(initialCount)
   })
 
   test('anonymous session cookie persists across page reloads', async ({ page }) => {
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     // Submit feedback to create session
     const title = `Persist Test ${Date.now()}`
@@ -194,14 +239,14 @@ test.describe('Anonymous feedback sessions', () => {
     expect(cookie2).toBeDefined()
     expect(cookie2!.value).toBe(token1)
 
-    // Own submissions should still be highlighted after reload
+    // Ensure the newest submission is visible after reload.
+    await sortFeedbackByNewest(page)
     await expect(page.getByText(title)).toBeVisible({ timeout: 10_000 })
   })
 
   test('anonymous session merges into authenticated user on login', async ({ page }) => {
     // Start as anonymous
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     const title = `Merge Test ${Date.now()}`
     await fillAndSubmitFeedback(page, {
@@ -214,22 +259,29 @@ test.describe('Anonymous feedback sessions', () => {
     let cookie = await getAnonCookie(page)
     expect(cookie).toBeDefined()
 
-    // Now log in
-    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    // Sign in on the same host so the anonymous cookie is available during merge.
+    await signInOnPublicHost(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-    // Trigger the merge
+    // Ensure merge has run on this host (login also triggers it, this call is idempotent).
     await page.evaluate(async () => {
       await fetch('/api/auth/merge-anonymous', { method: 'POST' })
     })
 
+    await gotoPublicPage(page)
+
     // After merge, the anonymous cookie should be cleared
     cookie = await getAnonCookie(page)
     expect(cookie).toBeUndefined()
+
+    // Feedback ownership should stay with the authenticated user.
+    await sortFeedbackByNewest(page)
+    await expect(page.getByText(title)).toBeVisible({ timeout: 10_000 })
+    const card = page.locator('.space-y-3 > div', { hasText: title }).first()
+    await expect(card.getByText('Your submission')).toBeVisible()
   })
 
   test('vote toggle works for anonymous users (vote then unvote)', async ({ page }) => {
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     // Submit feedback
     const title = `Toggle Vote ${Date.now()}`
@@ -247,20 +299,24 @@ test.describe('Anonymous feedback sessions', () => {
 
     const initialCount = parseInt((await voteCountEl.textContent()) || '0', 10)
 
-    // Vote
-    await voteButton.click()
-    await page.waitForTimeout(1000)
-    expect(parseInt((await voteCountEl.textContent()) || '0', 10)).toBe(initialCount + 1)
+    expect(initialCount).toBeGreaterThan(0)
 
-    // Unvote (toggle off)
+    // Newly submitted feedback is already voted by the submitter.
+    // First click removes the vote.
     await voteButton.click()
-    await page.waitForTimeout(1000)
-    expect(parseInt((await voteCountEl.textContent()) || '0', 10)).toBe(initialCount)
+    await expect
+      .poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10))
+      .toBe(initialCount - 1)
+
+    // Second click re-adds the vote.
+    await voteButton.click()
+    await expect
+      .poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10))
+      .toBe(initialCount)
   })
 
   test('email helper text is shown in submit dialog', async ({ page }) => {
-    await page.goto(PUBLIC_PAGE)
-    await waitForPageReady(page)
+    await gotoPublicPage(page)
 
     await openSubmitDialog(page)
 
@@ -292,8 +348,7 @@ test.describe('Anonymous feedback sessions', () => {
       const saveResponse = await saveResponsePromise
       expect(saveResponse.ok()).toBe(true)
 
-      await page.goto(PUBLIC_PAGE)
-      await waitForPageReady(page)
+      await gotoPublicPage(page)
 
       await expect(page.locator('[data-testid="public-footer-powered-by"]')).toHaveCount(0)
       await expect(page.locator('[data-testid="public-footer-github"]')).toHaveCount(0)
@@ -320,8 +375,7 @@ test.describe('Anonymous feedback sessions', () => {
         expect(resetSaveResponse.ok()).toBe(true)
       }
 
-      await page.goto(PUBLIC_PAGE)
-      await waitForPageReady(page)
+      await gotoPublicPage(page)
       await expect(page.locator('[data-testid="public-footer-veerify-board"]')).toHaveCount(1)
     }
   })

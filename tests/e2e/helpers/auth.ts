@@ -6,14 +6,30 @@ export type LoginCredentials = {
   password: string
 }
 
+async function gotoWithRetry(page: Page, path: string) {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await page.goto(path, { waitUntil: 'domcontentloaded' })
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < 3) {
+        await page.waitForTimeout(1000)
+      }
+    }
+  }
+  throw lastError
+}
+
 export async function expectRedirectToLogin(page: Page, protectedPath: string) {
-  await page.goto(protectedPath)
+  await gotoWithRetry(page, protectedPath)
   await expect(page).toHaveURL(/\/login/)
   await expect(page.locator(selectors.loginEmail)).toBeVisible()
 }
 
 export async function loginViaUi(page: Page, credentials: LoginCredentials) {
-  await page.goto('/login')
+  await gotoWithRetry(page, '/login')
   await expect(page.locator(selectors.loginEmail)).toBeVisible()
   await page.waitForFunction(() => {
     const form = document.querySelector('form') as any

@@ -3,7 +3,7 @@ import type { APIRequestContext } from '@playwright/test'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:4173'
+const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
 
 test.setTimeout(60_000)
 
@@ -12,6 +12,14 @@ function withAuthHeaders(sessionCookie: string, refererPath = '/feedback') {
     cookie: sessionCookie,
     origin: BASE_URL,
     referer: `${BASE_URL}${refererPath}`,
+  }
+}
+
+function anonymousHeaders(refererPath = '/feedback') {
+  return {
+    origin: BASE_URL,
+    referer: `${BASE_URL}${refererPath}`,
+    cookie: '',
   }
 }
 
@@ -49,7 +57,7 @@ async function createTestProject(
   sessionCookie: string,
   teamId: string,
   slug: string,
-  isPublic: boolean = false
+  isPublic: boolean = true
 ) {
   const response = await request.post(`/api/teams/${teamId}/projects`, {
     headers: withAuthHeaders(sessionCookie, '/products'),
@@ -58,11 +66,26 @@ async function createTestProject(
       slug,
       description: 'Created for multi-tenant auth testing',
       customDomain: null,
-      settings: { isPublic },
     },
   })
   const payload = await response.json()
   expect(response.status(), `Create project failed: ${JSON.stringify(payload)}`).toBe(201)
+
+  if (!isPublic) {
+    const visibilityResponse = await request.put(`/api/projects/${slug}`, {
+      headers: withAuthHeaders(sessionCookie, '/products'),
+      data: {
+        isPublic: false,
+      },
+    })
+    const visibilityPayload = await visibilityResponse.json().catch(() => ({}))
+    expect(
+      visibilityResponse.ok(),
+      `Failed to set project visibility: ${JSON.stringify(visibilityPayload)}`
+    ).toBeTruthy()
+    expect(visibilityPayload?.data?.isPublic).toBe(false)
+  }
+
   return payload.data.id as string
 }
 
@@ -70,6 +93,10 @@ async function deleteTestProject(request: APIRequestContext, sessionCookie: stri
   await request.delete(`/api/teams/${teamId}/projects/${projectId}`, {
     headers: withAuthHeaders(sessionCookie),
   })
+}
+
+function getErrorCode(payload: any) {
+  return payload?.error?.code || payload?.data?.error?.code
 }
 
 test.describe('Multi-tenant authorization', () => {
@@ -82,7 +109,7 @@ test.describe('Multi-tenant authorization', () => {
     })
     expect(response.status()).toBe(400)
     const payload = await response.json()
-    expect(payload.error?.code).toBe('VALIDATION_ERROR')
+    expect(getErrorCode(payload)).toBe('VALIDATION_ERROR')
   })
 
   test('GET /api/feedback filters by projectId correctly', async ({ request }) => {
@@ -164,10 +191,7 @@ test.describe('Multi-tenant authorization', () => {
 
     // Anonymous user cannot submit to private project
     const anonResponse = await request.post('/api/feedback', {
-      headers: {
-        origin: BASE_URL,
-        referer: `${BASE_URL}/feedback`,
-      },
+      headers: anonymousHeaders('/feedback'),
       data: {
         projectId,
         title: 'Anonymous attempt',
@@ -191,10 +215,7 @@ test.describe('Multi-tenant authorization', () => {
 
     // Anonymous user can submit to public project
     const anonResponse = await request.post('/api/feedback', {
-      headers: {
-        origin: BASE_URL,
-        referer: `${BASE_URL}/feedback`,
-      },
+      headers: anonymousHeaders('/feedback'),
       data: {
         projectId,
         title: 'Anonymous public feedback',
@@ -230,10 +251,7 @@ test.describe('Multi-tenant authorization', () => {
 
     // Try to vote on private project feedback (should fail even for team members via public endpoint)
     const votePrivateResponse = await request.post(`/api/feedback/${privateFb.data.id}/vote`, {
-      headers: {
-        origin: BASE_URL,
-        referer: `${BASE_URL}/feedback`,
-      },
+      headers: anonymousHeaders('/feedback'),
     })
     expect(votePrivateResponse.status()).toBe(403)
 
@@ -255,10 +273,7 @@ test.describe('Multi-tenant authorization', () => {
 
     // Anonymous vote on public project should work
     const votePublicResponse = await request.post(`/api/feedback/${publicFb.data.id}/vote`, {
-      headers: {
-        origin: BASE_URL,
-        referer: `${BASE_URL}/feedback`,
-      },
+      headers: anonymousHeaders('/feedback'),
     })
     expect(votePublicResponse.status()).toBe(200)
 
@@ -293,10 +308,7 @@ test.describe('Multi-tenant authorization', () => {
 
     // Anonymous user cannot access private project feedback
     const anonGetResponse = await request.get(`/api/feedback/${fb.data.id}`, {
-      headers: {
-        origin: BASE_URL,
-        referer: `${BASE_URL}/feedback`,
-      },
+      headers: anonymousHeaders('/feedback'),
     })
     expect(anonGetResponse.status()).toBe(403)
 
@@ -324,10 +336,7 @@ test.describe('Multi-tenant authorization', () => {
 
     // Anonymous user can access public project feedback
     const anonGetResponse = await request.get(`/api/feedback/${fb.data.id}`, {
-      headers: {
-        origin: BASE_URL,
-        referer: `${BASE_URL}/feedback`,
-      },
+      headers: anonymousHeaders('/feedback'),
     })
     expect(anonGetResponse.status()).toBe(200)
     const anonPayload = await anonGetResponse.json()

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { APIRequestContext } from '@playwright/test'
+import type { APIRequestContext, Page } from '@playwright/test'
 import { selectors } from './helpers/selectors'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
@@ -66,6 +66,22 @@ async function deleteTestProject(request: APIRequestContext, sessionCookie: stri
     headers: withAuthHeaders(sessionCookie),
   })
   expect(response.ok()).toBeTruthy()
+}
+
+async function gotoWithRetry(page: Page, path: string) {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < 3) {
+        await page.waitForTimeout(1000)
+      }
+    }
+  }
+  throw lastError
 }
 
 test.describe('Admin feedback workflow', () => {
@@ -138,7 +154,7 @@ test.describe('Admin feedback workflow', () => {
     expect(setActiveTeamResponse.ok()).toBeTruthy()
 
     // Navigate to feedback page
-    await page.goto('/feedback', { waitUntil: 'commit', timeout: 180_000 })
+    await gotoWithRetry(page, '/feedback')
     await expect(page).toHaveURL(/\/feedback/)
 
     // Verify page title and Add Feedback button

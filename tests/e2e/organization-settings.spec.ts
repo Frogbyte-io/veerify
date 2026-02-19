@@ -92,7 +92,7 @@ test('owner can view, update, and delete organization from settings tab', async 
   await page.locator(selectors.settingsTabOrganization).click()
   await expect(page).toHaveURL(/#organization/)
   await expect(page.locator(selectors.organizationTitle)).toBeVisible()
-  await expect(page.locator(selectors.organizationMembersCount)).toContainText('members')
+  await expect(page.locator(selectors.organizationMembersCount)).toHaveText(/\d+\s+member(s)?/)
   await expect(page.locator('[data-testid="organization-member-role"]').first()).toHaveText(/owner|admin|member/i)
 
   const updatedName = `${originalName} Updated`
