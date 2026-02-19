@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test'
-import { selectors, teamSwitcherItemSelector } from './selectors'
+import { selectors } from './selectors'
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
 
@@ -28,7 +28,7 @@ function parseTeams(payload: any): ListUserTeam[] {
 }
 
 async function listUserTeams(request: APIRequestContext): Promise<ListUserTeam[]> {
-  const response = await request.get('/api/auth/organization/list-user-teams')
+  const response = await request.get('/api/teams/list-user')
   expect(response.ok()).toBeTruthy()
 
   const payload = await response.json()
@@ -36,7 +36,7 @@ async function listUserTeams(request: APIRequestContext): Promise<ListUserTeam[]
 }
 
 async function listOrganizationTeams(request: APIRequestContext): Promise<ListUserTeam[]> {
-  const response = await request.get('/api/auth/organization/list-teams')
+  const response = await request.get('/api/teams/list-organization')
   expect(response.ok()).toBeTruthy()
   const payload = await response.json()
   return parseTeams(payload)
@@ -168,6 +168,11 @@ export async function createTeamFromSettings(page: Page, teamName: string): Prom
     )
     .toBe(teamName)
 
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.locator(selectors.teamSwitcherActiveName)).toHaveText(teamName, {
+    timeout: 20_000,
+  })
+
   const createDialog = page.getByRole('dialog', { name: 'Create Team' })
   if (await createDialog.isVisible().catch(() => false)) {
     await page.keyboard.press('Escape')
@@ -210,8 +215,9 @@ export async function switchTeamFromSidebar(page: Page, params: SwitchTeamParams
   }
 
   if ('teamId' in params) {
-    await expect(page.locator(teamSwitcherItemSelector(params.teamId))).toBeVisible()
-    await page.locator(teamSwitcherItemSelector(params.teamId)).click()
+    const teamMenuItem = page.getByRole('menuitem').filter({ hasText: params.expectedName }).first()
+    await expect(teamMenuItem).toBeVisible({ timeout: 20_000 })
+    await teamMenuItem.click()
   } else {
     const teamMenuItem = page.getByRole('menuitem').filter({ hasText: params.teamName }).first()
     await expect(teamMenuItem).toBeVisible({ timeout: 20_000 })

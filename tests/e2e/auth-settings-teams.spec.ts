@@ -66,25 +66,29 @@ test('user can create a new team from settings team tab', async ({ page }) => {
 test('user can switch teams using sidebar team switcher', async ({ page }) => {
   await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const createdTeamName = `E2E Switch Team ${Date.now()}`
-  const createdTeam = await createTeamFromSettings(page, createdTeamName)
+  const teamA = await createTeamFromSettings(page, `E2E Switch Team A ${Date.now()}`)
+  const teamB = await createTeamFromSettings(page, `E2E Switch Team B ${Date.now()}`)
 
-  const switchedToDefault = await switchTeamFromSidebar(page, { teamName: 'Default' })
-  expect(switchedToDefault.name).toBe('Default')
+  const switchedToTeamA = await switchTeamFromSidebar(page, {
+    teamId: teamA.id,
+    expectedName: teamA.name,
+  })
+  expect(switchedToTeamA.id).toBe(teamA.id)
+  expect(switchedToTeamA.name).toBe(teamA.name)
 
   const switchedBack = await switchTeamFromSidebar(page, {
-    teamId: createdTeam.id,
-    expectedName: createdTeam.name,
+    teamId: teamB.id,
+    expectedName: teamB.name,
   })
-  expect(switchedBack.id).toBe(createdTeam.id)
+  expect(switchedBack.id).toBe(teamB.id)
 
   const activeTeam = await getActiveTeamViaApi(page.request)
-  expect(activeTeam.id).toBe(createdTeam.id)
-  expect(activeTeam.name).toBe(createdTeam.name)
+  expect(activeTeam.id).toBe(teamB.id)
+  expect(activeTeam.name).toBe(teamB.name)
 })
 
 test('sidebar team switcher data stays cached across client-side route changes', async ({ page }) => {
-  const listUserTeamsPath = '/api/auth/organization/list-user-teams'
+  const listUserTeamsPath = '/api/teams/list-user'
   let listUserTeamsRequestCount = 0
 
   page.on('request', (request) => {
@@ -149,17 +153,21 @@ test('roadmap and changelog sidebar buttons are disabled', async ({ page }) => {
 test('settings team panel tracks active team selected in sidebar', async ({ page }) => {
   await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const createdTeamName = `E2E Settings Team ${Date.now()}`
-  const createdTeam = await createTeamFromSettings(page, createdTeamName)
+  const teamA = await createTeamFromSettings(page, `E2E Settings Team A ${Date.now()}`)
+  const teamB = await createTeamFromSettings(page, `E2E Settings Team B ${Date.now()}`)
 
   await expect(page.locator(selectors.teamNameInput)).toBeVisible()
   await expect(page.getByText('No active team. Create a team to continue.')).toHaveCount(0)
+  await expect(page.locator(selectors.teamNameInput)).toHaveValue(teamB.name)
 
-  await switchTeamFromSidebar(page, { teamName: 'Default' })
-  await expect(page.locator(selectors.teamNameInput)).toHaveValue('Default')
+  await switchTeamFromSidebar(page, {
+    teamId: teamA.id,
+    expectedName: teamA.name,
+  })
+  await expect(page.locator(selectors.teamNameInput)).toHaveValue(teamA.name)
   await expect(page.getByText('No active team. Create a team to continue.')).toHaveCount(0)
 
-  await switchTeamFromSidebar(page, { teamId: createdTeam.id, expectedName: createdTeam.name })
-  await expect(page.locator(selectors.teamNameInput)).toHaveValue(createdTeam.name)
+  await switchTeamFromSidebar(page, { teamId: teamB.id, expectedName: teamB.name })
+  await expect(page.locator(selectors.teamNameInput)).toHaveValue(teamB.name)
   await expect(page.getByText('No active team. Create a team to continue.')).toHaveCount(0)
 })

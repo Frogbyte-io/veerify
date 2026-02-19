@@ -354,7 +354,7 @@ export default {
 
     async fetchAllTeams() {
       try {
-        const response = await $fetch('/api/auth/organization/list-user-teams')
+        const response = await $fetch('/api/teams/list-user')
         return Array.isArray(response) ? response : response?.data || []
       } catch (_error) {
         return []

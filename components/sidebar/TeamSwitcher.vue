@@ -185,9 +185,24 @@ export default {
 
   async mounted() {
     await this.initializeTeams()
+
+    if (import.meta.client) {
+      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
+  },
+
+  beforeUnmount() {
+    if (import.meta.client) {
+      window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
   },
 
   methods: {
+    async handleActiveTeamChanged() {
+      clearTeamContextCache()
+      await this.initializeTeams({ force: true, silent: true })
+    },
+
     applyTeamContextFromCache() {
       this.teams = teamSwitcherCache.teams
       this.activeTeam = teamSwitcherCache.activeTeam
@@ -206,7 +221,7 @@ export default {
       const activeTeamResponse = await $fetch('/api/teams/active').catch(() => null)
 
       const [teamsResponse, activeOrganizationResponse] = await Promise.all([
-        $fetch('/api/auth/organization/list-user-teams'),
+        $fetch('/api/teams/list-user'),
         $fetch('/api/auth/organization/get-full-organization').catch(() => null),
       ])
 
@@ -280,13 +295,36 @@ export default {
     },
 
     async switchToDefaultTeam() {
-      const defaultTeam = this.teams.find((t) => t.name === 'Default')
+      let defaultTeam = this.teams.find((t) => t.name === 'Default')
+      if (!defaultTeam) {
+        const organizationTeamsResponse = await $fetch('/api/teams/list-organization').catch(() => null)
+        const organizationTeams = Array.isArray(organizationTeamsResponse)
+          ? organizationTeamsResponse
+          : organizationTeamsResponse?.data || []
+
+        defaultTeam =
+          organizationTeams.find(
+            (team) =>
+              team.name === 'Default' &&
+              (!this.activeOrganization?.id || team.organizationId === this.activeOrganization.id)
+          ) ||
+          organizationTeams.find((team) => team.name === 'Default')
+
+        if (defaultTeam && !this.teams.some((team) => team.id === defaultTeam.id)) {
+          this.teams = [defaultTeam, ...this.teams]
+          teamSwitcherCache.teams = this.teams
+        }
+      }
+
       if (!defaultTeam || defaultTeam.id === this.activeTeam?.id) return
       await this.setActiveTeam(defaultTeam)
     },
 
     async setActiveTeam(team) {
-      if (team.id === this.activeTeam?.id) return
+      if (team.id === this.activeTeam?.id) {
+        const activeTeamResponse = await $fetch('/api/teams/active').catch(() => null)
+        if (activeTeamResponse?.data?.id === team.id) return
+      }
 
       const previousActiveTeam = this.activeTeam
       const previousActiveOrganization = this.activeOrganization
