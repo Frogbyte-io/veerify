@@ -288,6 +288,16 @@
         </a>
         &middot;
         <a href="https://github.com/Frogbyte-io/veerify/issues" target="_blank" rel="noopener noreferrer" class="hover:underline">report an issue</a>
+        &middot;
+        <a
+          data-testid="public-footer-veerify-board"
+          href="https://feedback.veerify.io"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="hover:underline"
+        >
+          Veerify feedback board
+        </a>
       </div>
     </div>
     </div>

@@ -297,6 +297,7 @@ test.describe('Anonymous feedback sessions', () => {
 
       await expect(page.locator('[data-testid="public-footer-powered-by"]')).toHaveCount(0)
       await expect(page.locator('[data-testid="public-footer-github"]')).toHaveCount(0)
+      await expect(page.locator('[data-testid="public-footer-veerify-board"]')).toHaveCount(0)
     } finally {
       await page.goto('/products/demo#appearance')
       await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
@@ -318,6 +319,10 @@ test.describe('Anonymous feedback sessions', () => {
         const resetSaveResponse = await resetSaveResponsePromise
         expect(resetSaveResponse.ok()).toBe(true)
       }
+
+      await page.goto(PUBLIC_PAGE)
+      await waitForPageReady(page)
+      await expect(page.locator('[data-testid="public-footer-veerify-board"]')).toHaveCount(1)
     }
   })
 })
