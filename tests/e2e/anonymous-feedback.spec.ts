@@ -123,6 +123,14 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
   })
 
+  test('category icon is shown on public feedback items when configured', async ({ page }) => {
+    await gotoPublicPage(page)
+
+    const categoryIcon = page.locator('[data-testid^="public-feedback-category-icon-"]').first()
+    await expect(categoryIcon).toBeVisible()
+    await expect(categoryIcon).not.toHaveText('')
+  })
+
   test('anonymous user can submit feedback and gets a session cookie', async ({ page }) => {
     await gotoPublicPage(page)
 

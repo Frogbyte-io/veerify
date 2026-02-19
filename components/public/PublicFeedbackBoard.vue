@@ -180,6 +180,13 @@
                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                     :style="{ backgroundColor: item.category.color + '20', color: item.category.color }"
                   >
+                    <span
+                      v-if="item.category.icon"
+                      :data-testid="`public-feedback-category-icon-${item.id}`"
+                      class="mr-1"
+                    >
+                      {{ item.category.icon }}
+                    </span>
                     {{ item.category.name }}
                   </span>
                 </div>
