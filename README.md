@@ -249,6 +249,7 @@ The shadcn-vue configuration is stored in `components.json`:
 - **Team** (`/team`) - Team member management and permissions
 - **Help Center** (`/help`) - User documentation and support
 - **Settings** (`/settings`) - Application configuration
+- **API Docs** (`/api-docs`) - Interactive Scalar reference backed by `/api/openapi.json`
 
 ## 🤝 Contributing
 
