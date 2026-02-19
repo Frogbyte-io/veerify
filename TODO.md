@@ -35,7 +35,8 @@ MVP
 - [ ] Set up full test infrastructure
 - [ ] Send email when custom domain has been verified/connected
 - [x] Allow users to create an account or log in directly from the public feedback board (top-right button)
-- [ ] Add REST API docs UI (`/api/openapi.json` exists; add Scalar or Swagger UI)
+- [x] Add REST API docs UI (`/api/openapi.json` exists; add Scalar or Swagger UI)
+  - Added Scalar docs route at `/api-docs` via `nuxt.config.ts`, documented in `README.md`, and covered by `tests/e2e/api-docs.spec.ts`.
 - [ ] Notifications infrastructure (real-time or polling for in-app notifications)
 - [ ] Create embeddable widgets for customers to add to their own website
 - [ ] Migrate to Nuxt 4
