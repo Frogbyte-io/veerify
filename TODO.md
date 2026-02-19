@@ -60,7 +60,8 @@ MVP
 - [ ] In public feedback board, it should be possible to click a feedback to see more details (description, comments, etc.) in a modal or separate page without leaving the board
 - [x] Move powered by verify to the very bottom of the page and make it smaller. Change domain to veerify.io
 - [x] Add a GitHub mention link to the footer of the public board for users to easily report issues with the board itself, and to see the source code. Mention that it is open source and contributions are welcome.
-- [ ] Add a link to veerify's own public feedback board in the footer of the public board, so users can see an example of a feedback board and submit feedback about veerify itself. 
+- [x] Add a link to veerify's own public feedback board in the footer of the public board, so users can see an example of a feedback board and submit feedback about veerify itself. 
+  - Added footer link in `components/public/PublicFeedbackBoard.vue` (`public-footer-veerify-board`) with coverage updates in `tests/e2e/anonymous-feedback.spec.ts`.
 
 - [x] When refreshing in a personal account, the sidebar renders the items for the organization instead of the personal account. This is because the sidebar is rendered before we fetch the user data and determine if it's a personal or org account. We should either fetch the user data earlier or make the sidebar more resilient to this case.
 
