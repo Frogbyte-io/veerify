@@ -183,73 +183,79 @@
           </Button>
         </div>
 
-        <!-- Feedback List -->
-        <div v-else data-testid="feedback-list" class="bg-card rounded-lg border border-border">
-          <div class="p-6 border-b border-border">
+        <!-- Feedback Kanban -->
+        <div v-else data-testid="feedback-list" class="space-y-4">
+          <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-card-foreground">
-              Feedback
+              Kanban Board
               <span class="text-sm font-normal text-muted-foreground ml-2">{{ pagination.total }} total</span>
             </h2>
           </div>
-          <div class="divide-y divide-border">
-            <NuxtLink
-              v-for="item in feedbackItems"
-              :key="item.id"
-              :to="`/feedback/${item.id}`"
-              :data-testid="`feedback-item-${item.id}`"
-              class="block p-6 hover:bg-muted transition-colors cursor-pointer"
-            >
-              <div class="flex items-start space-x-4">
-                <div class="flex flex-col items-center space-y-1">
-                  <div class="flex flex-col items-center p-2 rounded-lg">
-                    <Icon name="lucide:chevron-up" class="w-4 h-4 text-muted-foreground" />
-                    <span class="text-sm font-medium text-card-foreground">{{ item.voteCount }}</span>
+          <div data-testid="feedback-kanban" class="overflow-x-auto pb-2">
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-4 min-w-[960px] xl:min-w-0">
+              <section
+                v-for="column in kanbanColumns"
+                :key="column.value"
+                :data-testid="`feedback-kanban-column-${column.value}`"
+                class="rounded-lg border border-border bg-card/50 flex flex-col min-h-[420px]"
+              >
+                <div class="px-4 py-3 border-b border-border flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <Icon :name="column.icon" class="w-4 h-4 text-muted-foreground" />
+                    <h3 class="text-sm font-semibold text-card-foreground">{{ column.label }}</h3>
                   </div>
+                  <Badge variant="outline">{{ kanbanItemsByStatus[column.value].length }}</Badge>
                 </div>
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-start justify-between gap-4">
-                    <div class="min-w-0">
-                      <h3 class="text-lg font-medium text-card-foreground mb-1 group-hover:text-primary">{{ item.title }}</h3>
-                      <p v-if="item.body" class="text-muted-foreground mb-3 line-clamp-2">{{ item.body }}</p>
-                      <div class="flex items-center flex-wrap gap-3 text-sm text-muted-foreground">
-                        <div v-if="item.authorName" class="flex items-center gap-1">
-                          <Icon name="lucide:user" class="w-4 h-4" />
-                          <span>{{ item.authorName }}</span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                          <Icon name="lucide:calendar" class="w-4 h-4" />
-                          <span>{{ formatDate(item.createdAt) }}</span>
-                        </div>
-                        <div class="flex items-center gap-1">
-                          <Icon name="lucide:message-circle" class="w-4 h-4" />
-                          <span>{{ item.commentCount }} comments</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                      <Badge :variant="statusBadgeVariant(item.status)">
-                        {{ formatStatus(item.status) }}
-                      </Badge>
-                      <Badge v-if="item.category" variant="outline">
-                        {{ item.category.name }}
-                      </Badge>
+                <div class="p-3 space-y-3 flex-1">
+                  <p
+                    v-if="kanbanItemsByStatus[column.value].length === 0"
+                    class="text-xs text-muted-foreground border border-dashed border-border rounded-md p-3"
+                  >
+                    No items in {{ column.label.toLowerCase() }}.
+                  </p>
+                  <NuxtLink
+                    v-for="item in kanbanItemsByStatus[column.value]"
+                    :key="item.id"
+                    :to="`/feedback/${item.id}`"
+                    :data-testid="`feedback-item-${item.id}`"
+                    class="block rounded-md border bg-card p-3 hover:shadow-sm transition-shadow"
+                  >
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                      <h4 class="text-sm font-medium text-card-foreground line-clamp-2">{{ item.title }}</h4>
                       <button
                         :data-testid="`feedback-item-delete-${item.id}`"
-                        class="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                        class="p-1 text-muted-foreground hover:text-destructive transition-colors shrink-0"
                         title="Delete feedback"
-                        @click.prevent="confirmDelete(item)"
+                        @click.prevent.stop="confirmDelete(item)"
                       >
-                        <Icon name="lucide:trash-2" class="w-4 h-4" />
+                        <Icon name="lucide:trash-2" class="w-3.5 h-3.5" />
                       </button>
                     </div>
-                  </div>
+                    <p v-if="item.body" class="text-xs text-muted-foreground mb-2 line-clamp-3">{{ item.body }}</p>
+                    <div class="flex items-center flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span class="inline-flex items-center gap-1">
+                        <Icon name="lucide:chevron-up" class="w-3 h-3" />
+                        {{ item.voteCount }}
+                      </span>
+                      <span class="inline-flex items-center gap-1">
+                        <Icon name="lucide:message-circle" class="w-3 h-3" />
+                        {{ item.commentCount }}
+                      </span>
+                      <Badge v-if="item.category" variant="outline" class="text-[10px] px-1.5 py-0">
+                        {{ item.category.name }}
+                      </Badge>
+                    </div>
+                    <p class="text-[11px] text-muted-foreground mt-2">
+                      {{ formatDate(item.createdAt) }}
+                    </p>
+                  </NuxtLink>
                 </div>
-              </div>
-            </NuxtLink>
+              </section>
+            </div>
           </div>
 
           <!-- Pagination -->
-          <div v-if="pagination.totalPages > 1" class="p-6 border-t border-border">
+          <div v-if="pagination.totalPages > 1" class="rounded-lg border border-border bg-card p-4">
             <div class="flex items-center justify-between">
               <div class="text-sm text-muted-foreground">
                 Page {{ pagination.page }} of {{ pagination.totalPages }} ({{ pagination.total }} total)
@@ -399,6 +405,30 @@ export default {
   computed: {
     selectedProject() {
       return this.products.find((p) => p.id === this.selectedProjectId) || null
+    },
+    kanbanColumns() {
+      return [
+        { value: 'open', label: 'Open', icon: 'lucide:clock-3' },
+        { value: 'in_progress', label: 'In Progress', icon: 'lucide:play' },
+        { value: 'planned', label: 'Planned', icon: 'lucide:calendar-range' },
+        { value: 'completed', label: 'Completed', icon: 'lucide:check-circle' },
+        { value: 'closed', label: 'Closed', icon: 'lucide:archive' },
+        { value: 'declined', label: 'Declined', icon: 'lucide:x-circle' },
+      ]
+    },
+    kanbanItemsByStatus() {
+      const grouped = {}
+      for (const column of this.kanbanColumns) {
+        grouped[column.value] = []
+      }
+      for (const item of this.feedbackItems) {
+        if (grouped[item.status]) {
+          grouped[item.status].push(item)
+        } else {
+          grouped.open.push(item)
+        }
+      }
+      return grouped
     },
   },
 
