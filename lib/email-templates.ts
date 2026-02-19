@@ -67,6 +67,12 @@ interface PasswordResetOptions {
   resetUrl: string
 }
 
+interface CustomDomainNotificationOptions {
+  name: string
+  projectName: string
+  domain: string
+}
+
 export function getEmailVerificationTemplate({ name, verificationUrl }: EmailVerificationOptions) {
   const subject = 'Verify your email address'
 
@@ -183,6 +189,66 @@ ${magicLinkUrl}
 This link will expire in 5 minutes.
 
 If you didn't request this link, please ignore this email.
+  `
+
+  return { subject, html, text }
+}
+
+export function getCustomDomainConnectedTemplate({ name, projectName, domain }: CustomDomainNotificationOptions) {
+  const subject = `Custom domain connected for ${projectName}`
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #333;">Custom domain connected</h1>
+      <p>Hi ${name},</p>
+      <p>Your custom domain has been connected to <strong>${projectName}</strong>.</p>
+      <p>
+        Domain:
+        <span style="font-family: monospace; background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${domain}</span>
+      </p>
+      <p>Next step: verify DNS to confirm the CNAME is resolving correctly.</p>
+    </div>
+  `
+
+  const text = `
+Custom domain connected
+
+Hi ${name},
+
+Your custom domain has been connected to ${projectName}.
+Domain: ${domain}
+
+Next step: verify DNS to confirm the CNAME is resolving correctly.
+  `
+
+  return { subject, html, text }
+}
+
+export function getCustomDomainVerifiedTemplate({ name, projectName, domain }: CustomDomainNotificationOptions) {
+  const subject = `Custom domain verified for ${projectName}`
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #333;">Custom domain verified</h1>
+      <p>Hi ${name},</p>
+      <p>Your DNS check passed and your custom domain is now verified for <strong>${projectName}</strong>.</p>
+      <p>
+        Domain:
+        <span style="font-family: monospace; background: #f5f5f5; padding: 2px 6px; border-radius: 4px;">${domain}</span>
+      </p>
+      <p>Visitors can now reliably access your public board using this domain.</p>
+    </div>
+  `
+
+  const text = `
+Custom domain verified
+
+Hi ${name},
+
+Your DNS check passed and your custom domain is now verified for ${projectName}.
+Domain: ${domain}
+
+Visitors can now reliably access your public board using this domain.
   `
 
   return { subject, html, text }

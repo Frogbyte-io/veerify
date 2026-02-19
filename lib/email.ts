@@ -1,4 +1,11 @@
-import { getEmailVerificationTemplate, getFeedbackConfirmationTemplate, getMagicLinkTemplate, getPasswordResetTemplate } from './email-templates'
+import {
+  getCustomDomainConnectedTemplate,
+  getCustomDomainVerifiedTemplate,
+  getEmailVerificationTemplate,
+  getFeedbackConfirmationTemplate,
+  getMagicLinkTemplate,
+  getPasswordResetTemplate,
+} from './email-templates'
 
 interface EmailOptions {
   to: string
@@ -30,6 +37,13 @@ interface FeedbackConfirmationEmailOptions {
   feedbackTitle: string
   projectName: string
   editUrl: string
+}
+
+interface CustomDomainEmailOptions {
+  to: string
+  name: string
+  projectName: string
+  domain: string
 }
 
 export async function sendEmail(options: EmailOptions) {
@@ -110,6 +124,30 @@ export async function sendPasswordResetEmail(options: PasswordResetOptions) {
 
 export async function sendFeedbackConfirmationEmail(options: FeedbackConfirmationEmailOptions) {
   const template = getFeedbackConfirmationTemplate(options)
+
+  const result = await sendEmail({
+    to: options.to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+  })
+  return result
+}
+
+export async function sendCustomDomainConnectedEmail(options: CustomDomainEmailOptions) {
+  const template = getCustomDomainConnectedTemplate(options)
+
+  const result = await sendEmail({
+    to: options.to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+  })
+  return result
+}
+
+export async function sendCustomDomainVerifiedEmail(options: CustomDomainEmailOptions) {
+  const template = getCustomDomainVerifiedTemplate(options)
 
   const result = await sendEmail({
     to: options.to,
