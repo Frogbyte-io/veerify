@@ -162,3 +162,57 @@ test('owner can view, update, and delete organization from settings tab', async 
     )
     .toBe(200)
 })
+
+test('owner can add billing contact emails for receipt copy', async ({ page }) => {
+  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  await cleanupTemporaryOrganizations(page.request)
+
+  const orgSlug = `org-e2e-billing-${Date.now()}`
+  await createOrganization(page.request, `Org Billing ${Date.now()}`, orgSlug)
+
+  try {
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get('/api/org-context/active-org')
+          return response.status()
+        },
+        { timeout: 20_000 }
+      )
+      .toBe(200)
+
+    await page.goto('/settings#billing')
+    await page.waitForFunction(() => {
+      const tab = document.querySelector('[data-testid="settings-tab-billing"]') as any
+      return Boolean(tab?.__vueParentComponent)
+    })
+
+    await page.locator(selectors.settingsTabBilling).click()
+    await expect(page).toHaveURL(/#billing/)
+    await expect(page.locator(selectors.settingsBillingPanel)).toBeVisible()
+
+    const contactEmail = `billing-${Date.now()}@example.com`
+    const normalizedEmail = contactEmail.toLowerCase()
+
+    await page.locator(selectors.billingContactsInput).fill(contactEmail)
+    await page.locator(selectors.billingContactsAdd).click()
+    await expect(page.locator(selectors.billingContactItem).filter({ hasText: normalizedEmail })).toBeVisible()
+
+    await page.locator(selectors.billingContactsSave).click()
+
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(`/api/orgs/${orgSlug}`)
+          if (!response.ok()) return []
+          const payload = await response.json()
+          return payload?.data?.settings?.billingCcEmails || []
+        },
+        { timeout: 20_000 }
+      )
+      .toEqual(expect.arrayContaining([normalizedEmail]))
+  } finally {
+    await deleteOrganizationIfExists(page.request, orgSlug)
+  }
+})
