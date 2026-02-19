@@ -50,8 +50,13 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Delegate to Better-Auth
-  const result = await auth.api.inviteMember({
+  // Delegate to Better-Auth (runtime-guarded because the generated API type may omit this method).
+  const inviteMember = (auth.api as { inviteMember?: (args: unknown) => Promise<unknown> }).inviteMember
+  if (!inviteMember) {
+    throw createError({ statusCode: 500, statusMessage: 'Organization invitation API is unavailable' })
+  }
+
+  const result = await inviteMember({
     headers: event.node.req.headers as any,
     body: {
       organizationId,

@@ -226,7 +226,7 @@ export default {
 
       try {
         const redirect = this.$route.query.redirect
-        let callbackURL = redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard'
+        const callbackURL = redirect && typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/dashboard'
 
         const result = await authClient.signIn.magicLink({
           email: this.email,
