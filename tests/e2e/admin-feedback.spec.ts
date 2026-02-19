@@ -163,6 +163,8 @@ test.describe('Admin feedback workflow', () => {
 
     // Wait for data to load (loading state should disappear)
     await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
+    await expect(page.locator(selectors.feedbackKanban)).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator(selectors.feedbackKanbanOpenColumn)).toBeVisible({ timeout: 20_000 })
 
     // If there's a project selector (multiple products), select our test project
     const projectSelector = page.locator(selectors.feedbackProjectSelector)
