@@ -1,5 +1,11 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import tailwindcss from '@tailwindcss/vite'
+
+const appDomain = process.env.APP_DOMAIN || 'localhost'
+const dashboardDomain =
+  process.env.APP_DASHBOARD_DOMAIN ||
+  (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
   devtools: { enabled: true },
@@ -28,7 +34,8 @@ export default defineNuxtConfig({
       },
     },
     public: {
-      appDomain: process.env.APP_DOMAIN || 'localhost',
+      appDomain,
+      dashboardDomain,
       cnameTarget: process.env.CNAME_TARGET || 'cname.veerify.com',
     },
   },

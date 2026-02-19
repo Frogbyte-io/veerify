@@ -148,6 +148,19 @@ PGDATABASE=veerifydb
 
 `DATABASE_URL` takes precedence when both are set.
 
+#### Configure app and public-board domains
+
+Use separate domains for the dashboard app and team public boards:
+
+```env
+# Dashboard app host (main app)
+BETTER_AUTH_URL=https://app.veerify.io
+APP_DASHBOARD_DOMAIN=app.veerify.io
+
+# Public board base host (team subdomains)
+APP_DOMAIN=veerify.io
+```
+
 For local development, start the database with Docker Compose:
 
 ```bash

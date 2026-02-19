@@ -1,13 +1,16 @@
 export default defineEventHandler((event) => {
   const host = getHeader(event, 'host') || ''
   const appDomain = process.env.APP_DOMAIN || 'localhost'
+  const dashboardDomain =
+    process.env.APP_DASHBOARD_DOMAIN ||
+    (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
 
   // Strip port from host
   const hostWithoutPort = host.split(':')[0]
 
   let teamSlug: string | null = null
 
-  if (hostWithoutPort === appDomain) {
+  if (hostWithoutPort === appDomain || hostWithoutPort === dashboardDomain) {
     // Bare app domain — no subdomain
     teamSlug = null
   } else if (hostWithoutPort.endsWith('.' + appDomain)) {
