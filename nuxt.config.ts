@@ -59,11 +59,9 @@ export default defineNuxtConfig({
     },
   ],
   scalar: {
-    spec: {
-      url: '/api/openapi.json',
-    },
-    proxy: {
-      path: '/api-docs',
+    url: '/api/openapi.json',
+    pathRouting: {
+      basePath: '/api-docs',
     },
   } as any,
 })
