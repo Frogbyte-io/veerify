@@ -66,7 +66,8 @@ MVP
 
 - [x] Add hover effect to products in products page to indicate they are clickable
 
-- [ ] For the billing page, please add a contacts section where it is possible to add additional emails that will be on copy when the bill/receipt is sent out.
+- [x] For the billing page, please add a contacts section where it is possible to add additional emails that will be on copy when the bill/receipt is sent out.
+  - Added editable billing contact emails in `components/settings/SettingsBilling.vue`, persisted to organization `settings.billingCcEmails` via `server/api/orgs/[slug].put.ts`, with e2e coverage in `tests/e2e/organization-settings.spec.ts`.
 
 - [x] Workspace icon for when the sidebar is collapsed is not centered in the sidebar. Please center it.
 
