@@ -81,3 +81,8 @@ MVP
 - [ ] Add option to create a custom footer for public feedback boards, where customers can add their own text, links, and branding instead of the default "Powered by Veerify" badge. This would allow customers to fully white-label the public board experience if they choose to.
 
 - [ ] Feedback page for a product should default to a Kanban style board instead
+
+
+
+- [ ] We want to have a home page for the entire project, hosted on veerify.io. Please change the main domain for the dashboard to app.veerify.io, so we can host a separate site for the homepage. 
+
