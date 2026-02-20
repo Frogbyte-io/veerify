@@ -111,6 +111,7 @@
 import ProductSettingsGeneral from '~/components/products/ProductSettingsGeneral.vue'
 import ProductSettingsCategories from '~/components/products/ProductSettingsCategories.vue'
 import ProductSettingsAppearance from '~/components/products/ProductSettingsAppearance.vue'
+import ProductSettingsGithub from '~/components/products/ProductSettingsGithub.vue'
 import ProductSettingsDomain from '~/components/products/ProductSettingsDomain.vue'
 import ProductSettingsEmbed from '~/components/products/ProductSettingsEmbed.vue'
 import ProductSettingsDanger from '~/components/products/ProductSettingsDanger.vue'
@@ -121,6 +122,7 @@ export default {
     ProductSettingsGeneral,
     ProductSettingsCategories,
     ProductSettingsAppearance,
+    ProductSettingsGithub,
     ProductSettingsDomain,
     ProductSettingsEmbed,
     ProductSettingsDanger,
@@ -135,6 +137,7 @@ export default {
         { id: 'general', label: 'General', icon: 'lucide:settings' },
         { id: 'categories', label: 'Categories', icon: 'lucide:tags' },
         { id: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
+        { id: 'github', label: 'GitHub', icon: 'lucide:github' },
         { id: 'domain', label: 'Custom Domain', icon: 'lucide:globe' },
         { id: 'embed', label: 'Embed', icon: 'lucide:code-2' },
         { id: 'danger', label: 'Danger Zone', icon: 'lucide:alert-triangle' },
@@ -157,6 +160,7 @@ export default {
         general: 'ProductSettingsGeneral',
         categories: 'ProductSettingsCategories',
         appearance: 'ProductSettingsAppearance',
+        github: 'ProductSettingsGithub',
         domain: 'ProductSettingsDomain',
         embed: 'ProductSettingsEmbed',
         danger: 'ProductSettingsDanger',
@@ -166,7 +170,7 @@ export default {
   },
   async mounted() {
     const hash = window.location.hash.replace('#', '')
-    if (hash && ['general', 'categories', 'appearance', 'domain', 'embed', 'danger'].includes(hash)) {
+    if (hash && ['general', 'categories', 'appearance', 'github', 'domain', 'embed', 'danger'].includes(hash)) {
       this.activeTab = hash
     }
     await this.loadProject()
