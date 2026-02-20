@@ -161,6 +161,13 @@ APP_DASHBOARD_DOMAIN=app.veerify.io
 APP_DOMAIN=veerify.io
 ```
 
+To enable GitHub repository connection in product settings, set OAuth credentials:
+
+```env
+GITHUB_CLIENT_ID=your-github-oauth-app-client-id
+GITHUB_CLIENT_SECRET=your-github-oauth-app-client-secret
+```
+
 For local development, start the database with Docker Compose:
 
 ```bash

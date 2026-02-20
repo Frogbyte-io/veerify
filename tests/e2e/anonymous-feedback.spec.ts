@@ -481,4 +481,13 @@ test.describe('Anonymous feedback sessions', () => {
       }
     }
   })
+
+  test('product GitHub settings shows connect flow controls', async ({ page }) => {
+    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await page.goto('/products/demo#github')
+    await expect(page.getByRole('heading', { name: 'GitHub Integration' })).toBeVisible()
+
+    await expect(page.locator('[data-testid="github-connect"]')).toBeVisible()
+    await expect(page.locator('[data-testid="github-repo-select"]')).toBeVisible()
+  })
 })
