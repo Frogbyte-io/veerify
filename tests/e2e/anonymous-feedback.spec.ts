@@ -373,25 +373,15 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(page.locator('[data-testid="public-footer-github"]')).toHaveCount(0)
       await expect(page.locator('[data-testid="public-footer-veerify-board"]')).toHaveCount(0)
     } finally {
-      await page.goto('/products/demo#appearance')
-      await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
-
-      const resetPoweredByToggle = page.locator('[data-testid="appearance-toggle-powered-by"]')
-      const resetGithubFooterToggle = page.locator('[data-testid="appearance-toggle-github-footer"]')
-      const resetSaveButton = page.getByRole('button', { name: 'Save Changes' })
-
-      await setSwitchState(resetPoweredByToggle, true)
-      await setSwitchState(resetGithubFooterToggle, true)
-
-      if (await resetSaveButton.isEnabled()) {
-        const resetSaveResponsePromise = page.waitForResponse(
-          (response) => response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
-          { timeout: 20_000 }
-        )
-        await resetSaveButton.click()
-        const resetSaveResponse = await resetSaveResponsePromise
-        expect(resetSaveResponse.ok()).toBe(true)
-      }
+      // Reset settings via API to avoid cross-origin session cookie issues
+      // when navigating back from the public board subdomain to the main app.
+      // page.request shares the browser context's cookies across all domains,
+      // bypassing SameSite restrictions that affect browser-level navigation.
+      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+        data: { settings: null },
+        headers: { 'content-type': 'application/json' },
+      })
+      expect(resetResponse.ok()).toBe(true)
 
       await gotoPublicPage(page)
       await expect(page.locator('[data-testid="public-footer-veerify-board"]')).toHaveCount(1)
@@ -448,22 +438,13 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(page.locator('[data-testid="public-footer-github"]')).toHaveCount(0)
       await expect(page.locator('[data-testid="public-footer-veerify-board"]')).toHaveCount(0)
     } finally {
-      await page.goto('/products/demo#appearance')
-      await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
-
-      const resetCustomFooterToggle = page.locator('[data-testid="appearance-toggle-custom-footer"]')
-      const resetSaveButton = page.getByRole('button', { name: 'Save Changes' })
-      await setSwitchState(resetCustomFooterToggle, false)
-
-      if (await resetSaveButton.isEnabled()) {
-        const resetSaveResponsePromise = page.waitForResponse(
-          (response) => response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
-          { timeout: 20_000 }
-        )
-        await resetSaveButton.click()
-        const resetSaveResponse = await resetSaveResponsePromise
-        expect(resetSaveResponse.ok()).toBe(true)
-      }
+      // Reset settings via API to avoid cross-origin session cookie issues
+      // when navigating back from the public board subdomain to the main app.
+      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+        data: { settings: null },
+        headers: { 'content-type': 'application/json' },
+      })
+      expect(resetResponse.ok()).toBe(true)
     }
   })
 
