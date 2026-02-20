@@ -38,7 +38,7 @@
             projects or departments.
           </p>
           <Button
-            data-testid="team-open-create-dialog"
+            data-testid="team-open-create-dialog-empty"
             class="mt-4"
             variant="outline"
             @click="showCreateTeamDialog = true"
