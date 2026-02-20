@@ -420,7 +420,7 @@ export default {
       return !forced || forced === 'system'
     },
     authRedirectTarget() {
-      if (!import.meta.client) return encodeURIComponent('/')
+      if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}`)
       return encodeURIComponent(window.location.href)
     },
     customFooterBranding() {
