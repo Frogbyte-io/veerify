@@ -83,3 +83,5 @@ MVP
 
 - [x] We want to have a home page for the entire project, hosted on veerify.io. Please change the main domain for the dashboard to app.veerify.io, so we can host a separate site for the homepage.
   - Added dedicated dashboard-domain config (`APP_DASHBOARD_DOMAIN`) and runtime usage in `nuxt.config.ts`, `server/middleware/subdomain.ts`, and `components/public/PublicFeedbackBoard.vue`, plus env/docs updates in `.env.example` and `README.md`.
+
+- [ ] Add ability on public feedback items to subscribe to a feedback to get notified when there are updates. For anonymous this should open a prompt for email, and for logged in users this should open a modal where they can select between email and app notifications. If app notifications has not been enabled, it should prompt for access before toggling the button.
