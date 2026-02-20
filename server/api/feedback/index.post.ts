@@ -6,7 +6,7 @@ import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
-import { feedback, project, feedbackCategory, vote } from '~/server/database/schema/feedback'
+import { feedback, project, feedbackCategory, vote, githubIntegration, githubIssueLink } from '~/server/database/schema/feedback'
 import { sendFeedbackConfirmationEmail } from '~/lib/email'
 
 const createFeedbackSchema = z.object({
@@ -111,6 +111,87 @@ export default defineEventHandler(async (event) => {
     createdAt: now,
   })
 
+  let responseFeedback = created
+
+  const [integration] = await db
+    .select()
+    .from(githubIntegration)
+    .where(eq(githubIntegration.projectId, created.projectId))
+    .limit(1)
+
+  if (integration?.autoCreateIssues && integration.syncEnabled && integration.accessToken) {
+    const labels = new Set<string>(['source:veerify', 'status:open'])
+
+    if (created.categoryId) {
+      const [category] = await db
+        .select()
+        .from(feedbackCategory)
+        .where(eq(feedbackCategory.id, created.categoryId))
+        .limit(1)
+      if (category?.name) {
+        labels.add(category.name)
+      }
+    }
+
+    try {
+      const issueResponse = await fetch(`https://api.github.com/repos/${integration.owner}/${integration.repo}/issues`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${integration.accessToken}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'Veerify',
+        },
+        body: JSON.stringify({
+          title: created.title,
+          body: [
+            created.body?.trim() || '*No description provided*',
+            '',
+            `Source feedback ID: ${created.id}`,
+          ].join('\n'),
+          labels: Array.from(labels),
+        }),
+      })
+
+      if (!issueResponse.ok) {
+        const issueError = await issueResponse.json().catch(() => null) as { message?: string } | null
+        console.error('Failed to auto-create GitHub issue:', issueError?.message || issueResponse.statusText)
+      } else {
+        const issue = await issueResponse.json() as {
+          number: number
+          html_url: string
+          state: string
+        }
+
+        await db.insert(githubIssueLink).values({
+          id: crypto.randomUUID(),
+          feedbackId: created.id,
+          githubIntegrationId: integration.id,
+          issueNumber: issue.number,
+          issueUrl: issue.html_url,
+          issueState: issue.state,
+          lastSyncAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+
+        const [updatedFeedback] = await db
+          .update(feedback)
+          .set({
+            status: 'in_progress',
+            updatedAt: now,
+          })
+          .where(eq(feedback.id, created.id))
+          .returning()
+
+        responseFeedback = updatedFeedback
+      }
+    } catch (error) {
+      console.error('Auto-create GitHub issue failed:', error)
+    }
+  }
+
   // Send confirmation email if the submitter provided an email address
   const recipientEmail = session?.user ? session.user.email : body.authorEmail
   const recipientName = session?.user ? session.user.name : body.authorName
@@ -129,5 +210,5 @@ export default defineEventHandler(async (event) => {
   }
 
   setResponseStatus(event, 201)
-  return createSuccessResponse(created)
+  return createSuccessResponse(responseFeedback)
 })
