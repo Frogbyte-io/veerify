@@ -1,5 +1,7 @@
 ﻿# Manual Feature QA Checklist
+
 This checklist is maintained outside TODO.md to keep backlog tracking focused.
+
 ## Implemented Feature Inventory (QA scope)
 
 This is a practical inventory of implemented features you can test right now.
