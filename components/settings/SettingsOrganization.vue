@@ -191,10 +191,7 @@
                 variant="ghost"
                 size="icon"
                 class="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
-                @click="
-                  memberToRemove = m
-                  showRemoveMemberDialog = true
-                "
+                @click="openRemoveMemberDialog(m)"
               >
                 <Icon name="lucide:user-minus" class="h-4 w-4" />
               </Button>
@@ -575,6 +572,11 @@ export default {
         return m.role === 'member'
       }
       return false
+    },
+
+    openRemoveMemberDialog(member) {
+      this.memberToRemove = member
+      this.showRemoveMemberDialog = true
     },
 
     getAvailableRoles() {
