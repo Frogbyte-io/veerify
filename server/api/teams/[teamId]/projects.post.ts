@@ -62,10 +62,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 409,
       statusMessage: 'Conflict',
-      data: createErrorResponse(
-        ErrorCode.CONFLICT,
-        'A project with this slug already exists in this team'
-      ),
+      data: createErrorResponse(ErrorCode.CONFLICT, 'A project with this slug already exists in this team'),
     })
   }
 
@@ -74,7 +71,14 @@ export default defineEventHandler(async (event) => {
 
   const defaultCategories = [
     { name: 'Bug', slug: 'bug', icon: '🐛', color: '#ef4444', isDefault: true, description: 'Something isn’t working' },
-    { name: 'Feature', slug: 'feature', icon: '✨', color: '#10b981', isDefault: true, description: 'A new capability or improvement' },
+    {
+      name: 'Feature',
+      slug: 'feature',
+      icon: '✨',
+      color: '#10b981',
+      isDefault: true,
+      description: 'A new capability or improvement',
+    },
   ]
 
   const created = await db.transaction(async (tx) => {

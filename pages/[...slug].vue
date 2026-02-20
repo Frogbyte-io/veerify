@@ -1,10 +1,6 @@
 <template>
   <div>
-    <PublicFeedbackBoard
-      v-if="teamSubdomain && slug"
-      :team-slug="teamSubdomain"
-      :project-slug="slug"
-    />
+    <PublicFeedbackBoard v-if="teamSubdomain && slug" :team-slug="teamSubdomain" :project-slug="slug" />
     <NuxtLayout v-else name="clean">
       <div class="min-h-screen flex items-center justify-center bg-background">
         <div class="text-center">

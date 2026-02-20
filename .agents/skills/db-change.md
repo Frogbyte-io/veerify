@@ -21,15 +21,7 @@ server/database/schema/auth.ts
 All tables are defined with `pgTable` from `drizzle-orm/pg-core`. Common column types:
 
 ```typescript
-import {
-  pgTable,
-  text,
-  boolean,
-  timestamp,
-  integer,
-  varchar,
-  uuid,
-} from 'drizzle-orm/pg-core'
+import { pgTable, text, boolean, timestamp, integer, varchar, uuid } from 'drizzle-orm/pg-core'
 ```
 
 ### Adding a column to an existing table
@@ -37,8 +29,8 @@ import {
 ```typescript
 export const myTable = pgTable('my_table', {
   // existing columns...
-  newColumn: text('new_column'),                        // nullable text
-  requiredColumn: text('required_column').notNull(),    // not-null text
+  newColumn: text('new_column'), // nullable text
+  requiredColumn: text('required_column').notNull(), // not-null text
   withDefault: boolean('with_default').notNull().default(false),
   foreignKey: text('other_id').references(() => otherTable.id),
 })

@@ -13,6 +13,7 @@
 ## Task 1: Add role column to teamMember table
 
 **Files:**
+
 - Modify: `server/database/schema/auth.ts:272-280` (teamMember table definition)
 - Create: `server/database/migrations/0006_add_team_member_role.sql`
 
@@ -55,6 +56,7 @@ Expected: Creates `server/database/migrations/0006_add_team_member_role.sql`
 **Step 3: Review and adjust migration**
 
 The generated migration should add:
+
 - `ALTER TABLE "team_member" ADD COLUMN "role" text DEFAULT 'member' NOT NULL;`
 
 Verify it looks correct.
@@ -80,6 +82,7 @@ git commit -m "feat(schema): add role column to teamMember table
 ## Task 2: Add feedbackComment table
 
 **Files:**
+
 - Modify: `server/database/schema/feedback.ts` (add table at end, before exports)
 - Modify: `server/database/schema/index.ts` (export new table)
 - Create: `server/database/migrations/0007_add_feedback_comment.sql`
@@ -166,6 +169,7 @@ git commit -m "feat(schema): add feedbackComment table
 ## Task 3: Add project access authorization utility
 
 **Files:**
+
 - Create: `server/utils/project-access.ts`
 
 **Step 1: Create project access utility module**
@@ -309,6 +313,7 @@ git commit -m "feat(utils): add project access authorization utilities
 ## Task 4: Fix GET /api/feedback - require projectId
 
 **Files:**
+
 - Modify: `server/api/feedback/index.get.ts:11-15` (make projectId required)
 
 **Step 1: Make projectId required in query schema**
@@ -333,12 +338,12 @@ const listFeedbackQuerySchema = z.object({
 Change line 27-33 to always include projectId:
 
 ```typescript
-  // Build conditions - projectId is now required
-  const conditions = [eq(feedback.projectId, query.projectId)]
-  if (query.status) conditions.push(eq(feedback.status, query.status))
-  if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
+// Build conditions - projectId is now required
+const conditions = [eq(feedback.projectId, query.projectId)]
+if (query.status) conditions.push(eq(feedback.status, query.status))
+if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
 
-  const whereClause = and(...conditions)
+const whereClause = and(...conditions)
 ```
 
 **Step 3: Test the endpoint returns 400 without projectId**
@@ -367,6 +372,7 @@ git commit -m "fix(api): require projectId in GET /api/feedback
 ## Task 5: Fix POST /api/feedback - verify team access for private projects
 
 **Files:**
+
 - Modify: `server/api/feedback/index.post.ts:25-41` (add team membership check)
 
 **Step 1: Import project access utility**
@@ -382,14 +388,14 @@ import { requirePublicProject, requireProjectAccess } from '~/server/utils/proje
 Replace lines 25-41 with:
 
 ```typescript
-  // For authenticated users submitting to private projects, verify team access
-  if (session?.user) {
-    const proj = await requireProjectAccess(body.projectId, session.user.id)
-    // User has team access, proceed
-  } else {
-    // Anonymous user - project must be public
-    const proj = await requirePublicProject(body.projectId)
-  }
+// For authenticated users submitting to private projects, verify team access
+if (session?.user) {
+  const proj = await requireProjectAccess(body.projectId, session.user.id)
+  // User has team access, proceed
+} else {
+  // Anonymous user - project must be public
+  const proj = await requirePublicProject(body.projectId)
+}
 ```
 
 **Step 3: Remove the old proj lookup that's now redundant**
@@ -397,31 +403,27 @@ Replace lines 25-41 with:
 The category verification (lines 44-57) needs the project. Update it:
 
 ```typescript
-  // Fetch project for category validation (already verified access above)
-  const [proj] = await db.select().from(project).where(eq(project.id, body.projectId)).limit(1)
-  if (!proj) {
+// Fetch project for category validation (already verified access above)
+const [proj] = await db.select().from(project).where(eq(project.id, body.projectId)).limit(1)
+if (!proj) {
+  throw createError({
+    statusCode: 404,
+    statusMessage: 'Not Found',
+    data: createErrorResponse(ErrorCode.NOT_FOUND, 'Project not found'),
+  })
+}
+
+// Verify category if provided
+if (body.categoryId) {
+  const [cat] = await db.select().from(feedbackCategory).where(eq(feedbackCategory.id, body.categoryId)).limit(1)
+  if (!cat || cat.projectId !== proj.id) {
     throw createError({
-      statusCode: 404,
-      statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Project not found'),
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid category for this project'),
     })
   }
-
-  // Verify category if provided
-  if (body.categoryId) {
-    const [cat] = await db
-      .select()
-      .from(feedbackCategory)
-      .where(eq(feedbackCategory.id, body.categoryId))
-      .limit(1)
-    if (!cat || cat.projectId !== proj.id) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid category for this project'),
-      })
-    }
-  }
+}
 ```
 
 **Step 4: Commit**
@@ -440,6 +442,7 @@ git commit -m "fix(api): verify team access for private projects in POST /api/fe
 ## Task 6: Fix POST /api/feedback/[id]/vote - verify project access
 
 **Files:**
+
 - Modify: `server/api/feedback/[id]/vote.post.ts:20-28` (add access check)
 
 **Step 1: Import utilities**
@@ -456,27 +459,27 @@ import { project } from '~/server/database/schema/feedback'
 Replace lines 20-28 with:
 
 ```typescript
-  const id = getRouterParam(event, 'id')
-  if (!id) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Feedback ID is required'),
-    })
-  }
+const id = getRouterParam(event, 'id')
+if (!id) {
+  throw createError({
+    statusCode: 400,
+    statusMessage: 'Bad Request',
+    data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Feedback ID is required'),
+  })
+}
 
-  // Check feedback exists
-  const [fb] = await db.select().from(feedback).where(eq(feedback.id, id)).limit(1)
-  if (!fb) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Feedback not found'),
-    })
-  }
+// Check feedback exists
+const [fb] = await db.select().from(feedback).where(eq(feedback.id, id)).limit(1)
+if (!fb) {
+  throw createError({
+    statusCode: 404,
+    statusMessage: 'Not Found',
+    data: createErrorResponse(ErrorCode.NOT_FOUND, 'Feedback not found'),
+  })
+}
 
-  // Verify the feedback's project is public (voting is public-facing feature)
-  await requirePublicProject(fb.projectId)
+// Verify the feedback's project is public (voting is public-facing feature)
+await requirePublicProject(fb.projectId)
 ```
 
 **Step 3: Commit**
@@ -495,6 +498,7 @@ git commit -m "fix(api): verify project access in POST /api/feedback/[id]/vote
 ## Task 7: Add GET /api/feedback/[id] endpoint
 
 **Files:**
+
 - Create: `server/api/feedback/[id]/index.get.ts`
 
 **Step 1: Create the endpoint**
@@ -550,18 +554,10 @@ export default defineEventHandler(async (event) => {
   // Check if viewer has voted
   let hasVoted = false
   if (session?.user) {
-    const [userVote] = await db
-      .select()
-      .from(vote)
-      .where(eq(vote.voterUserId, session.user.id))
-      .limit(1)
+    const [userVote] = await db.select().from(vote).where(eq(vote.voterUserId, session.user.id)).limit(1)
     hasVoted = !!userVote
   } else if (anonSession) {
-    const [sessionVote] = await db
-      .select()
-      .from(vote)
-      .where(eq(vote.voterSessionId, anonSession.id))
-      .limit(1)
+    const [sessionVote] = await db.select().from(vote).where(eq(vote.voterSessionId, anonSession.id)).limit(1)
     hasVoted = !!sessionVote
   }
 
@@ -605,6 +601,7 @@ git commit -m "feat(api): add GET /api/feedback/[id] endpoint
 ## Task 8: Create E2E test for authorization boundaries
 
 **Files:**
+
 - Create: `tests/e2e/multi-tenant-authorization.spec.ts`
 
 **Step 1: Write comprehensive authorization tests**
@@ -970,6 +967,7 @@ git commit -m "test(e2e): add multi-tenant authorization boundary tests
 ## Task 9: Update existing E2E tests for new validation
 
 **Files:**
+
 - Modify: `tests/e2e/admin-feedback.spec.ts:95,111` (add projectId to GET requests)
 - Modify: `tests/e2e/anonymous-feedback.spec.ts` (verify still works with public project)
 
@@ -1028,6 +1026,7 @@ Expected: All tests pass, including new multi-tenant-authorization tests
 **Step 3: Review test output**
 
 Check for:
+
 - ✓ All admin-feedback tests pass
 - ✓ All anonymous-feedback tests pass
 - ✓ All new multi-tenant-authorization tests pass
@@ -1037,6 +1036,7 @@ Check for:
 **Step 4: Fix any test failures**
 
 If tests fail, review error messages and fix the corresponding endpoint or test logic. Common issues:
+
 - Seed data missing public project flag
 - Project access utility throwing incorrect status codes
 - Test race conditions (add waits if needed)
@@ -1050,6 +1050,7 @@ No commit needed - this is a verification step.
 ## Task 11: Update CLAUDE.md documentation
 
 **Files:**
+
 - Modify: `CLAUDE.md` (add authorization patterns section)
 
 **Step 1: Add authorization patterns section**
@@ -1065,26 +1066,27 @@ All feedback, votes, and comments are scoped to projects, which belong to teams,
 
 ### Project Access Utilities (`server/utils/project-access.ts`)
 
-| Function | Purpose | Throws |
-|----------|---------|--------|
-| `requireProjectAccess(projectId, userId)` | Verify user is team member | 404 if project not found, 403 if no access |
-| `requireFeedbackAccess(feedbackId, userId)` | Verify user has access to feedback's project | 404 if not found, 403 if no access |
-| `requirePublicProject(projectId)` | Verify project is public (for anonymous) | 404 if not found, 403 if not public |
-| `resolvePublicProject(orgSlug, projectSlug)` | Resolve public project by slugs | 404 if not found, 403 if not public |
+| Function                                     | Purpose                                      | Throws                                     |
+| -------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
+| `requireProjectAccess(projectId, userId)`    | Verify user is team member                   | 404 if project not found, 403 if no access |
+| `requireFeedbackAccess(feedbackId, userId)`  | Verify user has access to feedback's project | 404 if not found, 403 if no access         |
+| `requirePublicProject(projectId)`            | Verify project is public (for anonymous)     | 404 if not found, 403 if not public        |
+| `resolvePublicProject(orgSlug, projectSlug)` | Resolve public project by slugs              | 404 if not found, 403 if not public        |
 
 ### Endpoint Authorization Rules
 
-| Endpoint | Auth | Access Rule |
-|----------|------|-------------|
-| `GET /api/feedback` | Optional | Requires `projectId` parameter (mandatory) |
-| `POST /api/feedback` | Optional | Authenticated: requires team membership for private projects. Anonymous: requires public project |
-| `GET /api/feedback/[id]` | Optional | Authenticated: requires team membership. Anonymous: requires public project |
-| `DELETE /api/feedback/[id]` | Required | Author OR team member of project's team |
-| `POST /api/feedback/[id]/vote` | Optional | Project must be public (voting is public-facing) |
+| Endpoint                       | Auth     | Access Rule                                                                                      |
+| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
+| `GET /api/feedback`            | Optional | Requires `projectId` parameter (mandatory)                                                       |
+| `POST /api/feedback`           | Optional | Authenticated: requires team membership for private projects. Anonymous: requires public project |
+| `GET /api/feedback/[id]`       | Optional | Authenticated: requires team membership. Anonymous: requires public project                      |
+| `DELETE /api/feedback/[id]`    | Required | Author OR team member of project's team                                                          |
+| `POST /api/feedback/[id]/vote` | Optional | Project must be public (voting is public-facing)                                                 |
 
 ### Team Member Roles
 
 The `teamMember` table includes a `role` column:
+
 - `admin` - Team administrator (future: can manage team settings, add/remove members)
 - `member` - Regular team member (can create feedback, manage team projects)
 

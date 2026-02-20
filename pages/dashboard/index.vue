@@ -17,7 +17,9 @@
       <template v-else-if="!hasOrganization">
         <div class="mb-6">
           <h1 class="text-3xl font-bold text-foreground">Welcome, {{ userName }}</h1>
-          <p class="text-muted-foreground">This is your personal dashboard. Track your feedback submissions and manage your account.</p>
+          <p class="text-muted-foreground">
+            This is your personal dashboard. Track your feedback submissions and manage your account.
+          </p>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -68,7 +70,12 @@
                     <CardTitle>Recent Submissions</CardTitle>
                     <CardDescription>Your latest feedback across all projects</CardDescription>
                   </div>
-                  <Button v-if="recentSubmissions.length > 0" variant="outline" size="sm" @click="navigateTo('/submissions')">
+                  <Button
+                    v-if="recentSubmissions.length > 0"
+                    variant="outline"
+                    size="sm"
+                    @click="navigateTo('/submissions')"
+                  >
                     View all
                   </Button>
                 </div>
@@ -123,7 +130,8 @@
                 </div>
                 <CardTitle class="text-lg">Want to collect feedback?</CardTitle>
                 <CardDescription>
-                  Create a workspace to set up your own feedback boards, manage projects, and collaborate with your team.
+                  Create a workspace to set up your own feedback boards, manage projects, and collaborate with your
+                  team.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -317,13 +325,8 @@ export default {
         this.submissionCount = response?.pagination?.totalCount || 0
 
         // Calculate stats from the full list
-        this.completedCount = this.recentSubmissions.filter(
-          (s) => s.status === 'completed'
-        ).length
-        this.totalVotes = this.recentSubmissions.reduce(
-          (sum, s) => sum + (s.voteCount || 0),
-          0
-        )
+        this.completedCount = this.recentSubmissions.filter((s) => s.status === 'completed').length
+        this.totalVotes = this.recentSubmissions.reduce((sum, s) => sum + (s.voteCount || 0), 0)
 
         // If we have more items than the preview, fetch full stats
         if (this.submissionCount > 5) {
@@ -331,13 +334,8 @@ export default {
             params: { limit: 50 },
           })
           const allItems = fullResponse?.data || []
-          this.completedCount = allItems.filter(
-            (s) => s.status === 'completed'
-          ).length
-          this.totalVotes = allItems.reduce(
-            (sum, s) => sum + (s.voteCount || 0),
-            0
-          )
+          this.completedCount = allItems.filter((s) => s.status === 'completed').length
+          this.totalVotes = allItems.reduce((sum, s) => sum + (s.voteCount || 0), 0)
         }
       } catch (_error) {
         // Submissions loading is non-critical

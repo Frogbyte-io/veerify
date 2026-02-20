@@ -101,9 +101,7 @@ export async function getOrCreateAnonSession(event: H3Event): Promise<AnonSessio
   const expiresAt = getExpiresAt()
 
   const ipAddress =
-    getHeader(event, 'x-forwarded-for')?.split(',')[0]?.trim() ||
-    event.node.req.socket?.remoteAddress ||
-    null
+    getHeader(event, 'x-forwarded-for')?.split(',')[0]?.trim() || event.node.req.socket?.remoteAddress || null
   const userAgent = getHeader(event, 'user-agent') || null
 
   await db.insert(anonymousSession).values({

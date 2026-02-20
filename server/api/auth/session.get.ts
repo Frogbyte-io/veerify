@@ -48,14 +48,14 @@ export default defineEventHandler(async (event) => {
       emailVerified: session.user.emailVerified,
       image: session.user.image,
       createdAt: session.user.createdAt,
-      updatedAt: session.user.updatedAt
+      updatedAt: session.user.updatedAt,
     },
     session: {
       id: session.session.id,
       userId: session.session.userId,
       expiresAt: session.session.expiresAt,
       activeOrganizationId: session.session.activeOrganizationId,
-      activeTeamId: session.session.activeTeamId
-    }
+      activeTeamId: session.session.activeTeamId,
+    },
   })
 })

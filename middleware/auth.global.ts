@@ -9,7 +9,20 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
   // On team subdomains, all routes are public. Redirect app routes to team root.
   const teamSubdomain = useState('teamSubdomain')
   if (teamSubdomain.value) {
-    const appRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products', '/login', '/signup', '/auth', '/onboarding', '/submissions', '/get-started']
+    const appRoutes = [
+      '/dashboard',
+      '/settings',
+      '/reports',
+      '/feedback',
+      '/help',
+      '/products',
+      '/login',
+      '/signup',
+      '/auth',
+      '/onboarding',
+      '/submissions',
+      '/get-started',
+    ]
     if (appRoutes.some((r) => to.path.startsWith(r))) {
       return navigateTo('/')
     }
@@ -20,7 +33,16 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     const { data: session } = await authClient.useSession(useFetch)
 
     // Protected routes that require authentication
-    const protectedRoutes = ['/dashboard', '/settings', '/reports', '/feedback', '/help', '/products', '/onboarding', '/submissions']
+    const protectedRoutes = [
+      '/dashboard',
+      '/settings',
+      '/reports',
+      '/feedback',
+      '/help',
+      '/products',
+      '/onboarding',
+      '/submissions',
+    ]
 
     // Auth routes that should redirect to dashboard if user is already logged in
     const authRoutes = ['/login', '/signup', '/auth']

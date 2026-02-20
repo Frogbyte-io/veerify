@@ -12,14 +12,14 @@ export default defineEventHandler((event) => {
       description: 'API documentation for Veerify - Feedback management and verification platform',
       contact: {
         name: 'Veerify Support',
-        email: 'support@veerify.com'
-      }
+        email: 'support@veerify.com',
+      },
     },
     servers: [
       {
         url: import.meta.dev ? 'http://localhost:3000' : 'https://api.veerify.com',
-        description: import.meta.dev ? 'Development server' : 'Production server'
-      }
+        description: import.meta.dev ? 'Development server' : 'Production server',
+      },
     ],
     tags: [
       { name: 'Authentication', description: 'Authentication and session management' },
@@ -27,7 +27,7 @@ export default defineEventHandler((event) => {
       { name: 'Teams', description: 'Team workspace management' },
       { name: 'Projects', description: 'Project management' },
       { name: 'Feedback', description: 'Feedback and feature request management' },
-      { name: 'GitHub', description: 'GitHub integration endpoints' }
+      { name: 'GitHub', description: 'GitHub integration endpoints' },
     ],
     components: {
       securitySchemes: {
@@ -35,8 +35,8 @@ export default defineEventHandler((event) => {
           type: 'apiKey',
           in: 'cookie',
           name: 'better-auth.session_token',
-          description: 'Session cookie set by Better-Auth'
-        }
+          description: 'Session cookie set by Better-Auth',
+        },
       },
       schemas: {
         Error: {
@@ -48,18 +48,18 @@ export default defineEventHandler((event) => {
               properties: {
                 code: { type: 'string', example: 'VALIDATION_ERROR' },
                 message: { type: 'string', example: 'Request validation failed' },
-                details: { type: 'object' }
-              }
-            }
-          }
+                details: { type: 'object' },
+              },
+            },
+          },
         },
         Success: {
           type: 'object',
           properties: {
             success: { type: 'boolean', example: true },
             data: { type: 'object' },
-            message: { type: 'string' }
-          }
+            message: { type: 'string' },
+          },
         },
         User: {
           type: 'object',
@@ -70,8 +70,8 @@ export default defineEventHandler((event) => {
             emailVerified: { type: 'boolean' },
             image: { type: 'string', format: 'uri', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
-            updatedAt: { type: 'string', format: 'date-time' }
-          }
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
         },
         Session: {
           type: 'object',
@@ -84,10 +84,10 @@ export default defineEventHandler((event) => {
                 userId: { type: 'string' },
                 expiresAt: { type: 'string', format: 'date-time' },
                 activeOrganizationId: { type: 'string', nullable: true },
-                activeTeamId: { type: 'string', nullable: true }
-              }
-            }
-          }
+                activeTeamId: { type: 'string', nullable: true },
+              },
+            },
+          },
         },
         Organization: {
           type: 'object',
@@ -96,8 +96,8 @@ export default defineEventHandler((event) => {
             name: { type: 'string', example: 'Acme Inc.' },
             slug: { type: 'string', example: 'acme-inc' },
             logo: { type: 'string', format: 'uri', nullable: true },
-            createdAt: { type: 'string', format: 'date-time' }
-          }
+            createdAt: { type: 'string', format: 'date-time' },
+          },
         },
         Project: {
           type: 'object',
@@ -110,8 +110,8 @@ export default defineEventHandler((event) => {
             teamId: { type: 'string' },
             githubRepoUrl: { type: 'string', format: 'uri', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
-            updatedAt: { type: 'string', format: 'date-time' }
-          }
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
         },
         Feedback: {
           type: 'object',
@@ -126,12 +126,12 @@ export default defineEventHandler((event) => {
             authorId: { type: 'string' },
             githubIssueNumber: { type: 'integer', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
-            updatedAt: { type: 'string', format: 'date-time' }
-          }
-        }
-      }
+            updatedAt: { type: 'string', format: 'date-time' },
+          },
+        },
+      },
     },
-    paths: {} // Paths will be added as routes are implemented
+    paths: {}, // Paths will be added as routes are implemented
   }
 
   return spec

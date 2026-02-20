@@ -44,7 +44,12 @@
           <div class="flex items-center gap-2 text-sm text-muted-foreground mb-4">
             <NuxtLink to="/feedback" class="hover:text-foreground transition-colors">Feedback</NuxtLink>
             <Icon name="lucide:chevron-right" class="w-4 h-4" />
-            <NuxtLink v-if="item.project" :to="`/feedback?projectId=${item.project.id}`" class="hover:text-foreground transition-colors">{{ item.project.name }}</NuxtLink>
+            <NuxtLink
+              v-if="item.project"
+              :to="`/feedback?projectId=${item.project.id}`"
+              class="hover:text-foreground transition-colors"
+              >{{ item.project.name }}</NuxtLink
+            >
             <Icon v-if="item.project" name="lucide:chevron-right" class="w-4 h-4" />
             <span class="text-foreground">{{ item.title }}</span>
           </div>
@@ -67,9 +72,11 @@
                 <div class="flex flex-col items-center">
                   <button
                     class="flex flex-col items-center p-2 rounded-lg border transition-colors"
-                    :class="item.hasVoted
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border hover:border-primary/50 text-muted-foreground hover:text-primary'"
+                    :class="
+                      item.hasVoted
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border hover:border-primary/50 text-muted-foreground hover:text-primary'
+                    "
                     @click="toggleVote"
                   >
                     <Icon name="lucide:chevron-up" class="w-5 h-5" />
@@ -85,7 +92,9 @@
               </div>
 
               <!-- Meta row -->
-              <div class="flex items-center flex-wrap gap-4 mt-6 pt-4 border-t border-border text-sm text-muted-foreground">
+              <div
+                class="flex items-center flex-wrap gap-4 mt-6 pt-4 border-t border-border text-sm text-muted-foreground"
+              >
                 <div class="flex items-center gap-2">
                   <Avatar class="h-6 w-6">
                     <AvatarImage v-if="item.author?.image" :src="item.author.image" />
@@ -160,7 +169,11 @@
                         <span class="text-sm font-medium text-foreground">
                           {{ comment.authorName || comment.author?.name || 'Anonymous' }}
                         </span>
-                        <Badge v-if="comment.isInternal" variant="outline" class="text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+                        <Badge
+                          v-if="comment.isInternal"
+                          variant="outline"
+                          class="text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700"
+                        >
                           <Icon name="lucide:lock" class="w-3 h-3 mr-1" />
                           Internal
                         </Badge>
@@ -183,17 +196,16 @@
                   />
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3">
-                      <label v-if="isTeamMember" class="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                      <label
+                        v-if="isTeamMember"
+                        class="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer"
+                      >
                         <input v-model="isInternalComment" type="checkbox" class="rounded border-border" />
                         <Icon name="lucide:lock" class="w-4 h-4" />
                         Internal note
                       </label>
                     </div>
-                    <Button
-                      size="sm"
-                      :disabled="!newComment.trim() || isSubmittingComment"
-                      @click="submitComment"
-                    >
+                    <Button size="sm" :disabled="!newComment.trim() || isSubmittingComment" @click="submitComment">
                       <Icon v-if="isSubmittingComment" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
                       Post Comment
                     </Button>
@@ -304,11 +316,7 @@
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
-            <Button
-              variant="destructive"
-              :disabled="isDeleting"
-              @click="deleteFeedback"
-            >
+            <Button variant="destructive" :disabled="isDeleting" @click="deleteFeedback">
               <Icon v-if="isDeleting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
               Delete
             </Button>

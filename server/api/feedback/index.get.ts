@@ -41,10 +41,7 @@ export default defineEventHandler(async (event) => {
   const orderFn = query.sortOrder === 'asc' ? asc : desc
 
   // Get total count
-  const [totalResult] = await db
-    .select({ count: count() })
-    .from(feedback)
-    .where(whereClause)
+  const [totalResult] = await db.select({ count: count() }).from(feedback).where(whereClause)
 
   const total = totalResult?.count || 0
   const offset = (query.page - 1) * query.limit

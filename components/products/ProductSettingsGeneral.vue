@@ -11,23 +11,13 @@
       <CardContent class="space-y-4">
         <div class="space-y-2">
           <Label for="project-name">Product Name</Label>
-          <Input
-            id="project-name"
-            v-model="form.name"
-            placeholder="My Product"
-          />
+          <Input id="project-name" v-model="form.name" placeholder="My Product" />
         </div>
 
         <div class="space-y-2">
           <Label for="project-slug">URL Slug</Label>
-          <Input
-            id="project-slug"
-            v-model="form.slug"
-            placeholder="my-product"
-          />
-          <p class="text-xs text-muted-foreground">
-            Used in your public feedback URL.
-          </p>
+          <Input id="project-slug" v-model="form.slug" placeholder="my-product" />
+          <p class="text-xs text-muted-foreground">Used in your public feedback URL.</p>
         </div>
 
         <div class="space-y-2">

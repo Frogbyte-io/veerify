@@ -1,10 +1,5 @@
 import { createAuthClient } from 'better-auth/vue' // make sure to import from better-auth/vue
-import {
-  magicLinkClient,
-  multiSessionClient,
-  organizationClient,
-  twoFactorClient,
-} from 'better-auth/client/plugins'
+import { magicLinkClient, multiSessionClient, organizationClient, twoFactorClient } from 'better-auth/client/plugins'
 
 const configuredBaseURL = process.env.BETTER_AUTH_URL
 

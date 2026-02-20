@@ -8,9 +8,7 @@ test.describe('API docs', () => {
     expect(specBody).toContain('"openapi"')
 
     const openApiFetchPromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'GET' &&
-        response.url().includes('/api/openapi.json'),
+      (response) => response.request().method() === 'GET' && response.url().includes('/api/openapi.json'),
       { timeout: 30_000 }
     )
 

@@ -40,8 +40,7 @@ export async function loginViaUi(page: Page, credentials: LoginCredentials) {
   await page.locator(selectors.loginPassword).fill(credentials.password)
 
   const signInResponsePromise = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' && response.url().includes('/api/auth/sign-in/email'),
+    (response) => response.request().method() === 'POST' && response.url().includes('/api/auth/sign-in/email'),
     { timeout: 20_000 }
   )
 

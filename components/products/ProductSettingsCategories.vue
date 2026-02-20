@@ -92,21 +92,12 @@
         <div class="space-y-4 py-4">
           <div class="space-y-2">
             <Label for="cat-name">Name</Label>
-            <Input
-              id="cat-name"
-              v-model="categoryForm.name"
-              placeholder="e.g. Enhancement"
-            />
+            <Input id="cat-name" v-model="categoryForm.name" placeholder="e.g. Enhancement" />
           </div>
           <div class="grid grid-cols-2 gap-4">
             <div class="space-y-2">
               <Label for="cat-icon">Icon (emoji)</Label>
-              <Input
-                id="cat-icon"
-                v-model="categoryForm.icon"
-                placeholder="e.g. 🚀"
-                maxlength="4"
-              />
+              <Input id="cat-icon" v-model="categoryForm.icon" placeholder="e.g. 🚀" maxlength="4" />
             </div>
             <div class="space-y-2">
               <Label for="cat-color">Color</Label>
@@ -117,22 +108,13 @@
                   class="w-8 h-8 rounded border cursor-pointer"
                   @input="categoryForm.color = $event.target.value"
                 />
-                <Input
-                  id="cat-color"
-                  v-model="categoryForm.color"
-                  placeholder="#6b7280"
-                  class="flex-1"
-                />
+                <Input id="cat-color" v-model="categoryForm.color" placeholder="#6b7280" class="flex-1" />
               </div>
             </div>
           </div>
           <div class="space-y-2">
             <Label for="cat-desc">Description (optional)</Label>
-            <Input
-              id="cat-desc"
-              v-model="categoryForm.description"
-              placeholder="A brief description"
-            />
+            <Input id="cat-desc" v-model="categoryForm.description" placeholder="A brief description" />
           </div>
         </div>
         <DialogFooter>
@@ -150,14 +132,10 @@
       <DialogContent class="sm:max-w-[450px]">
         <DialogHeader>
           <DialogTitle class="text-destructive">Delete Category</DialogTitle>
-          <DialogDescription>
-            Are you sure you want to delete "{{ deletingCategory?.name }}"?
-          </DialogDescription>
+          <DialogDescription> Are you sure you want to delete "{{ deletingCategory?.name }}"? </DialogDescription>
         </DialogHeader>
         <div v-if="deletingCategory" class="py-4">
-          <p class="text-sm text-muted-foreground mb-3">
-            If feedback items use this category, select a replacement:
-          </p>
+          <p class="text-sm text-muted-foreground mb-3">If feedback items use this category, select a replacement:</p>
           <div class="space-y-2">
             <Label for="replacement-cat">Replacement Category</Label>
             <select
@@ -167,7 +145,7 @@
             >
               <option value="">None (remove category from feedback)</option>
               <option
-                v-for="cat in categories.filter(c => c.id !== deletingCategory?.id)"
+                v-for="cat in categories.filter((c) => c.id !== deletingCategory?.id)"
                 :key="cat.id"
                 :value="cat.id"
               >

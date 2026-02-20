@@ -25,14 +25,11 @@ export type ApiResponse<T = any> = ApiSuccessResponse<T> | ApiErrorResponse
  * @param data - The response data
  * @param message - Optional success message
  */
-export function createSuccessResponse<T>(
-  data: T,
-  message?: string
-): ApiSuccessResponse<T> {
+export function createSuccessResponse<T>(data: T, message?: string): ApiSuccessResponse<T> {
   return {
     success: true,
     data,
-    ...(message && { message })
+    ...(message && { message }),
   }
 }
 
@@ -42,18 +39,14 @@ export function createSuccessResponse<T>(
  * @param message - Human-readable error message
  * @param details - Optional additional error details
  */
-export function createErrorResponse(
-  code: string,
-  message: string,
-  details?: any
-): ApiErrorResponse {
+export function createErrorResponse(code: string, message: string, details?: any): ApiErrorResponse {
   return {
     success: false,
     error: {
       code,
       message,
-      ...(details && { details })
-    }
+      ...(details && { details }),
+    },
   }
 }
 
@@ -68,5 +61,5 @@ export const ErrorCode = {
   CONFLICT: 'CONFLICT',
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
-  NOT_IMPLEMENTED: 'NOT_IMPLEMENTED'
+  NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
 } as const

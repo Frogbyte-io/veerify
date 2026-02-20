@@ -36,7 +36,9 @@ export default defineEventHandler(async (event) => {
     .from(invitation)
     .innerJoin(user, eq(invitation.inviterId, user.id))
     .leftJoin(team, eq(invitation.teamId, team.id))
-    .where(and(eq(invitation.organizationId, org.id), eq(invitation.status, 'pending'), gt(invitation.expiresAt, new Date())))
+    .where(
+      and(eq(invitation.organizationId, org.id), eq(invitation.status, 'pending'), gt(invitation.expiresAt, new Date()))
+    )
 
   return createSuccessResponse(pendingInvitations)
 })

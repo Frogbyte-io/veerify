@@ -113,11 +113,10 @@ import { parseRepoFullName, buildIssueLabels } from '~/server/utils/github'
 
 const createGitHubIssueSchema = z.object({
   feedbackId: z.string().min(1, 'Feedback ID is required'),
-  repo: z.string()
-    .regex(/^[\w-]+\/[\w-]+$/, 'Repository must be in format "owner/repo"'),
+  repo: z.string().regex(/^[\w-]+\/[\w-]+$/, 'Repository must be in format "owner/repo"'),
   title: z.string().optional().nullable(),
   body: z.string().optional().nullable(),
-  labels: z.array(z.string()).optional().default([])
+  labels: z.array(z.string()).optional().default([]),
 })
 
 export default defineEventHandler(async (event) => {
@@ -158,10 +157,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        'The selected repository is not connected to this project'
-      ),
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'The selected repository is not connected to this project'),
     })
   }
 
@@ -169,10 +165,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        'GitHub access token is missing for this integration'
-      ),
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'GitHub access token is missing for this integration'),
     })
   }
 
@@ -193,11 +186,13 @@ export default defineEventHandler(async (event) => {
   })
 
   const issueTitle = body.title?.trim() || selectedFeedback.title
-  const issueBody = body.body?.trim() || [
-    selectedFeedback.body?.trim() || '*No description provided*',
-    '',
-    `Source feedback ID: ${selectedFeedback.id}`,
-  ].join('\n')
+  const issueBody =
+    body.body?.trim() ||
+    [
+      selectedFeedback.body?.trim() || '*No description provided*',
+      '',
+      `Source feedback ID: ${selectedFeedback.id}`,
+    ].join('\n')
 
   const githubResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues`, {
     method: 'POST',
@@ -216,18 +211,15 @@ export default defineEventHandler(async (event) => {
   })
 
   if (!githubResponse.ok) {
-    const errorBody = await githubResponse.json().catch(() => null) as { message?: string } | null
+    const errorBody = (await githubResponse.json().catch(() => null)) as { message?: string } | null
     throw createError({
       statusCode: githubResponse.status,
       statusMessage: 'GitHub API error',
-      data: createErrorResponse(
-        ErrorCode.INTERNAL_ERROR,
-        errorBody?.message || 'Failed to create issue in GitHub'
-      ),
+      data: createErrorResponse(ErrorCode.INTERNAL_ERROR, errorBody?.message || 'Failed to create issue in GitHub'),
     })
   }
 
-  const createdIssue = await githubResponse.json() as {
+  const createdIssue = (await githubResponse.json()) as {
     number: number
     title: string
     html_url: string

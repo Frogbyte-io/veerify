@@ -4,11 +4,7 @@ import { Client } from 'pg'
 
 const require = createRequire(import.meta.url)
 const isCloudEnvironment = Boolean(
-  process.env.GITHUB_ACTIONS ||
-    process.env.VERCEL ||
-    process.env.CIRCLECI ||
-    process.env.BUILDKITE ||
-    process.env.CI
+  process.env.GITHUB_ACTIONS || process.env.VERCEL || process.env.CIRCLECI || process.env.BUILDKITE || process.env.CI
 )
 const isForced = process.env.PLAYWRIGHT_FORCE === '1'
 const canRunByEnvironment = isCloudEnvironment || isForced
@@ -79,9 +75,7 @@ async function verifyDatabaseAvailable() {
       return false
     }
 
-    const seededUserCheck = await client.query('SELECT 1 FROM "user" WHERE email = $1 LIMIT 1', [
-      requiredSeedUserEmail,
-    ])
+    const seededUserCheck = await client.query('SELECT 1 FROM "user" WHERE email = $1 LIMIT 1', [requiredSeedUserEmail])
     if ((seededUserCheck.rowCount ?? 0) === 0) {
       skipReasons.push(`e2e seed user "${requiredSeedUserEmail}" was not found (run yarn db:seed)`)
       return false

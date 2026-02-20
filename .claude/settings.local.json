@@ -1,9 +1,5 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(yarn list:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)"
-    ]
+    "allow": ["Bash(yarn list:*)", "Bash(git add:*)", "Bash(git commit:*)"]
   }
 }

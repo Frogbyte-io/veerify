@@ -48,20 +48,17 @@
               <p class="text-muted-foreground">Manage your product settings and configuration</p>
             </div>
             <div class="flex items-center gap-2">
-              <Button
-                v-if="publicBoardUrl"
-                variant="outline"
-                size="sm"
-                as="a"
-                :href="publicBoardUrl"
-                target="_blank"
-              >
+              <Button v-if="publicBoardUrl" variant="outline" size="sm" as="a" :href="publicBoardUrl" target="_blank">
                 <Icon name="lucide:external-link" class="w-4 h-4 mr-1.5" />
                 Preview Board
               </Button>
               <span
                 class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
-                :class="projectData.isPublic ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'"
+                :class="
+                  projectData.isPublic
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                    : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                "
               >
                 {{ projectData.isPublic ? 'Public' : 'Private' }}
               </span>

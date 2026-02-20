@@ -7,7 +7,8 @@ import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
 import { validateBody } from '~/server/utils/validation'
 
 const updateGithubIntegrationSchema = z.object({
-  repoFullName: z.string()
+  repoFullName: z
+    .string()
     .trim()
     .min(1, 'Repository is required')
     .max(201, 'Repository is too long')
@@ -49,22 +50,14 @@ export default defineEventHandler(async (event) => {
     const [conflict] = await db
       .select()
       .from(githubIntegration)
-      .where(
-        and(
-          eq(githubIntegration.owner, owner),
-          eq(githubIntegration.repo, repo)
-        )
-      )
+      .where(and(eq(githubIntegration.owner, owner), eq(githubIntegration.repo, repo)))
       .limit(1)
 
     if (conflict && conflict.projectId !== project.id) {
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
-        data: createErrorResponse(
-          ErrorCode.CONFLICT,
-          'This GitHub repository is already connected to another project'
-        ),
+        data: createErrorResponse(ErrorCode.CONFLICT, 'This GitHub repository is already connected to another project'),
       })
     }
 
@@ -105,22 +98,14 @@ export default defineEventHandler(async (event) => {
   const [conflict] = await db
     .select()
     .from(githubIntegration)
-    .where(
-      and(
-        eq(githubIntegration.owner, owner),
-        eq(githubIntegration.repo, repo)
-      )
-    )
+    .where(and(eq(githubIntegration.owner, owner), eq(githubIntegration.repo, repo)))
     .limit(1)
 
   if (conflict) {
     throw createError({
       statusCode: 409,
       statusMessage: 'Conflict',
-      data: createErrorResponse(
-        ErrorCode.CONFLICT,
-        'This GitHub repository is already connected to another project'
-      ),
+      data: createErrorResponse(ErrorCode.CONFLICT, 'This GitHub repository is already connected to another project'),
     })
   }
 

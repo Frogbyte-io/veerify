@@ -46,14 +46,14 @@ import { z } from 'zod'
 
 const callbackQuerySchema = z.object({
   code: z.string().min(1, 'Authorization code is required'),
-  state: z.string().min(1, 'State parameter is required')
+  state: z.string().min(1, 'State parameter is required'),
 })
 
 export default defineEventHandler(async (event) => {
   // Rate limiting
   await requireRateLimit(event, {
     ...rateLimits.strict,
-    identifier: 'github-callback'
+    identifier: 'github-callback',
   })
 
   // Validate query parameters
@@ -73,9 +73,6 @@ export default defineEventHandler(async (event) => {
   throw createError({
     statusCode: 501,
     statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'GitHub OAuth callback is not yet implemented'
-    )
+    data: createErrorResponse(ErrorCode.NOT_IMPLEMENTED, 'GitHub OAuth callback is not yet implemented'),
   })
 })

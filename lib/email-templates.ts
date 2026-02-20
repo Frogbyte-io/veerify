@@ -5,7 +5,12 @@ interface FeedbackConfirmationOptions {
   editUrl: string
 }
 
-export function getFeedbackConfirmationTemplate({ authorName, feedbackTitle, projectName, editUrl }: FeedbackConfirmationOptions) {
+export function getFeedbackConfirmationTemplate({
+  authorName,
+  feedbackTitle,
+  projectName,
+  editUrl,
+}: FeedbackConfirmationOptions) {
   const subject = `Your feedback for ${projectName} has been received`
 
   const html = `

@@ -23,7 +23,9 @@
             size="lg"
             class="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1 group-data-[collapsible=icon]:justify-center"
           >
-            <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+            <div
+              class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
+            >
               <Icon name="lucide:building-2" class="size-4" />
             </div>
             <div class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
@@ -71,7 +73,12 @@
             <template v-if="additionalTeams.length > 0">
               <DropdownMenuSeparator />
               <DropdownMenuLabel class="text-xs text-muted-foreground">Teams</DropdownMenuLabel>
-              <DropdownMenuItem v-for="team in additionalTeams" :key="team.id" class="gap-2 p-2" @click="setActiveTeam(team)">
+              <DropdownMenuItem
+                v-for="team in additionalTeams"
+                :key="team.id"
+                class="gap-2 p-2"
+                @click="setActiveTeam(team)"
+              >
                 <div class="flex size-6 items-center justify-center rounded-sm border">
                   <Icon name="lucide:users" class="size-4 shrink-0" />
                 </div>
@@ -98,7 +105,9 @@
         class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1"
       >
         <NuxtLink to="/dashboard">
-          <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+          <div
+            class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+          >
             <Icon name="lucide:check-circle" class="size-4" />
           </div>
           <span class="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Veerify</span>
@@ -307,8 +316,7 @@ export default {
             (team) =>
               team.name === 'Default' &&
               (!this.activeOrganization?.id || team.organizationId === this.activeOrganization.id)
-          ) ||
-          organizationTeams.find((team) => team.name === 'Default')
+          ) || organizationTeams.find((team) => team.name === 'Default')
 
         if (defaultTeam && !this.teams.some((team) => team.id === defaultTeam.id)) {
           this.teams = [defaultTeam, ...this.teams]

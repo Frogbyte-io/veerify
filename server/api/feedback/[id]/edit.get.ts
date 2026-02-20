@@ -58,11 +58,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const [proj] = await db
-    .select({ name: project.name })
-    .from(project)
-    .where(eq(project.id, item.projectId))
-    .limit(1)
+  const [proj] = await db.select({ name: project.name }).from(project).where(eq(project.id, item.projectId)).limit(1)
 
   return createSuccessResponse({
     id: item.id,

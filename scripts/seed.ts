@@ -67,81 +67,56 @@ async function clean(client: Client) {
   // Note: Some deletions use specific IDs, others delete by foreign key reference
 
   // 1. Delete ALL projects that reference the seed team (not just the seed project)
-  const { rowCount: projectCount } = await client.query(
-    `DELETE FROM "project" WHERE team_id = $1`,
-    [IDS.team]
-  )
+  const { rowCount: projectCount } = await client.query(`DELETE FROM "project" WHERE team_id = $1`, [IDS.team])
   if (projectCount && projectCount > 0) {
     console.log(`[seed:clean] Deleted ${projectCount} project(s) referencing seed team`)
   }
 
   // 2. Delete team member
-  const { rowCount: teamMemberCount } = await client.query(
-    `DELETE FROM "team_member" WHERE id = $1`,
-    [IDS.teamMember]
-  )
+  const { rowCount: teamMemberCount } = await client.query(`DELETE FROM "team_member" WHERE id = $1`, [IDS.teamMember])
   if (teamMemberCount && teamMemberCount > 0) {
     console.log(`[seed:clean] Deleted team_member (${IDS.teamMember})`)
   }
 
   // 3. Delete team
-  const { rowCount: teamCount } = await client.query(
-    `DELETE FROM "team" WHERE id = $1`,
-    [IDS.team]
-  )
+  const { rowCount: teamCount } = await client.query(`DELETE FROM "team" WHERE id = $1`, [IDS.team])
   if (teamCount && teamCount > 0) {
     console.log(`[seed:clean] Deleted team (${IDS.team})`)
   }
 
   // 4. Delete organization member
-  const { rowCount: memberCount } = await client.query(
-    `DELETE FROM "member" WHERE id = $1`,
-    [IDS.member]
-  )
+  const { rowCount: memberCount } = await client.query(`DELETE FROM "member" WHERE id = $1`, [IDS.member])
   if (memberCount && memberCount > 0) {
     console.log(`[seed:clean] Deleted member (${IDS.member})`)
   }
 
   // 5. Delete account
-  const { rowCount: accountCount } = await client.query(
-    `DELETE FROM "account" WHERE id = $1`,
-    [IDS.account]
-  )
+  const { rowCount: accountCount } = await client.query(`DELETE FROM "account" WHERE id = $1`, [IDS.account])
   if (accountCount && accountCount > 0) {
     console.log(`[seed:clean] Deleted account (${IDS.account})`)
   }
 
   // 6. Delete organization
-  const { rowCount: orgCount } = await client.query(
-    `DELETE FROM "organization" WHERE id = $1`,
-    [IDS.org]
-  )
+  const { rowCount: orgCount } = await client.query(`DELETE FROM "organization" WHERE id = $1`, [IDS.org])
   if (orgCount && orgCount > 0) {
     console.log(`[seed:clean] Deleted organization (${IDS.org})`)
   }
 
   // 7. Delete user
-  const { rowCount: userCount } = await client.query(
-    `DELETE FROM "user" WHERE id = $1`,
-    [IDS.user]
-  )
+  const { rowCount: userCount } = await client.query(`DELETE FROM "user" WHERE id = $1`, [IDS.user])
   if (userCount && userCount > 0) {
     console.log(`[seed:clean] Deleted user (${IDS.user})`)
   }
 
   // 8. Delete personal user account + user
-  const { rowCount: personalAccountCount } = await client.query(
-    `DELETE FROM "account" WHERE id = $1`,
-    [IDS.personalAccount]
-  )
+  const { rowCount: personalAccountCount } = await client.query(`DELETE FROM "account" WHERE id = $1`, [
+    IDS.personalAccount,
+  ])
   if (personalAccountCount && personalAccountCount > 0) {
     console.log(`[seed:clean] Deleted personal account (${IDS.personalAccount})`)
   }
 
-  const { rowCount: personalUserCount } = await client.query(
-    `DELETE FROM "user" WHERE id = $1`,
-    [IDS.personalUser]
-  )
+  const { rowCount: personalUserCount } = await client.query(`DELETE FROM "user" WHERE id = $1`, [IDS.personalUser])
   if (personalUserCount && personalUserCount > 0) {
     console.log(`[seed:clean] Deleted personal user (${IDS.personalUser})`)
   }
@@ -232,11 +207,41 @@ async function seed(client: Client) {
   // Categories for each project (Bug + Feature)
   const categories = [
     [IDS.catDemoBug, IDS.project, 'Bug', 'bug', '🐛', '#ef4444', "Something isn't working", 0, true],
-    [IDS.catDemoFeature, IDS.project, 'Feature', 'feature', '✨', '#10b981', 'A new capability or improvement', 1, true],
+    [
+      IDS.catDemoFeature,
+      IDS.project,
+      'Feature',
+      'feature',
+      '✨',
+      '#10b981',
+      'A new capability or improvement',
+      1,
+      true,
+    ],
     [IDS.catMobileBug, IDS.project2, 'Bug', 'bug', '🐛', '#ef4444', "Something isn't working", 0, true],
-    [IDS.catMobileFeature, IDS.project2, 'Feature', 'feature', '✨', '#10b981', 'A new capability or improvement', 1, true],
+    [
+      IDS.catMobileFeature,
+      IDS.project2,
+      'Feature',
+      'feature',
+      '✨',
+      '#10b981',
+      'A new capability or improvement',
+      1,
+      true,
+    ],
     [IDS.catApiBug, IDS.project3, 'Bug', 'bug', '🐛', '#ef4444', "Something isn't working", 0, true],
-    [IDS.catApiFeature, IDS.project3, 'Feature', 'feature', '✨', '#10b981', 'A new capability or improvement', 1, true],
+    [
+      IDS.catApiFeature,
+      IDS.project3,
+      'Feature',
+      'feature',
+      '✨',
+      '#10b981',
+      'A new capability or improvement',
+      1,
+      true,
+    ],
   ]
 
   for (const [id, projectId, name, slug, icon, color, description, sortOrder, isDefault] of categories) {
@@ -249,9 +254,33 @@ async function seed(client: Client) {
 
   // Sample feedback for Demo Project
   const feedbackItems = [
-    [IDS.feedback1, IDS.project, IDS.catDemoFeature, 'Dark mode support', 'It would be great to have a dark mode option for better usability during night hours.', 'open', 5],
-    [IDS.feedback2, IDS.project, IDS.catDemoBug, 'Login page crashes on Safari', 'The login form throws an error when submitting on Safari 17.', 'in_progress', 2],
-    [IDS.feedback3, IDS.project, IDS.catDemoFeature, 'Add keyboard shortcuts', 'Power users would benefit from keyboard shortcuts for common actions.', 'planned', 8],
+    [
+      IDS.feedback1,
+      IDS.project,
+      IDS.catDemoFeature,
+      'Dark mode support',
+      'It would be great to have a dark mode option for better usability during night hours.',
+      'open',
+      5,
+    ],
+    [
+      IDS.feedback2,
+      IDS.project,
+      IDS.catDemoBug,
+      'Login page crashes on Safari',
+      'The login form throws an error when submitting on Safari 17.',
+      'in_progress',
+      2,
+    ],
+    [
+      IDS.feedback3,
+      IDS.project,
+      IDS.catDemoFeature,
+      'Add keyboard shortcuts',
+      'Power users would benefit from keyboard shortcuts for common actions.',
+      'planned',
+      8,
+    ],
   ]
 
   for (const [id, projectId, categoryId, title, body, status, voteCount] of feedbackItems) {

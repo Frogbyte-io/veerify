@@ -34,7 +34,8 @@
             </div>
             <CardTitle class="text-2xl">Create your workspace</CardTitle>
             <CardDescription>
-              A workspace is where your team collaborates on feedback and projects. You can think of it as your company or organization.
+              A workspace is where your team collaborates on feedback and projects. You can think of it as your company
+              or organization.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -142,16 +143,11 @@
               </div>
 
               <div class="flex flex-col gap-2 pt-2">
-                <Button
-                  :disabled="isInviting || !hasValidEmails"
-                  @click="sendInvitations"
-                >
+                <Button :disabled="isInviting || !hasValidEmails" @click="sendInvitations">
                   <Icon v-if="isInviting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
                   {{ isInviting ? 'Sending invitations...' : 'Send invitations' }}
                 </Button>
-                <Button variant="ghost" :disabled="isInviting" @click="skipInvitations">
-                  Skip for now
-                </Button>
+                <Button variant="ghost" :disabled="isInviting" @click="skipInvitations"> Skip for now </Button>
               </div>
             </div>
           </CardContent>
@@ -180,7 +176,9 @@
                   </div>
                   <div>
                     <p class="font-medium text-sm">Collect feedback</p>
-                    <p class="text-xs text-muted-foreground">Gather feature requests, bug reports, and ideas from your users.</p>
+                    <p class="text-xs text-muted-foreground">
+                      Gather feature requests, bug reports, and ideas from your users.
+                    </p>
                   </div>
                 </div>
                 <div class="flex items-start gap-3 rounded-lg border p-3">
@@ -189,7 +187,10 @@
                   </div>
                   <div>
                     <p class="font-medium text-sm">Organize with projects</p>
-                    <p class="text-xs text-muted-foreground">Create projects for different products or areas. Need more separation? Create additional teams later.</p>
+                    <p class="text-xs text-muted-foreground">
+                      Create projects for different products or areas. Need more separation? Create additional teams
+                      later.
+                    </p>
                   </div>
                 </div>
                 <div class="flex items-start gap-3 rounded-lg border p-3">
@@ -198,7 +199,9 @@
                   </div>
                   <div>
                     <p class="font-medium text-sm">Collaborate with your team</p>
-                    <p class="text-xs text-muted-foreground">Everyone in your workspace has access. Invite more members anytime from settings.</p>
+                    <p class="text-xs text-muted-foreground">
+                      Everyone in your workspace has access. Invite more members anytime from settings.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -244,7 +247,6 @@ export default {
       isInviting: false,
       inviteError: '',
       inviteSuccess: '',
-
     }
   },
 
@@ -318,9 +320,7 @@ export default {
       if (!this.createdOrgId) return
 
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      const validEmails = this.inviteEmails
-        .map((e) => e.trim())
-        .filter((e) => emailRegex.test(e))
+      const validEmails = this.inviteEmails.map((e) => e.trim()).filter((e) => emailRegex.test(e))
 
       if (validEmails.length === 0) return
 

@@ -147,9 +147,7 @@ export default {
         const currentHost = window.location.hostname.toLowerCase()
 
         const isAllowedHost =
-          redirectHost === currentHost ||
-          redirectHost === appDomain ||
-          redirectHost.endsWith(`.${appDomain}`)
+          redirectHost === currentHost || redirectHost === appDomain || redirectHost.endsWith(`.${appDomain}`)
 
         return isAllowedHost ? parsed.toString() : fallback
       } catch {

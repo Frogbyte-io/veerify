@@ -21,11 +21,7 @@ export default defineEventHandler(async (event) => {
   const normalizedEmail = email.trim().toLowerCase()
 
   // Check whether this email is already a member of any organization
-  const [existingUser] = await db
-    .select({ id: user.id })
-    .from(user)
-    .where(eq(user.email, normalizedEmail))
-    .limit(1)
+  const [existingUser] = await db.select({ id: user.id }).from(user).where(eq(user.email, normalizedEmail)).limit(1)
 
   if (existingUser) {
     const [existingMembership] = await db

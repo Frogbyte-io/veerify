@@ -9,10 +9,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       statusMessage: 'GitHub OAuth not configured',
-      data: createErrorResponse(
-        ErrorCode.INTERNAL_ERROR,
-        'Missing GITHUB_CLIENT_ID configuration'
-      ),
+      data: createErrorResponse(ErrorCode.INTERNAL_ERROR, 'Missing GITHUB_CLIENT_ID configuration'),
     })
   }
 
@@ -28,17 +25,22 @@ export default defineEventHandler(async (event) => {
   const state = crypto.randomUUID()
   const callbackUrl = `${getRequestURL(event).origin}/api/projects/${projectSlug}/github/callback`
 
-  setCookie(event, 'veerify_github_oauth_state', JSON.stringify({
-    state,
-    projectSlug,
-    createdAt: Date.now(),
-  }), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 10,
-  })
+  setCookie(
+    event,
+    'veerify_github_oauth_state',
+    JSON.stringify({
+      state,
+      projectSlug,
+      createdAt: Date.now(),
+    }),
+    {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 10,
+    }
+  )
 
   const params = new URLSearchParams({
     client_id: clientId,

@@ -49,7 +49,8 @@
       </div>
 
       <div class="mt-auto py-3 text-center text-xs text-muted-foreground">
-        Powered by <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="hover:underline">Veerify</a>
+        Powered by
+        <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="hover:underline">Veerify</a>
       </div>
     </div>
   </div>

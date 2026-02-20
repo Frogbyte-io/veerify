@@ -14,10 +14,7 @@ import { ErrorCode, createErrorResponse } from './response'
  * @returns Validated and typed data
  * @throws 400 Validation error if schema validation fails
  */
-export async function validateBody<T extends z.ZodType>(
-  event: H3Event,
-  schema: T
-): Promise<z.infer<T>> {
+export async function validateBody<T extends z.ZodType>(event: H3Event, schema: T): Promise<z.infer<T>> {
   try {
     const body = await readBody(event)
     const result = schema.safeParse(body)
@@ -26,11 +23,7 @@ export async function validateBody<T extends z.ZodType>(
       throw createError({
         statusCode: 400,
         statusMessage: 'Validation failed',
-        data: createErrorResponse(
-          ErrorCode.VALIDATION_ERROR,
-          'Request validation failed',
-          result.error.issues
-        )
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Request validation failed', result.error.issues),
       })
     }
 
@@ -45,10 +38,7 @@ export async function validateBody<T extends z.ZodType>(
     throw createError({
       statusCode: 400,
       statusMessage: 'Invalid request body',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        'Failed to parse request body'
-      )
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Failed to parse request body'),
     })
   }
 }
@@ -60,10 +50,7 @@ export async function validateBody<T extends z.ZodType>(
  * @returns Validated and typed query parameters
  * @throws 400 Validation error if schema validation fails
  */
-export function validateQuery<T extends z.ZodType>(
-  event: H3Event,
-  schema: T
-): z.infer<T> {
+export function validateQuery<T extends z.ZodType>(event: H3Event, schema: T): z.infer<T> {
   const query = getQuery(event)
   const result = schema.safeParse(query)
 
@@ -71,11 +58,7 @@ export function validateQuery<T extends z.ZodType>(
     throw createError({
       statusCode: 400,
       statusMessage: 'Invalid query parameters',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        'Query parameter validation failed',
-        result.error.issues
-      )
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Query parameter validation failed', result.error.issues),
     })
   }
 
@@ -103,7 +86,8 @@ export const commonSchemas = {
   uuid: z.string().uuid('Invalid UUID format'),
 
   // Text fields
-  slug: z.string()
+  slug: z
+    .string()
     .min(1, 'Slug is required')
     .max(100, 'Slug too long')
     .regex(/^[a-z0-9-]+$/, 'Slug must contain only lowercase letters, numbers, and hyphens'),

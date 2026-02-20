@@ -18,11 +18,7 @@
             >
               <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option>
             </select>
-            <Button
-              data-testid="feedback-add-button"
-              :disabled="!selectedProjectId"
-              @click="showCreateDialog = true"
-            >
+            <Button data-testid="feedback-add-button" :disabled="!selectedProjectId" @click="showCreateDialog = true">
               <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
               Add Feedback
             </Button>
@@ -63,9 +59,7 @@
       <div v-else-if="products.length === 0" class="rounded-lg border bg-card p-12 text-center">
         <Icon name="lucide:package" class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
         <h2 class="text-xl font-semibold mb-2">No products yet</h2>
-        <p class="text-muted-foreground mb-6">
-          Create a product first to start collecting and managing feedback.
-        </p>
+        <p class="text-muted-foreground mb-6">Create a product first to start collecting and managing feedback.</p>
         <NuxtLink to="/products">
           <Button>
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -83,7 +77,9 @@
               <Icon name="lucide:message-square" class="w-8 h-8 text-blue-600 dark:text-blue-400" />
               <div class="ml-4">
                 <p class="text-sm font-medium text-muted-foreground">Total Feedback</p>
-                <p data-testid="feedback-stat-total" class="text-2xl font-bold text-card-foreground">{{ pagination.total }}</p>
+                <p data-testid="feedback-stat-total" class="text-2xl font-bold text-card-foreground">
+                  {{ pagination.total }}
+                </p>
               </div>
             </div>
           </div>
@@ -171,12 +167,14 @@
         </div>
 
         <!-- Empty Feedback State -->
-        <div v-else-if="feedbackItems.length === 0" data-testid="feedback-empty" class="rounded-lg border bg-card p-12 text-center">
+        <div
+          v-else-if="feedbackItems.length === 0"
+          data-testid="feedback-empty"
+          class="rounded-lg border bg-card p-12 text-center"
+        >
           <Icon name="lucide:message-square-plus" class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
           <h2 class="text-xl font-semibold mb-2">No feedback yet</h2>
-          <p class="text-muted-foreground mb-6">
-            Be the first to add feedback for this project.
-          </p>
+          <p class="text-muted-foreground mb-6">Be the first to add feedback for this project.</p>
           <Button @click="showCreateDialog = true">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
             Add Feedback
@@ -288,7 +286,9 @@
         <DialogContent class="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>Add Feedback</DialogTitle>
-            <DialogDescription>Create a new feedback item for {{ selectedProject?.name || 'this project' }}.</DialogDescription>
+            <DialogDescription
+              >Create a new feedback item for {{ selectedProject?.name || 'this project' }}.</DialogDescription
+            >
           </DialogHeader>
           <div class="space-y-4 py-4">
             <div class="space-y-2">

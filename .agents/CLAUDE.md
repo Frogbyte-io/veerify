@@ -412,26 +412,27 @@ All feedback, votes, and comments are scoped to projects, which belong to teams,
 
 ### Project Access Utilities (`server/utils/project-access.ts`)
 
-| Function | Purpose | Throws |
-|----------|---------|--------|
-| `requireProjectAccess(projectId, userId)` | Verify user is team member | 404 if project not found, 403 if no access |
-| `requireFeedbackAccess(feedbackId, userId)` | Verify user has access to feedback's project | 404 if not found, 403 if no access |
-| `requirePublicProject(projectId)` | Verify project is public (for anonymous) | 404 if not found, 403 if not public |
-| `resolvePublicProject(orgSlug, projectSlug)` | Resolve public project by slugs | 404 if not found, 403 if not public |
+| Function                                     | Purpose                                      | Throws                                     |
+| -------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
+| `requireProjectAccess(projectId, userId)`    | Verify user is team member                   | 404 if project not found, 403 if no access |
+| `requireFeedbackAccess(feedbackId, userId)`  | Verify user has access to feedback's project | 404 if not found, 403 if no access         |
+| `requirePublicProject(projectId)`            | Verify project is public (for anonymous)     | 404 if not found, 403 if not public        |
+| `resolvePublicProject(orgSlug, projectSlug)` | Resolve public project by slugs              | 404 if not found, 403 if not public        |
 
 ### Endpoint Authorization Rules
 
-| Endpoint | Auth | Access Rule |
-|----------|------|-------------|
-| `GET /api/feedback` | Optional | Requires `projectId` parameter (mandatory) |
-| `POST /api/feedback` | Optional | Authenticated: requires team membership for private projects. Anonymous: requires public project |
-| `GET /api/feedback/[id]` | Optional | Authenticated: requires team membership. Anonymous: requires public project |
-| `DELETE /api/feedback/[id]` | Required | Author OR team member of project's team |
-| `POST /api/feedback/[id]/vote` | Optional | Project must be public (voting is public-facing) |
+| Endpoint                       | Auth     | Access Rule                                                                                      |
+| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
+| `GET /api/feedback`            | Optional | Requires `projectId` parameter (mandatory)                                                       |
+| `POST /api/feedback`           | Optional | Authenticated: requires team membership for private projects. Anonymous: requires public project |
+| `GET /api/feedback/[id]`       | Optional | Authenticated: requires team membership. Anonymous: requires public project                      |
+| `DELETE /api/feedback/[id]`    | Required | Author OR team member of project's team                                                          |
+| `POST /api/feedback/[id]/vote` | Optional | Project must be public (voting is public-facing)                                                 |
 
 ### Team Member Roles
 
 The `teamMember` table includes a `role` column:
+
 - `admin` - Team administrator (future: can manage team settings, add/remove members)
 - `member` - Regular team member (can create feedback, manage team projects)
 
@@ -479,12 +480,12 @@ These mirror the conventions in this file. Keep them in sync when making archite
 
 Reusable skill prompts live in `.agents/skills/`. Use them when asked to scaffold common structures:
 
-| Skill file                        | Invoke with   | Purpose                                      |
-| --------------------------------- | ------------- | -------------------------------------------- |
-| `.agents/skills/new-api.md`       | `/new-api`    | Scaffold a protected server API endpoint     |
-| `.agents/skills/new-page.md`      | `/new-page`   | Scaffold a new dashboard page                |
-| `.agents/skills/new-component.md` | `/new-component` | Scaffold an Options API Vue component     |
-| `.agents/skills/db-change.md`     | `/db-change`  | Guide a schema change + migration end-to-end |
+| Skill file                        | Invoke with      | Purpose                                      |
+| --------------------------------- | ---------------- | -------------------------------------------- |
+| `.agents/skills/new-api.md`       | `/new-api`       | Scaffold a protected server API endpoint     |
+| `.agents/skills/new-page.md`      | `/new-page`      | Scaffold a new dashboard page                |
+| `.agents/skills/new-component.md` | `/new-component` | Scaffold an Options API Vue component        |
+| `.agents/skills/db-change.md`     | `/db-change`     | Guide a schema change + migration end-to-end |
 
 ---
 

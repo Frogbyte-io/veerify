@@ -19,9 +19,7 @@
 
         <div v-else-if="error" class="rounded-md border border-destructive/30 bg-destructive/5 p-4">
           <p class="text-sm text-destructive">{{ error }}</p>
-          <Button variant="outline" size="sm" class="mt-3" @click="loadIntegration">
-            Try Again
-          </Button>
+          <Button variant="outline" size="sm" class="mt-3" @click="loadIntegration"> Try Again </Button>
         </div>
 
         <template v-else>
@@ -29,16 +27,9 @@
             <div class="flex items-center justify-between gap-3">
               <div>
                 <p class="text-sm font-medium">GitHub account connection</p>
-                <p class="text-xs text-muted-foreground">
-                  Use OAuth to authorize repository access for this project.
-                </p>
+                <p class="text-xs text-muted-foreground">Use OAuth to authorize repository access for this project.</p>
               </div>
-              <Button
-                variant="outline"
-                data-testid="github-connect"
-                :disabled="isConnecting"
-                @click="connectGithub"
-              >
+              <Button variant="outline" data-testid="github-connect" :disabled="isConnecting" @click="connectGithub">
                 <Icon v-if="isConnecting" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
                 <Icon v-else name="lucide:link" class="mr-2 h-4 w-4" />
                 Connect GitHub

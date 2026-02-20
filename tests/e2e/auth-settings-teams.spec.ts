@@ -100,9 +100,7 @@ test('sidebar team switcher data stays cached across client-side route changes',
   await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
   await expect(page.locator(selectors.teamSwitcherActiveName)).toBeVisible({ timeout: 20_000 })
 
-  await expect
-    .poll(() => listUserTeamsRequestCount, { timeout: 20_000 })
-    .toBeGreaterThan(0)
+  await expect.poll(() => listUserTeamsRequestCount, { timeout: 20_000 }).toBeGreaterThan(0)
 
   const baselineRequestCount = listUserTeamsRequestCount
 

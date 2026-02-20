@@ -91,11 +91,7 @@ export async function requireOrganizationMembershipBySlug(session: AuthSession, 
   return { org, membership }
 }
 
-export async function requireOrganizationRoleBySlug(
-  session: AuthSession,
-  slug: string,
-  allowedRoles: string[]
-) {
+export async function requireOrganizationRoleBySlug(session: AuthSession, slug: string, allowedRoles: string[]) {
   const { org, membership } = await requireOrganizationMembershipBySlug(session, slug)
   if (!allowedRoles.includes(membership.role)) {
     throw createError({
@@ -108,7 +104,10 @@ export async function requireOrganizationRoleBySlug(
   return { org, membership }
 }
 
-export async function getOrganizationDetails(organizationId: string, currentUserId: string): Promise<OrganizationDetails> {
+export async function getOrganizationDetails(
+  organizationId: string,
+  currentUserId: string
+): Promise<OrganizationDetails> {
   const [org] = await db.select().from(organization).where(eq(organization.id, organizationId)).limit(1)
   if (!org) {
     throw createError({
@@ -171,9 +170,7 @@ export type OrganizationMemberWithTeams = OrganizationMemberSummary & {
   teams: { id: string; name: string; role: string }[]
 }
 
-export async function getOrganizationMembersWithTeams(
-  organizationId: string
-): Promise<OrganizationMemberWithTeams[]> {
+export async function getOrganizationMembersWithTeams(organizationId: string): Promise<OrganizationMemberWithTeams[]> {
   const members = await db
     .select({
       id: member.id,

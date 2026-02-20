@@ -138,9 +138,7 @@ test.describe('Admin feedback workflow', () => {
     const sessionCookie = await signInAndGetSessionCookie(request)
 
     // Transfer auth cookies to browser context
-    const authCookies = (await request.storageState()).cookies.filter((cookie) =>
-      cookie.name.startsWith('better-auth')
-    )
+    const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
@@ -161,16 +159,22 @@ test.describe('Admin feedback workflow', () => {
     await expect(page.getByRole('heading', { name: 'Feedback' })).toBeVisible()
     await expect(page.locator(selectors.feedbackAddButton)).toBeVisible()
 
-    // Wait for data to load (loading state should disappear)
-    await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
-    await expect(page.locator(selectors.feedbackKanban)).toBeVisible({ timeout: 20_000 })
-    await expect(page.locator(selectors.feedbackKanbanOpenColumn)).toBeVisible({ timeout: 20_000 })
-
     // If there's a project selector (multiple products), select our test project
     const projectSelector = page.locator(selectors.feedbackProjectSelector)
     if (await projectSelector.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await projectSelector.selectOption({ value: projectId })
       await page.waitForTimeout(2000)
+    }
+
+    // Wait for data to load (loading state should disappear)
+    await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
+
+    // Fresh test products can legitimately show an empty board first.
+    const feedbackKanban = page.locator(selectors.feedbackKanban)
+    if (await feedbackKanban.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await expect(page.locator(selectors.feedbackKanbanOpenColumn)).toBeVisible({ timeout: 20_000 })
+    } else {
+      await expect(page.locator(selectors.feedbackEmpty)).toBeVisible({ timeout: 20_000 })
     }
 
     await expect(page.locator(selectors.feedbackAddButton)).toBeEnabled({ timeout: 20_000 })

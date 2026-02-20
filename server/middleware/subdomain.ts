@@ -2,8 +2,7 @@ export default defineEventHandler((event) => {
   const host = getHeader(event, 'host') || ''
   const appDomain = process.env.APP_DOMAIN || 'localhost'
   const dashboardDomain =
-    process.env.APP_DASHBOARD_DOMAIN ||
-    (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
+    process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
 
   // Strip port from host
   const hostWithoutPort = host.split(':')[0]
@@ -22,7 +21,7 @@ export default defineEventHandler((event) => {
   } else if (appDomain === 'localhost' && hostWithoutPort.endsWith('.localhost')) {
     // Development: "team.localhost" — endsWith check handles the case above already,
     // but this explicit branch covers when APP_DOMAIN is left as default "localhost".
-    const subdomain = hostWithoutPort.slice(0, -('.localhost'.length))
+    const subdomain = hostWithoutPort.slice(0, -'.localhost'.length)
     if (subdomain && !subdomain.includes('.')) {
       teamSlug = subdomain
     }

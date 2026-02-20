@@ -6,9 +6,7 @@
           <Icon name="lucide:code-2" class="h-5 w-5" />
           Embed Your Feedback Board
         </CardTitle>
-        <CardDescription>
-          Add your public feedback board to any website using an iframe snippet.
-        </CardDescription>
+        <CardDescription> Add your public feedback board to any website using an iframe snippet. </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div v-if="!publicBoardUrl" class="rounded-md bg-muted p-4 text-sm text-muted-foreground">
@@ -20,7 +18,10 @@
           <div class="space-y-2">
             <Label>Embed Snippet</Label>
             <div class="relative">
-              <pre class="rounded-md bg-muted px-4 py-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap break-all">{{ iframeSnippet }}</pre>
+              <pre
+                class="rounded-md bg-muted px-4 py-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap break-all"
+                >{{ iframeSnippet }}</pre
+              >
               <Button
                 variant="ghost"
                 size="icon"
@@ -37,25 +38,17 @@
           <div class="grid grid-cols-2 gap-4">
             <div class="space-y-2">
               <Label for="embed-width">Width</Label>
-              <Input
-                id="embed-width"
-                v-model="options.width"
-                placeholder="100%"
-              />
+              <Input id="embed-width" v-model="options.width" placeholder="100%" />
             </div>
             <div class="space-y-2">
               <Label for="embed-height">Height</Label>
-              <Input
-                id="embed-height"
-                v-model="options.height"
-                placeholder="600"
-              />
+              <Input id="embed-height" v-model="options.height" placeholder="600" />
             </div>
           </div>
 
           <p class="text-xs text-muted-foreground">
-            Paste this snippet into any HTML page where you want the feedback board to appear.
-            The board will use the same settings and styles configured in the Appearance tab.
+            Paste this snippet into any HTML page where you want the feedback board to appear. The board will use the
+            same settings and styles configured in the Appearance tab.
           </p>
         </template>
       </CardContent>

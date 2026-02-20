@@ -3,8 +3,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
 const dashboardDomain =
-  process.env.APP_DASHBOARD_DOMAIN ||
-  (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
+  process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
@@ -21,7 +20,15 @@ export default defineNuxtConfig({
       isCustomElement: (tag: string) => tag === 'hex-color-picker',
     },
   },
-  modules: ['@nuxt/fonts', '@nuxt/icon', '@nuxt/test-utils', 'shadcn-nuxt', '@nuxtjs/color-mode', 'nuxt-nodemailer', '@scalar/nuxt'],
+  modules: [
+    '@nuxt/fonts',
+    '@nuxt/icon',
+    '@nuxt/test-utils',
+    'shadcn-nuxt',
+    '@nuxtjs/color-mode',
+    'nuxt-nodemailer',
+    '@scalar/nuxt',
+  ],
   runtimeConfig: {
     nodemailer: {
       from: process.env.MAIL_FROM,

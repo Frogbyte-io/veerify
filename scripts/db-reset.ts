@@ -16,15 +16,13 @@ function createClient() {
 }
 
 function getDatabaseName() {
-  if (process.env.PGDATABASE)
-    return process.env.PGDATABASE
+  if (process.env.PGDATABASE) return process.env.PGDATABASE
 
   if (process.env.DATABASE_URL) {
     try {
       const url = new URL(process.env.DATABASE_URL)
       const db = url.pathname.replace(/^\//, '')
-      if (db)
-        return db
+      if (db) return db
     } catch {
       // Ignore parse errors and fall back to default.
     }

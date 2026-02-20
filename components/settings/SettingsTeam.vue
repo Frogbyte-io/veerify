@@ -10,7 +10,8 @@
               <span data-testid="team-title">Teams</span>
             </CardTitle>
             <CardDescription>
-              Your workspace operates as a single shared space by default. Create additional teams to organize different projects or departments separately.
+              Your workspace operates as a single shared space by default. Create additional teams to organize different
+              projects or departments separately.
             </CardDescription>
           </div>
           <Button data-testid="team-open-create-dialog" size="sm" @click="showCreateTeamDialog = true">
@@ -33,9 +34,15 @@
           </div>
           <p class="font-medium mb-1">No additional teams</p>
           <p class="text-sm text-muted-foreground max-w-sm mx-auto">
-            All workspace members share access to projects. Create a team when you need separate groups for different projects or departments.
+            All workspace members share access to projects. Create a team when you need separate groups for different
+            projects or departments.
           </p>
-          <Button data-testid="team-open-create-dialog" class="mt-4" variant="outline" @click="showCreateTeamDialog = true">
+          <Button
+            data-testid="team-open-create-dialog"
+            class="mt-4"
+            variant="outline"
+            @click="showCreateTeamDialog = true"
+          >
             <Icon name="lucide:plus" class="h-4 w-4 mr-2" />
             Create your first team
           </Button>
@@ -51,7 +58,9 @@
             @click="switchToTeam(team)"
           >
             <div class="flex items-center gap-3 min-w-0">
-              <div class="flex size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground shrink-0">
+              <div
+                class="flex size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground shrink-0"
+              >
                 <Icon name="lucide:users" class="size-4" />
               </div>
               <div class="min-w-0">
@@ -61,7 +70,11 @@
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <Badge v-if="currentTeam?.id === team.id" variant="default" class="text-xs">Active</Badge>
-              <Icon v-if="switchingTeamId === team.id" name="lucide:loader-2" class="h-4 w-4 animate-spin text-muted-foreground" />
+              <Icon
+                v-if="switchingTeamId === team.id"
+                name="lucide:loader-2"
+                class="h-4 w-4 animate-spin text-muted-foreground"
+              />
             </div>
           </button>
         </div>
@@ -85,9 +98,7 @@
         <div class="space-y-2">
           <Label for="team-slug">Subdomain Slug</Label>
           <Input id="team-slug" v-model="teamSlug" placeholder="my-team" />
-          <p class="text-xs text-muted-foreground">
-            Public URL: {{ teamSlugPreview }}
-          </p>
+          <p class="text-xs text-muted-foreground">Public URL: {{ teamSlugPreview }}</p>
         </div>
         <div class="flex justify-end">
           <Button :disabled="isSavingTeam || !hasTeamChanges" @click="updateTeam">
@@ -171,18 +182,28 @@
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create Team</DialogTitle>
-          <DialogDescription>Create a new team to organize a separate group of projects. Team members will have their own workspace context.</DialogDescription>
+          <DialogDescription
+            >Create a new team to organize a separate group of projects. Team members will have their own workspace
+            context.</DialogDescription
+          >
         </DialogHeader>
         <div class="space-y-4 py-4">
           <div class="space-y-2">
             <Label for="new-team-name">Team Name</Label>
-            <Input id="new-team-name" data-testid="team-create-name" v-model="newTeamName" placeholder="Platform Team" @input="generateNewTeamSlug" />
+            <Input
+              id="new-team-name"
+              data-testid="team-create-name"
+              v-model="newTeamName"
+              placeholder="Platform Team"
+              @input="generateNewTeamSlug"
+            />
           </div>
           <div class="space-y-2">
             <Label for="new-team-slug">Subdomain Slug</Label>
             <Input id="new-team-slug" v-model="newTeamSlug" placeholder="platform-team" />
             <p class="text-xs text-muted-foreground">
-              Your public feedback boards will live at <span class="font-medium">{{ newTeamSlug || 'slug' }}.{{ appDomain }}</span>
+              Your public feedback boards will live at
+              <span class="font-medium">{{ newTeamSlug || 'slug' }}.{{ appDomain }}</span>
             </p>
           </div>
         </div>
@@ -228,9 +249,7 @@
       <DialogContent>
         <DialogHeader>
           <DialogTitle class="text-red-600">Delete Team</DialogTitle>
-          <DialogDescription>
-            This permanently deletes the team and removes its workspace context.
-          </DialogDescription>
+          <DialogDescription> This permanently deletes the team and removes its workspace context. </DialogDescription>
         </DialogHeader>
         <div class="py-3">
           <Input v-model="deleteConfirmation" placeholder="Type team name to confirm" />

@@ -2,14 +2,13 @@ import { spawnSync } from 'node:child_process'
 
 const serverName = process.env.CODEX_CHROME_MCP_NAME || 'chrome-devtools'
 const serverCommand = process.env.CODEX_CHROME_MCP_COMMAND || 'npx'
-const serverArgs =
-  process.env.CODEX_CHROME_MCP_ARGS?.split(' ').filter(Boolean) || [
-    '-y',
-    'chrome-devtools-mcp@latest',
-    '--headless',
-    '--isolated',
-    '--no-sandbox',
-  ]
+const serverArgs = process.env.CODEX_CHROME_MCP_ARGS?.split(' ').filter(Boolean) || [
+  '-y',
+  'chrome-devtools-mcp@latest',
+  '--headless',
+  '--isolated',
+  '--no-sandbox',
+]
 
 function runCodex(args, options = {}) {
   const result = spawnSync('codex', args, {

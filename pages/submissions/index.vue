@@ -37,7 +37,8 @@
           </div>
           <p class="font-medium text-lg mb-1">No submissions yet</p>
           <p class="text-sm text-muted-foreground max-w-sm mx-auto">
-            When you submit feedback on public boards, your submissions will appear here so you can track their progress.
+            When you submit feedback on public boards, your submissions will appear here so you can track their
+            progress.
           </p>
         </CardContent>
       </Card>
@@ -103,9 +104,7 @@
             Page {{ page }} of {{ totalPages }} ({{ totalCount }} submissions)
           </p>
           <div class="flex gap-2">
-            <Button variant="outline" size="sm" :disabled="page <= 1" @click="goToPage(page - 1)">
-              Previous
-            </Button>
+            <Button variant="outline" size="sm" :disabled="page <= 1" @click="goToPage(page - 1)"> Previous </Button>
             <Button variant="outline" size="sm" :disabled="page >= totalPages" @click="goToPage(page + 1)">
               Next
             </Button>

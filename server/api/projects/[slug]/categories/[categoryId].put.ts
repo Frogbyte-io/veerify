@@ -9,7 +9,12 @@ import { requireProjectCategoryAccess, toCategorySlug } from '~/server/utils/pro
 const updateCategorySchema = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   icon: z.string().trim().max(32).nullable().optional(),
-  color: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  color: z
+    .string()
+    .trim()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
+    .optional(),
   description: z.string().trim().max(200).nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
 })

@@ -1,6 +1,6 @@
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
-  const appDomain = config.public.appDomain as string || 'localhost'
+  const appDomain = (config.public.appDomain as string) || 'localhost'
   const host = window.location.hostname
 
   let teamSlug: string | null = null
@@ -13,7 +13,7 @@ export default defineNuxtPlugin(() => {
       teamSlug = subdomain
     }
   } else if (appDomain === 'localhost' && host.endsWith('.localhost')) {
-    const subdomain = host.slice(0, -('.localhost'.length))
+    const subdomain = host.slice(0, -'.localhost'.length)
     if (subdomain && !subdomain.includes('.')) {
       teamSlug = subdomain
     }

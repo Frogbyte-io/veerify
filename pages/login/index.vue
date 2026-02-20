@@ -36,7 +36,11 @@
                   <button
                     type="button"
                     class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                    :class="loginMethod === 'password' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
+                    :class="
+                      loginMethod === 'password'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    "
                     @click="loginMethod = 'password'"
                   >
                     Password
@@ -44,7 +48,11 @@
                   <button
                     type="button"
                     class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                    :class="loginMethod === 'magic-link' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'"
+                    :class="
+                      loginMethod === 'magic-link'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    "
                     @click="loginMethod = 'magic-link'"
                   >
                     Magic Link
@@ -95,7 +103,8 @@
                       <Icon name="lucide:mail-check" class="mx-auto mb-2 h-8 w-8 text-primary" />
                       <p class="text-sm font-medium">Check your email</p>
                       <p class="mt-1 text-xs text-muted-foreground">
-                        We sent a sign-in link to <strong>{{ email }}</strong>. Click the link in the email to sign in.
+                        We sent a sign-in link to <strong>{{ email }}</strong
+                        >. Click the link in the email to sign in.
                       </p>
                       <Button
                         type="button"
@@ -204,9 +213,7 @@ export default {
         const currentHost = window.location.hostname.toLowerCase()
 
         const isAllowedHost =
-          redirectHost === currentHost ||
-          redirectHost === appDomain ||
-          redirectHost.endsWith(`.${appDomain}`)
+          redirectHost === currentHost || redirectHost === appDomain || redirectHost.endsWith(`.${appDomain}`)
 
         return isAllowedHost ? parsed.toString() : fallback
       } catch {

@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
   // Rate limiting (high limit for webhooks)
   await requireRateLimit(event, {
     ...rateLimits.webhook,
-    identifier: 'github-webhook'
+    identifier: 'github-webhook',
   })
 
   // Get GitHub webhook headers
@@ -88,10 +88,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        'Missing required GitHub webhook headers'
-      )
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Missing required GitHub webhook headers'),
     })
   }
 
@@ -112,9 +109,6 @@ export default defineEventHandler(async (event) => {
   throw createError({
     statusCode: 501,
     statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'GitHub webhook processing is not yet implemented'
-    )
+    data: createErrorResponse(ErrorCode.NOT_IMPLEMENTED, 'GitHub webhook processing is not yet implemented'),
   })
 })

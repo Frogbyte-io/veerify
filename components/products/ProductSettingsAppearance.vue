@@ -12,30 +12,18 @@
         <div class="space-y-2">
           <Label>Accent Color</Label>
           <ColorPicker v-model="form.accentColor" />
-          <p class="text-xs text-muted-foreground">
-            Used for buttons and links on your public board.
-          </p>
+          <p class="text-xs text-muted-foreground">Used for buttons and links on your public board.</p>
         </div>
 
         <div class="space-y-2">
           <Label for="logo-url">Logo URL</Label>
-          <Input
-            id="logo-url"
-            v-model="form.logoUrl"
-            placeholder="https://example.com/logo.png"
-          />
-          <p class="text-xs text-muted-foreground">
-            Displayed in the header of your public feedback board.
-          </p>
+          <Input id="logo-url" v-model="form.logoUrl" placeholder="https://example.com/logo.png" />
+          <p class="text-xs text-muted-foreground">Displayed in the header of your public feedback board.</p>
         </div>
 
         <div class="space-y-2">
           <Label for="banner-url">Banner Image URL</Label>
-          <Input
-            id="banner-url"
-            v-model="form.bannerUrl"
-            placeholder="https://example.com/banner.jpg"
-          />
+          <Input id="banner-url" v-model="form.bannerUrl" placeholder="https://example.com/banner.jpg" />
           <p class="text-xs text-muted-foreground">
             Displayed as a hero banner at the top of your public board. Recommended size: 1200×300px.
           </p>
@@ -51,17 +39,13 @@
             <option value="light">Always Light</option>
             <option value="dark">Always Dark</option>
           </select>
-          <p class="text-xs text-muted-foreground">
-            Controls the default theme for your public feedback board.
-          </p>
+          <p class="text-xs text-muted-foreground">Controls the default theme for your public feedback board.</p>
         </div>
 
         <div class="flex items-center justify-between">
           <div>
             <p class="font-medium text-sm">Show "Powered by Veerify"</p>
-            <p class="text-xs text-muted-foreground">
-              Display a small attribution badge on your public board.
-            </p>
+            <p class="text-xs text-muted-foreground">Display a small attribution badge on your public board.</p>
           </div>
           <Switch v-model="form.showPoweredBy" data-testid="appearance-toggle-powered-by" />
         </div>
@@ -148,9 +132,7 @@
                 />
               </div>
             </div>
-            <p class="text-xs text-muted-foreground">
-              Leave link label or URL empty to hide that link.
-            </p>
+            <p class="text-xs text-muted-foreground">Leave link label or URL empty to hide that link.</p>
           </div>
         </div>
 
@@ -181,10 +163,7 @@
             class="w-full h-32 object-cover"
             @error="$event.target.style.display = 'none'"
           />
-          <div
-            class="p-4 flex items-center gap-3"
-            :style="{ backgroundColor: form.accentColor || '#3b82f6' }"
-          >
+          <div class="p-4 flex items-center gap-3" :style="{ backgroundColor: form.accentColor || '#3b82f6' }">
             <img
               v-if="form.logoUrl"
               :src="form.logoUrl"
@@ -192,10 +171,7 @@
               class="h-8 w-8 rounded object-cover bg-white/20"
               @error="$event.target.style.display = 'none'"
             />
-            <div
-              v-else
-              class="h-8 w-8 rounded bg-white/20 flex items-center justify-center"
-            >
+            <div v-else class="h-8 w-8 rounded bg-white/20 flex items-center justify-center">
               <Icon name="lucide:message-square" class="w-4 h-4 text-white" />
             </div>
             <div>
@@ -323,10 +299,11 @@ export default {
       return ''
     },
     showPreviewCustomFooter() {
-      return this.form.customFooterEnabled && (
-        this.form.customFooterBranding?.trim() ||
-        this.form.customFooterText?.trim() ||
-        this.previewCustomFooterLinks.length > 0
+      return (
+        this.form.customFooterEnabled &&
+        (this.form.customFooterBranding?.trim() ||
+          this.form.customFooterText?.trim() ||
+          this.previewCustomFooterLinks.length > 0)
       )
     },
     previewCustomFooterLinks() {

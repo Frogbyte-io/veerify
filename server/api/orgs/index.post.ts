@@ -87,11 +87,9 @@ import { assertOrganizationSlugAvailable } from '~/server/utils/organization-acc
 import { DEFAULT_TEAM_NAME } from '~/server/utils/team-context'
 
 const createOrganizationSchema = z.object({
-  name: z.string()
-    .min(1, 'Organization name is required')
-    .max(100, 'Organization name too long'),
+  name: z.string().min(1, 'Organization name is required').max(100, 'Organization name too long'),
   slug: commonSchemas.slug,
-  logo: commonSchemas.url.optional().nullable()
+  logo: commonSchemas.url.optional().nullable(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -111,10 +109,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 409,
       statusMessage: 'Conflict',
-      data: createErrorResponse(
-        ErrorCode.CONFLICT,
-        `Organization limit reached (${ORGANIZATION_LIMIT}).`
-      )
+      data: createErrorResponse(ErrorCode.CONFLICT, `Organization limit reached (${ORGANIZATION_LIMIT}).`),
     })
   }
 

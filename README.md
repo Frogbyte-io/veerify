@@ -53,6 +53,7 @@ yarn harness:verify
 ```
 
 `yarn harness:verify` runs:
+
 - `yarn typecheck`
 - `yarn test`
 - `yarn lint`
@@ -179,7 +180,6 @@ docker compose up -d
 ```bash
 yarn preview
 ```
-
 
 **Test credentials on preview deployments:**
 

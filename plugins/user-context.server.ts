@@ -9,9 +9,7 @@ export default defineNuxtPlugin(async () => {
       headers: event.node.req.headers as any,
     })
 
-    useState('hasActiveOrganization', () =>
-      session?.user ? !!session.session?.activeOrganizationId : null
-    )
+    useState('hasActiveOrganization', () => (session?.user ? !!session.session?.activeOrganizationId : null))
   } catch {
     useState('hasActiveOrganization', () => null)
   }

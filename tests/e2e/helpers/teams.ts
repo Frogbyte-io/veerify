@@ -182,9 +182,7 @@ export async function createTeamFromSettings(page: Page, teamName: string): Prom
   return getActiveTeamViaApi(page.request)
 }
 
-type SwitchTeamParams =
-  | { teamId: string; expectedName: string }
-  | { teamName: string }
+type SwitchTeamParams = { teamId: string; expectedName: string } | { teamName: string }
 
 export async function switchTeamFromSidebar(page: Page, params: SwitchTeamParams): Promise<ActiveTeam> {
   await expect(page.locator(selectors.teamSwitcherTrigger)).toBeVisible()

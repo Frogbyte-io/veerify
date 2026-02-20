@@ -1,12 +1,10 @@
 ## 📥 Inbox
-*New ideas land here automatically from Discord #veerify-ideas. Move them to the right section when triaged.*
+
+_New ideas land here automatically from Discord #veerify-ideas. Move them to the right section when triaged._
 
 - [ ] Add language selection using i18n
 
-
-
 MVP
-
 
 ### Customers (Dashboard)
 
@@ -44,7 +42,6 @@ MVP
 - [ ] Anti-spam: IP-based rate limiting, duplicate content detection, user reputation scoring, CAPTCHA (optional)
 - [ ] Review and harden HTML sanitization for user-submitted content; audit for SQL injection risks
 
-
 - [ ] Discord Bot — notify on new feedback; submit feedback via `/feedback` slash command
 - [ ] Polls / feature suggestions with yay-or-nay vote
 - [ ] Integrations with form providers (Tally, Jotform, Google Forms, etc.)
@@ -62,7 +59,7 @@ MVP
 - [ ] In public feedback board, it should be possible to click a feedback to see more details (description, comments, etc.) in a modal or separate page without leaving the board
 - [x] Move powered by verify to the very bottom of the page and make it smaller. Change domain to veerify.io
 - [x] Add a GitHub mention link to the footer of the public board for users to easily report issues with the board itself, and to see the source code. Mention that it is open source and contributions are welcome.
-- [x] Add a link to veerify's own public feedback board in the footer of the public board, so users can see an example of a feedback board and submit feedback about veerify itself. 
+- [x] Add a link to veerify's own public feedback board in the footer of the public board, so users can see an example of a feedback board and submit feedback about veerify itself.
   - Added footer link in `components/public/PublicFeedbackBoard.vue` (`public-footer-veerify-board`) with coverage updates in `tests/e2e/anonymous-feedback.spec.ts`.
 
 - [x] When refreshing in a personal account, the sidebar renders the items for the organization instead of the personal account. This is because the sidebar is rendered before we fetch the user data and determine if it's a personal or org account. We should either fetch the user data earlier or make the sidebar more resilient to this case.
@@ -74,11 +71,9 @@ MVP
 
 - [x] Workspace icon for when the sidebar is collapsed is not centered in the sidebar. Please center it.
 
-
 - [ ] When on a public board on a custom domain or subdomain but I am logged in to the dashboard on the main domain, it should show that I am logged in and allow me to access the dashboard from the public board. Currently, it shows that I am not logged in and when I click the login button, it takes me to the main domain login page instead of showing a login modal on the public board. We should either show a login modal on the public board or redirect to the main domain login page and then back to the public board after login.
 
-
-- [x] The toggle in product settings to show or not show the powered by veerify badge on the public board is currently updating on public boards. It should hide the badge when toggled off and show it when toggled on. Please also add option to toggle Github footer as well. 
+- [x] The toggle in product settings to show or not show the powered by veerify badge on the public board is currently updating on public boards. It should hide the badge when toggled off and show it when toggled on. Please also add option to toggle Github footer as well.
 
 - [x] Add option to create a custom footer for public feedback boards, where customers can add their own text, links, and branding instead of the default "Powered by Veerify" badge. This would allow customers to fully white-label the public board experience if they choose to.
   - Added custom footer settings and rendering in `components/products/ProductSettingsAppearance.vue` and `components/public/PublicFeedbackBoard.vue`, with API validation in `server/api/projects/[slug].put.ts` and e2e coverage in `tests/e2e/anonymous-feedback.spec.ts`.
@@ -86,8 +81,5 @@ MVP
 - [x] Feedback page for a product should default to a Kanban style board instead
   - Replaced list rendering in `pages/feedback/index.vue` with a Kanban-first board and updated e2e selectors/assertions in `tests/e2e/helpers/selectors.ts` and `tests/e2e/admin-feedback.spec.ts`.
 
-
-
-- [x] We want to have a home page for the entire project, hosted on veerify.io. Please change the main domain for the dashboard to app.veerify.io, so we can host a separate site for the homepage. 
+- [x] We want to have a home page for the entire project, hosted on veerify.io. Please change the main domain for the dashboard to app.veerify.io, so we can host a separate site for the homepage.
   - Added dedicated dashboard-domain config (`APP_DASHBOARD_DOMAIN`) and runtime usage in `nuxt.config.ts`, `server/middleware/subdomain.ts`, and `components/public/PublicFeedbackBoard.vue`, plus env/docs updates in `.env.example` and `README.md`.
-

@@ -6,7 +6,14 @@ import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
-import { feedback, project, feedbackCategory, vote, githubIntegration, githubIssueLink } from '~/server/database/schema/feedback'
+import {
+  feedback,
+  project,
+  feedbackCategory,
+  vote,
+  githubIntegration,
+  githubIssueLink,
+} from '~/server/database/schema/feedback'
 import { sendFeedbackConfirmationEmail } from '~/lib/email'
 
 const createFeedbackSchema = z.object({
@@ -44,11 +51,7 @@ export default defineEventHandler(async (event) => {
 
   // Verify category if provided
   if (body.categoryId) {
-    const [cat] = await db
-      .select()
-      .from(feedbackCategory)
-      .where(eq(feedbackCategory.id, body.categoryId))
-      .limit(1)
+    const [cat] = await db.select().from(feedbackCategory).where(eq(feedbackCategory.id, body.categoryId)).limit(1)
     if (!cat || cat.projectId !== proj.id) {
       throw createError({
         statusCode: 400,
@@ -134,31 +137,32 @@ export default defineEventHandler(async (event) => {
     }
 
     try {
-      const issueResponse = await fetch(`https://api.github.com/repos/${integration.owner}/${integration.repo}/issues`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${integration.accessToken}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'User-Agent': 'Veerify',
-        },
-        body: JSON.stringify({
-          title: created.title,
-          body: [
-            created.body?.trim() || '*No description provided*',
-            '',
-            `Source feedback ID: ${created.id}`,
-          ].join('\n'),
-          labels: Array.from(labels),
-        }),
-      })
+      const issueResponse = await fetch(
+        `https://api.github.com/repos/${integration.owner}/${integration.repo}/issues`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${integration.accessToken}`,
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'User-Agent': 'Veerify',
+          },
+          body: JSON.stringify({
+            title: created.title,
+            body: [created.body?.trim() || '*No description provided*', '', `Source feedback ID: ${created.id}`].join(
+              '\n'
+            ),
+            labels: Array.from(labels),
+          }),
+        }
+      )
 
       if (!issueResponse.ok) {
-        const issueError = await issueResponse.json().catch(() => null) as { message?: string } | null
+        const issueError = (await issueResponse.json().catch(() => null)) as { message?: string } | null
         console.error('Failed to auto-create GitHub issue:', issueError?.message || issueResponse.statusText)
       } else {
-        const issue = await issueResponse.json() as {
+        const issue = (await issueResponse.json()) as {
           number: number
           html_url: string
           state: string

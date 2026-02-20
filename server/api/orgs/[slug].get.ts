@@ -82,10 +82,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        'Organization slug is required'
-      )
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Organization slug is required'),
     })
   }
 

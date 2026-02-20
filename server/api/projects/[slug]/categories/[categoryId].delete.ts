@@ -27,11 +27,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 400,
       statusMessage: 'Validation failed',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        'Request validation failed',
-        parsedBody.error.issues
-      ),
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Request validation failed', parsedBody.error.issues),
     })
   }
   const body = parsedBody.data

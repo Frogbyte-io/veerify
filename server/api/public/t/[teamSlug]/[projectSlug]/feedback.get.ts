@@ -53,10 +53,16 @@ export default defineEventHandler(async (event) => {
   const feedbackIds = items.map((i) => i.feedback.id)
   if (feedbackIds.length > 0) {
     if (session?.user) {
-      const votes = await db.select({ feedbackId: vote.feedbackId }).from(vote).where(eq(vote.voterUserId, session.user.id))
+      const votes = await db
+        .select({ feedbackId: vote.feedbackId })
+        .from(vote)
+        .where(eq(vote.voterUserId, session.user.id))
       voterVotes = new Set(votes.map((v) => v.feedbackId))
     } else if (anonSession) {
-      const votes = await db.select({ feedbackId: vote.feedbackId }).from(vote).where(eq(vote.voterSessionId, anonSession.id))
+      const votes = await db
+        .select({ feedbackId: vote.feedbackId })
+        .from(vote)
+        .where(eq(vote.voterSessionId, anonSession.id))
       voterVotes = new Set(votes.map((v) => v.feedbackId))
     }
   }
@@ -78,7 +84,13 @@ export default defineEventHandler(async (event) => {
         ? item.feedback.authorSessionId === anonSession.id
         : false,
     category: item.category
-      ? { id: item.category.id, name: item.category.name, slug: item.category.slug, icon: item.category.icon, color: item.category.color }
+      ? {
+          id: item.category.id,
+          name: item.category.name,
+          slug: item.category.slug,
+          icon: item.category.icon,
+          color: item.category.color,
+        }
       : null,
   }))
 

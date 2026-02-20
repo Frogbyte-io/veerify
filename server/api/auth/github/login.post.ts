@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   // Rate limiting for login attempts
   await requireRateLimit(event, {
     ...rateLimits.strict,
-    identifier: 'github-login'
+    identifier: 'github-login',
   })
 
   // TODO: Implement GitHub OAuth redirect
@@ -43,9 +43,6 @@ export default defineEventHandler(async (event) => {
   throw createError({
     statusCode: 501,
     statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'GitHub OAuth login is not yet implemented'
-    )
+    data: createErrorResponse(ErrorCode.NOT_IMPLEMENTED, 'GitHub OAuth login is not yet implemented'),
   })
 })

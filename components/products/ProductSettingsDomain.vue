@@ -27,7 +27,8 @@
             </Button>
           </div>
           <p class="text-xs text-muted-foreground">
-            Enter a subdomain you control, e.g. <code class="font-mono bg-muted px-1 py-0.5 rounded">feedback.yourapp.com</code>.
+            Enter a subdomain you control, e.g.
+            <code class="font-mono bg-muted px-1 py-0.5 rounded">feedback.yourapp.com</code>.
           </p>
         </div>
 
@@ -47,7 +48,9 @@
               <span class="text-sm font-medium">
                 <span v-if="verifyStatus === 'idle'">Not checked yet</span>
                 <span v-else-if="verifyStatus === 'checking'">Checking DNS…</span>
-                <span v-else-if="verifyStatus === 'verified'" class="text-green-600 dark:text-green-400">CNAME verified</span>
+                <span v-else-if="verifyStatus === 'verified'" class="text-green-600 dark:text-green-400"
+                  >CNAME verified</span
+                >
                 <span v-else class="text-yellow-600 dark:text-yellow-400">CNAME not detected</span>
               </span>
             </div>
@@ -65,13 +68,15 @@
             </p>
             <p v-if="verifyResult.resolvedTo.length">
               <span class="font-medium">Resolved to:</span>
-              <code
-                v-for="c in verifyResult.resolvedTo"
-                :key="c"
-                class="ml-1 font-mono bg-muted px-1 py-0.5 rounded"
-              >{{ c }}</code>
+              <code v-for="c in verifyResult.resolvedTo" :key="c" class="ml-1 font-mono bg-muted px-1 py-0.5 rounded">{{
+                c
+              }}</code>
             </p>
-            <p v-else>No CNAME record found for <code class="font-mono bg-muted px-1 py-0.5 rounded">{{ form.customDomain }}</code>.</p>
+            <p v-else>
+              No CNAME record found for
+              <code class="font-mono bg-muted px-1 py-0.5 rounded">{{ form.customDomain }}</code
+              >.
+            </p>
           </div>
         </div>
       </CardContent>
@@ -99,14 +104,19 @@
             </div>
             <div class="space-y-1">
               <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium">Name / Host</p>
-              <code class="block font-mono bg-background border rounded px-2 py-1 truncate">{{ hostPart || 'feedback' }}</code>
+              <code class="block font-mono bg-background border rounded px-2 py-1 truncate">{{
+                hostPart || 'feedback'
+              }}</code>
             </div>
             <div class="space-y-1">
               <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium">Value / Target</p>
               <code class="block font-mono bg-background border rounded px-2 py-1 truncate">{{ cnameTarget }}</code>
             </div>
           </div>
-          <p class="text-xs text-muted-foreground">TTL can be set to <strong>Auto</strong> or <strong>3600</strong>. DNS changes can take up to 48 hours to propagate, though usually much faster.</p>
+          <p class="text-xs text-muted-foreground">
+            TTL can be set to <strong>Auto</strong> or <strong>3600</strong>. DNS changes can take up to 48 hours to
+            propagate, though usually much faster.
+          </p>
         </div>
 
         <!-- Provider Selector -->

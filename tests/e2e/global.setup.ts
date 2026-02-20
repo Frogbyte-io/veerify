@@ -36,9 +36,7 @@ export default async function globalSetup() {
     }
 
     if (REQUIRE_SEED) {
-      const seedCheck = await client.query('SELECT 1 FROM "user" WHERE email = $1 LIMIT 1', [
-        REQUIRED_SEED_USER_EMAIL,
-      ])
+      const seedCheck = await client.query('SELECT 1 FROM "user" WHERE email = $1 LIMIT 1', [REQUIRED_SEED_USER_EMAIL])
       if ((seedCheck.rowCount ?? 0) === 0) {
         throw new Error(`seed user "${REQUIRED_SEED_USER_EMAIL}" was not found (run yarn db:seed)`)
       }

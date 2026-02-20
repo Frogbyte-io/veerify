@@ -12,7 +12,9 @@
               <h3 class="font-medium text-blue-900">Professional Plan</h3>
               <p class="text-sm text-blue-700">$29/month - Billed monthly</p>
             </div>
-            <button class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">Manage Subscription</button>
+            <button class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+              Manage Subscription
+            </button>
           </div>
         </div>
 
@@ -34,7 +36,9 @@
     <Card>
       <CardHeader>
         <CardTitle>Billing Contacts</CardTitle>
-        <CardDescription>Add additional emails that should receive billing receipts and invoices in copy.</CardDescription>
+        <CardDescription
+          >Add additional emails that should receive billing receipts and invoices in copy.</CardDescription
+        >
       </CardHeader>
       <CardContent class="space-y-4">
         <div v-if="isLoading" class="space-y-2">
@@ -88,9 +92,7 @@
           <p v-if="newContactEmail && !isValidNewEmail" class="text-xs text-destructive">
             Enter a valid email address.
           </p>
-          <p v-else-if="isDuplicateNewEmail" class="text-xs text-destructive">
-            This contact email is already added.
-          </p>
+          <p v-else-if="isDuplicateNewEmail" class="text-xs text-destructive">This contact email is already added.</p>
 
           <div class="flex justify-end">
             <Button

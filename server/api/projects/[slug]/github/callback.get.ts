@@ -39,10 +39,10 @@ export default defineEventHandler(async (event) => {
   }
 
   if (
-    !stateCookie
-    || stateCookie.state !== returnedState
-    || stateCookie.projectSlug !== projectSlug
-    || Date.now() - stateCookie.createdAt > 10 * 60 * 1000
+    !stateCookie ||
+    stateCookie.state !== returnedState ||
+    stateCookie.projectSlug !== projectSlug ||
+    Date.now() - stateCookie.createdAt > 10 * 60 * 1000
   ) {
     throw createError({
       statusCode: 400,
@@ -58,10 +58,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 500,
       statusMessage: 'GitHub OAuth not configured',
-      data: createErrorResponse(
-        ErrorCode.INTERNAL_ERROR,
-        'Missing GitHub OAuth configuration'
-      ),
+      data: createErrorResponse(ErrorCode.INTERNAL_ERROR, 'Missing GitHub OAuth configuration'),
     })
   }
 
@@ -89,15 +86,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const tokenBody = await tokenResponse.json() as { access_token?: string; error?: string }
+  const tokenBody = (await tokenResponse.json()) as { access_token?: string; error?: string }
   if (!tokenBody.access_token) {
     throw createError({
       statusCode: 400,
       statusMessage: 'GitHub authorization failed',
-      data: createErrorResponse(
-        ErrorCode.VALIDATION_ERROR,
-        tokenBody.error || 'GitHub did not return an access token'
-      ),
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, tokenBody.error || 'GitHub did not return an access token'),
     })
   }
 

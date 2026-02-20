@@ -19,21 +19,16 @@ export default defineEventHandler(async (event) => {
   }
 
   const cnameTarget = useRuntimeConfig().public.cnameTarget as string
-  const currentSettings = selectedProject.settings && typeof selectedProject.settings === 'object'
-    ? selectedProject.settings
-    : {}
+  const currentSettings =
+    selectedProject.settings && typeof selectedProject.settings === 'object' ? selectedProject.settings : {}
 
   try {
     const cnames = await dns.resolveCname(domain)
     const matched = cnames.some(
-      (c) => c.toLowerCase().replace(/\.$/, '') === cnameTarget.toLowerCase().replace(/\.$/, ''),
+      (c) => c.toLowerCase().replace(/\.$/, '') === cnameTarget.toLowerCase().replace(/\.$/, '')
     )
 
-    if (
-      matched
-      && session?.user?.email
-      && currentSettings.domainVerifiedEmailSentFor !== domain
-    ) {
+    if (matched && session?.user?.email && currentSettings.domainVerifiedEmailSentFor !== domain) {
       sendCustomDomainVerifiedEmail({
         to: session.user.email,
         name: session.user.name || 'there',

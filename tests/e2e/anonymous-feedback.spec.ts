@@ -13,8 +13,7 @@ import { loginViaUi } from './helpers/auth'
 const PORT = Number(process.env.PLAYWRIGHT_PORT || 4173)
 const TEAM_SLUG = process.env.E2E_TEAM_SLUG || 'preview-org'
 const PROJECT_SLUG = process.env.E2E_PROJECT_SLUG || 'demo'
-const PUBLIC_PAGE =
-  process.env.E2E_PUBLIC_PAGE_URL || `http://${TEAM_SLUG}.localhost:${PORT}/${PROJECT_SLUG}`
+const PUBLIC_PAGE = process.env.E2E_PUBLIC_PAGE_URL || `http://${TEAM_SLUG}.localhost:${PORT}/${PROJECT_SLUG}`
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
@@ -52,10 +51,7 @@ async function openSubmitDialog(page: Page) {
   await expect(page.getByText('Share your ideas')).toBeVisible({ timeout: 5_000 })
 }
 
-async function fillAndSubmitFeedback(
-  page: Page,
-  opts: { title: string; body: string; name: string; email?: string }
-) {
+async function fillAndSubmitFeedback(page: Page, opts: { title: string; body: string; name: string; email?: string }) {
   await openSubmitDialog(page)
 
   await page.locator('#fb-title').fill(opts.title)
@@ -74,7 +70,10 @@ async function fillAndSubmitFeedback(
 }
 
 function getAnonCookie(page: Page) {
-  return page.context().cookies().then((cookies) => cookies.find((c) => c.name === 'veerify_anon_session'))
+  return page
+    .context()
+    .cookies()
+    .then((cookies) => cookies.find((c) => c.name === 'veerify_anon_session'))
 }
 
 async function setSwitchState(toggle: Locator, enabled: boolean) {
@@ -234,15 +233,11 @@ test.describe('Anonymous feedback sessions', () => {
 
     // New submissions are auto-upvoted by the submitter, so first click removes the vote.
     await voteButton.click()
-    await expect
-      .poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10))
-      .toBe(initialCount - 1)
+    await expect.poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10)).toBe(initialCount - 1)
 
     // Second click adds the vote back.
     await voteButton.click()
-    await expect
-      .poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10))
-      .toBe(initialCount)
+    await expect.poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10)).toBe(initialCount)
   })
 
   test('anonymous session cookie persists across page reloads', async ({ page }) => {
@@ -335,15 +330,11 @@ test.describe('Anonymous feedback sessions', () => {
     // Newly submitted feedback is already voted by the submitter.
     // First click removes the vote.
     await voteButton.click()
-    await expect
-      .poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10))
-      .toBe(initialCount - 1)
+    await expect.poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10)).toBe(initialCount - 1)
 
     // Second click re-adds the vote.
     await voteButton.click()
-    await expect
-      .poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10))
-      .toBe(initialCount)
+    await expect.poll(async () => parseInt((await voteCountEl.textContent()) || '0', 10)).toBe(initialCount)
   })
 
   test('email helper text is shown in submit dialog', async ({ page }) => {
@@ -352,9 +343,7 @@ test.describe('Anonymous feedback sessions', () => {
     await openSubmitDialog(page)
 
     // Check that the email helper text exists
-    await expect(
-      page.getByText('Provide your email to receive updates on comments and status changes.')
-    ).toBeVisible()
+    await expect(page.getByText('Provide your email to receive updates on comments and status changes.')).toBeVisible()
   })
 
   test('appearance footer toggles control public board footer visibility', async ({ page }) => {
@@ -371,8 +360,7 @@ test.describe('Anonymous feedback sessions', () => {
       await setSwitchState(githubFooterToggle, false)
 
       const saveResponsePromise = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+        (response) => response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
         { timeout: 20_000 }
       )
       await saveButton.click()
@@ -397,8 +385,7 @@ test.describe('Anonymous feedback sessions', () => {
 
       if (await resetSaveButton.isEnabled()) {
         const resetSaveResponsePromise = page.waitForResponse(
-          (response) =>
-            response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+          (response) => response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
           { timeout: 20_000 }
         )
         await resetSaveButton.click()
@@ -435,8 +422,7 @@ test.describe('Anonymous feedback sessions', () => {
       await customFooterSecondaryUrl.fill('https://acme.example/support')
 
       const saveResponsePromise = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+        (response) => response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
         { timeout: 20_000 }
       )
       await saveButton.click()
@@ -471,8 +457,7 @@ test.describe('Anonymous feedback sessions', () => {
 
       if (await resetSaveButton.isEnabled()) {
         const resetSaveResponsePromise = page.waitForResponse(
-          (response) =>
-            response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+          (response) => response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
           { timeout: 20_000 }
         )
         await resetSaveButton.click()

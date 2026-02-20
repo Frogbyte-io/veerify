@@ -16,11 +16,7 @@
       >
         <div class="space-y-3">
           <ClientOnly>
-            <hex-color-picker
-              :color="modelValue"
-              class="color-picker-widget"
-              @color-changed="onColorChanged"
-            />
+            <hex-color-picker :color="modelValue" class="color-picker-widget" @color-changed="onColorChanged" />
           </ClientOnly>
           <div class="flex items-center gap-2">
             <div

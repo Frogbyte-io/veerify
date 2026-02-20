@@ -9,7 +9,10 @@
       <!-- Search Bar -->
       <div class="mb-8">
         <div class="relative max-w-md">
-          <Icon name="lucide:search" class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Icon
+            name="lucide:search"
+            class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground"
+          />
           <input
             type="text"
             placeholder="Search help articles..."
@@ -111,7 +114,9 @@
           <div class="p-6">
             <div class="space-y-4">
               <div class="flex items-start space-x-3">
-                <div class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5">
+                <div
+                  class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5"
+                >
                   <span class="text-xs font-medium text-blue-600 dark:text-blue-400">1</span>
                 </div>
                 <div>
@@ -121,7 +126,9 @@
               </div>
 
               <div class="flex items-start space-x-3">
-                <div class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5">
+                <div
+                  class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5"
+                >
                   <span class="text-xs font-medium text-blue-600 dark:text-blue-400">2</span>
                 </div>
                 <div>
@@ -131,17 +138,23 @@
               </div>
 
               <div class="flex items-start space-x-3">
-                <div class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5">
+                <div
+                  class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5"
+                >
                   <span class="text-xs font-medium text-blue-600 dark:text-blue-400">3</span>
                 </div>
                 <div>
                   <h3 class="font-medium text-card-foreground mb-1">Organize feedback</h3>
-                  <p class="text-sm text-muted-foreground">Use tags, categories, and statuses to organize submissions</p>
+                  <p class="text-sm text-muted-foreground">
+                    Use tags, categories, and statuses to organize submissions
+                  </p>
                 </div>
               </div>
 
               <div class="flex items-start space-x-3">
-                <div class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5">
+                <div
+                  class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5"
+                >
                   <span class="text-xs font-medium text-blue-600 dark:text-blue-400">4</span>
                 </div>
                 <div>
@@ -151,7 +164,9 @@
               </div>
 
               <div class="flex items-start space-x-3">
-                <div class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5">
+                <div
+                  class="w-6 h-6 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mt-0.5"
+                >
                   <span class="text-xs font-medium text-blue-600 dark:text-blue-400">5</span>
                 </div>
                 <div>

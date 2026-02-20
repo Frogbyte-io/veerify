@@ -61,7 +61,7 @@ export interface OpenAPISchema {
  */
 export function defineOpenAPIRoute(operation: OpenAPIOperation) {
   return {
-    __openapi: operation
+    __openapi: operation,
   }
 }
 
@@ -78,10 +78,10 @@ export const commonSchemas = {
         properties: {
           code: { type: 'string', example: 'VALIDATION_ERROR' },
           message: { type: 'string', example: 'Request validation failed' },
-          details: { type: 'object' }
-        }
-      }
-    }
+          details: { type: 'object' },
+        },
+      },
+    },
   } as OpenAPISchema,
 
   Success: {
@@ -89,8 +89,8 @@ export const commonSchemas = {
     properties: {
       success: { type: 'boolean', example: true },
       data: { type: 'object' },
-      message: { type: 'string' }
-    }
+      message: { type: 'string' },
+    },
   } as OpenAPISchema,
 
   Pagination: {
@@ -99,8 +99,8 @@ export const commonSchemas = {
       page: { type: 'integer', example: 1 },
       limit: { type: 'integer', example: 20 },
       total: { type: 'integer', example: 100 },
-      totalPages: { type: 'integer', example: 5 }
-    }
+      totalPages: { type: 'integer', example: 5 },
+    },
   } as OpenAPISchema,
 
   User: {
@@ -112,8 +112,8 @@ export const commonSchemas = {
       emailVerified: { type: 'boolean', example: true },
       image: { type: 'string', format: 'uri', example: 'https://example.com/avatar.jpg' },
       createdAt: { type: 'string', format: 'date-time' },
-      updatedAt: { type: 'string', format: 'date-time' }
-    }
+      updatedAt: { type: 'string', format: 'date-time' },
+    },
   } as OpenAPISchema,
 
   Session: {
@@ -123,8 +123,8 @@ export const commonSchemas = {
       userId: { type: 'string', example: 'usr_123' },
       expiresAt: { type: 'string', format: 'date-time' },
       activeOrganizationId: { type: 'string', example: 'org_123' },
-      activeTeamId: { type: 'string', example: 'team_123' }
-    }
+      activeTeamId: { type: 'string', example: 'team_123' },
+    },
   } as OpenAPISchema,
 
   Organization: {
@@ -134,8 +134,8 @@ export const commonSchemas = {
       name: { type: 'string', example: 'Acme Inc.' },
       slug: { type: 'string', example: 'acme-inc' },
       logo: { type: 'string', format: 'uri' },
-      createdAt: { type: 'string', format: 'date-time' }
-    }
+      createdAt: { type: 'string', format: 'date-time' },
+    },
   } as OpenAPISchema,
 
   Project: {
@@ -149,8 +149,8 @@ export const commonSchemas = {
       teamId: { type: 'string', example: 'team_123' },
       githubRepoUrl: { type: 'string', format: 'uri', example: 'https://github.com/org/repo' },
       createdAt: { type: 'string', format: 'date-time' },
-      updatedAt: { type: 'string', format: 'date-time' }
-    }
+      updatedAt: { type: 'string', format: 'date-time' },
+    },
   } as OpenAPISchema,
 
   Feedback: {
@@ -166,9 +166,9 @@ export const commonSchemas = {
       authorId: { type: 'string', example: 'usr_123' },
       githubIssueNumber: { type: 'integer', example: 123 },
       createdAt: { type: 'string', format: 'date-time' },
-      updatedAt: { type: 'string', format: 'date-time' }
-    }
-  } as OpenAPISchema
+      updatedAt: { type: 'string', format: 'date-time' },
+    },
+  } as OpenAPISchema,
 }
 
 /**
@@ -179,62 +179,62 @@ export const commonResponses = {
     description: 'Unauthorized - Authentication required',
     content: {
       'application/json': {
-        schema: commonSchemas.Error
-      }
-    }
+        schema: commonSchemas.Error,
+      },
+    },
   } as OpenAPIResponse,
 
   forbidden: {
     description: 'Forbidden - Insufficient permissions',
     content: {
       'application/json': {
-        schema: commonSchemas.Error
-      }
-    }
+        schema: commonSchemas.Error,
+      },
+    },
   } as OpenAPIResponse,
 
   notFound: {
     description: 'Not found',
     content: {
       'application/json': {
-        schema: commonSchemas.Error
-      }
-    }
+        schema: commonSchemas.Error,
+      },
+    },
   } as OpenAPIResponse,
 
   validationError: {
     description: 'Validation error',
     content: {
       'application/json': {
-        schema: commonSchemas.Error
-      }
-    }
+        schema: commonSchemas.Error,
+      },
+    },
   } as OpenAPIResponse,
 
   rateLimited: {
     description: 'Rate limit exceeded',
     content: {
       'application/json': {
-        schema: commonSchemas.Error
-      }
-    }
+        schema: commonSchemas.Error,
+      },
+    },
   } as OpenAPIResponse,
 
   notImplemented: {
     description: 'Not implemented - Endpoint is scaffolded but not yet implemented',
     content: {
       'application/json': {
-        schema: commonSchemas.Error
-      }
-    }
+        schema: commonSchemas.Error,
+      },
+    },
   } as OpenAPIResponse,
 
   internalError: {
     description: 'Internal server error',
     content: {
       'application/json': {
-        schema: commonSchemas.Error
-      }
-    }
-  } as OpenAPIResponse
+        schema: commonSchemas.Error,
+      },
+    },
+  } as OpenAPIResponse,
 }

@@ -15,13 +15,13 @@ Ask the user for the following if not already provided:
 
 Nuxt server routes follow this convention:
 
-| Method | File suffix |
-|--------|------------|
-| GET    | `.get.ts`  |
-| POST   | `.post.ts` |
-| PUT    | `.put.ts`  |
-| PATCH  | `.patch.ts`|
-| DELETE | `.delete.ts`|
+| Method | File suffix  |
+| ------ | ------------ |
+| GET    | `.get.ts`    |
+| POST   | `.post.ts`   |
+| PUT    | `.put.ts`    |
+| PATCH  | `.patch.ts`  |
+| DELETE | `.delete.ts` |
 
 File location: `server/api/<route-path>.<method>.ts`
 
@@ -67,11 +67,11 @@ export default defineEventHandler(async (event) => {
 Replace the hard session guard with a soft check:
 
 ```typescript
-  // Session is optional — anonymous requests are allowed
-  const session = await auth.api.getSession({
-    headers: event.node.req.headers as any,
-  })
-  const userId = session?.user?.id ?? null
+// Session is optional — anonymous requests are allowed
+const session = await auth.api.getSession({
+  headers: event.node.req.headers as any,
+})
+const userId = session?.user?.id ?? null
 ```
 
 ### If the endpoint touches a project or feedback:

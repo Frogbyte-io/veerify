@@ -47,11 +47,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const [conflict] = await db
-    .select()
-    .from(team)
-    .where(eq(team.slug, body.slug))
-    .limit(1)
+  const [conflict] = await db.select().from(team).where(eq(team.slug, body.slug)).limit(1)
 
   if (conflict && conflict.id !== teamId) {
     throw createError({

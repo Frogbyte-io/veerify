@@ -78,11 +78,7 @@ export const auth = betterAuth({
             let slug = baseSlug
             let attempt = 0
             while (attempt < 5) {
-              const [existing] = await db
-                .select()
-                .from(schema.team)
-                .where(eq(schema.team.slug, slug))
-                .limit(1)
+              const [existing] = await db.select().from(schema.team).where(eq(schema.team.slug, slug)).limit(1)
               if (!existing) break
               slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`
               attempt++

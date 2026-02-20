@@ -1,4 +1,14 @@
-import { pgTable, text, timestamp, boolean, integer, jsonb, uniqueIndex, index, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  integer,
+  jsonb,
+  uniqueIndex,
+  index,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core'
 import { user, organization, team } from './auth'
 
 // Projects table - operational workspaces scoped to teams.
@@ -20,9 +30,7 @@ export const project = pgTable(
       .$defaultFn(() => false)
       .notNull(),
     // Controls who can submit feedback: 'anonymous' allows anonymous + optional email, 'account_required' requires login
-    submissionMode: text('submission_mode')
-      .default('anonymous')
-      .notNull(),
+    submissionMode: text('submission_mode').default('anonymous').notNull(),
     customDomain: text('custom_domain'),
     settings: jsonb('settings').$type<Record<string, any>>(),
     createdAt: timestamp('created_at')
@@ -315,7 +323,9 @@ export const feedbackComment = pgTable(
     feedbackId: text('feedback_id')
       .notNull()
       .references(() => feedback.id, { onDelete: 'cascade' }),
-    parentCommentId: text('parent_comment_id').references((): AnyPgColumn => feedbackComment.id, { onDelete: 'cascade' }),
+    parentCommentId: text('parent_comment_id').references((): AnyPgColumn => feedbackComment.id, {
+      onDelete: 'cascade',
+    }),
     body: text('body').notNull(),
     // Author can be either a user or an anonymous session
     authorUserId: text('author_user_id').references(() => user.id, { onDelete: 'set null' }),

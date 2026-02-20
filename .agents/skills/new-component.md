@@ -19,6 +19,7 @@ components/<subfolder>/<ComponentName>.vue
 ```
 
 Examples:
+
 - `components/feedback/FeedbackCard.vue`
 - `components/settings/SettingsBilling.vue`
 - `components/sidebar/NavTeam.vue`

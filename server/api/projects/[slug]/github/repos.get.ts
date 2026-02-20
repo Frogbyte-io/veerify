@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const repos = await response.json() as Array<{
+  const repos = (await response.json()) as Array<{
     id: number
     full_name: string
     name: string

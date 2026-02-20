@@ -35,10 +35,7 @@ export interface RateLimitConfig {
  * @param config - Rate limit configuration
  * @returns True if within limits (always true in stub)
  */
-export async function checkRateLimit(
-  event: H3Event,
-  config: RateLimitConfig
-): Promise<boolean> {
+export async function checkRateLimit(event: H3Event, config: RateLimitConfig): Promise<boolean> {
   // Get client identifier (IP address or user ID)
   const clientId = getClientId(event)
 
@@ -63,24 +60,17 @@ export async function checkRateLimit(
  * @param config - Rate limit configuration
  * @throws 429 Too Many Requests if rate limit exceeded
  */
-export async function requireRateLimit(
-  event: H3Event,
-  config: RateLimitConfig
-): Promise<void> {
+export async function requireRateLimit(event: H3Event, config: RateLimitConfig): Promise<void> {
   const allowed = await checkRateLimit(event, config)
 
   if (!allowed) {
     throw createError({
       statusCode: 429,
       statusMessage: 'Too Many Requests',
-      data: createErrorResponse(
-        ErrorCode.RATE_LIMITED,
-        'Rate limit exceeded. Please try again later.',
-        {
-          maxRequests: config.maxRequests,
-          windowSeconds: config.windowSeconds,
-        }
-      )
+      data: createErrorResponse(ErrorCode.RATE_LIMITED, 'Rate limit exceeded. Please try again later.', {
+        maxRequests: config.maxRequests,
+        windowSeconds: config.windowSeconds,
+      }),
     })
   }
 }
@@ -96,7 +86,9 @@ function getClientId(event: H3Event): string {
   // Try to get IP address
   const forwarded = event.node.req.headers['x-forwarded-for']
   const ip = forwarded
-    ? (Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0])
+    ? Array.isArray(forwarded)
+      ? forwarded[0]
+      : forwarded.split(',')[0]
     : event.node.req.socket.remoteAddress
 
   return ip || 'unknown'

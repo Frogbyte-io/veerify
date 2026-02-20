@@ -96,9 +96,7 @@ test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces 
 
 test('authenticated user can access products UI workflow', async ({ request, page }) => {
   await signInAndGetSessionCookie(request)
-  const authCookies = (await request.storageState()).cookies.filter((cookie) =>
-    cookie.name.startsWith('better-auth')
-  )
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 

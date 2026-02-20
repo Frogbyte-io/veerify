@@ -105,12 +105,11 @@ import { validateQuery } from '~/server/utils/validation'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 
 const searchIssuesQuerySchema = z.object({
-  repo: z.string()
-    .regex(/^[\w-]+\/[\w-]+$/, 'Repository must be in format "owner/repo"'),
+  repo: z.string().regex(/^[\w-]+\/[\w-]+$/, 'Repository must be in format "owner/repo"'),
   query: z.string().optional(),
   state: z.enum(['open', 'closed', 'all']).default('open'),
   page: z.coerce.number().int().positive().default(1),
-  per_page: z.coerce.number().int().positive().max(100).default(30)
+  per_page: z.coerce.number().int().positive().max(100).default(30),
 })
 
 export default defineEventHandler(async (event) => {
@@ -133,9 +132,6 @@ export default defineEventHandler(async (event) => {
   throw createError({
     statusCode: 501,
     statusMessage: 'Not Implemented',
-    data: createErrorResponse(
-      ErrorCode.NOT_IMPLEMENTED,
-      'GitHub issues search is not yet implemented'
-    )
+    data: createErrorResponse(ErrorCode.NOT_IMPLEMENTED, 'GitHub issues search is not yet implemented'),
   })
 })

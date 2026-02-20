@@ -23,11 +23,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Look up the anonymous session
-  const [anonRow] = await db
-    .select()
-    .from(anonymousSession)
-    .where(eq(anonymousSession.token, token))
-    .limit(1)
+  const [anonRow] = await db.select().from(anonymousSession).where(eq(anonymousSession.token, token)).limit(1)
 
   if (!anonRow) {
     clearAnonCookie(event)
@@ -55,10 +51,7 @@ export default defineEventHandler(async (event) => {
     .from(vote)
     .where(eq(vote.voterSessionId, anonId))
 
-  const userVotes = await db
-    .select({ feedbackId: vote.feedbackId })
-    .from(vote)
-    .where(eq(vote.voterUserId, userId))
+  const userVotes = await db.select({ feedbackId: vote.feedbackId }).from(vote).where(eq(vote.voterUserId, userId))
 
   const userVotedFeedbackIds = new Set(userVotes.map((v) => v.feedbackId))
 
@@ -86,10 +79,7 @@ export default defineEventHandler(async (event) => {
   // Transfer non-duplicate votes to the user
   if (transferVoteIds.length > 0) {
     for (const transferId of transferVoteIds) {
-      await db
-        .update(vote)
-        .set({ voterUserId: userId, voterSessionId: null })
-        .where(eq(vote.id, transferId))
+      await db.update(vote).set({ voterUserId: userId, voterSessionId: null }).where(eq(vote.id, transferId))
     }
   }
 

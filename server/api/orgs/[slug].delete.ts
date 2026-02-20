@@ -37,10 +37,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await db.transaction(async (tx) => {
-    const teams = await tx
-      .select({ id: team.id })
-      .from(team)
-      .where(eq(team.organizationId, org.id))
+    const teams = await tx.select({ id: team.id }).from(team).where(eq(team.organizationId, org.id))
 
     const teamIds = teams.map((item) => item.id)
 

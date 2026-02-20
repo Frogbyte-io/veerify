@@ -7,28 +7,36 @@ import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
 import { sendCustomDomainConnectedEmail } from '~/lib/email'
 
-const projectSettingsSchema = z.object({
-  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Invalid color').optional(),
-  logoUrl: z.string().url().max(500).startsWith('https://').optional().nullable(),
-  bannerUrl: z.string().url().max(500).startsWith('https://').optional().nullable(),
-  showPoweredBy: z.boolean().optional(),
-  showGithubFooter: z.boolean().optional(),
-  themeMode: z.enum(['system', 'light', 'dark']).optional(),
-  customFooterEnabled: z.boolean().optional(),
-  customFooterBranding: z.string().max(120).optional().nullable(),
-  customFooterText: z.string().max(500).optional().nullable(),
-  customFooterPrimaryLabel: z.string().max(80).optional().nullable(),
-  customFooterPrimaryUrl: z.string().url().max(500).optional().nullable(),
-  customFooterSecondaryLabel: z.string().max(80).optional().nullable(),
-  customFooterSecondaryUrl: z.string().url().max(500).optional().nullable(),
-}).passthrough().nullable().optional()
+const projectSettingsSchema = z
+  .object({
+    accentColor: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/, 'Invalid color')
+      .optional(),
+    logoUrl: z.string().url().max(500).startsWith('https://').optional().nullable(),
+    bannerUrl: z.string().url().max(500).startsWith('https://').optional().nullable(),
+    showPoweredBy: z.boolean().optional(),
+    showGithubFooter: z.boolean().optional(),
+    themeMode: z.enum(['system', 'light', 'dark']).optional(),
+    customFooterEnabled: z.boolean().optional(),
+    customFooterBranding: z.string().max(120).optional().nullable(),
+    customFooterText: z.string().max(500).optional().nullable(),
+    customFooterPrimaryLabel: z.string().max(80).optional().nullable(),
+    customFooterPrimaryUrl: z.string().url().max(500).optional().nullable(),
+    customFooterSecondaryLabel: z.string().max(80).optional().nullable(),
+    customFooterSecondaryUrl: z.string().url().max(500).optional().nullable(),
+  })
+  .passthrough()
+  .nullable()
+  .optional()
 
 const updateProjectSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name too long').optional(),
   slug: commonSchemas.slug.optional(),
   description: z.string().max(1000, 'Description too long').nullable().optional(),
   isPublic: z.boolean().optional(),
-  customDomain: z.string()
+  customDomain: z
+    .string()
     .max(253, 'Domain too long')
     .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/, 'Invalid domain format')
     .nullable()
@@ -39,21 +47,18 @@ const updateProjectSchema = z.object({
 export default defineEventHandler(async (event) => {
   const { project: currentProject, session } = await requireProjectCategoryAccess(event)
   const body = await validateBody(event, updateProjectSchema)
-  const currentSettings = currentProject.settings && typeof currentProject.settings === 'object'
-    ? currentProject.settings
-    : {}
+  const currentSettings =
+    currentProject.settings && typeof currentProject.settings === 'object' ? currentProject.settings : {}
   const requestedDomain = body.customDomain !== undefined ? body.customDomain || null : undefined
   const domainChanged = requestedDomain !== undefined && requestedDomain !== (currentProject.customDomain || null)
   const shouldNotifyConnected = Boolean(
-    domainChanged
-    && requestedDomain
-    && session?.user?.email
-    && currentSettings.domainConnectedEmailSentFor !== requestedDomain
+    domainChanged &&
+    requestedDomain &&
+    session?.user?.email &&
+    currentSettings.domainConnectedEmailSentFor !== requestedDomain
   )
 
-  const nextSettings = body.settings !== undefined
-    ? body.settings
-    : currentSettings
+  const nextSettings = body.settings !== undefined ? body.settings : currentSettings
   const settingsForUpdate = shouldNotifyConnected
     ? {
         ...nextSettings,

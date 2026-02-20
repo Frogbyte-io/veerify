@@ -7,7 +7,10 @@
           <Icon name="lucide:building-2" class="h-5 w-5" />
           <span data-testid="organization-title">Workspace Settings</span>
         </CardTitle>
-        <CardDescription>Manage your workspace profile and URL namespace. Your workspace is the shared space where your team collaborates.</CardDescription>
+        <CardDescription
+          >Manage your workspace profile and URL namespace. Your workspace is the shared space where your team
+          collaborates.</CardDescription
+        >
       </CardHeader>
       <CardContent class="space-y-4">
         <div v-if="isLoading" class="space-y-3">
@@ -99,7 +102,9 @@
               <Icon name="lucide:users" class="h-5 w-5" />
               Members
             </CardTitle>
-            <CardDescription>Manage workspace members and their roles. All members have access to shared projects.</CardDescription>
+            <CardDescription
+              >Manage workspace members and their roles. All members have access to shared projects.</CardDescription
+            >
           </div>
           <Button v-if="canManageMembers" size="sm" @click="showInviteDialog = true">
             <Icon name="lucide:user-plus" class="h-4 w-4 mr-2" />
@@ -135,12 +140,7 @@
                 </p>
                 <p class="text-xs text-muted-foreground truncate">{{ m.email }}</p>
                 <div v-if="nonDefaultTeams(m.teams).length > 0" class="flex flex-wrap gap-1 mt-1">
-                  <Badge
-                    v-for="t in nonDefaultTeams(m.teams)"
-                    :key="t.id"
-                    variant="outline"
-                    class="text-xs"
-                  >
+                  <Badge v-for="t in nonDefaultTeams(m.teams)" :key="t.id" variant="outline" class="text-xs">
                     {{ t.name }}
                   </Badge>
                 </div>
@@ -153,7 +153,11 @@
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
                     <Button variant="outline" size="sm" class="capitalize" :disabled="updatingRoleMemberId === m.id">
-                      <Icon v-if="updatingRoleMemberId === m.id" name="lucide:loader-2" class="h-3 w-3 mr-1 animate-spin" />
+                      <Icon
+                        v-if="updatingRoleMemberId === m.id"
+                        name="lucide:loader-2"
+                        class="h-3 w-3 mr-1 animate-spin"
+                      />
                       {{ m.role }}
                       <Icon name="lucide:chevron-down" class="h-3 w-3 ml-1" />
                     </Button>
@@ -187,7 +191,10 @@
                 variant="ghost"
                 size="icon"
                 class="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
-                @click="memberToRemove = m; showRemoveMemberDialog = true"
+                @click="
+                  memberToRemove = m
+                  showRemoveMemberDialog = true
+                "
               >
                 <Icon name="lucide:user-minus" class="h-4 w-4" />
               </Button>
@@ -272,12 +279,15 @@
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" @click="showRemoveMemberDialog = false; memberToRemove = null">Cancel</Button>
           <Button
-            variant="destructive"
-            :disabled="isRemovingMember"
-            @click="confirmRemoveMember"
+            variant="outline"
+            @click="
+              showRemoveMemberDialog = false
+              memberToRemove = null
+            "
+            >Cancel</Button
           >
+          <Button variant="destructive" :disabled="isRemovingMember" @click="confirmRemoveMember">
             <Icon v-if="isRemovingMember" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
             Remove Member
           </Button>
@@ -315,10 +325,7 @@
         </div>
         <DialogFooter>
           <Button variant="outline" @click="showInviteDialog = false">Cancel</Button>
-          <Button
-            :disabled="isInviting || !isValidInviteEmail"
-            @click="inviteMember"
-          >
+          <Button :disabled="isInviting || !isValidInviteEmail" @click="inviteMember">
             <Icon v-if="isInviting" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
             Send Invitation
           </Button>

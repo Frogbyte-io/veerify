@@ -255,9 +255,7 @@ export default {
       try {
         const { data } = await authClient.multiSession.listDeviceSessions()
         if (!data || !this.session?.user) return
-        this.otherAccounts = data.filter(
-          (entry) => entry.user.id !== this.session.user.id,
-        )
+        this.otherAccounts = data.filter((entry) => entry.user.id !== this.session.user.id)
       } catch (error) {
         console.error('Error loading device sessions:', error)
       }

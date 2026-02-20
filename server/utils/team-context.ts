@@ -8,11 +8,7 @@ import type { AuthSession } from './auth-middleware'
 
 export const DEFAULT_TEAM_NAME = 'Default'
 
-export async function setActiveTeamAndOrganization(params: {
-  sessionToken: string
-  userId: string
-  teamId: string
-}) {
+export async function setActiveTeamAndOrganization(params: { sessionToken: string; userId: string; teamId: string }) {
   const [selectedTeam] = await db.select().from(team).where(eq(team.id, params.teamId)).limit(1)
   if (!selectedTeam) {
     throw createError({
@@ -130,10 +126,7 @@ export async function resolveActiveTeamForSession(session: AuthSession) {
   throw createError({
     statusCode: 409,
     statusMessage: 'Conflict',
-    data: createErrorResponse(
-      ErrorCode.CONFLICT,
-      'No team membership found. Join or create a team to continue.'
-    ),
+    data: createErrorResponse(ErrorCode.CONFLICT, 'No team membership found. Join or create a team to continue.'),
   })
 }
 

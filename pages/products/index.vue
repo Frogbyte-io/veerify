@@ -5,9 +5,7 @@
         <div class="flex items-center justify-between">
           <div>
             <h1 class="text-3xl font-bold">Products</h1>
-            <p class="text-muted-foreground">
-              Manage your products and their public feedback pages
-            </p>
+            <p class="text-muted-foreground">Manage your products and their public feedback pages</p>
           </div>
           <Button @click="showCreateDialog = true">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -65,7 +63,11 @@
               </div>
               <span
                 class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
-                :class="product.isPublic ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'"
+                :class="
+                  product.isPublic
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                    : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                "
               >
                 {{ product.isPublic ? 'Public' : 'Private' }}
               </span>
@@ -92,10 +94,7 @@
               <Icon name="lucide:external-link" class="w-3 h-3" />
               View Public Page
             </span>
-            <button
-              class="text-sm text-muted-foreground hover:text-foreground"
-              @click.prevent="copyPublicUrl(product)"
-            >
+            <button class="text-sm text-muted-foreground hover:text-foreground" @click.prevent="copyPublicUrl(product)">
               <Icon name="lucide:copy" class="w-4 h-4" />
             </button>
           </div>
@@ -107,38 +106,21 @@
         <DialogContent class="sm:max-w-[500px]">
           <DialogHeader>
             <h2 class="text-lg font-semibold">Create New Product</h2>
-            <p class="text-sm text-muted-foreground">
-              Set up a new product with its own public feedback page.
-            </p>
+            <p class="text-sm text-muted-foreground">Set up a new product with its own public feedback page.</p>
           </DialogHeader>
           <div class="space-y-4 py-4">
             <div class="space-y-2">
               <Label for="name">Product Name</Label>
-              <Input
-                id="name"
-                v-model="form.name"
-                placeholder="My Awesome App"
-                @input="generateSlug"
-              />
+              <Input id="name" v-model="form.name" placeholder="My Awesome App" @input="generateSlug" />
             </div>
             <div class="space-y-2">
               <Label for="slug">URL Slug</Label>
-              <Input
-                id="slug"
-                v-model="form.slug"
-                placeholder="my-awesome-app"
-              />
-              <p class="text-xs text-muted-foreground">
-                Public URL: {{ publicUrlPreview }}
-              </p>
+              <Input id="slug" v-model="form.slug" placeholder="my-awesome-app" />
+              <p class="text-xs text-muted-foreground">Public URL: {{ publicUrlPreview }}</p>
             </div>
             <div class="space-y-2">
               <Label for="description">Description (optional)</Label>
-              <Input
-                id="description"
-                v-model="form.description"
-                placeholder="A brief description of your product"
-              />
+              <Input id="description" v-model="form.description" placeholder="A brief description of your product" />
             </div>
           </div>
           <DialogFooter>

@@ -44,9 +44,7 @@ const personalItems: SidebarNavItem[] = [
 
 // Dashboard is only relevant in workspace context; show it while loading (null) too
 const personalNavItems = computed(() =>
-  hasActiveOrganization.value !== false
-    ? personalItems
-    : personalItems.filter((item) => item.title !== 'Dashboard')
+  hasActiveOrganization.value !== false ? personalItems : personalItems.filter((item) => item.title !== 'Dashboard')
 )
 
 // Workspace navigation items (only shown when org is active)
@@ -110,7 +108,11 @@ const supportItems: SidebarNavItem[] = [
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem v-for="item in personalNavItems" :key="item.title">
-              <SidebarMenuButton as-child :tooltip="item.title" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
+              <SidebarMenuButton
+                as-child
+                :tooltip="item.title"
+                class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+              >
                 <NuxtLink :to="item.url">
                   <Icon :name="item.icon" class="!size-5 shrink-0" />
                   <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
@@ -129,11 +131,22 @@ const supportItems: SidebarNavItem[] = [
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem v-for="item in feedbackItems" :key="item.title">
-                <SidebarMenuButton v-if="item.disabled" :tooltip="item.title" disabled aria-disabled="true" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
+                <SidebarMenuButton
+                  v-if="item.disabled"
+                  :tooltip="item.title"
+                  disabled
+                  aria-disabled="true"
+                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                >
                   <Icon :name="item.icon" class="!size-5 shrink-0" />
                   <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                 </SidebarMenuButton>
-                <SidebarMenuButton v-else as-child :tooltip="item.title" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
+                <SidebarMenuButton
+                  v-else
+                  as-child
+                  :tooltip="item.title"
+                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                >
                   <NuxtLink :to="item.url">
                     <Icon :name="item.icon" class="!size-5 shrink-0" />
                     <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
@@ -150,7 +163,11 @@ const supportItems: SidebarNavItem[] = [
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem v-for="item in managementItems" :key="item.title">
-                <SidebarMenuButton as-child :tooltip="item.title" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
+                <SidebarMenuButton
+                  as-child
+                  :tooltip="item.title"
+                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                >
                   <NuxtLink :to="item.url">
                     <Icon :name="item.icon" class="!size-5 shrink-0" />
                     <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
@@ -168,7 +185,11 @@ const supportItems: SidebarNavItem[] = [
         <SidebarGroupContent>
           <SidebarMenu>
             <SidebarMenuItem v-for="item in supportItems" :key="item.title">
-              <SidebarMenuButton as-child :tooltip="item.title" class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5">
+              <SidebarMenuButton
+                as-child
+                :tooltip="item.title"
+                class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+              >
                 <NuxtLink :to="item.url">
                   <Icon :name="item.icon" class="!size-5 shrink-0" />
                   <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>

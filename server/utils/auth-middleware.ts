@@ -47,10 +47,7 @@ export async function requireAuth(event: H3Event): Promise<AuthSession> {
     throw createError({
       statusCode: 401,
       statusMessage: 'Unauthorized',
-      data: createErrorResponse(
-        ErrorCode.UNAUTHORIZED,
-        'Authentication required'
-      )
+      data: createErrorResponse(ErrorCode.UNAUTHORIZED, 'Authentication required'),
     })
   }
 
@@ -121,10 +118,7 @@ export async function requireOrganizationRole(
     throw createError({
       statusCode: 403,
       statusMessage: 'Forbidden',
-      data: createErrorResponse(
-        ErrorCode.FORBIDDEN,
-        'Insufficient permissions'
-      )
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'Insufficient permissions'),
     })
   }
 

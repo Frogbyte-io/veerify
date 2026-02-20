@@ -8,11 +8,7 @@ export default defineEventHandler(async (event) => {
   const { activeTeam } = await requireAuthWithResolvedTeam(event)
 
   // Fetch organization details to include slug
-  const [org] = await db
-    .select()
-    .from(organization)
-    .where(eq(organization.id, activeTeam.organizationId))
-    .limit(1)
+  const [org] = await db.select().from(organization).where(eq(organization.id, activeTeam.organizationId)).limit(1)
 
   return createSuccessResponse({
     ...activeTeam,

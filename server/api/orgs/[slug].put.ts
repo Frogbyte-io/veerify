@@ -3,7 +3,11 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { organization } from '~/server/database/schema/auth'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { assertOrganizationSlugAvailable, getOrganizationDetails, requireOrganizationRoleBySlug } from '~/server/utils/organization-access'
+import {
+  assertOrganizationSlugAvailable,
+  getOrganizationDetails,
+  requireOrganizationRoleBySlug,
+} from '~/server/utils/organization-access'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody, commonSchemas } from '~/server/utils/validation'
@@ -21,7 +25,8 @@ const updateOrganizationSchema = z
       .optional(),
   })
   .refine(
-    (value) => value.name !== undefined || value.slug !== undefined || value.logo !== undefined || value.settings !== undefined,
+    (value) =>
+      value.name !== undefined || value.slug !== undefined || value.logo !== undefined || value.settings !== undefined,
     {
       message: 'At least one field must be provided',
       path: ['name'],

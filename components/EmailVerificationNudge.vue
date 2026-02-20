@@ -26,11 +26,7 @@
       <Icon v-if="isSending" name="lucide:loader-circle" class="h-3 w-3 animate-spin" />
       {{ isSending ? 'Sending…' : 'Resend email' }}
     </Button>
-    <button
-      class="ml-1 shrink-0 rounded p-0.5 opacity-60 hover:opacity-100"
-      aria-label="Dismiss"
-      @click="dismiss"
-    >
+    <button class="ml-1 shrink-0 rounded p-0.5 opacity-60 hover:opacity-100" aria-label="Dismiss" @click="dismiss">
       <Icon name="lucide:x" class="h-4 w-4" />
     </button>
   </div>

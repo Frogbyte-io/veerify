@@ -16,7 +16,7 @@ Ask the user for the following if not already provided:
 Nuxt file-based routing:
 
 | Desired URL          | File path                           |
-|----------------------|-------------------------------------|
+| -------------------- | ----------------------------------- |
 | `/reports`           | `pages/reports/index.vue`           |
 | `/reports/analytics` | `pages/reports/analytics/index.vue` |
 | `/settings/billing`  | `pages/settings/billing/index.vue`  |
@@ -32,7 +32,7 @@ const protectedRoutes = [
   '/dashboard',
   '/settings',
   '/feedback',
-  '/reports',      // ← add new prefix here if not already present
+  '/reports', // ← add new prefix here if not already present
   '/help',
 ]
 ```

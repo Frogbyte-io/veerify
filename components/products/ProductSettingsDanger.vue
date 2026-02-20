@@ -6,21 +6,18 @@
           <Icon name="lucide:alert-triangle" class="h-5 w-5" />
           Danger Zone
         </CardTitle>
-        <CardDescription>
-          Irreversible and destructive actions for this product.
-        </CardDescription>
+        <CardDescription> Irreversible and destructive actions for this product. </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="flex items-center justify-between rounded-lg border border-destructive/30 p-4">
           <div>
             <p class="font-medium text-sm">Delete this product</p>
             <p class="text-xs text-muted-foreground">
-              Permanently delete "{{ project.name }}" and all its feedback, categories, and roadmap items. This cannot be undone.
+              Permanently delete "{{ project.name }}" and all its feedback, categories, and roadmap items. This cannot
+              be undone.
             </p>
           </div>
-          <Button variant="destructive" @click="showDeleteDialog = true">
-            Delete Product
-          </Button>
+          <Button variant="destructive" @click="showDeleteDialog = true"> Delete Product </Button>
         </div>
       </CardContent>
     </Card>
@@ -31,17 +28,15 @@
         <DialogHeader>
           <DialogTitle class="text-destructive">Delete Product</DialogTitle>
           <DialogDescription>
-            This will permanently delete <span class="font-semibold">{{ project.name }}</span> and all associated data including feedback, votes, categories, and roadmap items.
+            This will permanently delete <span class="font-semibold">{{ project.name }}</span> and all associated data
+            including feedback, votes, categories, and roadmap items.
           </DialogDescription>
         </DialogHeader>
         <div class="py-4 space-y-3">
           <p class="text-sm text-muted-foreground">
             Type <span class="font-mono font-semibold text-foreground">{{ project.name }}</span> to confirm:
           </p>
-          <Input
-            v-model="deleteConfirmation"
-            :placeholder="project.name"
-          />
+          <Input v-model="deleteConfirmation" :placeholder="project.name" />
         </div>
         <DialogFooter>
           <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
