@@ -136,8 +136,8 @@ test.describe('Anonymous feedback sessions', () => {
     expect(loginHref!).toContain('/login?redirect=')
     expect(signupHref!).toContain('/signup?redirect=')
 
-    const loginUrl = new URL(loginHref!)
-    const signupUrl = new URL(signupHref!)
+    const loginUrl = new URL(loginHref!, PUBLIC_PAGE)
+    const signupUrl = new URL(signupHref!, PUBLIC_PAGE)
     const loginRedirect = decodeURIComponent(loginUrl.searchParams.get('redirect') || '')
     const signupRedirect = decodeURIComponent(signupUrl.searchParams.get('redirect') || '')
 

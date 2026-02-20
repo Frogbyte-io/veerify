@@ -275,7 +275,7 @@
             from this workspace? They will lose access to all workspace resources.
           </DialogDescription>
         </DialogHeader>
-          <DialogFooter>
+        <DialogFooter>
           <Button variant="outline" @click="closeRemoveMemberDialog">Cancel</Button>
           <Button variant="destructive" :disabled="isRemovingMember" @click="confirmRemoveMember">
             <Icon v-if="isRemovingMember" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
