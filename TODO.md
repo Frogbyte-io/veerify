@@ -98,7 +98,8 @@ MVP
 
 - [ ] Add Organization avatar image to the organization settings, with file upload using the S3 bucket
 
-- [ ] For the Visibility - Control who can see and submit feedback to your product setting in general, add a copy URL button.
+- [x] For the Visibility - Control who can see and submit feedback to your product setting in general, add a copy URL button.
+  - Added a `Copy URL` action in `components/products/ProductSettingsGeneral.vue` (`project-visibility-copy-url`) that copies the computed public board URL.
 
 - [ ] In product settings Apperance, Improve the look of the File picker - use shadcn if a component exist or make a better one, and add preview of the image that is selected.
 
