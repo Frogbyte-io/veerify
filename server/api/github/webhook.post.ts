@@ -71,6 +71,23 @@
 
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
+import { and, eq } from 'drizzle-orm'
+import { db } from '~/server/database/drizzle'
+import { feedback, githubIntegration, githubIssueLink } from '~/server/database/schema/feedback'
+import { mergeMissingLabel, resolveCompletedLabel, verifyGithubWebhookSignature } from '~/server/utils/github-webhook'
+
+interface GithubWebhookPayload {
+  action?: string
+  repository?: {
+    full_name?: string
+    owner?: { login?: string }
+    name?: string
+  }
+  issue?: {
+    number?: number
+    labels?: Array<{ name?: string }>
+  }
+}
 
 export default defineEventHandler(async (event) => {
   // Rate limiting (high limit for webhooks)
@@ -92,23 +109,182 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Read webhook payload
-  const payload = await readBody(event)
+  const rawPayload = await readRawBody(event, 'utf8')
+  if (!rawPayload) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Missing GitHub webhook payload'),
+    })
+  }
 
-  // TODO: Implement GitHub webhook processing
-  // 1. Verify webhook signature using GITHUB_WEBHOOK_SECRET
-  // 2. Parse event type (issues, pull_request, etc.)
-  // 3. Handle different event actions:
-  //    - issues.opened: Link to feedback if reference exists
-  //    - issues.closed: Update feedback status to 'completed'
-  //    - issues.reopened: Update feedback status to 'open'
-  //    - pull_request.merged: Update related feedback status
-  // 4. Log webhook delivery for debugging
-  // 5. Return processing result
+  let payload: GithubWebhookPayload
+  try {
+    payload = JSON.parse(rawPayload) as GithubWebhookPayload
+  } catch {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid GitHub webhook payload JSON'),
+    })
+  }
 
-  throw createError({
-    statusCode: 501,
-    statusMessage: 'Not Implemented',
-    data: createErrorResponse(ErrorCode.NOT_IMPLEMENTED, 'GitHub webhook processing is not yet implemented'),
+  if (githubEvent !== 'issues') {
+    return createSuccessResponse({
+      processed: false,
+      event: githubEvent,
+      deliveryId,
+      reason: 'unsupported_event',
+    })
+  }
+
+  if (payload.action !== 'closed') {
+    return createSuccessResponse({
+      processed: false,
+      event: githubEvent,
+      deliveryId,
+      action: payload.action || null,
+      reason: 'unsupported_action',
+    })
+  }
+
+  const repoFullName =
+    payload.repository?.full_name ||
+    (payload.repository?.owner?.login && payload.repository?.name
+      ? `${payload.repository.owner.login}/${payload.repository.name}`
+      : null)
+
+  if (!repoFullName?.includes('/')) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Missing repository information in webhook payload'),
+    })
+  }
+
+  const [owner, repo] = repoFullName.split('/')
+
+  const [integration] = await db
+    .select()
+    .from(githubIntegration)
+    .where(and(eq(githubIntegration.owner, owner), eq(githubIntegration.repo, repo)))
+    .limit(1)
+
+  if (!integration) {
+    return createSuccessResponse({
+      processed: false,
+      event: githubEvent,
+      deliveryId,
+      reason: 'integration_not_found',
+      repository: repoFullName,
+    })
+  }
+
+  if (integration.webhookSecret?.trim()) {
+    const signatureValid = verifyGithubWebhookSignature(rawPayload, signature, integration.webhookSecret)
+    if (!signatureValid) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Unauthorized',
+        data: createErrorResponse(ErrorCode.UNAUTHORIZED, 'Invalid GitHub webhook signature'),
+      })
+    }
+  }
+
+  if (!integration.syncEnabled || !integration.autoSyncStatus) {
+    return createSuccessResponse({
+      processed: false,
+      event: githubEvent,
+      deliveryId,
+      reason: 'sync_disabled',
+      repository: repoFullName,
+    })
+  }
+
+  const issueNumber = Number(payload.issue?.number)
+  if (!Number.isInteger(issueNumber) || issueNumber < 1) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Missing issue number in webhook payload'),
+    })
+  }
+
+  const [link] = await db
+    .select()
+    .from(githubIssueLink)
+    .where(and(eq(githubIssueLink.githubIntegrationId, integration.id), eq(githubIssueLink.issueNumber, issueNumber)))
+    .limit(1)
+
+  if (!link) {
+    return createSuccessResponse({
+      processed: false,
+      event: githubEvent,
+      deliveryId,
+      reason: 'feedback_link_not_found',
+      repository: repoFullName,
+      issueNumber,
+    })
+  }
+
+  const now = new Date()
+  await db
+    .update(githubIssueLink)
+    .set({
+      issueState: 'closed',
+      lastSyncAt: now,
+      updatedAt: now,
+    })
+    .where(eq(githubIssueLink.id, link.id))
+
+  const [updatedFeedback] = await db
+    .update(feedback)
+    .set({
+      status: 'completed',
+      updatedAt: now,
+    })
+    .where(eq(feedback.id, link.feedbackId))
+    .returning()
+
+  const completedLabel = resolveCompletedLabel(integration.settings)
+  const existingLabels = (payload.issue?.labels || [])
+    .map((label) => label?.name?.trim())
+    .filter((label): label is string => Boolean(label))
+  const targetLabels = mergeMissingLabel(existingLabels, completedLabel)
+
+  let labelPatched = false
+  if (integration.accessToken && targetLabels.length !== existingLabels.length) {
+    const patchResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${integration.accessToken}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'Veerify',
+      },
+      body: JSON.stringify({
+        labels: targetLabels,
+      }),
+    })
+
+    labelPatched = patchResponse.ok
+    if (!patchResponse.ok) {
+      const errorBody = (await patchResponse.json().catch(() => null)) as { message?: string } | null
+      console.error('Failed to patch GitHub issue labels:', errorBody?.message || patchResponse.statusText)
+    }
+  }
+
+  return createSuccessResponse({
+    processed: true,
+    event: githubEvent,
+    deliveryId,
+    action: payload.action,
+    repository: repoFullName,
+    issueNumber,
+    feedbackId: updatedFeedback?.id || link.feedbackId,
+    feedbackStatus: updatedFeedback?.status || 'completed',
+    label: completedLabel,
+    labelPatched,
   })
 })
