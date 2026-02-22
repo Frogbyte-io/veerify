@@ -159,14 +159,20 @@
           <div
             v-for="item in feedbackItems"
             :key="item.id"
-            class="rounded-lg border bg-card hover:shadow-sm transition-shadow"
+            class="rounded-lg border bg-card hover:shadow-sm transition-shadow cursor-pointer"
             :class="item.isOwn ? 'ring-2 ring-primary/30' : ''"
+            :data-testid="`public-feedback-item-${item.id}`"
+            role="button"
+            tabindex="0"
+            @click="openFeedbackDetails(item)"
+            @keydown.enter.prevent="openFeedbackDetails(item)"
+            @keydown.space.prevent="openFeedbackDetails(item)"
           >
             <div class="flex items-start gap-4 p-4">
               <div class="flex flex-col items-center min-w-[48px]">
                 <button
                   class="flex flex-col items-center p-2 rounded-lg hover:bg-accent transition-colors"
-                  @click="handleVote(item)"
+                  @click.stop="handleVote(item)"
                 >
                   <Icon
                     name="lucide:chevron-up"
@@ -224,6 +230,7 @@
                     <Icon name="lucide:message-circle" class="w-3 h-3 inline" />
                     {{ item.commentCount }}
                   </span>
+                  <span class="ml-auto text-primary">View details</span>
                 </div>
               </div>
             </div>
@@ -309,6 +316,93 @@
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <Dialog :open="showDetailsDialog" @update:open="handleDetailsDialogChange">
+          <DialogContent class="sm:max-w-[640px]">
+            <DialogHeader>
+              <h2 class="text-lg font-semibold">Feedback details</h2>
+              <p class="text-sm text-muted-foreground">Review the full request and discussion in one place.</p>
+            </DialogHeader>
+
+            <div v-if="detailsLoading" class="space-y-3 py-2">
+              <Skeleton class="h-7 w-3/4" />
+              <Skeleton class="h-20 w-full" />
+              <Skeleton class="h-5 w-1/2" />
+              <Skeleton class="h-16 w-full" />
+            </div>
+
+            <div v-else-if="detailsError" class="rounded-md border border-destructive/30 bg-destructive/5 p-4">
+              <p class="text-sm text-destructive">{{ detailsError }}</p>
+              <Button class="mt-3" size="sm" variant="outline" @click="retryLoadDetails">Retry</Button>
+            </div>
+
+            <div v-else-if="selectedFeedback" class="space-y-4 py-2">
+              <div class="space-y-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="text-lg font-semibold">{{ selectedFeedback.title }}</h3>
+                  <span
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :class="
+                      statusClasses[selectedFeedback.status] ||
+                      'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                    "
+                  >
+                    {{ formatStatus(selectedFeedback.status) }}
+                  </span>
+                  <span
+                    v-if="selectedFeedback.category"
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :style="{
+                      backgroundColor: selectedFeedback.category.color + '20',
+                      color: selectedFeedback.category.color,
+                    }"
+                  >
+                    <span v-if="selectedFeedback.category.icon" class="mr-1">{{ selectedFeedback.category.icon }}</span>
+                    {{ selectedFeedback.category.name }}
+                  </span>
+                </div>
+                <p class="text-sm text-muted-foreground whitespace-pre-line">
+                  {{ selectedFeedback.body || 'No description provided.' }}
+                </p>
+                <div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                  <span>
+                    <Icon name="lucide:thumbs-up" class="w-3 h-3 inline" />
+                    {{ selectedFeedback.voteCount || 0 }} votes
+                  </span>
+                  <span>
+                    <Icon name="lucide:calendar" class="w-3 h-3 inline" />
+                    {{ formatDate(selectedFeedback.createdAt) }}
+                  </span>
+                  <span>
+                    <Icon name="lucide:message-circle" class="w-3 h-3 inline" />
+                    {{ selectedFeedbackComments.length }} comments
+                  </span>
+                </div>
+              </div>
+
+              <div class="space-y-2">
+                <h4 class="text-sm font-medium">Comments</h4>
+                <div v-if="selectedFeedbackComments.length === 0" class="rounded-md border bg-muted/40 p-3 text-sm">
+                  No comments yet.
+                </div>
+                <div v-else class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  <div v-for="comment in selectedFeedbackComments" :key="comment.id" class="rounded-md border p-3">
+                    <p class="text-sm whitespace-pre-line">{{ comment.body }}</p>
+                    <div class="mt-2 text-xs text-muted-foreground flex items-center gap-2">
+                      <span>{{ formatCommentAuthor(comment) }}</span>
+                      <span aria-hidden="true">&middot;</span>
+                      <span>{{ formatDate(comment.createdAt) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" @click="showDetailsDialog = false">Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
       <!-- Footer -->
       <div class="mt-auto py-3 text-center text-xs text-muted-foreground space-y-1">
@@ -391,7 +485,13 @@ export default {
       error: null,
       feedbackLoading: false,
       showSubmitDialog: false,
+      showDetailsDialog: false,
       isSubmitting: false,
+      detailsLoading: false,
+      detailsError: null,
+      selectedFeedbackId: null,
+      selectedFeedback: null,
+      selectedFeedbackComments: [],
       filters: { status: '', categoryId: '', sortBy: 'voteCount' },
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
       submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
@@ -544,6 +644,41 @@ export default {
         this.isSubmitting = false
       }
     },
+    async openFeedbackDetails(item) {
+      if (!item?.id) return
+      this.showDetailsDialog = true
+      this.selectedFeedbackId = item.id
+      await this.loadFeedbackDetails(item.id)
+    },
+    handleDetailsDialogChange(isOpen) {
+      this.showDetailsDialog = isOpen
+      if (!isOpen) {
+        this.detailsError = null
+      }
+    },
+    async retryLoadDetails() {
+      if (!this.selectedFeedbackId) return
+      await this.loadFeedbackDetails(this.selectedFeedbackId)
+    },
+    async loadFeedbackDetails(feedbackId) {
+      this.detailsLoading = true
+      this.detailsError = null
+      try {
+        const [feedbackResponse, commentsResponse] = await Promise.all([
+          $fetch(`/api/feedback/${feedbackId}`),
+          $fetch(`/api/feedback/${feedbackId}/comments`),
+        ])
+        this.selectedFeedback = feedbackResponse?.data || null
+        this.selectedFeedbackComments = Array.isArray(commentsResponse?.data) ? commentsResponse.data : []
+      } catch (err) {
+        console.error('Error loading feedback details:', err)
+        this.detailsError = err?.data?.error?.message || 'Failed to load feedback details'
+        this.selectedFeedback = null
+        this.selectedFeedbackComments = []
+      } finally {
+        this.detailsLoading = false
+      }
+    },
     async handleVote(item) {
       // Optimistic update for instant feedback
       const wasVoted = item.hasVoted
@@ -630,6 +765,9 @@ export default {
       if (diffDays < 7) return `${diffDays} days ago`
       if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
       return d.toLocaleDateString()
+    },
+    formatCommentAuthor(comment) {
+      return comment?.author?.name || comment?.authorName || 'Anonymous'
     },
   },
 }

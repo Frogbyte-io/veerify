@@ -355,6 +355,30 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.getByText('Provide your email to receive updates on comments and status changes.')).toBeVisible()
   })
 
+  test('public feedback item opens a details dialog without leaving the board', async ({ page }) => {
+    await gotoPublicPage(page)
+
+    const title = `Details Dialog ${Date.now()}`
+    const body = 'Full details body for dialog rendering checks on public board.'
+    await fillAndSubmitFeedback(page, {
+      title,
+      body,
+      name: 'Details Tester',
+    })
+
+    const feedbackCard = page.locator('.space-y-3 > div', { hasText: title }).first()
+    await feedbackCard.click()
+
+    const detailsDialog = page.locator('[role="dialog"]', { hasText: 'Feedback details' })
+    await expect(detailsDialog).toBeVisible()
+    await expect(detailsDialog).toContainText(title)
+    await expect(detailsDialog).toContainText(body)
+    await expect(detailsDialog).toContainText('Comments')
+
+    await detailsDialog.getByRole('button', { name: 'Close' }).click()
+    await expect(detailsDialog).not.toBeVisible()
+  })
+
   test('appearance footer toggles control public board footer visibility', async ({ page }) => {
     await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto('/products/demo#appearance')
