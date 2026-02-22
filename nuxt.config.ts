@@ -30,6 +30,16 @@ export default defineNuxtConfig({
     '@scalar/nuxt',
   ],
   runtimeConfig: {
+    storageDriver: process.env.STORAGE_DRIVER || 'local',
+    storageBucket: process.env.STORAGE_BUCKET || '',
+    storageRegion: process.env.STORAGE_REGION || 'auto',
+    storageEndpoint: process.env.STORAGE_ENDPOINT || '',
+    storageAccessKeyId: process.env.STORAGE_ACCESS_KEY_ID || '',
+    storageSecretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY || '',
+    storageForcePathStyle: process.env.STORAGE_FORCE_PATH_STYLE === 'true',
+    storagePublicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL || '',
+    storageLocalDir: process.env.STORAGE_LOCAL_DIR || '.data/storage',
+    uploadTokenSecret: process.env.UPLOAD_TOKEN_SECRET || process.env.BETTER_AUTH_SECRET || '',
     nodemailer: {
       from: process.env.MAIL_FROM,
       host: process.env.SMTP_HOST,

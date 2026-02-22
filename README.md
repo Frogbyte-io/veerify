@@ -86,6 +86,11 @@ yarn dev
 docker compose -f docker-compose-dev.yml up -d
 ```
 
+This starts:
+- PostgreSQL on `localhost:5432`
+- Mailpit SMTP/UI on `localhost:1025` and `localhost:8025`
+- MinIO API/Console on `localhost:9000` and `localhost:9001`
+
 #### Email Testing with Mailpit
 
 The development environment includes [Mailpit](https://mailpit.axllent.io/), a local SMTP server and web interface for testing emails during development.
@@ -167,6 +172,48 @@ To enable GitHub repository connection in product settings, set OAuth credential
 ```env
 GITHUB_CLIENT_ID=your-github-oauth-app-client-id
 GITHUB_CLIENT_SECRET=your-github-oauth-app-client-secret
+```
+
+To enable product logo/banner uploads, configure storage:
+
+```env
+# Choose "local" or "s3"
+STORAGE_DRIVER=local
+
+# Local mode (self-host/dev default)
+STORAGE_LOCAL_DIR=.data/storage
+```
+
+S3-compatible mode works with AWS S3, Cloudflare R2, and MinIO:
+
+```env
+STORAGE_DRIVER=s3
+STORAGE_BUCKET=veerify-assets
+STORAGE_REGION=auto
+STORAGE_ENDPOINT=
+STORAGE_ACCESS_KEY_ID=
+STORAGE_SECRET_ACCESS_KEY=
+STORAGE_FORCE_PATH_STYLE=false
+STORAGE_PUBLIC_BASE_URL=
+UPLOAD_TOKEN_SECRET=replace-with-long-random-secret
+```
+
+Provider examples:
+
+- AWS S3: leave `STORAGE_ENDPOINT` empty, use region like `us-east-1`, optional `STORAGE_PUBLIC_BASE_URL` via CloudFront/custom domain.
+- Cloudflare R2: set `STORAGE_ENDPOINT=https://<accountid>.r2.cloudflarestorage.com`, `STORAGE_REGION=auto`.
+- MinIO (self-host): set `STORAGE_ENDPOINT=http://127.0.0.1:9000`, `STORAGE_FORCE_PATH_STYLE=true`.
+
+For local dev with `docker-compose-dev.yml`, MinIO bootstraps bucket `veerify-assets` automatically. Use:
+
+```env
+STORAGE_DRIVER=s3
+STORAGE_BUCKET=veerify-assets
+STORAGE_REGION=us-east-1
+STORAGE_ENDPOINT=http://127.0.0.1:9000
+STORAGE_ACCESS_KEY_ID=minioadmin
+STORAGE_SECRET_ACCESS_KEY=minioadmin
+STORAGE_FORCE_PATH_STYLE=true
 ```
 
 For local development, start the database with Docker Compose:

@@ -97,3 +97,9 @@ MVP
 - [ ] In product settings feedback categories, add drag and drop sorting on which feedback category should appear first.
 
 - [ ] Add Organization avatar image to the organization settings, with file upload using the S3 bucket
+
+- [ ] For the Visibility - Control who can see and submit feedback to your product setting in general, add a copy URL button.
+
+- [ ] In product settings Apperance, Improve the look of the File picker - use shadcn if a component exist or make a better one, and add preview of the image that is selected.
+
+- [ ] For the Public Feedback Page, add banner image and logo to the public feedback page and use that is uploaded for that project, or if user has not uploaded logo or banner show a default look. like today.

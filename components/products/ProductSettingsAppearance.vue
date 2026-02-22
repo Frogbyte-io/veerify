@@ -16,16 +16,86 @@
         </div>
 
         <div class="space-y-2">
-          <Label for="logo-url">Logo URL</Label>
-          <Input id="logo-url" v-model="form.logoUrl" placeholder="https://example.com/logo.png" />
+          <Label for="logo-file">Logo Image</Label>
+          <Input
+            id="logo-file"
+            :key="logoInputKey"
+            data-testid="appearance-logo-upload-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            @change="handleFileSelect('logo', $event)"
+          />
+          <div class="flex flex-wrap items-center gap-2">
+            <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 2 MB.</p>
+            <p v-if="logoFile" class="text-xs text-muted-foreground">
+              Selected: <span class="font-medium text-foreground">{{ logoFile.name }}</span>
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              v-if="logoFile"
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="appearance-logo-clear-selection"
+              @click="clearSelectedFile('logo')"
+            >
+              Clear selection
+            </Button>
+            <Button
+              v-if="showLogoRemoveButton"
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="appearance-logo-remove"
+              @click="markAssetForRemoval('logo')"
+            >
+              Remove logo
+            </Button>
+          </div>
           <p class="text-xs text-muted-foreground">Displayed in the header of your public feedback board.</p>
         </div>
 
         <div class="space-y-2">
-          <Label for="banner-url">Banner Image URL</Label>
-          <Input id="banner-url" v-model="form.bannerUrl" placeholder="https://example.com/banner.jpg" />
+          <Label for="banner-file">Banner Image</Label>
+          <Input
+            id="banner-file"
+            :key="bannerInputKey"
+            data-testid="appearance-banner-upload-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            @change="handleFileSelect('banner', $event)"
+          />
+          <div class="flex flex-wrap items-center gap-2">
+            <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 8 MB.</p>
+            <p v-if="bannerFile" class="text-xs text-muted-foreground">
+              Selected: <span class="font-medium text-foreground">{{ bannerFile.name }}</span>
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              v-if="bannerFile"
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="appearance-banner-clear-selection"
+              @click="clearSelectedFile('banner')"
+            >
+              Clear selection
+            </Button>
+            <Button
+              v-if="showBannerRemoveButton"
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="appearance-banner-remove"
+              @click="markAssetForRemoval('banner')"
+            >
+              Remove banner
+            </Button>
+          </div>
           <p class="text-xs text-muted-foreground">
-            Displayed as a hero banner at the top of your public board. Recommended size: 1200×300px.
+            Displayed as a hero banner at the top of your public board. Recommended size: 1200x300px.
           </p>
         </div>
 
@@ -145,7 +215,6 @@
       </CardContent>
     </Card>
 
-    <!-- Preview -->
     <Card>
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
@@ -157,16 +226,16 @@
       <CardContent>
         <div class="rounded-lg border overflow-hidden" :class="previewThemeClass">
           <img
-            v-if="form.bannerUrl"
-            :src="form.bannerUrl"
+            v-if="previewBannerUrl"
+            :src="previewBannerUrl"
             alt="Banner"
             class="w-full h-32 object-cover"
             @error="$event.target.style.display = 'none'"
           />
           <div class="p-4 flex items-center gap-3" :style="{ backgroundColor: form.accentColor || '#3b82f6' }">
             <img
-              v-if="form.logoUrl"
-              :src="form.logoUrl"
+              v-if="previewLogoUrl"
+              :src="previewLogoUrl"
               alt="Logo"
               class="h-8 w-8 rounded object-cover bg-white/20"
               @error="$event.target.style.display = 'none'"
@@ -244,6 +313,15 @@
 <script>
 import { toast } from 'vue-sonner'
 
+const IMAGE_RULES = {
+  logo: {
+    maxBytes: 2 * 1024 * 1024,
+  },
+  banner: {
+    maxBytes: 8 * 1024 * 1024,
+  },
+}
+
 export default {
   name: 'ProductSettingsAppearance',
   props: {
@@ -271,6 +349,14 @@ export default {
         customFooterSecondaryLabel: settings.customFooterSecondaryLabel || '',
         customFooterSecondaryUrl: settings.customFooterSecondaryUrl || '',
       },
+      logoFile: null,
+      bannerFile: null,
+      logoPreviewUrl: '',
+      bannerPreviewUrl: '',
+      removeLogo: false,
+      removeBanner: false,
+      logoInputKey: 0,
+      bannerInputKey: 0,
       isSaving: false,
     }
   },
@@ -298,6 +384,20 @@ export default {
       if (this.form.themeMode === 'light') return ''
       return ''
     },
+    previewBannerUrl() {
+      if (this.removeBanner) return ''
+      return this.bannerPreviewUrl || this.form.bannerUrl || ''
+    },
+    previewLogoUrl() {
+      if (this.removeLogo) return ''
+      return this.logoPreviewUrl || this.form.logoUrl || ''
+    },
+    showLogoRemoveButton() {
+      return (this.currentSettings.logoUrl || this.logoPreviewUrl) && !this.removeLogo
+    },
+    showBannerRemoveButton() {
+      return (this.currentSettings.bannerUrl || this.bannerPreviewUrl) && !this.removeBanner
+    },
     showPreviewCustomFooter() {
       return (
         this.form.customFooterEnabled &&
@@ -322,8 +422,6 @@ export default {
     hasChanges() {
       return (
         this.form.accentColor !== this.currentSettings.accentColor ||
-        this.form.logoUrl !== this.currentSettings.logoUrl ||
-        this.form.bannerUrl !== this.currentSettings.bannerUrl ||
         this.form.showPoweredBy !== this.currentSettings.showPoweredBy ||
         this.form.showGithubFooter !== this.currentSettings.showGithubFooter ||
         this.form.themeMode !== this.currentSettings.themeMode ||
@@ -333,7 +431,11 @@ export default {
         this.form.customFooterPrimaryLabel !== this.currentSettings.customFooterPrimaryLabel ||
         this.form.customFooterPrimaryUrl !== this.currentSettings.customFooterPrimaryUrl ||
         this.form.customFooterSecondaryLabel !== this.currentSettings.customFooterSecondaryLabel ||
-        this.form.customFooterSecondaryUrl !== this.currentSettings.customFooterSecondaryUrl
+        this.form.customFooterSecondaryUrl !== this.currentSettings.customFooterSecondaryUrl ||
+        Boolean(this.logoFile) ||
+        Boolean(this.bannerFile) ||
+        (this.removeLogo && Boolean(this.currentSettings.logoUrl)) ||
+        (this.removeBanner && Boolean(this.currentSettings.bannerUrl))
       )
     },
   },
@@ -354,40 +456,182 @@ export default {
         this.form.customFooterPrimaryUrl = settings.customFooterPrimaryUrl || ''
         this.form.customFooterSecondaryLabel = settings.customFooterSecondaryLabel || ''
         this.form.customFooterSecondaryUrl = settings.customFooterSecondaryUrl || ''
+        this.resetPendingAssets()
       },
       deep: true,
     },
   },
+  beforeUnmount() {
+    this.resetPendingAssets()
+  },
   methods: {
+    resetPendingAssets() {
+      this.revokePreviewUrl('logo')
+      this.revokePreviewUrl('banner')
+      this.logoFile = null
+      this.bannerFile = null
+      this.removeLogo = false
+      this.removeBanner = false
+      this.clearFileInput('logo')
+      this.clearFileInput('banner')
+    },
+    revokePreviewUrl(kind) {
+      if (!import.meta.client) return
+      const key = kind === 'logo' ? 'logoPreviewUrl' : 'bannerPreviewUrl'
+      if (this[key]) {
+        URL.revokeObjectURL(this[key])
+        this[key] = ''
+      }
+    },
+    clearFileInput(kind) {
+      if (kind === 'logo') {
+        this.logoInputKey += 1
+      } else {
+        this.bannerInputKey += 1
+      }
+    },
+    validateFile(kind, file) {
+      if (!file) return false
+
+      const contentType = (file.type || '').toLowerCase()
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType)) {
+        toast.error('Only JPEG, PNG, and WebP files are supported')
+        return false
+      }
+
+      if (file.size > IMAGE_RULES[kind].maxBytes) {
+        const maxMb = Math.floor(IMAGE_RULES[kind].maxBytes / (1024 * 1024))
+        toast.error(`Selected ${kind} file exceeds ${maxMb} MB`)
+        return false
+      }
+
+      return true
+    },
+    handleFileSelect(kind, event) {
+      const file = event?.target?.files?.[0]
+      if (!file) return
+      if (!this.validateFile(kind, file)) {
+        this.clearFileInput(kind)
+        return
+      }
+
+      this.revokePreviewUrl(kind)
+      const previewUrl = import.meta.client ? URL.createObjectURL(file) : ''
+      if (kind === 'logo') {
+        this.logoFile = file
+        this.logoPreviewUrl = previewUrl
+        this.removeLogo = false
+      } else {
+        this.bannerFile = file
+        this.bannerPreviewUrl = previewUrl
+        this.removeBanner = false
+      }
+    },
+    clearSelectedFile(kind) {
+      this.revokePreviewUrl(kind)
+      if (kind === 'logo') {
+        this.logoFile = null
+      } else {
+        this.bannerFile = null
+      }
+      this.clearFileInput(kind)
+    },
+    markAssetForRemoval(kind) {
+      this.clearSelectedFile(kind)
+      if (kind === 'logo') {
+        this.removeLogo = true
+      } else {
+        this.removeBanner = true
+      }
+    },
+    async uploadSelectedFile(kind, file) {
+      const contentType = (file.type || '').toLowerCase()
+      const presignResponse = await $fetch(`/api/projects/${this.project.slug}/assets/presign`, {
+        method: 'POST',
+        body: {
+          kind,
+          filename: file.name || `${kind}.webp`,
+          contentType,
+          sizeBytes: file.size,
+        },
+      })
+
+      const uploadTarget = presignResponse?.data
+      if (!uploadTarget?.uploadId || !uploadTarget?.uploadUrl) {
+        throw new Error('Upload target response is invalid')
+      }
+
+      const uploadHeaders = {
+        ...(uploadTarget.headers || {}),
+        'content-type': contentType,
+      }
+
+      const uploadResponse = await fetch(uploadTarget.uploadUrl, {
+        method: uploadTarget.method || 'PUT',
+        headers: uploadHeaders,
+        body: file,
+      })
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed (${uploadResponse.status})`)
+      }
+
+      return uploadTarget.uploadId
+    },
     async save() {
       if (!this.hasChanges) return
       this.isSaving = true
 
       try {
         const existingSettings = this.project.settings || {}
+        let logoUploadId = null
+        let bannerUploadId = null
+
+        if (this.logoFile) {
+          logoUploadId = await this.uploadSelectedFile('logo', this.logoFile)
+        }
+        if (this.bannerFile) {
+          bannerUploadId = await this.uploadSelectedFile('banner', this.bannerFile)
+        }
+
+        const settingsPayload = {
+          ...existingSettings,
+          accentColor: this.form.accentColor,
+          showPoweredBy: this.form.showPoweredBy,
+          showGithubFooter: this.form.showGithubFooter,
+          themeMode: this.form.themeMode,
+          customFooterEnabled: this.form.customFooterEnabled,
+          customFooterBranding: this.form.customFooterBranding?.trim() || null,
+          customFooterText: this.form.customFooterText?.trim() || null,
+          customFooterPrimaryLabel: this.form.customFooterPrimaryLabel?.trim() || null,
+          customFooterPrimaryUrl: this.form.customFooterPrimaryUrl?.trim() || null,
+          customFooterSecondaryLabel: this.form.customFooterSecondaryLabel?.trim() || null,
+          customFooterSecondaryUrl: this.form.customFooterSecondaryUrl?.trim() || null,
+        }
+
+        if (logoUploadId) {
+          settingsPayload.logoUploadId = logoUploadId
+        }
+        if (bannerUploadId) {
+          settingsPayload.bannerUploadId = bannerUploadId
+        }
+        if (this.removeLogo) {
+          settingsPayload.logoUrl = null
+          settingsPayload.logoAssetKey = null
+        }
+        if (this.removeBanner) {
+          settingsPayload.bannerUrl = null
+          settingsPayload.bannerAssetKey = null
+        }
+
         const response = await $fetch(`/api/projects/${this.project.slug}`, {
           method: 'PUT',
           body: {
-            settings: {
-              ...existingSettings,
-              accentColor: this.form.accentColor,
-              logoUrl: this.form.logoUrl || null,
-              bannerUrl: this.form.bannerUrl || null,
-              showPoweredBy: this.form.showPoweredBy,
-              showGithubFooter: this.form.showGithubFooter,
-              themeMode: this.form.themeMode,
-              customFooterEnabled: this.form.customFooterEnabled,
-              customFooterBranding: this.form.customFooterBranding?.trim() || null,
-              customFooterText: this.form.customFooterText?.trim() || null,
-              customFooterPrimaryLabel: this.form.customFooterPrimaryLabel?.trim() || null,
-              customFooterPrimaryUrl: this.form.customFooterPrimaryUrl?.trim() || null,
-              customFooterSecondaryLabel: this.form.customFooterSecondaryLabel?.trim() || null,
-              customFooterSecondaryUrl: this.form.customFooterSecondaryUrl?.trim() || null,
-            },
+            settings: settingsPayload,
           },
         })
 
         this.$emit('updated', response.data)
+        this.resetPendingAssets()
         toast.success('Appearance settings saved')
       } catch (err) {
         console.error('Error saving appearance:', err)

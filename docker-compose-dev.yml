@@ -17,6 +17,33 @@ services:
     ports:
       - '1025:1025'
       - '8025:8025'
+  minio:
+    container_name: veerify-minio
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+  minio-setup:
+    container_name: veerify-minio-setup
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do
+        echo 'waiting for minio...';
+        sleep 1;
+      done;
+      mc mb --ignore-existing local/veerify-assets;
+      mc anonymous set download local/veerify-assets;
+      "
 
 volumes:
   db_data:
+  minio_data:

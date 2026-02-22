@@ -5,6 +5,11 @@ import { selectors } from './helpers/selectors'
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
+const STORAGE_DRIVER = process.env.STORAGE_DRIVER || 'local'
+const ONE_BY_ONE_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=',
+  'base64'
+)
 
 test.setTimeout(60_000)
 
@@ -250,5 +255,128 @@ test.describe('Admin feedback workflow', () => {
       headers: withAuthHeaders(sessionCookie),
     })
     expect(deleteRes.status()).toBe(404)
+  })
+
+  test('API: presign/upload/project settings update validates and persists managed assets', async ({ request }) => {
+    test.skip(STORAGE_DRIVER !== 'local', 'This API upload flow test currently runs in local storage mode only')
+
+    const sessionCookie = await signInAndGetSessionCookie(request)
+    const teamId = await getActiveTeamId(request, sessionCookie)
+
+    const unauthorizedPresign = await request.post('/api/projects/demo/assets/presign', {
+      data: {
+        kind: 'logo',
+        filename: 'logo.png',
+        contentType: 'image/png',
+        sizeBytes: 1024,
+      },
+    })
+    expect(unauthorizedPresign.status()).toBe(401)
+
+    const invalidMimePresign = await request.post('/api/projects/demo/assets/presign', {
+      headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+      data: {
+        kind: 'logo',
+        filename: 'logo.gif',
+        contentType: 'image/gif',
+        sizeBytes: 1024,
+      },
+    })
+    expect(invalidMimePresign.status()).toBe(400)
+
+    const largeLogoPresign = await request.post('/api/projects/demo/assets/presign', {
+      headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+      data: {
+        kind: 'logo',
+        filename: 'logo.png',
+        contentType: 'image/png',
+        sizeBytes: 3 * 1024 * 1024,
+      },
+    })
+    expect(largeLogoPresign.status()).toBe(400)
+
+    const slug = `e2e-upload-${Date.now()}`
+    const projectId = await createTestProject(request, sessionCookie, teamId, slug)
+
+    try {
+      const otherProjectPresign = await request.post(`/api/projects/${slug}/assets/presign`, {
+        headers: withAuthHeaders(sessionCookie, `/products/${slug}#appearance`),
+        data: {
+          kind: 'logo',
+          filename: 'logo.png',
+          contentType: 'image/png',
+          sizeBytes: ONE_BY_ONE_PNG.byteLength,
+        },
+      })
+      expect(otherProjectPresign.ok()).toBeTruthy()
+      const otherPresignPayload = await otherProjectPresign.json()
+      const otherUpload = otherPresignPayload?.data
+      expect(otherUpload?.uploadUrl).toContain('/api/uploads/temp/')
+
+      const otherUploadResult = await request.put(otherUpload.uploadUrl, {
+        headers: otherUpload.headers,
+        data: ONE_BY_ONE_PNG,
+      })
+      expect(otherUploadResult.ok()).toBeTruthy()
+
+      const mismatchedUpdate = await request.put('/api/projects/demo', {
+        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        data: {
+          settings: {
+            logoUploadId: otherUpload.uploadId,
+          },
+        },
+      })
+      expect(mismatchedUpdate.status()).toBe(400)
+
+      const validPresign = await request.post('/api/projects/demo/assets/presign', {
+        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        data: {
+          kind: 'logo',
+          filename: 'logo.png',
+          contentType: 'image/png',
+          sizeBytes: ONE_BY_ONE_PNG.byteLength,
+        },
+      })
+      expect(validPresign.ok()).toBeTruthy()
+      const validPresignPayload = await validPresign.json()
+      const validUpload = validPresignPayload?.data
+
+      const validUploadResult = await request.put(validUpload.uploadUrl, {
+        headers: validUpload.headers,
+        data: ONE_BY_ONE_PNG,
+      })
+      expect(validUploadResult.ok()).toBeTruthy()
+
+      const updateWithUpload = await request.put('/api/projects/demo', {
+        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        data: {
+          settings: {
+            logoUploadId: validUpload.uploadId,
+          },
+        },
+      })
+      expect(updateWithUpload.ok()).toBeTruthy()
+      const updatedPayload = await updateWithUpload.json()
+      expect(updatedPayload?.data?.settings?.logoUrl).toContain('/api/uploads/object/')
+      expect(updatedPayload?.data?.settings?.logoAssetKey).toContain('projects/')
+
+      const clearLogoUpdate = await request.put('/api/projects/demo', {
+        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        data: {
+          settings: {
+            logoUrl: null,
+            logoAssetKey: null,
+          },
+        },
+      })
+      expect(clearLogoUpdate.ok()).toBeTruthy()
+    } finally {
+      await request.put('/api/projects/demo', {
+        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        data: { settings: null },
+      })
+      await deleteTestProject(request, sessionCookie, teamId, projectId)
+    }
   })
 })

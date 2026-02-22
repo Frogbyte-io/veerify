@@ -50,6 +50,7 @@
       <img
         v-if="projectData.project.settings?.bannerUrl"
         :src="projectData.project.settings.bannerUrl"
+        data-testid="public-board-banner"
         alt=""
         class="w-full h-48 md:h-64 object-cover"
         @error="$event.target.style.display = 'none'"
@@ -58,8 +59,18 @@
       <div class="max-w-4xl mx-auto px-4 py-8">
         <!-- Header -->
         <div class="mb-8">
-          <div class="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <span>{{ projectData.team.name }}</span>
+          <div class="flex items-center gap-3 mb-2">
+            <img
+              v-if="projectData.project.settings?.logoUrl"
+              :src="projectData.project.settings.logoUrl"
+              data-testid="public-board-logo"
+              alt="Project logo"
+              class="h-10 w-10 rounded object-cover border bg-muted"
+              @error="$event.target.style.display = 'none'"
+            />
+            <div class="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>{{ projectData.team.name }}</span>
+            </div>
           </div>
           <h1 class="text-3xl font-bold mb-2">{{ projectData.project.name }}</h1>
           <p v-if="projectData.project.description" class="text-muted-foreground text-lg">

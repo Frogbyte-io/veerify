@@ -16,6 +16,15 @@ const PROJECT_SLUG = process.env.E2E_PROJECT_SLUG || 'demo'
 const PUBLIC_PAGE = process.env.E2E_PUBLIC_PAGE_URL || `http://${TEAM_SLUG}.localhost:${PORT}/${PROJECT_SLUG}`
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
+const STORAGE_DRIVER = process.env.STORAGE_DRIVER || 'local'
+const PNG_ONE_BY_ONE = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=',
+  'base64'
+)
+const PNG_TWO_BY_TWO = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4EIwESMolGF1FMIAGUQAhI3GfQAAAAASUVORK5CYII=',
+  'base64'
+)
 
 test.setTimeout(60_000)
 
@@ -440,6 +449,101 @@ test.describe('Anonymous feedback sessions', () => {
     } finally {
       // Reset settings via API to avoid cross-origin session cookie issues
       // when navigating back from the public board subdomain to the main app.
+      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+        data: { settings: null },
+        headers: { 'content-type': 'application/json' },
+      })
+      expect(resetResponse.ok()).toBe(true)
+    }
+  })
+
+  test('appearance image uploads support upload, replace, and remove workflow', async ({ page }) => {
+    test.skip(STORAGE_DRIVER !== 'local', 'Upload e2e currently runs in local storage mode only')
+
+    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await page.goto('/products/demo#appearance')
+    await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
+
+    const logoInput = page.locator('[data-testid="appearance-logo-upload-input"]')
+    const bannerInput = page.locator('[data-testid="appearance-banner-upload-input"]')
+    const saveButton = page.getByRole('button', { name: 'Save Changes' })
+
+    try {
+      await logoInput.setInputFiles({
+        name: 'logo-1.png',
+        mimeType: 'image/png',
+        buffer: PNG_ONE_BY_ONE,
+      })
+      await bannerInput.setInputFiles({
+        name: 'banner-1.png',
+        mimeType: 'image/png',
+        buffer: PNG_ONE_BY_ONE,
+      })
+
+      const firstSaveResponsePromise = page.waitForResponse(
+        (response) => response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+        { timeout: 20_000 }
+      )
+      await saveButton.click()
+      const firstSaveResponse = await firstSaveResponsePromise
+      expect(firstSaveResponse.ok()).toBe(true)
+
+      const firstSettingsResponse = await page.request.get(`http://127.0.0.1:${PORT}/api/projects/demo`)
+      const firstSettingsPayload = await firstSettingsResponse.json()
+      const firstLogoUrl = firstSettingsPayload?.data?.settings?.logoUrl
+      const firstBannerUrl = firstSettingsPayload?.data?.settings?.bannerUrl
+      expect(firstLogoUrl).toContain('/api/uploads/object/')
+      expect(firstBannerUrl).toContain('/api/uploads/object/')
+
+      await logoInput.setInputFiles({
+        name: 'logo-2.png',
+        mimeType: 'image/png',
+        buffer: PNG_TWO_BY_TWO,
+      })
+      await bannerInput.setInputFiles({
+        name: 'banner-2.png',
+        mimeType: 'image/png',
+        buffer: PNG_TWO_BY_TWO,
+      })
+
+      const secondSaveResponsePromise = page.waitForResponse(
+        (response) => response.request().method() === 'PUT' && response.url().includes('/api/projects/demo'),
+        { timeout: 20_000 }
+      )
+      await saveButton.click()
+      const secondSaveResponse = await secondSaveResponsePromise
+      expect(secondSaveResponse.ok()).toBe(true)
+
+      const secondSettingsResponse = await page.request.get(`http://127.0.0.1:${PORT}/api/projects/demo`)
+      const secondSettingsPayload = await secondSettingsResponse.json()
+      const secondLogoUrl = secondSettingsPayload?.data?.settings?.logoUrl
+      const secondBannerUrl = secondSettingsPayload?.data?.settings?.bannerUrl
+      expect(secondLogoUrl).toContain('/api/uploads/object/')
+      expect(secondBannerUrl).toContain('/api/uploads/object/')
+      expect(secondLogoUrl).not.toBe(firstLogoUrl)
+      expect(secondBannerUrl).not.toBe(firstBannerUrl)
+
+      await gotoPublicPage(page)
+      await expect(page.locator('[data-testid="public-board-logo"]')).toBeVisible()
+      await expect(page.locator('[data-testid="public-board-banner"]')).toBeVisible()
+
+      const clearResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+        data: {
+          settings: {
+            logoUrl: null,
+            logoAssetKey: null,
+            bannerUrl: null,
+            bannerAssetKey: null,
+          },
+        },
+        headers: { 'content-type': 'application/json' },
+      })
+      expect(clearResponse.ok()).toBe(true)
+
+      await gotoPublicPage(page)
+      await expect(page.locator('[data-testid="public-board-logo"]')).toHaveCount(0)
+      await expect(page.locator('[data-testid="public-board-banner"]')).toHaveCount(0)
+    } finally {
       const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
         data: { settings: null },
         headers: { 'content-type': 'application/json' },
