@@ -85,3 +85,7 @@ MVP
   - Added dedicated dashboard-domain config (`APP_DASHBOARD_DOMAIN`) and runtime usage in `nuxt.config.ts`, `server/middleware/subdomain.ts`, and `components/public/PublicFeedbackBoard.vue`, plus env/docs updates in `.env.example` and `README.md`.
 
 - [ ] Add ability on public feedback items to subscribe to a feedback to get notified when there are updates. For anonymous this should open a prompt for email, and for logged in users this should open a modal where they can select between email and app notifications. If app notifications has not been enabled, it should prompt for access before toggling the button.
+
+- [ ] Add selection between table view of feedback items, and Kanban view. Feedback table view should have a compact view of all feedback items, just like the github projects tool, with links and issues number, or a create github issue button if it does not exist as a github issue. The github issue column should only appear if github issues feature is set up.
+
+- [ ] Add option to select multiple feedback products to see feedback from, in addition to a ALL checkbox that checks all feedback products.
