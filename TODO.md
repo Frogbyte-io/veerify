@@ -89,3 +89,11 @@ MVP
 - [ ] Add selection between table view of feedback items, and Kanban view. Feedback table view should have a compact view of all feedback items, just like the github projects tool, with links and issues number, or a create github issue button if it does not exist as a github issue. The github issue column should only appear if github issues feature is set up.
 
 - [ ] Add option to select multiple feedback products to see feedback from, in addition to a ALL checkbox that checks all feedback products.
+
+- [ ] In feedback kanban view, add drag and drop sorting of items.
+
+- [ ] In feedback kanban view, remove status and sort by as they are not needed in kanban view
+
+- [ ] In product settings feedback categories, add drag and drop sorting on which feedback category should appear first.
+
+- [ ] Add Organization avatar image to the organization settings, with file upload using the S3 bucket
