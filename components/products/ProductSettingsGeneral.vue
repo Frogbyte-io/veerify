@@ -51,11 +51,23 @@
           <Switch v-model="form.isPublic" />
         </div>
 
-        <div v-if="publicUrl" class="rounded-md bg-muted p-3">
-          <p class="text-sm">
-            <span class="font-medium">Public URL:</span>
-            <span class="ml-1 text-muted-foreground">{{ publicUrl }}</span>
-          </p>
+        <div v-if="publicUrl" class="rounded-md bg-muted p-3 space-y-2">
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-sm min-w-0">
+              <span class="font-medium">Public URL:</span>
+              <span class="ml-1 text-muted-foreground break-all">{{ publicUrl }}</span>
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="project-visibility-copy-url"
+              @click="copyPublicUrl"
+            >
+              <Icon name="lucide:copy" class="h-4 w-4 mr-2" />
+              Copy URL
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -125,6 +137,17 @@ export default {
     },
   },
   methods: {
+    async copyPublicUrl() {
+      if (!import.meta.client || !this.publicUrl) return
+
+      try {
+        await navigator.clipboard.writeText(this.publicUrl)
+        toast.success('Public URL copied')
+      } catch (err) {
+        console.error('Failed to copy public URL:', err)
+        toast.error('Could not copy URL. Please copy it manually.')
+      }
+    },
     async save() {
       if (!this.hasChanges) return
       this.isSaving = true
