@@ -109,3 +109,5 @@ MVP
 
 - [x] For the Public Feedback Page, add banner image and logo to the public feedback page and use that is uploaded for that project, or if user has not uploaded logo or banner show a default look. like today.
   - Public banner/logo rendering and fallback behavior is implemented in `components/public/PublicFeedbackBoard.vue`; fallback-aware assertions were updated in `tests/e2e/anonymous-feedback.spec.ts`.
+
+- [ ] Allow resizing of sidebar.
