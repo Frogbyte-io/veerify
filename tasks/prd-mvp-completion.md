@@ -16,37 +16,54 @@ This PRD covers the highest-priority unchecked items required to complete the Ve
 
 ---
 
+## Ralph Loop Progress (2026-02-23)
+
+- US-001: In progress. Runtime behavior is implemented, and e2e fallback assertions were aligned to default banner/logo behavior.
+- US-002: In progress. File picker + preview behavior is implemented in `ProductSettingsAppearance`.
+- US-003: Not started. Status tags are still hardcoded for feedback workflows.
+- US-004: Not started. Product settings does not yet have a dedicated Feedback tab with full filter/search set.
+- US-005: Not started. Feedback kanban still lacks drag-and-drop column movement.
+- US-006: In progress. Category drag-and-drop ordering was implemented with persisted `sortOrder` updates.
+
+---
+
 ## User Stories
 
 ### US-001: Public feedback page — banner image and logo
+
 **Description:** As a public board visitor, I want to see the product's banner and logo so that the board feels branded and trustworthy.
 
 **Acceptance Criteria:**
-- [ ] If the project has a banner image URL set, render it as the header background image on the public feedback board
-- [ ] If the project has a logo URL set, render it as an avatar/logo in the public board header
-- [ ] If neither is set, fall back to the current default look (no regression)
-- [ ] Banner and logo are responsive and render correctly on mobile
+
+- [x] If the project has a banner image URL set, render it as the header background image on the public feedback board
+- [x] If the project has a logo URL set, render it as an avatar/logo in the public board header
+- [x] If neither is set, fall back to the current default look (no regression)
+- [x] Banner and logo are responsive and render correctly on mobile
 - [ ] Typecheck passes
 - [ ] Verify in browser using dev-browser skill
 
 ---
 
 ### US-002: Improve file picker in product settings Appearance
+
 **Description:** As a product admin, I want a polished file picker with image preview so that uploading a banner or logo feels professional.
 
 **Acceptance Criteria:**
-- [ ] Replace the plain `<input type="file">` in `ProductSettingsAppearance` with a styled component (shadcn if available, otherwise custom)
-- [ ] After selecting an image, a preview thumbnail is shown inline before saving
-- [ ] Existing uploaded image is shown as the current preview on page load
+
+- [x] Replace the plain `<input type="file">` in `ProductSettingsAppearance` with a styled component (shadcn if available, otherwise custom)
+- [x] After selecting an image, a preview thumbnail is shown inline before saving
+- [x] Existing uploaded image is shown as the current preview on page load
 - [ ] Typecheck passes
 - [ ] Verify in browser using dev-browser skill
 
 ---
 
 ### US-003: Allow product admins to add and change status tags
+
 **Description:** As a product admin, I want to create and rename status tags (e.g. "Planned", "In Progress", "Completed") so that I can customise the workflow for my product.
 
 **Acceptance Criteria:**
+
 - [ ] In product settings, there is a "Status Tags" section (or existing tab) where admins can view all current status tags
 - [ ] Admin can add a new status tag with a name and optional colour
 - [ ] Admin can rename an existing status tag
@@ -58,9 +75,11 @@ This PRD covers the highest-priority unchecked items required to complete the Ve
 ---
 
 ### US-004: Add a "Feedback" tab to product settings
+
 **Description:** As a product admin, I want a Feedback tab in product settings that lists all feedback items with filters and search so that I can manage feedback without leaving settings.
 
 **Acceptance Criteria:**
+
 - [ ] A "Feedback" tab is added to `pages/products/[slug].vue`
 - [ ] The tab shows a compact list/table of all feedback items for the product
 - [ ] Filters available: status, category, date range
@@ -72,9 +91,11 @@ This PRD covers the highest-priority unchecked items required to complete the Ve
 ---
 
 ### US-005: Kanban view — drag and drop sorting of items
+
 **Description:** As a product admin, I want to drag feedback cards between kanban columns so that I can update status without opening each item individually.
 
 **Acceptance Criteria:**
+
 - [ ] Feedback cards in the kanban board are draggable using a library (e.g. `vue-draggable-plus` or `@dnd-kit`)
 - [ ] Dropping a card into a different column updates its status to that column's status tag
 - [ ] The change persists to the database via an API call
@@ -86,22 +107,26 @@ This PRD covers the highest-priority unchecked items required to complete the Ve
 ---
 
 ### US-006: Feedback categories — drag and drop sorting
+
 **Description:** As a product admin, I want to drag-reorder feedback categories in product settings so that the most relevant categories appear first on the public board.
 
 **Acceptance Criteria:**
-- [ ] Feedback category rows in product settings are draggable
-- [ ] Dragging a row to a new position reorders it
-- [ ] Order is persisted to the database (a `sortOrder` or `position` field on the category)
-- [ ] The public board renders categories in the saved order
+
+- [x] Feedback category rows in product settings are draggable
+- [x] Dragging a row to a new position reorders it
+- [x] Order is persisted to the database (a `sortOrder` or `position` field on the category)
+- [x] The public board renders categories in the saved order
 - [ ] Typecheck passes
 - [ ] Verify in browser using dev-browser skill
 
 ---
 
 ### US-007: Organization avatar image
+
 **Description:** As an organization admin, I want to upload an avatar/logo for my organization so that it appears in the sidebar and settings pages.
 
 **Acceptance Criteria:**
+
 - [ ] Organization settings page has an avatar upload field
 - [ ] File upload uses S3 (or local storage fallback) consistent with how other images are stored
 - [ ] Uploaded avatar is displayed in the sidebar `TeamSwitcher` component next to the org name
@@ -112,9 +137,11 @@ This PRD covers the highest-priority unchecked items required to complete the Ve
 ---
 
 ### US-008: Notifications infrastructure
+
 **Description:** As a developer, I need a base notifications infrastructure (polling or real-time) so that in-app and email notification features can be built on top of it.
 
 **Acceptance Criteria:**
+
 - [ ] A `notification` table is added to the schema with fields: `id`, `userId`, `type`, `payload` (jsonb), `read` (boolean), `createdAt`
 - [ ] A `POST /api/notifications` internal utility function exists to create a notification record
 - [ ] A `GET /api/notifications` endpoint returns unread notifications for the authenticated user
@@ -126,9 +153,11 @@ This PRD covers the highest-priority unchecked items required to complete the Ve
 ---
 
 ### US-009: File/image/log attachments on feedback submission
+
 **Description:** As a public board user, I want to attach files or images when submitting feedback so that I can provide richer context (screenshots, logs, etc.).
 
 **Acceptance Criteria:**
+
 - [ ] The feedback submission form has a file upload field (accepts images, text files, PDFs; max 10 MB each, max 5 files)
 - [ ] Uploaded files are stored in S3 (or local storage in dev) and their URLs are linked to the feedback record via a `feedbackAttachment` table
 - [ ] Attached files are shown in the feedback detail view (images rendered inline; other files as download links)
@@ -139,9 +168,11 @@ This PRD covers the highest-priority unchecked items required to complete the Ve
 ---
 
 ### US-010: Email notification subscription on public board
+
 **Description:** As a public board visitor, I want to subscribe to a feedback item so that I receive email updates when its status changes or new comments are posted.
 
 **Acceptance Criteria:**
+
 - [ ] Each feedback item on the public board shows a "Subscribe" button
 - [ ] For anonymous users: clicking Subscribe opens an email prompt; submission stores the email in a `feedbackSubscription` table linked to the feedback item
 - [ ] For logged-in users: clicking Subscribe opens a modal to choose email and/or in-app notification (in-app only available if notifications infrastructure is enabled)
@@ -154,9 +185,11 @@ This PRD covers the highest-priority unchecked items required to complete the Ve
 ---
 
 ### US-011: Login flow on public board with custom domain
+
 **Description:** As a logged-in dashboard user visiting a public board on a custom domain, I want to be recognized as logged in (or easily log in) so that I can access dashboard features from the public board without being redirected incorrectly.
 
 **Acceptance Criteria:**
+
 - [ ] When a user is authenticated on `app.veerify.io` and visits a custom-domain public board, their session is detected and the "Log in" button in the top-right is replaced with their avatar / a "Go to Dashboard" link
 - [ ] If not authenticated, clicking "Log in" on a custom-domain public board either (a) shows a login modal directly on the public board, or (b) redirects to `app.veerify.io/login?redirect=<current-url>` and returns after successful login
 - [ ] The chosen approach handles cross-domain cookies correctly (document cookies or a token redirect flow)

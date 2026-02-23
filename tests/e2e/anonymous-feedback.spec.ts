@@ -548,8 +548,12 @@ test.describe('Anonymous feedback sessions', () => {
       expect(secondBannerUrl).not.toBe(firstBannerUrl)
 
       await gotoPublicPage(page)
-      await expect(page.locator('[data-testid="public-board-logo"]')).toBeVisible()
-      await expect(page.locator('[data-testid="public-board-banner"]')).toBeVisible()
+      const logoImage = page.locator('img[data-testid="public-board-logo"]')
+      const bannerImage = page.locator('[data-testid="public-board-banner"] img')
+      await expect(logoImage).toBeVisible()
+      await expect(logoImage).toHaveAttribute('src', /\/api\/uploads\/object\//)
+      await expect(bannerImage).toBeVisible()
+      await expect(bannerImage).toHaveAttribute('src', /\/api\/uploads\/object\//)
 
       const clearResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
         data: {
@@ -565,8 +569,14 @@ test.describe('Anonymous feedback sessions', () => {
       expect(clearResponse.ok()).toBe(true)
 
       await gotoPublicPage(page)
-      await expect(page.locator('[data-testid="public-board-logo"]')).toHaveCount(0)
-      await expect(page.locator('[data-testid="public-board-banner"]')).toHaveCount(0)
+      const fallbackLogo = page.locator('div[data-testid="public-board-logo"]')
+      const fallbackBanner = page.locator('[data-testid="public-board-banner"]')
+      await expect(fallbackLogo).toBeVisible()
+      await expect(fallbackLogo).toHaveText(/\S/)
+      await expect(page.locator('img[data-testid="public-board-logo"]')).toHaveCount(0)
+      await expect(fallbackBanner).toBeVisible()
+      await expect(page.locator('[data-testid="public-board-banner"] img')).toHaveCount(0)
+      await expect(fallbackBanner.getByText('Feedback Board')).toBeVisible()
     } finally {
       const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
         data: { settings: null },

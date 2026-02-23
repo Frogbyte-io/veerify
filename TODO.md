@@ -96,13 +96,16 @@ MVP
 
 - [x] In feedback kanban view, remove status and sort by as they are not needed in kanban view
 
-- [ ] In product settings feedback categories, add drag and drop sorting on which feedback category should appear first.
+- [x] In product settings feedback categories, add drag and drop sorting on which feedback category should appear first.
+  - Added drag handles and drop targets in `components/products/ProductSettingsCategories.vue`, persisting `sortOrder` via category `PUT` updates, with reorder API coverage in `tests/e2e/team-primary-workspace.spec.ts`.
 
 - [ ] Add Organization avatar image to the organization settings, with file upload using the S3 bucket
 
 - [x] For the Visibility - Control who can see and submit feedback to your product setting in general, add a copy URL button.
   - Added a `Copy URL` action in `components/products/ProductSettingsGeneral.vue` (`project-visibility-copy-url`) that copies the computed public board URL.
 
-- [ ] In product settings Apperance, Improve the look of the File picker - use shadcn if a component exist or make a better one, and add preview of the image that is selected.
+- [x] In product settings Apperance, Improve the look of the File picker - use shadcn if a component exist or make a better one, and add preview of the image that is selected.
+  - Implemented styled upload inputs and preview handling in `components/products/ProductSettingsAppearance.vue`.
 
-- [ ] For the Public Feedback Page, add banner image and logo to the public feedback page and use that is uploaded for that project, or if user has not uploaded logo or banner show a default look. like today.
+- [x] For the Public Feedback Page, add banner image and logo to the public feedback page and use that is uploaded for that project, or if user has not uploaded logo or banner show a default look. like today.
+  - Public banner/logo rendering and fallback behavior is implemented in `components/public/PublicFeedbackBoard.vue`; fallback-aware assertions were updated in `tests/e2e/anonymous-feedback.spec.ts`.

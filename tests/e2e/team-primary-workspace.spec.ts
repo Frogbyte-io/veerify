@@ -166,14 +166,45 @@ test('project categories API supports create/update/reorder/delete with reassign
     headers: withAuthHeaders(sessionCookie),
     data: {
       name: 'User Experience',
-      sortOrder: 0,
       color: '#9333ea',
     },
   })
   const updateCategoryPayload = await updateCategoryResponse.json()
   expect(updateCategoryResponse.ok()).toBeTruthy()
   expect(updateCategoryPayload.data.name).toBe('User Experience')
-  expect(updateCategoryPayload.data.sortOrder).toBe(0)
+
+  const bugCategory = defaults.find((category) => category.slug === 'bug')
+  expect(bugCategory?.id).toBeTruthy()
+  if (!bugCategory) throw new Error('Expected default bug category to exist')
+
+  const featureCategory = defaults.find((category) => category.slug === 'feature')
+  expect(featureCategory?.id).toBeTruthy()
+  if (!featureCategory) throw new Error('Expected default feature category to exist')
+
+  const reorderedCategoryIds = [customCategoryId, bugCategory.id, featureCategory.id]
+  for (const [sortOrder, categoryId] of reorderedCategoryIds.entries()) {
+    const reorderResponse = await request.put(`/api/projects/${projectSlug}/categories/${categoryId}`, {
+      headers: withAuthHeaders(sessionCookie),
+      data: { sortOrder },
+    })
+    expect(reorderResponse.ok()).toBeTruthy()
+  }
+
+  const listAfterReorderResponse = await request.get(`/api/projects/${projectSlug}/categories`, {
+    headers: withAuthHeaders(sessionCookie),
+  })
+  const listAfterReorderPayload = await listAfterReorderResponse.json()
+  expect(listAfterReorderResponse.ok()).toBeTruthy()
+  const categoriesAfterReorder = listAfterReorderPayload.data as Array<{ name: string }>
+  expect(categoriesAfterReorder.map((category) => category.name)).toEqual(['User Experience', 'Bug', 'Feature'])
+
+  const publicProjectResponse = await request.get(`/api/public/t/${TEAM_SLUG}/${projectSlug}`)
+  const publicProjectPayload = await publicProjectResponse.json()
+  expect(publicProjectResponse.ok()).toBeTruthy()
+  const publicCategoryNames = (publicProjectPayload?.data?.categories ?? []).map(
+    (category: { name: string }) => category.name
+  )
+  expect(publicCategoryNames).toEqual(['User Experience', 'Bug', 'Feature'])
 
   const createFeedbackResponse = await request.post('/api/feedback', {
     headers: withAuthHeaders(sessionCookie, '/feedback'),
@@ -193,10 +224,6 @@ test('project categories API supports create/update/reorder/delete with reassign
     data: {},
   })
   expect(deleteWithoutReplacement.status()).toBe(409)
-
-  const bugCategory = defaults.find((category) => category.slug === 'bug')
-  expect(bugCategory?.id).toBeTruthy()
-  if (!bugCategory) throw new Error('Expected default bug category to exist')
 
   const deleteWithReplacement = await request.delete(`/api/projects/${projectSlug}/categories/${customCategoryId}`, {
     headers: withAuthHeaders(sessionCookie),

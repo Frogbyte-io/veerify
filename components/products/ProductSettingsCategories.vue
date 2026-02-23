@@ -40,12 +40,33 @@
 
         <!-- Category List -->
         <div v-else class="space-y-2">
+          <p class="text-xs text-muted-foreground">Drag categories to reorder how they appear on your public board.</p>
           <div
             v-for="category in categories"
             :key="category.id"
-            class="flex items-center justify-between rounded-lg border p-3"
+            :data-testid="`product-category-item-${category.id}`"
+            class="flex items-center justify-between rounded-lg border p-3 transition-colors"
+            :class="{
+              'border-primary bg-primary/5': dragOverCategoryId === category.id && draggedCategoryId !== category.id,
+            }"
+            @dragover.prevent="onCategoryDragOver(category.id)"
+            @dragenter.prevent="onCategoryDragOver(category.id)"
+            @dragleave="onCategoryDragLeave(category.id)"
+            @drop.prevent="onCategoryDrop(category.id)"
           >
             <div class="flex items-center gap-3">
+              <button
+                type="button"
+                :data-testid="`product-category-drag-handle-${category.id}`"
+                class="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:cursor-not-allowed"
+                :aria-label="`Drag to reorder ${category.name}`"
+                :disabled="isReordering"
+                draggable="true"
+                @dragstart="onCategoryDragStart(category.id, $event)"
+                @dragend="onCategoryDragEnd"
+              >
+                <Icon name="lucide:grip-vertical" class="w-4 h-4" />
+              </button>
               <span
                 class="w-3 h-3 rounded-full flex-shrink-0"
                 :style="{ backgroundColor: category.color || '#6b7280' }"
@@ -62,7 +83,7 @@
               </div>
             </div>
             <div class="flex items-center gap-1">
-              <Button variant="ghost" size="sm" @click="openEditDialog(category)">
+              <Button variant="ghost" size="sm" :disabled="isReordering" @click="openEditDialog(category)">
                 <Icon name="lucide:pencil" class="w-4 h-4" />
               </Button>
               <Button
@@ -70,6 +91,7 @@
                 variant="ghost"
                 size="sm"
                 class="text-destructive hover:text-destructive"
+                :disabled="isReordering"
                 @click="openDeleteDialog(category)"
               >
                 <Icon name="lucide:trash-2" class="w-4 h-4" />
@@ -189,6 +211,9 @@ export default {
       replacementCategoryId: '',
       isSavingCategory: false,
       isDeletingCategory: false,
+      isReordering: false,
+      draggedCategoryId: null,
+      dragOverCategoryId: null,
       categoryForm: {
         name: '',
         icon: '',
@@ -245,6 +270,80 @@ export default {
       this.deletingCategory = category
       this.replacementCategoryId = ''
       this.showDeleteDialog = true
+    },
+
+    onCategoryDragStart(categoryId, event) {
+      if (this.isReordering) {
+        event.preventDefault()
+        return
+      }
+
+      this.draggedCategoryId = categoryId
+      if (event?.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', categoryId)
+      }
+    },
+
+    onCategoryDragOver(categoryId) {
+      if (!this.draggedCategoryId || this.draggedCategoryId === categoryId) return
+      this.dragOverCategoryId = categoryId
+    },
+
+    onCategoryDragLeave(categoryId) {
+      if (this.dragOverCategoryId === categoryId) {
+        this.dragOverCategoryId = null
+      }
+    },
+
+    onCategoryDragEnd() {
+      this.draggedCategoryId = null
+      this.dragOverCategoryId = null
+    },
+
+    async onCategoryDrop(targetCategoryId) {
+      if (!this.draggedCategoryId || this.draggedCategoryId === targetCategoryId || this.isReordering) {
+        this.onCategoryDragEnd()
+        return
+      }
+
+      const fromIndex = this.categories.findIndex((category) => category.id === this.draggedCategoryId)
+      const toIndex = this.categories.findIndex((category) => category.id === targetCategoryId)
+
+      if (fromIndex < 0 || toIndex < 0) {
+        this.onCategoryDragEnd()
+        return
+      }
+
+      const previousOrder = [...this.categories]
+      const reordered = [...this.categories]
+      const [movedCategory] = reordered.splice(fromIndex, 1)
+      reordered.splice(toIndex, 0, movedCategory)
+      this.categories = reordered
+      this.onCategoryDragEnd()
+      await this.persistCategoryOrder(previousOrder)
+    },
+
+    async persistCategoryOrder(previousOrder) {
+      this.isReordering = true
+
+      try {
+        await Promise.all(
+          this.categories.map((category, sortOrder) =>
+            $fetch(`/api/projects/${this.project.slug}/categories/${category.id}`, {
+              method: 'PUT',
+              body: { sortOrder },
+            })
+          )
+        )
+        toast.success('Category order saved')
+      } catch (err) {
+        console.error('Error saving category order:', err)
+        this.categories = previousOrder
+        toast.error(err?.data?.error?.message || 'Failed to save category order')
+      } finally {
+        this.isReordering = false
+      }
     },
 
     async saveCategory() {
