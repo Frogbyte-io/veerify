@@ -1,31 +1,51 @@
 import { z } from 'zod'
-import { eq, and, desc, asc, count, sql } from 'drizzle-orm'
-import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { eq, and, desc, asc, count, inArray } from 'drizzle-orm'
+import { createSuccessResponse } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
-import { user } from '~/server/database/schema/auth'
+import { feedback, feedbackCategory, githubIssueLink, project, vote } from '~/server/database/schema/feedback'
 
-const listFeedbackQuerySchema = z.object({
-  projectId: z.string().min(1, 'Project ID is required'),
-  status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']).optional(),
-  categoryId: z.string().optional(),
-  search: z.string().optional(),
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
-  sortBy: z.enum(['createdAt', 'updatedAt', 'voteCount', 'title']).default('voteCount'),
-  sortOrder: z.enum(['asc', 'desc']).default('desc'),
-})
+const listFeedbackQuerySchema = z
+  .object({
+    projectId: z.string().min(1).optional(),
+    projectIds: z
+      .string()
+      .optional()
+      .transform((value) =>
+        value
+          ? value
+              .split(',')
+              .map((id) => id.trim())
+              .filter(Boolean)
+          : []
+      ),
+    status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']).optional(),
+    categoryId: z.string().optional(),
+    search: z.string().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(20),
+    sortBy: z.enum(['createdAt', 'updatedAt', 'voteCount', 'title']).default('voteCount'),
+    sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  })
+  .refine((data) => Boolean(data.projectId) || data.projectIds.length > 0, {
+    message: 'Project ID is required',
+    path: ['projectId'],
+  })
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
   const anonSession = !session?.user ? await getAnonSession(event) : null
   const query = validateQuery(event, listFeedbackQuerySchema)
+  const requestedProjectIds = query.projectIds.length > 0 ? query.projectIds : query.projectId ? [query.projectId] : []
 
-  // Build conditions - projectId is now required
-  const conditions = [eq(feedback.projectId, query.projectId)]
+  const conditions = []
+  if (requestedProjectIds.length === 1) {
+    conditions.push(eq(feedback.projectId, requestedProjectIds[0]))
+  } else {
+    conditions.push(inArray(feedback.projectId, requestedProjectIds))
+  }
   if (query.status) conditions.push(eq(feedback.status, query.status))
   if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
 
@@ -51,9 +71,21 @@ export default defineEventHandler(async (event) => {
     .select({
       feedback: feedback,
       category: feedbackCategory,
+      project: {
+        id: project.id,
+        name: project.name,
+        slug: project.slug,
+      },
+      githubIssue: {
+        issueNumber: githubIssueLink.issueNumber,
+        issueUrl: githubIssueLink.issueUrl,
+        issueState: githubIssueLink.issueState,
+      },
     })
     .from(feedback)
     .leftJoin(feedbackCategory, eq(feedback.categoryId, feedbackCategory.id))
+    .leftJoin(project, eq(feedback.projectId, project.id))
+    .leftJoin(githubIssueLink, eq(githubIssueLink.feedbackId, feedback.id))
     .where(whereClause)
     .orderBy(orderFn(sortColumn))
     .limit(query.limit)
@@ -81,6 +113,15 @@ export default defineEventHandler(async (event) => {
   const result = items.map((item) => ({
     ...item.feedback,
     category: item.category,
+    project: item.project,
+    githubIssue:
+      item.githubIssue?.issueNumber && item.githubIssue.issueUrl
+        ? {
+            issueNumber: item.githubIssue.issueNumber,
+            issueUrl: item.githubIssue.issueUrl,
+            issueState: item.githubIssue.issueState,
+          }
+        : null,
     hasVoted: voterVotes.has(item.feedback.id),
     isOwn: session?.user
       ? item.feedback.authorUserId === session.user.id

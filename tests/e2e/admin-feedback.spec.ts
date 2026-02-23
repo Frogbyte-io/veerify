@@ -156,23 +156,39 @@ test.describe('Admin feedback workflow', () => {
     })
     expect(setActiveTeamResponse.ok()).toBeTruthy()
 
-    // Navigate to feedback page
-    await gotoWithRetry(page, '/feedback')
+    // Navigate to feedback page with explicit project preselected
+    await gotoWithRetry(page, `/feedback?projectId=${projectId}`)
     await expect(page).toHaveURL(/\/feedback/)
 
     // Verify page title and Add Feedback button
     await expect(page.getByRole('heading', { name: 'Feedback' })).toBeVisible()
+    await expect(page.locator(selectors.feedbackProductsFilterTrigger)).toBeVisible()
     await expect(page.locator(selectors.feedbackAddButton)).toBeVisible()
 
-    // If there's a project selector (multiple products), select our test project
-    const projectSelector = page.locator(selectors.feedbackProjectSelector)
-    if (await projectSelector.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await projectSelector.selectOption({ value: projectId })
-      await page.waitForTimeout(2000)
-    }
+    // Verify product filter menu includes the ALL option
+    await page.locator(selectors.feedbackProductsFilterTrigger).click()
+    await expect(page.locator(selectors.feedbackProductsFilterAll)).toBeVisible()
+    await page.keyboard.press('Escape')
 
     // Wait for data to load (loading state should disappear)
     await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
+
+    // Kanban is the default and table-only controls are hidden.
+    await expect(page.locator(selectors.feedbackViewKanban)).toBeVisible()
+    await expect(page.locator(selectors.feedbackKanban)).toBeVisible()
+    await expect(page.locator(selectors.feedbackStatusFilter)).not.toBeVisible()
+    await expect(page.locator(selectors.feedbackSortFilter)).not.toBeVisible()
+
+    // Switching to table view reveals table controls.
+    await page.locator(selectors.feedbackViewTable).click()
+    await expect(page.locator(selectors.feedbackTable)).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator(selectors.feedbackStatusFilter)).toBeVisible()
+    await expect(page.locator(selectors.feedbackSortFilter)).toBeVisible()
+
+    // Switch back to kanban for the existing create/delete workflow.
+    await page.locator(selectors.feedbackViewKanban).click()
+    await expect(page.locator(selectors.feedbackStatusFilter)).not.toBeVisible()
+    await expect(page.locator(selectors.feedbackSortFilter)).not.toBeVisible()
 
     // Fresh test products can legitimately show an empty board first.
     const feedbackKanban = page.locator(selectors.feedbackKanban)
