@@ -9,7 +9,7 @@ const props = defineProps<{
 </script>
 
 <template>
-  <AvatarRoot data-slot="avatar" :class="cn('relative flex size-8 shrink-0 overflow-hidden rounded-full', props.class)">
+  <AvatarRoot data-slot="avatar" :class="cn('relative flex size-10 shrink-0 overflow-hidden rounded-full shadow-sm transition-transform duration-200 hover:scale-105', props.class)">
     <slot />
   </AvatarRoot>
 </template>
