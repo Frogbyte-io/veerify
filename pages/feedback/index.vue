@@ -246,14 +246,31 @@
                     </div>
                     <Badge variant="secondary" class="font-mono">{{ kanbanItemsByStatus[column.value].length }}</Badge>
                   </div>
-                  <div class="p-3 flex-1 overflow-y-auto space-y-3 min-h-[500px]">
+                  <div
+                    class="p-3 flex-1 overflow-y-auto space-y-3 min-h-[500px] transition-colors"
+                    :class="{
+                      'bg-primary/5 ring-2 ring-inset ring-primary/20': dragState.overStatus === column.value && dragState.fromStatus !== column.value,
+                    }"
+                    @dragover.prevent="onColumnDragOver(column.value)"
+                    @dragleave="onColumnDragLeave(column.value)"
+                    @drop.prevent="onColumnDrop($event, column.value)">
                     <div v-if="kanbanItemsByStatus[column.value].length === 0"
-                      class="h-24 border-2 border-dashed rounded-lg flex items-center justify-center text-muted-foreground text-sm">
-                      No items
+                      class="h-24 border-2 border-dashed rounded-lg flex items-center justify-center text-muted-foreground text-sm"
+                      :class="{ 'border-primary/50 bg-primary/5': dragState.overStatus === column.value }">
+                      Drop here
                     </div>
                     <Card v-for="item in kanbanItemsByStatus[column.value]" :key="item.id"
-                      class="group cursor-pointer hover:border-primary/50 transition-colors"
-                      @click="$router.push(`/feedback/${item.id}`)">
+                      class="group cursor-grab active:cursor-grabbing hover:border-primary/50 transition-all select-none"
+                      :class="{
+                        'opacity-40 scale-[0.98]': dragState.itemId === item.id,
+                        'border-t-2 border-t-primary': dragState.overItemId === item.id && dragState.insertBefore,
+                        'border-b-2 border-b-primary': dragState.overItemId === item.id && !dragState.insertBefore,
+                      }"
+                      draggable="true"
+                      @click="$router.push(`/feedback/${item.id}`)"
+                      @dragstart.stop="onCardDragStart($event, item, column.value)"
+                      @dragend="onCardDragEnd"
+                      @dragover="onCardDragOver($event, item.id)">
                       <CardContent class="p-4">
                         <div class="flex items-start justify-between gap-2 mb-2">
                           <h4 class="text-sm font-medium leading-tight line-clamp-2">{{ item.title }}</h4>
@@ -493,6 +510,15 @@ export default {
       sortBy: 'voteCount',
       sortOrder: 'desc',
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+
+      dragState: {
+        itemId: null,
+        fromStatus: null,
+        overStatus: null,
+        overItemId: null,
+        insertBefore: true,
+      },
+      kanbanLocalOrders: {},
     }
   },
 
@@ -541,6 +567,16 @@ export default {
         } else {
           grouped.open.push(item)
         }
+      }
+      // Apply any local reorderings from drag-and-drop
+      for (const status of Object.keys(this.kanbanLocalOrders)) {
+        if (!grouped[status]) continue
+        const localOrder = this.kanbanLocalOrders[status]
+        const itemMap = Object.fromEntries(grouped[status].map((i) => [i.id, i]))
+        const orderedIds = new Set(localOrder)
+        const ordered = localOrder.map((id) => itemMap[id]).filter(Boolean)
+        const extra = grouped[status].filter((i) => !orderedIds.has(i.id))
+        grouped[status] = [...ordered, ...extra]
       }
       return grouped
     },
@@ -738,6 +774,7 @@ export default {
           githubIssue: item.githubIssue || null,
         }))
         this.pagination = response?.data?.pagination || this.pagination
+        this.kanbanLocalOrders = {}
 
         this.updateStatusCounts()
       } catch (err) {
@@ -934,6 +971,92 @@ export default {
       } finally {
         this.isDeleting = false
       }
+    },
+
+    onCardDragStart(event, item, status) {
+      event.dataTransfer.effectAllowed = 'move'
+      event.dataTransfer.setData('text/plain', item.id)
+      this.dragState.itemId = item.id
+      this.dragState.fromStatus = status
+    },
+
+    onCardDragEnd() {
+      this.dragState = { itemId: null, fromStatus: null, overStatus: null, overItemId: null, insertBefore: true }
+    },
+
+    onCardDragOver(event, itemId) {
+      const rect = event.currentTarget.getBoundingClientRect()
+      this.dragState.overItemId = itemId
+      this.dragState.insertBefore = event.clientY < rect.top + rect.height / 2
+    },
+
+    onColumnDragOver(status) {
+      this.dragState.overStatus = status
+    },
+
+    onColumnDragLeave(status) {
+      if (this.dragState.overStatus === status) {
+        this.dragState.overStatus = null
+        this.dragState.overItemId = null
+      }
+    },
+
+    async onColumnDrop(event, targetStatus) {
+      const { itemId, fromStatus, overItemId, insertBefore } = this.dragState
+      this.dragState = { itemId: null, fromStatus: null, overStatus: null, overItemId: null, insertBefore: true }
+
+      if (!itemId) return
+
+      if (fromStatus !== targetStatus) {
+        await this.updateFeedbackStatus(itemId, targetStatus)
+      } else {
+        this.reorderKanbanItem(itemId, targetStatus, overItemId, insertBefore)
+      }
+    },
+
+    async updateFeedbackStatus(itemId, newStatus) {
+      const item = this.feedbackItems.find((i) => i.id === itemId)
+      if (!item) return
+
+      const oldStatus = item.status
+      item.status = newStatus
+      this.updateStatusCounts()
+
+      try {
+        await $fetch(`/api/feedback/${itemId}/status`, {
+          method: 'PATCH',
+          body: { status: newStatus },
+        })
+      } catch (err) {
+        item.status = oldStatus
+        this.updateStatusCounts()
+        console.error('Failed to update feedback status:', err)
+      }
+    },
+
+    reorderKanbanItem(itemId, status, overItemId, insertBefore) {
+      const currentItems = this.kanbanItemsByStatus[status]
+      if (!currentItems) return
+
+      const order = currentItems.map((i) => i.id)
+      const fromIdx = order.indexOf(itemId)
+      if (fromIdx === -1) return
+
+      order.splice(fromIdx, 1)
+
+      if (overItemId && overItemId !== itemId) {
+        let toIdx = order.indexOf(overItemId)
+        if (toIdx === -1) {
+          order.push(itemId)
+        } else {
+          if (!insertBefore) toIdx++
+          order.splice(toIdx, 0, itemId)
+        }
+      } else {
+        order.push(itemId)
+      }
+
+      this.kanbanLocalOrders = { ...this.kanbanLocalOrders, [status]: order }
     },
 
     formatDate(dateStr) {
