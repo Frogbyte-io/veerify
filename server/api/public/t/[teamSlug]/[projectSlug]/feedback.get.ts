@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
 
   const { project: proj } = await resolvePublicProjectByTeam(teamSlug!, projectSlug!)
 
-  const conditions = [eq(feedback.projectId, proj.id)]
+  const conditions = [eq(feedback.projectId, proj.id), eq(feedback.isHidden, false)]
   if (query.status) conditions.push(eq(feedback.status, query.status))
   if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
 

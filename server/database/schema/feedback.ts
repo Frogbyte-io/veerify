@@ -144,6 +144,9 @@ export const feedback = pgTable(
     isLocked: boolean('is_locked')
       .$defaultFn(() => false)
       .notNull(),
+    isHidden: boolean('is_hidden')
+      .$defaultFn(() => false)
+      .notNull(),
     metadata: jsonb('metadata').$type<Record<string, any>>(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
@@ -167,6 +170,8 @@ export const feedback = pgTable(
     voteCountIdx: index('feedback_vote_count_idx').on(table.voteCount),
     // Index for pinned items
     pinnedIdx: index('feedback_pinned_idx').on(table.isPinned),
+    // Index for hidden items
+    hiddenIdx: index('feedback_hidden_idx').on(table.isHidden),
     // Composite index for project + status queries
     projectStatusIdx: index('feedback_project_status_idx').on(table.projectId, table.status),
   })

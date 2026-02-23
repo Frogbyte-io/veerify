@@ -111,3 +111,17 @@ MVP
   - Public banner/logo rendering and fallback behavior is implemented in `components/public/PublicFeedbackBoard.vue`; fallback-aware assertions were updated in `tests/e2e/anonymous-feedback.spec.ts`.
 
 - [ ] Allow resizing of sidebar.
+
+- [ ] For the feedback board, please replace the product selector with a dropdown that allows you to select multiple products to view feedback from, Use checkboxes, and let the dropdown stay open while selecting multiple products. Also add an All checkbox that selects all products.
+
+- [ ] For the add feedback modal form, please make it more of a guided form with multiple steps. First step should be to select the type of feedback (bug report, feature request, etc.), then the next step should be to add the details of the feedback (title, description, attachments, etc.). This will make it easier for users to submit feedback and ensure that they provide all the necessary information.
+
+- [ ] For the feedbacks, add ability to downvote feedback in addition to upvote, and show the total votes (upvotes - downvotes) on the feedback card. This will allow users to express disagreement with feedback and help surface the most popular feedback more accurately.
+
+- [ ] For the public feedback board, add a filter option to filter feedback by category, status, or tags. This will allow users to easily find feedback that is relevant to them and help them navigate the board more effectively.
+
+- [ ] For the public feedback board, please add infinite scrolling with lazy loading of feedback items as the user scrolls down, instead of paginating with a "Load more" button. This will create a smoother browsing experience and allow users to easily explore more feedback without interruption.
+
+- [ ] For the public feedback board, please reduce the size of the banner, and increase the space below the bottom feedback so it is possible to scroll the banner up and see it fully without the feedback cards covering it. This will improve the visibility of the banner and make the board look less cramped.
+
+- [ ] For the public feedback board, please add a pinning feature, so that product admins can pin important feedback items to the top of the board. This will allow them to highlight key feedback and ensure it gets the attention it deserves.

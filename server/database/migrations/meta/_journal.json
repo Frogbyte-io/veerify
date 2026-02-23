@@ -78,6 +78,13 @@
       "when": 1771240930530,
       "tag": "0010_thick_yellow_claw",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1771879911622,
+      "tag": "0011_youthful_thor_girl",
+      "breakpoints": true
     }
   ]
 }

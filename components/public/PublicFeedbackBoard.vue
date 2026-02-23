@@ -339,89 +339,253 @@
         </Dialog>
 
         <Dialog :open="showDetailsDialog" @update:open="handleDetailsDialogChange">
-          <DialogContent class="sm:max-w-[640px]">
-            <DialogHeader>
-              <h2 class="text-lg font-semibold">Feedback details</h2>
-              <p class="text-sm text-muted-foreground">Review the full request and discussion in one place.</p>
-            </DialogHeader>
-
-            <div v-if="detailsLoading" class="space-y-3 py-2">
+          <DialogContent class="sm:max-w-[900px] p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col">
+            <!-- Loading -->
+            <div v-if="detailsLoading" class="p-6 space-y-4">
               <Skeleton class="h-7 w-3/4" />
-              <Skeleton class="h-20 w-full" />
+              <Skeleton class="h-24 w-full" />
               <Skeleton class="h-5 w-1/2" />
               <Skeleton class="h-16 w-full" />
             </div>
 
-            <div v-else-if="detailsError" class="rounded-md border border-destructive/30 bg-destructive/5 p-4">
-              <p class="text-sm text-destructive">{{ detailsError }}</p>
-              <Button class="mt-3" size="sm" variant="outline" @click="retryLoadDetails">Retry</Button>
+            <!-- Error -->
+            <div v-else-if="detailsError" class="p-6">
+              <div class="rounded-md border border-destructive/30 bg-destructive/5 p-4">
+                <p class="text-sm text-destructive">{{ detailsError }}</p>
+                <Button class="mt-3" size="sm" variant="outline" @click="retryLoadDetails">Retry</Button>
+              </div>
             </div>
 
-            <div v-else-if="selectedFeedback" class="space-y-4 py-2">
-              <div class="space-y-2">
-                <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-lg font-semibold">{{ selectedFeedback.title }}</h3>
-                  <span
-                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                    :class="
-                      statusClasses[selectedFeedback.status] ||
-                      'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
-                    "
-                  >
-                    {{ formatStatus(selectedFeedback.status) }}
-                  </span>
-                  <span
-                    v-if="selectedFeedback.category"
-                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                    :style="{
-                      backgroundColor: selectedFeedback.category.color + '20',
-                      color: selectedFeedback.category.color,
-                    }"
-                  >
-                    <span v-if="selectedFeedback.category.icon" class="mr-1">{{ selectedFeedback.category.icon }}</span>
-                    {{ selectedFeedback.category.name }}
-                  </span>
+            <!-- Two-column layout -->
+            <div v-else-if="selectedFeedback" class="flex flex-col sm:flex-row min-h-0 flex-1 overflow-hidden">
+              <!-- Left: main content + comments -->
+              <div class="flex-1 overflow-y-auto p-6 space-y-5">
+                <!-- Title + vote -->
+                <div>
+                  <div class="flex items-start justify-between gap-2 mb-3">
+                    <h2 class="text-xl font-bold flex-1">{{ selectedFeedback.title }}</h2>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <DropdownMenu v-if="isAdmin">
+                        <DropdownMenuTrigger as-child>
+                          <button class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+                            <Icon name="lucide:more-horizontal" class="w-4 h-4" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem @click="adminTogglePin">
+                            <Icon :name="selectedFeedback.isPinned ? 'lucide:pin-off' : 'lucide:pin'" class="w-4 h-4 mr-2" />
+                            {{ selectedFeedback.isPinned ? 'Unpin' : 'Pin' }}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem @click="adminToggleHide">
+                            <Icon :name="selectedFeedback.isHidden ? 'lucide:eye' : 'lucide:eye-off'" class="w-4 h-4 mr-2" />
+                            {{ selectedFeedback.isHidden ? 'Make visible' : 'Hide from public' }}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem class="text-destructive focus:text-destructive" @click="adminDeleteFeedback">
+                            <Icon name="lucide:trash-2" class="w-4 h-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      <button
+                        class="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg border text-sm font-semibold transition-colors"
+                        :class="selectedFeedback.hasVoted ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/50 text-foreground'"
+                        @click="voteFromDetails"
+                      >
+                        <Icon name="lucide:chevron-up" class="w-4 h-4" />
+                        {{ selectedFeedback.voteCount }}
+                      </button>
+                    </div>
+                  </div>
+                  <p v-if="selectedFeedback.body" class="text-sm text-muted-foreground whitespace-pre-line">
+                    {{ selectedFeedback.body }}
+                  </p>
+                  <p v-else class="text-sm text-muted-foreground italic">No description provided.</p>
                 </div>
-                <p class="text-sm text-muted-foreground whitespace-pre-line">
-                  {{ selectedFeedback.body || 'No description provided.' }}
-                </p>
-                <div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                  <span>
-                    <Icon name="lucide:thumbs-up" class="w-3 h-3 inline" />
-                    {{ selectedFeedback.voteCount || 0 }} votes
-                  </span>
-                  <span>
-                    <Icon name="lucide:calendar" class="w-3 h-3 inline" />
-                    {{ formatDate(selectedFeedback.createdAt) }}
-                  </span>
-                  <span>
-                    <Icon name="lucide:message-circle" class="w-3 h-3 inline" />
-                    {{ selectedFeedbackComments.length }} comments
-                  </span>
-                </div>
-              </div>
 
-              <div class="space-y-2">
-                <h4 class="text-sm font-medium">Comments</h4>
-                <div v-if="selectedFeedbackComments.length === 0" class="rounded-md border bg-muted/40 p-3 text-sm">
-                  No comments yet.
-                </div>
-                <div v-else class="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  <div v-for="comment in selectedFeedbackComments" :key="comment.id" class="rounded-md border p-3">
-                    <p class="text-sm whitespace-pre-line">{{ comment.body }}</p>
-                    <div class="mt-2 text-xs text-muted-foreground flex items-center gap-2">
-                      <span>{{ formatCommentAuthor(comment) }}</span>
-                      <span aria-hidden="true">&middot;</span>
-                      <span>{{ formatDate(comment.createdAt) }}</span>
+                <Separator />
+
+                <!-- Comments section -->
+                <div class="pt-1">
+                  <div class="flex items-center border-b pb-2 mb-4">
+                    <span class="text-sm font-semibold">
+                      Comments
+                      <span class="text-muted-foreground font-normal ml-1">{{ selectedFeedbackComments.length }}</span>
+                    </span>
+                  </div>
+
+                  <div v-if="selectedFeedbackComments.length === 0" class="py-6 text-center text-sm text-muted-foreground">
+                    No comments yet. Be the first to share your thoughts.
+                  </div>
+                  <div v-else class="space-y-5">
+                    <div v-for="comment in selectedFeedbackComments" :key="comment.id" class="flex items-start gap-3">
+                      <Avatar class="h-8 w-8 shrink-0">
+                        <AvatarImage v-if="comment.author?.image" :src="comment.author.image" />
+                        <AvatarFallback class="text-xs">{{ commentAuthorInitialsStr(comment) }}</AvatarFallback>
+                      </Avatar>
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                          <span class="text-sm font-medium">{{ formatCommentAuthor(comment) }}</span>
+                          <span class="text-xs text-muted-foreground">{{ formatDate(comment.createdAt) }}</span>
+                        </div>
+                        <p class="text-sm whitespace-pre-line">{{ comment.body }}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Comment form -->
+                  <div class="mt-6 space-y-3 border-t pt-4">
+                    <textarea
+                      v-model="detailCommentBody"
+                      placeholder="Write a comment..."
+                      rows="3"
+                      :disabled="isSubmittingDetailComment"
+                      class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+                    />
+                    <div class="flex items-center justify-between gap-2">
+                      <p v-if="detailCommentError" class="text-xs text-destructive">{{ detailCommentError }}</p>
+                      <div v-else />
+                      <Button
+                        size="sm"
+                        :disabled="!detailCommentBody.trim() || isSubmittingDetailComment"
+                        @click="openCommentOptions"
+                      >
+                        <Icon v-if="isSubmittingDetailComment" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                        Post Comment
+                      </Button>
                     </div>
                   </div>
                 </div>
               </div>
+
+              <!-- Right: metadata sidebar -->
+              <div class="sm:w-[220px] shrink-0 overflow-y-auto border-t sm:border-t-0 sm:border-l bg-muted/20 px-5 pb-5 pt-10 space-y-4">
+                <!-- Status -->
+                <div class="space-y-1.5">
+                  <p class="text-sm text-muted-foreground">Status</p>
+                  <span
+                    class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
+                    :class="statusClasses[selectedFeedback.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'"
+                  >
+                    {{ formatStatus(selectedFeedback.status) }}
+                  </span>
+                </div>
+
+                <!-- Board (Category) -->
+                <div v-if="selectedFeedback.category" class="space-y-1.5">
+                  <p class="text-sm text-muted-foreground">Board</p>
+                  <div class="flex items-center gap-1.5 text-sm">
+                    <span v-if="selectedFeedback.category.icon">{{ selectedFeedback.category.icon }}</span>
+                    <Icon v-else name="lucide:layout-list" class="w-3.5 h-3.5 text-muted-foreground" />
+                    <span>{{ selectedFeedback.category.name }}</span>
+                  </div>
+                </div>
+
+                <!-- Date -->
+                <div class="space-y-1.5">
+                  <p class="text-sm text-muted-foreground">Date</p>
+                  <p class="text-sm">{{ formatDate(selectedFeedback.createdAt) }}</p>
+                </div>
+
+                <!-- Author -->
+                <div class="space-y-1.5">
+                  <p class="text-sm text-muted-foreground">Author</p>
+                  <div class="flex items-center gap-2">
+                    <Avatar class="h-6 w-6">
+                      <AvatarImage v-if="selectedFeedback.author?.image" :src="selectedFeedback.author.image" />
+                      <AvatarFallback class="text-[10px]">{{ selectedFeedbackAuthorInitials }}</AvatarFallback>
+                    </Avatar>
+                    <span class="text-sm">{{ selectedFeedback.authorName || selectedFeedback.author?.name || 'Anonymous' }}</span>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <!-- Subscribe to post -->
+                <div class="space-y-2">
+                  <p class="text-sm font-semibold">Subscribe to post</p>
+                  <p class="text-xs text-muted-foreground">Get notified by email when there are changes.</p>
+                  <Button size="sm" variant="outline" class="w-full">
+                    <Icon name="lucide:bell" class="w-4 h-4 mr-2" />
+                    Get notified
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <!-- Comment Options Dialog -->
+        <Dialog :open="showCommentOptionsModal" @update:open="showCommentOptionsModal = $event">
+          <DialogContent class="sm:max-w-[400px]">
+            <DialogHeader>
+              <h2 class="text-lg font-semibold">How would you like to post?</h2>
+              <p class="text-sm text-muted-foreground">Choose how to submit your comment.</p>
+            </DialogHeader>
+
+            <!-- Option selection -->
+            <div v-if="!commentOptionSelected" class="space-y-3 py-2">
+              <a
+                :href="mainAppUrl + '/login?redirect=' + authRedirectTarget"
+                class="flex items-center gap-3 w-full rounded-md border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
+              >
+                <Icon name="lucide:log-in" class="w-4 h-4 shrink-0" />
+                <div class="text-left">
+                  <p class="font-medium">Log in</p>
+                  <p class="text-xs text-muted-foreground font-normal">Comment with your account</p>
+                </div>
+              </a>
+              <button
+                class="flex items-center gap-3 w-full rounded-md border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+                @click="submitAsAnon"
+              >
+                <Icon name="lucide:user-x" class="w-4 h-4 shrink-0" />
+                <div>
+                  <p class="font-medium">Continue as guest</p>
+                  <p class="text-xs text-muted-foreground font-normal">Post anonymously without notifications</p>
+                </div>
+              </button>
+              <button
+                class="flex items-center gap-3 w-full rounded-md border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors text-left"
+                @click="commentOptionSelected = 'notify'"
+              >
+                <Icon name="lucide:bell" class="w-4 h-4 shrink-0" />
+                <div>
+                  <p class="font-medium">Get notified</p>
+                  <p class="text-xs text-muted-foreground font-normal">Enter your name and email for updates</p>
+                </div>
+              </button>
             </div>
 
-            <DialogFooter>
-              <Button variant="outline" @click="showDetailsDialog = false">Close</Button>
-            </DialogFooter>
+            <!-- Notify form -->
+            <div v-else-if="commentOptionSelected === 'notify'" class="space-y-4 py-2">
+              <div class="space-y-2">
+                <Label>Your name <span class="text-destructive">*</span></Label>
+                <Input v-model="commentOptionName" placeholder="John Doe" :disabled="isSubmittingDetailComment" />
+              </div>
+              <div class="space-y-2">
+                <Label>Email <span class="text-muted-foreground text-xs font-normal">(optional)</span></Label>
+                <Input
+                  v-model="commentOptionEmail"
+                  type="email"
+                  placeholder="you@example.com"
+                  :disabled="isSubmittingDetailComment"
+                />
+                <p class="text-xs text-muted-foreground">Receive email updates on replies and status changes.</p>
+              </div>
+              <div class="flex justify-end gap-2 pt-1">
+                <Button variant="outline" :disabled="isSubmittingDetailComment" @click="commentOptionSelected = null">
+                  Back
+                </Button>
+                <Button
+                  :disabled="!commentOptionName.trim() || isSubmittingDetailComment"
+                  @click="submitWithNotify"
+                >
+                  <Icon v-if="isSubmittingDetailComment" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                  Post Comment
+                </Button>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
@@ -492,6 +656,8 @@
 </template>
 
 <script>
+import { authClient } from '~/lib/auth-client'
+
 export default {
   name: 'PublicFeedbackBoard',
   props: {
@@ -513,6 +679,14 @@ export default {
       selectedFeedbackId: null,
       selectedFeedback: null,
       selectedFeedbackComments: [],
+      detailCommentBody: '',
+      isSubmittingDetailComment: false,
+      detailCommentError: null,
+      showCommentOptionsModal: false,
+      commentOptionSelected: null,
+      commentOptionName: '',
+      commentOptionEmail: '',
+      isAdmin: false,
       filters: { status: '', categoryId: '', sortBy: 'voteCount' },
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
       submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
@@ -602,6 +776,15 @@ export default {
         (this.customFooterBranding || this.customFooterText || this.customFooterLinks.length > 0)
       )
     },
+    selectedFeedbackAuthorInitials() {
+      const name = this.selectedFeedback?.authorName || this.selectedFeedback?.author?.name || '?'
+      return name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    },
   },
   beforeUnmount() {
     if (import.meta.client && this.previousColorMode) {
@@ -617,6 +800,7 @@ export default {
       this.projectData = response?.data
       this.applyTheme(this.projectData?.project?.settings?.themeMode || 'system')
       await this.loadFeedback()
+      this.checkAdminStatus()
     } catch (err) {
       console.error('Error loading project:', err)
       this.error = 'This feedback page could not be found.'
@@ -702,6 +886,12 @@ export default {
       this.showDetailsDialog = isOpen
       if (!isOpen) {
         this.detailsError = null
+        this.detailCommentBody = ''
+        this.detailCommentError = null
+        this.showCommentOptionsModal = false
+        this.commentOptionSelected = null
+        this.commentOptionName = ''
+        this.commentOptionEmail = ''
       }
     },
     async retryLoadDetails() {
@@ -816,6 +1006,146 @@ export default {
     },
     formatCommentAuthor(comment) {
       return comment?.author?.name || comment?.authorName || 'Anonymous'
+    },
+    commentAuthorInitialsStr(comment) {
+      const name = comment?.author?.name || comment?.authorName || '?'
+      return name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    },
+    openCommentOptions() {
+      if (!this.detailCommentBody.trim()) return
+      this.commentOptionSelected = null
+      this.commentOptionName = ''
+      this.commentOptionEmail = ''
+      this.showCommentOptionsModal = true
+    },
+    async submitAsAnon() {
+      await this.executeCommentSubmit('Anonymous', '')
+    },
+    async submitWithNotify() {
+      if (!this.commentOptionName.trim()) return
+      await this.executeCommentSubmit(this.commentOptionName.trim(), this.commentOptionEmail.trim())
+    },
+    async executeCommentSubmit(authorName, authorEmail) {
+      this.isSubmittingDetailComment = true
+      this.detailCommentError = null
+      try {
+        const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/comments`, {
+          method: 'POST',
+          body: {
+            body: this.detailCommentBody.trim(),
+            authorName,
+            authorEmail: authorEmail || undefined,
+          },
+        })
+        const comment = response?.data
+        if (comment) {
+          this.selectedFeedbackComments.push(comment)
+          if (this.selectedFeedback) {
+            this.selectedFeedback.commentCount = (this.selectedFeedback.commentCount || 0) + 1
+          }
+          const listItem = this.feedbackItems.find((item) => item.id === this.selectedFeedbackId)
+          if (listItem) listItem.commentCount = (listItem.commentCount || 0) + 1
+        }
+        this.detailCommentBody = ''
+        this.showCommentOptionsModal = false
+        this.commentOptionSelected = null
+        this.commentOptionName = ''
+        this.commentOptionEmail = ''
+      } catch (err) {
+        console.error('Error posting comment:', err)
+        this.detailCommentError = err?.data?.error?.message || 'Failed to post comment. Please try again.'
+        this.showCommentOptionsModal = false
+      } finally {
+        this.isSubmittingDetailComment = false
+      }
+    },
+    async checkAdminStatus() {
+      if (!import.meta.client) return
+      try {
+        const sessionResult = await authClient.getSession()
+        if (!sessionResult?.data?.user) return
+        const response = await $fetch('/api/teams/list-user')
+        const teams = response?.data || []
+        this.isAdmin = teams.some((t) => t.slug === this.teamSlug)
+      } catch {
+        this.isAdmin = false
+      }
+    },
+    async adminTogglePin() {
+      try {
+        const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/pin`, { method: 'PATCH' })
+        const updated = response?.data
+        if (updated && this.selectedFeedback) {
+          this.selectedFeedback.isPinned = updated.isPinned
+        }
+        const listItem = this.feedbackItems.find((item) => item.id === this.selectedFeedbackId)
+        if (listItem && updated) listItem.isPinned = updated.isPinned
+      } catch (err) {
+        console.error('Error toggling pin:', err)
+      }
+    },
+    async adminToggleHide() {
+      try {
+        const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/visibility`, { method: 'PATCH' })
+        const updated = response?.data
+        if (updated && this.selectedFeedback) {
+          this.selectedFeedback.isHidden = updated.isHidden
+        }
+        if (updated?.isHidden) {
+          this.feedbackItems = this.feedbackItems.filter((item) => item.id !== this.selectedFeedbackId)
+          this.showDetailsDialog = false
+        }
+      } catch (err) {
+        console.error('Error toggling visibility:', err)
+      }
+    },
+    async adminDeleteFeedback() {
+      if (!confirm('Delete this feedback? This cannot be undone.')) return
+      try {
+        await $fetch(`/api/feedback/${this.selectedFeedbackId}`, { method: 'DELETE' })
+        this.feedbackItems = this.feedbackItems.filter((item) => item.id !== this.selectedFeedbackId)
+        this.showDetailsDialog = false
+      } catch (err) {
+        console.error('Error deleting feedback:', err)
+        alert(err?.data?.error?.message || 'Failed to delete feedback.')
+      }
+    },
+    async voteFromDetails() {
+      if (!this.selectedFeedback) return
+      const wasVoted = this.selectedFeedback.hasVoted
+      this.selectedFeedback.hasVoted = !wasVoted
+      this.selectedFeedback.voteCount += wasVoted ? -1 : 1
+      // Sync the list item too
+      const listItem = this.feedbackItems.find((item) => item.id === this.selectedFeedbackId)
+      if (listItem) {
+        listItem.hasVoted = this.selectedFeedback.hasVoted
+        listItem.voteCount = this.selectedFeedback.voteCount
+      }
+      try {
+        const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/vote`, { method: 'POST' })
+        const data = response?.data
+        this.selectedFeedback.voteCount = data.voteCount
+        this.selectedFeedback.hasVoted = data.voted
+        this.saveLocalVote(this.selectedFeedbackId, data.voted)
+        if (listItem) {
+          listItem.voteCount = data.voteCount
+          listItem.hasVoted = data.voted
+        }
+      } catch (err) {
+        // Revert optimistic update
+        this.selectedFeedback.hasVoted = wasVoted
+        this.selectedFeedback.voteCount += wasVoted ? 1 : -1
+        if (listItem) {
+          listItem.hasVoted = wasVoted
+          listItem.voteCount = this.selectedFeedback.voteCount
+        }
+        console.error('Error voting:', err)
+      }
     },
   },
 }
