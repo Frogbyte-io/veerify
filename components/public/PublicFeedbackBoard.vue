@@ -46,28 +46,49 @@
 
     <!-- Main Content -->
     <div v-else-if="projectData" class="flex-1 flex flex-col">
-      <!-- Banner -->
-      <img
-        v-if="projectData.project.settings?.bannerUrl"
-        :src="projectData.project.settings.bannerUrl"
+      <!-- Banner: custom image when set, otherwise a styled default using accentColor -->
+      <div
         data-testid="public-board-banner"
-        alt=""
-        class="w-full h-48 md:h-64 object-cover"
-        @error="$event.target.style.display = 'none'"
-      />
+        class="w-full h-48 md:h-64 overflow-hidden relative"
+        :style="bannerContainerStyle"
+      >
+        <img
+          v-if="projectData.project.settings?.bannerUrl && !bannerError"
+          :src="projectData.project.settings.bannerUrl"
+          alt=""
+          class="w-full h-full object-cover"
+          @error="onBannerError"
+        />
+        <!-- Default banner content when no image or image failed to load -->
+        <div v-if="!projectData.project.settings?.bannerUrl || bannerError" class="absolute inset-0 flex items-end">
+          <div class="max-w-4xl w-full mx-auto px-4 pb-4">
+            <p class="text-white/60 text-sm font-medium tracking-wide uppercase">Feedback Board</p>
+          </div>
+        </div>
+      </div>
 
       <div class="max-w-4xl mx-auto px-4 py-8">
         <!-- Header -->
         <div class="mb-8">
           <div class="flex items-center gap-3 mb-2">
-            <img
-              v-if="projectData.project.settings?.logoUrl"
-              :src="projectData.project.settings.logoUrl"
+            <!-- Logo: custom image when set, otherwise a letter-avatar using accentColor -->
+            <template v-if="projectData.project.settings?.logoUrl && !logoError">
+              <img
+                :src="projectData.project.settings.logoUrl"
+                data-testid="public-board-logo"
+                alt="Project logo"
+                class="h-10 w-10 rounded object-cover border bg-muted"
+                @error="onLogoError"
+              />
+            </template>
+            <div
+              v-else
               data-testid="public-board-logo"
-              alt="Project logo"
-              class="h-10 w-10 rounded object-cover border bg-muted"
-              @error="$event.target.style.display = 'none'"
-            />
+              class="h-10 w-10 rounded flex items-center justify-center text-white font-bold text-lg select-none shrink-0"
+              :style="logoFallbackStyle"
+            >
+              {{ projectInitial }}
+            </div>
             <div class="flex items-center gap-2 text-sm text-muted-foreground">
               <span>{{ projectData.team.name }}</span>
             </div>
@@ -497,6 +518,8 @@ export default {
       submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
       previousColorMode: null,
       activeTheme: 'system',
+      logoError: false,
+      bannerError: false,
       statusClasses: {
         open: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
         in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -508,6 +531,25 @@ export default {
     }
   },
   computed: {
+    accentColor() {
+      return this.projectData?.project?.settings?.accentColor || '#6366f1'
+    },
+    projectInitial() {
+      const name = this.projectData?.project?.name || ''
+      return name.charAt(0).toUpperCase() || '?'
+    },
+    bannerContainerStyle() {
+      const color = this.accentColor
+      // Convert hex to a usable gradient. Always show something visually present.
+      return {
+        background: `linear-gradient(135deg, ${color} 0%, ${color}cc 50%, ${color}80 100%)`,
+      }
+    },
+    logoFallbackStyle() {
+      return {
+        backgroundColor: this.accentColor,
+      }
+    },
     mainAppUrl() {
       if (!import.meta.client) return ''
       const config = useRuntimeConfig()
@@ -583,6 +625,12 @@ export default {
     }
   },
   methods: {
+    onBannerError() {
+      this.bannerError = true
+    },
+    onLogoError() {
+      this.logoError = true
+    },
     applyTheme(mode) {
       this.activeTheme = mode
       if (import.meta.client) {
