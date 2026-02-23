@@ -13,7 +13,8 @@ MVP
 - [x] **GitHub issue creation from feedback** — `POST /api/github/issues` is a 501 stub; implement full flow: verify feedback, get GitHub token, create issue with labels, store link in `githubIssueLink` table
 - [x] **GitHub settings in product settings** — Add a "GitHub" tab to `pages/products/[slug].vue`; allow user to connect a GitHub repo (OAuth token, owner/repo); save to `githubIntegration` table
 - [x] **Auto-create GitHub issues toggle** — UI toggle in GitHub product settings that sets `githubIntegration.autoCreateIssues`; wire up the feedback creation flow to create an issue automatically when enabled
-- [ ] **Auto-add labels on GitHub issue close** — Finish `server/api/github/webhook.post.ts`: when an issue is closed, update feedback status to `completed` and add the configured label back to the issue if needed
+- [x] **Auto-add labels on GitHub issue close** — Finish `server/api/github/webhook.post.ts`: when an issue is closed, update feedback status to `completed` and add the configured label back to the issue if needed
+  - Implemented `issues.closed` webhook handling in `server/api/github/webhook.post.ts`, with signature verification helpers in `server/utils/github-webhook.ts` and coverage in `tests/github-webhook-utils.test.ts`.
 
 ### Users (Public Board)
 
@@ -56,7 +57,8 @@ MVP
 - [ ] Allow product admins to add and change status tags (e.g. "planned", "in progress", "completed")
 - [x] Show icon besides the feedback category on the public board (e.g. a bug icon for bug reports, a lightbulb for feature requests, etc.) when icon is added to the category
   - Rendered category icons in `components/public/PublicFeedbackBoard.vue` and added e2e coverage in `tests/e2e/anonymous-feedback.spec.ts`.
-- [ ] In public feedback board, it should be possible to click a feedback to see more details (description, comments, etc.) in a modal or separate page without leaving the board
+- [x] In public feedback board, it should be possible to click a feedback to see more details (description, comments, etc.) in a modal or separate page without leaving the board
+  - Added clickable feedback cards in `components/public/PublicFeedbackBoard.vue` that open a details dialog with full description and comments, with e2e coverage in `tests/e2e/anonymous-feedback.spec.ts`.
 - [x] Move powered by verify to the very bottom of the page and make it smaller. Change domain to veerify.io
 - [x] Add a GitHub mention link to the footer of the public board for users to easily report issues with the board itself, and to see the source code. Mention that it is open source and contributions are welcome.
 - [x] Add a link to veerify's own public feedback board in the footer of the public board, so users can see an example of a feedback board and submit feedback about veerify itself.
@@ -98,7 +100,8 @@ MVP
 
 - [ ] Add Organization avatar image to the organization settings, with file upload using the S3 bucket
 
-- [ ] For the Visibility - Control who can see and submit feedback to your product setting in general, add a copy URL button.
+- [x] For the Visibility - Control who can see and submit feedback to your product setting in general, add a copy URL button.
+  - Added a `Copy URL` action in `components/products/ProductSettingsGeneral.vue` (`project-visibility-copy-url`) that copies the computed public board URL.
 
 - [ ] In product settings Apperance, Improve the look of the File picker - use shadcn if a component exist or make a better one, and add preview of the image that is selected.
 
