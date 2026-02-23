@@ -1,0 +1,4 @@
+interface:
+  display_name: "TODO Harness Workflow"
+  short_description: "Run TODO items with parallel execution and safe sequential merges."
+  default_prompt: "Use $todo-harness-workflow in Ralph loop mode to decompose unchecked TODO.md items into subagent subtasks and integrate them safely into main one-by-one."
