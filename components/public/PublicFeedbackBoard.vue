@@ -10,19 +10,39 @@
         <Icon :name="currentThemeIcon" class="w-4 h-4" />
         {{ currentThemeLabel }}
       </button>
-      <a
-        :href="mainAppUrl + '/login?redirect=' + authRedirectTarget"
-        class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
-      >
-        <Icon name="lucide:log-in" class="w-4 h-4" />
-        Log in
-      </a>
-      <a
-        :href="mainAppUrl + '/signup?redirect=' + authRedirectTarget"
-        class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-      >
-        Sign up
-      </a>
+      <!-- Logged-in state -->
+      <template v-if="currentUser">
+        <a
+          :href="mainAppUrl + '/dashboard'"
+          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
+        >
+          <Icon name="lucide:layout-dashboard" class="w-4 h-4" />
+          Dashboard
+        </a>
+        <div class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground bg-background/80 backdrop-blur-sm">
+          <Avatar class="h-5 w-5">
+            <AvatarImage v-if="currentUser.image" :src="currentUser.image" />
+            <AvatarFallback class="text-[9px]">{{ currentUserInitials }}</AvatarFallback>
+          </Avatar>
+          {{ currentUser.name }}
+        </div>
+      </template>
+      <!-- Logged-out state -->
+      <template v-else>
+        <a
+          :href="mainAppUrl + '/login?redirect=' + authRedirectTarget"
+          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
+        >
+          <Icon name="lucide:log-in" class="w-4 h-4" />
+          Log in
+        </a>
+        <a
+          :href="mainAppUrl + '/signup?redirect=' + authRedirectTarget"
+          class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          Sign up
+        </a>
+      </template>
     </div>
 
     <!-- Loading State -->
@@ -313,22 +333,28 @@
                   <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                 </select>
               </div>
-              <div class="space-y-2">
-                <Label for="fb-name">Your Name</Label>
-                <Input id="fb-name" v-model="submitForm.authorName" placeholder="John Doe" />
+              <div v-if="currentUser" class="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+                <Icon name="lucide:user-check" class="w-3.5 h-3.5 shrink-0" />
+                Submitting as {{ currentUser.name }}
               </div>
-              <div class="space-y-2">
-                <Label for="fb-email">Email (optional)</Label>
-                <Input id="fb-email" v-model="submitForm.authorEmail" type="email" placeholder="you@example.com" />
-                <p class="text-xs text-muted-foreground">
-                  Provide your email to receive updates on comments and status changes.
-                </p>
-              </div>
+              <template v-else>
+                <div class="space-y-2">
+                  <Label for="fb-name">Your Name</Label>
+                  <Input id="fb-name" v-model="submitForm.authorName" placeholder="John Doe" />
+                </div>
+                <div class="space-y-2">
+                  <Label for="fb-email">Email (optional)</Label>
+                  <Input id="fb-email" v-model="submitForm.authorEmail" type="email" placeholder="you@example.com" />
+                  <p class="text-xs text-muted-foreground">
+                    Provide your email to receive updates on comments and status changes.
+                  </p>
+                </div>
+              </template>
             </div>
             <DialogFooter>
               <Button variant="outline" @click="showSubmitDialog = false">Cancel</Button>
               <Button
-                :disabled="isSubmitting || !submitForm.title || !submitForm.body || !submitForm.authorName"
+                :disabled="isSubmitting || !submitForm.title || !submitForm.body || (!currentUser && !submitForm.authorName)"
                 @click="submitFeedback"
               >
                 <Icon v-if="isSubmitting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
@@ -526,6 +552,7 @@
             <!-- Option selection -->
             <div v-if="!commentOptionSelected" class="space-y-3 py-2">
               <a
+                v-if="!currentUser"
                 :href="mainAppUrl + '/login?redirect=' + authRedirectTarget"
                 class="flex items-center gap-3 w-full rounded-md border px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
               >
@@ -687,6 +714,7 @@ export default {
       commentOptionName: '',
       commentOptionEmail: '',
       isAdmin: false,
+      currentUser: null,
       filters: { status: '', categoryId: '', sortBy: 'voteCount' },
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
       submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
@@ -778,6 +806,15 @@ export default {
     },
     selectedFeedbackAuthorInitials() {
       const name = this.selectedFeedback?.authorName || this.selectedFeedback?.author?.name || '?'
+      return name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    },
+    currentUserInitials() {
+      const name = this.currentUser?.name || this.currentUser?.email || '?'
       return name
         .split(' ')
         .map((n) => n[0])
@@ -1018,6 +1055,10 @@ export default {
     },
     openCommentOptions() {
       if (!this.detailCommentBody.trim()) return
+      if (this.currentUser) {
+        this.executeCommentSubmit('', '')
+        return
+      }
       this.commentOptionSelected = null
       this.commentOptionName = ''
       this.commentOptionEmail = ''
@@ -1069,6 +1110,9 @@ export default {
       try {
         const sessionResult = await authClient.getSession()
         if (!sessionResult?.data?.user) return
+        this.currentUser = sessionResult.data.user
+        this.submitForm.authorName = sessionResult.data.user.name || ''
+        this.submitForm.authorEmail = sessionResult.data.user.email || ''
         const response = await $fetch('/api/teams/list-user')
         const teams = response?.data || []
         this.isAdmin = teams.some((t) => t.slug === this.teamSlug)
