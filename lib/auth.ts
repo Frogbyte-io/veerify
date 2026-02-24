@@ -12,7 +12,7 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
   trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS
     ? process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(',')
-    : (req: Request) => {
+    : (req?: Request) => {
         if (!req) return []
         const origin = req.headers.get('origin') || ''
         if (!origin) return []
@@ -21,7 +21,9 @@ export const auth = betterAuth({
           if (hostname === appDomain || hostname.endsWith('.' + appDomain)) {
             return [origin]
           }
-        } catch {}
+        } catch {
+          // invalid URL — not a trusted origin
+        }
         return []
       },
   advanced: {
@@ -47,7 +49,6 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
-    sendVerificationEmail: sendEmailVerificationEmail,
     sendResetPassword: async ({ user, url, token }, _request) => {
       await sendPasswordResetEmail({
         to: user.email,

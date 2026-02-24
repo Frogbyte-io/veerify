@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 const PORT = Number(process.env.PLAYWRIGHT_PORT || 4173)
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${PORT}`
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${PORT}`
 const trustedOrigins = Array.from(
   new Set([baseURL, `http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`, `http://preview-org.localhost:${PORT}`])
 )
@@ -29,7 +29,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: `yarn dev --host 127.0.0.1 --port ${PORT}`,
+        command: `yarn dev --host localhost --port ${PORT}`,
         url: `${baseURL}/login`,
         timeout: 120_000,
         reuseExistingServer: !process.env.CI,
