@@ -173,20 +173,23 @@ test.describe('Admin feedback workflow', () => {
     // Wait for data to load (loading state should disappear)
     await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
 
-    // Kanban is the default and table-only controls are hidden.
+    // Kanban is the default: search is always visible, table-only controls are hidden.
     await expect(page.locator(selectors.feedbackViewKanban)).toBeVisible()
     await expect(page.locator(selectors.feedbackKanban)).toBeVisible()
+    await expect(page.locator(selectors.feedbackSearch)).toBeVisible()
     await expect(page.locator(selectors.feedbackStatusFilter)).not.toBeVisible()
     await expect(page.locator(selectors.feedbackSortFilter)).not.toBeVisible()
 
-    // Switching to table view reveals table controls.
+    // Switching to table view reveals table controls; search remains visible.
     await page.locator(selectors.feedbackViewTable).click()
     await expect(page.locator(selectors.feedbackTable)).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator(selectors.feedbackSearch)).toBeVisible()
     await expect(page.locator(selectors.feedbackStatusFilter)).toBeVisible()
     await expect(page.locator(selectors.feedbackSortFilter)).toBeVisible()
 
     // Switch back to kanban for the existing create/delete workflow.
     await page.locator(selectors.feedbackViewKanban).click()
+    await expect(page.locator(selectors.feedbackSearch)).toBeVisible()
     await expect(page.locator(selectors.feedbackStatusFilter)).not.toBeVisible()
     await expect(page.locator(selectors.feedbackSortFilter)).not.toBeVisible()
 

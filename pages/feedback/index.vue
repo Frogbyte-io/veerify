@@ -145,7 +145,7 @@
         <!-- Filters Toolbar -->
         <div
           class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-card p-2 rounded-lg border shadow-sm">
-          <div class="flex items-center p-1 bg-muted/50 rounded-md border">
+          <div class="flex items-center p-1 bg-muted/50 rounded-md border shrink-0">
             <Button data-testid="feedback-view-kanban" size="sm"
               :variant="viewMode === 'kanban' ? 'secondary' : 'ghost'" class="h-8 px-3"
               @click="onViewModeChange('kanban')">
@@ -159,8 +159,16 @@
             </Button>
           </div>
 
-          <div v-if="viewMode === 'table'" class="flex items-center gap-2 w-full sm:w-auto">
-            <div class="relative flex-1 sm:w-[180px]">
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <!-- Search — always visible in both views -->
+            <div class="relative flex-1 sm:w-[200px]">
+              <Icon name="lucide:search"
+                class="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Input v-model="searchQuery" data-testid="feedback-search" placeholder="Search feedback…"
+                class="pl-8 h-9 text-sm" @input="onSearchInput" />
+            </div>
+            <!-- Status + Sort — always rendered to preserve toolbar height; hidden in kanban view -->
+            <div class="relative flex-1 sm:w-[180px]" :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }">
               <select v-model="statusFilter" data-testid="feedback-status-filter"
                 class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
                 @change="onFilterChange()">
@@ -175,7 +183,7 @@
               <Icon name="lucide:chevron-down"
                 class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
             </div>
-            <div class="relative flex-1 sm:w-[180px]">
+            <div class="relative flex-1 sm:w-[180px]" :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }">
               <select v-model="sortBy" data-testid="feedback-sort-filter"
                 class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
                 @change="onFilterChange()">
@@ -509,6 +517,8 @@ export default {
       statusFilter: '',
       sortBy: 'voteCount',
       sortOrder: 'desc',
+      searchQuery: '',
+      searchTimer: null,
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
 
       dragState: {
@@ -759,6 +769,7 @@ export default {
           page: String(this.pagination.page),
           limit: String(this.pagination.limit),
         })
+        if (this.searchQuery.trim()) params.set('search', this.searchQuery.trim())
         if (this.viewMode === 'table') {
           params.set('sortBy', this.sortBy)
           params.set('sortOrder', this.sortOrder)
@@ -899,6 +910,14 @@ export default {
         }
       }
       this.statusCounts = counts
+    },
+
+    onSearchInput() {
+      if (this.searchTimer) clearTimeout(this.searchTimer)
+      this.searchTimer = setTimeout(async () => {
+        this.pagination.page = 1
+        await this.loadFeedback()
+      }, 300)
     },
 
     async onFilterChange() {

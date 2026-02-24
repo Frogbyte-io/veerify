@@ -42,6 +42,7 @@ export const selectors = {
   feedbackProductsFilterAll: '[data-testid="feedback-products-filter-all"]',
   feedbackViewKanban: '[data-testid="feedback-view-kanban"]',
   feedbackViewTable: '[data-testid="feedback-view-table"]',
+  feedbackSearch: '[data-testid="feedback-search"]',
   feedbackStatusFilter: '[data-testid="feedback-status-filter"]',
   feedbackSortFilter: '[data-testid="feedback-sort-filter"]',
   feedbackTable: '[data-testid="feedback-table"]',

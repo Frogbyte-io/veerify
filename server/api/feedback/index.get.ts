@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { eq, and, desc, asc, count, inArray } from 'drizzle-orm'
+import { eq, and, desc, asc, count, inArray, or, ilike } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getAnonSession } from '~/server/utils/anonymous-session'
@@ -48,6 +48,10 @@ export default defineEventHandler(async (event) => {
   }
   if (query.status) conditions.push(eq(feedback.status, query.status))
   if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
+  if (query.search) {
+    const term = `%${query.search}%`
+    conditions.push(or(ilike(feedback.title, term), ilike(feedback.body, term))!)
+  }
 
   const whereClause = and(...conditions)
 
