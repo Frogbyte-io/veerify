@@ -31,7 +31,7 @@
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button data-testid="feedback-add-button" :disabled="!canCreateFeedback" @click="showCreateDialog = true">
+          <Button data-testid="feedback-add-button" :disabled="!canCreateFeedback" @click="openCreateDialog()">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
             Add Feedback
           </Button>
@@ -230,7 +230,7 @@
             <h2 class="text-xl font-semibold mb-2">No feedback yet</h2>
             <p class="text-muted-foreground mb-6 max-w-sm">Get started by adding your first piece of feedback or feature
               request.</p>
-            <Button @click="showCreateDialog = true">
+            <Button @click="openCreateDialog()">
               <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
               Add Feedback
             </Button>
@@ -419,14 +419,45 @@
       </div>
 
       <!-- Create Feedback Dialog -->
-      <Dialog :open="showCreateDialog" @update:open="showCreateDialog = $event">
+      <Dialog :open="showCreateDialog" @update:open="(v) => { if (!v) closeCreateDialog() }">
         <DialogContent class="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Add Feedback</DialogTitle>
-            <DialogDescription>Create a new feedback item for {{ selectedProject?.name || 'this project' }}.
+            <DialogTitle>{{ createDialogStep === 'select-project' ? 'Select Product' : 'Add Feedback' }}</DialogTitle>
+            <DialogDescription>
+              {{ createDialogStep === 'select-project'
+                ? 'Choose which product to submit feedback for.'
+                : `Create a new feedback item for ${products.find(p => p.id === createForm.projectId)?.name || 'this product'}.`
+              }}
             </DialogDescription>
           </DialogHeader>
-          <div class="space-y-4 py-4">
+
+          <!-- Step 1: Project picker (multi-product only) -->
+          <div v-if="createDialogStep === 'select-project'" class="py-2">
+            <div class="max-h-[320px] overflow-y-auto space-y-2 pr-1">
+              <button
+                v-for="p in products.filter(prod => selectedProjectIds.includes(prod.id))"
+                :key="p.id"
+                :data-testid="`feedback-create-project-${p.id}`"
+                type="button"
+                class="w-full text-left rounded-lg border bg-card p-4 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                @click="selectDialogProject(p)"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                    <Icon name="lucide:package" class="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p class="text-sm font-medium leading-none">{{ p.name }}</p>
+                    <p v-if="p.description" class="mt-1 text-xs text-muted-foreground line-clamp-1">{{ p.description }}</p>
+                  </div>
+                  <Icon name="lucide:chevron-right" class="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 2: Feedback form -->
+          <div v-else class="space-y-4 py-4">
             <div class="space-y-2">
               <Label for="feedback-title">Title</Label>
               <Input id="feedback-title" v-model="createForm.title" data-testid="feedback-create-title"
@@ -438,19 +469,37 @@
                 placeholder="Provide details about the feedback" rows="4"
                 class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
             </div>
-            <div v-if="categories.length > 0" class="space-y-2">
+            <div v-if="isLoadingDialogCategories" class="space-y-2">
+              <Skeleton class="h-4 w-20" />
+              <Skeleton class="h-10 w-full" />
+            </div>
+            <div v-else-if="dialogCategories.length > 0" class="space-y-2">
               <Label for="feedback-category">Category</Label>
               <select id="feedback-category" v-model="createForm.categoryId" data-testid="feedback-create-category"
                 class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
                 <option :value="null">No category</option>
-                <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+                <option v-for="cat in dialogCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
               </select>
             </div>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" @click="showCreateDialog = false">Cancel</Button>
-            <Button data-testid="feedback-create-submit" :disabled="isCreating || !createForm.title || !createForm.body"
-              @click="createFeedback">
+            <Button
+              v-if="createDialogStep === 'fill-form' && selectedProjectIds.length > 1"
+              variant="ghost"
+              class="mr-auto"
+              @click="createDialogStep = 'select-project'"
+            >
+              <Icon name="lucide:arrow-left" class="w-4 h-4 mr-2" />
+              Back
+            </Button>
+            <Button variant="outline" @click="closeCreateDialog">Cancel</Button>
+            <Button
+              v-if="createDialogStep === 'fill-form'"
+              data-testid="feedback-create-submit"
+              :disabled="isCreating || !createForm.title || !createForm.body"
+              @click="createFeedback"
+            >
               <Icon v-if="isCreating" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
               Add Feedback
             </Button>
@@ -496,6 +545,7 @@ export default {
 
       feedbackItems: [],
       categories: [],
+      dialogCategories: [],
       githubIntegrationsByProjectId: {},
       creatingGithubIssueFeedbackIds: [],
       statusCounts: { open: 0, in_progress: 0, completed: 0 },
@@ -507,7 +557,9 @@ export default {
 
       showCreateDialog: false,
       isCreating: false,
-      createForm: { title: '', body: '', categoryId: null },
+      createDialogStep: 'select-project',
+      isLoadingDialogCategories: false,
+      createForm: { title: '', body: '', categoryId: null, projectId: '' },
 
       showDeleteDialog: false,
       isDeleting: false,
@@ -551,7 +603,7 @@ export default {
       return `${this.selectedProjectIds.length} products selected`
     },
     canCreateFeedback() {
-      return Boolean(this.selectedProjectId)
+      return this.selectedProjectIds.length > 0
     },
     showGithubIssueColumn() {
       return this.selectedProjectIds.some((projectId) => this.hasGithubIntegration(projectId))
@@ -846,6 +898,52 @@ export default {
       this.githubIntegrationsByProjectId = integrations
     },
 
+    openCreateDialog() {
+      if (this.selectedProjectIds.length === 0) return
+      this.createForm = { title: '', body: '', categoryId: null, projectId: '' }
+      if (this.selectedProjectIds.length === 1) {
+        this.createForm.projectId = this.selectedProjectIds[0]
+        this.createDialogStep = 'fill-form'
+        this.loadDialogCategories()
+      } else {
+        this.createDialogStep = 'select-project'
+      }
+      this.showCreateDialog = true
+    },
+
+    selectDialogProject(project) {
+      this.createForm.projectId = project.id
+      this.createForm.categoryId = null
+      this.createDialogStep = 'fill-form'
+      // Fire-and-forget: skeleton in step 2 handles loading state.
+      this.loadDialogCategories()
+    },
+
+    async loadDialogCategories() {
+      const project = this.products.find((p) => p.id === this.createForm.projectId)
+      if (!project?.slug) {
+        this.dialogCategories = []
+        return
+      }
+      this.isLoadingDialogCategories = true
+      try {
+        const response = await $fetch(`/api/projects/${project.slug}/categories`)
+        this.dialogCategories = response?.data || []
+      } catch (err) {
+        console.error('Error loading categories for dialog:', err)
+        this.dialogCategories = []
+      } finally {
+        this.isLoadingDialogCategories = false
+      }
+    },
+
+    closeCreateDialog() {
+      this.showCreateDialog = false
+      this.createDialogStep = 'select-project'
+      this.isLoadingDialogCategories = false
+      this.dialogCategories = []
+    },
+
     hasGithubIntegration(projectId) {
       const integration = this.githubIntegrationsByProjectId[projectId]
       return Boolean(integration?.repoFullName && integration?.hasAccessToken)
@@ -943,7 +1041,7 @@ export default {
     },
 
     async createFeedback() {
-      if (!this.selectedProjectId || !this.createForm.title || !this.createForm.body) return
+      if (!this.createForm.projectId || !this.createForm.title || !this.createForm.body) return
 
       this.isCreating = true
 
@@ -951,7 +1049,7 @@ export default {
         await $fetch('/api/feedback', {
           method: 'POST',
           body: {
-            projectId: this.selectedProjectId,
+            projectId: this.createForm.projectId,
             title: this.createForm.title,
             body: this.createForm.body,
             categoryId: this.createForm.categoryId || null,
@@ -959,7 +1057,7 @@ export default {
         })
 
         this.showCreateDialog = false
-        this.createForm = { title: '', body: '', categoryId: null }
+        this.createForm = { title: '', body: '', categoryId: null, projectId: '' }
         await this.loadFeedback()
       } catch (err) {
         console.error('Error creating feedback:', err)

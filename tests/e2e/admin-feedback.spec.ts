@@ -398,4 +398,80 @@ test.describe('Admin feedback workflow', () => {
       await deleteTestProject(request, sessionCookie, teamId, projectId)
     }
   })
+
+  test('UI: multi-product picker shown when 2 products selected, skipped for single', async ({ request, page }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request)
+    const teamId = await getActiveTeamId(request, sessionCookie)
+
+    const slugA = `e2e-picker-a-${Date.now()}`
+    const slugB = `e2e-picker-b-${Date.now() + 1}`
+    const projectIdA = await createTestProject(request, sessionCookie, teamId, slugA)
+    const projectIdB = await createTestProject(request, sessionCookie, teamId, slugB)
+
+    // Transfer auth cookies to browser context
+    const authCookies = (await request.storageState()).cookies.filter((c) => c.name.startsWith('better-auth'))
+    expect(authCookies.length).toBeGreaterThan(0)
+    await page.context().addCookies(authCookies)
+
+    const setActiveTeamResponse = await page.request.post('/api/teams/active', { data: { teamId } })
+    expect(setActiveTeamResponse.ok()).toBeTruthy()
+
+    try {
+      // ─── Multi-product flow: picker should appear ───────────────────────────
+
+      // Pre-select both products via query param
+      await gotoWithRetry(page, `/feedback?projectIds=${projectIdA},${projectIdB}`)
+      await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
+
+      // Add Feedback button must be enabled when multiple products are selected
+      const addBtn = page.locator(selectors.feedbackAddButton)
+      await expect(addBtn).toBeEnabled({ timeout: 10_000 })
+
+      // Click Add Feedback — step 1 (project picker) should open
+      await addBtn.click()
+      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible({ timeout: 5_000 })
+      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdB}"]`)).toBeVisible()
+
+      // The feedback form inputs should NOT be visible yet (still in step 1)
+      await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
+
+      // Clicking a project card advances to step 2 (feedback form)
+      await page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`).click()
+      await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
+
+      // Back button is visible since we came from multi-product step 1
+      await expect(page.locator('button:has-text("Back")')).toBeVisible()
+
+      // Back button returns to step 1
+      await page.locator('button:has-text("Back")').click()
+      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible()
+      await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
+
+      // Cancel closes the dialog entirely
+      await page.getByRole('button', { name: 'Cancel' }).click()
+      await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 5_000 })
+
+      // ─── Single-product flow: picker should be skipped ──────────────────────
+
+      // Navigate with only project A selected
+      await gotoWithRetry(page, `/feedback?projectId=${projectIdA}`)
+      await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
+
+      await expect(addBtn).toBeEnabled({ timeout: 10_000 })
+      await addBtn.click()
+
+      // Should jump straight to form — no project cards visible
+      await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
+      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).not.toBeVisible()
+
+      // No Back button in single-product mode
+      await expect(page.locator('button:has-text("Back")')).not.toBeVisible()
+
+      await page.getByRole('button', { name: 'Cancel' }).click()
+      await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 5_000 })
+    } finally {
+      await deleteTestProject(request, sessionCookie, teamId, projectIdA)
+      await deleteTestProject(request, sessionCookie, teamId, projectIdB)
+    }
+  })
 })

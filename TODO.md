@@ -131,4 +131,5 @@ MVP
 - [x] For the private feedback collection at /feedback, everything resizes and changes when I switch between the list view and the kanban view. Please make it so that the filters, search bar, and other UI elements stay consistent and in the same place when switching between views, to create a smoother experience.
   - Added a persistent search bar (always visible in both views, debounced server-side search on title/body); status and sort selects now use `invisible` CSS to preserve toolbar height in kanban mode instead of `v-if`; wired `search` param in the feedback GET API.
 
-- [ ] For the private feedback collection at /feedback, the add feedback button should still work, but if multiple products are selected in the product filter dropdown, it should ask which product the feedback is for when I click the add feedback button.
+- [x] For the private feedback collection at /feedback, the add feedback button should still work, but if multiple products are selected in the product filter dropdown, it should ask which product the feedback is for when I click the add feedback button.
+  - Two-step dialog: scrollable project-card picker (step 1, skipped for single product) → feedback form (step 2); Back button returns to step 1 in multi-product mode.
