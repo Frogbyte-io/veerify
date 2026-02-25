@@ -110,7 +110,7 @@ MVP
 - [x] For the Public Feedback Page, add banner image and logo to the public feedback page and use that is uploaded for that project, or if user has not uploaded logo or banner show a default look. like today.
   - Public banner/logo rendering and fallback behavior is implemented in `components/public/PublicFeedbackBoard.vue`; fallback-aware assertions were updated in `tests/e2e/anonymous-feedback.spec.ts`.
 
-- [ ] Allow resizing of sidebar.
+- [x] Allow resizing of sidebar.
 
 - [x] For the feedback board, please replace the product selector with a dropdown that allows you to select multiple products to view feedback from, Use checkboxes, and let the dropdown stay open while selecting multiple products. Also add an All checkbox that selects all products.
 
