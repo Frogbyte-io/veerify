@@ -21,6 +21,7 @@ const createFeedbackSchema = z.object({
   body: z.string().min(1, 'Description is required').max(5000, 'Description too long'),
   projectId: z.string().min(1, 'Project ID is required'),
   categoryId: z.string().optional().nullable(),
+  feedbackType: z.enum(['feature_request', 'bug_report', 'improvement', 'question', 'other']).optional(),
   authorName: z.string().min(1).max(100).optional(),
   authorEmail: z.string().email().optional(),
 })
@@ -99,7 +100,11 @@ export default defineEventHandler(async (event) => {
       commentCount: 0,
       isPinned: false,
       isLocked: false,
-      metadata: { editToken, editTokenExpiry },
+      metadata: {
+        editToken,
+        editTokenExpiry,
+        feedbackType: body.feedbackType || null,
+      },
       createdAt: now,
       updatedAt: now,
     })

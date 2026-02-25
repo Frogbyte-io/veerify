@@ -524,12 +524,22 @@
       >
         <DialogContent class="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>{{ createDialogStep === 'select-project' ? 'Select Product' : 'Add Feedback' }}</DialogTitle>
+            <DialogTitle>
+              {{
+                createDialogStep === 'select-project'
+                  ? 'Select Product'
+                  : createDialogStep === 'select-type'
+                    ? 'Select Feedback Type'
+                    : 'Add Feedback'
+              }}
+            </DialogTitle>
             <DialogDescription>
               {{
                 createDialogStep === 'select-project'
                   ? 'Choose which product to submit feedback for.'
-                  : `Create a new feedback item for ${products.find((p) => p.id === createForm.projectId)?.name || 'this product'}.`
+                  : createDialogStep === 'select-type'
+                    ? 'Choose the feedback type first, then add details.'
+                    : `Create a new feedback item for ${products.find((p) => p.id === createForm.projectId)?.name || 'this product'}.`
               }}
             </DialogDescription>
           </DialogHeader>
@@ -561,8 +571,45 @@
             </div>
           </div>
 
-          <!-- Step 2: Feedback form -->
+          <!-- Step 2: Feedback type picker -->
+          <div v-else-if="createDialogStep === 'select-type'" class="py-2">
+            <div class="space-y-2">
+              <button
+                v-for="type in feedbackTypeOptions"
+                :key="type.value"
+                :data-testid="`feedback-create-type-${type.value}`"
+                type="button"
+                class="w-full text-left rounded-lg border bg-card p-4 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                @click="selectFeedbackType(type.value)"
+              >
+                <div class="flex items-start gap-3">
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
+                    <Icon :name="type.icon" class="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium leading-none">{{ type.label }}</p>
+                    <p class="mt-1 text-xs text-muted-foreground">{{ type.description }}</p>
+                  </div>
+                  <Icon name="lucide:chevron-right" class="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step 3: Feedback form -->
           <div v-else class="space-y-4 py-4">
+            <div
+              v-if="selectedFeedbackType"
+              class="flex items-center justify-between gap-2 rounded-md border border-dashed bg-muted/30 px-3 py-2"
+            >
+              <div class="flex items-center gap-2 text-sm">
+                <Icon :name="selectedFeedbackType.icon" class="w-4 h-4 text-muted-foreground" />
+                <span class="font-medium">{{ selectedFeedbackType.label }}</span>
+              </div>
+              <Button variant="ghost" size="sm" class="h-7 px-2" @click="createDialogStep = 'select-type'">
+                Change
+              </Button>
+            </div>
             <div class="space-y-2">
               <Label for="feedback-title">Title</Label>
               <Input
@@ -603,10 +650,13 @@
 
           <DialogFooter>
             <Button
-              v-if="createDialogStep === 'fill-form' && selectedProjectIds.length > 1"
+              v-if="
+                createDialogStep === 'fill-form' ||
+                (createDialogStep === 'select-type' && selectedProjectIds.length > 1)
+              "
               variant="ghost"
               class="mr-auto"
-              @click="createDialogStep = 'select-project'"
+              @click="createDialogBack"
             >
               <Icon name="lucide:arrow-left" class="w-4 h-4 mr-2" />
               Back
@@ -681,7 +731,39 @@ export default {
       isCreating: false,
       createDialogStep: 'select-project',
       isLoadingDialogCategories: false,
-      createForm: { title: '', body: '', categoryId: null, projectId: '' },
+      feedbackTypeOptions: [
+        {
+          value: 'feature_request',
+          label: 'Feature request',
+          icon: 'lucide:lightbulb',
+          description: 'Suggest a new feature or enhancement.',
+        },
+        {
+          value: 'bug_report',
+          label: 'Bug report',
+          icon: 'lucide:bug',
+          description: 'Report something that is broken or not working as expected.',
+        },
+        {
+          value: 'improvement',
+          label: 'Improvement',
+          icon: 'lucide:wrench',
+          description: 'Propose improvements to an existing workflow.',
+        },
+        {
+          value: 'question',
+          label: 'Question',
+          icon: 'lucide:circle-help',
+          description: 'Ask for clarification or request additional guidance.',
+        },
+        {
+          value: 'other',
+          label: 'Other',
+          icon: 'lucide:message-square',
+          description: 'Share feedback that does not fit a specific type.',
+        },
+      ],
+      createForm: { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' },
 
       showDeleteDialog: false,
       isDeleting: false,
@@ -729,6 +811,9 @@ export default {
     },
     showGithubIssueColumn() {
       return this.selectedProjectIds.some((projectId) => this.hasGithubIntegration(projectId))
+    },
+    selectedFeedbackType() {
+      return this.feedbackTypeOptions.find((type) => type.value === this.createForm.feedbackType) || null
     },
     kanbanColumns() {
       return [
@@ -1037,11 +1122,10 @@ export default {
 
     openCreateDialog() {
       if (this.selectedProjectIds.length === 0) return
-      this.createForm = { title: '', body: '', categoryId: null, projectId: '' }
+      this.createForm = { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' }
       if (this.selectedProjectIds.length === 1) {
         this.createForm.projectId = this.selectedProjectIds[0]
-        this.createDialogStep = 'fill-form'
-        this.loadDialogCategories()
+        this.createDialogStep = 'select-type'
       } else {
         this.createDialogStep = 'select-project'
       }
@@ -1051,9 +1135,46 @@ export default {
     selectDialogProject(project) {
       this.createForm.projectId = project.id
       this.createForm.categoryId = null
+      this.createForm.feedbackType = ''
+      this.createDialogStep = 'select-type'
+    },
+
+    async selectFeedbackType(type) {
+      this.createForm.feedbackType = type
       this.createDialogStep = 'fill-form'
-      // Fire-and-forget: skeleton in step 2 handles loading state.
-      this.loadDialogCategories()
+      await this.loadDialogCategories()
+    },
+
+    createDialogBack() {
+      if (this.createDialogStep === 'fill-form') {
+        this.createDialogStep = 'select-type'
+        return
+      }
+
+      if (this.createDialogStep === 'select-type' && this.selectedProjectIds.length > 1) {
+        this.createDialogStep = 'select-project'
+      }
+    },
+
+    syncCategoryWithFeedbackType() {
+      if (!this.createForm.feedbackType || this.dialogCategories.length === 0 || this.createForm.categoryId) return
+
+      const keywordMap = {
+        bug_report: ['bug'],
+        feature_request: ['feature', 'request'],
+        improvement: ['improvement', 'enhancement'],
+        question: ['question', 'support'],
+      }
+
+      const keywords = keywordMap[this.createForm.feedbackType] || []
+      const matchedCategory = this.dialogCategories.find((category) => {
+        const categoryName = String(category.name || '').toLowerCase()
+        return keywords.some((keyword) => categoryName.includes(keyword))
+      })
+
+      if (matchedCategory) {
+        this.createForm.categoryId = matchedCategory.id
+      }
     },
 
     async loadDialogCategories() {
@@ -1066,6 +1187,7 @@ export default {
       try {
         const response = await $fetch(`/api/projects/${project.slug}/categories`)
         this.dialogCategories = response?.data || []
+        this.syncCategoryWithFeedbackType()
       } catch (err) {
         console.error('Error loading categories for dialog:', err)
         this.dialogCategories = []
@@ -1079,6 +1201,7 @@ export default {
       this.createDialogStep = 'select-project'
       this.isLoadingDialogCategories = false
       this.dialogCategories = []
+      this.createForm = { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' }
     },
 
     hasGithubIntegration(projectId) {
@@ -1179,6 +1302,7 @@ export default {
 
     async createFeedback() {
       if (!this.createForm.projectId || !this.createForm.title || !this.createForm.body) return
+      if (!this.createForm.feedbackType) return
 
       this.isCreating = true
 
@@ -1190,11 +1314,12 @@ export default {
             title: this.createForm.title,
             body: this.createForm.body,
             categoryId: this.createForm.categoryId || null,
+            feedbackType: this.createForm.feedbackType,
           },
         })
 
         this.showCreateDialog = false
-        this.createForm = { title: '', body: '', categoryId: null, projectId: '' }
+        this.createForm = { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' }
         await this.loadFeedback()
       } catch (err) {
         console.error('Error creating feedback:', err)
