@@ -10,8 +10,11 @@
         <div class="flex items-center gap-3">
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
-              <Button variant="outline" data-testid="feedback-products-filter-trigger"
-                class="min-w-[200px] justify-between bg-background">
+              <Button
+                variant="outline"
+                data-testid="feedback-products-filter-trigger"
+                class="min-w-[200px] justify-between bg-background"
+              >
                 <span class="truncate">{{ selectedProductsLabel }}</span>
                 <Icon name="lucide:chevrons-up-down" class="w-4 h-4 ml-2 shrink-0 opacity-50" />
               </Button>
@@ -19,14 +22,23 @@
             <DropdownMenuContent align="end" class="w-[200px]">
               <DropdownMenuLabel>Products</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem data-testid="feedback-products-filter-all" :model-value="allProductsSelected"
-                @update:model-value="toggleAllProducts">
+              <DropdownMenuCheckboxItem
+                data-testid="feedback-products-filter-all"
+                :model-value="allProductsSelected"
+                @select.prevent
+                @update:model-value="toggleAllProducts"
+              >
                 All Products
               </DropdownMenuCheckboxItem>
               <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem v-for="p in products" :key="p.id"
-                :data-testid="`feedback-products-filter-item-${p.id}`" :model-value="selectedProjectIds.includes(p.id)"
-                @update:model-value="(checked) => toggleProjectSelection(p.id, checked)">
+              <DropdownMenuCheckboxItem
+                v-for="p in products"
+                :key="p.id"
+                :data-testid="`feedback-products-filter-item-${p.id}`"
+                :model-value="selectedProjectIds.includes(p.id)"
+                @select.prevent
+                @update:model-value="(checked) => toggleProjectSelection(p.id, checked)"
+              >
                 {{ p.name }}
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
@@ -89,8 +101,9 @@
             <Icon name="lucide:package" class="w-8 h-8 text-muted-foreground" />
           </div>
           <h2 class="text-xl font-semibold mb-2">No products yet</h2>
-          <p class="text-muted-foreground mb-6 max-w-sm">Create a product first to start collecting and managing
-            feedback from your users.</p>
+          <p class="text-muted-foreground mb-6 max-w-sm">
+            Create a product first to start collecting and managing feedback from your users.
+          </p>
           <NuxtLink to="/products">
             <Button>
               <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -144,16 +157,26 @@
 
         <!-- Filters Toolbar -->
         <div
-          class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-card p-2 rounded-lg border shadow-sm">
+          class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-card p-2 rounded-lg border shadow-sm"
+        >
           <div class="flex items-center p-1 bg-muted/50 rounded-md border shrink-0">
-            <Button data-testid="feedback-view-kanban" size="sm"
-              :variant="viewMode === 'kanban' ? 'secondary' : 'ghost'" class="h-8 px-3"
-              @click="onViewModeChange('kanban')">
+            <Button
+              data-testid="feedback-view-kanban"
+              size="sm"
+              :variant="viewMode === 'kanban' ? 'secondary' : 'ghost'"
+              class="h-8 px-3"
+              @click="onViewModeChange('kanban')"
+            >
               <Icon name="lucide:kanban" class="w-4 h-4 mr-2" />
               Board
             </Button>
-            <Button data-testid="feedback-view-table" size="sm" :variant="viewMode === 'table' ? 'secondary' : 'ghost'"
-              class="h-8 px-3" @click="onViewModeChange('table')">
+            <Button
+              data-testid="feedback-view-table"
+              size="sm"
+              :variant="viewMode === 'table' ? 'secondary' : 'ghost'"
+              class="h-8 px-3"
+              @click="onViewModeChange('table')"
+            >
               <Icon name="lucide:list" class="w-4 h-4 mr-2" />
               List
             </Button>
@@ -162,16 +185,29 @@
           <div class="flex items-center gap-2 w-full sm:w-auto">
             <!-- Search — always visible in both views -->
             <div class="relative flex-1 sm:w-[200px]">
-              <Icon name="lucide:search"
-                class="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
-              <Input v-model="searchQuery" data-testid="feedback-search" placeholder="Search feedback…"
-                class="pl-8 h-9 text-sm" @input="onSearchInput" />
+              <Icon
+                name="lucide:search"
+                class="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none"
+              />
+              <Input
+                v-model="searchQuery"
+                data-testid="feedback-search"
+                placeholder="Search feedback…"
+                class="pl-8 h-9 text-sm"
+                @input="onSearchInput"
+              />
             </div>
             <!-- Status + Sort — always rendered to preserve toolbar height; hidden in kanban view -->
-            <div class="relative flex-1 sm:w-[180px]" :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }">
-              <select v-model="statusFilter" data-testid="feedback-status-filter"
+            <div
+              class="relative flex-1 sm:w-[180px]"
+              :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }"
+            >
+              <select
+                v-model="statusFilter"
+                data-testid="feedback-status-filter"
                 class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
-                @change="onFilterChange()">
+                @change="onFilterChange()"
+              >
                 <option value="">All Statuses</option>
                 <option value="open">Open</option>
                 <option value="in_progress">In Progress</option>
@@ -180,20 +216,30 @@
                 <option value="closed">Closed</option>
                 <option value="declined">Declined</option>
               </select>
-              <Icon name="lucide:chevron-down"
-                class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Icon
+                name="lucide:chevron-down"
+                class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none"
+              />
             </div>
-            <div class="relative flex-1 sm:w-[180px]" :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }">
-              <select v-model="sortBy" data-testid="feedback-sort-filter"
+            <div
+              class="relative flex-1 sm:w-[180px]"
+              :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }"
+            >
+              <select
+                v-model="sortBy"
+                data-testid="feedback-sort-filter"
                 class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
-                @change="onFilterChange()">
+                @change="onFilterChange()"
+              >
                 <option value="voteCount">Most Popular</option>
                 <option value="createdAt">Most Recent</option>
                 <option value="updatedAt">Recently Updated</option>
                 <option value="title">Title</option>
               </select>
-              <Icon name="lucide:chevron-down"
-                class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Icon
+                name="lucide:chevron-down"
+                class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none"
+              />
             </div>
           </div>
         </div>
@@ -228,8 +274,9 @@
               <Icon name="lucide:message-square-plus" class="w-8 h-8 text-muted-foreground" />
             </div>
             <h2 class="text-xl font-semibold mb-2">No feedback yet</h2>
-            <p class="text-muted-foreground mb-6 max-w-sm">Get started by adding your first piece of feedback or feature
-              request.</p>
+            <p class="text-muted-foreground mb-6 max-w-sm">
+              Get started by adding your first piece of feedback or feature request.
+            </p>
             <Button @click="openCreateDialog()">
               <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
               Add Feedback
@@ -242,9 +289,12 @@
           <template v-if="viewMode === 'kanban'">
             <div data-testid="feedback-kanban" class="overflow-x-auto pb-4 -mx-2 px-2">
               <div class="flex gap-4 min-w-max">
-                <div v-for="column in kanbanColumns" :key="column.value"
+                <div
+                  v-for="column in kanbanColumns"
+                  :key="column.value"
                   :data-testid="`feedback-kanban-column-${column.value}`"
-                  class="w-[320px] shrink-0 flex flex-col bg-muted/30 rounded-xl border">
+                  class="w-[320px] shrink-0 flex flex-col bg-muted/30 rounded-xl border"
+                >
                   <div class="p-3 flex items-center justify-between border-b bg-card/50 rounded-t-xl">
                     <div class="flex items-center gap-2">
                       <div :class="`p-1 rounded-md ${column.colorClass}`">
@@ -257,17 +307,23 @@
                   <div
                     class="p-3 flex-1 overflow-y-auto space-y-3 min-h-[500px] transition-colors"
                     :class="{
-                      'bg-primary/5 ring-2 ring-inset ring-primary/20': dragState.overStatus === column.value && dragState.fromStatus !== column.value,
+                      'bg-primary/5 ring-2 ring-inset ring-primary/20':
+                        dragState.overStatus === column.value && dragState.fromStatus !== column.value,
                     }"
                     @dragover.prevent="onColumnDragOver(column.value)"
                     @dragleave="onColumnDragLeave(column.value)"
-                    @drop.prevent="onColumnDrop($event, column.value)">
-                    <div v-if="kanbanItemsByStatus[column.value].length === 0"
+                    @drop.prevent="onColumnDrop($event, column.value)"
+                  >
+                    <div
+                      v-if="kanbanItemsByStatus[column.value].length === 0"
                       class="h-24 border-2 border-dashed rounded-lg flex items-center justify-center text-muted-foreground text-sm"
-                      :class="{ 'border-primary/50 bg-primary/5': dragState.overStatus === column.value }">
+                      :class="{ 'border-primary/50 bg-primary/5': dragState.overStatus === column.value }"
+                    >
                       Drop here
                     </div>
-                    <Card v-for="item in kanbanItemsByStatus[column.value]" :key="item.id"
+                    <Card
+                      v-for="item in kanbanItemsByStatus[column.value]"
+                      :key="item.id"
                       class="group cursor-grab active:cursor-grabbing hover:border-primary/50 transition-all select-none"
                       :class="{
                         'opacity-40 scale-[0.98]': dragState.itemId === item.id,
@@ -278,14 +334,18 @@
                       @click="$router.push(`/feedback/${item.id}`)"
                       @dragstart.stop="onCardDragStart($event, item, column.value)"
                       @dragend="onCardDragEnd"
-                      @dragover="onCardDragOver($event, item.id)">
+                      @dragover="onCardDragOver($event, item.id)"
+                    >
                       <CardContent class="p-4">
                         <div class="flex items-start justify-between gap-2 mb-2">
                           <h4 class="text-sm font-medium leading-tight line-clamp-2">{{ item.title }}</h4>
                           <DropdownMenu>
                             <DropdownMenuTrigger as-child @click.stop>
-                              <Button variant="ghost" size="icon"
-                                class="h-6 w-6 -mr-2 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                class="h-6 w-6 -mr-2 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
                                 <Icon name="lucide:more-vertical" class="w-4 h-4" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -337,11 +397,17 @@
                     </tr>
                   </thead>
                   <tbody class="divide-y">
-                    <tr v-for="item in feedbackItems" :key="item.id" :data-testid="`feedback-item-${item.id}`"
-                      class="hover:bg-muted/30 transition-colors group">
+                    <tr
+                      v-for="item in feedbackItems"
+                      :key="item.id"
+                      :data-testid="`feedback-item-${item.id}`"
+                      class="hover:bg-muted/30 transition-colors group"
+                    >
                       <td class="px-4 py-3 align-top">
-                        <NuxtLink :to="`/feedback/${item.id}`"
-                          class="font-medium text-foreground hover:text-primary transition-colors block">
+                        <NuxtLink
+                          :to="`/feedback/${item.id}`"
+                          class="font-medium text-foreground hover:text-primary transition-colors block"
+                        >
                           {{ item.title }}
                         </NuxtLink>
                         <p v-if="item.body" class="text-xs text-muted-foreground mt-1 line-clamp-1">{{ item.body }}</p>
@@ -351,41 +417,62 @@
                       </td>
                       <td class="px-4 py-3 align-top">
                         <Badge :variant="statusBadgeVariant(item.status)" class="font-normal">{{
-                          formatStatus(item.status) }}</Badge>
+                          formatStatus(item.status)
+                        }}</Badge>
                       </td>
                       <td class="px-4 py-3 align-top text-right">
                         <div
-                          class="inline-flex items-center justify-end gap-1 bg-muted/50 px-2 py-0.5 rounded-md text-xs font-medium">
+                          class="inline-flex items-center justify-end gap-1 bg-muted/50 px-2 py-0.5 rounded-md text-xs font-medium"
+                        >
                           <Icon name="lucide:chevron-up" class="w-3 h-3 text-muted-foreground" />
                           {{ item.voteCount }}
                         </div>
                       </td>
-                      <td class="px-4 py-3 align-top text-right text-muted-foreground tabular-nums">{{ item.commentCount
-                        }}</td>
+                      <td class="px-4 py-3 align-top text-right text-muted-foreground tabular-nums">
+                        {{ item.commentCount }}
+                      </td>
                       <td v-if="showGithubIssueColumn" class="px-4 py-3 align-top">
-                        <a v-if="item.githubIssue?.issueUrl" :href="item.githubIssue.issueUrl"
+                        <a
+                          v-if="item.githubIssue?.issueUrl"
+                          :href="item.githubIssue.issueUrl"
                           class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline bg-primary/10 px-2 py-0.5 rounded-md"
-                          target="_blank" rel="noopener noreferrer">
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
                           <Icon name="lucide:github" class="w-3 h-3" />
                           #{{ item.githubIssue.issueNumber }}
                         </a>
-                        <Button v-else-if="canCreateGithubIssue(item)" size="sm" variant="outline"
-                          class="h-7 text-xs px-2" :disabled="isCreatingGithubIssue(item.id)"
-                          :data-testid="`feedback-table-create-issue-${item.id}`" @click="createGithubIssue(item)">
-                          <Icon v-if="isCreatingGithubIssue(item.id)" name="lucide:loader-2"
-                            class="w-3 h-3 mr-1.5 animate-spin" />
+                        <Button
+                          v-else-if="canCreateGithubIssue(item)"
+                          size="sm"
+                          variant="outline"
+                          class="h-7 text-xs px-2"
+                          :disabled="isCreatingGithubIssue(item.id)"
+                          :data-testid="`feedback-table-create-issue-${item.id}`"
+                          @click="createGithubIssue(item)"
+                        >
+                          <Icon
+                            v-if="isCreatingGithubIssue(item.id)"
+                            name="lucide:loader-2"
+                            class="w-3 h-3 mr-1.5 animate-spin"
+                          />
                           <Icon v-else name="lucide:plus" class="w-3 h-3 mr-1.5" />
                           Create Issue
                         </Button>
                         <span v-else class="text-muted-foreground text-xs">-</span>
                       </td>
-                      <td class="px-4 py-3 align-top text-muted-foreground text-xs whitespace-nowrap">{{
-                        formatDate(item.updatedAt) }}</td>
+                      <td class="px-4 py-3 align-top text-muted-foreground text-xs whitespace-nowrap">
+                        {{ formatDate(item.updatedAt) }}
+                      </td>
                       <td class="px-4 py-3 align-top text-right">
-                        <Button variant="ghost" size="icon"
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                          :data-testid="`feedback-item-delete-${item.id}`" title="Delete feedback"
-                          @click="confirmDelete(item)">
+                          :data-testid="`feedback-item-delete-${item.id}`"
+                          title="Delete feedback"
+                          @click="confirmDelete(item)"
+                        >
                           <Icon name="lucide:trash-2" class="w-4 h-4" />
                         </Button>
                       </td>
@@ -399,17 +486,25 @@
           <!-- Pagination -->
           <div v-if="pagination.totalPages > 1" class="flex items-center justify-between pt-4">
             <div class="text-sm text-muted-foreground">
-              Showing page <span class="font-medium text-foreground">{{ pagination.page }}</span> of <span
-                class="font-medium text-foreground">{{ pagination.totalPages }}</span>
+              Showing page <span class="font-medium text-foreground">{{ pagination.page }}</span> of
+              <span class="font-medium text-foreground">{{ pagination.totalPages }}</span>
             </div>
             <div class="flex items-center space-x-2">
-              <Button variant="outline" size="sm" :disabled="pagination.page <= 1"
-                @click="goToPage(pagination.page - 1)">
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="pagination.page <= 1"
+                @click="goToPage(pagination.page - 1)"
+              >
                 <Icon name="lucide:chevron-left" class="w-4 h-4 mr-1" />
                 Previous
               </Button>
-              <Button variant="outline" size="sm" :disabled="pagination.page >= pagination.totalPages"
-                @click="goToPage(pagination.page + 1)">
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="pagination.page >= pagination.totalPages"
+                @click="goToPage(pagination.page + 1)"
+              >
                 Next
                 <Icon name="lucide:chevron-right" class="w-4 h-4 ml-1" />
               </Button>
@@ -419,14 +514,22 @@
       </div>
 
       <!-- Create Feedback Dialog -->
-      <Dialog :open="showCreateDialog" @update:open="(v) => { if (!v) closeCreateDialog() }">
+      <Dialog
+        :open="showCreateDialog"
+        @update:open="
+          (v) => {
+            if (!v) closeCreateDialog()
+          }
+        "
+      >
         <DialogContent class="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>{{ createDialogStep === 'select-project' ? 'Select Product' : 'Add Feedback' }}</DialogTitle>
             <DialogDescription>
-              {{ createDialogStep === 'select-project'
-                ? 'Choose which product to submit feedback for.'
-                : `Create a new feedback item for ${products.find(p => p.id === createForm.projectId)?.name || 'this product'}.`
+              {{
+                createDialogStep === 'select-project'
+                  ? 'Choose which product to submit feedback for.'
+                  : `Create a new feedback item for ${products.find((p) => p.id === createForm.projectId)?.name || 'this product'}.`
               }}
             </DialogDescription>
           </DialogHeader>
@@ -435,7 +538,7 @@
           <div v-if="createDialogStep === 'select-project'" class="py-2">
             <div class="max-h-[320px] overflow-y-auto space-y-2 pr-1">
               <button
-                v-for="p in products.filter(prod => selectedProjectIds.includes(prod.id))"
+                v-for="p in products.filter((prod) => selectedProjectIds.includes(prod.id))"
                 :key="p.id"
                 :data-testid="`feedback-create-project-${p.id}`"
                 type="button"
@@ -448,7 +551,9 @@
                   </div>
                   <div>
                     <p class="text-sm font-medium leading-none">{{ p.name }}</p>
-                    <p v-if="p.description" class="mt-1 text-xs text-muted-foreground line-clamp-1">{{ p.description }}</p>
+                    <p v-if="p.description" class="mt-1 text-xs text-muted-foreground line-clamp-1">
+                      {{ p.description }}
+                    </p>
                   </div>
                   <Icon name="lucide:chevron-right" class="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
                 </div>
@@ -460,14 +565,23 @@
           <div v-else class="space-y-4 py-4">
             <div class="space-y-2">
               <Label for="feedback-title">Title</Label>
-              <Input id="feedback-title" v-model="createForm.title" data-testid="feedback-create-title"
-                placeholder="Brief summary of the feedback" />
+              <Input
+                id="feedback-title"
+                v-model="createForm.title"
+                data-testid="feedback-create-title"
+                placeholder="Brief summary of the feedback"
+              />
             </div>
             <div class="space-y-2">
               <Label for="feedback-body">Description</Label>
-              <textarea id="feedback-body" v-model="createForm.body" data-testid="feedback-create-body"
-                placeholder="Provide details about the feedback" rows="4"
-                class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+              <textarea
+                id="feedback-body"
+                v-model="createForm.body"
+                data-testid="feedback-create-body"
+                placeholder="Provide details about the feedback"
+                rows="4"
+                class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              />
             </div>
             <div v-if="isLoadingDialogCategories" class="space-y-2">
               <Skeleton class="h-4 w-20" />
@@ -475,8 +589,12 @@
             </div>
             <div v-else-if="dialogCategories.length > 0" class="space-y-2">
               <Label for="feedback-category">Category</Label>
-              <select id="feedback-category" v-model="createForm.categoryId" data-testid="feedback-create-category"
-                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+              <select
+                id="feedback-category"
+                v-model="createForm.categoryId"
+                data-testid="feedback-create-category"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
                 <option :value="null">No category</option>
                 <option v-for="cat in dialogCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
               </select>
@@ -518,8 +636,12 @@
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
-            <Button data-testid="feedback-delete-confirm" variant="destructive" :disabled="isDeleting"
-              @click="deleteFeedback">
+            <Button
+              data-testid="feedback-delete-confirm"
+              variant="destructive"
+              :disabled="isDeleting"
+              @click="deleteFeedback"
+            >
               <Icon v-if="isDeleting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
               Delete
             </Button>
@@ -611,9 +733,24 @@ export default {
     kanbanColumns() {
       return [
         { value: 'open', label: 'Open', icon: 'lucide:clock-3', colorClass: 'bg-orange-500/10 text-orange-500' },
-        { value: 'in_progress', label: 'In Progress', icon: 'lucide:play-circle', colorClass: 'bg-blue-500/10 text-blue-500' },
-        { value: 'planned', label: 'Planned', icon: 'lucide:calendar-range', colorClass: 'bg-purple-500/10 text-purple-500' },
-        { value: 'completed', label: 'Completed', icon: 'lucide:check-circle-2', colorClass: 'bg-green-500/10 text-green-500' },
+        {
+          value: 'in_progress',
+          label: 'In Progress',
+          icon: 'lucide:play-circle',
+          colorClass: 'bg-blue-500/10 text-blue-500',
+        },
+        {
+          value: 'planned',
+          label: 'Planned',
+          icon: 'lucide:calendar-range',
+          colorClass: 'bg-purple-500/10 text-purple-500',
+        },
+        {
+          value: 'completed',
+          label: 'Completed',
+          icon: 'lucide:check-circle-2',
+          colorClass: 'bg-green-500/10 text-green-500',
+        },
         { value: 'closed', label: 'Closed', icon: 'lucide:archive', colorClass: 'bg-gray-500/10 text-gray-500' },
         { value: 'declined', label: 'Declined', icon: 'lucide:x-circle', colorClass: 'bg-red-500/10 text-red-500' },
       ]
@@ -769,7 +906,7 @@ export default {
         query.projectIds = this.selectedProjectIds.join(',')
       }
 
-      this.$router.replace({ query }).catch(() => { })
+      this.$router.replace({ query }).catch(() => {})
     },
 
     async toggleAllProducts(checked) {

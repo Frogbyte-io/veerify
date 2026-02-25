@@ -423,13 +423,27 @@ test.describe('Admin feedback workflow', () => {
       await gotoWithRetry(page, `/feedback?projectIds=${projectIdA},${projectIdB}`)
       await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
 
+      // Product filter dropdown should stay open while selecting multiple products.
+      await page.locator(selectors.feedbackProductsFilterTrigger).click()
+      const filterItemA = page.locator(`[data-testid="feedback-products-filter-item-${projectIdA}"]`)
+      const filterItemB = page.locator(`[data-testid="feedback-products-filter-item-${projectIdB}"]`)
+      await expect(filterItemA).toBeVisible()
+      await expect(filterItemB).toBeVisible()
+      await filterItemA.click()
+      await expect(filterItemB).toBeVisible()
+      await filterItemA.click()
+      await expect(filterItemB).toBeVisible()
+      await page.keyboard.press('Escape')
+
       // Add Feedback button must be enabled when multiple products are selected
       const addBtn = page.locator(selectors.feedbackAddButton)
       await expect(addBtn).toBeEnabled({ timeout: 10_000 })
 
       // Click Add Feedback — step 1 (project picker) should open
       await addBtn.click()
-      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible({ timeout: 5_000 })
+      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible({
+        timeout: 5_000,
+      })
       await expect(page.locator(`[data-testid="feedback-create-project-${projectIdB}"]`)).toBeVisible()
 
       // The feedback form inputs should NOT be visible yet (still in step 1)
