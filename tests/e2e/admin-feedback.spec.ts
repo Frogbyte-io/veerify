@@ -105,11 +105,13 @@ test.describe('Admin feedback workflow', () => {
         projectId,
         title: 'API test feedback item',
         body: 'Created by Playwright API test for admin feedback workflow',
+        feedbackType: 'bug_report',
       },
     })
     expect(createFbRes.status()).toBe(201)
     const createFbPayload = await createFbRes.json()
     expect(createFbPayload?.success).toBeTruthy()
+    expect(createFbPayload?.data?.metadata?.feedbackType).toBe('bug_report')
     const feedbackId = createFbPayload.data.id as string
 
     // Verify feedback appears in list
@@ -206,7 +208,11 @@ test.describe('Admin feedback workflow', () => {
     // Click Add Feedback
     await page.locator(selectors.feedbackAddButton).click()
 
-    // Fill in feedback form
+    // Step 1: select feedback type
+    await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible({ timeout: 5_000 })
+    await page.locator('[data-testid="feedback-create-type-feature_request"]').click()
+
+    // Step 2: fill feedback form
     await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
     await page.locator(selectors.feedbackCreateTitle).fill('UI Test Feedback Item')
     await page.locator(selectors.feedbackCreateBody).fill('This is test feedback created by Playwright E2E test')
@@ -449,14 +455,24 @@ test.describe('Admin feedback workflow', () => {
       // The feedback form inputs should NOT be visible yet (still in step 1)
       await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
 
-      // Clicking a project card advances to step 2 (feedback form)
+      // Clicking a project card advances to step 2 (type picker)
       await page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`).click()
+      await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible({ timeout: 5_000 })
+      await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
+
+      // Clicking a type advances to step 3 (feedback form)
+      await page.locator('[data-testid="feedback-create-type-feature_request"]').click()
       await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
 
       // Back button is visible since we came from multi-product step 1
       await expect(page.locator('button:has-text("Back")')).toBeVisible()
 
-      // Back button returns to step 1
+      // Back from form returns to type picker.
+      await page.locator('button:has-text("Back")').click()
+      await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible()
+      await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
+
+      // Back from type picker returns to product picker.
       await page.locator('button:has-text("Back")').click()
       await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible()
       await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
@@ -474,12 +490,17 @@ test.describe('Admin feedback workflow', () => {
       await expect(addBtn).toBeEnabled({ timeout: 10_000 })
       await addBtn.click()
 
-      // Should jump straight to form — no project cards visible
-      await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
+      // Should jump to type picker first — no project cards visible.
+      await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible({ timeout: 5_000 })
       await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).not.toBeVisible()
 
-      // No Back button in single-product mode
-      await expect(page.locator('button:has-text("Back")')).not.toBeVisible()
+      await page.locator('[data-testid="feedback-create-type-feature_request"]').click()
+      await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
+
+      // Back button should return to type picker in single-product mode.
+      await expect(page.locator('button:has-text("Back")')).toBeVisible()
+      await page.locator('button:has-text("Back")').click()
+      await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible()
 
       await page.getByRole('button', { name: 'Cancel' }).click()
       await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 5_000 })
