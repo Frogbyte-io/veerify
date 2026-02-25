@@ -461,8 +461,45 @@
                         <div class="flex items-center gap-2 mb-1">
                           <span class="text-sm font-medium">{{ formatCommentAuthor(comment) }}</span>
                           <span class="text-xs text-muted-foreground">{{ formatDate(comment.createdAt) }}</span>
+                          <div v-if="comment.canEdit" class="ml-auto flex items-center gap-1">
+                            <button
+                              class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                              :data-testid="`comment-edit-btn-${comment.id}`"
+                              @click="startEditComment(comment)"
+                            >
+                              <Icon name="lucide:pencil" class="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              class="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                              :data-testid="`comment-delete-btn-${comment.id}`"
+                              @click="deleteComment(comment)"
+                            >
+                              <Icon name="lucide:trash-2" class="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
-                        <p class="text-sm whitespace-pre-line">{{ comment.body }}</p>
+                        <template v-if="editingCommentId === comment.id">
+                          <textarea
+                            v-model="editingCommentBody"
+                            rows="3"
+                            :disabled="isSavingComment"
+                            class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+                          />
+                          <div class="flex items-center gap-2 mt-2">
+                            <Button size="sm" variant="outline" :disabled="isSavingComment" @click="cancelEditComment">
+                              Cancel
+                            </Button>
+                            <Button
+                              size="sm"
+                              :disabled="!editingCommentBody.trim() || isSavingComment"
+                              @click="saveEditComment(comment)"
+                            >
+                              <Icon v-if="isSavingComment" name="lucide:loader-2" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                              Save
+                            </Button>
+                          </div>
+                        </template>
+                        <p v-else class="text-sm whitespace-pre-line">{{ comment.body }}</p>
                       </div>
                     </div>
                   </div>
@@ -730,6 +767,9 @@ export default {
       activeTheme: 'system',
       logoError: false,
       bannerError: false,
+      editingCommentId: null,
+      editingCommentBody: '',
+      isSavingComment: false,
       statusClasses: {
         open: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
         in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -937,6 +977,8 @@ export default {
         this.commentOptionSelected = null
         this.commentOptionName = ''
         this.commentOptionEmail = ''
+        this.editingCommentId = null
+        this.editingCommentBody = ''
       }
     },
     async retryLoadDetails() {
@@ -1165,6 +1207,53 @@ export default {
       } catch (err) {
         console.error('Error deleting feedback:', err)
         alert(err?.data?.error?.message || 'Failed to delete feedback.')
+      }
+    },
+    startEditComment(comment) {
+      this.editingCommentId = comment.id
+      this.editingCommentBody = comment.body
+    },
+    cancelEditComment() {
+      this.editingCommentId = null
+      this.editingCommentBody = ''
+    },
+    async saveEditComment(comment) {
+      if (!this.editingCommentBody.trim()) return
+      this.isSavingComment = true
+      try {
+        const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/comments/${comment.id}`, {
+          method: 'PATCH',
+          body: { body: this.editingCommentBody.trim() },
+        })
+        const updated = response?.data
+        if (updated) {
+          const idx = this.selectedFeedbackComments.findIndex((c) => c.id === comment.id)
+          if (idx !== -1) {
+            this.selectedFeedbackComments[idx] = { ...this.selectedFeedbackComments[idx], body: updated.body }
+          }
+        }
+        this.editingCommentId = null
+        this.editingCommentBody = ''
+      } catch (err) {
+        console.error('Error editing comment:', err)
+        alert(err?.data?.error?.message || 'Failed to edit comment. Please try again.')
+      } finally {
+        this.isSavingComment = false
+      }
+    },
+    async deleteComment(comment) {
+      if (!confirm('Delete this comment? This cannot be undone.')) return
+      try {
+        await $fetch(`/api/feedback/${this.selectedFeedbackId}/comments/${comment.id}`, { method: 'DELETE' })
+        this.selectedFeedbackComments = this.selectedFeedbackComments.filter((c) => c.id !== comment.id)
+        if (this.selectedFeedback) {
+          this.selectedFeedback.commentCount = Math.max((this.selectedFeedback.commentCount || 0) - 1, 0)
+        }
+        const listItem = this.feedbackItems.find((item) => item.id === this.selectedFeedbackId)
+        if (listItem) listItem.commentCount = Math.max((listItem.commentCount || 0) - 1, 0)
+      } catch (err) {
+        console.error('Error deleting comment:', err)
+        alert(err?.data?.error?.message || 'Failed to delete comment. Please try again.')
       }
     },
     async voteFromDetails() {

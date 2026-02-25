@@ -1,13 +1,17 @@
-import { eq, and, asc, isNull } from 'drizzle-orm'
+import { eq, and, asc } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
+import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
 
+const EDIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
+  const anonSession = session?.user ? null : await getAnonSession(event)
 
   const id = getRouterParam(event, 'id')
   if (!id) {
@@ -64,10 +68,21 @@ export default defineEventHandler(async (event) => {
     .where(and(...conditions))
     .orderBy(asc(feedbackComment.createdAt))
 
-  const result = comments.map((row) => ({
-    ...row.comment,
-    author: row.comment.authorUserId ? row.authorUser : null,
-  }))
+  const userId = session?.user?.id || null
+  const anonSessionId = anonSession?.id || null
+
+  const result = comments.map((row) => {
+    const comment = row.comment
+    const ageMs = Date.now() - new Date(comment.createdAt).getTime()
+    const withinWindow = ageMs <= EDIT_WINDOW_MS
+    const isAuthor =
+      (userId && comment.authorUserId === userId) || (anonSessionId && comment.authorSessionId === anonSessionId)
+    return {
+      ...comment,
+      author: comment.authorUserId ? row.authorUser : null,
+      canEdit: withinWindow && !!isAuthor,
+    }
+  })
 
   return createSuccessResponse(result)
 })
