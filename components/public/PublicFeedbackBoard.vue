@@ -1135,8 +1135,7 @@ export default {
         if (updated && this.selectedFeedback) {
           this.selectedFeedback.isPinned = updated.isPinned
         }
-        const listItem = this.feedbackItems.find((item) => item.id === this.selectedFeedbackId)
-        if (listItem && updated) listItem.isPinned = updated.isPinned
+        await this.loadFeedback()
       } catch (err) {
         console.error('Error toggling pin:', err)
       }
