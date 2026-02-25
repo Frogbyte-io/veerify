@@ -52,7 +52,6 @@ export default defineEventHandler(async (event) => {
     const term = `%${query.search}%`
     conditions.push(or(ilike(feedback.title, term), ilike(feedback.body, term))!)
   }
-  conditions.push(eq(feedback.isHidden, false))
 
   const whereClause = and(...conditions)
 
