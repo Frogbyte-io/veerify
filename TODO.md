@@ -112,7 +112,7 @@ MVP
 
 - [ ] Allow resizing of sidebar.
 
-- [ ] For the feedback board, please replace the product selector with a dropdown that allows you to select multiple products to view feedback from, Use checkboxes, and let the dropdown stay open while selecting multiple products. Also add an All checkbox that selects all products.
+- [x] For the feedback board, please replace the product selector with a dropdown that allows you to select multiple products to view feedback from, Use checkboxes, and let the dropdown stay open while selecting multiple products. Also add an All checkbox that selects all products.
 
 - [ ] For the add feedback modal form, please make it more of a guided form with multiple steps. First step should be to select the type of feedback (bug report, feature request, etc.), then the next step should be to add the details of the feedback (title, description, attachments, etc.). This will make it easier for users to submit feedback and ensure that they provide all the necessary information.
 
