@@ -7,8 +7,6 @@ import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedbackComment } from '~/server/database/schema/feedback'
 
-const EDIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
-
 const editCommentSchema = z.object({
   body: z.string().min(1, 'Comment body is required').max(5000, 'Comment too long'),
 })
@@ -41,16 +39,6 @@ export default defineEventHandler(async (event) => {
       statusCode: 404,
       statusMessage: 'Not Found',
       data: createErrorResponse(ErrorCode.NOT_FOUND, 'Comment not found'),
-    })
-  }
-
-  // Check time window
-  const ageMs = Date.now() - new Date(comment.createdAt).getTime()
-  if (ageMs > EDIT_WINDOW_MS) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'Comments can only be edited within 15 minutes of posting'),
     })
   }
 

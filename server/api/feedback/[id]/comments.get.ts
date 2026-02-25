@@ -7,8 +7,6 @@ import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
 
-const EDIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
-
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
   const anonSession = session?.user ? null : await getAnonSession(event)
@@ -73,14 +71,14 @@ export default defineEventHandler(async (event) => {
 
   const result = comments.map((row) => {
     const comment = row.comment
-    const ageMs = Date.now() - new Date(comment.createdAt).getTime()
-    const withinWindow = ageMs <= EDIT_WINDOW_MS
     const isAuthor =
       (userId && comment.authorUserId === userId) || (anonSessionId && comment.authorSessionId === anonSessionId)
+    const isEdited = new Date(comment.updatedAt).getTime() > new Date(comment.createdAt).getTime()
     return {
       ...comment,
       author: comment.authorUserId ? row.authorUser : null,
-      canEdit: withinWindow && !!isAuthor,
+      canEdit: !!isAuthor,
+      isEdited,
     }
   })
 

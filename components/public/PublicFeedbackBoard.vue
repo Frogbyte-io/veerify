@@ -461,6 +461,7 @@
                         <div class="flex items-center gap-2 mb-1">
                           <span class="text-sm font-medium">{{ formatCommentAuthor(comment) }}</span>
                           <span class="text-xs text-muted-foreground">{{ formatDate(comment.createdAt) }}</span>
+                          <span v-if="comment.isEdited" class="text-xs text-muted-foreground italic">(edited)</span>
                           <div v-if="comment.canEdit" class="ml-auto flex items-center gap-1">
                             <button
                               class="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
@@ -1229,7 +1230,11 @@ export default {
         if (updated) {
           const idx = this.selectedFeedbackComments.findIndex((c) => c.id === comment.id)
           if (idx !== -1) {
-            this.selectedFeedbackComments[idx] = { ...this.selectedFeedbackComments[idx], body: updated.body }
+            this.selectedFeedbackComments[idx] = {
+              ...this.selectedFeedbackComments[idx],
+              body: updated.body,
+              isEdited: true,
+            }
           }
         }
         this.editingCommentId = null

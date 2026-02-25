@@ -5,8 +5,6 @@ import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment } from '~/server/database/schema/feedback'
 
-const EDIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
-
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
   const anonSession = session?.user ? null : await getAnonSession(event)
@@ -33,16 +31,6 @@ export default defineEventHandler(async (event) => {
       statusCode: 404,
       statusMessage: 'Not Found',
       data: createErrorResponse(ErrorCode.NOT_FOUND, 'Comment not found'),
-    })
-  }
-
-  // Check time window
-  const ageMs = Date.now() - new Date(comment.createdAt).getTime()
-  if (ageMs > EDIT_WINDOW_MS) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'Comments can only be deleted within 15 minutes of posting'),
     })
   }
 
