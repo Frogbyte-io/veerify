@@ -124,7 +124,8 @@ MVP
 
 - [ ] For the public feedback board, please reduce the size of the banner, and increase the space below the bottom feedback so it is possible to scroll the banner up and see it fully without the feedback cards covering it. This will improve the visibility of the banner and make the board look less cramped.
 
-- [ ] For the public feedback board, please add a pinning feature, so that product admins can pin important feedback items to the top of the board. This will allow them to highlight key feedback and ensure it gets the attention it deserves.
+- [x] For the public feedback board, please add a pinning feature, so that product admins can pin important feedback items to the top of the board. This will allow them to highlight key feedback and ensure it gets the attention it deserves.
+  - Pinned items now sort to top via `isPinned DESC` in `server/api/feedback/index.get.ts`; pin icon indicator added to cards in `components/public/PublicFeedbackBoard.vue`; list reloads after pin toggle for correct sort order.
 
 - [ ] For the public feedback board, please add the ability for comment posters to edit or delete their comments within a certain time window (e.g. 15 minutes after posting). This will allow users to correct mistakes or remove comments they no longer want visible, while still maintaining the integrity of the discussion. After the time window has passed, comments should be locked from editing to prevent abuse.
 
