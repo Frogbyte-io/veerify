@@ -225,7 +225,15 @@
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-start justify-between gap-2 mb-1">
-                  <h3 class="font-medium">{{ item.title }}</h3>
+                  <h3 class="font-medium flex items-center gap-1.5">
+                    <Icon
+                      v-if="item.isPinned"
+                      name="lucide:pin"
+                      class="w-3.5 h-3.5 text-primary shrink-0"
+                      data-testid="public-feedback-pinned-icon"
+                    />
+                    {{ item.title }}
+                  </h3>
                   <div class="flex items-center gap-2 shrink-0">
                     <span
                       class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
