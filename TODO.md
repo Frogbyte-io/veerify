@@ -136,3 +136,5 @@ MVP
 
 - [x] For the private feedback collection at /feedback, the add feedback button should still work, but if multiple products are selected in the product filter dropdown, it should ask which product the feedback is for when I click the add feedback button.
   - Two-step dialog: scrollable project-card picker (step 1, skipped for single product) → feedback form (step 2); Back button returns to step 1 in multi-product mode.
+
+- [ ] Detect between self hosted and cloud based on env variables. if locally hosted, replace the billing tab with a "Status" tab that shows the status of different services (database, storage, etc.) and any errors or warnings related to them. This will help self-hosted users monitor the health of their instance and troubleshoot any issues that arise.
