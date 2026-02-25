@@ -52,6 +52,7 @@ export default defineEventHandler(async (event) => {
     const term = `%${query.search}%`
     conditions.push(or(ilike(feedback.title, term), ilike(feedback.body, term))!)
   }
+  conditions.push(eq(feedback.isHidden, false))
 
   const whereClause = and(...conditions)
 
@@ -91,7 +92,7 @@ export default defineEventHandler(async (event) => {
     .leftJoin(project, eq(feedback.projectId, project.id))
     .leftJoin(githubIssueLink, eq(githubIssueLink.feedbackId, feedback.id))
     .where(whereClause)
-    .orderBy(orderFn(sortColumn))
+    .orderBy(desc(feedback.isPinned), orderFn(sortColumn))
     .limit(query.limit)
     .offset(offset)
 
