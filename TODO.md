@@ -120,7 +120,8 @@ MVP
 
 - [ ] For the public feedback board, add a filter option to filter feedback by category, status, or tags. This will allow users to easily find feedback that is relevant to them and help them navigate the board more effectively.
 
-- [ ] For the public feedback board, please add infinite scrolling with lazy loading of feedback items as the user scrolls down, instead of paginating with a "Load more" button. This will create a smoother browsing experience and allow users to easily explore more feedback without interruption.
+- [x] For the public feedback board, please add infinite scrolling with lazy loading of feedback items as the user scrolls down, instead of paginating with a "Load more" button. This will create a smoother browsing experience and allow users to easily explore more feedback without interruption.
+  - Replaced Previous/Next pagination with an `IntersectionObserver` sentinel at the bottom of the list. Filter/sort changes reset to page 1 (skeleton shown); subsequent pages append via `loadMore()` with a spinner indicator.
 
 - [x] For the public feedback board, please reduce the size of the banner, and increase the space below the bottom feedback so it is possible to scroll the banner up and see it fully without the feedback cards covering it. This will improve the visibility of the banner and make the board look less cramped.
   - Reduced banner from `h-48 md:h-64` to `h-24 md:h-36`; inner parallax layer drifts at 25% of scroll speed (capped 30px); added `pb-32` scroll buffer below feedback list.
