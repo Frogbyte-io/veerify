@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
     .from(feedback)
     .leftJoin(feedbackCategory, eq(feedback.categoryId, feedbackCategory.id))
     .where(whereClause)
-    .orderBy(orderFn(sortColumn))
+    .orderBy(desc(feedback.isPinned), orderFn(sortColumn))
     .limit(query.limit)
     .offset(offset)
 
