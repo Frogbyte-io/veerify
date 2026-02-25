@@ -1135,6 +1135,7 @@ export default {
         if (updated && this.selectedFeedback) {
           this.selectedFeedback.isPinned = updated.isPinned
         }
+        this.pagination.page = 1
         await this.loadFeedback()
       } catch (err) {
         console.error('Error toggling pin:', err)
