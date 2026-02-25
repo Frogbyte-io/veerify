@@ -122,7 +122,8 @@ MVP
 
 - [ ] For the public feedback board, please add infinite scrolling with lazy loading of feedback items as the user scrolls down, instead of paginating with a "Load more" button. This will create a smoother browsing experience and allow users to easily explore more feedback without interruption.
 
-- [ ] For the public feedback board, please reduce the size of the banner, and increase the space below the bottom feedback so it is possible to scroll the banner up and see it fully without the feedback cards covering it. This will improve the visibility of the banner and make the board look less cramped.
+- [x] For the public feedback board, please reduce the size of the banner, and increase the space below the bottom feedback so it is possible to scroll the banner up and see it fully without the feedback cards covering it. This will improve the visibility of the banner and make the board look less cramped.
+  - Reduced banner from `h-48 md:h-64` to `h-24 md:h-36`; inner parallax layer drifts at 25% of scroll speed (capped 30px); added `pb-32` scroll buffer below feedback list.
 
 - [x] For the public feedback board, please add a pinning feature, so that product admins can pin important feedback items to the top of the board. This will allow them to highlight key feedback and ensure it gets the attention it deserves.
   - Pinned items now sort to top via `isPinned DESC` in `server/api/feedback/index.get.ts`; pin icon indicator added to cards in `components/public/PublicFeedbackBoard.vue`; list reloads after pin toggle for correct sort order.

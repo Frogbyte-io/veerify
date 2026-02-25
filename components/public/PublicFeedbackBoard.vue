@@ -67,27 +67,34 @@
     <!-- Main Content -->
     <div v-else-if="projectData" class="flex-1 flex flex-col">
       <!-- Banner: custom image when set, otherwise a styled default using accentColor -->
+      <!-- Outer container clips the parallax overflow -->
       <div
         data-testid="public-board-banner"
-        class="w-full h-48 md:h-64 overflow-hidden relative"
-        :style="bannerContainerStyle"
+        class="w-full h-24 md:h-36 overflow-hidden relative"
       >
-        <img
-          v-if="projectData.project.settings?.bannerUrl && !bannerError"
-          :src="projectData.project.settings.bannerUrl"
-          alt=""
-          class="w-full h-full object-cover"
-          @error="onBannerError"
-        />
-        <!-- Default banner content when no image or image failed to load -->
-        <div v-if="!projectData.project.settings?.bannerUrl || bannerError" class="absolute inset-0 flex items-end">
-          <div class="max-w-4xl w-full mx-auto px-4 pb-4">
-            <p class="text-white/60 text-sm font-medium tracking-wide uppercase">Feedback Board</p>
+        <!-- Inner parallax layer: extends beyond container so no blank edges show during scroll -->
+        <div
+          class="absolute inset-x-0"
+          style="top: -30px; bottom: -30px;"
+          :style="bannerInnerStyle"
+        >
+          <img
+            v-if="projectData.project.settings?.bannerUrl && !bannerError"
+            :src="projectData.project.settings.bannerUrl"
+            alt=""
+            class="w-full h-full object-cover"
+            @error="onBannerError"
+          />
+          <!-- Default banner content when no image or image failed to load -->
+          <div v-if="!projectData.project.settings?.bannerUrl || bannerError" class="absolute inset-0 flex items-end">
+            <div class="max-w-4xl w-full mx-auto px-4 pb-4">
+              <p class="text-white/60 text-sm font-medium tracking-wide uppercase">Feedback Board</p>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="max-w-4xl mx-auto px-4 py-8">
+      <div class="max-w-4xl mx-auto px-4 pt-8 pb-32">
         <!-- Header -->
         <div class="mb-8">
           <div class="flex items-center gap-3 mb-2">
@@ -771,6 +778,7 @@ export default {
       editingCommentId: null,
       editingCommentBody: '',
       isSavingComment: false,
+      scrollY: 0,
       statusClasses: {
         open: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
         in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
@@ -789,11 +797,13 @@ export default {
       const name = this.projectData?.project?.name || ''
       return name.charAt(0).toUpperCase() || '?'
     },
-    bannerContainerStyle() {
+    bannerInnerStyle() {
       const color = this.accentColor
-      // Convert hex to a usable gradient. Always show something visually present.
+      const offset = Math.min(this.scrollY * 0.25, 30)
       return {
         background: `linear-gradient(135deg, ${color} 0%, ${color}cc 50%, ${color}80 100%)`,
+        transform: `translateY(${offset}px)`,
+        willChange: 'transform',
       }
     },
     logoFallbackStyle() {
@@ -873,13 +883,17 @@ export default {
     },
   },
   beforeUnmount() {
-    if (import.meta.client && this.previousColorMode) {
-      this.$colorMode.preference = this.previousColorMode
+    if (import.meta.client) {
+      if (this.previousColorMode) {
+        this.$colorMode.preference = this.previousColorMode
+      }
+      window.removeEventListener('scroll', this.handleScroll)
     }
   },
   async mounted() {
     if (import.meta.client) {
       this.previousColorMode = this.$colorMode.preference
+      window.addEventListener('scroll', this.handleScroll, { passive: true })
     }
     try {
       const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`)
@@ -895,6 +909,9 @@ export default {
     }
   },
   methods: {
+    handleScroll() {
+      this.scrollY = window.scrollY
+    },
     onBannerError() {
       this.bannerError = true
     },
