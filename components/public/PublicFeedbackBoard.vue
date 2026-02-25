@@ -152,7 +152,7 @@
             <select
               v-model="filters.status"
               class="px-3 py-2 rounded-md border bg-background text-sm"
-              @change="loadFeedback"
+              @change="resetFeedback"
             >
               <option value="">All Status</option>
               <option value="open">Open</option>
@@ -164,7 +164,7 @@
             <select
               v-model="filters.categoryId"
               class="px-3 py-2 rounded-md border bg-background text-sm"
-              @change="loadFeedback"
+              @change="resetFeedback"
             >
               <option value="">All Categories</option>
               <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">
@@ -175,7 +175,7 @@
             <select
               v-model="filters.sortBy"
               class="px-3 py-2 rounded-md border bg-background text-sm"
-              @change="loadFeedback"
+              @change="resetFeedback"
             >
               <option value="voteCount">Most Voted</option>
               <option value="createdAt">Newest</option>
@@ -189,11 +189,11 @@
         </div>
 
         <!-- Feedback List -->
-        <div v-if="feedbackLoading" class="space-y-4">
+        <div v-if="feedbackLoading && feedbackItems.length === 0" class="space-y-4">
           <Skeleton v-for="n in 3" :key="n" class="h-28" />
         </div>
 
-        <div v-else-if="feedbackItems.length === 0" class="rounded-lg border bg-card p-12 text-center">
+        <div v-else-if="!feedbackLoading && feedbackItems.length === 0" class="rounded-lg border bg-card p-12 text-center">
           <Icon name="lucide:message-square" class="w-12 h-12 mx-auto text-muted-foreground mb-4" />
           <h2 class="text-lg font-semibold mb-2">No feedback yet</h2>
           <p class="text-muted-foreground mb-4">Be the first to submit feedback for this product!</p>
@@ -292,26 +292,11 @@
             </div>
           </div>
 
-          <div v-if="pagination.totalPages > 1" class="flex items-center justify-between pt-4">
-            <p class="text-sm text-muted-foreground">
-              Page {{ pagination.page }} of {{ pagination.totalPages }} ({{ pagination.total }} total)
-            </p>
-            <div class="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                :disabled="pagination.page <= 1"
-                @click="changePage(pagination.page - 1)"
-                >Previous</Button
-              >
-              <Button
-                variant="outline"
-                size="sm"
-                :disabled="pagination.page >= pagination.totalPages"
-                @click="changePage(pagination.page + 1)"
-                >Next</Button
-              >
-            </div>
+          <!-- Infinite scroll sentinel -->
+          <div ref="scrollSentinel" class="h-4" />
+          <!-- Loading more indicator -->
+          <div v-if="feedbackLoading && feedbackItems.length > 0" class="flex justify-center py-6">
+            <Icon name="lucide:loader-2" class="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
         </div>
 
@@ -888,6 +873,9 @@ export default {
         this.$colorMode.preference = this.previousColorMode
       }
       window.removeEventListener('scroll', this.handleScroll)
+      if (this.scrollObserver) {
+        this.scrollObserver.disconnect()
+      }
     }
   },
   async mounted() {
@@ -906,6 +894,8 @@ export default {
       this.error = 'This feedback page could not be found.'
     } finally {
       this.isLoading = false
+      await this.$nextTick()
+      this.setupScrollObserver()
     }
   },
   methods: {
@@ -931,6 +921,7 @@ export default {
     async loadFeedback() {
       if (!this.projectData) return
       this.feedbackLoading = true
+      const isFirstPage = this.pagination.page === 1
       try {
         const params = new URLSearchParams()
         params.set('page', String(this.pagination.page))
@@ -943,13 +934,40 @@ export default {
           `/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback?${params.toString()}`
         )
         const data = response?.data
-        this.feedbackItems = this.mergeWithLocalVotes(data?.items || [])
+        const newItems = this.mergeWithLocalVotes(data?.items || [])
+        if (isFirstPage) {
+          this.feedbackItems = newItems
+        } else {
+          this.feedbackItems = [...this.feedbackItems, ...newItems]
+        }
         this.pagination = data?.pagination || this.pagination
       } catch (err) {
         console.error('Error loading feedback:', err)
       } finally {
         this.feedbackLoading = false
       }
+    },
+    resetFeedback() {
+      this.pagination.page = 1
+      this.feedbackItems = []
+      this.loadFeedback()
+    },
+    loadMore() {
+      if (this.feedbackLoading || this.pagination.page >= this.pagination.totalPages) return
+      this.pagination.page++
+      this.loadFeedback()
+    },
+    setupScrollObserver() {
+      if (!import.meta.client || !this.$refs.scrollSentinel) return
+      this.scrollObserver = new IntersectionObserver(
+        (entries) => {
+          if (entries[0].isIntersecting) {
+            this.loadMore()
+          }
+        },
+        { rootMargin: '200px' }
+      )
+      this.scrollObserver.observe(this.$refs.scrollSentinel)
     },
     async submitFeedback() {
       if (!this.submitForm.title || !this.submitForm.body || !this.submitForm.authorName) return
@@ -1081,10 +1099,6 @@ export default {
       } catch {
         return items
       }
-    },
-    changePage(page) {
-      this.pagination.page = page
-      this.loadFeedback()
     },
     formatStatus(status) {
       const map = {
