@@ -200,7 +200,7 @@
                         v-if="isTeamMember"
                         class="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer"
                       >
-                        <input v-model="isInternalComment" type="checkbox" class="rounded border-border" />
+                        <input v-model="isInternalComment" type="checkbox" class="rounded border-border" >
                         <Icon name="lucide:lock" class="w-4 h-4" />
                         Internal note
                       </label>

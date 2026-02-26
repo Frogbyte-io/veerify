@@ -66,8 +66,8 @@
                       <Label for="email">Email</Label>
                       <Input
                         id="email"
-                        data-testid="login-email"
                         v-model="email"
+                        data-testid="login-email"
                         type="email"
                         placeholder="m@example.com"
                         required
@@ -83,8 +83,8 @@
                       </div>
                       <Input
                         id="password"
-                        data-testid="login-password"
                         v-model="password"
+                        data-testid="login-password"
                         type="password"
                         required
                         :disabled="isLoading"

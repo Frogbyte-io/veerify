@@ -42,8 +42,8 @@
             <Label for="organization-name">Workspace Name</Label>
             <Input
               id="organization-name"
-              data-testid="organization-name-input"
               v-model="organizationName"
+              data-testid="organization-name-input"
               :disabled="!canEditOrganization || isSaving"
               placeholder="Organization name"
             />
@@ -53,8 +53,8 @@
             <Label for="organization-slug">Workspace URL</Label>
             <Input
               id="organization-slug"
-              data-testid="organization-slug-input"
               v-model="organizationSlug"
+              data-testid="organization-slug-input"
               :disabled="!canEditOrganization || isSaving"
               placeholder="organization-slug"
             />
@@ -67,8 +67,8 @@
             <Label for="organization-logo">Logo URL</Label>
             <Input
               id="organization-logo"
-              data-testid="organization-logo-input"
               v-model="organizationLogo"
+              data-testid="organization-logo-input"
               :disabled="!canEditOrganization || isSaving"
               placeholder="https://example.com/logo.png"
             />
@@ -373,8 +373,8 @@
         </DialogHeader>
         <div class="py-3">
           <Input
-            data-testid="organization-delete-confirm-input"
             v-model="deleteConfirmation"
+            data-testid="organization-delete-confirm-input"
             placeholder="Enter organization slug"
           />
         </div>

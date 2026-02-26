@@ -192,8 +192,8 @@
             <Label for="new-team-name">Team Name</Label>
             <Input
               id="new-team-name"
-              data-testid="team-create-name"
               v-model="newTeamName"
+              data-testid="team-create-name"
               placeholder="Platform Team"
               @input="generateNewTeamSlug"
             />

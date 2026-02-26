@@ -39,7 +39,7 @@
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form @submit.prevent="createWorkspace" class="space-y-4">
+            <form class="space-y-4" @submit.prevent="createWorkspace">
               <div class="space-y-2">
                 <Label for="org-name">Workspace name</Label>
                 <Input

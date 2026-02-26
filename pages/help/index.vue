@@ -17,7 +17,7 @@
             type="text"
             placeholder="Search help articles..."
             class="w-full pl-10 pr-4 py-3 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          />
+          >
         </div>
       </div>
 

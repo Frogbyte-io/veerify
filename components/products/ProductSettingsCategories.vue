@@ -129,7 +129,7 @@
                   :value="categoryForm.color || '#6b7280'"
                   class="w-8 h-8 rounded border cursor-pointer"
                   @input="categoryForm.color = $event.target.value"
-                />
+                >
                 <Input id="cat-color" v-model="categoryForm.color" placeholder="#6b7280" class="flex-1" />
               </div>
             </div>

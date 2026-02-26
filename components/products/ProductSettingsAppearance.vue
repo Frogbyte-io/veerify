@@ -231,7 +231,7 @@
             alt="Banner"
             class="w-full h-32 object-cover"
             @error="$event.target.style.display = 'none'"
-          />
+          >
           <div class="p-4 flex items-center gap-3" :style="{ backgroundColor: form.accentColor || '#3b82f6' }">
             <img
               v-if="previewLogoUrl"
@@ -239,7 +239,7 @@
               alt="Logo"
               class="h-8 w-8 rounded object-cover bg-white/20"
               @error="$event.target.style.display = 'none'"
-            />
+            >
             <div v-else class="h-8 w-8 rounded bg-white/20 flex items-center justify-center">
               <Icon name="lucide:message-square" class="w-4 h-4 text-white" />
             </div>
