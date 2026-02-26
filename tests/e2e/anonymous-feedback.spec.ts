@@ -122,6 +122,58 @@ async function signInOnPublicHost(page: Page, opts: { email: string; password: s
 // ---------------------------------------------------------------------------
 
 test.describe('Anonymous feedback sessions', () => {
+  test('public board supports filtering feedback by tags', async ({ page }) => {
+    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+    const projectResponse = await page.request.get(`http://127.0.0.1:${PORT}/api/public/t/${TEAM_SLUG}/${PROJECT_SLUG}`)
+    expect(projectResponse.ok()).toBe(true)
+    const projectPayload = await projectResponse.json()
+    const projectId = projectPayload?.data?.project?.id
+    expect(projectId).toBeTruthy()
+
+    const bugTitle = `Tag Bug ${Date.now()}`
+    const featureTitle = `Tag Feature ${Date.now()}`
+
+    const bugCreate = await page.request.post(`http://127.0.0.1:${PORT}/api/feedback`, {
+      data: {
+        projectId,
+        title: bugTitle,
+        body: 'Bug-tagged feedback item for filter verification.',
+        feedbackType: 'bug_report',
+      },
+      headers: { 'content-type': 'application/json' },
+    })
+    expect(bugCreate.status()).toBe(201)
+
+    const featureCreate = await page.request.post(`http://127.0.0.1:${PORT}/api/feedback`, {
+      data: {
+        projectId,
+        title: featureTitle,
+        body: 'Feature-tagged feedback item for filter verification.',
+        feedbackType: 'feature_request',
+      },
+      headers: { 'content-type': 'application/json' },
+    })
+    expect(featureCreate.status()).toBe(201)
+
+    await gotoPublicPage(page)
+
+    const tagFilter = page.locator('[data-testid="public-feedback-filter-tag"]')
+    await expect(tagFilter).toBeVisible()
+
+    await tagFilter.selectOption('bug_report')
+    await expect(page.getByText(bugTitle)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(featureTitle)).toHaveCount(0)
+
+    await tagFilter.selectOption('feature_request')
+    await expect(page.getByText(featureTitle)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(bugTitle)).toHaveCount(0)
+
+    await tagFilter.selectOption('')
+    await expect(page.getByText(bugTitle)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(featureTitle)).toBeVisible({ timeout: 10_000 })
+  })
+
   test('public feedback page loads for unauthenticated users', async ({ page }) => {
     await gotoPublicPage(page)
 

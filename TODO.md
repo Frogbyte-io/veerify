@@ -118,7 +118,8 @@ MVP
 
 - [ ] For the feedbacks, add ability to downvote feedback in addition to upvote, and show the total votes (upvotes - downvotes) on the feedback card. This will allow users to express disagreement with feedback and help surface the most popular feedback more accurately.
 
-- [ ] For the public feedback board, add a filter option to filter feedback by category, status, or tags. This will allow users to easily find feedback that is relevant to them and help them navigate the board more effectively.
+- [x] For the public feedback board, add a filter option to filter feedback by category, status, or tags. This will allow users to easily find feedback that is relevant to them and help them navigate the board more effectively.
+  - Added tag filtering (based on `metadata.feedbackType`) in `server/api/public/t/[teamSlug]/[projectSlug]/feedback.get.ts`, wired filter controls in `components/public/PublicFeedbackBoard.vue`, and covered end-to-end behavior in `tests/e2e/anonymous-feedback.spec.ts`.
 
 - [x] For the public feedback board, please add infinite scrolling with lazy loading of feedback items as the user scrolls down, instead of paginating with a "Load more" button. This will create a smoother browsing experience and allow users to easily explore more feedback without interruption.
   - Replaced Previous/Next pagination with an `IntersectionObserver` sentinel at the bottom of the list. Filter/sort changes reset to page 1 (skeleton shown); subsequent pages append via `loadMore()` with a spinner indicator.
