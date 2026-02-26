@@ -331,7 +331,17 @@ The shadcn-vue configuration is stored in `components.json`:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## License`r`n`r`nThis project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0-only)**.`r`n`r`n- Source code and derivatives must remain under the same license when distributed`r`n- Networked/hosted modified versions must also provide source to users`r`n- Commercial use is permitted under AGPL terms`r`n`r`nSee [LICENSE](./LICENSE) for the full terms.`r`n## 📚 Learn More
+## License
+
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0-only)**.
+
+- Source code and derivatives must remain under the same license when distributed
+- Networked/hosted modified versions must also provide source to users
+- Commercial use is permitted under AGPL terms
+
+See [LICENSE](./LICENSE) for the full terms.
+
+## 📚 Learn More
 
 - [Nuxt 3 Documentation](https://nuxt.com/docs/getting-started/introduction)
 - [shadcn-vue Documentation](https://www.shadcn-vue.com/)
