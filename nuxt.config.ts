@@ -4,6 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 const appDomain = process.env.APP_DOMAIN || 'localhost'
 const dashboardDomain =
   process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
+const deploymentModeEnv = (process.env.APP_DEPLOYMENT_MODE || '').toLowerCase()
+const deploymentMode =
+  deploymentModeEnv === 'cloud' || deploymentModeEnv === 'self-hosted'
+    ? deploymentModeEnv
+    : process.env.VERCEL || process.env.VERCEL_ENV
+      ? 'cloud'
+      : 'self-hosted'
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
@@ -53,6 +60,7 @@ export default defineNuxtConfig({
       appDomain,
       dashboardDomain,
       cnameTarget: process.env.CNAME_TARGET || 'cname.veerify.com',
+      deploymentMode,
     },
   },
   colorMode: {

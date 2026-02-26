@@ -87,6 +87,7 @@ docker compose -f docker-compose-dev.yml up -d
 ```
 
 This starts:
+
 - PostgreSQL on `localhost:5432`
 - Mailpit SMTP/UI on `localhost:1025` and `localhost:8025`
 - MinIO API/Console on `localhost:9000` and `localhost:9001`
@@ -165,6 +166,10 @@ APP_DASHBOARD_DOMAIN=app.veerify.io
 
 # Public board base host (team subdomains)
 APP_DOMAIN=veerify.io
+
+# Optional deployment mode override ("self-hosted" or "cloud")
+# If omitted, Veerify auto-detects cloud platforms from env vars.
+APP_DEPLOYMENT_MODE=self-hosted
 ```
 
 To enable GitHub repository connection in product settings, set OAuth credentials:

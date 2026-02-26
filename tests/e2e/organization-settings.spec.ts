@@ -5,6 +5,8 @@ import { selectors } from './helpers/selectors'
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const TEMP_ORG_SLUG_PREFIX = 'org-e2e-'
+const deploymentMode =
+  process.env.APP_DEPLOYMENT_MODE || (process.env.VERCEL || process.env.VERCEL_ENV ? 'cloud' : 'self-hosted')
 
 test.setTimeout(60_000)
 
@@ -199,36 +201,51 @@ test('owner can add billing contact emails for receipt copy', async ({ page }) =
       )
       .toBe(200)
 
-    await page.goto('/settings#billing')
-    await page.waitForFunction(() => {
-      const tab = document.querySelector('[data-testid="settings-tab-billing"]') as any
-      return Boolean(tab?.__vueParentComponent)
-    })
+    if (deploymentMode === 'self-hosted') {
+      await page.goto('/settings#status')
+      await page.waitForFunction(() => {
+        const tab = document.querySelector('[data-testid="settings-tab-status"]') as any
+        return Boolean(tab?.__vueParentComponent)
+      })
 
-    await page.locator(selectors.settingsTabBilling).click()
-    await expect(page).toHaveURL(/#billing/)
-    await expect(page.locator(selectors.settingsBillingPanel)).toBeVisible()
+      await page.locator(selectors.settingsTabStatus).click()
+      await expect(page).toHaveURL(/#status/)
+      await expect(page.locator(selectors.settingsStatusPanel)).toBeVisible()
+      await expect(page.locator(selectors.statusServiceDatabase)).toBeVisible()
+      await expect(page.locator(selectors.statusServiceStorage)).toBeVisible()
+      await expect(page.locator(selectors.statusServiceEmail)).toBeVisible()
+    } else {
+      await page.goto('/settings#billing')
+      await page.waitForFunction(() => {
+        const tab = document.querySelector('[data-testid="settings-tab-billing"]') as any
+        return Boolean(tab?.__vueParentComponent)
+      })
 
-    const contactEmail = `billing-${Date.now()}@example.com`
-    const normalizedEmail = contactEmail.toLowerCase()
+      await page.locator(selectors.settingsTabBilling).click()
+      await expect(page).toHaveURL(/#billing/)
+      await expect(page.locator(selectors.settingsBillingPanel)).toBeVisible()
 
-    await page.locator(selectors.billingContactsInput).fill(contactEmail)
-    await page.locator(selectors.billingContactsAdd).click()
-    await expect(page.locator(selectors.billingContactItem).filter({ hasText: normalizedEmail })).toBeVisible()
+      const contactEmail = `billing-${Date.now()}@example.com`
+      const normalizedEmail = contactEmail.toLowerCase()
 
-    await page.locator(selectors.billingContactsSave).click()
+      await page.locator(selectors.billingContactsInput).fill(contactEmail)
+      await page.locator(selectors.billingContactsAdd).click()
+      await expect(page.locator(selectors.billingContactItem).filter({ hasText: normalizedEmail })).toBeVisible()
 
-    await expect
-      .poll(
-        async () => {
-          const response = await page.request.get(`/api/orgs/${orgSlug}`)
-          if (!response.ok()) return []
-          const payload = await response.json()
-          return payload?.data?.settings?.billingCcEmails || []
-        },
-        { timeout: 20_000 }
-      )
-      .toEqual(expect.arrayContaining([normalizedEmail]))
+      await page.locator(selectors.billingContactsSave).click()
+
+      await expect
+        .poll(
+          async () => {
+            const response = await page.request.get(`/api/orgs/${orgSlug}`)
+            if (!response.ok()) return []
+            const payload = await response.json()
+            return payload?.data?.settings?.billingCcEmails || []
+          },
+          { timeout: 20_000 }
+        )
+        .toEqual(expect.arrayContaining([normalizedEmail]))
+    }
   } finally {
     await deleteOrganizationIfExists(page.request, orgSlug)
   }

@@ -46,15 +46,15 @@ import SettingsNotifications from '~/components/settings/SettingsNotifications.v
 import SettingsOrganization from '~/components/settings/SettingsOrganization.vue'
 import SettingsTeam from '~/components/settings/SettingsTeam.vue'
 import SettingsBilling from '~/components/settings/SettingsBilling.vue'
+import SettingsStatus from '~/components/settings/SettingsStatus.vue'
 import SettingsAppearance from '~/components/settings/SettingsAppearance.vue'
 
-const allTabs = [
+const baseTabs = [
   { key: 'profile', label: 'Profile', icon: 'lucide:user' },
   { key: 'security', label: 'Security', icon: 'lucide:shield' },
   { key: 'notifications', label: 'Notifications', icon: 'lucide:bell' },
   { key: 'organization', label: 'Workspace', icon: 'lucide:building-2' },
   { key: 'team', label: 'Teams', icon: 'lucide:users' },
-  { key: 'billing', label: 'Billing', icon: 'lucide:credit-card' },
   { key: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
 ]
 
@@ -65,6 +65,7 @@ const componentMap = {
   organization: 'SettingsOrganization',
   team: 'SettingsTeam',
   billing: 'SettingsBilling',
+  status: 'SettingsStatus',
   appearance: 'SettingsAppearance',
 }
 
@@ -77,6 +78,7 @@ export default {
     SettingsOrganization,
     SettingsTeam,
     SettingsBilling,
+    SettingsStatus,
     SettingsAppearance,
   },
   data() {
@@ -84,16 +86,26 @@ export default {
       activeTab: 'profile',
       currentOrgRole: null,
       hasOrganization: false,
+      deploymentMode: 'cloud',
     }
   },
   computed: {
+    isSelfHosted() {
+      return this.deploymentMode === 'self-hosted'
+    },
+    tabs() {
+      const billingOrStatusTab = this.isSelfHosted
+        ? { key: 'status', label: 'Status', icon: 'lucide:activity' }
+        : { key: 'billing', label: 'Billing', icon: 'lucide:credit-card' }
+      return [...baseTabs.slice(0, 5), billingOrStatusTab, ...baseTabs.slice(5)]
+    },
     availableTabs() {
-      return allTabs.filter((tab) => {
+      return this.tabs.filter((tab) => {
         // Teams and billing are only visible in workspace context
-        if (['team', 'billing'].includes(tab.key) && !this.hasOrganization) {
+        if (['team', 'billing', 'status'].includes(tab.key) && !this.hasOrganization) {
           return false
         }
-        if (tab.key === 'billing') {
+        if (['billing', 'status'].includes(tab.key)) {
           return this.currentOrgRole === 'owner'
         }
         return true
@@ -104,9 +116,13 @@ export default {
     },
   },
   async mounted() {
+    const config = useRuntimeConfig()
+    this.deploymentMode = config.public.deploymentMode || 'cloud'
+
     await this.loadOrgRole()
 
-    const hash = window.location.hash.replace('#', '')
+    const requestedHash = window.location.hash.replace('#', '')
+    const hash = this.normalizeTabHash(requestedHash)
     const validKeys = this.availableTabs.map((t) => t.key)
     if (hash && validKeys.includes(hash)) {
       this.activeTab = hash
@@ -119,6 +135,11 @@ export default {
     }
   },
   methods: {
+    normalizeTabHash(hash) {
+      if (this.isSelfHosted && hash === 'billing') return 'status'
+      if (!this.isSelfHosted && hash === 'status') return 'billing'
+      return hash
+    },
     async loadOrgRole() {
       try {
         const activeOrg = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
@@ -147,8 +168,9 @@ export default {
       }
     },
     setActiveTab(tab) {
-      this.activeTab = tab
-      window.history.replaceState(null, null, `#${tab}`)
+      const normalized = this.normalizeTabHash(tab)
+      this.activeTab = normalized
+      window.history.replaceState(null, null, `#${normalized}`)
     },
   },
 }
