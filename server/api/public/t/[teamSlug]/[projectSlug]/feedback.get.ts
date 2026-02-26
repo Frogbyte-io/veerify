@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { eq, and, desc, asc, count } from 'drizzle-orm'
+import { eq, and, desc, asc, count, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getAnonSession } from '~/server/utils/anonymous-session'
@@ -11,6 +11,7 @@ import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedb
 const querySchema = z.object({
   status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']).optional(),
   categoryId: z.string().optional(),
+  tag: z.enum(['feature_request', 'bug_report', 'improvement', 'question', 'other']).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   sortBy: z.enum(['createdAt', 'voteCount']).default('voteCount'),
@@ -30,6 +31,9 @@ export default defineEventHandler(async (event) => {
   const conditions = [eq(feedback.projectId, proj.id), eq(feedback.isHidden, false)]
   if (query.status) conditions.push(eq(feedback.status, query.status))
   if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
+  if (query.tag) {
+    conditions.push(sql`coalesce(${feedback.metadata}->>'feedbackType', '') = ${query.tag}`)
+  }
 
   const whereClause = and(...conditions)
 
@@ -72,6 +76,7 @@ export default defineEventHandler(async (event) => {
     title: item.feedback.title,
     body: item.feedback.body,
     status: item.feedback.status,
+    tag: item.feedback.metadata?.feedbackType || null,
     voteCount: item.feedback.voteCount,
     commentCount: item.feedback.commentCount,
     authorName: item.feedback.authorName,

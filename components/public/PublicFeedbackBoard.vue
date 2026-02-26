@@ -19,7 +19,9 @@
           <Icon name="lucide:layout-dashboard" class="w-4 h-4" />
           Dashboard
         </a>
-        <div class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground bg-background/80 backdrop-blur-sm">
+        <div
+          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground bg-background/80 backdrop-blur-sm"
+        >
           <Avatar class="h-5 w-5">
             <AvatarImage v-if="currentUser.image" :src="currentUser.image" />
             <AvatarFallback class="text-[9px]">{{ currentUserInitials }}</AvatarFallback>
@@ -68,16 +70,9 @@
     <div v-else-if="projectData" class="flex-1 flex flex-col">
       <!-- Banner: custom image when set, otherwise a styled default using accentColor -->
       <!-- Outer container clips the parallax overflow -->
-      <div
-        data-testid="public-board-banner"
-        class="w-full h-24 md:h-36 overflow-hidden relative"
-      >
+      <div data-testid="public-board-banner" class="w-full h-24 md:h-36 overflow-hidden relative">
         <!-- Inner parallax layer: extends beyond container so no blank edges show during scroll -->
-        <div
-          class="absolute inset-x-0"
-          style="top: -30px; bottom: -30px;"
-          :style="bannerInnerStyle"
-        >
+        <div class="absolute inset-x-0" style="top: -30px; bottom: -30px" :style="bannerInnerStyle">
           <img
             v-if="projectData.project.settings?.bannerUrl && !bannerError"
             :src="projectData.project.settings.bannerUrl"
@@ -151,6 +146,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <select
               v-model="filters.status"
+              data-testid="public-feedback-filter-status"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -163,6 +159,7 @@
 
             <select
               v-model="filters.categoryId"
+              data-testid="public-feedback-filter-category"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -173,7 +170,20 @@
             </select>
 
             <select
+              v-model="filters.tag"
+              data-testid="public-feedback-filter-tag"
+              class="px-3 py-2 rounded-md border bg-background text-sm"
+              @change="resetFeedback"
+            >
+              <option value="">All Tags</option>
+              <option v-for="tag in feedbackTypeOptions" :key="tag.value" :value="tag.value">
+                {{ tag.label }}
+              </option>
+            </select>
+
+            <select
               v-model="filters.sortBy"
+              data-testid="public-feedback-filter-sort"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -193,7 +203,10 @@
           <Skeleton v-for="n in 3" :key="n" class="h-28" />
         </div>
 
-        <div v-else-if="!feedbackLoading && feedbackItems.length === 0" class="rounded-lg border bg-card p-12 text-center">
+        <div
+          v-else-if="!feedbackLoading && feedbackItems.length === 0"
+          class="rounded-lg border bg-card p-12 text-center"
+        >
           <Icon name="lucide:message-square" class="w-12 h-12 mx-auto text-muted-foreground mb-4" />
           <h2 class="text-lg font-semibold mb-2">No feedback yet</h2>
           <p class="text-muted-foreground mb-4">Be the first to submit feedback for this product!</p>
@@ -264,6 +277,12 @@
                       </span>
                       {{ item.category.name }}
                     </span>
+                    <span
+                      v-if="item.tag && feedbackTypeLabel(item.tag)"
+                      class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
+                    >
+                      {{ feedbackTypeLabel(item.tag) }}
+                    </span>
                   </div>
                 </div>
                 <p v-if="item.body" class="text-sm text-muted-foreground line-clamp-2 mb-2">
@@ -333,7 +352,10 @@
                   <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                 </select>
               </div>
-              <div v-if="currentUser" class="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+              <div
+                v-if="currentUser"
+                class="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
+              >
                 <Icon name="lucide:user-check" class="w-3.5 h-3.5 shrink-0" />
                 Submitting as {{ currentUser.name }}
               </div>
@@ -354,7 +376,9 @@
             <DialogFooter>
               <Button variant="outline" @click="showSubmitDialog = false">Cancel</Button>
               <Button
-                :disabled="isSubmitting || !submitForm.title || !submitForm.body || (!currentUser && !submitForm.authorName)"
+                :disabled="
+                  isSubmitting || !submitForm.title || !submitForm.body || (!currentUser && !submitForm.authorName)
+                "
                 @click="submitFeedback"
               >
                 <Icon v-if="isSubmitting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
@@ -393,21 +417,32 @@
                     <div class="flex items-center gap-2 shrink-0">
                       <DropdownMenu v-if="isAdmin">
                         <DropdownMenuTrigger as-child>
-                          <button class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors">
+                          <button
+                            class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                          >
                             <Icon name="lucide:more-horizontal" class="w-4 h-4" />
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem @click="adminTogglePin">
-                            <Icon :name="selectedFeedback.isPinned ? 'lucide:pin-off' : 'lucide:pin'" class="w-4 h-4 mr-2" />
+                            <Icon
+                              :name="selectedFeedback.isPinned ? 'lucide:pin-off' : 'lucide:pin'"
+                              class="w-4 h-4 mr-2"
+                            />
                             {{ selectedFeedback.isPinned ? 'Unpin' : 'Pin' }}
                           </DropdownMenuItem>
                           <DropdownMenuItem @click="adminToggleHide">
-                            <Icon :name="selectedFeedback.isHidden ? 'lucide:eye' : 'lucide:eye-off'" class="w-4 h-4 mr-2" />
+                            <Icon
+                              :name="selectedFeedback.isHidden ? 'lucide:eye' : 'lucide:eye-off'"
+                              class="w-4 h-4 mr-2"
+                            />
                             {{ selectedFeedback.isHidden ? 'Make visible' : 'Hide from public' }}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem class="text-destructive focus:text-destructive" @click="adminDeleteFeedback">
+                          <DropdownMenuItem
+                            class="text-destructive focus:text-destructive"
+                            @click="adminDeleteFeedback"
+                          >
                             <Icon name="lucide:trash-2" class="w-4 h-4 mr-2" />
                             Delete
                           </DropdownMenuItem>
@@ -415,7 +450,11 @@
                       </DropdownMenu>
                       <button
                         class="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg border text-sm font-semibold transition-colors"
-                        :class="selectedFeedback.hasVoted ? 'border-primary bg-primary/10 text-primary' : 'border-border hover:border-primary/50 text-foreground'"
+                        :class="
+                          selectedFeedback.hasVoted
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border hover:border-primary/50 text-foreground'
+                        "
                         @click="voteFromDetails"
                       >
                         <Icon name="lucide:chevron-up" class="w-4 h-4" />
@@ -440,7 +479,10 @@
                     </span>
                   </div>
 
-                  <div v-if="selectedFeedbackComments.length === 0" class="py-6 text-center text-sm text-muted-foreground">
+                  <div
+                    v-if="selectedFeedbackComments.length === 0"
+                    class="py-6 text-center text-sm text-muted-foreground"
+                  >
                     No comments yet. Be the first to share your thoughts.
                   </div>
                   <div v-else class="space-y-5">
@@ -487,7 +529,11 @@
                               :disabled="!editingCommentBody.trim() || isSavingComment"
                               @click="saveEditComment(comment)"
                             >
-                              <Icon v-if="isSavingComment" name="lucide:loader-2" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                              <Icon
+                                v-if="isSavingComment"
+                                name="lucide:loader-2"
+                                class="w-3.5 h-3.5 mr-1.5 animate-spin"
+                              />
                               Save
                             </Button>
                           </div>
@@ -514,7 +560,11 @@
                         :disabled="!detailCommentBody.trim() || isSubmittingDetailComment"
                         @click="openCommentOptions"
                       >
-                        <Icon v-if="isSubmittingDetailComment" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                        <Icon
+                          v-if="isSubmittingDetailComment"
+                          name="lucide:loader-2"
+                          class="w-4 h-4 mr-2 animate-spin"
+                        />
                         Post Comment
                       </Button>
                     </div>
@@ -523,13 +573,18 @@
               </div>
 
               <!-- Right: metadata sidebar -->
-              <div class="sm:w-[220px] shrink-0 overflow-y-auto border-t sm:border-t-0 sm:border-l bg-muted/20 px-5 pb-5 pt-10 space-y-4">
+              <div
+                class="sm:w-[220px] shrink-0 overflow-y-auto border-t sm:border-t-0 sm:border-l bg-muted/20 px-5 pb-5 pt-10 space-y-4"
+              >
                 <!-- Status -->
                 <div class="space-y-1.5">
                   <p class="text-sm text-muted-foreground">Status</p>
                   <span
                     class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
-                    :class="statusClasses[selectedFeedback.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'"
+                    :class="
+                      statusClasses[selectedFeedback.status] ||
+                      'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                    "
                   >
                     {{ formatStatus(selectedFeedback.status) }}
                   </span>
@@ -543,6 +598,14 @@
                     <Icon v-else name="lucide:layout-list" class="w-3.5 h-3.5 text-muted-foreground" />
                     <span>{{ selectedFeedback.category.name }}</span>
                   </div>
+                </div>
+
+                <!-- Tag -->
+                <div v-if="selectedFeedback.tag" class="space-y-1.5">
+                  <p class="text-sm text-muted-foreground">Tag</p>
+                  <Badge variant="secondary">
+                    {{ feedbackTypeLabel(selectedFeedback.tag) || selectedFeedback.tag }}
+                  </Badge>
                 </div>
 
                 <!-- Date -->
@@ -559,7 +622,9 @@
                       <AvatarImage v-if="selectedFeedback.author?.image" :src="selectedFeedback.author.image" />
                       <AvatarFallback class="text-[10px]">{{ selectedFeedbackAuthorInitials }}</AvatarFallback>
                     </Avatar>
-                    <span class="text-sm">{{ selectedFeedback.authorName || selectedFeedback.author?.name || 'Anonymous' }}</span>
+                    <span class="text-sm">{{
+                      selectedFeedback.authorName || selectedFeedback.author?.name || 'Anonymous'
+                    }}</span>
                   </div>
                 </div>
 
@@ -642,10 +707,7 @@
                 <Button variant="outline" :disabled="isSubmittingDetailComment" @click="commentOptionSelected = null">
                   Back
                 </Button>
-                <Button
-                  :disabled="!commentOptionName.trim() || isSubmittingDetailComment"
-                  @click="submitWithNotify"
-                >
+                <Button :disabled="!commentOptionName.trim() || isSubmittingDetailComment" @click="submitWithNotify">
                   <Icon v-if="isSubmittingDetailComment" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
                   Post Comment
                 </Button>
@@ -753,7 +815,7 @@ export default {
       commentOptionEmail: '',
       isAdmin: false,
       currentUser: null,
-      filters: { status: '', categoryId: '', sortBy: 'voteCount' },
+      filters: { status: '', categoryId: '', tag: '', sortBy: 'voteCount' },
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
       submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
       previousColorMode: null,
@@ -772,6 +834,13 @@ export default {
         closed: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
         declined: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
       },
+      feedbackTypeOptions: [
+        { value: 'feature_request', label: 'Feature Request' },
+        { value: 'bug_report', label: 'Bug Report' },
+        { value: 'improvement', label: 'Improvement' },
+        { value: 'question', label: 'Question' },
+        { value: 'other', label: 'Other' },
+      ],
     }
   },
   computed: {
@@ -930,6 +999,7 @@ export default {
         params.set('sortOrder', 'desc')
         if (this.filters.status) params.set('status', this.filters.status)
         if (this.filters.categoryId) params.set('categoryId', this.filters.categoryId)
+        if (this.filters.tag) params.set('tag', this.filters.tag)
         const response = await $fetch(
           `/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback?${params.toString()}`
         )
@@ -1110,6 +1180,10 @@ export default {
         declined: 'Declined',
       }
       return map[status] || status
+    },
+    feedbackTypeLabel(value) {
+      const option = this.feedbackTypeOptions.find((item) => item.value === value)
+      return option?.label || ''
     },
     formatDate(date) {
       if (!date) return ''
