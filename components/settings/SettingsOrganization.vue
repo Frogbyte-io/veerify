@@ -72,6 +72,45 @@
               :disabled="!canEditOrganization || isSaving"
               placeholder="https://example.com/logo.png"
             />
+            <div class="space-y-2">
+              <Input
+                id="organization-logo-upload"
+                :key="logoInputKey"
+                data-testid="organization-logo-upload-input"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                :disabled="!canEditOrganization || isSaving"
+                @change="handleLogoFileSelect"
+              />
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 2 MB.</p>
+                <p v-if="logoFile" class="text-xs text-muted-foreground">
+                  Selected: <span class="font-medium text-foreground">{{ logoFile.name }}</span>
+                </p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <Button
+                  v-if="logoFile"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="organization-logo-clear-selection"
+                  @click="clearSelectedLogoFile"
+                >
+                  Clear selection
+                </Button>
+                <Button
+                  v-if="showLogoRemoveButton"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="organization-logo-remove"
+                  @click="markLogoForRemoval"
+                >
+                  Remove logo
+                </Button>
+              </div>
+            </div>
           </div>
 
           <div class="flex items-center justify-between gap-3">
@@ -360,6 +399,10 @@
 import { authClient } from '~/lib/auth-client'
 import { toast } from 'vue-sonner'
 
+const LOGO_IMAGE_RULES = {
+  maxBytes: 2 * 1024 * 1024,
+}
+
 export default {
   name: 'SettingsOrganization',
 
@@ -370,6 +413,10 @@ export default {
       organizationName: '',
       organizationSlug: '',
       organizationLogo: '',
+      logoFile: null,
+      logoPreviewUrl: '',
+      removeLogo: false,
+      logoInputKey: 0,
       membersWithTeams: [],
       pendingInvitations: [],
       isLoading: true,
@@ -433,13 +480,23 @@ export default {
       return (
         this.organizationName.trim() !== this.organizationDetails.name ||
         this.organizationSlug.trim() !== this.organizationDetails.slug ||
-        (this.organizationLogo.trim() || null) !== this.organizationDetails.logo
+        (this.organizationLogo.trim() || null) !== this.organizationDetails.logo ||
+        Boolean(this.logoFile) ||
+        (this.removeLogo && Boolean(this.organizationDetails.logo))
       )
+    },
+
+    showLogoRemoveButton() {
+      return (this.organizationDetails?.logo || this.logoPreviewUrl) && !this.removeLogo
     },
   },
 
   async mounted() {
     await this.initialize()
+  },
+
+  beforeUnmount() {
+    this.revokeLogoPreview()
   },
 
   methods: {
@@ -467,6 +524,102 @@ export default {
       this.organizationName = this.organizationDetails.name || ''
       this.organizationSlug = this.organizationDetails.slug || ''
       this.organizationLogo = this.organizationDetails.logo || ''
+      this.resetLogoSelection()
+    },
+
+    resetLogoSelection() {
+      this.revokeLogoPreview()
+      this.logoFile = null
+      this.removeLogo = false
+      this.clearLogoFileInput()
+    },
+
+    revokeLogoPreview() {
+      if (!import.meta.client) return
+      if (this.logoPreviewUrl) {
+        URL.revokeObjectURL(this.logoPreviewUrl)
+        this.logoPreviewUrl = ''
+      }
+    },
+
+    clearLogoFileInput() {
+      this.logoInputKey += 1
+    },
+
+    validateLogoFile(file) {
+      if (!file) return false
+
+      const contentType = (file.type || '').toLowerCase()
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType)) {
+        toast.error('Only JPEG, PNG, and WebP files are supported')
+        return false
+      }
+
+      if (file.size > LOGO_IMAGE_RULES.maxBytes) {
+        toast.error('Selected logo file exceeds 2 MB')
+        return false
+      }
+
+      return true
+    },
+
+    handleLogoFileSelect(event) {
+      const file = event?.target?.files?.[0]
+      if (!file) return
+      if (!this.validateLogoFile(file)) {
+        this.clearLogoFileInput()
+        return
+      }
+
+      this.revokeLogoPreview()
+      this.logoFile = file
+      this.logoPreviewUrl = import.meta.client ? URL.createObjectURL(file) : ''
+      this.removeLogo = false
+    },
+
+    clearSelectedLogoFile() {
+      this.revokeLogoPreview()
+      this.logoFile = null
+      this.clearLogoFileInput()
+    },
+
+    markLogoForRemoval() {
+      this.clearSelectedLogoFile()
+      this.removeLogo = true
+      this.organizationLogo = ''
+    },
+
+    async uploadSelectedLogo(file) {
+      const contentType = (file.type || '').toLowerCase()
+      const presignResponse = await $fetch(`/api/orgs/${this.organizationDetails.slug}/assets/presign`, {
+        method: 'POST',
+        body: {
+          kind: 'logo',
+          filename: file.name || 'logo.webp',
+          contentType,
+          sizeBytes: file.size,
+        },
+      })
+
+      const uploadTarget = presignResponse?.data
+      if (!uploadTarget?.uploadId || !uploadTarget?.uploadUrl) {
+        throw new Error('Upload target response is invalid')
+      }
+
+      const uploadResponse = await fetch(uploadTarget.uploadUrl, {
+        method: uploadTarget.method || 'PUT',
+        headers: {
+          ...(uploadTarget.headers || {}),
+          'content-type': contentType,
+        },
+        body: file,
+      })
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed (${uploadResponse.status})`)
+      }
+
+      return uploadTarget.uploadId
     },
 
     nonDefaultTeams(teams) {
@@ -675,12 +828,18 @@ export default {
 
       try {
         this.isSaving = true
+        let logoUploadId = null
+        if (this.logoFile) {
+          logoUploadId = await this.uploadSelectedLogo(this.logoFile)
+        }
+
         const response = await $fetch(`/api/orgs/${this.organizationDetails.slug}`, {
           method: 'PUT',
           body: {
             name: this.organizationName.trim(),
             slug: this.organizationSlug.trim(),
-            logo: this.organizationLogo.trim() || null,
+            logo: this.removeLogo ? null : this.organizationLogo.trim() || null,
+            ...(logoUploadId ? { logoUploadId } : {}),
           },
         })
         this.organizationDetails = response.data

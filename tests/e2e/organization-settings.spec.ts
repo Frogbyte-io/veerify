@@ -97,10 +97,15 @@ test('owner can view, update, and delete organization from settings tab', async 
 
   const updatedName = `${originalName} Updated`
   const updatedSlug = `${baseSlug}-updated`
+  const logoPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2m7w0AAAAASUVORK5CYII='
 
   await page.locator(selectors.organizationNameInput).fill(updatedName)
   await page.locator(selectors.organizationSlugInput).fill(updatedSlug)
-  await page.locator(selectors.organizationLogoInput).fill('https://example.com/org-logo.png')
+  await page.locator(selectors.organizationLogoUploadInput).setInputFiles({
+    name: 'workspace-logo.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(logoPngBase64, 'base64'),
+  })
   await page.locator(selectors.organizationSave).click()
 
   await expect
@@ -114,6 +119,18 @@ test('owner can view, update, and delete organization from settings tab', async 
       { timeout: 20_000 }
     )
     .toBe(updatedName)
+
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/orgs/${updatedSlug}`)
+        if (!response.ok()) return null
+        const payload = await response.json()
+        return payload?.data?.logo || null
+      },
+      { timeout: 20_000 }
+    )
+    .toMatch(/(\/api\/uploads\/object\/|https?:\/\/)/)
 
   const oldSlugResponse = await page.request.get(`/api/orgs/${baseSlug}`)
   expect(oldSlugResponse.status()).toBe(404)
