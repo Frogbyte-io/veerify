@@ -99,7 +99,7 @@ MVP
 - [x] In product settings feedback categories, add drag and drop sorting on which feedback category should appear first.
   - Added drag handles and drop targets in `components/products/ProductSettingsCategories.vue`, persisting `sortOrder` via category `PUT` updates, with reorder API coverage in `tests/e2e/team-primary-workspace.spec.ts`.
 
-- [ ] Add Organization avatar image to the organization settings, with file upload using the S3 bucket
+- [x] Add Organization avatar image to the organization settings, with file upload using the S3 bucket
 
 - [x] For the Visibility - Control who can see and submit feedback to your product setting in general, add a copy URL button.
   - Added a `Copy URL` action in `components/products/ProductSettingsGeneral.vue` (`project-visibility-copy-url`) that copies the computed public board URL.
