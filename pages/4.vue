@@ -71,12 +71,9 @@
       <!-- Filters -->
       <nav class="gazette-filters">
         <div class="filter-tabs">
-          <button
-            v-for="tab in filterTabs"
-            :key="tab.value"
+          <button v-for="tab in filterTabs" :key="tab.value"
             :class="['filter-tab', { 'filter-tab-active': activeFilter === tab.value }]"
-            @click="activeFilter = tab.value"
-          >
+            @click="activeFilter = tab.value">
             {{ tab.label }}
           </button>
         </div>
@@ -88,15 +85,11 @@
             <option value="improvement">Improvements</option>
           </select>
           <div class="sort-links">
-            <button
-              :class="['sort-link', { 'sort-link-active': sortBy === 'popular' }]"
-              @click="sortBy = 'popular'"
-            >Sort by Popular</button>
+            <button :class="['sort-link', { 'sort-link-active': sortBy === 'popular' }]"
+              @click="sortBy = 'popular'">Sort by Popular</button>
             <span class="sort-divider">|</span>
-            <button
-              :class="['sort-link', { 'sort-link-active': sortBy === 'recent' }]"
-              @click="sortBy = 'recent'"
-            >Sort by Recent</button>
+            <button :class="['sort-link', { 'sort-link-active': sortBy === 'recent' }]" @click="sortBy = 'recent'">Sort
+              by Recent</button>
           </div>
         </div>
       </nav>
@@ -105,12 +98,8 @@
       <div v-if="pinnedItems.length > 0" class="featured-section">
         <div class="section-rule"></div>
         <div class="featured-grid">
-          <article
-            v-for="item in pinnedItems"
-            :key="'pinned-' + item.id"
-            class="featured-article"
-            @click="openDetail(item)"
-          >
+          <article v-for="item in pinnedItems" :key="'pinned-' + item.id" class="featured-article"
+            @click="openDetail(item)">
             <span class="article-section-label" :style="{ color: item.categoryColor }">
               {{ formatCategory(item.category) }}
             </span>
@@ -127,10 +116,7 @@
               </span>
             </div>
             <div class="featured-vote">
-              <button
-                :class="['vote-btn', { 'vote-btn-active': item.voted }]"
-                @click.stop="toggleVote(item)"
-              >
+              <button :class="['vote-btn', { 'vote-btn-active': item.voted }]" @click.stop="toggleVote(item)">
                 &#9650; {{ item.voted ? 'Endorsed' : 'Endorse' }}
               </button>
             </div>
@@ -150,12 +136,8 @@
       <div class="columns-section">
         <div class="section-rule"></div>
         <div class="columns-grid">
-          <article
-            v-for="item in regularItems"
-            :key="'regular-' + item.id"
-            class="column-article"
-            @click="openDetail(item)"
-          >
+          <article v-for="item in regularItems" :key="'regular-' + item.id" class="column-article"
+            @click="openDetail(item)">
             <span class="article-section-label" :style="{ color: item.categoryColor }">
               {{ formatCategory(item.category) }}
             </span>
@@ -166,13 +148,11 @@
             </div>
             <div class="column-footer">
               <span class="article-status" :class="'status-' + item.status">{{ formatStatus(item.status) }}</span>
-              <span class="column-engagement">{{ item.voteCount }} endorsements &middot; {{ item.commentCount }} letters</span>
+              <span class="column-engagement">{{ item.voteCount }} endorsements &middot; {{ item.commentCount }}
+                letters</span>
             </div>
             <div class="column-vote">
-              <button
-                :class="['vote-btn', { 'vote-btn-active': item.voted }]"
-                @click.stop="toggleVote(item)"
-              >
+              <button :class="['vote-btn', { 'vote-btn-active': item.voted }]" @click.stop="toggleVote(item)">
                 &#9650; {{ item.voteCount }}
               </button>
             </div>
@@ -233,7 +213,8 @@
                     </div>
                     <div class="form-field">
                       <label class="form-label">Your Response</label>
-                      <textarea v-model="commentBody" class="form-textarea" rows="4" placeholder="Dear Editor..."></textarea>
+                      <textarea v-model="commentBody" class="form-textarea" rows="4"
+                        placeholder="Dear Editor..."></textarea>
                     </div>
                     <button class="submit-response-btn" @click="submitComment">Submit Response</button>
                   </div>
@@ -243,7 +224,8 @@
             <aside class="detail-sidebar">
               <div class="sidebar-block">
                 <span class="sidebar-label">STATUS</span>
-                <span class="article-status" :class="'status-' + selectedItem.status">{{ formatStatus(selectedItem.status) }}</span>
+                <span class="article-status" :class="'status-' + selectedItem.status">{{
+                  formatStatus(selectedItem.status) }}</span>
               </div>
               <div class="sidebar-block">
                 <span class="sidebar-label">CATEGORY</span>
@@ -257,10 +239,8 @@
                 <span class="sidebar-label">LETTERS</span>
                 <span class="sidebar-number">{{ selectedItem.commentCount }}</span>
               </div>
-              <button
-                :class="['vote-btn vote-btn-full', { 'vote-btn-active': selectedItem.voted }]"
-                @click="toggleVote(selectedItem)"
-              >
+              <button :class="['vote-btn vote-btn-full', { 'vote-btn-active': selectedItem.voted }]"
+                @click="toggleVote(selectedItem)">
                 &#9650; {{ selectedItem.voted ? 'Endorsed' : 'Endorse This' }}
               </button>
             </aside>
@@ -283,7 +263,8 @@
             </div>
             <div class="form-field">
               <label class="form-label">Headline</label>
-              <input v-model="submitTitle" type="text" class="form-input" placeholder="A concise summary of your feedback" />
+              <input v-model="submitTitle" type="text" class="form-input"
+                placeholder="A concise summary of your feedback" />
             </div>
             <div class="form-field">
               <label class="form-label">Category</label>
@@ -295,7 +276,8 @@
             </div>
             <div class="form-field">
               <label class="form-label">Your Letter</label>
-              <textarea v-model="submitBody" class="form-textarea" rows="6" placeholder="Dear Editor, I would like to suggest..."></textarea>
+              <textarea v-model="submitBody" class="form-textarea" rows="6"
+                placeholder="Dear Editor, I would like to suggest..."></textarea>
             </div>
             <button class="submit-btn" @click="submitFeedback">Submit to the Gazette</button>
           </div>
