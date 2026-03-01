@@ -116,7 +116,8 @@ MVP
 
 - [x] For the add feedback modal form, please make it more of a guided form with multiple steps. First step should be to select the type of feedback (bug report, feature request, etc.), then the next step should be to add the details of the feedback (title, description, attachments, etc.). This will make it easier for users to submit feedback and ensure that they provide all the necessary information.
 
-- [ ] For the feedbacks, add ability to downvote feedback in addition to upvote, and show the total votes (upvotes - downvotes) on the feedback card. This will allow users to express disagreement with feedback and help surface the most popular feedback more accurately.
+- [x] For the feedbacks, add ability to downvote feedback in addition to upvote, and show the total votes (upvotes - downvotes) on the feedback card. This will allow users to express disagreement with feedback and help surface the most popular feedback more accurately.
+  - Added `type` column to `vote` table (migration `0012_steep_scorpion.sql`); vote API handles toggle/switch; public board and detail page show paired up/down buttons with net score.
 
 - [x] For the public feedback board, add a filter option to filter feedback by category, status, or tags. This will allow users to easily find feedback that is relevant to them and help them navigate the board more effectively.
   - Added tag filtering (based on `metadata.feedbackType`) in `server/api/public/t/[teamSlug]/[projectSlug]/feedback.get.ts`, wired filter controls in `components/public/PublicFeedbackBoard.vue`, and covered end-to-end behavior in `tests/e2e/anonymous-feedback.spec.ts`.
