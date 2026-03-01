@@ -188,6 +188,8 @@ export const vote = pgTable(
     // Voter can be either a user or an anonymous session
     voterUserId: text('voter_user_id').references(() => user.id, { onDelete: 'cascade' }),
     voterSessionId: text('voter_session_id').references(() => anonymousSession.id, { onDelete: 'cascade' }),
+    // Vote direction: 'upvote' (default, backwards compatible) or 'downvote'
+    type: text('type').default('upvote').notNull(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),

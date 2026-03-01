@@ -230,17 +230,23 @@
             @keydown.space.prevent="openFeedbackDetails(item)"
           >
             <div class="flex items-start gap-4 p-4">
-              <div class="flex flex-col items-center min-w-[48px]">
+              <div class="flex flex-col items-center min-w-[48px] gap-0.5">
                 <button
-                  class="flex flex-col items-center p-2 rounded-lg hover:bg-accent transition-colors"
-                  @click.stop="handleVote(item)"
+                  class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors"
+                  :class="item.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
+                  :title="item.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
+                  @click.stop="handleVote(item, 'upvote')"
                 >
-                  <Icon
-                    name="lucide:chevron-up"
-                    class="w-5 h-5"
-                    :class="item.hasVoted ? 'text-primary' : 'text-muted-foreground'"
-                  />
-                  <span class="text-sm font-semibold">{{ item.voteCount }}</span>
+                  <Icon name="lucide:chevron-up" class="w-5 h-5" />
+                </button>
+                <span class="text-sm font-semibold leading-none">{{ item.voteCount }}</span>
+                <button
+                  class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors"
+                  :class="item.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'"
+                  :title="item.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
+                  @click.stop="handleVote(item, 'downvote')"
+                >
+                  <Icon name="lucide:chevron-down" class="w-5 h-5" />
                 </button>
               </div>
               <div class="flex-1 min-w-0">
@@ -1110,44 +1116,70 @@ export default {
         this.detailsLoading = false
       }
     },
-    async handleVote(item) {
+    async handleVote(item, type) {
       // Optimistic update for instant feedback
-      const wasVoted = item.hasVoted
-      item.hasVoted = !wasVoted
-      item.voteCount += wasVoted ? -1 : 1
+      const prevVoteType = item.voteType
+      if (prevVoteType === type) {
+        // Toggle off same type
+        item.voteType = null
+        item.hasVoted = false
+        item.voteCount += type === 'upvote' ? -1 : 1
+      } else if (prevVoteType !== null) {
+        // Switch direction
+        item.voteType = type
+        item.hasVoted = true
+        item.voteCount += type === 'upvote' ? 2 : -2
+      } else {
+        // New vote
+        item.voteType = type
+        item.hasVoted = true
+        item.voteCount += type === 'upvote' ? 1 : -1
+      }
       try {
-        const response = await $fetch(`/api/feedback/${item.id}/vote`, { method: 'POST' })
+        const response = await $fetch(`/api/feedback/${item.id}/vote`, {
+          method: 'POST',
+          body: { type },
+        })
         const data = response?.data
         item.voteCount = data.voteCount
+        item.voteType = data.voteType
         item.hasVoted = data.voted
-        this.saveLocalVote(item.id, data.voted)
+        this.saveLocalVoteType(item.id, data.voteType)
       } catch (err) {
         // Revert optimistic update
-        item.hasVoted = wasVoted
-        item.voteCount += wasVoted ? 1 : -1
+        item.voteType = prevVoteType
+        item.hasVoted = prevVoteType !== null
+        if (prevVoteType === type) {
+          item.voteCount += type === 'upvote' ? 1 : -1
+        } else if (prevVoteType !== null) {
+          item.voteCount += type === 'upvote' ? -2 : 2
+        } else {
+          item.voteCount += type === 'upvote' ? -1 : 1
+        }
         console.error('Error voting:', err)
         alert('Failed to vote. Please try again.')
       }
     },
-    getLocalVotedIds() {
-      if (!import.meta.client) return new Set()
+    getLocalVoteTypes() {
+      if (!import.meta.client) return {}
       try {
-        const data = JSON.parse(localStorage.getItem('veerify_votes') || '[]')
-        return new Set(Array.isArray(data) ? data : [])
+        const raw = localStorage.getItem('veerify_vote_types')
+        const parsed = raw ? JSON.parse(raw) : {}
+        return typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
       } catch {
-        return new Set()
+        return {}
       }
     },
-    saveLocalVote(feedbackId, voted) {
+    saveLocalVoteType(feedbackId, voteType) {
       if (!import.meta.client) return
       try {
-        const votes = this.getLocalVotedIds()
-        if (voted) {
-          votes.add(feedbackId)
+        const types = this.getLocalVoteTypes()
+        if (voteType) {
+          types[feedbackId] = voteType
         } else {
-          votes.delete(feedbackId)
+          delete types[feedbackId]
         }
-        localStorage.setItem('veerify_votes', JSON.stringify([...votes]))
+        localStorage.setItem('veerify_vote_types', JSON.stringify(types))
       } catch {
         // localStorage might be unavailable (e.g. private browsing with storage blocked)
       }
@@ -1155,17 +1187,23 @@ export default {
     mergeWithLocalVotes(items) {
       if (!import.meta.client) return items
       try {
-        const localVotes = this.getLocalVotedIds()
+        const localTypes = this.getLocalVoteTypes()
         // Sync localStorage with any server-confirmed votes
         items.forEach((item) => {
-          if (item.hasVoted) localVotes.add(item.id)
+          if (item.voteType) localTypes[item.id] = item.voteType
+          else if (item.hasVoted) localTypes[item.id] = 'upvote'
         })
-        localStorage.setItem('veerify_votes', JSON.stringify([...localVotes]))
-        // Apply localStorage state — if local says voted and server doesn't (e.g. cookie cleared), show as voted
-        return items.map((item) => ({
-          ...item,
-          hasVoted: item.hasVoted || localVotes.has(item.id),
-        }))
+        localStorage.setItem('veerify_vote_types', JSON.stringify(localTypes))
+        // Apply localStorage state — if local has a vote type and server doesn't (e.g. cookie cleared), use local
+        return items.map((item) => {
+          const localType = localTypes[item.id] || null
+          const resolvedType = item.voteType || localType
+          return {
+            ...item,
+            voteType: resolvedType,
+            hasVoted: resolvedType !== null,
+          }
+        })
       } catch {
         return items
       }

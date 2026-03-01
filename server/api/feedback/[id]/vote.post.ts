@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { eq, and, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
@@ -5,6 +6,10 @@ import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { requirePublicProject } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
 import { feedback, vote } from '~/server/database/schema/feedback'
+
+const bodySchema = z.object({
+  type: z.enum(['upvote', 'downvote']).default('upvote'),
+})
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
@@ -17,6 +22,11 @@ export default defineEventHandler(async (event) => {
       data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Feedback ID is required'),
     })
   }
+
+  // Parse vote type from body (defaults to 'upvote' for backward compat)
+  const rawBody = await readBody(event).catch(() => ({}))
+  const parsed = bodySchema.safeParse(rawBody || {})
+  const voteType = parsed.success ? parsed.data.type : 'upvote'
 
   // Check feedback exists
   const [fb] = await db.select().from(feedback).where(eq(feedback.id, id)).limit(1)
@@ -48,30 +58,49 @@ export default defineEventHandler(async (event) => {
   const [existingVote] = await db.select().from(vote).where(voteCondition).limit(1)
 
   if (existingVote) {
-    // Remove vote (toggle off)
-    await db.delete(vote).where(eq(vote.id, existingVote.id))
-    await db
-      .update(feedback)
-      .set({ voteCount: sql`${feedback.voteCount} - 1`, updatedAt: new Date() })
-      .where(eq(feedback.id, id))
+    if (existingVote.type === voteType) {
+      // Same type → toggle off (remove vote)
+      await db.delete(vote).where(eq(vote.id, existingVote.id))
+      // Upvote removed: count -1; downvote removed: count +1
+      const delta = voteType === 'upvote' ? -1 : 1
+      await db
+        .update(feedback)
+        .set({ voteCount: sql`${feedback.voteCount} + ${delta}`, updatedAt: new Date() })
+        .where(eq(feedback.id, id))
 
-    const [updated] = await db.select().from(feedback).where(eq(feedback.id, id)).limit(1)
-    return createSuccessResponse({ voted: false, voteCount: updated.voteCount })
+      const [updated] = await db.select().from(feedback).where(eq(feedback.id, id)).limit(1)
+      return createSuccessResponse({ voted: false, voteType: null, voteCount: updated.voteCount })
+    } else {
+      // Different type → switch vote direction
+      await db.update(vote).set({ type: voteType }).where(eq(vote.id, existingVote.id))
+      // Switching from downvote to upvote: +2; from upvote to downvote: -2
+      const delta = voteType === 'upvote' ? 2 : -2
+      await db
+        .update(feedback)
+        .set({ voteCount: sql`${feedback.voteCount} + ${delta}`, updatedAt: new Date() })
+        .where(eq(feedback.id, id))
+
+      const [updated] = await db.select().from(feedback).where(eq(feedback.id, id)).limit(1)
+      return createSuccessResponse({ voted: true, voteType, voteCount: updated.voteCount })
+    }
   } else {
-    // Add vote
+    // No existing vote → add new vote
     await db.insert(vote).values({
       id: crypto.randomUUID(),
       feedbackId: id,
       voterUserId: userId,
       voterSessionId: anonSessionId,
+      type: voteType,
       createdAt: new Date(),
     })
+    // Upvote: +1; downvote: -1
+    const delta = voteType === 'upvote' ? 1 : -1
     await db
       .update(feedback)
-      .set({ voteCount: sql`${feedback.voteCount} + 1`, updatedAt: new Date() })
+      .set({ voteCount: sql`${feedback.voteCount} + ${delta}`, updatedAt: new Date() })
       .where(eq(feedback.id, id))
 
     const [updated] = await db.select().from(feedback).where(eq(feedback.id, id)).limit(1)
-    return createSuccessResponse({ voted: true, voteCount: updated.voteCount })
+    return createSuccessResponse({ voted: true, voteType, voteCount: updated.voteCount })
   }
 })

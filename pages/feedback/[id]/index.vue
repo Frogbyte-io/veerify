@@ -68,19 +68,32 @@
             <!-- Feedback Header -->
             <div class="bg-card rounded-lg border border-border p-6">
               <div class="flex items-start gap-4">
-                <!-- Vote button -->
-                <div class="flex flex-col items-center">
+                <!-- Vote buttons -->
+                <div class="flex flex-col items-center gap-0.5">
                   <button
-                    class="flex flex-col items-center p-2 rounded-lg border transition-colors"
+                    class="flex items-center justify-center w-9 h-9 rounded-lg border transition-colors"
                     :class="
-                      item.hasVoted
+                      item.voteType === 'upvote'
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border hover:border-primary/50 text-muted-foreground hover:text-primary'
                     "
-                    @click="toggleVote"
+                    :title="item.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
+                    @click="toggleVote('upvote')"
                   >
                     <Icon name="lucide:chevron-up" class="w-5 h-5" />
-                    <span class="text-sm font-semibold">{{ item.voteCount }}</span>
+                  </button>
+                  <span class="text-sm font-semibold text-center">{{ item.voteCount }}</span>
+                  <button
+                    class="flex items-center justify-center w-9 h-9 rounded-lg border transition-colors"
+                    :class="
+                      item.voteType === 'downvote'
+                        ? 'border-destructive bg-destructive/10 text-destructive'
+                        : 'border-border hover:border-destructive/50 text-muted-foreground hover:text-destructive'
+                    "
+                    :title="item.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
+                    @click="toggleVote('downvote')"
+                  >
+                    <Icon name="lucide:chevron-down" class="w-5 h-5" />
                   </button>
                 </div>
 
@@ -443,16 +456,18 @@ export default {
       }
     },
 
-    async toggleVote() {
+    async toggleVote(type) {
       if (!this.item) return
 
       try {
         const response = await $fetch(`/api/feedback/${this.feedbackId}/vote`, {
           method: 'POST',
+          body: { type },
         })
         const data = response?.data
         if (data) {
           this.item.hasVoted = data.voted
+          this.item.voteType = data.voteType
           this.item.voteCount = data.voteCount
         }
       } catch (err) {

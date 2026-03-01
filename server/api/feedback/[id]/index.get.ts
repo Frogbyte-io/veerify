@@ -77,22 +77,22 @@ export default defineEventHandler(async (event) => {
     .where(eq(project.id, item.feedback.projectId))
     .limit(1)
 
-  // Check if viewer has voted
-  let hasVoted = false
+  // Check if viewer has voted and which direction
+  let voteType: 'upvote' | 'downvote' | null = null
   if (session?.user) {
     const [userVote] = await db
       .select()
       .from(vote)
       .where(and(eq(vote.feedbackId, id), eq(vote.voterUserId, session.user.id)))
       .limit(1)
-    hasVoted = !!userVote
+    voteType = (userVote?.type as 'upvote' | 'downvote') || null
   } else if (anonSession) {
     const [sessionVote] = await db
       .select()
       .from(vote)
       .where(and(eq(vote.feedbackId, id), eq(vote.voterSessionId, anonSession.id)))
       .limit(1)
-    hasVoted = !!sessionVote
+    voteType = (sessionVote?.type as 'upvote' | 'downvote') || null
   }
 
   const isOwn = session?.user
@@ -106,7 +106,8 @@ export default defineEventHandler(async (event) => {
     category: item.category,
     author,
     project: proj,
-    hasVoted,
+    hasVoted: voteType !== null,
+    voteType,
     isOwn,
   })
 })

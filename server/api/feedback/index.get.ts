@@ -96,21 +96,21 @@ export default defineEventHandler(async (event) => {
     .offset(offset)
 
   // Check which items the viewer has voted on (authenticated user or anonymous session)
-  let voterVotes: Set<string> = new Set()
+  const voterVoteMap: Map<string, 'upvote' | 'downvote'> = new Map()
   const feedbackIds = items.map((i) => i.feedback.id)
   if (feedbackIds.length > 0) {
     if (session?.user) {
       const votes = await db
-        .select({ feedbackId: vote.feedbackId })
+        .select({ feedbackId: vote.feedbackId, type: vote.type })
         .from(vote)
         .where(eq(vote.voterUserId, session.user.id))
-      voterVotes = new Set(votes.map((v) => v.feedbackId))
+      votes.forEach((v) => voterVoteMap.set(v.feedbackId, v.type as 'upvote' | 'downvote'))
     } else if (anonSession) {
       const votes = await db
-        .select({ feedbackId: vote.feedbackId })
+        .select({ feedbackId: vote.feedbackId, type: vote.type })
         .from(vote)
         .where(eq(vote.voterSessionId, anonSession.id))
-      voterVotes = new Set(votes.map((v) => v.feedbackId))
+      votes.forEach((v) => voterVoteMap.set(v.feedbackId, v.type as 'upvote' | 'downvote'))
     }
   }
 
@@ -126,7 +126,8 @@ export default defineEventHandler(async (event) => {
             issueState: item.githubIssue.issueState,
           }
         : null,
-    hasVoted: voterVotes.has(item.feedback.id),
+    hasVoted: voterVoteMap.has(item.feedback.id),
+    voteType: voterVoteMap.get(item.feedback.id) || null,
     isOwn: session?.user
       ? item.feedback.authorUserId === session.user.id
       : anonSession

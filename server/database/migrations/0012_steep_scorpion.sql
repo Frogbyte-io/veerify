@@ -1,0 +1,1 @@
+ALTER TABLE "vote" ADD COLUMN "type" text DEFAULT 'upvote' NOT NULL;
