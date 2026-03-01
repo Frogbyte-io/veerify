@@ -242,7 +242,9 @@
                 <span class="text-sm font-semibold leading-none">{{ item.voteCount }}</span>
                 <button
                   class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors"
-                  :class="item.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'"
+                  :class="
+                    item.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
+                  "
                   :title="item.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
                   @click.stop="handleVote(item, 'downvote')"
                 >

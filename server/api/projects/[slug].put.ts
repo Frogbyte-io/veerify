@@ -152,7 +152,11 @@ export default defineEventHandler(async (event) => {
   const pendingDeletes = new Set<string>()
 
   const nextSettings =
-    body.settings === undefined ? { ...currentSettings } : body.settings === null ? null : normalizeSettings(body.settings)
+    body.settings === undefined
+      ? { ...currentSettings }
+      : body.settings === null
+        ? null
+        : normalizeSettings(body.settings)
 
   if (nextSettings === null) {
     if (previousManagedLogoKey) pendingDeletes.add(previousManagedLogoKey)

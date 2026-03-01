@@ -15,7 +15,11 @@ export interface PutObjectInput {
 
 export interface StorageProvider {
   driver: StorageDriver
-  getPresignedUploadTarget(keyOrToken: string, contentType: string, expiresSeconds: number): Promise<PresignedUploadTarget>
+  getPresignedUploadTarget(
+    keyOrToken: string,
+    contentType: string,
+    expiresSeconds: number
+  ): Promise<PresignedUploadTarget>
   putObject(input: PutObjectInput): Promise<void>
   getObject(key: string): Promise<Buffer>
   deleteObject(key: string): Promise<void>

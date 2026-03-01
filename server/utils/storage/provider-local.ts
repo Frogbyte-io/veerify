@@ -56,7 +56,11 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
-  async getPresignedUploadTarget(token: string, contentType: string, expiresSeconds: number): Promise<PresignedUploadTarget> {
+  async getPresignedUploadTarget(
+    token: string,
+    contentType: string,
+    expiresSeconds: number
+  ): Promise<PresignedUploadTarget> {
     void expiresSeconds
     return {
       uploadUrl: toUploadObjectUrl(this.publicBaseUrl, token),

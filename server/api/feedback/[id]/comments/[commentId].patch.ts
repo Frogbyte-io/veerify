@@ -28,11 +28,7 @@ export default defineEventHandler(async (event) => {
 
   const body = await validateBody(event, editCommentSchema)
 
-  const [comment] = await db
-    .select()
-    .from(feedbackComment)
-    .where(eq(feedbackComment.id, commentId))
-    .limit(1)
+  const [comment] = await db.select().from(feedbackComment).where(eq(feedbackComment.id, commentId)).limit(1)
 
   if (!comment || comment.feedbackId !== feedbackId) {
     throw createError({

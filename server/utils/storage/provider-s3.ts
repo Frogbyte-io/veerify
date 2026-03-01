@@ -65,7 +65,11 @@ export class S3StorageProvider implements StorageProvider {
     })
   }
 
-  async getPresignedUploadTarget(key: string, contentType: string, expiresSeconds: number): Promise<PresignedUploadTarget> {
+  async getPresignedUploadTarget(
+    key: string,
+    contentType: string,
+    expiresSeconds: number
+  ): Promise<PresignedUploadTarget> {
     const normalizedKey = trimSlashes(key)
     const command = new PutObjectCommand({
       Bucket: this.options.bucket,

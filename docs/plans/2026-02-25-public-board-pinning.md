@@ -13,6 +13,7 @@
 ### Task 1: Update the feedback list API to sort pinned items first and hide hidden items
 
 **Files:**
+
 - Modify: `server/api/feedback/index.get.ts`
 
 **Step 1: Understand current sort logic**
@@ -69,6 +70,7 @@ git commit -m "feat(feedback):sort pinned items first and hide hidden from publi
 ### Task 2: Show a pin indicator on pinned cards in the public board
 
 **Files:**
+
 - Modify: `components/public/PublicFeedbackBoard.vue`
 
 **Step 1: Locate the feedback card title row**
@@ -114,6 +116,7 @@ Expected: no errors.
 ### Task 3: Reload the list after toggling pin
 
 **Files:**
+
 - Modify: `components/public/PublicFeedbackBoard.vue`
 
 **Step 1: Locate `adminTogglePin` method**
@@ -185,6 +188,7 @@ git commit -m "feat(public-board):show pin indicator on cards and reload list af
 ### Task 4: Mark the TODO item as done and commit the design doc
 
 **Files:**
+
 - Modify: `TODO.md`
 - Already created: `docs/plans/2026-02-25-public-board-pinning-design.md`
 

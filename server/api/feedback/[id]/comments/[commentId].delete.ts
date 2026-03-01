@@ -20,11 +20,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const [comment] = await db
-    .select()
-    .from(feedbackComment)
-    .where(eq(feedbackComment.id, commentId))
-    .limit(1)
+  const [comment] = await db.select().from(feedbackComment).where(eq(feedbackComment.id, commentId)).limit(1)
 
   if (!comment || comment.feedbackId !== feedbackId) {
     throw createError({

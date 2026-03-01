@@ -12,9 +12,10 @@ When multiple products are selected in the feedback page product filter, the **A
 
 A two-step dialog flow. Step 1 is skipped when only one product is selected.
 
-### Step 1 — Select Product *(multi-product only)*
+### Step 1 — Select Product _(multi-product only)_
 
 A scrollable list of clickable project cards, one per currently-selected product. Clicking a card:
+
 - Sets `createForm.projectId` to that project's ID
 - Loads categories for that project
 - Advances the dialog to step 2
@@ -25,11 +26,11 @@ The existing title / description / category form. When the user arrived from ste
 
 ## State changes
 
-| Field | Type | Purpose |
-|---|---|---|
-| `createDialogStep` | `'select-project' \| 'fill-form'` | Tracks current dialog step |
-| `createForm.projectId` | `string` | Project chosen for the new feedback item |
-| `isLoadingDialogCategories` | `boolean` | Loading indicator for categories in step 2 |
+| Field                       | Type                              | Purpose                                    |
+| --------------------------- | --------------------------------- | ------------------------------------------ |
+| `createDialogStep`          | `'select-project' \| 'fill-form'` | Tracks current dialog step                 |
+| `createForm.projectId`      | `string`                          | Project chosen for the new feedback item   |
+| `isLoadingDialogCategories` | `boolean`                         | Loading indicator for categories in step 2 |
 
 ## Key method changes
 

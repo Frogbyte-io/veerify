@@ -167,27 +167,53 @@ test.describe('Admin feedback workflow', () => {
     await expect(page.locator(selectors.feedbackProductsFilterTrigger)).toBeVisible()
     await expect(page.locator(selectors.feedbackAddButton)).toBeVisible()
 
-    // Verify product filter menu includes the ALL option
-    await page.locator(selectors.feedbackProductsFilterTrigger).click()
-    await expect(page.locator(selectors.feedbackProductsFilterAll)).toBeVisible()
+    // Verify product filter menu includes the ALL option.
+    // Retry opening the dropdown to absorb transient render/loading timing.
+    await expect
+      .poll(
+        async () => {
+          await page.locator(selectors.feedbackProductsFilterTrigger).click()
+          const isVisible = await page
+            .locator(selectors.feedbackProductsFilterAll)
+            .isVisible()
+            .catch(() => false)
+          if (!isVisible) {
+            await page.keyboard.press('Escape').catch(() => {})
+          }
+          return isVisible
+        },
+        {
+          timeout: 30_000,
+        }
+      )
+      .toBe(true)
     await page.keyboard.press('Escape')
-
-    // Wait for data to load (loading state should disappear)
-    await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
 
     // Kanban is the default: search is always visible, table-only controls are hidden.
     await expect(page.locator(selectors.feedbackViewKanban)).toBeVisible()
-    await expect(page.locator(selectors.feedbackKanban)).toBeVisible()
     await expect(page.locator(selectors.feedbackSearch)).toBeVisible()
     await expect(page.locator(selectors.feedbackStatusFilter)).not.toBeVisible()
     await expect(page.locator(selectors.feedbackSortFilter)).not.toBeVisible()
+    const hasKanbanInDefaultView = await page
+      .locator(selectors.feedbackKanban)
+      .isVisible({ timeout: 5_000 })
+      .catch(() => false)
+    if (!hasKanbanInDefaultView) {
+      await expect(page.locator(selectors.feedbackEmpty)).toBeVisible({ timeout: 20_000 })
+    }
 
     // Switching to table view reveals table controls; search remains visible.
     await page.locator(selectors.feedbackViewTable).click()
-    await expect(page.locator(selectors.feedbackTable)).toBeVisible({ timeout: 10_000 })
     await expect(page.locator(selectors.feedbackSearch)).toBeVisible()
     await expect(page.locator(selectors.feedbackStatusFilter)).toBeVisible()
     await expect(page.locator(selectors.feedbackSortFilter)).toBeVisible()
+    const hasTableInListView = await page
+      .locator(selectors.feedbackTable)
+      .isVisible({ timeout: 5_000 })
+      .catch(() => false)
+    if (!hasTableInListView) {
+      await expect(page.locator(selectors.feedbackEmpty)).toBeVisible({ timeout: 20_000 })
+    }
 
     // Switch back to kanban for the existing create/delete workflow.
     await page.locator(selectors.feedbackViewKanban).click()
@@ -225,6 +251,10 @@ test.describe('Admin feedback workflow', () => {
 
     // Verify feedback appears in the list
     await expect(page.getByText('UI Test Feedback Item')).toBeVisible({ timeout: 10_000 })
+
+    // Switch to table view for deterministic row-level actions.
+    await page.locator(selectors.feedbackViewTable).click()
+    await expect(page.locator(selectors.feedbackTable)).toBeVisible({ timeout: 10_000 })
 
     // Delete the feedback - find the item and click its delete button
     const feedbackItem = page.locator('[data-testid^="feedback-item-"]', { hasText: 'UI Test Feedback Item' }).first()

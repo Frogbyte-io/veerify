@@ -33,7 +33,9 @@ Use this skill to run a TODO backlog with parallel implementation and sequential
    - Prefer `yarn harness:verify`.
    - If e2e is skipped by guard, report the explicit skip reason.
 10. Run Prettier formatting before any commit:
-   - Format changed files with Prettier before staging/committing.
+
+- Format changed files with Prettier before staging/committing.
+
 11. Push `main`.
 12. Only after successful integration and verification, check off item in `TODO.md` and push checklist commit.
 

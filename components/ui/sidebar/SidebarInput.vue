@@ -9,8 +9,13 @@ const props = defineProps<{
 </script>
 
 <template>
-  <Input data-slot="sidebar-input" data-sidebar="input"
-    :class="cn('bg-background h-9 w-full shadow-none focus-visible:ring-2 focus-visible:ring-sidebar-ring', props.class)">
+  <Input
+    data-slot="sidebar-input"
+    data-sidebar="input"
+    :class="
+      cn('bg-background h-9 w-full shadow-none focus-visible:ring-2 focus-visible:ring-sidebar-ring', props.class)
+    "
+  >
     <slot />
   </Input>
 </template>

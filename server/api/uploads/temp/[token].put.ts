@@ -9,7 +9,10 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 404,
       statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Temporary upload endpoint is only available in local storage mode'),
+      data: createErrorResponse(
+        ErrorCode.NOT_FOUND,
+        'Temporary upload endpoint is only available in local storage mode'
+      ),
     })
   }
 

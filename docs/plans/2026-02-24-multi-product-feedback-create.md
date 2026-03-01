@@ -13,6 +13,7 @@
 ### Task 1: Extend component state and fix `canCreateFeedback`
 
 **Files:**
+
 - Modify: `pages/feedback/index.vue` — `data()` and `canCreateFeedback` computed
 
 **Step 1: Add new state fields in `data()`**
@@ -33,12 +34,15 @@ createForm: { title: '', body: '', categoryId: null, projectId: '' },
 **Step 2: Fix `canCreateFeedback` computed**
 
 Replace:
+
 ```js
 canCreateFeedback() {
   return Boolean(this.selectedProjectId)
 },
 ```
+
 With:
+
 ```js
 canCreateFeedback() {
   return this.selectedProjectIds.length > 0
@@ -58,6 +62,7 @@ Expected: no new errors related to `canCreateFeedback`.
 ### Task 2: Add `openCreateDialog` and `selectDialogProject` methods
 
 **Files:**
+
 - Modify: `pages/feedback/index.vue` — `methods`
 
 **Step 1: Add `openCreateDialog()` method**
@@ -114,6 +119,7 @@ async loadDialogCategories() {
 **Step 4: Update `createFeedback()` to use `createForm.projectId`**
 
 Replace the guard and body line:
+
 ```js
 // Old:
 if (!this.selectedProjectId || !this.createForm.title || !this.createForm.body) return
@@ -131,6 +137,7 @@ projectId: this.createForm.projectId,
 ### Task 3: Replace all `showCreateDialog = true` call sites with `openCreateDialog()`
 
 **Files:**
+
 - Modify: `pages/feedback/index.vue` — template
 
 There are three places in the template that set `showCreateDialog = true` directly:
@@ -152,6 +159,7 @@ In the `@update:open` handler on the Dialog, wrap it:
 ### Task 4: Update the Create Feedback Dialog template
 
 **Files:**
+
 - Modify: `pages/feedback/index.vue` — the Create Feedback `<Dialog>` block (lines ~422–459)
 
 **Step 1: Replace the static DialogHeader description**
@@ -160,10 +168,8 @@ Replace the hardcoded description that references `selectedProject` with one tha
 
 ```html
 <DialogDescription>
-  {{ createDialogStep === 'select-project'
-    ? 'Choose which product to submit feedback for.'
-    : `Create a new feedback item for ${products.find(p => p.id === createForm.projectId)?.name || 'this product'}.`
-  }}
+  {{ createDialogStep === 'select-project' ? 'Choose which product to submit feedback for.' : `Create a new feedback
+  item for ${products.find(p => p.id === createForm.projectId)?.name || 'this product'}.` }}
 </DialogDescription>
 ```
 
@@ -200,24 +206,37 @@ Replace the `<div class="space-y-4 py-4">` block with:
 <!-- Step 2: Feedback form -->
 <div v-else class="space-y-4 py-4">
   <div class="space-y-2">
-    <Label for="feedback-title">Title</Label>
-    <Input id="feedback-title" v-model="createForm.title" data-testid="feedback-create-title"
-      placeholder="Brief summary of the feedback" />
+    <label for="feedback-title">Title</label>
+    <input
+      id="feedback-title"
+      v-model="createForm.title"
+      data-testid="feedback-create-title"
+      placeholder="Brief summary of the feedback"
+    />
   </div>
   <div class="space-y-2">
-    <Label for="feedback-body">Description</Label>
-    <textarea id="feedback-body" v-model="createForm.body" data-testid="feedback-create-body"
-      placeholder="Provide details about the feedback" rows="4"
-      class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
+    <label for="feedback-body">Description</label>
+    <textarea
+      id="feedback-body"
+      v-model="createForm.body"
+      data-testid="feedback-create-body"
+      placeholder="Provide details about the feedback"
+      rows="4"
+      class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    />
   </div>
   <div v-if="isLoadingDialogCategories" class="space-y-2">
     <Skeleton class="h-4 w-20" />
     <Skeleton class="h-10 w-full" />
   </div>
   <div v-else-if="categories.length > 0" class="space-y-2">
-    <Label for="feedback-category">Category</Label>
-    <select id="feedback-category" v-model="createForm.categoryId" data-testid="feedback-create-category"
-      class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+    <label for="feedback-category">Category</label>
+    <select
+      id="feedback-category"
+      v-model="createForm.categoryId"
+      data-testid="feedback-create-category"
+      class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
       <option :value="null">No category</option>
       <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
     </select>
@@ -232,7 +251,7 @@ Replace the existing footer:
 ```html
 <DialogFooter>
   <!-- Back button — only shown in fill-form step when there were multiple products -->
-  <Button
+  <button
     v-if="createDialogStep === 'fill-form' && selectedProjectIds.length > 1"
     variant="ghost"
     class="mr-auto"
@@ -240,9 +259,9 @@ Replace the existing footer:
   >
     <Icon name="lucide:arrow-left" class="w-4 h-4 mr-2" />
     Back
-  </Button>
-  <Button variant="outline" @click="showCreateDialog = false">Cancel</Button>
-  <Button
+  </button>
+  <button variant="outline" @click="showCreateDialog = false">Cancel</button>
+  <button
     v-if="createDialogStep === 'fill-form'"
     data-testid="feedback-create-submit"
     :disabled="isCreating || !createForm.title || !createForm.body"
@@ -250,7 +269,7 @@ Replace the existing footer:
   >
     <Icon v-if="isCreating" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
     Add Feedback
-  </Button>
+  </button>
 </DialogFooter>
 ```
 
@@ -259,6 +278,7 @@ Replace the existing footer:
 ### Task 5: Write E2E test for multi-product project picker
 
 **Files:**
+
 - Modify: `tests/e2e/admin-feedback.spec.ts`
 
 **Step 1: Add a test that creates two products, selects both, and verifies the picker appears**
@@ -336,10 +356,13 @@ test('UI: multi-product picker shown when 2 products selected, skipped for singl
 **Step 1: Mark the item done in `TODO.md`**
 
 Find the line:
+
 ```
 - [ ] For the private feedback collection at /feedback, the add feedback button should still work, but if multiple products are selected in the product filter dropdown, it should ask which product the feedback is for when I click the add feedback button.
 ```
+
 Change `- [ ]` to `- [x]` and add a note below:
+
 ```
   - Two-step dialog: scrollable project-card picker (step 1) → feedback form (step 2); single-product flow skips step 1.
 ```

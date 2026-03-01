@@ -40,10 +40,10 @@ Also filter out hidden items for non-admin callers (items where `isHidden = true
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `server/api/feedback/index.get.ts` | Add `desc(feedback.isPinned)` as first ORDER BY; add `eq(feedback.isHidden, false)` to conditions |
-| `components/public/PublicFeedbackBoard.vue` | Pin icon on card, reload after toggle |
+| File                                        | Change                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `server/api/feedback/index.get.ts`          | Add `desc(feedback.isPinned)` as first ORDER BY; add `eq(feedback.isHidden, false)` to conditions |
+| `components/public/PublicFeedbackBoard.vue` | Pin icon on card, reload after toggle                                                             |
 
 ## Testing
 
