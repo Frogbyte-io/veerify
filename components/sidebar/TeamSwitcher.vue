@@ -105,10 +105,8 @@
         class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-1"
       >
         <NuxtLink to="/dashboard">
-          <div
-            class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-          >
-            <Icon name="lucide:check-circle" class="size-4" />
+          <div class="flex aspect-square size-8 items-center justify-center rounded-lg">
+            <img src="/veerify.svg" alt="Veerify" class="size-8" />
           </div>
           <span class="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Veerify</span>
         </NuxtLink>
