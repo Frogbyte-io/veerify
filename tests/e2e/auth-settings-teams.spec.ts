@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expectRedirectToLogin, loginViaUi } from './helpers/auth'
+import { expectRedirectToLogin, loginViaProgrammaticPage, loginViaUi } from './helpers/auth'
 import { selectors } from './helpers/selectors'
 import { createTeamFromSettings, getActiveTeamViaApi, switchTeamFromSidebar } from './helpers/teams'
 
@@ -17,7 +17,7 @@ test('user can sign in through login form and land in dashboard', async ({ page 
 })
 
 test('settings navigation tabs render expected sections', async ({ page }) => {
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   await page.goto('/settings')
   await page.waitForFunction(() => {
@@ -55,7 +55,7 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
 })
 
 test('user can create a new team from settings team tab', async ({ page }) => {
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   const teamName = `E2E Team ${Date.now()}`
   const createdTeam = await createTeamFromSettings(page, teamName)
@@ -64,7 +64,7 @@ test('user can create a new team from settings team tab', async ({ page }) => {
 })
 
 test('user can switch teams using sidebar team switcher', async ({ page }) => {
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   const teamA = await createTeamFromSettings(page, `E2E Switch Team A ${Date.now()}`)
   const teamB = await createTeamFromSettings(page, `E2E Switch Team B ${Date.now()}`)
@@ -97,7 +97,8 @@ test('sidebar team switcher data stays cached across client-side route changes',
     }
   })
 
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await page.goto('/dashboard')
   await expect(page.locator(selectors.teamSwitcherActiveName)).toBeVisible({ timeout: 20_000 })
 
   await expect.poll(() => listUserTeamsRequestCount, { timeout: 20_000 }).toBeGreaterThan(0)
@@ -118,7 +119,8 @@ test('sidebar team switcher data stays cached across client-side route changes',
 })
 
 test('sidebar user section stays hydrated across client-side route changes', async ({ page }) => {
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await page.goto('/dashboard')
 
   await expect(page.locator(selectors.navUserTrigger)).toBeVisible({ timeout: 20_000 })
   await expect(page.locator(selectors.navUserName)).toBeVisible()
@@ -136,7 +138,8 @@ test('sidebar user section stays hydrated across client-side route changes', asy
 })
 
 test('roadmap and changelog sidebar buttons are disabled', async ({ page }) => {
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await page.goto('/dashboard')
 
   const sidebar = page.locator('[data-testid="app-sidebar"]')
   const roadmapButton = sidebar.getByRole('button', { name: 'Roadmap' })
@@ -149,7 +152,7 @@ test('roadmap and changelog sidebar buttons are disabled', async ({ page }) => {
 })
 
 test('settings team panel tracks active team selected in sidebar', async ({ page }) => {
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   const teamA = await createTeamFromSettings(page, `E2E Settings Team A ${Date.now()}`)
   const teamB = await createTeamFromSettings(page, `E2E Settings Team B ${Date.now()}`)

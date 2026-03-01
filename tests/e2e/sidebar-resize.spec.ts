@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { loginViaUi } from './helpers/auth'
+import { loginViaProgrammaticPage } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
 test.describe('Sidebar resizing', () => {
   test('dragging the resize handle updates sidebar width', async ({ page }) => {
-    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto('/feedback')
     await expect(page).toHaveURL(/\/feedback/)
 

@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { loginViaUi } from './helpers/auth'
+import { loginViaProgrammaticPage } from './helpers/auth'
 import { selectors } from './helpers/selectors'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
@@ -68,7 +68,7 @@ async function cleanupTemporaryOrganizations(request: APIRequestContext) {
 }
 
 test('owner can view, update, and delete organization from settings tab', async ({ page }) => {
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   await cleanupTemporaryOrganizations(page.request)
 
@@ -183,7 +183,7 @@ test('owner can view, update, and delete organization from settings tab', async 
 })
 
 test('owner can add billing contact emails for receipt copy', async ({ page }) => {
-  await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   await cleanupTemporaryOrganizations(page.request)
 

@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Page } from '@playwright/test'
+import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 import { selectors } from './helpers/selectors'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
 const STORAGE_DRIVER = process.env.STORAGE_DRIVER || 'local'
 const ONE_BY_ONE_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=',
@@ -12,34 +12,6 @@ const ONE_BY_ONE_PNG = Buffer.from(
 )
 
 test.setTimeout(60_000)
-
-function withAuthHeaders(sessionCookie: string, refererPath = '/feedback') {
-  return {
-    cookie: sessionCookie,
-    origin: BASE_URL,
-    referer: `${BASE_URL}${refererPath}`,
-  }
-}
-
-async function signInAndGetSessionCookie(request: APIRequestContext) {
-  const signInResponse = await request.post('/api/auth/sign-in/email', {
-    headers: {
-      origin: BASE_URL,
-      referer: `${BASE_URL}/login`,
-    },
-    data: {
-      email: TEST_EMAIL,
-      password: TEST_PASSWORD,
-    },
-  })
-
-  const signInPayload = await signInResponse.json().catch(() => null)
-  expect(signInResponse.ok(), `Sign-in failed: ${JSON.stringify(signInPayload ?? {})}`).toBeTruthy()
-
-  const setCookie = signInResponse.headers()['set-cookie']
-  expect(setCookie, 'Sign-in response missing Set-Cookie').toBeTruthy()
-  return setCookie!.split(';')[0]
-}
 
 async function getActiveTeamId(request: APIRequestContext, sessionCookie: string) {
   const response = await request.get('/api/teams/active', {
@@ -91,7 +63,7 @@ async function gotoWithRetry(page: Page, path: string) {
 
 test.describe('Admin feedback workflow', () => {
   test('API: create product, add feedback, delete feedback, delete product', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create test product
@@ -142,7 +114,7 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('UI: feedback page loads, add and delete feedback', async ({ request, page }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
     // Transfer auth cookies to browser context
     const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
@@ -274,7 +246,7 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('API: delete project cascades feedback', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create project
@@ -304,7 +276,7 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('API: delete nonexistent feedback returns 404', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
     const deleteRes = await request.delete('/api/feedback/nonexistent-id-12345', {
       headers: withAuthHeaders(sessionCookie),
@@ -315,7 +287,7 @@ test.describe('Admin feedback workflow', () => {
   test('API: presign/upload/project settings update validates and persists managed assets', async ({ request }) => {
     test.skip(STORAGE_DRIVER !== 'local', 'This API upload flow test currently runs in local storage mode only')
 
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     const unauthorizedPresign = await request.post('/api/projects/demo/assets/presign', {
@@ -436,7 +408,7 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('UI: multi-product picker shown when 2 products selected, skipped for single', async ({ request, page }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     const slugA = `e2e-picker-a-${Date.now()}`

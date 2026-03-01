@@ -1,45 +1,17 @@
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
+import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
 const TEAM_SLUG = process.env.E2E_TEAM_SLUG || 'preview-org'
 
 test.setTimeout(60_000)
 
-function withAuthHeaders(sessionCookie: string, refererPath = '/products') {
-  return {
-    cookie: sessionCookie,
-    origin: BASE_URL,
-    referer: `${BASE_URL}${refererPath}`,
-  }
-}
-
-async function signInAndGetSessionCookie(request: APIRequestContext) {
-  const signInResponse = await request.post('/api/auth/sign-in/email', {
-    headers: {
-      origin: BASE_URL,
-      referer: `${BASE_URL}/login`,
-    },
-    data: {
-      email: TEST_EMAIL,
-      password: TEST_PASSWORD,
-    },
-  })
-
-  const signInPayload = await signInResponse.json().catch(() => null)
-  expect(signInResponse.ok(), `Sign-in failed: ${JSON.stringify(signInPayload ?? {})}`).toBeTruthy()
-
-  const setCookie = signInResponse.headers()['set-cookie']
-  expect(setCookie, 'Sign-in response missing Set-Cookie').toBeTruthy()
-  return setCookie!.split(';')[0]
-}
-
 test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces duplicate slug conflict', async ({
   request,
 }) => {
-  const sessionCookie = await signInAndGetSessionCookie(request)
+  const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   const activeTeamResponse = await request.get('/api/teams/active', {
     headers: withAuthHeaders(sessionCookie),
@@ -95,7 +67,7 @@ test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces 
 })
 
 test('authenticated user can access products UI workflow', async ({ request, page }) => {
-  await signInAndGetSessionCookie(request)
+  await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
@@ -118,7 +90,7 @@ test('authenticated user can access products UI workflow', async ({ request, pag
 })
 
 test('project categories API supports create/update/reorder/delete with reassignment rules', async ({ request }) => {
-  const sessionCookie = await signInAndGetSessionCookie(request)
+  const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   const activeTeamResponse = await request.get('/api/teams/active', {
     headers: withAuthHeaders(sessionCookie),

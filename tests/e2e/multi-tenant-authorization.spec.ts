@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
+import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -7,40 +8,12 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
 
 test.setTimeout(60_000)
 
-function withAuthHeaders(sessionCookie: string, refererPath = '/feedback') {
-  return {
-    cookie: sessionCookie,
-    origin: BASE_URL,
-    referer: `${BASE_URL}${refererPath}`,
-  }
-}
-
 function anonymousHeaders(refererPath = '/feedback') {
   return {
     origin: BASE_URL,
     referer: `${BASE_URL}${refererPath}`,
     cookie: '',
   }
-}
-
-async function signInAndGetSessionCookie(request: APIRequestContext) {
-  const signInResponse = await request.post('/api/auth/sign-in/email', {
-    headers: {
-      origin: BASE_URL,
-      referer: `${BASE_URL}/login`,
-    },
-    data: {
-      email: TEST_EMAIL,
-      password: TEST_PASSWORD,
-    },
-  })
-
-  const signInPayload = await signInResponse.json().catch(() => null)
-  expect(signInResponse.ok(), `Sign-in failed: ${JSON.stringify(signInPayload ?? {})}`).toBeTruthy()
-
-  const setCookie = signInResponse.headers()['set-cookie']
-  expect(setCookie, 'Sign-in response missing Set-Cookie').toBeTruthy()
-  return setCookie!.split(';')[0]
 }
 
 async function getActiveTeamId(request: APIRequestContext, sessionCookie: string) {
@@ -101,7 +74,7 @@ function getErrorCode(payload: any) {
 
 test.describe('Multi-tenant authorization', () => {
   test('GET /api/feedback requires projectId parameter', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
     // Without projectId should return 400
     const response = await request.get('/api/feedback', {
@@ -113,7 +86,7 @@ test.describe('Multi-tenant authorization', () => {
   })
 
   test('GET /api/feedback filters by projectId correctly', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create two projects
@@ -171,7 +144,7 @@ test.describe('Multi-tenant authorization', () => {
   })
 
   test('POST /api/feedback to private project requires team membership', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create a private project (isPublic = false by default)
@@ -206,7 +179,7 @@ test.describe('Multi-tenant authorization', () => {
   })
 
   test('POST /api/feedback to public project allows anonymous submissions', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create a public project
@@ -230,7 +203,7 @@ test.describe('Multi-tenant authorization', () => {
   })
 
   test('POST /api/feedback/[id]/vote only works on public projects', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create private project
@@ -283,7 +256,7 @@ test.describe('Multi-tenant authorization', () => {
   })
 
   test('GET /api/feedback/[id] verifies project access', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create private project with feedback
@@ -317,7 +290,7 @@ test.describe('Multi-tenant authorization', () => {
   })
 
   test('GET /api/feedback/[id] allows access to public project feedback', async ({ request }) => {
-    const sessionCookie = await signInAndGetSessionCookie(request)
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create public project with feedback

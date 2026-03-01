@@ -1,6 +1,6 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { magicLink, multiSession, organization, twoFactor } from 'better-auth/plugins'
+import { magicLink, multiSession, organization, testUtils, twoFactor } from 'better-auth/plugins'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
@@ -9,7 +9,13 @@ import { sendEmailVerificationEmail, sendMagicLinkEmail, sendPasswordResetEmail 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
 
 export const auth = betterAuth({
-  baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
+  // Dynamic base URL: resolves from incoming request headers (x-forwarded-host / x-forwarded-proto)
+  // so the same config works across local dev, staging, preview deployments, and production.
+  baseURL: {
+    allowedHosts: [appDomain, `*.${appDomain}`],
+    fallback: process.env.BETTER_AUTH_URL || 'http://localhost:3000',
+    protocol: 'auto',
+  },
   trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS
     ? process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(',')
     : (req?: Request) => {
@@ -32,6 +38,18 @@ export const auth = betterAuth({
       domain: '.' + appDomain,
     },
   },
+  // `secret` is kept as legacy fallback for decrypting bare-hex payloads created before 1.5.
+  // New data is encrypted using the envelope format defined by `secrets` below.
+  secret: process.env.BETTER_AUTH_SECRET,
+  // Versioned secrets for non-destructive rotation.
+  // First entry = current key (encrypts all new data).
+  // Remaining entries = decryption-only (previous key versions).
+  // To rotate: generate a new secret, set it as BETTER_AUTH_SECRET, move the old one to
+  // BETTER_AUTH_SECRET_PREV, then bump the version numbers here.
+  secrets: [
+    { version: 1, value: process.env.BETTER_AUTH_SECRET! },
+    ...(process.env.BETTER_AUTH_SECRET_PREV ? [{ version: 0, value: process.env.BETTER_AUTH_SECRET_PREV }] : []),
+  ],
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema: {
@@ -122,35 +140,42 @@ export const auth = betterAuth({
         },
       },
       organizationHooks: {
+        // NOTE (BetterAuth 1.5): "after" hooks now run post-transaction. If this hook
+        // fails, the invitation acceptance is already committed — wrap in try/catch so
+        // the error is logged without surfacing a 500 to the user.
         async afterAcceptInvitation({ invitation, user, organization }) {
           // Organization-only invitations should place users in the default team.
           if (invitation.teamId) {
             return
           }
 
-          const [defaultTeam] = await db
-            .select()
-            .from(schema.team)
-            .where(and(eq(schema.team.organizationId, organization.id), eq(schema.team.name, 'Default')))
-            .limit(1)
+          try {
+            const [defaultTeam] = await db
+              .select()
+              .from(schema.team)
+              .where(and(eq(schema.team.organizationId, organization.id), eq(schema.team.name, 'Default')))
+              .limit(1)
 
-          if (!defaultTeam) {
-            return
-          }
+            if (!defaultTeam) {
+              return
+            }
 
-          const [existing] = await db
-            .select()
-            .from(schema.teamMember)
-            .where(and(eq(schema.teamMember.teamId, defaultTeam.id), eq(schema.teamMember.userId, user.id)))
-            .limit(1)
+            const [existing] = await db
+              .select()
+              .from(schema.teamMember)
+              .where(and(eq(schema.teamMember.teamId, defaultTeam.id), eq(schema.teamMember.userId, user.id)))
+              .limit(1)
 
-          if (!existing) {
-            await db.insert(schema.teamMember).values({
-              id: crypto.randomUUID(),
-              teamId: defaultTeam.id,
-              userId: user.id,
-              createdAt: new Date(),
-            })
+            if (!existing) {
+              await db.insert(schema.teamMember).values({
+                id: crypto.randomUUID(),
+                teamId: defaultTeam.id,
+                userId: user.id,
+                createdAt: new Date(),
+              })
+            }
+          } catch (error) {
+            console.error('[auth] afterAcceptInvitation: failed to add user to default team', error)
           }
         },
       },
@@ -164,5 +189,8 @@ export const auth = betterAuth({
       issuer: 'Veerify',
     }),
     multiSession(),
+    // Test utilities: exposes `ctx.test` helpers for programmatic user/session creation.
+    // Only active outside production to avoid exposing an unauthenticated test surface.
+    ...(process.env.NODE_ENV !== 'production' ? [testUtils()] : []),
   ],
 })

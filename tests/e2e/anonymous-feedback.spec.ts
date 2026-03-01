@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Locator } from '@playwright/test'
-import { loginViaUi } from './helpers/auth'
+import { loginViaProgrammaticPage } from './helpers/auth'
 
 /**
  * Anonymous feedback e2e tests.
@@ -123,7 +123,7 @@ async function signInOnPublicHost(page: Page, opts: { email: string; password: s
 
 test.describe('Anonymous feedback sessions', () => {
   test('public board supports filtering feedback by tags', async ({ page }) => {
-    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
     const projectResponse = await page.request.get(`http://127.0.0.1:${PORT}/api/public/t/${TEAM_SLUG}/${PROJECT_SLUG}`)
     expect(projectResponse.ok()).toBe(true)
@@ -432,7 +432,7 @@ test.describe('Anonymous feedback sessions', () => {
   })
 
   test('appearance footer toggles control public board footer visibility', async ({ page }) => {
-    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto('/products/demo#appearance')
     await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
 
@@ -474,7 +474,7 @@ test.describe('Anonymous feedback sessions', () => {
   })
 
   test('custom footer replaces default public board footer links', async ({ page }) => {
-    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto('/products/demo#appearance')
     await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
 
@@ -536,7 +536,7 @@ test.describe('Anonymous feedback sessions', () => {
   test('appearance image uploads support upload, replace, and remove workflow', async ({ page }) => {
     test.skip(STORAGE_DRIVER !== 'local', 'Upload e2e currently runs in local storage mode only')
 
-    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto('/products/demo#appearance')
     await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
 
@@ -639,7 +639,7 @@ test.describe('Anonymous feedback sessions', () => {
   })
 
   test('product GitHub settings shows connect flow controls', async ({ page }) => {
-    await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto('/products/demo#github')
     await expect(page.getByRole('heading', { name: 'GitHub Integration' })).toBeVisible()
 
