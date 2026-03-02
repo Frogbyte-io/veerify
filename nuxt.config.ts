@@ -36,6 +36,12 @@ export default defineNuxtConfig({
     'nuxt-nodemailer',
     '@scalar/nuxt',
   ],
+  fonts: {
+    families: [
+      { name: 'Fraunces', provider: 'google' },
+      { name: 'Figtree', provider: 'google' },
+    ],
+  },
   runtimeConfig: {
     storageDriver: process.env.STORAGE_DRIVER || 'local',
     storageBucket: process.env.STORAGE_BUCKET || '',

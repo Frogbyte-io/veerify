@@ -1,11 +1,21 @@
 <template>
   <NuxtLayout name="clean">
-    <div class="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
+    <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div class="w-full max-w-sm">
         <div class="flex flex-col gap-6">
+          <!-- Brand -->
+          <div class="flex flex-col items-center gap-2">
+            <div class="flex items-center gap-2.5">
+              <div class="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
+                <Icon name="lucide:check-check" class="h-5 w-5 text-primary-foreground" />
+              </div>
+              <span class="text-2xl font-display font-semibold tracking-tight">Veerify</span>
+            </div>
+          </div>
+
           <Card>
             <CardHeader class="text-center">
-              <CardTitle class="text-xl"> Reset your password </CardTitle>
+              <CardTitle class="text-xl font-display"> Reset your password </CardTitle>
               <CardDescription>
                 Enter your email address and we'll send you a link to reset your password
               </CardDescription>
@@ -33,7 +43,7 @@
               <!-- Success Message -->
               <div
                 v-if="success"
-                class="mt-4 p-3 bg-background border border-label text-label-foreground rounded-md text-sm"
+                class="mt-4 p-3 bg-primary/10 border border-primary/20 text-foreground rounded-md text-sm"
               >
                 {{ success }}
               </div>
