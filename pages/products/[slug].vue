@@ -112,6 +112,7 @@ import ProductSettingsGithub from '~/components/products/ProductSettingsGithub.v
 import ProductSettingsDomain from '~/components/products/ProductSettingsDomain.vue'
 import ProductSettingsEmbed from '~/components/products/ProductSettingsEmbed.vue'
 import ProductSettingsDanger from '~/components/products/ProductSettingsDanger.vue'
+import ProductSettingsFeedback from '~/components/products/ProductSettingsFeedback.vue'
 
 export default {
   name: 'ProductSettingsPage',
@@ -123,6 +124,7 @@ export default {
     ProductSettingsDomain,
     ProductSettingsEmbed,
     ProductSettingsDanger,
+    ProductSettingsFeedback,
   },
   data() {
     return {
@@ -132,6 +134,7 @@ export default {
       activeTab: 'general',
       tabs: [
         { id: 'general', label: 'General', icon: 'lucide:settings' },
+        { id: 'feedback', label: 'Feedback', icon: 'lucide:message-square' },
         { id: 'categories', label: 'Categories', icon: 'lucide:tags' },
         { id: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
         { id: 'github', label: 'GitHub', icon: 'lucide:github' },
@@ -155,6 +158,7 @@ export default {
     currentComponent() {
       const componentMap = {
         general: 'ProductSettingsGeneral',
+        feedback: 'ProductSettingsFeedback',
         categories: 'ProductSettingsCategories',
         appearance: 'ProductSettingsAppearance',
         github: 'ProductSettingsGithub',
@@ -167,7 +171,7 @@ export default {
   },
   async mounted() {
     const hash = window.location.hash.replace('#', '')
-    if (hash && ['general', 'categories', 'appearance', 'github', 'domain', 'embed', 'danger'].includes(hash)) {
+    if (hash && ['general', 'feedback', 'categories', 'appearance', 'github', 'domain', 'embed', 'danger'].includes(hash)) {
       this.activeTab = hash
     }
     await this.loadProject()

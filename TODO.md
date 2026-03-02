@@ -53,7 +53,8 @@ MVP
 - [ ] Sync roadmaps to GitHub Projects
 - [ ] Customizable vote style (thumbs, arrows, ducks, rockets, etc.)
 - [x] When creating a feedback item, it should be automatically upvoted by the submitter (if anonymous, use the session; if logged in, use their user ID) so it appears in the board without needing a second click
-- [ ] Add a "Feedback" tab to the product settings page that shows a list of all feedback items with filters (status, tags, etc.) and search
+- [x] Add a "Feedback" tab to the product settings page that shows a list of all feedback items with filters (status, tags, etc.) and search
+  - Added `ProductSettingsFeedback.vue` with search, status/category/sort filters, paginated feedback list, inline status updates, and GitHub issue links. Wired into `pages/products/[slug].vue` as the second tab.
 - [ ] Allow product admins to add and change status tags (e.g. "planned", "in progress", "completed")
 - [x] Show icon besides the feedback category on the public board (e.g. a bug icon for bug reports, a lightbulb for feature requests, etc.) when icon is added to the category
   - Rendered category icons in `components/public/PublicFeedbackBoard.vue` and added e2e coverage in `tests/e2e/anonymous-feedback.spec.ts`.
