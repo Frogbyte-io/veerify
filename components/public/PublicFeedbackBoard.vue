@@ -887,6 +887,9 @@ export default {
         thumbs: { up: 'lucide:thumbs-up', down: 'lucide:thumbs-down' },
         rockets: { up: 'lucide:rocket', down: 'lucide:thumbs-down' },
         hearts: { up: 'lucide:heart', down: 'lucide:heart-off' },
+        stars: { up: 'lucide:star', down: 'lucide:star-off' },
+        zap: { up: 'lucide:zap', down: 'lucide:zap-off' },
+        plusminus: { up: 'lucide:plus', down: 'lucide:minus' },
       }
       return map[style] || map.arrows
     },

@@ -37,7 +37,7 @@ const projectSettingsSchema = z
     customFooterPrimaryUrl: z.string().url().max(500).optional().nullable(),
     customFooterSecondaryLabel: z.string().max(80).optional().nullable(),
     customFooterSecondaryUrl: z.string().url().max(500).optional().nullable(),
-    voteStyle: z.enum(['arrows', 'thumbs', 'rockets', 'hearts']).optional(),
+    voteStyle: z.enum(['arrows', 'thumbs', 'rockets', 'hearts', 'stars', 'zap', 'plusminus']).optional(),
   })
   .passthrough()
   .nullable()

@@ -114,7 +114,7 @@
 
         <div class="space-y-2">
           <Label>Vote Style</Label>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="appearance-vote-style-selector">
+          <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" data-testid="appearance-vote-style-selector">
             <button
               v-for="style in voteStyleOptions"
               :key="style.value"
@@ -409,6 +409,9 @@ export default {
         { value: 'thumbs', label: 'Thumbs', upIcon: 'lucide:thumbs-up', downIcon: 'lucide:thumbs-down' },
         { value: 'rockets', label: 'Rockets', upIcon: 'lucide:rocket', downIcon: 'lucide:thumbs-down' },
         { value: 'hearts', label: 'Hearts', upIcon: 'lucide:heart', downIcon: 'lucide:heart-off' },
+        { value: 'stars', label: 'Stars', upIcon: 'lucide:star', downIcon: 'lucide:star-off' },
+        { value: 'zap', label: 'Zap', upIcon: 'lucide:zap', downIcon: 'lucide:zap-off' },
+        { value: 'plusminus', label: '+/−', upIcon: 'lucide:plus', downIcon: 'lucide:minus' },
       ]
     },
     previewThemeClass() {
