@@ -38,7 +38,9 @@
       <template v-else-if="projectData">
         <div class="mb-6">
           <div class="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <NuxtLink to="/products" class="hover:text-foreground transition-colors">Products</NuxtLink>
+            <NuxtLink to="/products" prefetch-on="interaction" class="hover:text-foreground transition-colors"
+              >Products</NuxtLink
+            >
             <Icon name="lucide:chevron-right" class="w-4 h-4" />
             <span class="text-foreground">{{ projectData.name }}</span>
           </div>

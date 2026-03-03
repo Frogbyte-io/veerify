@@ -114,13 +114,16 @@
 
         <!-- Navigation tabs -->
         <div class="flex items-center gap-1 mb-8 border-b">
-          <a
-            :href="feedbackBoardUrl"
+          <NuxtLink
+            :to="feedbackBoardPath"
+            prefetch-on="interaction"
             class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
+            @pointerenter="warmFeedbackBoardData"
+            @focus="warmFeedbackBoardData"
           >
             <Icon name="lucide:message-square" class="w-4 h-4 inline mr-1.5" />
             Feedback
-          </a>
+          </NuxtLink>
           <span
             class="px-4 py-2 text-sm font-medium border-b-2 -mb-px"
             :style="{ borderColor: accentColor, color: accentColor }"
@@ -140,10 +143,16 @@
           <Icon name="lucide:map" class="w-12 h-12 mx-auto mb-3 opacity-40" />
           <p class="font-medium">No roadmap items yet</p>
           <p class="text-sm mt-1">Submit feedback to see it appear here.</p>
-          <a :href="feedbackBoardUrl" class="inline-block mt-4 text-sm text-primary hover:underline">
+          <NuxtLink
+            :to="feedbackBoardPath"
+            prefetch-on="interaction"
+            class="inline-block mt-4 text-sm text-primary hover:underline"
+            @pointerenter="warmFeedbackBoardData"
+            @focus="warmFeedbackBoardData"
+          >
             <Icon name="lucide:arrow-left" class="w-4 h-4 inline mr-1" />
             Back to feedback board
-          </a>
+          </NuxtLink>
         </div>
 
         <!-- Kanban columns -->
@@ -297,13 +306,16 @@
             <span>&middot;</span>
             <span>{{ formatDate(selectedFeedback.createdAt) }}</span>
           </div>
-          <a
-            :href="feedbackBoardUrl"
+          <NuxtLink
+            :to="feedbackBoardPath"
+            prefetch-on="interaction"
             class="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            @pointerenter="warmFeedbackBoardData"
+            @focus="warmFeedbackBoardData"
           >
             <Icon name="lucide:external-link" class="w-4 h-4" />
             View on feedback board
-          </a>
+          </NuxtLink>
         </div>
       </DialogContent>
     </Dialog>
@@ -312,6 +324,8 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+
+const FEEDBACK_BOARD_PREFETCH_CACHE_TTL_MS = 60_000
 
 export default {
   name: 'PublicRoadmap',
@@ -330,6 +344,7 @@ export default {
       logoError: false,
       bannerError: false,
       currentUser: null,
+      feedbackBoardPrefetch: null,
       showDetailsDialog: false,
       detailsLoading: false,
       selectedFeedback: null,
@@ -367,11 +382,8 @@ export default {
       const port = dashboardDomain === 'localhost' ? ':' + window.location.port : ''
       return `${protocol}//${dashboardDomain}${port}`
     },
-    feedbackBoardUrl() {
-      if (!import.meta.client) return `/${this.projectSlug}`
-      const url = new URL(window.location.href)
-      url.pathname = `/${this.projectSlug}`
-      return url.toString()
+    feedbackBoardPath() {
+      return `/${this.projectSlug}`
     },
     authRedirectTarget() {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}/roadmap`)
@@ -439,6 +451,7 @@ export default {
       this.projectData = { project: data.project, team: data.team }
       this.columns = data.columns || []
       this.applyTheme(this.projectData.project.settings?.themeMode || 'system')
+      this.warmFeedbackBoardData()
       this.checkCurrentUser()
     } catch (err) {
       console.error('Error loading roadmap:', err)
@@ -448,6 +461,28 @@ export default {
     }
   },
   methods: {
+    warmFeedbackBoardData() {
+      const now = Date.now()
+      const cachedAt = this.feedbackBoardPrefetch?.cachedAt || 0
+      if (this.feedbackBoardPrefetch?.promise && now - cachedAt < FEEDBACK_BOARD_PREFETCH_CACHE_TTL_MS) {
+        return this.feedbackBoardPrefetch.promise
+      }
+
+      const params = new URLSearchParams({
+        page: '1',
+        limit: '20',
+        sortBy: 'voteCount',
+        sortOrder: 'desc',
+      })
+
+      const promise = Promise.all([
+        $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`),
+        $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback?${params.toString()}`),
+      ]).catch(() => null)
+
+      this.feedbackBoardPrefetch = { promise, cachedAt: now }
+      return promise
+    },
     applyTheme(mode) {
       this.activeTheme = mode
       if (import.meta.client) {

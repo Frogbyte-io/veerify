@@ -31,6 +31,7 @@
           v-for="product in teamData.projects"
           :key="product.id"
           :to="`/${product.slug}`"
+          prefetch-on="interaction"
           class="block rounded-lg border bg-card p-6 hover:shadow-sm transition-shadow"
         >
           <div class="flex items-start gap-4">

@@ -97,6 +97,7 @@
                     v-for="item in recentSubmissions"
                     :key="item.id"
                     :to="`/feedback/${item.id}`"
+                    prefetch-on="interaction"
                     class="flex items-center justify-between rounded-lg border p-3 hover:bg-muted transition-colors"
                   >
                     <div class="min-w-0 flex-1">

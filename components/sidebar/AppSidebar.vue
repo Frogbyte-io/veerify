@@ -201,7 +201,7 @@ const supportItems: SidebarNavItem[] = [
                 :tooltip="item.title"
                 class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
               >
-                <NuxtLink :to="item.url">
+                <NuxtLink :to="item.url" prefetch-on="interaction">
                   <Icon :name="item.icon" class="!size-5 shrink-0" />
                   <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                 </NuxtLink>
@@ -235,7 +235,7 @@ const supportItems: SidebarNavItem[] = [
                   :tooltip="item.title"
                   class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
                 >
-                  <NuxtLink :to="item.url">
+                  <NuxtLink :to="item.url" prefetch-on="interaction">
                     <Icon :name="item.icon" class="!size-5 shrink-0" />
                     <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                   </NuxtLink>
@@ -256,7 +256,7 @@ const supportItems: SidebarNavItem[] = [
                   :tooltip="item.title"
                   class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
                 >
-                  <NuxtLink :to="item.url">
+                  <NuxtLink :to="item.url" prefetch-on="interaction">
                     <Icon :name="item.icon" class="!size-5 shrink-0" />
                     <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                   </NuxtLink>
@@ -278,7 +278,7 @@ const supportItems: SidebarNavItem[] = [
                 :tooltip="item.title"
                 class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
               >
-                <NuxtLink :to="item.url">
+                <NuxtLink :to="item.url" prefetch-on="interaction">
                   <Icon :name="item.icon" class="!size-5 shrink-0" />
                   <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
                 </NuxtLink>

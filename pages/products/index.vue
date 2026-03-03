@@ -53,6 +53,7 @@
           v-for="product in products"
           :key="product.id"
           :to="`/products/${product.slug}`"
+          prefetch-on="interaction"
           class="rounded-lg border bg-card hover:shadow-md hover:border-primary/50 transition-all cursor-pointer block"
         >
           <div class="p-6">

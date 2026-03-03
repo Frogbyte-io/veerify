@@ -37,4 +37,18 @@ test.describe('Sidebar resizing', () => {
     const resizedWidth = await getSidebarWidth()
     expect(resizedWidth).toBeGreaterThan(initialWidth)
   })
+
+  test('sidebar links navigate to expected routes', async ({ page }) => {
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await page.goto('/feedback')
+    await expect(page).toHaveURL(/\/feedback/)
+
+    const submissionsLink = page.getByRole('link', { name: 'My Submissions' })
+    await expect(submissionsLink).toBeVisible()
+    await submissionsLink.hover()
+    await submissionsLink.click()
+
+    await expect(page).toHaveURL(/\/submissions/)
+    await expect(page.getByRole('heading', { name: 'My Submissions' })).toBeVisible()
+  })
 })

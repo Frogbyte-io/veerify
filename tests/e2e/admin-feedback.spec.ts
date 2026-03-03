@@ -130,6 +130,15 @@ test.describe('Admin feedback workflow', () => {
     })
     expect(setActiveTeamResponse.ok()).toBeTruthy()
 
+    // Verify product cards navigate to their settings page.
+    await gotoWithRetry(page, '/products')
+    await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
+    const productCard = page.getByRole('link', { name: new RegExp(`E2E Feedback ${slug}`) }).first()
+    await expect(productCard).toBeVisible({ timeout: 20_000 })
+    await productCard.hover()
+    await productCard.click()
+    await expect(page).toHaveURL(new RegExp(`/products/${slug}$`))
+
     // Navigate to feedback page with explicit project preselected
     await gotoWithRetry(page, `/feedback?projectId=${projectId}`)
     await expect(page).toHaveURL(/\/feedback/)

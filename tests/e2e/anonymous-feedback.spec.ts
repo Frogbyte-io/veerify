@@ -183,6 +183,27 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
   })
 
+  test('public board navigation switches between feedback and roadmap pages', async ({ page }) => {
+    await gotoPublicPage(page)
+
+    const roadmapTab = page.getByRole('link', { name: 'Roadmap' })
+    await expect(roadmapTab).toBeVisible()
+    await roadmapTab.hover()
+    await roadmapTab.click()
+
+    await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}/roadmap`)
+    await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
+
+    const feedbackTab = page.getByRole('link', { name: 'Feedback' }).first()
+    await expect(feedbackTab).toBeVisible()
+    await feedbackTab.hover()
+    await feedbackTab.click()
+
+    await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}`)
+    await expect.poll(() => page.url()).not.toContain('/roadmap')
+    await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
+  })
+
   test('public board auth CTA includes dashboard redirect target', async ({ page }) => {
     await gotoPublicPage(page)
 

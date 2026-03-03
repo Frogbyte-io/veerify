@@ -125,13 +125,16 @@
             <Icon name="lucide:message-square" class="w-4 h-4 inline mr-1.5" />
             Feedback
           </span>
-          <a
-            :href="roadmapUrl"
+          <NuxtLink
+            :to="roadmapPath"
+            prefetch-on="interaction"
             class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
+            @pointerenter="warmRoadmapData"
+            @focus="warmRoadmapData"
           >
             <Icon name="lucide:map" class="w-4 h-4 inline mr-1.5" />
             Roadmap
-          </a>
+          </NuxtLink>
         </div>
 
         <!-- Stats -->
@@ -239,6 +242,8 @@
             role="button"
             tabindex="0"
             @click="openFeedbackDetails(item)"
+            @pointerenter="warmFeedbackDetails(item.id)"
+            @focus="warmFeedbackDetails(item.id)"
             @keydown.enter.prevent="openFeedbackDetails(item)"
             @keydown.space.prevent="openFeedbackDetails(item)"
           >
@@ -806,6 +811,10 @@
 <script>
 import { authClient } from '~/lib/auth-client'
 
+const ROADMAP_PREFETCH_CACHE_TTL_MS = 60_000
+const FEEDBACK_DETAILS_PREFETCH_CACHE_TTL_MS = 30_000
+const FEEDBACK_DETAILS_PREFETCH_LIMIT = 3
+
 export default {
   name: 'PublicFeedbackBoard',
   props: {
@@ -843,6 +852,9 @@ export default {
       activeTheme: 'system',
       logoError: false,
       bannerError: false,
+      roadmapPrefetch: null,
+      feedbackDetailsPrefetchCache: {},
+      feedbackDetailsRequests: {},
       editingCommentId: null,
       editingCommentBody: '',
       isSavingComment: false,
@@ -912,11 +924,8 @@ export default {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}`)
       return encodeURIComponent(window.location.href)
     },
-    roadmapUrl() {
-      if (!import.meta.client) return `/${this.projectSlug}/roadmap`
-      const url = new URL(window.location.href)
-      url.pathname = `/${this.projectSlug}/roadmap`
-      return url.toString()
+    roadmapPath() {
+      return `/${this.projectSlug}/roadmap`
     },
     customFooterBranding() {
       return this.projectData?.project?.settings?.customFooterBranding?.trim() || ''
@@ -984,6 +993,7 @@ export default {
       this.projectData = response?.data
       this.applyTheme(this.projectData?.project?.settings?.themeMode || 'system')
       await this.loadFeedback()
+      this.warmRoadmapData()
       this.checkAdminStatus()
     } catch (err) {
       console.error('Error loading project:', err)
@@ -1034,6 +1044,7 @@ export default {
         const newItems = this.mergeWithLocalVotes(data?.items || [])
         if (isFirstPage) {
           this.feedbackItems = newItems
+          this.warmVisibleFeedbackDetails()
         } else {
           this.feedbackItems = [...this.feedbackItems, ...newItems]
         }
@@ -1118,16 +1129,78 @@ export default {
       if (!this.selectedFeedbackId) return
       await this.loadFeedbackDetails(this.selectedFeedbackId)
     },
+    warmRoadmapData() {
+      const now = Date.now()
+      const cachedAt = this.roadmapPrefetch?.cachedAt || 0
+      if (this.roadmapPrefetch?.promise && now - cachedAt < ROADMAP_PREFETCH_CACHE_TTL_MS) {
+        return this.roadmapPrefetch.promise
+      }
+
+      const promise = $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`).catch(() => null)
+      this.roadmapPrefetch = { promise, cachedAt: now }
+      return promise
+    },
+    warmVisibleFeedbackDetails() {
+      for (const item of this.feedbackItems.slice(0, FEEDBACK_DETAILS_PREFETCH_LIMIT)) {
+        this.warmFeedbackDetails(item.id)
+      }
+    },
+    warmFeedbackDetails(feedbackId) {
+      if (!feedbackId) return
+      this.fetchFeedbackDetailsPayload(feedbackId).catch(() => {})
+    },
+    getCachedFeedbackDetails(feedbackId) {
+      const cached = this.feedbackDetailsPrefetchCache[feedbackId]
+      if (!cached) return null
+      if (Date.now() - cached.cachedAt > FEEDBACK_DETAILS_PREFETCH_CACHE_TTL_MS) {
+        const nextCache = { ...this.feedbackDetailsPrefetchCache }
+        delete nextCache[feedbackId]
+        this.feedbackDetailsPrefetchCache = nextCache
+        return null
+      }
+      return cached.payload
+    },
+    async fetchFeedbackDetailsPayload(feedbackId) {
+      if (!feedbackId) return null
+
+      const cachedPayload = this.getCachedFeedbackDetails(feedbackId)
+      if (cachedPayload) return cachedPayload
+
+      if (this.feedbackDetailsRequests[feedbackId]) {
+        return this.feedbackDetailsRequests[feedbackId]
+      }
+
+      const request = Promise.all([$fetch(`/api/feedback/${feedbackId}`), $fetch(`/api/feedback/${feedbackId}/comments`)])
+        .then(([feedbackResponse, commentsResponse]) => {
+          const payload = {
+            feedback: feedbackResponse?.data || null,
+            comments: Array.isArray(commentsResponse?.data) ? commentsResponse.data : [],
+          }
+          this.feedbackDetailsPrefetchCache = {
+            ...this.feedbackDetailsPrefetchCache,
+            [feedbackId]: { payload, cachedAt: Date.now() },
+          }
+          return payload
+        })
+        .finally(() => {
+          const nextRequests = { ...this.feedbackDetailsRequests }
+          delete nextRequests[feedbackId]
+          this.feedbackDetailsRequests = nextRequests
+        })
+
+      this.feedbackDetailsRequests = {
+        ...this.feedbackDetailsRequests,
+        [feedbackId]: request,
+      }
+      return request
+    },
     async loadFeedbackDetails(feedbackId) {
       this.detailsLoading = true
       this.detailsError = null
       try {
-        const [feedbackResponse, commentsResponse] = await Promise.all([
-          $fetch(`/api/feedback/${feedbackId}`),
-          $fetch(`/api/feedback/${feedbackId}/comments`),
-        ])
-        this.selectedFeedback = feedbackResponse?.data || null
-        this.selectedFeedbackComments = Array.isArray(commentsResponse?.data) ? commentsResponse.data : []
+        const payload = await this.fetchFeedbackDetailsPayload(feedbackId)
+        this.selectedFeedback = payload?.feedback || null
+        this.selectedFeedbackComments = Array.isArray(payload?.comments) ? payload.comments : []
       } catch (err) {
         console.error('Error loading feedback details:', err)
         this.detailsError = err?.data?.error?.message || 'Failed to load feedback details'

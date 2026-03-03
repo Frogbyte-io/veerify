@@ -104,7 +104,7 @@
           <p class="text-muted-foreground mb-6 max-w-sm">
             Create a product first to start collecting and managing feedback from your users.
           </p>
-          <NuxtLink to="/products">
+          <NuxtLink to="/products" prefetch-on="interaction">
             <Button>
               <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
               Create Product
@@ -332,6 +332,7 @@
                       }"
                       draggable="true"
                       @click="$router.push(`/feedback/${item.id}`)"
+                      @pointerenter="prewarmFeedbackRoute(item.id)"
                       @dragstart.stop="onCardDragStart($event, item, column.value)"
                       @dragend="onCardDragEnd"
                       @dragover="onCardDragOver($event, item.id)"
@@ -406,6 +407,7 @@
                       <td class="px-4 py-3 align-top">
                         <NuxtLink
                           :to="`/feedback/${item.id}`"
+                          prefetch-on="interaction"
                           class="font-medium text-foreground hover:text-primary transition-colors block"
                         >
                           {{ item.title }}
@@ -785,6 +787,7 @@ export default {
         insertBefore: true,
       },
       kanbanLocalOrders: {},
+      prewarmedFeedbackRoutes: {},
     }
   },
 
@@ -1350,6 +1353,19 @@ export default {
       } finally {
         this.isDeleting = false
       }
+    },
+
+    prewarmFeedbackRoute(feedbackId) {
+      if (!import.meta.client || !feedbackId) return
+
+      const route = `/feedback/${feedbackId}`
+      if (this.prewarmedFeedbackRoutes[route]) return
+
+      this.prewarmedFeedbackRoutes = {
+        ...this.prewarmedFeedbackRoutes,
+        [route]: true,
+      }
+      preloadRouteComponents(route).catch(() => {})
     },
 
     onCardDragStart(event, item, status) {
