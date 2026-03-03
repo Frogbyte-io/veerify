@@ -1,6 +1,15 @@
 <template>
   <div>
-    <PublicFeedbackBoard v-if="teamSubdomain && slug" :team-slug="teamSubdomain" :project-slug="slug" />
+    <PublicRoadmap
+      v-if="teamSubdomain && projectSlug && subPage === 'roadmap'"
+      :team-slug="teamSubdomain"
+      :project-slug="projectSlug"
+    />
+    <PublicFeedbackBoard
+      v-else-if="teamSubdomain && projectSlug"
+      :team-slug="teamSubdomain"
+      :project-slug="projectSlug"
+    />
     <NuxtLayout v-else name="clean">
       <div class="min-h-screen flex items-center justify-center bg-background">
         <div class="text-center">
@@ -21,9 +30,15 @@ export default {
     teamSubdomain() {
       return useState('teamSubdomain').value
     },
-    slug() {
+    slugParts() {
       const params = useRoute().params.slug
-      return Array.isArray(params) ? params[0] : params
+      return Array.isArray(params) ? params : params ? [params] : []
+    },
+    projectSlug() {
+      return this.slugParts[0] || null
+    },
+    subPage() {
+      return this.slugParts[1] || null
     },
   },
 }

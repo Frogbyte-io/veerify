@@ -49,7 +49,8 @@ MVP
 - [ ] Simple form website for collecting feedback publicly and adding it to the board without a public board (for internal use or private feedback collection)
 - [ ] For the new product form, add options between what type of product to create, like public feedback board, private feedback collection form, or in the future roadmaps/etc.. Make it a multi-step guide that explains the different options and helps users choose the right one for their needs. Different features can be combined based on the product type (e.g. a public feedback board would have voting and commenting enabled, while a private feedback form would just collect submissions from a third party form without showing them publicly).
 - [ ] Export feedback to Google Sheets / Excel / Airtable
-- [ ] Roadmap page — public timeline view based on feedback status tags
+- [x] Roadmap page — public timeline view based on feedback status tags
+  - Added `/roadmap` sub-page on public boards (e.g. `team.veerify.com/project-slug/roadmap`); new `GET /api/public/t/[teamSlug]/[projectSlug]/roadmap` endpoint returns feedback items grouped by status; `PublicRoadmap.vue` renders a horizontal kanban-style view with status columns; tab navigation added to `PublicFeedbackBoard.vue` linking to the roadmap.
 - [ ] Sync roadmaps to GitHub Projects
 - [ ] Customizable vote style (thumbs, arrows, ducks, rockets, etc.)
 - [x] When creating a feedback item, it should be automatically upvoted by the submitter (if anonymous, use the session; if logged in, use their user ID) so it appears in the board without needing a second click

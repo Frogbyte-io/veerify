@@ -121,6 +121,24 @@
           </p>
         </div>
 
+        <!-- Navigation tabs -->
+        <div class="flex items-center gap-1 mb-6 border-b">
+          <span
+            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px"
+            :style="{ borderColor: accentColor, color: accentColor }"
+          >
+            <Icon name="lucide:message-square" class="w-4 h-4 inline mr-1.5" />
+            Feedback
+          </span>
+          <a
+            :href="roadmapUrl"
+            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
+          >
+            <Icon name="lucide:map" class="w-4 h-4 inline mr-1.5" />
+            Roadmap
+          </a>
+        </div>
+
         <!-- Stats -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <div class="rounded-lg border bg-card p-4">
@@ -898,6 +916,12 @@ export default {
     authRedirectTarget() {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}`)
       return encodeURIComponent(window.location.href)
+    },
+    roadmapUrl() {
+      if (!import.meta.client) return `/${this.projectSlug}/roadmap`
+      const url = new URL(window.location.href)
+      url.pathname = `/${this.projectSlug}/roadmap`
+      return url.toString()
     },
     customFooterBranding() {
       return this.projectData?.project?.settings?.customFooterBranding?.trim() || ''
