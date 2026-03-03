@@ -183,27 +183,22 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
   })
 
-  test('public board auth links include dashboard redirect target', async ({ page }) => {
+  test('public board auth CTA includes dashboard redirect target', async ({ page }) => {
     await gotoPublicPage(page)
 
-    const loginLink = page.getByRole('link', { name: 'Log in' })
-    const signupLink = page.getByRole('link', { name: 'Sign up' })
+    const authCta = page.getByRole('link', { name: 'Sign in / Join' })
+    await expect(authCta).toBeVisible()
 
-    const loginHref = await loginLink.getAttribute('href')
-    const signupHref = await signupLink.getAttribute('href')
+    const loginHref = await authCta.getAttribute('href')
 
     expect(loginHref).toBeTruthy()
-    expect(signupHref).toBeTruthy()
     expect(loginHref!).toContain('/login?redirect=')
-    expect(signupHref!).toContain('/signup?redirect=')
 
     const loginUrl = new URL(loginHref!, PUBLIC_PAGE)
-    const signupUrl = new URL(signupHref!, PUBLIC_PAGE)
     const loginRedirect = decodeURIComponent(loginUrl.searchParams.get('redirect') || '')
-    const signupRedirect = decodeURIComponent(signupUrl.searchParams.get('redirect') || '')
 
     expect(loginRedirect).toContain(`/${PROJECT_SLUG}`)
-    expect(signupRedirect).toContain(`/${PROJECT_SLUG}`)
+    await expect(page.getByRole('link', { name: 'Sign up' })).toHaveCount(0)
   })
 
   test('login honors absolute redirect target back to public board', async ({ page }) => {

@@ -33,16 +33,11 @@
       <template v-else>
         <a
           :href="mainAppUrl + '/login?redirect=' + authRedirectTarget"
-          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
-        >
-          <Icon name="lucide:log-in" class="w-4 h-4" />
-          Log in
-        </a>
-        <a
-          :href="mainAppUrl + '/signup?redirect=' + authRedirectTarget"
+          data-testid="public-auth-cta"
           class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
         >
-          Sign up
+          <Icon name="lucide:log-in" class="w-4 h-4" />
+          Sign in / Join
         </a>
       </template>
     </div>
