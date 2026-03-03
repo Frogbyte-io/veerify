@@ -474,18 +474,25 @@
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <button
-                        class="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg border text-sm font-semibold transition-colors"
-                        :class="
-                          selectedFeedback.hasVoted
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-border hover:border-primary/50 text-foreground'
-                        "
-                        @click="voteFromDetails"
-                      >
-                        <Icon :name="voteIcons.up" class="w-4 h-4" />
-                        {{ selectedFeedback.voteCount }}
-                      </button>
+                      <div class="flex flex-col items-center gap-0.5">
+                        <button
+                          class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors"
+                          :class="selectedFeedback.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
+                          :title="selectedFeedback.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
+                          @click="voteFromDetails('upvote')"
+                        >
+                          <Icon :name="voteIcons.up" class="w-5 h-5" />
+                        </button>
+                        <span class="text-sm font-semibold leading-none">{{ selectedFeedback.voteCount }}</span>
+                        <button
+                          class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors"
+                          :class="selectedFeedback.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'"
+                          :title="selectedFeedback.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
+                          @click="voteFromDetails('downvote')"
+                        >
+                          <Icon :name="voteIcons.down" class="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <p v-if="selectedFeedback.body" class="text-sm text-muted-foreground whitespace-pre-line">
@@ -1511,36 +1518,66 @@ export default {
         alert(err?.data?.error?.message || 'Failed to delete comment. Please try again.')
       }
     },
-    async voteFromDetails() {
+    async voteFromDetails(type) {
       if (!this.selectedFeedback) return
-      const wasVoted = this.selectedFeedback.hasVoted
-      this.selectedFeedback.hasVoted = !wasVoted
-      this.selectedFeedback.voteCount += wasVoted ? -1 : 1
-      // Sync the list item too
+      const prevVoteType = this.selectedFeedback.voteType
+
+      // Optimistic update
+      if (prevVoteType === type) {
+        this.selectedFeedback.voteType = null
+        this.selectedFeedback.hasVoted = false
+        this.selectedFeedback.voteCount += type === 'upvote' ? -1 : 1
+      } else if (prevVoteType !== null) {
+        this.selectedFeedback.voteType = type
+        this.selectedFeedback.hasVoted = true
+        this.selectedFeedback.voteCount += type === 'upvote' ? 2 : -2
+      } else {
+        this.selectedFeedback.voteType = type
+        this.selectedFeedback.hasVoted = true
+        this.selectedFeedback.voteCount += type === 'upvote' ? 1 : -1
+      }
+
+      // Sync list item
       const listItem = this.feedbackItems.find((item) => item.id === this.selectedFeedbackId)
       if (listItem) {
         listItem.hasVoted = this.selectedFeedback.hasVoted
+        listItem.voteType = this.selectedFeedback.voteType
         listItem.voteCount = this.selectedFeedback.voteCount
       }
+
       try {
-        const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/vote`, { method: 'POST' })
+        const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/vote`, {
+          method: 'POST',
+          body: { type },
+        })
         const data = response?.data
         this.selectedFeedback.voteCount = data.voteCount
         this.selectedFeedback.hasVoted = data.voted
-        this.saveLocalVote(this.selectedFeedbackId, data.voted)
+        this.selectedFeedback.voteType = data.voteType || null
+        this.saveLocalVoteType(this.selectedFeedbackId, data.voteType)
         if (listItem) {
           listItem.voteCount = data.voteCount
           listItem.hasVoted = data.voted
+          listItem.voteType = data.voteType || null
         }
       } catch (err) {
         // Revert optimistic update
-        this.selectedFeedback.hasVoted = wasVoted
-        this.selectedFeedback.voteCount += wasVoted ? 1 : -1
+        this.selectedFeedback.voteType = prevVoteType
+        this.selectedFeedback.hasVoted = prevVoteType !== null
+        if (prevVoteType === type) {
+          this.selectedFeedback.voteCount += type === 'upvote' ? 1 : -1
+        } else if (prevVoteType !== null) {
+          this.selectedFeedback.voteCount += type === 'upvote' ? -2 : 2
+        } else {
+          this.selectedFeedback.voteCount += type === 'upvote' ? -1 : 1
+        }
         if (listItem) {
-          listItem.hasVoted = wasVoted
+          listItem.hasVoted = prevVoteType !== null
+          listItem.voteType = prevVoteType
           listItem.voteCount = this.selectedFeedback.voteCount
         }
         console.error('Error voting:', err)
+        alert('Failed to vote. Please try again.')
       }
     },
   },
