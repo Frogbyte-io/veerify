@@ -8,7 +8,7 @@ import { db } from '~/server/database/drizzle'
 import { feedback } from '~/server/database/schema/feedback'
 
 const updateStatusSchema = z.object({
-  status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']),
+  status: z.string().trim().min(1).max(80),
 })
 
 export default defineEventHandler(async (event) => {

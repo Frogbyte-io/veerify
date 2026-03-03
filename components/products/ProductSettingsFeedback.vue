@@ -33,12 +33,7 @@
             @change="onFilterChange"
           >
             <option value="">All Statuses</option>
-            <option value="open">Open</option>
-            <option value="in_progress">In Progress</option>
-            <option value="planned">Planned</option>
-            <option value="completed">Completed</option>
-            <option value="closed">Closed</option>
-            <option value="declined">Declined</option>
+            <option v-for="s in statuses" :key="s.value" :value="s.value">{{ s.name }}</option>
           </select>
           <select
             v-model="categoryFilter"
@@ -114,7 +109,10 @@
                     <span v-if="item.category.icon">{{ item.category.icon }}</span>
                     {{ item.category.name }}
                   </span>
-                  <StatusBadge :status="item.status" />
+                  <span
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                    :style="getStatusBadgeStyle(item.status)"
+                  >{{ getStatusLabel(item.status) }}</span>
                 </div>
               </div>
               <p v-if="item.body" class="text-xs text-muted-foreground line-clamp-2">{{ item.body }}</p>
@@ -146,12 +144,7 @@
                 :disabled="updatingStatusId === item.id"
                 @change="updateStatus(item, $event.target.value)"
               >
-                <option value="open">Open</option>
-                <option value="in_progress">In Progress</option>
-                <option value="planned">Planned</option>
-                <option value="completed">Completed</option>
-                <option value="closed">Closed</option>
-                <option value="declined">Declined</option>
+                <option v-for="s in statuses" :key="s.value" :value="s.value">{{ s.name }}</option>
               </select>
             </div>
           </div>
@@ -192,38 +185,17 @@
 <script>
 import { toast } from 'vue-sonner'
 
-const STATUS_LABELS = {
-  open: 'Open',
-  in_progress: 'In Progress',
-  planned: 'Planned',
-  completed: 'Completed',
-  closed: 'Closed',
-  declined: 'Declined',
-}
-
-const STATUS_CLASSES = {
-  open: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300',
-  in_progress: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300',
-  planned: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300',
-  completed: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300',
-  closed: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-  declined: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400',
-}
+const FALLBACK_STATUSES = [
+  { value: 'open', name: 'Open', color: '#3b82f6' },
+  { value: 'planned', name: 'Planned', color: '#8b5cf6' },
+  { value: 'in_progress', name: 'In Progress', color: '#f59e0b' },
+  { value: 'completed', name: 'Completed', color: '#10b981' },
+  { value: 'closed', name: 'Closed', color: '#6b7280' },
+  { value: 'declined', name: 'Declined', color: '#ef4444' },
+]
 
 export default {
   name: 'ProductSettingsFeedback',
-
-  components: {
-    StatusBadge: {
-      name: 'StatusBadge',
-      props: { status: { type: String, required: true } },
-      computed: {
-        label() { return STATUS_LABELS[this.status] || this.status },
-        classes() { return STATUS_CLASSES[this.status] || STATUS_CLASSES.open },
-      },
-      template: `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" :class="classes">{{ label }}</span>`,
-    },
-  },
 
   props: {
     project: {
@@ -236,6 +208,7 @@ export default {
     return {
       feedbackItems: [],
       categories: [],
+      statuses: FALLBACK_STATUSES,
       isLoading: true,
       error: null,
       searchQuery: '',
@@ -263,7 +236,7 @@ export default {
   },
 
   async mounted() {
-    await Promise.all([this.loadCategories(), this.loadFeedback()])
+    await Promise.all([this.loadCategories(), this.loadStatuses(), this.loadFeedback()])
   },
 
   methods: {
@@ -274,6 +247,27 @@ export default {
       } catch {
         // non-critical; swallow silently
       }
+    },
+
+    async loadStatuses() {
+      try {
+        const response = await $fetch(`/api/projects/${this.project.slug}/statuses`)
+        const data = response?.data || []
+        if (data.length > 0) this.statuses = data
+      } catch {
+        // non-critical; keep fallback statuses
+      }
+    },
+
+    getStatusLabel(value) {
+      const s = this.statuses.find((s) => s.value === value)
+      return s ? s.name : value
+    },
+
+    getStatusBadgeStyle(value) {
+      const s = this.statuses.find((s) => s.value === value)
+      const color = s?.color || '#6b7280'
+      return { backgroundColor: color + '22', color }
     },
 
     async loadFeedback() {
@@ -330,6 +324,7 @@ export default {
       this.feedbackItems = []
       this.loadFeedback()
       this.loadCategories()
+      this.loadStatuses()
     },
 
     goToPage(page) {

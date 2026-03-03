@@ -55,7 +55,8 @@ MVP
 - [x] When creating a feedback item, it should be automatically upvoted by the submitter (if anonymous, use the session; if logged in, use their user ID) so it appears in the board without needing a second click
 - [x] Add a "Feedback" tab to the product settings page that shows a list of all feedback items with filters (status, tags, etc.) and search
   - Added `ProductSettingsFeedback.vue` with search, status/category/sort filters, paginated feedback list, inline status updates, and GitHub issue links. Wired into `pages/products/[slug].vue` as the second tab.
-- [ ] Allow product admins to add and change status tags (e.g. "planned", "in progress", "completed")
+- [x] Allow product admins to add and change status tags (e.g. "planned", "in progress", "completed")
+  - Added `feedbackStatus` table (migration `0013_redundant_micromax.sql`) for per-project custom statuses. CRUD API routes at `server/api/projects/[slug]/statuses/`. New `ProductSettingsStatuses.vue` tab with drag-to-reorder, create/edit/delete dialogs, and fallback to system defaults when no custom statuses are configured. `ProductSettingsFeedback.vue` now loads statuses dynamically for both the filter dropdown and inline status-change select.
 - [x] Show icon besides the feedback category on the public board (e.g. a bug icon for bug reports, a lightbulb for feature requests, etc.) when icon is added to the category
   - Rendered category icons in `components/public/PublicFeedbackBoard.vue` and added e2e coverage in `tests/e2e/anonymous-feedback.spec.ts`.
 - [x] In public feedback board, it should be possible to click a feedback to see more details (description, comments, etc.) in a modal or separate page without leaving the board

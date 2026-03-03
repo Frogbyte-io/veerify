@@ -80,6 +80,36 @@ export const anonymousSession = pgTable(
   })
 )
 
+// Feedback statuses - per-project customizable workflow statuses
+export const feedbackStatus = pgTable(
+  'feedback_status',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),        // Display name: "Open", "In Progress"
+    value: text('value').notNull(),      // Machine value: "open", "in_progress" (stored in feedback.status)
+    color: text('color'),                // Hex color code
+    description: text('description'),    // Optional description
+    sortOrder: integer('sort_order')
+      .$defaultFn(() => 0)
+      .notNull(),
+    isDefault: boolean('is_default')
+      .$defaultFn(() => false)
+      .notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique value within a project
+    uniqueProjectValue: uniqueIndex('status_project_value_idx').on(table.projectId, table.value),
+    // Index for querying statuses by project
+    projectIdx: index('status_project_idx').on(table.projectId),
+  })
+)
+
 // Feedback categories - per-project categories (Bug, Feature, etc.)
 export const feedbackCategory = pgTable(
   'feedback_category',
