@@ -101,11 +101,13 @@ export default {
     },
     availableTabs() {
       return this.tabs.filter((tab) => {
-        // Teams and billing are only visible in workspace context
-        if (['team', 'billing', 'status'].includes(tab.key) && !this.hasOrganization) {
+        // Billing is hidden during the beta period
+        if (tab.key === 'billing') return false
+        // Teams and status are only visible in workspace context
+        if (['team', 'status'].includes(tab.key) && !this.hasOrganization) {
           return false
         }
-        if (['billing', 'status'].includes(tab.key)) {
+        if (tab.key === 'status') {
           return this.currentOrgRole === 'owner'
         }
         return true
