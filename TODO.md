@@ -21,7 +21,8 @@ MVP
 - [x] **Feedback submission confirmation email** — Send a confirmation email to the submitter when they submit feedback (if email provided), including a tokenized edit link
 - [x] **Edit feedback from confirmation email** — Create a token-based edit endpoint (`GET/PUT /api/feedback/[id]/edit?token=...`) and edit page so submitters can update their feedback via email link
 - [ ] **File/image/log attachments** — Add file upload support to the feedback submission form; store files (S3/local) and reference them from the feedback record
-- [ ] **Email notification subscription** — Allow users/anonymous submitters to subscribe to a feedback item for state-change and comment notifications; implement notification dispatch on status change and new public comment
+- [x] **Email notification subscription** — Allow users/anonymous submitters to subscribe to a feedback item for state-change and comment notifications; implement notification dispatch on status change and new public comment
+  - Added `feedbackSubscription` table (migration `0014_medical_jamie_braddock.sql`). `POST/DELETE /api/feedback/[id]/subscribe` handle subscribe/unsubscribe; `GET /api/feedback/[id]/unsubscribe?token=` handles one-click email links. Status-change and new-comment notifications are dispatched fire-and-forget in `status.patch.ts` and `comments.post.ts`. Three email templates added. UI: logged-in users get a one-click toggle; anonymous users see an inline email prompt with a confirmation message.
 
 ### Implementation
 
@@ -93,7 +94,8 @@ MVP
 - [x] We want to have a home page for the entire project, hosted on veerify.io. Please change the main domain for the dashboard to app.veerify.io, so we can host a separate site for the homepage.
   - Added dedicated dashboard-domain config (`APP_DASHBOARD_DOMAIN`) and runtime usage in `nuxt.config.ts`, `server/middleware/subdomain.ts`, and `components/public/PublicFeedbackBoard.vue`, plus env/docs updates in `.env.example` and `README.md`.
 
-- [ ] Add ability on public feedback items to subscribe to a feedback to get notified when there are updates. For anonymous this should open a prompt for email, and for logged in users this should open a modal where they can select between email and app notifications. If app notifications has not been enabled, it should prompt for access before toggling the button.
+- [x] Add ability on public feedback items to subscribe to a feedback to get notified when there are updates. For anonymous this should open a prompt for email, and for logged in users this should open a modal where they can select between email and app notifications. If app notifications has not been enabled, it should prompt for access before toggling the button.
+  - Implemented via the Email notification subscription feature above. App notifications deferred to the Notifications infrastructure item.
 
 - [x] Add selection between table view of feedback items, and Kanban view. Feedback table view should have a compact view of all feedback items, just like the github projects tool, with links and issues number, or a create github issue button if it does not exist as a github issue. The github issue column should only appear if github issues feature is set up.
 

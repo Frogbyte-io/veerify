@@ -289,3 +289,133 @@ Visitors can now reliably access your public board using this domain.
 
   return { subject, html, text }
 }
+
+// ---------------------------------------------------------------------------
+// Feedback subscription emails
+// ---------------------------------------------------------------------------
+
+interface SubscriptionConfirmationOptions {
+  feedbackTitle: string
+  unsubscribeUrl: string
+}
+
+export function getSubscriptionConfirmationTemplate({ feedbackTitle, unsubscribeUrl }: SubscriptionConfirmationOptions) {
+  const subject = `You're subscribed to updates for "${feedbackTitle}"`
+  const safeTitle = escapeHtml(feedbackTitle)
+  const safeUnsubUrl = escapeHtml(unsubscribeUrl)
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Subscribed to feedback updates</h2>
+      <p style="color:#444">You'll receive an email whenever the status changes or a new public comment is posted on:</p>
+      <div style="background:#f5f5f5;border-radius:8px;padding:16px;margin:16px 0">
+        <strong style="color:#1a1a1a">${safeTitle}</strong>
+      </div>
+      <p style="color:#444">To unsubscribe at any time, click the link below:</p>
+      <p><a href="${safeUnsubUrl}" style="color:#6366f1">Unsubscribe from this feedback</a></p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:12px">Powered by Veerify</p>
+    </div>
+  `
+
+  const text = `You're subscribed to updates for "${feedbackTitle}".
+
+You'll receive an email whenever the status changes or a new public comment is posted.
+
+To unsubscribe: ${unsubscribeUrl}
+`
+
+  return { subject, html, text }
+}
+
+interface StatusChangeNotificationOptions {
+  feedbackTitle: string
+  newStatus: string
+  boardUrl: string
+  unsubscribeUrl: string
+}
+
+export function getStatusChangeNotificationTemplate({
+  feedbackTitle,
+  newStatus,
+  boardUrl,
+  unsubscribeUrl,
+}: StatusChangeNotificationOptions) {
+  const subject = `Status update: "${feedbackTitle}" is now ${newStatus}`
+  const safeTitle = escapeHtml(feedbackTitle)
+  const safeStatus = escapeHtml(newStatus)
+  const safeBoardUrl = escapeHtml(boardUrl)
+  const safeUnsubUrl = escapeHtml(unsubscribeUrl)
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Feedback status updated</h2>
+      <p style="color:#444">The status of the following feedback item has changed:</p>
+      <div style="background:#f5f5f5;border-radius:8px;padding:16px;margin:16px 0">
+        <strong style="color:#1a1a1a">${safeTitle}</strong><br/>
+        <span style="color:#6366f1;font-weight:600">New status: ${safeStatus}</span>
+      </div>
+      <p><a href="${safeBoardUrl}" style="color:#6366f1">View on the feedback board</a></p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:12px">
+        <a href="${safeUnsubUrl}" style="color:#999">Unsubscribe from this feedback</a> &middot; Powered by Veerify
+      </p>
+    </div>
+  `
+
+  const text = `Feedback status updated: "${feedbackTitle}" is now ${newStatus}.
+
+View on the board: ${boardUrl}
+
+To unsubscribe: ${unsubscribeUrl}
+`
+
+  return { subject, html, text }
+}
+
+interface NewCommentNotificationOptions {
+  feedbackTitle: string
+  commenterName: string
+  commentBody: string
+  boardUrl: string
+  unsubscribeUrl: string
+}
+
+export function getNewCommentNotificationTemplate({
+  feedbackTitle,
+  commenterName,
+  commentBody,
+  boardUrl,
+  unsubscribeUrl,
+}: NewCommentNotificationOptions) {
+  const subject = `New comment on "${feedbackTitle}"`
+  const safeTitle = escapeHtml(feedbackTitle)
+  const safeName = escapeHtml(commenterName)
+  const safeComment = escapeHtml(commentBody.length > 300 ? commentBody.slice(0, 300) + '…' : commentBody)
+  const safeBoardUrl = escapeHtml(boardUrl)
+  const safeUnsubUrl = escapeHtml(unsubscribeUrl)
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">New comment on your subscribed feedback</h2>
+      <p style="color:#444"><strong>${safeName}</strong> commented on <strong>${safeTitle}</strong>:</p>
+      <div style="background:#f5f5f5;border-radius:8px;padding:16px;margin:16px 0;color:#444;white-space:pre-line">${safeComment}</div>
+      <p><a href="${safeBoardUrl}" style="color:#6366f1">View full discussion</a></p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:12px">
+        <a href="${safeUnsubUrl}" style="color:#999">Unsubscribe from this feedback</a> &middot; Powered by Veerify
+      </p>
+    </div>
+  `
+
+  const text = `${commenterName} commented on "${feedbackTitle}":
+
+${commentBody.length > 300 ? commentBody.slice(0, 300) + '…' : commentBody}
+
+View full discussion: ${boardUrl}
+
+To unsubscribe: ${unsubscribeUrl}
+`
+
+  return { subject, html, text }
+}

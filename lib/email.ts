@@ -5,6 +5,9 @@ import {
   getFeedbackConfirmationTemplate,
   getMagicLinkTemplate,
   getPasswordResetTemplate,
+  getSubscriptionConfirmationTemplate,
+  getStatusChangeNotificationTemplate,
+  getNewCommentNotificationTemplate,
 } from './email-templates'
 
 interface EmailOptions {
@@ -156,4 +159,42 @@ export async function sendCustomDomainVerifiedEmail(options: CustomDomainEmailOp
     text: template.text,
   })
   return result
+}
+
+interface SubscriptionConfirmationEmailOptions {
+  to: string
+  feedbackTitle: string
+  unsubscribeUrl: string
+}
+
+export async function sendFeedbackSubscriptionConfirmationEmail(options: SubscriptionConfirmationEmailOptions) {
+  const template = getSubscriptionConfirmationTemplate(options)
+  return sendEmail({ to: options.to, subject: template.subject, html: template.html, text: template.text })
+}
+
+interface StatusChangeNotificationEmailOptions {
+  to: string
+  feedbackTitle: string
+  newStatus: string
+  boardUrl: string
+  unsubscribeUrl: string
+}
+
+export async function sendStatusChangeNotificationEmail(options: StatusChangeNotificationEmailOptions) {
+  const template = getStatusChangeNotificationTemplate(options)
+  return sendEmail({ to: options.to, subject: template.subject, html: template.html, text: template.text })
+}
+
+interface NewCommentNotificationEmailOptions {
+  to: string
+  feedbackTitle: string
+  commenterName: string
+  commentBody: string
+  boardUrl: string
+  unsubscribeUrl: string
+}
+
+export async function sendNewCommentNotificationEmail(options: NewCommentNotificationEmailOptions) {
+  const template = getNewCommentNotificationTemplate(options)
+  return sendEmail({ to: options.to, subject: template.subject, html: template.html, text: template.text })
 }

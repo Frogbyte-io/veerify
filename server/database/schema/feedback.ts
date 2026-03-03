@@ -392,3 +392,30 @@ export const feedbackComment = pgTable(
     internalIdx: index('comment_internal_idx').on(table.isInternal),
   })
 )
+
+// Feedback subscriptions - email notification opt-in per feedback item
+export const feedbackSubscription = pgTable(
+  'feedback_subscription',
+  {
+    id: text('id').primaryKey(),
+    feedbackId: text('feedback_id')
+      .notNull()
+      .references(() => feedback.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    // Optional: link to a registered user account
+    userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+    // Opaque token used in one-click unsubscribe links
+    token: text('token').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // One subscription per email per feedback item
+    uniqueEmailFeedback: uniqueIndex('sub_email_feedback_idx').on(table.feedbackId, table.email),
+    // Fast lookup by token (unsubscribe links)
+    tokenIdx: uniqueIndex('sub_token_idx').on(table.token),
+    // Index for querying all subscribers of a feedback item
+    feedbackIdx: index('sub_feedback_idx').on(table.feedbackId),
+  })
+)

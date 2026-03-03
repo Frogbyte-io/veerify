@@ -4,7 +4,7 @@ import { optionalAuth } from '~/server/utils/auth-middleware'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, vote, project } from '~/server/database/schema/feedback'
+import { feedback, feedbackCategory, vote, project, feedbackSubscription } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
 
 export default defineEventHandler(async (event) => {
@@ -101,6 +101,17 @@ export default defineEventHandler(async (event) => {
       ? item.feedback.authorSessionId === anonSession.id
       : false
 
+  // Check subscription status for logged-in users
+  let isSubscribed = false
+  if (session?.user) {
+    const [sub] = await db
+      .select({ id: feedbackSubscription.id })
+      .from(feedbackSubscription)
+      .where(and(eq(feedbackSubscription.feedbackId, id), eq(feedbackSubscription.email, session.user.email)))
+      .limit(1)
+    isSubscribed = Boolean(sub)
+  }
+
   return createSuccessResponse({
     ...item.feedback,
     category: item.category,
@@ -109,5 +120,6 @@ export default defineEventHandler(async (event) => {
     hasVoted: voteType !== null,
     voteType,
     isOwn,
+    isSubscribed,
   })
 })

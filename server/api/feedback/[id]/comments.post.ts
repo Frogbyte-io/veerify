@@ -7,8 +7,9 @@ import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackComment } from '~/server/database/schema/feedback'
+import { feedback, feedbackComment, feedbackSubscription } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
+import { sendNewCommentNotificationEmail } from '~/lib/email'
 
 const createCommentSchema = z.object({
   body: z.string().min(1, 'Comment body is required').max(5000, 'Comment too long'),
@@ -143,6 +144,31 @@ export default defineEventHandler(async (event) => {
       .where(eq(user.id, session.user.id))
       .limit(1)
     author = authorUser || null
+  }
+
+  // Notify subscribers about the new public comment (fire-and-forget, skip internal notes)
+  if (!created.isInternal) {
+    const commenterName = created.authorName || (author?.name) || 'Someone'
+    db.select()
+      .from(feedbackSubscription)
+      .where(eq(feedbackSubscription.feedbackId, id))
+      .then((subscribers) => {
+        const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+        for (const sub of subscribers) {
+          // Don't email the commenter about their own comment
+          if (sub.email === created.authorEmail) continue
+          const unsubscribeUrl = `${baseUrl}/api/feedback/${id}/unsubscribe?token=${sub.token}`
+          sendNewCommentNotificationEmail({
+            to: sub.email,
+            feedbackTitle: fb.title,
+            commenterName,
+            commentBody: created.body,
+            boardUrl: baseUrl,
+            unsubscribeUrl,
+          }).catch((err) => console.error('Failed to send comment notification:', err))
+        }
+      })
+      .catch((err) => console.error('Failed to fetch subscribers for comment notification:', err))
   }
 
   setResponseStatus(event, 201)

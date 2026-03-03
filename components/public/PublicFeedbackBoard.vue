@@ -670,11 +670,57 @@
                 <!-- Subscribe to post -->
                 <div class="space-y-2">
                   <p class="text-sm font-semibold">Subscribe to post</p>
-                  <p class="text-xs text-muted-foreground">Get notified by email when there are changes.</p>
-                  <Button size="sm" variant="outline" class="w-full">
-                    <Icon name="lucide:bell" class="w-4 h-4 mr-2" />
-                    Get notified
-                  </Button>
+                  <p class="text-xs text-muted-foreground">Get notified by email when the status changes or new comments are posted.</p>
+
+                  <!-- Logged-in: one-click toggle -->
+                  <template v-if="currentUser">
+                    <Button
+                      size="sm"
+                      :variant="detailIsSubscribed ? 'default' : 'outline'"
+                      class="w-full"
+                      :disabled="detailSubscribeLoading"
+                      @click="toggleSubscription"
+                    >
+                      <Icon
+                        :name="detailSubscribeLoading ? 'lucide:loader-2' : detailIsSubscribed ? 'lucide:bell-off' : 'lucide:bell'"
+                        class="w-4 h-4 mr-2"
+                        :class="detailSubscribeLoading ? 'animate-spin' : ''"
+                      />
+                      {{ detailIsSubscribed ? 'Unsubscribe' : 'Get notified' }}
+                    </Button>
+                  </template>
+
+                  <!-- Anonymous: email prompt inline -->
+                  <template v-else>
+                    <div v-if="!detailSubscribeSuccess" class="space-y-2">
+                      <Input
+                        v-model="detailSubscribeEmail"
+                        type="email"
+                        placeholder="your@email.com"
+                        class="h-8 text-sm"
+                        :disabled="detailSubscribeLoading"
+                        @keydown.enter="subscribeAnonymous"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        class="w-full"
+                        :disabled="detailSubscribeLoading || !detailSubscribeEmail"
+                        @click="subscribeAnonymous"
+                      >
+                        <Icon
+                          :name="detailSubscribeLoading ? 'lucide:loader-2' : 'lucide:bell'"
+                          class="w-4 h-4 mr-2"
+                          :class="detailSubscribeLoading ? 'animate-spin' : ''"
+                        />
+                        Notify me
+                      </Button>
+                    </div>
+                    <div v-else class="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                      <Icon name="lucide:check-circle" class="w-4 h-4 shrink-0" />
+                      <span>Subscribed! Check your inbox for a confirmation.</span>
+                    </div>
+                  </template>
                 </div>
               </div>
             </div>
@@ -867,6 +913,10 @@ export default {
       feedbackDetailsPrefetchCache: {},
       feedbackDetailsRequests: {},
       votingIds: new Set(),
+      detailIsSubscribed: false,
+      detailSubscribeLoading: false,
+      detailSubscribeEmail: '',
+      detailSubscribeSuccess: false,
       editingCommentId: null,
       editingCommentBody: '',
       isSavingComment: false,
@@ -1226,6 +1276,9 @@ export default {
         const payload = await this.fetchFeedbackDetailsPayload(feedbackId)
         this.selectedFeedback = payload?.feedback || null
         this.selectedFeedbackComments = Array.isArray(payload?.comments) ? payload.comments : []
+        this.detailIsSubscribed = Boolean(payload?.feedback?.isSubscribed)
+        this.detailSubscribeEmail = ''
+        this.detailSubscribeSuccess = false
       } catch (err) {
         console.error('Error loading feedback details:', err)
         this.detailsError = err?.data?.error?.message || 'Failed to load feedback details'
@@ -1525,6 +1578,40 @@ export default {
       } catch (err) {
         console.error('Error deleting comment:', err)
         alert(err?.data?.error?.message || 'Failed to delete comment. Please try again.')
+      }
+    },
+    async toggleSubscription() {
+      if (!this.selectedFeedbackId || this.detailSubscribeLoading) return
+      this.detailSubscribeLoading = true
+      try {
+        if (this.detailIsSubscribed) {
+          await $fetch(`/api/feedback/${this.selectedFeedbackId}/subscribe`, { method: 'DELETE' })
+          this.detailIsSubscribed = false
+        } else {
+          await $fetch(`/api/feedback/${this.selectedFeedbackId}/subscribe`, { method: 'POST' })
+          this.detailIsSubscribed = true
+        }
+      } catch (err) {
+        console.error('Subscription toggle failed:', err)
+        alert(err?.data?.error?.message || 'Failed to update subscription. Please try again.')
+      } finally {
+        this.detailSubscribeLoading = false
+      }
+    },
+    async subscribeAnonymous() {
+      if (!this.selectedFeedbackId || !this.detailSubscribeEmail || this.detailSubscribeLoading) return
+      this.detailSubscribeLoading = true
+      try {
+        await $fetch(`/api/feedback/${this.selectedFeedbackId}/subscribe`, {
+          method: 'POST',
+          body: { email: this.detailSubscribeEmail },
+        })
+        this.detailSubscribeSuccess = true
+      } catch (err) {
+        console.error('Subscribe failed:', err)
+        alert(err?.data?.error?.message || 'Failed to subscribe. Please try again.')
+      } finally {
+        this.detailSubscribeLoading = false
       }
     },
     async voteFromDetails(type) {
