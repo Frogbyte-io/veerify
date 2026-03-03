@@ -5,6 +5,7 @@ import { optionalAuth } from '~/server/utils/auth-middleware'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
+import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
@@ -18,6 +19,8 @@ const createCommentSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  await requireRateLimit(event, { ...rateLimits.standard, identifier: 'feedback-comment' })
+
   const session = await optionalAuth(event)
   const body = await validateBody(event, createCommentSchema)
 

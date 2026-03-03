@@ -1,11 +1,10 @@
 /**
- * Rate limiting utilities (stub implementation)
+ * Rate limiting utilities
  *
- * TODO: Implement actual rate limiting using Redis or in-memory store
- * For production, consider using:
- * - @upstash/ratelimit with Upstash Redis
- * - nuxt-rate-limit module
- * - Custom implementation with node-rate-limiter-flexible
+ * Implements a sliding window rate limiter using an in-memory Map.
+ * Works correctly for single-instance deployments. For multi-instance
+ * deployments, swap the in-memory store for a shared Redis backend
+ * (e.g. @upstash/ratelimit).
  */
 
 import type { H3Event } from 'h3'
@@ -28,33 +27,57 @@ export interface RateLimitConfig {
   identifier?: string
 }
 
+// In-memory store: key → array of request timestamps (ms)
+const _store = new Map<string, number[]>()
+
+// Clean up stale entries every 5 minutes to prevent unbounded memory growth
+const _cleanup = setInterval(() => {
+  const now = Date.now()
+  for (const [key, timestamps] of _store.entries()) {
+    const fresh = timestamps.filter((t) => now - t < 3_600_000)
+    if (fresh.length === 0) {
+      _store.delete(key)
+    } else {
+      _store.set(key, fresh)
+    }
+  }
+}, 5 * 60 * 1000)
+
+// Allow the Node.js process to exit normally even if this timer is pending
+if (typeof (_cleanup as NodeJS.Timeout).unref === 'function') {
+  ;(_cleanup as NodeJS.Timeout).unref()
+}
+
 /**
- * Stub rate limiter - logs but doesn't enforce limits
+ * Checks whether a client is within its rate limit for the given configuration.
+ * Uses a sliding window algorithm.
  *
  * @param event - H3 event
  * @param config - Rate limit configuration
- * @returns True if within limits (always true in stub)
+ * @returns True if the request is within limits; false if the limit has been exceeded
  */
 export async function checkRateLimit(event: H3Event, config: RateLimitConfig): Promise<boolean> {
-  // Get client identifier (IP address or user ID)
   const clientId = getClientId(event)
+  const key = `${config.identifier ?? 'default'}:${clientId}`
+  const now = Date.now()
+  const windowMs = config.windowSeconds * 1000
 
-  // TODO: Implement actual rate limiting logic
-  // For now, just log and allow all requests
-  if (import.meta.dev) {
-    console.log(`[Rate Limit Stub] ${clientId} - ${config.identifier || 'default'}`)
+  // Retrieve existing timestamps and discard those outside the current window
+  const timestamps = (_store.get(key) ?? []).filter((t) => now - t < windowMs)
+
+  if (timestamps.length >= config.maxRequests) {
+    return false
   }
 
-  // In production, this should:
-  // 1. Check Redis/store for request count in current window
-  // 2. Increment counter
-  // 3. Return false and throw error if limit exceeded
+  // Record this request
+  timestamps.push(now)
+  _store.set(key, timestamps)
 
   return true
 }
 
 /**
- * Rate limit middleware - throws 429 if limit exceeded
+ * Rate limit middleware — throws 429 if limit exceeded.
  *
  * @param event - H3 event
  * @param config - Rate limit configuration
@@ -76,19 +99,18 @@ export async function requireRateLimit(event: H3Event, config: RateLimitConfig):
 }
 
 /**
- * Gets a unique client identifier for rate limiting
- * Prefers user ID if authenticated, falls back to IP address
+ * Gets a unique client identifier for rate limiting.
+ * Prefers the first IP from X-Forwarded-For, falls back to the socket remote address.
  *
  * @param event - H3 event
  * @returns Client identifier string
  */
 function getClientId(event: H3Event): string {
-  // Try to get IP address
   const forwarded = event.node.req.headers['x-forwarded-for']
   const ip = forwarded
     ? Array.isArray(forwarded)
       ? forwarded[0]
-      : forwarded.split(',')[0]
+      : forwarded.split(',')[0].trim()
     : event.node.req.socket.remoteAddress
 
   return ip || 'unknown'
@@ -98,25 +120,25 @@ function getClientId(event: H3Event): string {
  * Common rate limit configurations
  */
 export const rateLimits = {
-  // Strict - for sensitive operations (login, signup)
+  // Strict — for sensitive write operations (feedback submission, auth)
   strict: {
     maxRequests: 5,
     windowSeconds: 60, // 5 requests per minute
   },
 
-  // Standard - for most authenticated endpoints
+  // Standard — for most write endpoints (comments, etc.)
   standard: {
     maxRequests: 60,
     windowSeconds: 60, // 60 requests per minute
   },
 
-  // Relaxed - for read-only public endpoints
+  // Relaxed — for high-frequency interactions (voting, reads)
   relaxed: {
     maxRequests: 100,
     windowSeconds: 60, // 100 requests per minute
   },
 
-  // Webhooks - for external webhooks
+  // Webhooks — for external webhook ingestion
   webhook: {
     maxRequests: 1000,
     windowSeconds: 60, // 1000 requests per minute

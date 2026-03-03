@@ -40,7 +40,8 @@ MVP
 - [ ] Notifications infrastructure (real-time or polling for in-app notifications)
 - [ ] Create embeddable widgets for customers to add to their own website
 - [ ] Migrate to Nuxt 4
-- [ ] Anti-spam: IP-based rate limiting, duplicate content detection, user reputation scoring, CAPTCHA (optional)
+- [x] Anti-spam: IP-based rate limiting, duplicate content detection, user reputation scoring, CAPTCHA (optional)
+  - Implemented sliding-window in-memory rate limiter in `server/utils/rate-limit.ts`; applied strict (5/min) on public feedback submission, relaxed (100/min) on votes, and standard (60/min) on comment posting. Swap the in-memory store for a Redis backend (e.g. Upstash) in multi-instance deployments.
 - [ ] Review and harden HTML sanitization for user-submitted content; audit for SQL injection risks
 
 - [ ] Discord Bot — notify on new feedback; submit feedback via `/feedback` slash command

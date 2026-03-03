@@ -6,6 +6,7 @@ import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
 import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
+import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
 
@@ -18,6 +19,8 @@ const submitFeedbackSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  await requireRateLimit(event, { ...rateLimits.strict, identifier: 'public-feedback-submit' })
+
   const teamSlug = getRouterParam(event, 'teamSlug')
   const projectSlug = getRouterParam(event, 'projectSlug')
 

@@ -4,6 +4,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { requirePublicProject } from '~/server/utils/project-access'
+import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import { feedback, vote } from '~/server/database/schema/feedback'
 
@@ -12,6 +13,8 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  await requireRateLimit(event, { ...rateLimits.relaxed, identifier: 'feedback-vote' })
+
   const session = await optionalAuth(event)
 
   const id = getRouterParam(event, 'id')
