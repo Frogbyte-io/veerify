@@ -113,6 +113,7 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+import { resolveSafeRedirectTarget } from '~/lib/auth-redirect'
 
 export default {
   name: 'SignUpPage',
@@ -132,37 +133,8 @@ export default {
     },
   },
   methods: {
-    resolveRedirectTarget(rawRedirect, fallback = '/dashboard') {
-      if (!rawRedirect || typeof rawRedirect !== 'string') {
-        return fallback
-      }
-
-      if (rawRedirect.startsWith('/')) {
-        return rawRedirect
-      }
-
-      if (!import.meta.client) {
-        return fallback
-      }
-
-      try {
-        const parsed = new URL(rawRedirect)
-        if (!['http:', 'https:'].includes(parsed.protocol)) {
-          return fallback
-        }
-
-        const config = useRuntimeConfig()
-        const appDomain = String(config.public.appDomain || 'localhost').toLowerCase()
-        const redirectHost = parsed.hostname.toLowerCase()
-        const currentHost = window.location.hostname.toLowerCase()
-
-        const isAllowedHost =
-          redirectHost === currentHost || redirectHost === appDomain || redirectHost.endsWith(`.${appDomain}`)
-
-        return isAllowedHost ? parsed.toString() : fallback
-      } catch {
-        return fallback
-      }
+    async resolveRedirectTarget(rawRedirect, fallback = '/dashboard') {
+      return resolveSafeRedirectTarget(rawRedirect, fallback)
     },
 
     async handleSubmit() {
@@ -190,7 +162,7 @@ export default {
           this.error = result.error.message || 'Sign up failed'
         } else {
           $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
-          const target = this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
+          const target = await this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
           if (target.startsWith('http://') || target.startsWith('https://')) {
             window.location.href = target
           } else {
@@ -210,8 +182,10 @@ export default {
       this.error = ''
 
       try {
+        const callbackURL = await this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
         await authClient.signIn.social({
           provider: 'github',
+          callbackURL,
         })
       } catch (err) {
         this.error = 'GitHub sign up failed'

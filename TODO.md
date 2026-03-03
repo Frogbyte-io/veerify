@@ -76,7 +76,8 @@ MVP
 
 - [x] Workspace icon for when the sidebar is collapsed is not centered in the sidebar. Please center it.
 
-- [ ] When on a public board on a custom domain or subdomain but I am logged in to the dashboard on the main domain, it should show that I am logged in and allow me to access the dashboard from the public board. Currently, it shows that I am not logged in and when I click the login button, it takes me to the main domain login page instead of showing a login modal on the public board. We should either show a login modal on the public board or redirect to the main domain login page and then back to the public board after login.
+- [x] When on a public board on a custom domain or subdomain but I am logged in to the dashboard on the main domain, it should show that I am logged in and allow me to access the dashboard from the public board. Currently, it shows that I am not logged in and when I click the login button, it takes me to the main domain login page instead of showing a login modal on the public board. We should either show a login modal on the public board or redirect to the main domain login page and then back to the public board after login.
+  - Added safe absolute redirect handling in login/signup (including GitHub auth) and a server allowlist endpoint (`/api/public/auth/redirect-allowed`) that permits only app-domain hosts and configured public custom domains.
 
 - [x] The toggle in product settings to show or not show the powered by veerify badge on the public board is currently updating on public boards. It should hide the badge when toggled off and show it when toggled on. Please also add option to toggle Github footer as well.
 

@@ -206,6 +206,27 @@ test.describe('Anonymous feedback sessions', () => {
     expect(signupRedirect).toContain(`/${PROJECT_SLUG}`)
   })
 
+  test('login honors absolute redirect target back to public board', async ({ page }) => {
+    const redirectTarget = new URL(PUBLIC_PAGE)
+    redirectTarget.searchParams.set('fromAuth', '1')
+
+    await page.goto(`/login?redirect=${encodeURIComponent(redirectTarget.toString())}`)
+    await page.getByTestId('login-email').fill(TEST_EMAIL)
+    await page.getByTestId('login-password').fill(TEST_PASSWORD)
+    await page.getByTestId('login-submit').click()
+
+    await page.waitForURL(
+      (url) =>
+        url.origin === redirectTarget.origin &&
+        url.pathname === redirectTarget.pathname &&
+        url.searchParams.get('fromAuth') === '1',
+      {
+        timeout: 30_000,
+      }
+    )
+    await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
+  })
+
   test('category icon is shown on public feedback items when configured', async ({ page }) => {
     await gotoPublicPage(page)
 
