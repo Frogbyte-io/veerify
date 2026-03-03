@@ -255,7 +255,7 @@
                   :title="item.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
                   @click.stop="handleVote(item, 'upvote')"
                 >
-                  <Icon name="lucide:chevron-up" class="w-5 h-5" />
+                  <Icon :name="voteIcons.up" class="w-5 h-5" />
                 </button>
                 <span class="text-sm font-semibold leading-none">{{ item.voteCount }}</span>
                 <button
@@ -266,7 +266,7 @@
                   :title="item.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
                   @click.stop="handleVote(item, 'downvote')"
                 >
-                  <Icon name="lucide:chevron-down" class="w-5 h-5" />
+                  <Icon :name="voteIcons.down" class="w-5 h-5" />
                 </button>
               </div>
               <div class="flex-1 min-w-0">
@@ -483,7 +483,7 @@
                         "
                         @click="voteFromDetails"
                       >
-                        <Icon name="lucide:chevron-up" class="w-4 h-4" />
+                        <Icon :name="voteIcons.up" class="w-4 h-4" />
                         {{ selectedFeedback.voteCount }}
                       </button>
                     </div>
@@ -879,6 +879,16 @@ export default {
   computed: {
     accentColor() {
       return this.projectData?.project?.settings?.accentColor || '#6366f1'
+    },
+    voteIcons() {
+      const style = this.projectData?.project?.settings?.voteStyle || 'arrows'
+      const map = {
+        arrows: { up: 'lucide:chevron-up', down: 'lucide:chevron-down' },
+        thumbs: { up: 'lucide:thumbs-up', down: 'lucide:thumbs-down' },
+        rockets: { up: 'lucide:rocket', down: 'lucide:thumbs-down' },
+        hearts: { up: 'lucide:heart', down: 'lucide:heart-off' },
+      }
+      return map[style] || map.arrows
     },
     projectInitial() {
       const name = this.projectData?.project?.name || ''

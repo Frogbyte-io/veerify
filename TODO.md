@@ -54,7 +54,8 @@ MVP
 - [x] Roadmap page — public timeline view based on feedback status tags
   - Added `/roadmap` sub-page on public boards (e.g. `team.veerify.com/project-slug/roadmap`); new `GET /api/public/t/[teamSlug]/[projectSlug]/roadmap` endpoint returns feedback items grouped by status; `PublicRoadmap.vue` renders a horizontal kanban-style view with status columns; tab navigation added to `PublicFeedbackBoard.vue` linking to the roadmap.
 - [ ] Sync roadmaps to GitHub Projects
-- [ ] Customizable vote style (thumbs, arrows, ducks, rockets, etc.)
+- [x] Customizable vote style (thumbs, arrows, ducks, rockets, etc.)
+  - Added `voteStyle` setting (arrows/thumbs/rockets/hearts) to project appearance settings. Vote icons on the public board are now driven by this setting. Configured in `ProductSettingsAppearance.vue` and rendered dynamically via a `voteIcons` computed in `PublicFeedbackBoard.vue`; validated server-side in `server/api/projects/[slug].put.ts`.
 - [x] When creating a feedback item, it should be automatically upvoted by the submitter (if anonymous, use the session; if logged in, use their user ID) so it appears in the board without needing a second click
 - [x] Add a "Feedback" tab to the product settings page that shows a list of all feedback items with filters (status, tags, etc.) and search
   - Added `ProductSettingsFeedback.vue` with search, status/category/sort filters, paginated feedback list, inline status updates, and GitHub issue links. Wired into `pages/products/[slug].vue` as the second tab.

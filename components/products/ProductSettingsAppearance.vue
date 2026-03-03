@@ -112,6 +112,28 @@
           <p class="text-xs text-muted-foreground">Controls the default theme for your public feedback board.</p>
         </div>
 
+        <div class="space-y-2">
+          <Label>Vote Style</Label>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="appearance-vote-style-selector">
+            <button
+              v-for="style in voteStyleOptions"
+              :key="style.value"
+              type="button"
+              class="flex flex-col items-center gap-1.5 rounded-md border px-3 py-2.5 text-sm transition-colors hover:bg-accent"
+              :class="form.voteStyle === style.value ? 'border-primary bg-primary/5 text-primary font-medium' : 'border-border text-muted-foreground'"
+              :data-testid="'appearance-vote-style-' + style.value"
+              @click="form.voteStyle = style.value"
+            >
+              <div class="flex items-center gap-1">
+                <Icon :name="style.upIcon" class="w-4 h-4" />
+                <Icon :name="style.downIcon" class="w-4 h-4" />
+              </div>
+              <span class="text-xs">{{ style.label }}</span>
+            </button>
+          </div>
+          <p class="text-xs text-muted-foreground">The icons shown on vote buttons on your public board.</p>
+        </div>
+
         <div class="flex items-center justify-between">
           <div>
             <p class="font-medium text-sm">Show "Powered by Veerify"</p>
@@ -341,6 +363,7 @@ export default {
         showPoweredBy: settings.showPoweredBy !== false,
         showGithubFooter: settings.showGithubFooter !== false,
         themeMode: settings.themeMode || 'system',
+        voteStyle: settings.voteStyle || 'arrows',
         customFooterEnabled: settings.customFooterEnabled === true,
         customFooterBranding: settings.customFooterBranding || '',
         customFooterText: settings.customFooterText || '',
@@ -370,6 +393,7 @@ export default {
         showPoweredBy: settings.showPoweredBy !== false,
         showGithubFooter: settings.showGithubFooter !== false,
         themeMode: settings.themeMode || 'system',
+        voteStyle: settings.voteStyle || 'arrows',
         customFooterEnabled: settings.customFooterEnabled === true,
         customFooterBranding: settings.customFooterBranding || '',
         customFooterText: settings.customFooterText || '',
@@ -378,6 +402,14 @@ export default {
         customFooterSecondaryLabel: settings.customFooterSecondaryLabel || '',
         customFooterSecondaryUrl: settings.customFooterSecondaryUrl || '',
       }
+    },
+    voteStyleOptions() {
+      return [
+        { value: 'arrows', label: 'Arrows', upIcon: 'lucide:chevron-up', downIcon: 'lucide:chevron-down' },
+        { value: 'thumbs', label: 'Thumbs', upIcon: 'lucide:thumbs-up', downIcon: 'lucide:thumbs-down' },
+        { value: 'rockets', label: 'Rockets', upIcon: 'lucide:rocket', downIcon: 'lucide:thumbs-down' },
+        { value: 'hearts', label: 'Hearts', upIcon: 'lucide:heart', downIcon: 'lucide:heart-off' },
+      ]
     },
     previewThemeClass() {
       if (this.form.themeMode === 'dark') return 'dark'
@@ -425,6 +457,7 @@ export default {
         this.form.showPoweredBy !== this.currentSettings.showPoweredBy ||
         this.form.showGithubFooter !== this.currentSettings.showGithubFooter ||
         this.form.themeMode !== this.currentSettings.themeMode ||
+        this.form.voteStyle !== this.currentSettings.voteStyle ||
         this.form.customFooterEnabled !== this.currentSettings.customFooterEnabled ||
         this.form.customFooterBranding !== this.currentSettings.customFooterBranding ||
         this.form.customFooterText !== this.currentSettings.customFooterText ||
@@ -449,6 +482,7 @@ export default {
         this.form.showPoweredBy = settings.showPoweredBy !== false
         this.form.showGithubFooter = settings.showGithubFooter !== false
         this.form.themeMode = settings.themeMode || 'system'
+        this.form.voteStyle = settings.voteStyle || 'arrows'
         this.form.customFooterEnabled = settings.customFooterEnabled === true
         this.form.customFooterBranding = settings.customFooterBranding || ''
         this.form.customFooterText = settings.customFooterText || ''
@@ -599,6 +633,7 @@ export default {
           showPoweredBy: this.form.showPoweredBy,
           showGithubFooter: this.form.showGithubFooter,
           themeMode: this.form.themeMode,
+          voteStyle: this.form.voteStyle,
           customFooterEnabled: this.form.customFooterEnabled,
           customFooterBranding: this.form.customFooterBranding?.trim() || null,
           customFooterText: this.form.customFooterText?.trim() || null,
