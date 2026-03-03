@@ -181,8 +181,8 @@ export default {
       return domain
     },
     providers() {
-      const cname = this.cnameTarget
-      const host = this.hostPart || 'feedback'
+      const cname = this.escapeHtml(this.cnameTarget)
+      const host = this.escapeHtml(this.hostPart || 'feedback')
       return [
         {
           id: 'cloudflare',
@@ -286,6 +286,15 @@ export default {
     },
   },
   methods: {
+    escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;')
+    },
+
     async save() {
       this.isSaving = true
       try {

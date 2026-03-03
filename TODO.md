@@ -42,7 +42,8 @@ MVP
 - [ ] Migrate to Nuxt 4
 - [x] Anti-spam: IP-based rate limiting, duplicate content detection, user reputation scoring, CAPTCHA (optional)
   - Implemented sliding-window in-memory rate limiter in `server/utils/rate-limit.ts`; applied strict (5/min) on public feedback submission, relaxed (100/min) on votes, and standard (60/min) on comment posting. Swap the in-memory store for a Redis backend (e.g. Upstash) in multi-instance deployments.
-- [ ] Review and harden HTML sanitization for user-submitted content; audit for SQL injection risks
+- [x] Review and harden HTML sanitization for user-submitted content; audit for SQL injection risks
+  - Added `escapeHtml()` helper in `lib/email-templates.ts`; applied to all user-controlled values (`authorName`, `feedbackTitle`, `projectName`, `name`, `domain`, and server-generated URLs) interpolated into HTML email bodies across all six template functions. Added `escapeHtml()` method in `components/products/ProductSettingsDomain.vue` and applied it to the user-supplied custom domain (`host`) and CNAME target (`cname`) interpolated into `v-html` provider step strings. SQL injection risk is already mitigated by Drizzle ORM's parameterized queries throughout; no raw SQL concatenation found. Vue template interpolation (`{{ }}`) is safe by default.
 
 - [ ] Discord Bot — notify on new feedback; submit feedback via `/feedback` slash command
 - [ ] Polls / feature suggestions with yay-or-nay vote
