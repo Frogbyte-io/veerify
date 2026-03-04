@@ -46,26 +46,37 @@ export default defineEventHandler(async (event) => {
     .where(eq(feedback.id, id))
     .returning()
 
-  // Notify subscribers about the status change (fire-and-forget)
+  // Notify subscribers about the status change
   if (updated.status !== fb.status) {
-    db.select()
-      .from(feedbackSubscription)
-      .where(eq(feedbackSubscription.feedbackId, id))
-      .then((subscribers) => {
-        const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
-        for (const sub of subscribers) {
+    try {
+      const subscribers = await db
+        .select()
+        .from(feedbackSubscription)
+        .where(eq(feedbackSubscription.feedbackId, id))
+
+      const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+      const notificationResults = await Promise.allSettled(
+        subscribers.map((sub) => {
           const unsubscribeUrl = `${baseUrl}/api/feedback/${id}/unsubscribe?token=${sub.token}`
           const boardUrl = baseUrl
-          sendStatusChangeNotificationEmail({
+          return sendStatusChangeNotificationEmail({
             to: sub.email,
             feedbackTitle: updated.title,
             newStatus: updated.status,
             boardUrl,
             unsubscribeUrl,
-          }).catch((err) => console.error('Failed to send status notification:', err))
+          })
+        }),
+      )
+
+      for (const [index, result] of notificationResults.entries()) {
+        if (result.status === 'rejected') {
+          console.error(`Failed to send status notification to ${subscribers[index]?.email ?? 'unknown'}:`, result.reason)
         }
-      })
-      .catch((err) => console.error('Failed to fetch subscribers for status notification:', err))
+      }
+    } catch (err) {
+      console.error('Failed to fetch subscribers for status notification:', err)
+    }
   }
 
   return createSuccessResponse(updated)

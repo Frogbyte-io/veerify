@@ -146,29 +146,40 @@ export default defineEventHandler(async (event) => {
     author = authorUser || null
   }
 
-  // Notify subscribers about the new public comment (fire-and-forget, skip internal notes)
+  // Notify subscribers about the new public comment (skip internal notes)
   if (!created.isInternal) {
     const commenterName = created.authorName || (author?.name) || 'Someone'
-    db.select()
-      .from(feedbackSubscription)
-      .where(eq(feedbackSubscription.feedbackId, id))
-      .then((subscribers) => {
-        const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
-        for (const sub of subscribers) {
-          // Don't email the commenter about their own comment
-          if (sub.email === created.authorEmail) continue
+    try {
+      const subscribers = await db
+        .select()
+        .from(feedbackSubscription)
+        .where(eq(feedbackSubscription.feedbackId, id))
+
+      const recipients = subscribers.filter((sub) => sub.email !== created.authorEmail)
+      const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+
+      const notificationResults = await Promise.allSettled(
+        recipients.map((sub) => {
           const unsubscribeUrl = `${baseUrl}/api/feedback/${id}/unsubscribe?token=${sub.token}`
-          sendNewCommentNotificationEmail({
+          return sendNewCommentNotificationEmail({
             to: sub.email,
             feedbackTitle: fb.title,
             commenterName,
             commentBody: created.body,
             boardUrl: baseUrl,
             unsubscribeUrl,
-          }).catch((err) => console.error('Failed to send comment notification:', err))
+          })
+        }),
+      )
+
+      for (const [index, result] of notificationResults.entries()) {
+        if (result.status === 'rejected') {
+          console.error(`Failed to send comment notification to ${recipients[index]?.email ?? 'unknown'}:`, result.reason)
         }
-      })
-      .catch((err) => console.error('Failed to fetch subscribers for comment notification:', err))
+      }
+    } catch (err) {
+      console.error('Failed to fetch subscribers for comment notification:', err)
+    }
   }
 
   setResponseStatus(event, 201)
