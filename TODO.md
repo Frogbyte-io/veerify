@@ -151,3 +151,28 @@ MVP
 
 - [x] Detect between self hosted and cloud based on env variables. if locally hosted, replace the billing tab with a "Status" tab that shows the status of different services (database, storage, etc.) and any errors or warnings related to them. This will help self-hosted users monitor the health of their instance and troubleshoot any issues that arise.
   - Added deployment mode runtime config via `APP_DEPLOYMENT_MODE` (with auto-detection fallback), `SettingsStatus` UI in `components/settings/SettingsStatus.vue`, and service checks in `server/api/system/status.get.ts`. Settings now swaps Billing->Status for self-hosted mode in `pages/settings/index.vue`, with e2e coverage in `tests/e2e/organization-settings.spec.ts`.
+
+---
+
+## Technical Debt
+
+- [ ] **#4 — Validate feedback status against project's allowed statuses**
+  `server/api/feedback/[id]/status.patch.ts` accepts any string up to 80 chars. Validate that the provided status actually exists in the project's `feedbackStatus` table before applying it.
+
+- [ ] **#5 — Tighten rate limiting on anonymous feedback submission**
+  `server/api/feedback/index.post.ts` uses the `standard` limit (60/min) for unauthenticated requests. Switch anonymous submissions to the `strict` limit (5/min per IP) to prevent spam.
+
+- [ ] **#6 — Require UPLOAD_TOKEN_SECRET as a hard requirement**
+  `server/utils/upload-token.ts` silently falls back to `BETTER_AUTH_SECRET` when `UPLOAD_TOKEN_SECRET` is not set. Rotating the auth secret silently breaks all upload tokens. Should error at startup if missing, and note this in `.env.example`.
+
+- [ ] **#7 — Add composite database indexes for common query patterns**
+  `server/database/schema/feedback.ts` is missing performance indexes:
+  - `(projectId, createdAt)` on `feedback` — used for paginated project feedback lists
+  - `(feedbackId, createdAt)` on `feedbackComment` — used for threaded comment sorting
+  Add via schema change + `yarn db:generate` + `yarn db:migrate`.
+
+- [ ] **#8 — Replace `as any` header casts with `getRequestHeaders()`**
+  The pattern `event.node.req.headers as any` is repeated across 5+ server files. Replace with Nuxt's built-in `getRequestHeaders(event)` or a shared typed helper.
+
+- [ ] **#9 — Replace `console.error()` with structured logging**
+  Fire-and-forget failures (email notifications, GitHub API calls) only produce raw stack traces. Introduce a simple structured logger that includes context (feedbackId, userId, orgId) to make production debugging tractable.

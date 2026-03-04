@@ -88,11 +88,10 @@ export const auth = betterAuth({
     sendOnSignUp: true,
   },
   socialProviders: {
-    // TODO: uncomment and add OAuth credentials
-    // github: {
-    //   clientId: process.env.GITHUB_CLIENT_ID as string,
-    //   clientSecret: process.env.GITHUB_CLIENT_SECRET as string,
-    // },
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID as string,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET as string,
+    },
   },
   plugins: [
     organization({

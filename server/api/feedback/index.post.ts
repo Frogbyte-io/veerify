@@ -26,6 +26,40 @@ const createFeedbackSchema = z.object({
   authorEmail: z.string().email().optional(),
 })
 
+function createGitHubHeaders(accessToken: string) {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: 'application/vnd.github+json',
+    'Content-Type': 'application/json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'Veerify',
+  }
+}
+
+async function rollbackCreatedGitHubIssue(params: {
+  owner: string
+  repo: string
+  issueNumber: number
+  accessToken: string
+}) {
+  const response = await fetch(`https://api.github.com/repos/${params.owner}/${params.repo}/issues/${params.issueNumber}`, {
+    method: 'PATCH',
+    headers: createGitHubHeaders(params.accessToken),
+    body: JSON.stringify({
+      state: 'closed',
+      state_reason: 'not_planned',
+    }),
+  })
+
+  if (!response.ok) {
+    const rollbackError = (await response.json().catch(() => null)) as { message?: string } | null
+    console.error(
+      'Failed to rollback auto-created GitHub issue:',
+      rollbackError?.message || response.statusText
+    )
+  }
+}
+
 export default defineEventHandler(async (event) => {
   // Optional auth — allows anonymous submissions
   const session = await optionalAuth(event)
@@ -51,6 +85,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Verify category if provided
+  let categoryName: string | null = null
   if (body.categoryId) {
     const [cat] = await db.select().from(feedbackCategory).where(eq(feedbackCategory.id, body.categoryId)).limit(1)
     if (!cat || cat.projectId !== proj.id) {
@@ -60,6 +95,7 @@ export default defineEventHandler(async (event) => {
         data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid category for this project'),
       })
     }
+    categoryName = cat.name
   }
 
   // For anonymous submissions, require name
@@ -83,62 +119,25 @@ export default defineEventHandler(async (event) => {
   const editTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
 
   const now = new Date()
-  const [created] = await db
-    .insert(feedback)
-    .values({
-      id: crypto.randomUUID(),
-      projectId: body.projectId,
-      categoryId: body.categoryId || null,
-      title: body.title,
-      body: body.body,
-      status: 'open',
-      authorUserId: session?.user?.id || null,
-      authorSessionId: anonSessionId,
-      authorName: session?.user ? session.user.name : body.authorName || null,
-      authorEmail: session?.user ? session.user.email : body.authorEmail || null,
-      voteCount: 1,
-      commentCount: 0,
-      isPinned: false,
-      isLocked: false,
-      metadata: {
-        editToken,
-        editTokenExpiry,
-        feedbackType: body.feedbackType || null,
-      },
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning()
-
-  // Auto-upvote by the submitter so the item appears ranked without a second click
-  await db.insert(vote).values({
-    id: crypto.randomUUID(),
-    feedbackId: created.id,
-    voterUserId: session?.user?.id || null,
-    voterSessionId: anonSessionId,
-    createdAt: now,
-  })
-
-  let responseFeedback = created
+  const feedbackId = crypto.randomUUID()
 
   const [integration] = await db
     .select()
     .from(githubIntegration)
-    .where(eq(githubIntegration.projectId, created.projectId))
+    .where(eq(githubIntegration.projectId, body.projectId))
     .limit(1)
+
+  let createdIssue: {
+    number: number
+    html_url: string
+    state: string
+  } | null = null
 
   if (integration?.autoCreateIssues && integration.syncEnabled && integration.accessToken) {
     const labels = new Set<string>(['source:veerify', 'status:open'])
 
-    if (created.categoryId) {
-      const [category] = await db
-        .select()
-        .from(feedbackCategory)
-        .where(eq(feedbackCategory.id, created.categoryId))
-        .limit(1)
-      if (category?.name) {
-        labels.add(category.name)
-      }
+    if (categoryName) {
+      labels.add(categoryName)
     }
 
     try {
@@ -146,16 +145,10 @@ export default defineEventHandler(async (event) => {
         `https://api.github.com/repos/${integration.owner}/${integration.repo}/issues`,
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${integration.accessToken}`,
-            Accept: 'application/vnd.github+json',
-            'Content-Type': 'application/json',
-            'X-GitHub-Api-Version': '2022-11-28',
-            'User-Agent': 'Veerify',
-          },
+          headers: createGitHubHeaders(integration.accessToken),
           body: JSON.stringify({
-            title: created.title,
-            body: [created.body?.trim() || '*No description provided*', '', `Source feedback ID: ${created.id}`].join(
+            title: body.title,
+            body: [body.body?.trim() || '*No description provided*', '', `Source feedback ID: ${feedbackId}`].join(
               '\n'
             ),
             labels: Array.from(labels),
@@ -167,39 +160,94 @@ export default defineEventHandler(async (event) => {
         const issueError = (await issueResponse.json().catch(() => null)) as { message?: string } | null
         console.error('Failed to auto-create GitHub issue:', issueError?.message || issueResponse.statusText)
       } else {
-        const issue = (await issueResponse.json()) as {
+        createdIssue = (await issueResponse.json()) as {
           number: number
           html_url: string
           state: string
         }
-
-        await db.insert(githubIssueLink).values({
-          id: crypto.randomUUID(),
-          feedbackId: created.id,
-          githubIntegrationId: integration.id,
-          issueNumber: issue.number,
-          issueUrl: issue.html_url,
-          issueState: issue.state,
-          lastSyncAt: now,
-          createdAt: now,
-          updatedAt: now,
-        })
-
-        const [updatedFeedback] = await db
-          .update(feedback)
-          .set({
-            status: 'in_progress',
-            updatedAt: now,
-          })
-          .where(eq(feedback.id, created.id))
-          .returning()
-
-        responseFeedback = updatedFeedback
       }
     } catch (error) {
       console.error('Auto-create GitHub issue failed:', error)
     }
   }
+
+  const transactionResult = await (async () => {
+    try {
+      return await db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(feedback)
+          .values({
+            id: feedbackId,
+            projectId: body.projectId,
+            categoryId: body.categoryId || null,
+            title: body.title,
+            body: body.body,
+            status: createdIssue ? 'in_progress' : 'open',
+            authorUserId: session?.user?.id || null,
+            authorSessionId: anonSessionId,
+            authorName: session?.user ? session.user.name : body.authorName || null,
+            authorEmail: session?.user ? session.user.email : body.authorEmail || null,
+            voteCount: 1,
+            commentCount: 0,
+            isPinned: false,
+            isLocked: false,
+            metadata: {
+              editToken,
+              editTokenExpiry,
+              feedbackType: body.feedbackType || null,
+            },
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning()
+
+        // Auto-upvote by the submitter so the item appears ranked without a second click
+        await tx.insert(vote).values({
+          id: crypto.randomUUID(),
+          feedbackId: created.id,
+          voterUserId: session?.user?.id || null,
+          voterSessionId: anonSessionId,
+          createdAt: now,
+        })
+
+        if (createdIssue && integration) {
+          await tx.insert(githubIssueLink).values({
+            id: crypto.randomUUID(),
+            feedbackId: created.id,
+            githubIntegrationId: integration.id,
+            issueNumber: createdIssue.number,
+            issueUrl: createdIssue.html_url,
+            issueState: createdIssue.state,
+            lastSyncAt: now,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+
+        return {
+          createdFeedback: created,
+          responseFeedback: created,
+        }
+      })
+    } catch (error) {
+      if (createdIssue && integration?.accessToken) {
+        try {
+          await rollbackCreatedGitHubIssue({
+            owner: integration.owner,
+            repo: integration.repo,
+            issueNumber: createdIssue.number,
+            accessToken: integration.accessToken,
+          })
+        } catch (rollbackError) {
+          console.error('GitHub issue rollback request failed:', rollbackError)
+        }
+      }
+
+      throw error
+    }
+  })()
+
+  const { createdFeedback, responseFeedback } = transactionResult
 
   // Send confirmation email if the submitter provided an email address
   const recipientEmail = session?.user ? session.user.email : body.authorEmail
@@ -207,12 +255,12 @@ export default defineEventHandler(async (event) => {
 
   if (recipientEmail && recipientName) {
     const origin = getRequestURL(event).origin
-    const editUrl = `${origin}/feedback/${created.id}/edit?token=${editToken}`
+    const editUrl = `${origin}/feedback/${createdFeedback.id}/edit?token=${editToken}`
 
     sendFeedbackConfirmationEmail({
       to: recipientEmail,
       authorName: recipientName,
-      feedbackTitle: created.title,
+      feedbackTitle: createdFeedback.title,
       projectName: proj.name,
       editUrl,
     }).catch((err) => console.error('Failed to send feedback confirmation email:', err))
