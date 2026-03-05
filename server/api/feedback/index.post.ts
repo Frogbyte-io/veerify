@@ -5,6 +5,7 @@ import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
+import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import {
   feedback,
@@ -63,6 +64,13 @@ async function rollbackCreatedGitHubIssue(params: {
 export default defineEventHandler(async (event) => {
   // Optional auth — allows anonymous submissions
   const session = await optionalAuth(event)
+
+  // Anonymous submissions are rate-limited strictly (5/min) to prevent spam;
+  // authenticated users get the standard limit (60/min).
+  await requireRateLimit(event, {
+    ...(session?.user ? rateLimits.standard : rateLimits.strict),
+    identifier: session?.user ? 'feedback-post-auth' : 'feedback-post-anon',
+  })
 
   const body = await validateBody(event, createFeedbackSchema)
 
