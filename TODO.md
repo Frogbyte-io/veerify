@@ -156,7 +156,7 @@ MVP
 
 ## Technical Debt
 
-- [ ] **#4 — Validate feedback status against project's allowed statuses**
+- [x] **#4 — Validate feedback status against project's allowed statuses**
   `server/api/feedback/[id]/status.patch.ts` accepts any string up to 80 chars. Validate that the provided status actually exists in the project's `feedbackStatus` table before applying it.
 
 - [ ] **#5 — Tighten rate limiting on anonymous feedback submission**

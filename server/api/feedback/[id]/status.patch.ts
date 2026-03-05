@@ -5,8 +5,9 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireProjectAccess } from '~/server/utils/project-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackSubscription } from '~/server/database/schema/feedback'
+import { feedback, feedbackStatus, feedbackSubscription } from '~/server/database/schema/feedback'
 import { sendStatusChangeNotificationEmail } from '~/lib/email'
+import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 
 const updateStatusSchema = z.object({
   status: z.string().trim().min(1).max(80),
@@ -38,6 +39,20 @@ export default defineEventHandler(async (event) => {
 
   // Only team members can change status
   await requireProjectAccess(fb.projectId, session.user.id)
+
+  // Validate that the provided status is allowed for this project
+  const customStatuses = await db.select().from(feedbackStatus).where(eq(feedbackStatus.projectId, fb.projectId))
+  const allowedValues = customStatuses.length > 0
+    ? customStatuses.map((s) => s.value)
+    : SYSTEM_STATUSES.map((s) => s.value)
+
+  if (!allowedValues.includes(body.status)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, `Invalid status. Allowed values: ${allowedValues.join(', ')}`),
+    })
+  }
 
   const now = new Date()
   const [updated] = await db
