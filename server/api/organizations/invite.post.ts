@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event)
-  const { email, role, organizationId, teamId } = body
+  const { email, role, organizationId, teamId, resend } = body
 
   if (!email || !organizationId) {
     throw createError({ statusCode: 400, statusMessage: 'Email and organizationId are required' })
@@ -53,6 +53,7 @@ export default defineEventHandler(async (event) => {
       organizationId,
       email: normalizedEmail,
       role: role || 'member',
+      ...(resend ? { resend: true } : {}),
       ...(teamId ? { teamId } : {}),
     },
   })

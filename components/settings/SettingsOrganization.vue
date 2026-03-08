@@ -261,19 +261,30 @@
               <p class="text-xs text-muted-foreground">
                 Invited as <span class="capitalize">{{ inv.role }}</span>
                 <span v-if="inv.teamName"> to {{ inv.teamName }}</span>
-                &middot; Expires {{ formatDate(inv.expiresAt) }}
+                &middot; Sent {{ formatDate(inv.createdAt) }} &middot; Expires {{ formatDate(inv.expiresAt) }}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="text-red-600 hover:text-red-700 shrink-0"
-              :disabled="cancellingInvitationId === inv.id"
-              @click="cancelInvitation(inv.id)"
-            >
-              <Icon v-if="cancellingInvitationId === inv.id" name="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              <span v-else>Cancel</span>
-            </Button>
+            <div class="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="resendingInvitationId === inv.id || cancellingInvitationId === inv.id"
+                @click="resendInvitation(inv)"
+              >
+                <Icon v-if="resendingInvitationId === inv.id" name="lucide:loader-2" class="h-4 w-4 animate-spin" />
+                <span v-else>Send reminder</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="text-red-600 hover:text-red-700"
+                :disabled="cancellingInvitationId === inv.id || resendingInvitationId === inv.id"
+                @click="cancelInvitation(inv.id)"
+              >
+                <Icon v-if="cancellingInvitationId === inv.id" name="lucide:loader-2" class="h-4 w-4 animate-spin" />
+                <span v-else>Revoke</span>
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -442,6 +453,7 @@ export default {
 
       // Cancel invitation
       cancellingInvitationId: null,
+      resendingInvitationId: null,
     }
   },
 
@@ -814,12 +826,37 @@ export default {
         this.cancellingInvitationId = invitationId
         await authClient.organization.cancelInvitation({ invitationId })
         this.pendingInvitations = this.pendingInvitations.filter((inv) => inv.id !== invitationId)
-        toast.success('Invitation cancelled')
+        toast.success('Invitation revoked')
       } catch (error) {
         console.error('Error cancelling invitation:', error)
         toast.error('Failed to cancel invitation')
       } finally {
         this.cancellingInvitationId = null
+      }
+    },
+
+    async resendInvitation(invitation) {
+      if (!this.organizationDetails?.id) return
+      try {
+        this.resendingInvitationId = invitation.id
+        await $fetch('/api/organizations/invite', {
+          method: 'POST',
+          body: {
+            organizationId: this.organizationDetails.id,
+            email: invitation.email,
+            role: invitation.role,
+            ...(invitation.teamId ? { teamId: invitation.teamId } : {}),
+            resend: true,
+          },
+        })
+        await this.loadPendingInvitations()
+        toast.success('Invitation reminder sent')
+      } catch (error) {
+        console.error('Error resending invitation:', error)
+        const message = error?.data?.statusMessage || error?.data?.error?.message || 'Failed to resend invitation'
+        toast.error(message)
+      } finally {
+        this.resendingInvitationId = null
       }
     },
 

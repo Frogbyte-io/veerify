@@ -23,6 +23,8 @@ export const selectors = {
   teamTitle: '[data-testid="team-title"]',
   teamNameInput: '#team-name',
   teamMembersCount: '[data-testid="team-members-count"]',
+  teamPendingInvitations: '[data-testid="team-pending-invitations"]',
+  teamPendingInvitationRow: '[data-testid="team-pending-invitation-row"]',
   teamOpenCreateDialog: '[data-testid="team-open-create-dialog"]',
   teamCreateName: '[data-testid="team-create-name"]',
   teamCreateSubmit: '[data-testid="team-create-submit"]',

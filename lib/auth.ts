@@ -4,9 +4,27 @@ import { magicLink, multiSession, organization, testUtils, twoFactor } from 'bet
 import { and, eq } from 'drizzle-orm'
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
-import { sendEmailVerificationEmail, sendMagicLinkEmail, sendPasswordResetEmail } from './email'
+import {
+  sendEmailVerificationEmail,
+  sendMagicLinkEmail,
+  sendOrganizationInvitationEmail,
+  sendPasswordResetEmail,
+} from './email'
 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
+const defaultAppBaseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+
+function resolveInvitationBaseUrl(request?: Request) {
+  if (request?.url) {
+    try {
+      return new URL(request.url).origin
+    } catch {
+      // Ignore malformed request URLs and fall back to configured app URL.
+    }
+  }
+
+  return defaultAppBaseUrl
+}
 
 export const auth = betterAuth({
   // Dynamic base URL: resolves from incoming request headers (x-forwarded-host / x-forwarded-proto)
@@ -98,6 +116,32 @@ export const auth = betterAuth({
       allowUserToCreateOrganization: true,
       organizationLimit: 5,
       membershipLimit: 50,
+      sendInvitationEmail: async (data, request) => {
+        let teamName = null
+
+        if (data.invitation.teamId) {
+          const [teamRecord] = await db
+            .select()
+            .from(schema.team)
+            .where(eq(schema.team.id, data.invitation.teamId))
+            .limit(1)
+          teamName = teamRecord?.name || null
+        }
+
+        const invitationUrl = new URL(
+          `/accept-invitation?id=${encodeURIComponent(data.id)}`,
+          resolveInvitationBaseUrl(request)
+        ).toString()
+
+        await sendOrganizationInvitationEmail({
+          to: data.email,
+          organizationName: data.organization.name,
+          inviterName: data.inviter.user.name || data.inviter.user.email,
+          inviteUrl: invitationUrl,
+          role: data.role,
+          teamName,
+        })
+      },
       teams: {
         enabled: true,
         defaultTeam: {

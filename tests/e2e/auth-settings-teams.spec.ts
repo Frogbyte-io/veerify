@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test'
 import { expectRedirectToLogin, loginViaProgrammaticPage, loginViaUi } from './helpers/auth'
 import { selectors } from './helpers/selectors'
-import { createTeamFromSettings, ensureTeamAndOrganizationContext, getActiveTeamViaApi, switchTeamFromSidebar } from './helpers/teams'
+import {
+  createTeamFromSettings,
+  ensureTeamAndOrganizationContext,
+  getActiveTeamViaApi,
+  switchTeamFromSidebar,
+} from './helpers/teams'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -213,4 +218,42 @@ test('settings team panel tracks active team selected in sidebar', async ({ page
   await switchTeamFromSidebar(page, { teamId: teamB.id, expectedName: teamB.name })
   await expect(page.locator(selectors.teamNameInput)).toHaveValue(teamB.name)
   await expect(page.getByText('No active team. Create a team to continue.')).toHaveCount(0)
+})
+
+test('team settings show pending invites and allow reminder and revoke actions', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  await createTeamFromSettings(page, `E2E Invite Team ${Date.now()}`)
+
+  const inviteEmail = `pending-team-invite-${Date.now()}@example.com`
+
+  await expect(page.getByRole('button', { name: 'Invite to Team' })).toBeVisible()
+  await page.getByRole('button', { name: 'Invite to Team' }).click()
+
+  const inviteDialog = page.getByRole('dialog', { name: 'Invite to Team' })
+  await expect(inviteDialog).toBeVisible()
+  await inviteDialog.getByLabel('Email').fill(inviteEmail)
+  await inviteDialog.getByRole('button', { name: 'Send Invite' }).click()
+
+  const pendingInvites = page.locator(selectors.teamPendingInvitations)
+  await expect(pendingInvites).toBeVisible({ timeout: 20_000 })
+
+  const inviteRow = pendingInvites.locator(selectors.teamPendingInvitationRow).filter({ hasText: inviteEmail })
+  await expect(inviteRow).toBeVisible({ timeout: 20_000 })
+
+  const resendResponsePromise = page.waitForResponse((response) => {
+    return (
+      response.url().includes('/api/organizations/invite') &&
+      response.request().method() === 'POST' &&
+      (response.request().postData() || '').includes('"resend":true')
+    )
+  })
+
+  await inviteRow.getByRole('button', { name: 'Send reminder' }).click()
+  const resendResponse = await resendResponsePromise
+  expect(resendResponse.ok()).toBeTruthy()
+  await expect(inviteRow).toBeVisible()
+
+  await inviteRow.getByRole('button', { name: 'Revoke' }).click()
+  await expect(inviteRow).toHaveCount(0)
 })

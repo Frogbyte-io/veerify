@@ -4,6 +4,7 @@ import {
   getEmailVerificationTemplate,
   getFeedbackConfirmationTemplate,
   getMagicLinkTemplate,
+  getOrganizationInvitationTemplate,
   getPasswordResetTemplate,
   getSubscriptionConfirmationTemplate,
   getStatusChangeNotificationTemplate,
@@ -32,6 +33,15 @@ interface PasswordResetOptions {
   to: string
   name: string
   resetUrl: string
+}
+
+interface OrganizationInvitationEmailOptions {
+  to: string
+  organizationName: string
+  inviterName: string
+  inviteUrl: string
+  role: string
+  teamName?: string | null
 }
 
 interface FeedbackConfirmationEmailOptions {
@@ -103,6 +113,18 @@ export async function sendEmailVerificationEmail(options: EmailVerificationOptio
 
 export async function sendMagicLinkEmail(options: MagicLinkEmailOptions) {
   const template = getMagicLinkTemplate(options)
+
+  const result = await sendEmail({
+    to: options.to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+  })
+  return result
+}
+
+export async function sendOrganizationInvitationEmail(options: OrganizationInvitationEmailOptions) {
+  const template = getOrganizationInvitationTemplate(options)
 
   const result = await sendEmail({
     to: options.to,
