@@ -39,7 +39,7 @@
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form @submit.prevent="createWorkspace" class="space-y-4">
+            <form class="space-y-4" @submit.prevent="createWorkspace">
               <div class="space-y-2">
                 <Label for="org-name">Workspace name</Label>
                 <Input
@@ -47,7 +47,6 @@
                   v-model="orgName"
                   placeholder="Acme Inc."
                   :disabled="isCreatingOrg"
-                  @input="generateSlug"
                 />
               </div>
               <div class="space-y-2">
@@ -257,9 +256,15 @@ export default {
     },
   },
 
+  watch: {
+    orgName(newName) {
+      this.orgSlug = this.slugify(newName)
+    },
+  },
+
   methods: {
-    generateSlug() {
-      this.orgSlug = this.orgName
+    slugify(value) {
+      return value
         .toLowerCase()
         .replace(/[^a-z0-9\s-]/g, '')
         .replace(/\s+/g, '-')

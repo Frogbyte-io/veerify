@@ -81,7 +81,7 @@ async function addCurrentUserToTeam(request: APIRequestContext, teamId: string) 
   throw new Error(`Failed to add current user to created team: ${message}`)
 }
 
-async function ensureTeamAndOrganizationContext(request: APIRequestContext) {
+export async function ensureTeamAndOrganizationContext(request: APIRequestContext) {
   const activeResponse = await request.get('/api/teams/active')
   if (activeResponse.ok()) {
     return

@@ -195,7 +195,6 @@
               data-testid="team-create-name"
               v-model="newTeamName"
               placeholder="Platform Team"
-              @input="generateNewTeamSlug"
             />
           </div>
           <div class="space-y-2">
@@ -321,6 +320,12 @@ export default {
     },
     additionalTeams() {
       return this.allTeams.filter((t) => !this.isDefaultTeam(t))
+    },
+  },
+
+  watch: {
+    newTeamName(newName) {
+      this.newTeamSlug = this.slugify(newName)
     },
   },
 
@@ -567,8 +572,8 @@ export default {
       }
     },
 
-    generateNewTeamSlug() {
-      this.newTeamSlug = this.newTeamName
+    slugify(value) {
+      return value
         .toLowerCase()
         .replace(/[^a-z0-9\s-]/g, '')
         .replace(/\s+/g, '-')

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { expectRedirectToLogin, loginViaProgrammaticPage, loginViaUi } from './helpers/auth'
 import { selectors } from './helpers/selectors'
-import { createTeamFromSettings, getActiveTeamViaApi, switchTeamFromSidebar } from './helpers/teams'
+import { createTeamFromSettings, ensureTeamAndOrganizationContext, getActiveTeamViaApi, switchTeamFromSidebar } from './helpers/teams'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -14,6 +14,48 @@ test('unauthenticated user is redirected from protected route to login', async (
 
 test('user can sign in through login form and land in dashboard', async ({ page }) => {
   await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+})
+
+test('onboarding slug mirrors the full workspace name while typing', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  await page.goto('/onboarding')
+  await expect(page.getByRole('heading', { name: 'Create your workspace' })).toBeVisible()
+
+  const workspaceNameInput = page.getByLabel('Workspace name')
+  const workspaceSlugInput = page.getByLabel('URL')
+
+  await workspaceNameInput.click()
+  await workspaceNameInput.type('Frogbyte', { delay: 40 })
+  await expect(workspaceSlugInput).toHaveValue('frogbyte')
+
+  await workspaceNameInput.type(' Labs', { delay: 40 })
+  await expect(workspaceSlugInput).toHaveValue('frogbyte-labs')
+})
+
+test('team creation slug mirrors the full team name while typing', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
+
+  await page.goto('/settings#team')
+  await page.waitForFunction(() => {
+    const tab = document.querySelector('[data-testid="settings-tab-team"]') as any
+    return Boolean(tab?.__vueParentComponent)
+  })
+
+  await expect(page.locator(selectors.teamOpenCreateDialog)).toBeVisible({ timeout: 20_000 })
+  await page.locator(selectors.teamOpenCreateDialog).click()
+
+  const createDialog = page.getByRole('dialog', { name: 'Create Team' })
+  const teamNameInput = createDialog.getByLabel('Team Name')
+  const teamSlugInput = createDialog.getByLabel('Subdomain Slug')
+
+  await teamNameInput.click()
+  await teamNameInput.type('DotMatrixLabs', { delay: 40 })
+  await expect(teamSlugInput).toHaveValue('dotmatrixlabs')
+
+  await teamNameInput.type(' Ops', { delay: 40 })
+  await expect(teamSlugInput).toHaveValue('dotmatrixlabs-ops')
 })
 
 test('settings navigation tabs render expected sections', async ({ page }) => {
