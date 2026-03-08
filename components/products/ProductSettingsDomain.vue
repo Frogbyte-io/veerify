@@ -166,7 +166,7 @@ export default {
   },
   computed: {
     cnameTarget() {
-      return useRuntimeConfig().public.cnameTarget || 'cname.veerify.com'
+      return useRuntimeConfig().public.cnameTarget || 'cname.veerify.io'
     },
     activeProvider() {
       return this.providers.find((p) => p.id === this.selectedProvider) || this.providers[0]

@@ -66,7 +66,7 @@ export default defineNuxtConfig({
     public: {
       appDomain,
       dashboardDomain,
-      cnameTarget: process.env.CNAME_TARGET || 'cname.veerify.com',
+      cnameTarget: process.env.CNAME_TARGET || 'cname.veerify.io',
       deploymentMode,
     },
   },

@@ -54,7 +54,7 @@
                     :disabled="isCreatingOrg"
                     class="flex-1"
                   />
-                  <span class="text-sm text-muted-foreground whitespace-nowrap">.veerify.com</span>
+                  <span class="text-sm text-muted-foreground whitespace-nowrap">.veerify.io</span>
                 </div>
                 <p class="text-xs text-muted-foreground">
                   This will be your public workspace URL. You can change it later.

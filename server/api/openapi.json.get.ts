@@ -12,12 +12,12 @@ export default defineEventHandler((event) => {
       description: 'API documentation for Veerify - Feedback management and verification platform',
       contact: {
         name: 'Veerify Support',
-        email: 'support@veerify.com',
+        email: 'support@veerify.io',
       },
     },
     servers: [
       {
-        url: import.meta.dev ? 'http://localhost:3000' : 'https://api.veerify.com',
+        url: import.meta.dev ? 'http://localhost:3000' : 'https://api.veerify.io',
         description: import.meta.dev ? 'Development server' : 'Production server',
       },
     ],
