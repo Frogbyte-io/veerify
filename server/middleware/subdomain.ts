@@ -1,8 +1,9 @@
 export default defineEventHandler((event) => {
   const host = getHeader(event, 'host') || ''
-  const appDomain = process.env.APP_DOMAIN || 'localhost'
-  const dashboardDomain =
+  const appDomain = (process.env.APP_DOMAIN || 'localhost').trim()
+  const dashboardDomain = (
     process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
+  ).trim()
 
   // Strip port from host
   const hostWithoutPort = host.split(':')[0]

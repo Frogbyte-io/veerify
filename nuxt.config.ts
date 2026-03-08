@@ -1,9 +1,10 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 import tailwindcss from '@tailwindcss/vite'
 
-const appDomain = process.env.APP_DOMAIN || 'localhost'
-const dashboardDomain =
+const appDomain = (process.env.APP_DOMAIN || 'localhost').trim()
+const dashboardDomain = (
   process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
+).trim()
 const deploymentModeEnv = (process.env.APP_DEPLOYMENT_MODE || '').toLowerCase()
 const deploymentMode =
   deploymentModeEnv === 'cloud' || deploymentModeEnv === 'self-hosted'
