@@ -171,11 +171,6 @@ const managementItems: SidebarNavItem[] = [
 
 const supportItems: SidebarNavItem[] = [
   {
-    title: 'Help Center',
-    url: '/help',
-    icon: 'lucide:help-circle',
-  },
-  {
     title: 'Settings',
     url: '/settings',
     icon: 'lucide:settings',
