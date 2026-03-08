@@ -767,7 +767,11 @@ export default {
         toast.success('Invitation sent')
       } catch (error) {
         console.error('Error inviting team member:', error)
-        const message = error?.data?.statusMessage || 'Failed to send invitation'
+        const message =
+          error?.statusMessage ||
+          error?.data?.statusMessage ||
+          error?.data?.error?.message ||
+          'Failed to send invitation'
         const steps = error?.data?.data?.recommendedSteps
         const hint = steps ? `\n${steps[0]}` : ''
         toast.error(message + hint)
@@ -799,7 +803,11 @@ export default {
         toast.success('Invitation reminder sent')
       } catch (error) {
         console.error('Error resending team invitation:', error)
-        const message = error?.data?.statusMessage || error?.data?.error?.message || 'Failed to resend invitation'
+        const message =
+          error?.statusMessage ||
+          error?.data?.statusMessage ||
+          error?.data?.error?.message ||
+          'Failed to resend invitation'
         toast.error(message)
       } finally {
         this.resendingInvitationId = null

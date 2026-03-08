@@ -42,12 +42,7 @@
             <form class="space-y-4" @submit.prevent="createWorkspace">
               <div class="space-y-2">
                 <Label for="org-name">Workspace name</Label>
-                <Input
-                  id="org-name"
-                  v-model="orgName"
-                  placeholder="Acme Inc."
-                  :disabled="isCreatingOrg"
-                />
+                <Input id="org-name" v-model="orgName" placeholder="Acme Inc." :disabled="isCreatingOrg" />
               </div>
               <div class="space-y-2">
                 <Label for="org-slug">URL</Label>
@@ -349,7 +344,8 @@ export default {
             })
             successCount++
           } catch (error) {
-            const statusMessage = error?.data?.statusMessage || error?.message || 'Failed to send'
+            const statusMessage =
+              error?.statusMessage || error?.data?.statusMessage || error?.message || 'Failed to send'
             const steps = error?.data?.data?.recommendedSteps
             const detail = steps ? ` — ${steps[0]}` : ''
             errors.push(`${email}: ${statusMessage}${detail}`)
@@ -371,7 +367,7 @@ export default {
           }, 1500)
         }
       } catch (error) {
-        this.inviteError = error?.message || 'Failed to send invitations'
+        this.inviteError = error?.statusMessage || error?.message || 'Failed to send invitations'
         console.error('Error sending invitations:', error)
       } finally {
         this.isInviting = false
