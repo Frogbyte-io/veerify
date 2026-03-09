@@ -8,6 +8,13 @@ import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
 import { sendCustomDomainConnectedEmail } from '~/lib/email'
 import { getStorageProvider } from '~/server/utils/storage'
 import {
+  buildDomainSettingsPatch,
+  normalizeCustomDomainInput,
+  normalizeDomainSettings,
+  registerProjectCustomDomain,
+  removeProjectCustomDomain,
+} from '~/server/services/domains/domain-service'
+import {
   buildFinalObjectKey,
   transformImageForKind,
   validateImageUploadInput,
@@ -56,15 +63,6 @@ const updateProjectSchema = z.object({
     .optional(),
   settings: projectSettingsSchema,
 })
-
-type ProjectSettings = Record<string, any>
-
-function normalizeSettings(value: unknown): ProjectSettings {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {}
-  }
-  return { ...(value as ProjectSettings) }
-}
 
 function validationError(message: string): never {
   throw createError({
@@ -128,8 +126,9 @@ async function consumeUploadAsset(input: {
 export default defineEventHandler(async (event) => {
   const { project: currentProject, session } = await requireProjectCategoryAccess(event)
   const body = await validateBody(event, updateProjectSchema)
-  const currentSettings = normalizeSettings(currentProject.settings)
-  const requestedDomain = body.customDomain !== undefined ? body.customDomain || null : undefined
+  const currentSettings = normalizeDomainSettings(currentProject.settings)
+  const requestedDomain =
+    body.customDomain !== undefined ? normalizeCustomDomainInput(body.customDomain || null) : undefined
   const domainChanged = requestedDomain !== undefined && requestedDomain !== (currentProject.customDomain || null)
   const shouldNotifyConnected = Boolean(
     domainChanged &&
@@ -152,12 +151,12 @@ export default defineEventHandler(async (event) => {
     : null
   const pendingDeletes = new Set<string>()
 
-  const nextSettings =
+  let nextSettings =
     body.settings === undefined
       ? { ...currentSettings }
       : body.settings === null
         ? null
-        : normalizeSettings(body.settings)
+        : normalizeDomainSettings(body.settings)
 
   if (nextSettings === null) {
     if (previousManagedLogoKey) pendingDeletes.add(previousManagedLogoKey)
@@ -215,6 +214,20 @@ export default defineEventHandler(async (event) => {
     delete nextSettings.bannerUploadId
   }
 
+  if (domainChanged) {
+    if (requestedDomain) {
+      const domainRegistration = await registerProjectCustomDomain(requestedDomain)
+      const domainSettingsBase = nextSettings === null ? {} : nextSettings
+      nextSettings = buildDomainSettingsPatch(domainSettingsBase, domainRegistration)
+    } else {
+      if (currentProject.customDomain) {
+        await removeProjectCustomDomain(currentProject.customDomain)
+      }
+      const domainSettingsBase = nextSettings === null ? {} : nextSettings
+      nextSettings = buildDomainSettingsPatch(domainSettingsBase, null)
+    }
+  }
+
   const notifySettingsBase = nextSettings && typeof nextSettings === 'object' ? nextSettings : {}
   const settingsForUpdate = shouldNotifyConnected
     ? {
@@ -247,8 +260,8 @@ export default defineEventHandler(async (event) => {
       ...(body.slug !== undefined && { slug: body.slug }),
       ...(body.description !== undefined && { description: body.description }),
       ...(body.isPublic !== undefined && { isPublic: body.isPublic }),
-      ...(body.customDomain !== undefined && { customDomain: body.customDomain }),
-      ...((body.settings !== undefined || shouldNotifyConnected) && { settings: settingsForUpdate }),
+      ...(body.customDomain !== undefined && { customDomain: requestedDomain }),
+      ...((body.settings !== undefined || shouldNotifyConnected || domainChanged) && { settings: settingsForUpdate }),
       updatedAt: new Date(),
     })
     .where(eq(project.id, currentProject.id))

@@ -16,10 +16,9 @@ export function toCategorySlug(name: string) {
     .replace(/^-|-$/g, '')
 }
 
-export async function requireProjectCategoryAccess(event: H3Event) {
+export async function requireProjectCategoryAccessBySlug(event: H3Event, projectSlug: string) {
   const { session, activeTeam } = await requireAuthWithResolvedTeam(event)
 
-  const projectSlug = getRouterParam(event, 'slug') ?? getRouterParam(event, 'projectSlug')
   if (!projectSlug) {
     throw createError({
       statusCode: 400,
@@ -60,4 +59,9 @@ export async function requireProjectCategoryAccess(event: H3Event) {
     session,
     project: selectedProject,
   }
+}
+
+export async function requireProjectCategoryAccess(event: H3Event) {
+  const projectSlug = getRouterParam(event, 'slug') ?? getRouterParam(event, 'projectSlug')
+  return requireProjectCategoryAccessBySlug(event, projectSlug ?? '')
 }

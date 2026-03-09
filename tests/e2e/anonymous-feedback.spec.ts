@@ -683,4 +683,26 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.locator('[data-testid="github-connect"]')).toBeVisible()
     await expect(page.locator('[data-testid="github-repo-select"]')).toBeVisible()
   })
+
+  test('product GitHub connect flow uses callback under Better Auth GitHub path', async ({ page }) => {
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await page.goto('/products/demo#github')
+    await expect(page.getByRole('heading', { name: 'GitHub Integration' })).toBeVisible()
+
+    const response = await page.request.get('/api/projects/demo/github/connect')
+    expect(response.ok()).toBe(true)
+
+    const payload = await response.json()
+    const authorizationUrl = payload?.data?.authorizationUrl
+
+    expect(typeof authorizationUrl).toBe('string')
+
+    const authUrl = new URL(authorizationUrl)
+    const appOrigin = new URL(page.url()).origin
+
+    expect(authUrl.origin).toBe('https://github.com')
+    expect(authUrl.pathname).toBe('/login/oauth/authorize')
+    expect(authUrl.searchParams.get('redirect_uri')).toBe(`${appOrigin}/api/auth/callback/github/integration`)
+    expect(authUrl.searchParams.get('state')).toBeTruthy()
+  })
 })

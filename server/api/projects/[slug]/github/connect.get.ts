@@ -1,8 +1,9 @@
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
+import { resolveGithubIntegrationCallbackUrl } from '~/server/utils/github-oauth'
 
 export default defineEventHandler(async (event) => {
-  await requireProjectCategoryAccess(event)
+  const { project } = await requireProjectCategoryAccess(event)
 
   const clientId = process.env.GITHUB_CLIENT_ID
   if (!clientId) {
@@ -13,24 +14,15 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const projectSlug = getRouterParam(event, 'slug')
-  if (!projectSlug) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Project slug is required'),
-    })
-  }
-
   const state = crypto.randomUUID()
-  const callbackUrl = `${getRequestURL(event).origin}/api/projects/${projectSlug}/github/callback`
+  const callbackUrl = resolveGithubIntegrationCallbackUrl(event)
 
   setCookie(
     event,
     'veerify_github_oauth_state',
     JSON.stringify({
       state,
-      projectSlug,
+      projectSlug: project.slug,
       createdAt: Date.now(),
     }),
     {

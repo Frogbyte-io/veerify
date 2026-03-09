@@ -179,6 +179,8 @@ GITHUB_CLIENT_ID=your-github-oauth-app-client-id
 GITHUB_CLIENT_SECRET=your-github-oauth-app-client-secret
 ```
 
+Configure the GitHub OAuth app callback URL as `https://<your-dashboard-host>/api/auth/callback/github`. Veerify uses that Better Auth callback for sign-in and a nested callback below it for product-level GitHub repository authorization.
+
 To enable product logo/banner uploads, configure storage:
 
 ```env

@@ -44,6 +44,11 @@ export default defineNuxtConfig({
     ],
   },
   runtimeConfig: {
+    domainProvider: process.env.DOMAIN_PROVIDER || 'static-cname',
+    vercelApiToken: process.env.VERCEL_API_TOKEN || '',
+    vercelProjectId: process.env.VERCEL_PROJECT_ID || '',
+    vercelTeamId: process.env.VERCEL_TEAM_ID || '',
+    vercelTeamSlug: process.env.VERCEL_TEAM_SLUG || '',
     storageDriver: process.env.STORAGE_DRIVER || 'local',
     storageBucket: process.env.STORAGE_BUCKET || '',
     storageRegion: process.env.STORAGE_REGION || 'auto',
