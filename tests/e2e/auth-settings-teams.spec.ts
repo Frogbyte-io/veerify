@@ -115,6 +115,27 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
 })
 
+test('settings team tab renders immediately when organization lookup is slow', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
+
+  const organizationPath = '**/api/auth/organization/get-full-organization'
+  const organizationResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/auth/organization/get-full-organization')
+  )
+
+  await page.route(organizationPath, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await route.continue()
+  })
+
+  await page.goto('/settings', { waitUntil: 'domcontentloaded' })
+  await expect(page.locator(selectors.settingsTabTeam)).toBeVisible({ timeout: 250 })
+
+  await organizationResponse
+  await page.unroute(organizationPath)
+})
+
 test('user can create a new team from settings team tab', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
