@@ -9,94 +9,30 @@
         <CardDescription>Customize how your public feedback board looks.</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
+        <!-- Hidden file inputs triggered from the preview -->
+        <input
+          ref="logoInput"
+          :key="logoInputKey"
+          data-testid="appearance-logo-upload-input"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          class="sr-only"
+          @change="handleFileSelect('logo', $event)"
+        />
+        <input
+          ref="bannerInput"
+          :key="bannerInputKey"
+          data-testid="appearance-banner-upload-input"
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          class="sr-only"
+          @change="handleFileSelect('banner', $event)"
+        />
+
         <div class="space-y-2">
           <Label>Accent Color</Label>
           <ColorPicker v-model="form.accentColor" />
           <p class="text-xs text-muted-foreground">Used for buttons and links on your public board.</p>
-        </div>
-
-        <div class="space-y-2">
-          <Label for="logo-file">Logo Image</Label>
-          <Input
-            id="logo-file"
-            :key="logoInputKey"
-            data-testid="appearance-logo-upload-input"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            @change="handleFileSelect('logo', $event)"
-          />
-          <div class="flex flex-wrap items-center gap-2">
-            <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 2 MB.</p>
-            <p v-if="logoFile" class="text-xs text-muted-foreground">
-              Selected: <span class="font-medium text-foreground">{{ logoFile.name }}</span>
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              v-if="logoFile"
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="appearance-logo-clear-selection"
-              @click="clearSelectedFile('logo')"
-            >
-              Clear selection
-            </Button>
-            <Button
-              v-if="showLogoRemoveButton"
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="appearance-logo-remove"
-              @click="markAssetForRemoval('logo')"
-            >
-              Remove logo
-            </Button>
-          </div>
-          <p class="text-xs text-muted-foreground">Displayed in the header of your public feedback board.</p>
-        </div>
-
-        <div class="space-y-2">
-          <Label for="banner-file">Banner Image</Label>
-          <Input
-            id="banner-file"
-            :key="bannerInputKey"
-            data-testid="appearance-banner-upload-input"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            @change="handleFileSelect('banner', $event)"
-          />
-          <div class="flex flex-wrap items-center gap-2">
-            <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 8 MB.</p>
-            <p v-if="bannerFile" class="text-xs text-muted-foreground">
-              Selected: <span class="font-medium text-foreground">{{ bannerFile.name }}</span>
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              v-if="bannerFile"
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="appearance-banner-clear-selection"
-              @click="clearSelectedFile('banner')"
-            >
-              Clear selection
-            </Button>
-            <Button
-              v-if="showBannerRemoveButton"
-              type="button"
-              variant="outline"
-              size="sm"
-              data-testid="appearance-banner-remove"
-              @click="markAssetForRemoval('banner')"
-            >
-              Remove banner
-            </Button>
-          </div>
-          <p class="text-xs text-muted-foreground">
-            Displayed as a hero banner at the top of your public board. Recommended size: 1200x300px.
-          </p>
         </div>
 
         <div class="space-y-2">
@@ -237,57 +173,216 @@
       </CardContent>
     </Card>
 
+    <!-- Live Preview -->
     <Card>
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:eye" class="h-5 w-5" />
           Preview
         </CardTitle>
-        <CardDescription>A preview of your public board header.</CardDescription>
+        <CardDescription>
+          Live preview — updates as you change settings above.
+          <span v-if="hasChanges" class="text-amber-500 font-medium">Unsaved changes.</span>
+          Click the banner or logo to change them.
+        </CardDescription>
       </CardHeader>
-      <CardContent>
-        <div class="rounded-lg border overflow-hidden" :class="previewThemeClass">
-          <img
-            v-if="previewBannerUrl"
-            :src="previewBannerUrl"
-            alt="Banner"
-            class="w-full h-32 object-cover"
-            @error="$event.target.style.display = 'none'"
-          />
-          <div class="p-4 flex items-center gap-3" :style="{ backgroundColor: form.accentColor || '#3b82f6' }">
+      <CardContent class="p-0">
+        <!-- Board preview wrapper -->
+        <div
+          class="rounded-b-lg overflow-hidden border-t text-[13px] leading-snug"
+          :class="previewThemeClass"
+        >
+          <!-- Banner: click to change -->
+          <div
+            class="w-full h-28 relative overflow-hidden cursor-pointer group"
+            data-testid="appearance-preview-banner"
+            @click="$refs.bannerInput.click()"
+          >
             <img
-              v-if="previewLogoUrl"
-              :src="previewLogoUrl"
-              alt="Logo"
-              class="h-8 w-8 rounded object-cover bg-white/20"
+              v-if="previewBannerUrl"
+              :src="previewBannerUrl"
+              alt="Banner"
+              class="w-full h-full object-cover"
               @error="$event.target.style.display = 'none'"
             />
-            <div v-else class="h-8 w-8 rounded bg-white/20 flex items-center justify-center">
-              <Icon name="lucide:message-square" class="w-4 h-4 text-white" />
+            <div
+              v-else
+              class="absolute inset-0"
+              :style="{ background: `linear-gradient(135deg, ${form.accentColor} 0%, ${form.accentColor}cc 50%, ${form.accentColor}80 100%)` }"
+            />
+            <div v-if="!previewBannerUrl" class="absolute inset-0 flex items-end px-5 pb-3">
+              <p class="text-white/60 text-xs font-medium tracking-wide uppercase">Feedback Board</p>
             </div>
-            <div>
-              <p class="font-semibold text-white text-sm">{{ project.name }}</p>
-              <p class="text-white/70 text-xs">Share your feedback and ideas</p>
+            <!-- Hover overlay -->
+            <div
+              class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1.5 text-white"
+            >
+              <Icon name="lucide:image-plus" class="w-6 h-6" />
+              <span class="text-xs font-medium">{{ previewBannerUrl ? 'Change banner' : 'Upload banner' }}</span>
             </div>
+            <!-- Remove banner button -->
+            <button
+              v-if="showBannerRemoveButton"
+              type="button"
+              class="absolute top-2 right-2 z-10 rounded-md bg-black/60 hover:bg-black/80 text-white px-2 py-1 text-xs flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              data-testid="appearance-banner-remove"
+              @click.stop="markAssetForRemoval('banner')"
+            >
+              <Icon name="lucide:x" class="w-3 h-3" />
+              Remove
+            </button>
           </div>
-          <div class="p-4 bg-background">
-            <div class="flex items-center gap-2 mb-3">
+
+          <!-- Header -->
+          <div class="px-5 pt-5 pb-4 bg-background">
+            <div class="flex items-center gap-2.5 mb-1.5">
+              <!-- Logo: click to change -->
               <div
-                class="h-7 rounded-full px-3 flex items-center text-xs font-medium text-white"
-                :style="{ backgroundColor: form.accentColor || '#3b82f6' }"
+                class="relative cursor-pointer group/logo shrink-0"
+                data-testid="appearance-preview-logo"
+                @click="$refs.logoInput.click()"
               >
-                All
+                <img
+                  v-if="previewLogoUrl"
+                  :src="previewLogoUrl"
+                  alt="Logo"
+                  class="h-9 w-9 rounded object-cover border bg-muted"
+                  @error="$event.target.style.display = 'none'"
+                />
+                <div
+                  v-else
+                  class="h-9 w-9 rounded flex items-center justify-center text-white font-bold text-base select-none"
+                  :style="{ backgroundColor: form.accentColor }"
+                >
+                  {{ project.name?.[0]?.toUpperCase() || '?' }}
+                </div>
+                <!-- Logo hover overlay -->
+                <div
+                  class="absolute inset-0 bg-black/50 rounded opacity-0 group-hover/logo:opacity-100 transition-opacity flex items-center justify-center"
+                >
+                  <Icon name="lucide:camera" class="w-4 h-4 text-white" />
+                </div>
+                <!-- Remove logo button -->
+                <button
+                  v-if="showLogoRemoveButton"
+                  type="button"
+                  class="absolute -top-1.5 -right-1.5 z-10 rounded-full bg-destructive text-destructive-foreground w-4 h-4 flex items-center justify-center opacity-0 group-hover/logo:opacity-100 transition-opacity"
+                  data-testid="appearance-logo-remove"
+                  @click.stop="markAssetForRemoval('logo')"
+                >
+                  <Icon name="lucide:x" class="w-2.5 h-2.5" />
+                </button>
               </div>
-              <div class="h-7 rounded-full px-3 flex items-center text-xs font-medium bg-muted text-muted-foreground">
-                Feature
+              <span class="text-xs text-muted-foreground">{{ project.team?.name || 'Your Team' }}</span>
+            </div>
+            <h2 class="text-xl font-bold text-foreground">{{ project.name }}</h2>
+            <p v-if="project.description" class="text-xs text-muted-foreground mt-1">{{ project.description }}</p>
+
+            <!-- Navigation tabs -->
+            <div class="flex items-center gap-1 mt-4 border-b">
+              <span
+                class="px-3 py-1.5 text-xs font-medium border-b-2 -mb-px flex items-center gap-1"
+                :style="{ borderColor: form.accentColor, color: form.accentColor }"
+              >
+                <Icon name="lucide:message-square" class="w-3 h-3" />
+                Feedback
+              </span>
+              <span
+                class="px-3 py-1.5 text-xs font-medium text-muted-foreground border-b-2 border-transparent -mb-px flex items-center gap-1"
+              >
+                <Icon name="lucide:map" class="w-3 h-3" />
+                Roadmap
+              </span>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div class="grid grid-cols-4 gap-3 px-5 pb-4 bg-background">
+            <div class="rounded-lg border bg-card p-3">
+              <p class="text-[10px] text-muted-foreground">Total</p>
+              <p class="text-lg font-bold text-foreground">12</p>
+            </div>
+            <div class="rounded-lg border bg-card p-3">
+              <p class="text-[10px] text-muted-foreground">Open</p>
+              <p class="text-lg font-bold text-orange-600">7</p>
+            </div>
+            <div class="rounded-lg border bg-card p-3">
+              <p class="text-[10px] text-muted-foreground">In Progress</p>
+              <p class="text-lg font-bold text-blue-600">3</p>
+            </div>
+            <div class="rounded-lg border bg-card p-3">
+              <p class="text-[10px] text-muted-foreground">Completed</p>
+              <p class="text-lg font-bold text-green-600">2</p>
+            </div>
+          </div>
+
+          <!-- Actions bar -->
+          <div class="px-5 pb-4 bg-background flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <div class="h-8 rounded-md border bg-background px-3 flex items-center text-xs text-muted-foreground gap-1">
+                All Status
+                <Icon name="lucide:chevron-down" class="w-3 h-3 ml-1 opacity-60" />
               </div>
-              <div class="h-7 rounded-full px-3 flex items-center text-xs font-medium bg-muted text-muted-foreground">
-                Bug
+              <div class="h-8 rounded-md border bg-background px-3 flex items-center text-xs text-muted-foreground gap-1">
+                Category
+                <Icon name="lucide:chevron-down" class="w-3 h-3 ml-1 opacity-60" />
               </div>
             </div>
-            <div class="h-10 rounded-md bg-muted" />
+            <button
+              type="button"
+              class="h-8 rounded-md px-3 text-xs font-medium text-white flex items-center gap-1.5"
+              :style="{ backgroundColor: form.accentColor }"
+            >
+              <Icon name="lucide:plus" class="w-3 h-3" />
+              Submit Feedback
+            </button>
           </div>
-          <div class="border-t px-4 py-2 text-center space-y-1">
+
+          <!-- Mock feedback items -->
+          <div class="px-5 pb-5 space-y-3 bg-background">
+            <div
+              v-for="item in mockFeedbackItems"
+              :key="item.id"
+              class="rounded-lg border bg-card p-3 flex gap-3"
+            >
+              <!-- Vote column -->
+              <div class="flex flex-col items-center gap-0.5 shrink-0 pt-0.5">
+                <button
+                  type="button"
+                  class="p-1 rounded hover:bg-accent transition-colors"
+                  :style="{ color: item.voted ? form.accentColor : undefined }"
+                >
+                  <Icon :name="voteIcons.up" class="w-4 h-4" />
+                </button>
+                <span class="text-xs font-semibold leading-none">{{ item.votes }}</span>
+                <button type="button" class="p-1 rounded hover:bg-accent transition-colors text-muted-foreground">
+                  <Icon :name="voteIcons.down" class="w-4 h-4" />
+                </button>
+              </div>
+              <!-- Content -->
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-foreground">{{ item.title }}</p>
+                <p class="text-xs text-muted-foreground mt-0.5 line-clamp-1">{{ item.body }}</p>
+                <div class="flex items-center gap-2 mt-2">
+                  <span
+                    v-if="item.category"
+                    class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    :style="{ backgroundColor: item.category.color + '20', color: item.category.color }"
+                  >
+                    {{ item.category.name }}
+                  </span>
+                  <span class="text-[10px] text-muted-foreground">{{ item.status }}</span>
+                  <span class="text-[10px] text-muted-foreground ml-auto flex items-center gap-1">
+                    <Icon name="lucide:message-circle" class="w-3 h-3" />
+                    {{ item.comments }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="border-t px-5 py-3 text-center space-y-1 bg-background">
             <template v-if="showPreviewCustomFooter">
               <p v-if="form.customFooterBranding" class="text-xs font-medium text-foreground">
                 {{ form.customFooterBranding }}
@@ -412,6 +507,44 @@ export default {
         { value: 'stars', label: 'Stars', upIcon: 'lucide:star', downIcon: 'lucide:star-off' },
         { value: 'zap', label: 'Zap', upIcon: 'lucide:zap', downIcon: 'lucide:zap-off' },
         { value: 'plusminus', label: '+/−', upIcon: 'lucide:plus', downIcon: 'lucide:minus' },
+      ]
+    },
+    voteIcons() {
+      const opt = this.voteStyleOptions.find((o) => o.value === this.form.voteStyle) || this.voteStyleOptions[0]
+      return { up: opt.upIcon, down: opt.downIcon }
+    },
+    mockFeedbackItems() {
+      return [
+        {
+          id: 1,
+          title: 'Dark mode toggle improvements',
+          body: 'Would be great to have a system-level auto toggle that follows OS preferences.',
+          votes: 42,
+          voted: true,
+          status: 'Open',
+          comments: 8,
+          category: { name: 'Feature', color: '#3b82f6' },
+        },
+        {
+          id: 2,
+          title: 'Better notification system',
+          body: 'Support for email and Slack notifications when feedback status changes.',
+          votes: 28,
+          voted: false,
+          status: 'In Progress',
+          comments: 4,
+          category: { name: 'Enhancement', color: '#8b5cf6' },
+        },
+        {
+          id: 3,
+          title: 'Export feedback to CSV',
+          body: 'Need to download all feedback items as a spreadsheet for reporting.',
+          votes: 15,
+          voted: false,
+          status: 'Planned',
+          comments: 2,
+          category: null,
+        },
       ]
     },
     previewThemeClass() {
