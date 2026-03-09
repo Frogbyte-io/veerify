@@ -33,7 +33,8 @@
     "test:e2e:worktree": "node scripts/worktree-run.mjs yarn test:e2e",
     "snapshot:dashboard": "node scripts/snapshot-dashboard.mjs",
     "codex:mcp:chrome:setup": "node scripts/setup-codex-chrome-mcp.mjs",
-    "codex:mcp:chrome:status": "codex mcp get chrome-devtools"
+    "codex:mcp:chrome:status": "codex mcp get chrome-devtools",
+    "vercel:setup-domain-provider": "node scripts/setup-vercel-domain-provider.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.922.0",
