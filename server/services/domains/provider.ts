@@ -33,6 +33,7 @@ export function normalizeDomainHostname(hostname: string): string {
 
 export function dedupeDnsRecords(records: DomainDnsRecord[]): DomainDnsRecord[] {
   const seen = new Set<string>()
+  const seenCnameHosts = new Set<string>()
   const deduped: DomainDnsRecord[] = []
 
   for (const record of records) {
@@ -43,7 +44,11 @@ export function dedupeDnsRecords(records: DomainDnsRecord[]): DomainDnsRecord[] 
     }
     const key = `${normalized.type}:${normalized.name}:${normalized.value}`
     if (seen.has(key)) continue
+    if (normalized.type === 'CNAME' && seenCnameHosts.has(normalized.name)) continue
     seen.add(key)
+    if (normalized.type === 'CNAME') {
+      seenCnameHosts.add(normalized.name)
+    }
     deduped.push(normalized)
   }
 

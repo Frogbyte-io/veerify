@@ -23,6 +23,15 @@ describe('domain service helpers', () => {
     ).toEqual([{ type: 'CNAME', name: 'feedback.example.com', value: 'cname.veerify.io' }])
   })
 
+  it('keeps only one cname instruction per hostname', () => {
+    expect(
+      dedupeDnsRecords([
+        { type: 'CNAME', name: 'feedback.example.com', value: '23f9267bd57617a5.vercel-dns-017.com.' },
+        { type: 'CNAME', name: 'feedback.example.com.', value: 'cname.vercel-dns.com.' },
+      ])
+    ).toEqual([{ type: 'CNAME', name: 'feedback.example.com', value: '23f9267bd57617a5.vercel-dns-017.com.' }])
+  })
+
   it('builds a clean settings patch for a provider result', () => {
     const settings = buildDomainSettingsPatch(
       {
@@ -77,6 +86,38 @@ describe('domain service helpers', () => {
         type: 'TXT',
         name: '_vercel.feedback.example.com',
         value: 'vc-domain-verify=abc123',
+      },
+    ])
+  })
+
+  it('prefers the project-specific vercel cname when multiple cname targets are returned for one host', () => {
+    const result = mapVercelDomainResult('feedback.example.com', {
+      project: {
+        verified: false,
+        verification: [
+          {
+            type: 'CNAME',
+            domain: 'feedback.example.com',
+            value: 'cname.vercel-dns.com.',
+          },
+          {
+            type: 'CNAME',
+            domain: 'feedback.example.com',
+            value: '23f9267bd57617a5.vercel-dns-017.com.',
+          },
+        ],
+      },
+      config: {
+        configuredBy: 'CNAME',
+      },
+    })
+
+    expect(result.status).toBe('ownership_verification_required')
+    expect(result.dnsRecords).toEqual([
+      {
+        type: 'CNAME',
+        name: 'feedback.example.com',
+        value: '23f9267bd57617a5.vercel-dns-017.com.',
       },
     ])
   })

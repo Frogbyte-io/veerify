@@ -79,6 +79,26 @@ function mapVerificationRecords(hostname: string, verification: VercelVerificati
   return records
 }
 
+function isGenericVercelCname(value: string): boolean {
+  const normalizedValue = normalizeDomainHostname(value)
+  return /^cname\.vercel-dns(?:-\d+)?\.com$/i.test(normalizedValue)
+}
+
+function prioritizeDnsRecords(records: DomainDnsRecord[]): DomainDnsRecord[] {
+  return [...records].sort((left, right) => {
+    if (left.type !== right.type) return 0
+    if (left.type !== 'CNAME') return 0
+
+    const sameHost = normalizeDomainHostname(left.name) === normalizeDomainHostname(right.name)
+    if (!sameHost) return 0
+
+    const leftIsGeneric = isGenericVercelCname(left.value)
+    const rightIsGeneric = isGenericVercelCname(right.value)
+    if (leftIsGeneric === rightIsGeneric) return 0
+    return leftIsGeneric ? 1 : -1
+  })
+}
+
 function mapVercelDomainResult(hostname: string, payloads: { project: unknown; config: unknown }): DomainProviderResult {
   const projectRecord = asRecord(payloads.project) || {}
   const configRecord = asRecord(payloads.config) || {}
@@ -119,7 +139,7 @@ function mapVercelDomainResult(hostname: string, payloads: { project: unknown; c
     }
   }
 
-  const normalizedRecords = dedupeDnsRecords(dnsRecords)
+  const normalizedRecords = dedupeDnsRecords(prioritizeDnsRecords(dnsRecords))
   const expected = normalizedRecords.length === 1 ? normalizedRecords[0].value : null
   const resolvedTo = collectStringValues(configRecord.misconfigured)
   const status = verified
