@@ -79,6 +79,20 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await page.locator(selectors.settingsTabSecurity).click()
   await expect(page).toHaveURL(/#security/)
   await expect(page.getByRole('heading', { name: 'Security' })).toBeVisible()
+  await expect(page.locator(selectors.securityTwoFactorStatusCard)).toBeVisible()
+  await expect(page.locator(selectors.securityTwoFactorEnableCallout)).toBeVisible()
+
+  const enableCalloutClasses = await page.locator(selectors.securityTwoFactorEnableCallout).getAttribute('class')
+  expect(enableCalloutClasses).toContain('bg-primary/10')
+  expect(enableCalloutClasses).toContain('border-primary/20')
+
+  const statusIconBox = await page.locator(selectors.securityTwoFactorStatusIcon).boundingBox()
+  const calloutIconBox = await page.locator(selectors.securityTwoFactorEnableCalloutIcon).boundingBox()
+
+  expect(statusIconBox).not.toBeNull()
+  expect(calloutIconBox).not.toBeNull()
+  expect(Math.abs((statusIconBox?.width || 0) - (statusIconBox?.height || 0))).toBeLessThanOrEqual(1)
+  expect(Math.abs((calloutIconBox?.width || 0) - (calloutIconBox?.height || 0))).toBeLessThanOrEqual(1)
 
   await page.locator(selectors.settingsTabNotifications).click()
   await expect(page).toHaveURL(/#notifications/)
