@@ -8,7 +8,9 @@
               <Icon name="lucide:circle-dot" class="h-5 w-5" />
               Feedback Statuses
             </CardTitle>
-            <CardDescription>{{ statusCardDescription }}</CardDescription>
+            <CardDescription>
+              Customize the workflow statuses available for feedback items. Drag to reorder.
+            </CardDescription>
           </div>
           <Button size="sm" @click="openCreateDialog">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -25,7 +27,7 @@
         <!-- Error -->
         <div v-else-if="error" class="text-center py-6">
           <p class="text-sm text-destructive mb-2">{{ error }}</p>
-          <Button variant="outline" size="sm" @click="loadStatuses">
+          <Button variant="outline" size="sm" @click="refreshResource">
             <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
             Retry
           </Button>
@@ -35,11 +37,11 @@
         <div v-else-if="isUsingDefaults" class="space-y-4">
           <div class="rounded-md bg-muted p-3 text-sm text-muted-foreground">
             <Icon name="lucide:info" class="w-4 h-4 inline mr-1.5 align-text-bottom" />
-            Using the default starting workflow. Add a custom status to replace it with your own workflow.
+            Using default system statuses. Add a custom status to start customizing your workflow.
           </div>
           <div class="space-y-2">
             <div
-              v-for="status in statuses"
+              v-for="status in localStatuses"
               :key="status.value"
               class="flex items-center gap-3 rounded-lg border p-3"
             >
@@ -57,7 +59,7 @@
         </div>
 
         <!-- Empty -->
-        <div v-else-if="statuses.length === 0" class="text-center py-8">
+        <div v-else-if="localStatuses.length === 0" class="text-center py-8">
           <Icon name="lucide:circle-dot" class="w-10 h-10 mx-auto text-muted-foreground mb-3" />
           <p class="text-sm text-muted-foreground mb-3">No statuses yet</p>
           <Button size="sm" @click="openCreateDialog">Add First Status</Button>
@@ -65,13 +67,10 @@
 
         <!-- Custom Status List -->
         <div v-else class="space-y-2">
-          <p class="text-xs text-muted-foreground">
-            {{ canReorderStatuses ? 'Drag statuses to reorder how they appear in dropdowns.' : 'Add another status to enable reordering.' }}
-          </p>
+          <p class="text-xs text-muted-foreground">Drag statuses to reorder how they appear in dropdowns.</p>
           <div
-            v-for="status in statuses"
+            v-for="status in localStatuses"
             :key="status.id"
-            :data-testid="`product-status-item-${status.id}`"
             class="flex items-center justify-between rounded-lg border p-3 transition-colors"
             :class="{
               'border-primary bg-primary/5': dragOverStatusId === status.id && draggedStatusId !== status.id,
@@ -87,8 +86,8 @@
                 :data-testid="`product-status-drag-handle-${status.id}`"
                 class="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:cursor-not-allowed"
                 :aria-label="`Drag to reorder ${status.name}`"
-                :disabled="isReordering || !canReorderStatuses"
-                :draggable="canReorderStatuses && !isReordering"
+                :disabled="isReordering"
+                draggable="true"
                 @dragstart="onDragStart(status.id, $event)"
                 @dragend="onDragEnd"
               >
@@ -148,7 +147,7 @@
                 :value="statusForm.color || '#6b7280'"
                 class="w-8 h-8 rounded border cursor-pointer"
                 @input="statusForm.color = $event.target.value"
-              />
+              >
               <Input id="status-color" v-model="statusForm.color" placeholder="#6b7280" class="flex-1" />
             </div>
           </div>
@@ -187,11 +186,11 @@
             >
               <option value="">None (keep existing status value)</option>
               <option
-                v-for="s in statuses.filter((s) => s.id !== deletingStatus?.id)"
-                :key="s.id || s.value"
-                :value="s.value"
+                v-for="status in localStatuses.filter((item) => item.id !== deletingStatus?.id)"
+                :key="status.id || status.value"
+                :value="status.value"
               >
-                {{ s.name }}
+                {{ status.name }}
               </option>
             </select>
           </div>
@@ -211,6 +210,15 @@
 <script>
 import { toast } from 'vue-sonner'
 
+function sortStatuses(statuses) {
+  return [...statuses].sort((a, b) => {
+    if ((a.sortOrder ?? 0) !== (b.sortOrder ?? 0)) {
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+    }
+    return String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+  })
+}
+
 export default {
   name: 'ProductSettingsStatuses',
   props: {
@@ -218,13 +226,23 @@ export default {
       type: Object,
       required: true,
     },
+    resourceState: {
+      type: Object,
+      required: true,
+    },
+    ensureLoaded: {
+      type: Function,
+      default: null,
+    },
+    refresh: {
+      type: Function,
+      default: null,
+    },
   },
+  emits: ['statuses-updated', 'feedback-default-status-replaced'],
   data() {
     return {
-      statuses: [],
-      isLoading: true,
-      isUsingDefaults: false,
-      error: null,
+      localStatuses: [],
       showStatusDialog: false,
       showDeleteDialog: false,
       editingStatus: null,
@@ -243,51 +261,42 @@ export default {
     }
   },
   computed: {
-    canReorderStatuses() {
-      return !this.isUsingDefaults && this.statuses.length > 1
+    isLoading() {
+      return ['idle', 'loading'].includes(this.resourceState?.status) && this.localStatuses.length === 0
     },
-    statusCardDescription() {
-      if (this.isUsingDefaults) {
-        return 'Review the default starting workflow for feedback items. Add a custom status to start customizing it.'
-      }
-
-      if (this.statuses.length <= 1) {
-        return 'Customize the workflow statuses available for feedback items. Add another status to enable reordering.'
-      }
-
-      return 'Customize the workflow statuses available for feedback items. Drag to reorder.'
+    error() {
+      if (this.localStatuses.length > 0) return null
+      if (this.resourceState?.status !== 'error') return null
+      return this.resourceState?.error || 'Failed to load statuses'
+    },
+    isUsingDefaults() {
+      return this.localStatuses.length > 0 && this.localStatuses[0].id === null
     },
   },
   watch: {
-    'project.slug': {
-      handler() {
-        this.loadStatuses()
+    'resourceState.data': {
+      handler(statuses) {
+        this.localStatuses = sortStatuses(Array.isArray(statuses) ? statuses.map((status) => ({ ...status })) : [])
       },
-      immediate: false,
+      immediate: true,
+      deep: true,
     },
-  },
-  async mounted() {
-    await this.loadStatuses()
   },
   methods: {
-    async loadStatuses() {
-      this.isLoading = true
-      this.error = null
-
-      try {
-        const response = await $fetch(`/api/projects/${this.project.slug}/statuses`)
-        const data = response?.data || []
-        // Detect if we're showing system defaults (id is null)
-        this.isUsingDefaults = data.length > 0 && data[0].id === null
-        this.statuses = data
-      } catch (err) {
-        console.error('Error loading statuses:', err)
-        this.error = 'Failed to load statuses'
-      } finally {
-        this.isLoading = false
-      }
+    refreshResource() {
+      if (!this.refresh) return
+      this.refresh().catch(() => {})
     },
-
+    emitStatuses(statuses) {
+      const nextStatuses = sortStatuses(statuses.map((status) => ({ ...status })))
+      this.localStatuses = nextStatuses
+      this.$emit('statuses-updated', nextStatuses)
+    },
+    async refreshAndEmitStatuses() {
+      if (!this.refresh) return
+      const latestStatuses = await this.refresh()
+      this.emitStatuses(Array.isArray(latestStatuses) ? latestStatuses : [])
+    },
     openCreateDialog() {
       this.editingStatus = null
       this.statusForm = { name: '', color: '#6b7280', description: '' }
@@ -323,7 +332,7 @@ export default {
     },
 
     onDragOver(statusId) {
-      if (!this.canReorderStatuses || !this.draggedStatusId || this.draggedStatusId === statusId) return
+      if (!this.draggedStatusId || this.draggedStatusId === statusId) return
       this.dragOverStatusId = statusId
     },
 
@@ -339,43 +348,50 @@ export default {
     },
 
     async onDrop(targetStatusId) {
-      if (!this.canReorderStatuses || !this.draggedStatusId || this.draggedStatusId === targetStatusId || this.isReordering) {
+      if (!this.draggedStatusId || this.draggedStatusId === targetStatusId || this.isReordering) {
         this.onDragEnd()
         return
       }
 
-      const fromIndex = this.statuses.findIndex((s) => s.id === this.draggedStatusId)
-      const toIndex = this.statuses.findIndex((s) => s.id === targetStatusId)
+      const fromIndex = this.localStatuses.findIndex((status) => status.id === this.draggedStatusId)
+      const toIndex = this.localStatuses.findIndex((status) => status.id === targetStatusId)
 
       if (fromIndex < 0 || toIndex < 0) {
         this.onDragEnd()
         return
       }
 
-      const previousOrder = [...this.statuses]
-      const reordered = [...this.statuses]
+      const previousOrder = this.localStatuses.map((status) => ({ ...status }))
+      const reordered = [...this.localStatuses]
       const [moved] = reordered.splice(fromIndex, 1)
       reordered.splice(toIndex, 0, moved)
-      this.statuses = reordered
+      this.localStatuses = reordered
       this.onDragEnd()
       await this.persistOrder(previousOrder)
     },
 
     async persistOrder(previousOrder) {
       this.isReordering = true
+      const reorderedStatuses = this.localStatuses.map((status, sortOrder) => ({
+        ...status,
+        sortOrder,
+      }))
+      this.localStatuses = reorderedStatuses
+
       try {
         await Promise.all(
-          this.statuses.map((status, sortOrder) =>
+          reorderedStatuses.map((status) =>
             $fetch(`/api/projects/${this.project.slug}/statuses/${status.id}`, {
               method: 'PUT',
-              body: { sortOrder },
+              body: { sortOrder: status.sortOrder },
             })
           )
         )
+        this.emitStatuses(reorderedStatuses)
         toast.success('Status order saved')
       } catch (err) {
         console.error('Error saving status order:', err)
-        this.statuses = previousOrder
+        this.localStatuses = previousOrder
         toast.error(err?.data?.error?.message || 'Failed to save status order')
       } finally {
         this.isReordering = false
@@ -394,21 +410,24 @@ export default {
         }
 
         if (this.editingStatus) {
-          await $fetch(`/api/projects/${this.project.slug}/statuses/${this.editingStatus.id}`, {
+          const response = await $fetch(`/api/projects/${this.project.slug}/statuses/${this.editingStatus.id}`, {
             method: 'PUT',
             body,
           })
+          const savedStatus = response?.data || null
+          const nextStatuses = this.localStatuses.map((status) => (status.id === savedStatus?.id ? savedStatus : status))
+          this.emitStatuses(nextStatuses.filter(Boolean))
           toast.success('Status updated')
         } else {
           await $fetch(`/api/projects/${this.project.slug}/statuses`, {
             method: 'POST',
             body,
           })
+          await this.refreshAndEmitStatuses()
           toast.success('Status created')
         }
 
         this.showStatusDialog = false
-        await this.loadStatuses()
       } catch (err) {
         console.error('Error saving status:', err)
         toast.error(err?.data?.error?.message || 'Failed to save status')
@@ -422,6 +441,7 @@ export default {
       this.isDeletingStatus = true
 
       try {
+        const deletedStatusValue = this.deletingStatus.value
         await $fetch(`/api/projects/${this.project.slug}/statuses/${this.deletingStatus.id}`, {
           method: 'DELETE',
           body: {
@@ -429,9 +449,16 @@ export default {
           },
         })
 
+        if (this.replacementValue) {
+          this.$emit('feedback-default-status-replaced', {
+            fromValue: deletedStatusValue,
+            toValue: this.replacementValue,
+          })
+        }
+
+        await this.refreshAndEmitStatuses()
         toast.success('Status deleted')
         this.showDeleteDialog = false
-        await this.loadStatuses()
       } catch (err) {
         console.error('Error deleting status:', err)
         toast.error(err?.data?.error?.message || 'Failed to delete status')
