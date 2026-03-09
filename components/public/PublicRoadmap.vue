@@ -138,8 +138,16 @@
           A timeline view of all feedback items grouped by status.
         </p>
 
+        <!-- Loading columns skeleton -->
+        <div v-if="columnsLoading" class="flex gap-4 overflow-x-auto pb-4">
+          <div v-for="n in 3" :key="n" class="flex-shrink-0 w-72 space-y-2">
+            <Skeleton class="h-8 w-full" />
+            <Skeleton v-for="m in 3" :key="m" class="h-24 w-full" />
+          </div>
+        </div>
+
         <!-- Empty state -->
-        <div v-if="visibleColumns.length === 0" class="text-center py-20 text-muted-foreground">
+        <div v-else-if="visibleColumns.length === 0" class="text-center py-20 text-muted-foreground">
           <Icon name="lucide:map" class="w-12 h-12 mx-auto mb-3 opacity-40" />
           <p class="font-medium">No roadmap items yet</p>
           <p class="text-sm mt-1">Submit feedback to see it appear here.</p>
@@ -338,6 +346,7 @@ export default {
       projectData: null,
       columns: [],
       isLoading: true,
+      columnsLoading: true,
       error: null,
       previousColorMode: null,
       activeTheme: 'system',
@@ -445,6 +454,20 @@ export default {
     if (import.meta.client) {
       this.previousColorMode = this.$colorMode.preference
     }
+    // Use data prefetched by the feedback board page to skip the full-page loading skeleton
+    const roadmapCacheKey = `pubRoadmapData_${this.teamSlug}_${this.projectSlug}`
+    const cached = import.meta.client ? useState(roadmapCacheKey).value : null
+    if (cached && Date.now() - cached.cachedAt < 60_000 && cached.response?.data) {
+      const data = cached.response.data
+      this.projectData = { project: data.project, team: data.team }
+      this.columns = data.columns || []
+      this.isLoading = false
+      this.columnsLoading = false
+      this.applyTheme(data.project?.settings?.themeMode || 'system')
+      this.warmFeedbackBoardData()
+      this.checkCurrentUser()
+      return
+    }
     try {
       const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`)
       const data = response?.data
@@ -458,6 +481,7 @@ export default {
       this.error = 'This roadmap could not be found.'
     } finally {
       this.isLoading = false
+      this.columnsLoading = false
     }
   },
   methods: {
@@ -475,10 +499,18 @@ export default {
         sortOrder: 'desc',
       })
 
+      const cacheKey = `pubBoardData_${this.teamSlug}_${this.projectSlug}`
       const promise = Promise.all([
         $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`),
         $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback?${params.toString()}`),
-      ]).catch(() => null)
+      ])
+        .then(([projectResponse, feedbackResponse]) => {
+          if (import.meta.client) {
+            useState(cacheKey).value = { projectResponse, feedbackResponse, cachedAt: Date.now() }
+          }
+          return [projectResponse, feedbackResponse]
+        })
+        .catch(() => null)
 
       this.feedbackBoardPrefetch = { promise, cachedAt: now }
       return promise

@@ -1063,6 +1063,27 @@ export default {
       this.previousColorMode = this.$colorMode.preference
       window.addEventListener('scroll', this.handleScroll, { passive: true })
     }
+    // Use data prefetched by the roadmap page to skip the full-page loading skeleton
+    const boardCacheKey = `pubBoardData_${this.teamSlug}_${this.projectSlug}`
+    const cached = import.meta.client ? useState(boardCacheKey).value : null
+    if (cached && Date.now() - cached.cachedAt < 60_000 && cached.projectResponse?.data) {
+      const projectData = cached.projectResponse.data
+      const feedbackData = cached.feedbackResponse?.data
+      this.projectData = projectData
+      if (feedbackData?.items) {
+        this.feedbackItems = this.mergeWithLocalVotes(feedbackData.items)
+        this.pagination = feedbackData.pagination || this.pagination
+        this.warmVisibleFeedbackDetails()
+      }
+      this.isLoading = false
+      this.feedbackLoading = false
+      this.applyTheme(projectData.project?.settings?.themeMode || 'system')
+      await this.$nextTick()
+      this.setupScrollObserver()
+      this.warmRoadmapData()
+      this.checkAdminStatus()
+      return
+    }
     try {
       const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`)
       this.projectData = response?.data
@@ -1211,7 +1232,15 @@ export default {
         return this.roadmapPrefetch.promise
       }
 
-      const promise = $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`).catch(() => null)
+      const cacheKey = `pubRoadmapData_${this.teamSlug}_${this.projectSlug}`
+      const promise = $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`)
+        .then((response) => {
+          if (import.meta.client) {
+            useState(cacheKey).value = { response, cachedAt: Date.now() }
+          }
+          return response
+        })
+        .catch(() => null)
       this.roadmapPrefetch = { promise, cachedAt: now }
       return promise
     },
