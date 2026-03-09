@@ -43,6 +43,8 @@ test.describe('Sidebar resizing', () => {
     await page.goto('/feedback')
     await expect(page).toHaveURL(/\/feedback/)
 
+    await expect(page.getByRole('link', { name: 'Help Center' })).toHaveCount(0)
+
     const submissionsLink = page.getByRole('link', { name: 'My Submissions' })
     await expect(submissionsLink).toBeVisible()
     await submissionsLink.hover()
