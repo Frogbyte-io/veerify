@@ -26,40 +26,21 @@
           </p>
         </div>
 
-        <div v-if="form.customDomain" class="space-y-3 rounded-md border p-4">
+        <div v-if="form.customDomain" class="space-y-3 rounded-md border p-4 transition-colors" :class="statusPanelClass">
           <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
+            <div class="flex items-start gap-3">
               <span
                 class="flex h-2 w-2 rounded-full"
-                :class="{
-                  'bg-green-500': effectiveDomainStatus === 'active',
-                  'bg-yellow-500':
-                    effectiveDomainStatus === 'dns_required' ||
-                    effectiveDomainStatus === 'ownership_verification_required' ||
-                    verifyStatus === 'unverified',
-                  'bg-muted-foreground': verifyStatus === 'idle' && !effectiveDomainStatus,
-                  'bg-blue-500 animate-pulse': verifyStatus === 'checking',
-                }"
+                :class="statusDotClass"
               />
-              <span class="text-sm font-medium">
-                <span v-if="verifyStatus === 'checking'">Checking DNS...</span>
-                <span v-else-if="effectiveDomainStatus === 'active'" class="text-green-600 dark:text-green-400">
-                  Domain verified
-                </span>
-                <span
-                  v-else-if="effectiveDomainStatus === 'ownership_verification_required'"
-                  class="text-yellow-600 dark:text-yellow-400"
-                >
-                  Ownership verification required
-                </span>
-                <span v-else-if="effectiveDomainStatus === 'dns_required'" class="text-yellow-600 dark:text-yellow-400">
-                  DNS records still need to be added
-                </span>
-                <span v-else-if="verifyStatus === 'unverified'" class="text-yellow-600 dark:text-yellow-400">
-                  DNS not configured yet
-                </span>
-                <span v-else>Not checked yet</span>
-              </span>
+              <div class="space-y-1">
+                <p data-testid="product-domain-status-title" class="text-sm font-medium" :class="statusTextClass">
+                  {{ statusTitle }}
+                </p>
+                <p v-if="statusHint" data-testid="product-domain-status-hint" class="text-xs text-muted-foreground">
+                  {{ statusHint }}
+                </p>
+              </div>
             </div>
             <Button variant="outline" size="sm" :disabled="verifyStatus === 'checking'" @click="verify">
               <Icon v-if="verifyStatus === 'checking'" name="lucide:loader-2" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -172,24 +153,24 @@ export default {
     storedDomainRecords() {
       const records = this.project?.settings?.domainDnsRecords
       if (!Array.isArray(records)) return []
-      return records.filter((record) => {
+      return this.normalizeDnsRecords(records.filter((record) => {
         return record && typeof record.type === 'string' && typeof record.name === 'string' && typeof record.value === 'string'
-      })
+      }))
     },
     fallbackDnsRecord() {
       const domain = this.form.customDomain?.trim()
       if (!domain) return []
-      return [
+      return this.normalizeDnsRecords([
         {
           type: 'CNAME',
           name: domain,
           value: this.cnameTarget,
         },
-      ]
+      ])
     },
     displayDnsRecords() {
       if (Array.isArray(this.verifyResult?.dnsRecords) && this.verifyResult.dnsRecords.length > 0) {
-        return this.verifyResult.dnsRecords
+        return this.normalizeDnsRecords(this.verifyResult.dnsRecords)
       }
       if (this.storedDomainRecords.length > 0) {
         return this.storedDomainRecords
@@ -199,6 +180,77 @@ export default {
     effectiveDomainStatus() {
       if (this.verifyResult?.status) return this.verifyResult.status
       return this.project?.settings?.domainStatus || null
+    },
+    hasStoredVerifiedDomain() {
+      return this.project?.settings?.domainStatus === 'active'
+    },
+    statusPresentation() {
+      if (this.verifyStatus === 'checking') return 'checking'
+
+      if (this.verifyResult) {
+        if (this.verifyResult.verified) return 'active'
+        if (this.verifyResult.status === 'ownership_verification_required') {
+          return 'ownership_verification_required'
+        }
+        if (this.hasStoredVerifiedDomain) {
+          return 'dns_incomplete'
+        }
+        return 'dns_required'
+      }
+
+      if (this.effectiveDomainStatus === 'active') return 'active'
+      if (this.effectiveDomainStatus === 'ownership_verification_required') {
+        return 'ownership_verification_required'
+      }
+      if (this.effectiveDomainStatus === 'dns_required') return 'dns_required'
+      return 'idle'
+    },
+    statusTitle() {
+      if (this.statusPresentation === 'checking') return 'Checking DNS...'
+      if (this.statusPresentation === 'active') return 'Domain verified'
+      if (this.statusPresentation === 'ownership_verification_required') return 'Ownership verification required'
+      if (this.statusPresentation === 'dns_incomplete') return 'DNS configuration incomplete'
+      if (this.statusPresentation === 'dns_required') return 'DNS not configured yet'
+      return 'Not checked yet'
+    },
+    statusHint() {
+      if (this.statusPresentation === 'active') {
+        return 'The current DNS records match the required setup.'
+      }
+      if (this.statusPresentation === 'ownership_verification_required') {
+        return 'Add the verification records below to finish connecting this domain.'
+      }
+      if (this.statusPresentation === 'dns_incomplete') {
+        return 'The domain is added, but the latest DNS check did not find the required records.'
+      }
+      if (this.statusPresentation === 'dns_required') {
+        return 'Add the required DNS records below, then check again.'
+      }
+      return ''
+    },
+    statusDotClass() {
+      if (this.statusPresentation === 'checking') return 'bg-blue-500 animate-pulse'
+      if (this.statusPresentation === 'active') return 'bg-green-500'
+      if (this.statusPresentation === 'ownership_verification_required' || this.statusPresentation === 'dns_incomplete' || this.statusPresentation === 'dns_required') {
+        return 'bg-amber-500'
+      }
+      return 'bg-muted-foreground'
+    },
+    statusTextClass() {
+      if (this.statusPresentation === 'active') return 'text-green-600 dark:text-green-400'
+      if (this.statusPresentation === 'checking') return 'text-blue-600 dark:text-blue-400'
+      if (this.statusPresentation === 'ownership_verification_required' || this.statusPresentation === 'dns_incomplete' || this.statusPresentation === 'dns_required') {
+        return 'text-amber-700 dark:text-amber-300'
+      }
+      return ''
+    },
+    statusPanelClass() {
+      if (this.statusPresentation === 'active') return 'border-green-500/30 bg-green-500/5'
+      if (this.statusPresentation === 'checking') return 'border-blue-500/30 bg-blue-500/5'
+      if (this.statusPresentation === 'ownership_verification_required' || this.statusPresentation === 'dns_incomplete' || this.statusPresentation === 'dns_required') {
+        return 'border-amber-500/30 bg-amber-500/5'
+      }
+      return ''
     },
   },
   watch: {
@@ -216,6 +268,34 @@ export default {
     },
   },
   methods: {
+    normalizeDnsRecords(records) {
+      const seen = new Set()
+      const seenCnameHosts = new Set()
+      const normalized = []
+
+      for (const record of records) {
+        const nextRecord = {
+          type: String(record.type || '').trim().toUpperCase(),
+          name: String(record.name || '').trim().toLowerCase().replace(/\.$/, ''),
+          value: String(record.value || '').trim(),
+        }
+
+        if (!nextRecord.type || !nextRecord.name || !nextRecord.value) continue
+
+        const key = `${nextRecord.type}:${nextRecord.name}:${nextRecord.value}`
+        if (seen.has(key)) continue
+        if (nextRecord.type === 'CNAME' && seenCnameHosts.has(nextRecord.name)) continue
+
+        seen.add(key)
+        if (nextRecord.type === 'CNAME') {
+          seenCnameHosts.add(nextRecord.name)
+        }
+        normalized.push(nextRecord)
+      }
+
+      return normalized
+    },
+
     async save() {
       this.isSaving = true
       try {

@@ -201,6 +201,97 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
   await expect(page.getByText('cname.vercel-dns.com.')).toHaveCount(0)
 })
 
+test('custom domain status downgrades from stored verified state after a failed dns check', async ({ request, page }) => {
+  await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  expect(authCookies.length).toBeGreaterThan(0)
+  await page.context().addCookies(authCookies)
+
+  const activeTeamResponse = await request.get('/api/teams/active')
+  const activeTeamPayload = await activeTeamResponse.json()
+  expect(activeTeamResponse.ok()).toBeTruthy()
+  const teamId = activeTeamPayload.data.id as string
+
+  const projectSlug = `e2e-domain-status-${Date.now()}`
+  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+    data: {
+      name: 'Domain Status Product',
+      slug: projectSlug,
+      description: null,
+      customDomain: null,
+    },
+  })
+  expect(createProjectResponse.status()).toBe(201)
+
+  const saveDomainResponse = await request.put(`/api/projects/${projectSlug}`, {
+    data: {
+      customDomain: 'feedback.example.com',
+    },
+  })
+  expect(saveDomainResponse.ok()).toBeTruthy()
+
+  await page.route(`**/api/projects/${projectSlug}`, async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue()
+      return
+    }
+
+    const response = await page.request.fetch(route.request())
+    const payload = await response.json()
+
+    await route.fulfill({
+      status: response.status(),
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...payload,
+        data: {
+          ...payload.data,
+          settings: {
+            ...(payload.data?.settings || {}),
+            domainStatus: 'active',
+          },
+        },
+      }),
+    })
+  })
+
+  await page.route(`**/api/projects/${projectSlug}/verify-domain?**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        hostname: 'feedback.example.com',
+        provider: 'static-cname',
+        verified: false,
+        dnsRecords: [
+          {
+            type: 'CNAME',
+            name: 'feedback.example.com',
+            value: 'cname.veerify.com',
+          },
+        ],
+        configuredBy: 'CNAME',
+        expected: 'cname.veerify.com',
+        resolvedTo: [],
+        message: null,
+      }),
+    })
+  })
+
+  await page.goto(`/products/${projectSlug}#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#domain$`))
+  await expect(page.getByTestId('product-domain-status-title')).toHaveText('Domain verified')
+
+  await page.getByRole('button', { name: 'Check DNS' }).click()
+
+  await expect(page.getByTestId('product-domain-status-title')).toHaveText('DNS configuration incomplete')
+  await expect(page.getByTestId('product-domain-status-hint')).toHaveText(
+    'The domain is added, but the latest DNS check did not find the required records.'
+  )
+  await expect(page.getByText('No matching DNS records found for')).toBeVisible()
+})
+
 test('project categories API supports create/update/reorder/delete with reassignment rules', async ({ request }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
