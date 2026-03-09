@@ -138,6 +138,79 @@ test('new project statuses tab shows the default starting workflow without decli
   await expect(page.locator('[data-testid^="product-status-drag-handle-"]')).toHaveCount(0)
 })
 
+test('product categories tab reorders categories through drag and drop and persists the new order', async ({
+  request,
+  page,
+}) => {
+  await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  expect(authCookies.length).toBeGreaterThan(0)
+  await page.context().addCookies(authCookies)
+
+  const activeTeamResponse = await request.get('/api/teams/active')
+  const activeTeamPayload = await activeTeamResponse.json()
+  expect(activeTeamResponse.ok()).toBeTruthy()
+  const teamId = activeTeamPayload.data.id as string
+
+  const projectSlug = `e2e-categories-ui-${Date.now()}`
+  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+    data: {
+      name: 'Categories UI Product',
+      slug: projectSlug,
+      description: null,
+      customDomain: null,
+    },
+  })
+  expect(createProjectResponse.status()).toBe(201)
+
+  const categoriesResponse = await request.get(`/api/projects/${projectSlug}/categories`)
+  const categoriesPayload = await categoriesResponse.json()
+  expect(categoriesResponse.ok()).toBeTruthy()
+  const initialCategories = categoriesPayload.data as Array<{ id: string; name: string }>
+  expect(initialCategories.map((category) => category.name)).toEqual(['Bug', 'Feature'])
+
+  const bugCategory = initialCategories.find((category) => category.name === 'Bug')
+  const featureCategory = initialCategories.find((category) => category.name === 'Feature')
+  expect(bugCategory?.id).toBeTruthy()
+  expect(featureCategory?.id).toBeTruthy()
+
+  await page.goto(`/products/${projectSlug}#categories`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#categories$`))
+  await expect(page.getByText('Feedback Categories')).toBeVisible()
+  await expect(page.locator('[data-testid^="product-category-item-"]')).toHaveCount(2)
+
+  const readUiOrder = async () =>
+    page.locator('[data-testid^="product-category-item-"]').evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('data-testid')?.replace('product-category-item-', '') || '')
+    )
+
+  await expect.poll(readUiOrder).toEqual([bugCategory!.id, featureCategory!.id])
+
+  const sourceHandle = page.locator(`[data-testid="product-category-drag-handle-${bugCategory!.id}"]`)
+  const targetItem = page.locator(`[data-testid="product-category-item-${featureCategory!.id}"]`)
+  const sourceBox = await sourceHandle.boundingBox()
+  const targetBox = await targetItem.boundingBox()
+  expect(sourceBox).toBeTruthy()
+  expect(targetBox).toBeTruthy()
+
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height - 6, { steps: 20 })
+  await page.mouse.up()
+
+  await expect.poll(readUiOrder).toEqual([featureCategory!.id, bugCategory!.id])
+  await expect(page.getByText('Category order saved')).toBeVisible()
+
+  await expect
+    .poll(async () => {
+      const response = await request.get(`/api/projects/${projectSlug}/categories`)
+      const payload = await response.json()
+      return (payload.data as Array<{ name: string }>).map((category) => category.name)
+    })
+    .toEqual(['Feature', 'Bug'])
+})
+
 test('custom domain dns setup hides duplicate cname targets for the same host', async ({ request, page }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
