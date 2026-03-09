@@ -8,9 +8,7 @@
               <Icon name="lucide:circle-dot" class="h-5 w-5" />
               Feedback Statuses
             </CardTitle>
-            <CardDescription>
-              Customize the workflow statuses available for feedback items. Drag to reorder.
-            </CardDescription>
+            <CardDescription>{{ statusCardDescription }}</CardDescription>
           </div>
           <Button size="sm" @click="openCreateDialog">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -37,7 +35,7 @@
         <div v-else-if="isUsingDefaults" class="space-y-4">
           <div class="rounded-md bg-muted p-3 text-sm text-muted-foreground">
             <Icon name="lucide:info" class="w-4 h-4 inline mr-1.5 align-text-bottom" />
-            Using default system statuses. Add a custom status to start customizing your workflow.
+            Using the default starting workflow. Add a custom status to replace it with your own workflow.
           </div>
           <div class="space-y-2">
             <div
@@ -67,10 +65,13 @@
 
         <!-- Custom Status List -->
         <div v-else class="space-y-2">
-          <p class="text-xs text-muted-foreground">Drag statuses to reorder how they appear in dropdowns.</p>
+          <p class="text-xs text-muted-foreground">
+            {{ canReorderStatuses ? 'Drag statuses to reorder how they appear in dropdowns.' : 'Add another status to enable reordering.' }}
+          </p>
           <div
             v-for="status in statuses"
             :key="status.id"
+            :data-testid="`product-status-item-${status.id}`"
             class="flex items-center justify-between rounded-lg border p-3 transition-colors"
             :class="{
               'border-primary bg-primary/5': dragOverStatusId === status.id && draggedStatusId !== status.id,
@@ -83,10 +84,11 @@
             <div class="flex items-center gap-3">
               <button
                 type="button"
+                :data-testid="`product-status-drag-handle-${status.id}`"
                 class="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:cursor-not-allowed"
                 :aria-label="`Drag to reorder ${status.name}`"
-                :disabled="isReordering"
-                draggable="true"
+                :disabled="isReordering || !canReorderStatuses"
+                :draggable="canReorderStatuses && !isReordering"
                 @dragstart="onDragStart(status.id, $event)"
                 @dragend="onDragEnd"
               >
@@ -240,6 +242,22 @@ export default {
       },
     }
   },
+  computed: {
+    canReorderStatuses() {
+      return !this.isUsingDefaults && this.statuses.length > 1
+    },
+    statusCardDescription() {
+      if (this.isUsingDefaults) {
+        return 'Review the default starting workflow for feedback items. Add a custom status to start customizing it.'
+      }
+
+      if (this.statuses.length <= 1) {
+        return 'Customize the workflow statuses available for feedback items. Add another status to enable reordering.'
+      }
+
+      return 'Customize the workflow statuses available for feedback items. Drag to reorder.'
+    },
+  },
   watch: {
     'project.slug': {
       handler() {
@@ -305,7 +323,7 @@ export default {
     },
 
     onDragOver(statusId) {
-      if (!this.draggedStatusId || this.draggedStatusId === statusId) return
+      if (!this.canReorderStatuses || !this.draggedStatusId || this.draggedStatusId === statusId) return
       this.dragOverStatusId = statusId
     },
 
@@ -321,7 +339,7 @@ export default {
     },
 
     async onDrop(targetStatusId) {
-      if (!this.draggedStatusId || this.draggedStatusId === targetStatusId || this.isReordering) {
+      if (!this.canReorderStatuses || !this.draggedStatusId || this.draggedStatusId === targetStatusId || this.isReordering) {
         this.onDragEnd()
         return
       }

@@ -191,7 +191,6 @@ const FALLBACK_STATUSES = [
   { value: 'in_progress', name: 'In Progress', color: '#f59e0b' },
   { value: 'completed', name: 'Completed', color: '#10b981' },
   { value: 'closed', name: 'Closed', color: '#6b7280' },
-  { value: 'declined', name: 'Declined', color: '#ef4444' },
 ]
 
 export default {

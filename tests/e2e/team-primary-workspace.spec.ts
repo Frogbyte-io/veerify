@@ -1,6 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { APIRequestContext } from '@playwright/test'
-import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
+import { loginViaProgrammatic, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -87,6 +86,119 @@ test('authenticated user can access products UI workflow', async ({ request, pag
   await expect(page.getByText('General Settings')).toBeVisible()
   await expect(page.locator('label[for="project-domain"]')).toHaveCount(0)
   await expect(page.getByText('Point a CNAME record to Veerify to use a custom domain.')).toHaveCount(0)
+})
+
+test('new project statuses tab shows the default starting workflow without declined or drag affordances', async ({
+  request,
+  page,
+}) => {
+  await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  expect(authCookies.length).toBeGreaterThan(0)
+  await page.context().addCookies(authCookies)
+
+  const activeTeamResponse = await request.get('/api/teams/active')
+  const activeTeamPayload = await activeTeamResponse.json()
+  expect(activeTeamResponse.ok()).toBeTruthy()
+  const teamId = activeTeamPayload.data.id as string
+
+  const projectSlug = `e2e-statuses-${Date.now()}`
+  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+    data: {
+      name: 'Statuses Product',
+      slug: projectSlug,
+      description: null,
+      customDomain: null,
+    },
+  })
+  expect(createProjectResponse.status()).toBe(201)
+
+  const statusesResponse = await request.get(`/api/projects/${projectSlug}/statuses`)
+  const statusesPayload = await statusesResponse.json()
+  expect(statusesResponse.ok()).toBeTruthy()
+  const initialStatuses = statusesPayload.data as Array<{ name: string; value: string }>
+  expect(initialStatuses.map((status) => status.name)).toEqual(['Open', 'Planned', 'In Progress', 'Completed', 'Closed'])
+  expect(initialStatuses.map((status) => status.value)).not.toContain('declined')
+
+  await page.goto(`/products/${projectSlug}#statuses`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#statuses$`))
+  await expect(page.getByText('Feedback Statuses')).toBeVisible()
+  await expect(
+    page.getByText('Review the default starting workflow for feedback items. Add a custom status to start customizing it.')
+  ).toBeVisible()
+  await expect(
+    page.getByText('Using the default starting workflow. Add a custom status to replace it with your own workflow.')
+  ).toBeVisible()
+
+  for (const label of ['Open', 'Planned', 'In Progress', 'Completed', 'Closed']) {
+    await expect(page.getByText(label, { exact: true })).toBeVisible()
+  }
+  await expect(page.getByText('Declined', { exact: true })).toHaveCount(0)
+  await expect(page.locator('[data-testid^="product-status-drag-handle-"]')).toHaveCount(0)
+})
+
+test('custom domain dns setup hides duplicate cname targets for the same host', async ({ request, page }) => {
+  await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  expect(authCookies.length).toBeGreaterThan(0)
+  await page.context().addCookies(authCookies)
+
+  const activeTeamResponse = await request.get('/api/teams/active')
+  const activeTeamPayload = await activeTeamResponse.json()
+  expect(activeTeamResponse.ok()).toBeTruthy()
+  const teamId = activeTeamPayload.data.id as string
+
+  const projectSlug = `e2e-domain-${Date.now()}`
+  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+    data: {
+      name: 'Domain Product',
+      slug: projectSlug,
+      description: null,
+      customDomain: null,
+    },
+  })
+  expect(createProjectResponse.status()).toBe(201)
+
+  await page.route(`**/api/projects/${projectSlug}/verify-domain?**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        hostname: 'feedback.example.com',
+        provider: 'vercel',
+        verified: false,
+        status: 'ownership_verification_required',
+        dnsRecords: [
+          {
+            type: 'CNAME',
+            name: 'feedback.example.com',
+            value: '23f9267bd57617a5.vercel-dns-017.com.',
+          },
+          {
+            type: 'CNAME',
+            name: 'feedback.example.com',
+            value: 'cname.vercel-dns.com.',
+          },
+        ],
+        configuredBy: 'CNAME',
+        expected: '23f9267bd57617a5.vercel-dns-017.com.',
+        resolvedTo: [],
+        message: null,
+      }),
+    })
+  })
+
+  await page.goto(`/products/${projectSlug}#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#domain$`))
+  await expect(page.getByText('Required DNS records')).toBeVisible()
+
+  await page.locator('#custom-domain').fill('feedback.example.com')
+  await page.getByRole('button', { name: 'Check DNS' }).click()
+
+  await expect(page.getByText('23f9267bd57617a5.vercel-dns-017.com.')).toBeVisible()
+  await expect(page.getByText('cname.vercel-dns.com.')).toHaveCount(0)
 })
 
 test('project categories API supports create/update/reorder/delete with reassignment rules', async ({ request }) => {

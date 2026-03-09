@@ -13,7 +13,6 @@ export const SYSTEM_STATUSES = [
   { value: 'in_progress', name: 'In Progress', color: '#f59e0b', description: 'Actively being worked on', sortOrder: 2, isDefault: false },
   { value: 'completed', name: 'Completed', color: '#10b981', description: 'Released or resolved', sortOrder: 3, isDefault: false },
   { value: 'closed', name: 'Closed', color: '#6b7280', description: 'Closed without action', sortOrder: 4, isDefault: false },
-  { value: 'declined', name: 'Declined', color: '#ef4444', description: 'Out of scope or will not fix', sortOrder: 5, isDefault: false },
 ]
 
 export function toStatusValue(name: string) {
