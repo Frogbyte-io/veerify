@@ -64,51 +64,68 @@
           </div>
 
           <div class="space-y-2">
-            <Label for="organization-logo">Logo URL</Label>
-            <Input
-              id="organization-logo"
-              data-testid="organization-logo-input"
-              v-model="organizationLogo"
-              :disabled="!canEditOrganization || isSaving"
-              placeholder="https://example.com/logo.png"
-            />
-            <div class="space-y-2">
-              <Input
-                id="organization-logo-upload"
+            <Label>Logo</Label>
+            <div class="flex items-center gap-4">
+              <button
+                type="button"
+                :disabled="!canEditOrganization || isSaving"
+                class="group relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-border bg-muted transition-colors hover:border-primary hover:bg-muted/70 disabled:pointer-events-none disabled:opacity-50"
+                @click="$refs.logoFileInput.click()"
+              >
+                <img
+                  v-if="logoPreviewUrl || (organizationLogo && !removeLogo)"
+                  :src="logoPreviewUrl || organizationLogo"
+                  alt="Organization logo"
+                  class="h-full w-full object-cover"
+                />
+                <span v-else class="flex flex-col items-center gap-1 text-muted-foreground group-hover:text-primary">
+                  <Icon name="lucide:image-plus" class="h-5 w-5" />
+                </span>
+                <div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Icon name="lucide:upload" class="h-4 w-4 text-white" />
+                </div>
+              </button>
+
+              <input
+                ref="logoFileInput"
                 :key="logoInputKey"
                 data-testid="organization-logo-upload-input"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
+                class="hidden"
                 :disabled="!canEditOrganization || isSaving"
                 @change="handleLogoFileSelect"
               />
-              <div class="flex flex-wrap items-center gap-2">
-                <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 2 MB.</p>
-                <p v-if="logoFile" class="text-xs text-muted-foreground">
-                  Selected: <span class="font-medium text-foreground">{{ logoFile.name }}</span>
+
+              <div class="flex flex-col gap-1.5">
+                <p class="text-sm font-medium">
+                  <span v-if="logoFile">{{ logoFile.name }}</span>
+                  <span v-else-if="organizationLogo && !removeLogo" class="text-muted-foreground">Logo uploaded</span>
+                  <span v-else class="text-muted-foreground">No logo</span>
                 </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <Button
-                  v-if="logoFile"
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-testid="organization-logo-clear-selection"
-                  @click="clearSelectedLogoFile"
-                >
-                  Clear selection
-                </Button>
-                <Button
-                  v-if="showLogoRemoveButton"
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-testid="organization-logo-remove"
-                  @click="markLogoForRemoval"
-                >
-                  Remove logo
-                </Button>
+                <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 2 MB.</p>
+                <div class="flex gap-2">
+                  <Button
+                    v-if="logoFile"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="organization-logo-clear-selection"
+                    @click="clearSelectedLogoFile"
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    v-if="showLogoRemoveButton"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="organization-logo-remove"
+                    @click="markLogoForRemoval"
+                  >
+                    Remove
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
