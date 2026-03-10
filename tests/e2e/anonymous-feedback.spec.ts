@@ -468,6 +468,35 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(detailsDialog).not.toBeVisible()
   })
 
+  test('authenticated users can post comments from the public board details dialog', async ({ page }) => {
+    await gotoPublicPage(page)
+
+    const title = `Authenticated Comment ${Date.now()}`
+    await fillAndSubmitFeedback(page, {
+      title,
+      body: 'Feedback item used to verify authenticated comment submission on the public board.',
+      name: 'Auth Comment Seed',
+    })
+
+    await signInOnPublicHost(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await gotoPublicPage(page)
+    await sortFeedbackByNewest(page)
+
+    const feedbackCard = page.locator('.space-y-3 > div', { hasText: title }).first()
+    await expect(feedbackCard).toBeVisible({ timeout: 10_000 })
+    await feedbackCard.click()
+
+    const detailsDialog = page.locator('[role="dialog"]', { hasText: 'Feedback details' })
+    const commentBody = `Authenticated comment ${Date.now()}`
+    await expect(detailsDialog).toBeVisible()
+
+    await detailsDialog.locator('textarea[placeholder="Write a comment..."]').fill(commentBody)
+    await detailsDialog.getByRole('button', { name: 'Post Comment' }).click()
+
+    await expect(detailsDialog.getByText(commentBody)).toBeVisible({ timeout: 10_000 })
+    await expect(detailsDialog.getByText('Failed to post comment. Please try again.')).toHaveCount(0)
+  })
+
   test('appearance footer toggles control public board footer visibility', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto('/products/demo#appearance')

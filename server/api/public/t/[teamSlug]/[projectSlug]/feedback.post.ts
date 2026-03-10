@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
-import { validateBody } from '~/server/utils/validation'
+import { validateBody, optionalTrimmedEmail, optionalTrimmedString } from '~/server/utils/validation'
 import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
@@ -14,8 +14,8 @@ const submitFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
   body: z.string().min(1, 'Description is required').max(5000, 'Description too long'),
   categoryId: z.string().optional().nullable(),
-  authorName: z.string().min(1, 'Name is required').max(100).optional(),
-  authorEmail: z.string().email('Invalid email').optional(),
+  authorName: optionalTrimmedString(100, 'Name too long'),
+  authorEmail: optionalTrimmedEmail('Invalid email'),
 })
 
 export default defineEventHandler(async (event) => {

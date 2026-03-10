@@ -1174,18 +1174,23 @@ export default {
       this.scrollObserver.observe(this.$refs.scrollSentinel)
     },
     async submitFeedback() {
-      if (!this.submitForm.title || !this.submitForm.body || !this.submitForm.authorName) return
+      const authorName = this.submitForm.authorName.trim()
+      const authorEmail = this.submitForm.authorEmail.trim()
+      if (!this.submitForm.title || !this.submitForm.body || (!this.currentUser && !authorName)) return
+
+      const payload = {
+        title: this.submitForm.title,
+        body: this.submitForm.body,
+        categoryId: this.submitForm.categoryId || null,
+        ...(!this.currentUser && authorName ? { authorName } : {}),
+        ...(!this.currentUser && authorEmail ? { authorEmail } : {}),
+      }
+
       this.isSubmitting = true
       try {
         await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback`, {
           method: 'POST',
-          body: {
-            title: this.submitForm.title,
-            body: this.submitForm.body,
-            categoryId: this.submitForm.categoryId || null,
-            authorName: this.submitForm.authorName,
-            authorEmail: this.submitForm.authorEmail || undefined,
-          },
+          body: payload,
         })
         this.showSubmitDialog = false
         this.submitForm = { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' }
@@ -1455,7 +1460,7 @@ export default {
     openCommentOptions() {
       if (!this.detailCommentBody.trim()) return
       if (this.currentUser) {
-        this.executeCommentSubmit('', '')
+        this.executeCommentSubmit()
         return
       }
       this.commentOptionSelected = null
@@ -1471,16 +1476,18 @@ export default {
       await this.executeCommentSubmit(this.commentOptionName.trim(), this.commentOptionEmail.trim())
     },
     async executeCommentSubmit(authorName, authorEmail) {
+      const payload = {
+        body: this.detailCommentBody.trim(),
+        ...(authorName?.trim() ? { authorName: authorName.trim() } : {}),
+        ...(authorEmail?.trim() ? { authorEmail: authorEmail.trim() } : {}),
+      }
+
       this.isSubmittingDetailComment = true
       this.detailCommentError = null
       try {
         const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/comments`, {
           method: 'POST',
-          body: {
-            body: this.detailCommentBody.trim(),
-            authorName,
-            authorEmail: authorEmail || undefined,
-          },
+          body: payload,
         })
         const comment = response?.data
         if (comment) {

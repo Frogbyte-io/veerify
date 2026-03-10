@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
-import { validateBody } from '~/server/utils/validation'
+import { validateBody, optionalTrimmedEmail, optionalTrimmedString } from '~/server/utils/validation'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
@@ -23,8 +23,8 @@ const createFeedbackSchema = z.object({
   projectId: z.string().min(1, 'Project ID is required'),
   categoryId: z.string().optional().nullable(),
   feedbackType: z.enum(['feature_request', 'bug_report', 'improvement', 'question', 'other']).optional(),
-  authorName: z.string().min(1).max(100).optional(),
-  authorEmail: z.string().email().optional(),
+  authorName: optionalTrimmedString(100),
+  authorEmail: optionalTrimmedEmail(),
 })
 
 function createGitHubHeaders(accessToken: string) {

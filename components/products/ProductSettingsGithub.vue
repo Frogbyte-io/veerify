@@ -31,8 +31,13 @@
               </div>
               <Button variant="outline" data-testid="github-connect" :disabled="isConnecting" @click="connectGithub">
                 <Icon v-if="isConnecting" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+                <Icon
+                  v-else-if="isGithubConnected"
+                  name="lucide:check"
+                  class="mr-2 h-4 w-4 text-emerald-600"
+                />
                 <Icon v-else name="lucide:link" class="mr-2 h-4 w-4" />
-                Connect GitHub
+                {{ githubConnectLabel }}
               </Button>
             </div>
           </div>
@@ -166,6 +171,12 @@ export default {
     },
     canSave() {
       return Boolean(this.form.repoFullName)
+    },
+    isGithubConnected() {
+      return Boolean(this.integration?.hasAccessToken || this.$route.query.githubConnected === '1')
+    },
+    githubConnectLabel() {
+      return this.isGithubConnected ? 'Connected' : 'Connect GitHub'
     },
     repoPlaceholder() {
       if (this.isLoadingRepos) return 'Loading repositories...'

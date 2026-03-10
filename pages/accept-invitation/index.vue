@@ -22,11 +22,29 @@
             </div>
 
             <template v-else>
-              <Alert v-if="errorMessage" variant="destructive">
-                <Icon name="lucide:circle-alert" class="h-4 w-4" />
-                <AlertTitle>Invitation unavailable</AlertTitle>
-                <AlertDescription>{{ errorMessage }}</AlertDescription>
-              </Alert>
+              <template v-if="errorMessage">
+                <Alert variant="destructive">
+                  <Icon name="lucide:circle-alert" class="h-4 w-4" />
+                  <AlertTitle>Invitation unavailable</AlertTitle>
+                  <AlertDescription>{{ errorMessage }}</AlertDescription>
+                </Alert>
+
+                <template v-if="session?.user">
+                  <div class="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+                    You're signed in as <span class="font-medium text-foreground">{{ session.user.email }}</span>. Try
+                    signing in with the email address this invitation was sent to.
+                  </div>
+                  <div class="grid gap-3">
+                    <Button class="w-full" :disabled="isSwitching" @click="switchAccount">
+                      <Icon v-if="isSwitching" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+                      Sign in with a different account
+                    </Button>
+                    <Button as-child variant="outline" class="w-full">
+                      <NuxtLink :to="signupLink">Create a new account</NuxtLink>
+                    </Button>
+                  </div>
+                </template>
+              </template>
 
               <div v-else-if="wasAccepted" class="space-y-4 text-center">
                 <p class="text-sm text-muted-foreground">
@@ -83,6 +101,7 @@ export default {
       session: null,
       isLoading: true,
       isAccepting: false,
+      isSwitching: false,
       wasAccepted: false,
       errorMessage: '',
     }
@@ -174,6 +193,16 @@ export default {
         toast.error(message)
       } finally {
         this.isAccepting = false
+      }
+    },
+
+    async switchAccount() {
+      try {
+        this.isSwitching = true
+        await authClient.signOut()
+        await navigateTo(this.loginLink)
+      } catch {
+        this.isSwitching = false
       }
     },
 

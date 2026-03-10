@@ -1,3 +1,4 @@
+import { persistGithubIntegrationAccessToken } from '~/server/utils/github-integration'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { resolveGithubIntegrationCallbackUrl } from '~/server/utils/github-oauth'
 import { requireProjectCategoryAccessBySlug } from '~/server/utils/project-categories'
@@ -44,7 +45,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  await requireProjectCategoryAccessBySlug(event, stateCookie.projectSlug)
+  const { project } = await requireProjectCategoryAccessBySlug(event, stateCookie.projectSlug)
 
   const clientId = process.env.GITHUB_CLIENT_ID
   const clientSecret = process.env.GITHUB_CLIENT_SECRET
@@ -96,6 +97,8 @@ export default defineEventHandler(async (event) => {
     sameSite: 'lax',
     path: '/',
   })
+
+  await persistGithubIntegrationAccessToken(project.id, tokenBody.access_token)
 
   setCookie(event, 'veerify_github_oauth_token', tokenBody.access_token, {
     httpOnly: true,

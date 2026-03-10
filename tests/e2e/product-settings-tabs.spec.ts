@@ -166,6 +166,7 @@ test('product settings tabs warm shared data and avoid repeated fetches on revis
 
   await githubTab.click()
   await expect(page.getByText('GitHub Integration')).toBeVisible()
+  await expect(page.locator('[data-testid="github-connect"]')).toHaveText(/Connected/)
   await expect.poll(() => requestCounts.githubRepos, { timeout: 10_000 }).toBe(1)
 
   await page.goto(`/products/${projectSlug}#categories`, { waitUntil: 'domcontentloaded', timeout: 180_000 })

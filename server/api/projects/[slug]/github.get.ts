@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { githubIntegration } from '~/server/database/schema/feedback'
+import { hasGithubIntegrationAccessToken } from '~/server/utils/github-integration'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
 
@@ -12,6 +13,8 @@ export default defineEventHandler(async (event) => {
     .from(githubIntegration)
     .where(eq(githubIntegration.projectId, project.id))
     .limit(1)
+
+  const oauthToken = getCookie(event, 'veerify_github_oauth_token')
 
   if (!integration) {
     return createSuccessResponse(null)
@@ -25,7 +28,10 @@ export default defineEventHandler(async (event) => {
     syncEnabled: integration.syncEnabled,
     autoCreateIssues: integration.autoCreateIssues,
     autoSyncStatus: integration.autoSyncStatus,
-    hasAccessToken: Boolean(integration.accessToken),
+    hasAccessToken: hasGithubIntegrationAccessToken({
+      persistedAccessToken: integration.accessToken,
+      oauthToken,
+    }),
     updatedAt: integration.updatedAt,
   })
 })
