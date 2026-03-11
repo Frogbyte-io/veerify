@@ -17,6 +17,26 @@ test('unauthenticated user is redirected from protected route to login', async (
   await expectRedirectToLogin(page, '/settings')
 })
 
+test('root loading splash describes feedback collection before redirecting to login', async ({ page }) => {
+  const sessionPath = '**/api/auth/get-session**'
+
+  await page.route(sessionPath, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await route.continue()
+  })
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Veerify' })).toBeVisible()
+  await expect(page.getByText('Feedback collection and management')).toBeVisible()
+  await expect(page.getByText('Feedback management and verification')).toHaveCount(0)
+
+  await expect(page).toHaveURL(/\/login/)
+  await expect(page.locator(selectors.loginEmail)).toBeVisible()
+
+  await page.unroute(sessionPath)
+})
+
 test('user can sign in through login form and land in dashboard', async ({ page }) => {
   await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 })
