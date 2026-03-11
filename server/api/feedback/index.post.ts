@@ -16,6 +16,7 @@ import {
   githubIssueLink,
 } from '~/server/database/schema/feedback'
 import { sendFeedbackConfirmationEmail } from '~/lib/email'
+import { buildIssueLabels, ensureGitHubLabels } from '~/server/utils/github'
 
 const createFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
@@ -142,13 +143,16 @@ export default defineEventHandler(async (event) => {
   } | null = null
 
   if (integration?.autoCreateIssues && integration.syncEnabled && integration.accessToken) {
-    const labels = new Set<string>(['source:veerify', 'status:open'])
+    const labels = buildIssueLabels({
+      categoryLabel: categoryName,
+      feedbackStatus: 'open',
+    })
 
-    if (categoryName) {
-      labels.add(categoryName)
-    }
+    const feedbackUrl = `${getRequestURL(event).origin}/feedback/${feedbackId}`
 
     try {
+      await ensureGitHubLabels(integration.owner, integration.repo, labels, integration.accessToken)
+
       const issueResponse = await fetch(
         `https://api.github.com/repos/${integration.owner}/${integration.repo}/issues`,
         {
@@ -156,10 +160,10 @@ export default defineEventHandler(async (event) => {
           headers: createGitHubHeaders(integration.accessToken),
           body: JSON.stringify({
             title: body.title,
-            body: [body.body?.trim() || '*No description provided*', '', `Source feedback ID: ${feedbackId}`].join(
+            body: [body.body?.trim() || '*No description provided*', '', `[View feedback on Veerify](${feedbackUrl})`].join(
               '\n'
             ),
-            labels: Array.from(labels),
+            labels,
           }),
         }
       )

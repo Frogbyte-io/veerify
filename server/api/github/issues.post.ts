@@ -109,7 +109,7 @@ import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { requireFeedbackAccess } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, githubIntegration, githubIssueLink } from '~/server/database/schema/feedback'
-import { parseRepoFullName, buildIssueLabels } from '~/server/utils/github'
+import { parseRepoFullName, buildIssueLabels, ensureGitHubLabels } from '~/server/utils/github'
 
 const createGitHubIssueSchema = z.object({
   feedbackId: z.string().min(1, 'Feedback ID is required'),
@@ -186,13 +186,16 @@ export default defineEventHandler(async (event) => {
   })
 
   const issueTitle = body.title?.trim() || selectedFeedback.title
+  const feedbackUrl = `${getRequestURL(event).origin}/feedback/${selectedFeedback.id}`
   const issueBody =
     body.body?.trim() ||
     [
       selectedFeedback.body?.trim() || '*No description provided*',
       '',
-      `Source feedback ID: ${selectedFeedback.id}`,
+      `[View feedback on Veerify](${feedbackUrl})`,
     ].join('\n')
+
+  await ensureGitHubLabels(owner, repo, labels, integration.accessToken)
 
   const githubResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/issues`, {
     method: 'POST',

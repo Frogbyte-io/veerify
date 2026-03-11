@@ -74,7 +74,7 @@ import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedback, githubIntegration, githubIssueLink } from '~/server/database/schema/feedback'
-import { mergeMissingLabel, resolveCompletedLabel, verifyGithubWebhookSignature } from '~/server/utils/github-webhook'
+import { mergeMissingLabel, resolveStatusFromCloseReason, resolveStatusLabel, verifyGithubWebhookSignature } from '~/server/utils/github-webhook'
 
 interface GithubWebhookPayload {
   action?: string
@@ -85,6 +85,7 @@ interface GithubWebhookPayload {
   }
   issue?: {
     number?: number
+    state_reason?: string | null
     labels?: Array<{ name?: string }>
   }
 }
@@ -227,6 +228,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const feedbackStatus = resolveStatusFromCloseReason(payload.issue?.state_reason)
+
   const now = new Date()
   await db
     .update(githubIssueLink)
@@ -240,17 +243,17 @@ export default defineEventHandler(async (event) => {
   const [updatedFeedback] = await db
     .update(feedback)
     .set({
-      status: 'completed',
+      status: feedbackStatus,
       updatedAt: now,
     })
     .where(eq(feedback.id, link.feedbackId))
     .returning()
 
-  const completedLabel = resolveCompletedLabel(integration.settings)
+  const statusLabel = resolveStatusLabel(feedbackStatus, integration.settings)
   const existingLabels = (payload.issue?.labels || [])
     .map((label) => label?.name?.trim())
     .filter((label): label is string => Boolean(label))
-  const targetLabels = mergeMissingLabel(existingLabels, completedLabel)
+  const targetLabels = mergeMissingLabel(existingLabels, statusLabel)
 
   let labelPatched = false
   if (integration.accessToken && targetLabels.length !== existingLabels.length) {
@@ -282,9 +285,10 @@ export default defineEventHandler(async (event) => {
     action: payload.action,
     repository: repoFullName,
     issueNumber,
+    stateReason: payload.issue?.state_reason ?? null,
     feedbackId: updatedFeedback?.id || link.feedbackId,
-    feedbackStatus: updatedFeedback?.status || 'completed',
-    label: completedLabel,
+    feedbackStatus: updatedFeedback?.status || feedbackStatus,
+    label: statusLabel,
     labelPatched,
   })
 })
