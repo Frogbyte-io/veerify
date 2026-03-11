@@ -54,6 +54,80 @@ export function buildIssueLabels(params: BuildIssueLabelsParams) {
   return Array.from(labels)
 }
 
+interface RegisterWebhookResult {
+  webhookId: string
+  webhookSecret: string
+}
+
+/**
+ * Registers a webhook on a GitHub repo that delivers `issues` events to
+ * /api/github/webhook. Returns the webhook ID and generated secret.
+ * Throws if the GitHub API call fails.
+ */
+export async function registerGitHubWebhook(
+  owner: string,
+  repo: string,
+  accessToken: string,
+  webhookUrl: string,
+): Promise<RegisterWebhookResult> {
+  const webhookSecret = crypto.randomUUID().replace(/-/g, '')
+
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/hooks`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'Veerify',
+    },
+    body: JSON.stringify({
+      name: 'web',
+      active: true,
+      events: ['issues'],
+      config: {
+        url: webhookUrl,
+        content_type: 'json',
+        secret: webhookSecret,
+        insecure_ssl: '0',
+      },
+    }),
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null
+    throw createError({
+      statusCode: response.status,
+      statusMessage: 'GitHub webhook registration failed',
+      data: createErrorResponse(ErrorCode.INTERNAL_ERROR, body?.message || 'Failed to register GitHub webhook'),
+    })
+  }
+
+  const created = (await response.json()) as { id: number }
+  return { webhookId: String(created.id), webhookSecret }
+}
+
+/**
+ * Deletes a previously registered webhook. Failures are swallowed — the webhook
+ * may have already been deleted manually in GitHub.
+ */
+export async function deleteGitHubWebhook(
+  owner: string,
+  repo: string,
+  webhookId: string,
+  accessToken: string,
+): Promise<void> {
+  await fetch(`https://api.github.com/repos/${owner}/${repo}/hooks/${webhookId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'Veerify',
+    },
+  }).catch(() => {})
+}
+
 /**
  * Ensures that any Veerify-managed labels exist in the repo with the correct colour.
  * Creates the label if it doesn't exist; updates the colour if it does.

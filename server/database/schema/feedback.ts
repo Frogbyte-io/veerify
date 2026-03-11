@@ -293,6 +293,7 @@ export const githubIntegration = pgTable(
     repo: text('repo').notNull(), // GitHub repo name
     installationId: text('installation_id'), // GitHub App installation ID
     accessToken: text('access_token'), // Encrypted access token
+    webhookId: text('webhook_id'), // GitHub webhook ID for this integration
     webhookSecret: text('webhook_secret'), // Webhook secret for verification
     syncEnabled: boolean('sync_enabled')
       .$defaultFn(() => true)

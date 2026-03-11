@@ -5,6 +5,7 @@ import { githubIntegration } from '~/server/database/schema/feedback'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
 import { validateBody } from '~/server/utils/validation'
+import { registerGitHubWebhook, deleteGitHubWebhook } from '~/server/utils/github'
 
 const updateGithubIntegrationSchema = z.object({
   repoFullName: z
@@ -46,6 +47,8 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date()
 
+  const webhookUrl = `${getRequestURL(event).origin}/api/github/webhook`
+
   if (existing) {
     const [conflict] = await db
       .select()
@@ -61,12 +64,26 @@ export default defineEventHandler(async (event) => {
       })
     }
 
+    // Re-register webhook if the repo has changed
+    const repoChanged = existing.owner !== owner || existing.repo !== repo
+    const tokenForWebhook = (accessToken !== null ? accessToken : existing.accessToken) as string | null
+    let webhookFields: { webhookId: string; webhookSecret: string } | null = null
+
+    if (repoChanged && tokenForWebhook) {
+      // Delete webhook from old repo (best-effort)
+      if (existing.webhookId && existing.accessToken) {
+        await deleteGitHubWebhook(existing.owner, existing.repo, existing.webhookId, existing.accessToken)
+      }
+      webhookFields = await registerGitHubWebhook(owner, repo, tokenForWebhook, webhookUrl)
+    }
+
     const [updated] = await db
       .update(githubIntegration)
       .set({
         owner,
         repo,
         ...(accessToken !== null && { accessToken }),
+        ...(webhookFields && { webhookId: webhookFields.webhookId, webhookSecret: webhookFields.webhookSecret }),
         ...(body.syncEnabled !== undefined && { syncEnabled: body.syncEnabled }),
         ...(body.autoCreateIssues !== undefined && { autoCreateIssues: body.autoCreateIssues }),
         ...(body.autoSyncStatus !== undefined && { autoSyncStatus: body.autoSyncStatus }),
@@ -91,6 +108,7 @@ export default defineEventHandler(async (event) => {
       autoCreateIssues: updated.autoCreateIssues,
       autoSyncStatus: updated.autoSyncStatus,
       hasAccessToken: Boolean(updated.accessToken),
+      webhookRegistered: Boolean(updated.webhookId),
       updatedAt: updated.updatedAt,
     })
   }
@@ -109,6 +127,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const webhook = await registerGitHubWebhook(owner, repo, accessToken!, webhookUrl)
+
   const [created] = await db
     .insert(githubIntegration)
     .values({
@@ -117,6 +137,8 @@ export default defineEventHandler(async (event) => {
       owner,
       repo,
       accessToken: accessToken!,
+      webhookId: webhook.webhookId,
+      webhookSecret: webhook.webhookSecret,
       syncEnabled: body.syncEnabled ?? true,
       autoCreateIssues: body.autoCreateIssues ?? false,
       autoSyncStatus: body.autoSyncStatus ?? true,
@@ -142,6 +164,7 @@ export default defineEventHandler(async (event) => {
     autoCreateIssues: created.autoCreateIssues,
     autoSyncStatus: created.autoSyncStatus,
     hasAccessToken: Boolean(created.accessToken),
+    webhookRegistered: Boolean(created.webhookId),
     updatedAt: created.updatedAt,
   })
 })

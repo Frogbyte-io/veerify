@@ -1,0 +1,1 @@
+ALTER TABLE "github_integration" ADD COLUMN "webhook_id" text;
