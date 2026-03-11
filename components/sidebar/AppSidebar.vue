@@ -42,6 +42,13 @@ function clampSidebarWidth(width: number) {
   return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width))
 }
 
+function applySidebarWidth(width: number) {
+  sidebarWidth.value = width
+  if (!import.meta.client) return
+  const wrapper = document.querySelector<HTMLElement>('[data-slot="sidebar-wrapper"]')
+  wrapper?.style.setProperty('--sidebar-width', `${width}px`)
+}
+
 function persistSidebarWidth(width: number) {
   if (!import.meta.client) return
   try {
@@ -57,7 +64,7 @@ function restoreSidebarWidth() {
     const raw = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY)
     const parsed = Number(raw)
     if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
-      sidebarWidth.value = clampSidebarWidth(parsed)
+      applySidebarWidth(clampSidebarWidth(parsed))
     }
   } catch {
     // Ignore storage failures.
@@ -81,7 +88,7 @@ function onSidebarResizeMove(event: PointerEvent) {
   const direction = props.side === 'right' ? -1 : 1
   const delta = (event.clientX - resizeStartX.value) * direction
   const nextWidth = clampSidebarWidth(resizeStartWidth.value + delta)
-  sidebarWidth.value = nextWidth
+  applySidebarWidth(nextWidth)
 }
 
 function startSidebarResize(event: PointerEvent) {
