@@ -221,26 +221,6 @@
                 class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none"
               />
             </div>
-            <div
-              class="relative flex-1 sm:w-[180px]"
-              :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }"
-            >
-              <select
-                v-model="sortBy"
-                data-testid="feedback-sort-filter"
-                class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
-                @change="onFilterChange()"
-              >
-                <option value="voteCount">Most Popular</option>
-                <option value="createdAt">Most Recent</option>
-                <option value="updatedAt">Recently Updated</option>
-                <option value="title">Title</option>
-              </select>
-              <Icon
-                name="lucide:chevron-down"
-                class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none"
-              />
-            </div>
           </div>
         </div>
 
@@ -287,7 +267,7 @@
         <!-- Feedback Content -->
         <div v-else data-testid="feedback-list" class="space-y-4">
           <template v-if="viewMode === 'kanban'">
-            <div data-testid="feedback-kanban" class="overflow-x-auto pb-4 -mx-2 px-2">
+            <div data-testid="feedback-kanban" class="overflow-x-auto pb-4">
               <div class="flex gap-4 min-w-max">
                 <div
                   v-for="column in kanbanColumns"
@@ -302,42 +282,27 @@
                       </div>
                       <h3 class="text-sm font-semibold">{{ column.label }}</h3>
                     </div>
-                    <Badge variant="secondary" class="font-mono">{{ kanbanItemsByStatus[column.value].length }}</Badge>
+                    <Badge variant="secondary" class="font-mono">{{ kanbanData[column.value]?.length ?? 0 }}</Badge>
                   </div>
-                  <div
-                    class="p-3 flex-1 overflow-y-auto space-y-3 min-h-[500px] transition-colors"
-                    :class="{
-                      'bg-primary/5 ring-2 ring-inset ring-primary/20':
-                        dragState.overStatus === column.value && dragState.fromStatus !== column.value,
-                    }"
-                    @dragover.prevent="onColumnDragOver(column.value)"
-                    @dragleave="onColumnDragLeave(column.value)"
-                    @drop.prevent="onColumnDrop($event, column.value)"
-                  >
-                    <div
-                      v-if="kanbanItemsByStatus[column.value].length === 0"
-                      class="h-24 border-2 border-dashed rounded-lg flex items-center justify-center text-muted-foreground text-sm"
-                      :class="{ 'border-primary/50 bg-primary/5': dragState.overStatus === column.value }"
+                  <div class="relative flex-1 min-h-[500px]">
+                    <VueDraggable
+                      v-model="kanbanData[column.value]"
+                      :group="{ name: 'kanban', pull: true, put: true }"
+                      :animation="150"
+                      ghost-class="opacity-40"
+                      chosen-class="shadow-lg"
+                      class="p-3 space-y-3 min-h-[500px]"
+                      :data-status="column.value"
+                      @end="onKanbanDragEnd"
                     >
-                      Drop here
-                    </div>
-                    <Card
-                      v-for="item in kanbanItemsByStatus[column.value]"
-                      :key="item.id"
-                      class="group cursor-grab active:cursor-grabbing hover:border-primary/50 transition-all select-none"
-                      :class="{
-                        'opacity-40 scale-[0.98]': dragState.itemId === item.id,
-                        'border-t-2 border-t-primary': dragState.overItemId === item.id && dragState.insertBefore,
-                        'border-b-2 border-b-primary': dragState.overItemId === item.id && !dragState.insertBefore,
-                      }"
-                      draggable="true"
-                      @click="$router.push(`/feedback/${item.id}`)"
-                      @pointerenter="prewarmFeedbackRoute(item.id)"
-                      @dragstart.stop="onCardDragStart($event, item, column.value)"
-                      @dragend="onCardDragEnd"
-                      @dragover="onCardDragOver($event, item.id)"
-                    >
-                      <CardContent class="p-4">
+                      <Card
+                        v-for="item in kanbanData[column.value]"
+                        :key="item.id"
+                        class="group cursor-grab active:cursor-grabbing hover:border-primary/50 transition-all select-none"
+                        @click="$router.push(`/feedback/${item.id}`)"
+                        @pointerenter="prewarmFeedbackRoute(item.id)"
+                      >
+                        <CardContent class="p-4">
                         <div class="flex items-start justify-between gap-2 mb-2">
                           <h4 class="text-sm font-medium leading-tight line-clamp-2">{{ item.title }}</h4>
                           <DropdownMenu>
@@ -374,26 +339,76 @@
                             {{ item.category.name }}
                           </Badge>
                         </div>
-                      </CardContent>
-                    </Card>
+                        </CardContent>
+                      </Card>
+                    </VueDraggable>
+                    <div
+                      v-if="!kanbanData[column.value]?.length"
+                      class="absolute inset-0 pointer-events-none flex items-start justify-center pt-3"
+                    >
+                      <div
+                        class="h-24 w-full border-2 border-dashed rounded-lg flex items-center justify-center text-muted-foreground text-sm"
+                      >
+                        Drop here
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </template>
           <template v-else>
-            <Card data-testid="feedback-table-wrapper" class="overflow-hidden">
+            <Card data-testid="feedback-table-wrapper" class="overflow-hidden p-0">
               <div class="overflow-x-auto">
                 <table data-testid="feedback-table" class="w-full text-sm text-left">
                   <thead class="bg-muted/50 text-muted-foreground border-b">
                     <tr>
-                      <th class="font-medium px-4 py-3 w-[40%]">Feedback</th>
+                      <th
+                        class="font-medium px-4 py-3 w-[40%] cursor-pointer select-none hover:text-foreground"
+                        @click="onSortBy('title')"
+                      >
+                        <span class="flex items-center gap-1">
+                          Feedback
+                          <Icon
+                            v-if="sortBy === 'title'"
+                            :name="sortOrder === 'asc' ? 'lucide:chevron-up' : 'lucide:chevron-down'"
+                            class="w-3 h-3"
+                          />
+                          <Icon v-else name="lucide:chevrons-up-down" class="w-3 h-3 opacity-30" />
+                        </span>
+                      </th>
                       <th class="font-medium px-4 py-3">Product</th>
                       <th class="font-medium px-4 py-3">Status</th>
-                      <th class="font-medium px-4 py-3 text-right">Votes</th>
+                      <th
+                        class="font-medium px-4 py-3 text-right cursor-pointer select-none hover:text-foreground"
+                        @click="onSortBy('voteCount')"
+                      >
+                        <span class="flex items-center justify-end gap-1">
+                          Votes
+                          <Icon
+                            v-if="sortBy === 'voteCount'"
+                            :name="sortOrder === 'asc' ? 'lucide:chevron-up' : 'lucide:chevron-down'"
+                            class="w-3 h-3"
+                          />
+                          <Icon v-else name="lucide:chevrons-up-down" class="w-3 h-3 opacity-30" />
+                        </span>
+                      </th>
                       <th class="font-medium px-4 py-3 text-right">Comments</th>
                       <th v-if="showGithubIssueColumn" class="font-medium px-4 py-3">GitHub</th>
-                      <th class="font-medium px-4 py-3">Updated</th>
+                      <th
+                        class="font-medium px-4 py-3 cursor-pointer select-none hover:text-foreground"
+                        @click="onSortBy('updatedAt')"
+                      >
+                        <span class="flex items-center gap-1">
+                          Updated
+                          <Icon
+                            v-if="sortBy === 'updatedAt'"
+                            :name="sortOrder === 'asc' ? 'lucide:chevron-up' : 'lucide:chevron-down'"
+                            class="w-3 h-3"
+                          />
+                          <Icon v-else name="lucide:chevrons-up-down" class="w-3 h-3 opacity-30" />
+                        </span>
+                      </th>
                       <th class="font-medium px-4 py-3 text-right" />
                     </tr>
                   </thead>
@@ -402,7 +417,8 @@
                       v-for="item in feedbackItems"
                       :key="item.id"
                       :data-testid="`feedback-item-${item.id}`"
-                      class="hover:bg-muted/30 transition-colors group"
+                      class="hover:bg-muted/30 transition-colors group cursor-pointer"
+                      @click="$router.push(`/feedback/${item.id}`)"
                     >
                       <td class="px-4 py-3 align-top">
                         <NuxtLink
@@ -473,7 +489,7 @@
                           class="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
                           :data-testid="`feedback-item-delete-${item.id}`"
                           title="Delete feedback"
-                          @click="confirmDelete(item)"
+                          @click.stop="confirmDelete(item)"
                         >
                           <Icon name="lucide:trash-2" class="w-4 h-4" />
                         </Button>
@@ -705,10 +721,14 @@
 </template>
 
 <script>
+import { VueDraggable } from 'vue-draggable-plus'
+
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 
 export default {
   name: 'FeedbackPage',
+
+  components: { VueDraggable },
 
   data() {
     return {
@@ -771,7 +791,7 @@ export default {
       isDeleting: false,
       feedbackToDelete: null,
 
-      viewMode: 'kanban',
+      viewMode: (import.meta.client && localStorage.getItem('feedback:viewMode')) || 'kanban',
       statusFilter: '',
       sortBy: 'voteCount',
       sortOrder: 'desc',
@@ -779,14 +799,14 @@ export default {
       searchTimer: null,
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
 
-      dragState: {
-        itemId: null,
-        fromStatus: null,
-        overStatus: null,
-        overItemId: null,
-        insertBefore: true,
+      kanbanData: {
+        open: [],
+        in_progress: [],
+        planned: [],
+        completed: [],
+        closed: [],
+        declined: [],
       },
-      kanbanLocalOrders: {},
       prewarmedFeedbackRoutes: {},
     }
   },
@@ -842,30 +862,6 @@ export default {
         { value: 'closed', label: 'Closed', icon: 'lucide:archive', colorClass: 'bg-gray-500/10 text-gray-500' },
         { value: 'declined', label: 'Declined', icon: 'lucide:x-circle', colorClass: 'bg-red-500/10 text-red-500' },
       ]
-    },
-    kanbanItemsByStatus() {
-      const grouped = {}
-      for (const column of this.kanbanColumns) {
-        grouped[column.value] = []
-      }
-      for (const item of this.feedbackItems) {
-        if (grouped[item.status]) {
-          grouped[item.status].push(item)
-        } else {
-          grouped.open.push(item)
-        }
-      }
-      // Apply any local reorderings from drag-and-drop
-      for (const status of Object.keys(this.kanbanLocalOrders)) {
-        if (!grouped[status]) continue
-        const localOrder = this.kanbanLocalOrders[status]
-        const itemMap = Object.fromEntries(grouped[status].map((i) => [i.id, i]))
-        const orderedIds = new Set(localOrder)
-        const ordered = localOrder.map((id) => itemMap[id]).filter(Boolean)
-        const extra = grouped[status].filter((i) => !orderedIds.has(i.id))
-        grouped[status] = [...ordered, ...extra]
-      }
-      return grouped
     },
   },
 
@@ -1033,6 +1029,7 @@ export default {
       if (this.selectedProjectIds.length === 0) {
         this.feedbackItems = []
         this.pagination = { ...this.pagination, page: 1, total: 0, totalPages: 0 }
+        this.buildKanbanData()
         this.updateStatusCounts()
         return
       }
@@ -1062,8 +1059,7 @@ export default {
           githubIssue: item.githubIssue || null,
         }))
         this.pagination = response?.data?.pagination || this.pagination
-        this.kanbanLocalOrders = {}
-
+        this.buildKanbanData()
         this.updateStatusCounts()
       } catch (err) {
         console.error('Error loading feedback:', err)
@@ -1287,10 +1283,22 @@ export default {
       await this.loadFeedback()
     },
 
+    async onSortBy(field) {
+      if (this.sortBy === field) {
+        this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc'
+      } else {
+        this.sortBy = field
+        this.sortOrder = 'desc'
+      }
+      this.pagination.page = 1
+      await this.loadFeedback()
+    },
+
     async onViewModeChange(mode) {
       if (this.viewMode === mode) return
 
       this.viewMode = mode
+      if (import.meta.client) localStorage.setItem('feedback:viewMode', mode)
       this.pagination.page = 1
       if (mode === 'kanban') {
         this.statusFilter = ''
@@ -1368,90 +1376,45 @@ export default {
       preloadRouteComponents(route).catch(() => {})
     },
 
-    onCardDragStart(event, item, status) {
-      event.dataTransfer.effectAllowed = 'move'
-      event.dataTransfer.setData('text/plain', item.id)
-      this.dragState.itemId = item.id
-      this.dragState.fromStatus = status
-    },
-
-    onCardDragEnd() {
-      this.dragState = { itemId: null, fromStatus: null, overStatus: null, overItemId: null, insertBefore: true }
-    },
-
-    onCardDragOver(event, itemId) {
-      const rect = event.currentTarget.getBoundingClientRect()
-      this.dragState.overItemId = itemId
-      this.dragState.insertBefore = event.clientY < rect.top + rect.height / 2
-    },
-
-    onColumnDragOver(status) {
-      this.dragState.overStatus = status
-    },
-
-    onColumnDragLeave(status) {
-      if (this.dragState.overStatus === status) {
-        this.dragState.overStatus = null
-        this.dragState.overItemId = null
+    buildKanbanData() {
+      const grouped = { open: [], in_progress: [], planned: [], completed: [], closed: [], declined: [] }
+      for (const item of this.feedbackItems) {
+        if (grouped[item.status]) {
+          grouped[item.status].push(item)
+        } else {
+          grouped.open.push(item)
+        }
       }
+      this.kanbanData = grouped
     },
 
-    async onColumnDrop(event, targetStatus) {
-      const { itemId, fromStatus, overItemId, insertBefore } = this.dragState
-      this.dragState = { itemId: null, fromStatus: null, overStatus: null, overItemId: null, insertBefore: true }
+    async onKanbanDragEnd(evt) {
+      const fromStatus = evt.from?.dataset?.status
+      const toStatus = evt.to?.dataset?.status
 
-      if (!itemId) return
+      if (!fromStatus || !toStatus || fromStatus === toStatus) return
 
-      if (fromStatus !== targetStatus) {
-        await this.updateFeedbackStatus(itemId, targetStatus)
-      } else {
-        this.reorderKanbanItem(itemId, targetStatus, overItemId, insertBefore)
-      }
-    },
+      const movedItem = this.kanbanData[toStatus]?.[evt.newIndex]
+      if (!movedItem) return
 
-    async updateFeedbackStatus(itemId, newStatus) {
-      const item = this.feedbackItems.find((i) => i.id === itemId)
-      if (!item) return
+      const feedbackItem = this.feedbackItems.find((i) => i.id === movedItem.id)
+      if (!feedbackItem) return
 
-      const oldStatus = item.status
-      item.status = newStatus
+      const oldStatus = feedbackItem.status
+      feedbackItem.status = toStatus
       this.updateStatusCounts()
 
       try {
-        await $fetch(`/api/feedback/${itemId}/status`, {
+        await $fetch(`/api/feedback/${movedItem.id}/status`, {
           method: 'PATCH',
-          body: { status: newStatus },
+          body: { status: toStatus },
         })
       } catch (err) {
-        item.status = oldStatus
+        feedbackItem.status = oldStatus
+        this.buildKanbanData()
         this.updateStatusCounts()
         console.error('Failed to update feedback status:', err)
       }
-    },
-
-    reorderKanbanItem(itemId, status, overItemId, insertBefore) {
-      const currentItems = this.kanbanItemsByStatus[status]
-      if (!currentItems) return
-
-      const order = currentItems.map((i) => i.id)
-      const fromIdx = order.indexOf(itemId)
-      if (fromIdx === -1) return
-
-      order.splice(fromIdx, 1)
-
-      if (overItemId && overItemId !== itemId) {
-        let toIdx = order.indexOf(overItemId)
-        if (toIdx === -1) {
-          order.push(itemId)
-        } else {
-          if (!insertBefore) toIdx++
-          order.splice(toIdx, 0, itemId)
-        }
-      } else {
-        order.push(itemId)
-      }
-
-      this.kanbanLocalOrders = { ...this.kanbanLocalOrders, [status]: order }
     },
 
     formatDate(dateStr) {
@@ -1459,7 +1422,7 @@ export default {
       const now = new Date()
       const diff = now.getTime() - date.getTime()
       const days = Math.floor(diff / 86400000)
-      if (days === 0) return 'Today'
+      if (days <= 0) return 'Today'
       if (days === 1) return 'Yesterday'
       if (days < 7) return `${days} days ago`
       if (days < 30) return `${Math.floor(days / 7)} weeks ago`
