@@ -74,7 +74,12 @@ import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedback, githubIntegration, githubIssueLink } from '~/server/database/schema/feedback'
-import { mergeMissingLabel, resolveStatusFromCloseReason, resolveStatusLabel, verifyGithubWebhookSignature } from '~/server/utils/github-webhook'
+import {
+  mergeMissingLabel,
+  resolveStatusFromCloseReason,
+  resolveStatusLabel,
+  verifyGithubWebhookSignature,
+} from '~/server/utils/github-webhook'
 
 interface GithubWebhookPayload {
   action?: string

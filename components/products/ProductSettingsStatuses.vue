@@ -147,7 +147,7 @@
                 :value="statusForm.color || '#6b7280'"
                 class="w-8 h-8 rounded border cursor-pointer"
                 @input="statusForm.color = $event.target.value"
-              >
+              />
               <Input id="status-color" v-model="statusForm.color" placeholder="#6b7280" class="flex-1" />
             </div>
           </div>
@@ -174,9 +174,7 @@
           <DialogDescription>Are you sure you want to delete "{{ deletingStatus?.name }}"?</DialogDescription>
         </DialogHeader>
         <div v-if="deletingStatus" class="py-4">
-          <p class="text-sm text-muted-foreground mb-3">
-            If feedback items use this status, select a replacement:
-          </p>
+          <p class="text-sm text-muted-foreground mb-3">If feedback items use this status, select a replacement:</p>
           <div class="space-y-2">
             <Label for="replacement-status">Replacement Status</Label>
             <select
@@ -415,7 +413,9 @@ export default {
             body,
           })
           const savedStatus = response?.data || null
-          const nextStatuses = this.localStatuses.map((status) => (status.id === savedStatus?.id ? savedStatus : status))
+          const nextStatuses = this.localStatuses.map((status) =>
+            status.id === savedStatus?.id ? savedStatus : status
+          )
           this.emitStatuses(nextStatuses.filter(Boolean))
           toast.success('Status updated')
         } else {

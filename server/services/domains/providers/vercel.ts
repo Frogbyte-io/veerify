@@ -99,7 +99,10 @@ function prioritizeDnsRecords(records: DomainDnsRecord[]): DomainDnsRecord[] {
   })
 }
 
-function mapVercelDomainResult(hostname: string, payloads: { project: unknown; config: unknown }): DomainProviderResult {
+function mapVercelDomainResult(
+  hostname: string,
+  payloads: { project: unknown; config: unknown }
+): DomainProviderResult {
   const projectRecord = asRecord(payloads.project) || {}
   const configRecord = asRecord(payloads.config) || {}
   const configuredBy = typeof configRecord.configuredBy === 'string' ? configRecord.configuredBy : null
@@ -203,10 +206,7 @@ export class VercelDomainProvider implements DomainProvider {
 
     const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null
     if (!response.ok) {
-      const message =
-        extractMessage(payload?.error) ||
-        extractMessage(payload) ||
-        'Vercel API request failed'
+      const message = extractMessage(payload?.error) || extractMessage(payload) || 'Vercel API request failed'
       throw createError({
         statusCode: response.status,
         statusMessage: message,
@@ -236,13 +236,10 @@ export class VercelDomainProvider implements DomainProvider {
   async registerProjectDomain(input: { hostname: string }) {
     const hostname = normalizeDomainHostname(input.hostname)
     const { projectId } = this.getConfig()
-    await this.request(
-      `/v10/projects/${encodeURIComponent(projectId)}/domains${this.buildQuery()}`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ name: hostname }),
-      }
-    )
+    await this.request(`/v10/projects/${encodeURIComponent(projectId)}/domains${this.buildQuery()}`, {
+      method: 'POST',
+      body: JSON.stringify({ name: hostname }),
+    })
     return this.getMappedDomainResult(hostname)
   }
 

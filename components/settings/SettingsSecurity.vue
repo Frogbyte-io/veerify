@@ -82,10 +82,7 @@
                     : 'border-primary/20 bg-primary/10 text-primary'
                 "
               >
-                <Icon
-                  :name="user?.twoFactorEnabled ? 'lucide:shield-check' : 'lucide:shield'"
-                  class="h-5 w-5"
-                />
+                <Icon :name="user?.twoFactorEnabled ? 'lucide:shield-check' : 'lucide:shield'" class="h-5 w-5" />
               </div>
               <div class="space-y-1">
                 <p class="font-medium leading-none">

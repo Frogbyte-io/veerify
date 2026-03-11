@@ -19,14 +19,20 @@ function normalizeOptionalStringValue(value: unknown) {
 export function optionalTrimmedString(maxLength: number, tooLongMessage?: string) {
   return z.preprocess(
     normalizeOptionalStringValue,
-    z.string().max(maxLength, tooLongMessage || `Must be ${maxLength} characters or fewer`).optional()
+    z
+      .string()
+      .max(maxLength, tooLongMessage || `Must be ${maxLength} characters or fewer`)
+      .optional()
   )
 }
 
 export function optionalTrimmedEmail(invalidMessage?: string) {
   return z.preprocess(
     normalizeOptionalStringValue,
-    z.string().email(invalidMessage || 'Invalid email format').optional()
+    z
+      .string()
+      .email(invalidMessage || 'Invalid email format')
+      .optional()
   )
 }
 

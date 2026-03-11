@@ -118,14 +118,22 @@ test('new project statuses tab shows the default starting workflow without decli
   const statusesPayload = await statusesResponse.json()
   expect(statusesResponse.ok()).toBeTruthy()
   const initialStatuses = statusesPayload.data as Array<{ name: string; value: string }>
-  expect(initialStatuses.map((status) => status.name)).toEqual(['Open', 'Planned', 'In Progress', 'Completed', 'Closed'])
+  expect(initialStatuses.map((status) => status.name)).toEqual([
+    'Open',
+    'Planned',
+    'In Progress',
+    'Completed',
+    'Closed',
+  ])
   expect(initialStatuses.map((status) => status.value)).not.toContain('declined')
 
   await page.goto(`/products/${projectSlug}#statuses`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
   await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#statuses$`))
   await expect(page.getByText('Feedback Statuses')).toBeVisible()
   await expect(
-    page.getByText('Review the default starting workflow for feedback items. Add a custom status to start customizing it.')
+    page.getByText(
+      'Review the default starting workflow for feedback items. Add a custom status to start customizing it.'
+    )
   ).toBeVisible()
   await expect(
     page.getByText('Using the default starting workflow. Add a custom status to replace it with your own workflow.')
@@ -181,9 +189,11 @@ test('product categories tab reorders categories through drag and drop and persi
   await expect(page.locator('[data-testid^="product-category-item-"]')).toHaveCount(2)
 
   const readUiOrder = async () =>
-    page.locator('[data-testid^="product-category-item-"]').evaluateAll((elements) =>
-      elements.map((element) => element.getAttribute('data-testid')?.replace('product-category-item-', '') || '')
-    )
+    page
+      .locator('[data-testid^="product-category-item-"]')
+      .evaluateAll((elements) =>
+        elements.map((element) => element.getAttribute('data-testid')?.replace('product-category-item-', '') || '')
+      )
 
   await expect.poll(readUiOrder).toEqual([bugCategory!.id, featureCategory!.id])
 
@@ -274,7 +284,10 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
   await expect(page.getByText('cname.vercel-dns.com.')).toHaveCount(0)
 })
 
-test('custom domain status downgrades from stored verified state after a failed dns check', async ({ request, page }) => {
+test('custom domain status downgrades from stored verified state after a failed dns check', async ({
+  request,
+  page,
+}) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))

@@ -148,12 +148,9 @@ export default defineEventHandler(async (event) => {
 
   // Notify subscribers about the new public comment (skip internal notes)
   if (!created.isInternal) {
-    const commenterName = created.authorName || (author?.name) || 'Someone'
+    const commenterName = created.authorName || author?.name || 'Someone'
     try {
-      const subscribers = await db
-        .select()
-        .from(feedbackSubscription)
-        .where(eq(feedbackSubscription.feedbackId, id))
+      const subscribers = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.feedbackId, id))
 
       const recipients = subscribers.filter((sub) => sub.email !== created.authorEmail)
       const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
@@ -169,12 +166,15 @@ export default defineEventHandler(async (event) => {
             boardUrl: baseUrl,
             unsubscribeUrl,
           })
-        }),
+        })
       )
 
       for (const [index, result] of notificationResults.entries()) {
         if (result.status === 'rejected') {
-          console.error(`Failed to send comment notification to ${recipients[index]?.email ?? 'unknown'}:`, result.reason)
+          console.error(
+            `Failed to send comment notification to ${recipients[index]?.email ?? 'unknown'}:`,
+            result.reason
+          )
         }
       }
     } catch (err) {

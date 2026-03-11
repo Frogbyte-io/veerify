@@ -14,7 +14,12 @@
         <div class="space-y-2">
           <Label for="custom-domain">Domain</Label>
           <div class="flex gap-2">
-            <Input id="custom-domain" v-model="form.customDomain" placeholder="feedback.yourapp.com" class="font-mono" />
+            <Input
+              id="custom-domain"
+              v-model="form.customDomain"
+              placeholder="feedback.yourapp.com"
+              class="font-mono"
+            />
             <Button :disabled="isSaving" @click="save">
               <Icon v-if="isSaving" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
               Save
@@ -26,13 +31,14 @@
           </p>
         </div>
 
-        <div v-if="form.customDomain" class="space-y-3 rounded-md border p-4 transition-colors" :class="statusPanelClass">
+        <div
+          v-if="form.customDomain"
+          class="space-y-3 rounded-md border p-4 transition-colors"
+          :class="statusPanelClass"
+        >
           <div class="flex items-center justify-between">
             <div class="flex items-start gap-3">
-              <span
-                class="flex h-2 w-2 rounded-full"
-                :class="statusDotClass"
-              />
+              <span class="flex h-2 w-2 rounded-full" :class="statusDotClass" />
               <div class="space-y-1">
                 <p data-testid="product-domain-status-title" class="text-sm font-medium" :class="statusTextClass">
                   {{ statusTitle }}
@@ -66,7 +72,8 @@
             </p>
             <p v-else>
               No matching DNS records found for
-              <code class="rounded bg-muted px-1 py-0.5 font-mono">{{ form.customDomain }}</code>.
+              <code class="rounded bg-muted px-1 py-0.5 font-mono">{{ form.customDomain }}</code
+              >.
             </p>
           </div>
         </div>
@@ -153,9 +160,16 @@ export default {
     storedDomainRecords() {
       const records = this.project?.settings?.domainDnsRecords
       if (!Array.isArray(records)) return []
-      return this.normalizeDnsRecords(records.filter((record) => {
-        return record && typeof record.type === 'string' && typeof record.name === 'string' && typeof record.value === 'string'
-      }))
+      return this.normalizeDnsRecords(
+        records.filter((record) => {
+          return (
+            record &&
+            typeof record.type === 'string' &&
+            typeof record.name === 'string' &&
+            typeof record.value === 'string'
+          )
+        })
+      )
     },
     fallbackDnsRecord() {
       const domain = this.form.customDomain?.trim()
@@ -231,7 +245,11 @@ export default {
     statusDotClass() {
       if (this.statusPresentation === 'checking') return 'bg-blue-500 animate-pulse'
       if (this.statusPresentation === 'active') return 'bg-green-500'
-      if (this.statusPresentation === 'ownership_verification_required' || this.statusPresentation === 'dns_incomplete' || this.statusPresentation === 'dns_required') {
+      if (
+        this.statusPresentation === 'ownership_verification_required' ||
+        this.statusPresentation === 'dns_incomplete' ||
+        this.statusPresentation === 'dns_required'
+      ) {
         return 'bg-amber-500'
       }
       return 'bg-muted-foreground'
@@ -239,7 +257,11 @@ export default {
     statusTextClass() {
       if (this.statusPresentation === 'active') return 'text-green-600 dark:text-green-400'
       if (this.statusPresentation === 'checking') return 'text-blue-600 dark:text-blue-400'
-      if (this.statusPresentation === 'ownership_verification_required' || this.statusPresentation === 'dns_incomplete' || this.statusPresentation === 'dns_required') {
+      if (
+        this.statusPresentation === 'ownership_verification_required' ||
+        this.statusPresentation === 'dns_incomplete' ||
+        this.statusPresentation === 'dns_required'
+      ) {
         return 'text-amber-700 dark:text-amber-300'
       }
       return ''
@@ -247,7 +269,11 @@ export default {
     statusPanelClass() {
       if (this.statusPresentation === 'active') return 'border-green-500/30 bg-green-500/5'
       if (this.statusPresentation === 'checking') return 'border-blue-500/30 bg-blue-500/5'
-      if (this.statusPresentation === 'ownership_verification_required' || this.statusPresentation === 'dns_incomplete' || this.statusPresentation === 'dns_required') {
+      if (
+        this.statusPresentation === 'ownership_verification_required' ||
+        this.statusPresentation === 'dns_incomplete' ||
+        this.statusPresentation === 'dns_required'
+      ) {
         return 'border-amber-500/30 bg-amber-500/5'
       }
       return ''
@@ -275,8 +301,13 @@ export default {
 
       for (const record of records) {
         const nextRecord = {
-          type: String(record.type || '').trim().toUpperCase(),
-          name: String(record.name || '').trim().toLowerCase().replace(/\.$/, ''),
+          type: String(record.type || '')
+            .trim()
+            .toUpperCase(),
+          name: String(record.name || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\.$/, ''),
           value: String(record.value || '').trim(),
         }
 

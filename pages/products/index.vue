@@ -142,7 +142,9 @@
                 <p class="text-xs text-muted-foreground">Public URL: {{ publicUrlPreview }}</p>
               </div>
               <div class="space-y-2">
-                <Label for="description">Description <span class="text-muted-foreground font-normal">(optional)</span></Label>
+                <Label for="description"
+                  >Description <span class="text-muted-foreground font-normal">(optional)</span></Label
+                >
                 <Input id="description" v-model="form.description" placeholder="A brief description of your product" />
               </div>
             </div>
@@ -159,7 +161,10 @@
           <template v-if="currentStep === 2">
             <DialogHeader class="mb-4">
               <h2 class="text-lg font-semibold">Configure Features</h2>
-              <p class="text-sm text-muted-foreground">Choose what to enable for <strong>{{ form.name }}</strong>. You can change these later.</p>
+              <p class="text-sm text-muted-foreground">
+                Choose what to enable for <strong>{{ form.name }}</strong
+                >. You can change these later.
+              </p>
             </DialogHeader>
             <div class="space-y-3">
               <!-- Public Feedback Board -->
@@ -169,7 +174,8 @@
                 @click="form.isPublic = !form.isPublic"
               >
                 <div class="flex items-start gap-3 flex-1 min-w-0">
-                  <div class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                  <div
+                    class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 mt-0.5"
                     :class="form.isPublic ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
                   >
                     <Icon name="lucide:message-square" class="w-4 h-4" />
@@ -179,7 +185,11 @@
                     <p class="text-xs text-muted-foreground mt-0.5">Anyone can view, submit, and vote on feedback</p>
                   </div>
                 </div>
-                <Switch :checked="form.isPublic" class="shrink-0 ml-3 mt-0.5" @click.stop="form.isPublic = !form.isPublic" />
+                <Switch
+                  :checked="form.isPublic"
+                  class="shrink-0 ml-3 mt-0.5"
+                  @click.stop="form.isPublic = !form.isPublic"
+                />
               </div>
 
               <!-- Changelog -->
@@ -189,7 +199,8 @@
                 @click="form.changelogEnabled = !form.changelogEnabled"
               >
                 <div class="flex items-start gap-3 flex-1 min-w-0">
-                  <div class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                  <div
+                    class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 mt-0.5"
                     :class="form.changelogEnabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
                   >
                     <Icon name="lucide:newspaper" class="w-4 h-4" />
@@ -199,7 +210,11 @@
                     <p class="text-xs text-muted-foreground mt-0.5">Publish release notes and product updates</p>
                   </div>
                 </div>
-                <Switch :checked="form.changelogEnabled" class="shrink-0 ml-3 mt-0.5" @click.stop="form.changelogEnabled = !form.changelogEnabled" />
+                <Switch
+                  :checked="form.changelogEnabled"
+                  class="shrink-0 ml-3 mt-0.5"
+                  @click.stop="form.changelogEnabled = !form.changelogEnabled"
+                />
               </div>
 
               <!-- Public Roadmap -->
@@ -209,17 +224,24 @@
                 @click="form.roadmapEnabled = !form.roadmapEnabled"
               >
                 <div class="flex items-start gap-3 flex-1 min-w-0">
-                  <div class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                  <div
+                    class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 mt-0.5"
                     :class="form.roadmapEnabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
                   >
                     <Icon name="lucide:map" class="w-4 h-4" />
                   </div>
                   <div class="min-w-0">
                     <p class="text-sm font-medium">Public Roadmap</p>
-                    <p class="text-xs text-muted-foreground mt-0.5">Share your planned features and priorities publicly</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">
+                      Share your planned features and priorities publicly
+                    </p>
                   </div>
                 </div>
-                <Switch :checked="form.roadmapEnabled" class="shrink-0 ml-3 mt-0.5" @click.stop="form.roadmapEnabled = !form.roadmapEnabled" />
+                <Switch
+                  :checked="form.roadmapEnabled"
+                  class="shrink-0 ml-3 mt-0.5"
+                  @click.stop="form.roadmapEnabled = !form.roadmapEnabled"
+                />
               </div>
             </div>
             <DialogFooter class="mt-6">
@@ -362,7 +384,14 @@ export default {
       this.showCreateDialog = open
       if (!open) {
         this.currentStep = 1
-        this.form = { name: '', slug: '', description: '', isPublic: true, changelogEnabled: false, roadmapEnabled: false }
+        this.form = {
+          name: '',
+          slug: '',
+          description: '',
+          isPublic: true,
+          changelogEnabled: false,
+          roadmapEnabled: false,
+        }
       }
     },
 

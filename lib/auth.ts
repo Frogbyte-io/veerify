@@ -13,6 +13,12 @@ import {
 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
 const defaultAppBaseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+const betterAuthSecret =
+  process.env.BETTER_AUTH_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'veerify-dev-auth-secret-v1')
+
+if (!betterAuthSecret) {
+  throw new Error('BETTER_AUTH_SECRET is required in production')
+}
 
 function resolveInvitationBaseUrl(request?: Request) {
   if (request?.url) {
@@ -58,14 +64,14 @@ export const auth = betterAuth({
   },
   // `secret` is kept as legacy fallback for decrypting bare-hex payloads created before 1.5.
   // New data is encrypted using the envelope format defined by `secrets` below.
-  secret: process.env.BETTER_AUTH_SECRET,
+  secret: betterAuthSecret,
   // Versioned secrets for non-destructive rotation.
   // First entry = current key (encrypts all new data).
   // Remaining entries = decryption-only (previous key versions).
   // To rotate: generate a new secret, set it as BETTER_AUTH_SECRET, move the old one to
   // BETTER_AUTH_SECRET_PREV, then bump the version numbers here.
   secrets: [
-    { version: 1, value: process.env.BETTER_AUTH_SECRET! },
+    { version: 1, value: betterAuthSecret },
     ...(process.env.BETTER_AUTH_SECRET_PREV ? [{ version: 0, value: process.env.BETTER_AUTH_SECRET_PREV }] : []),
   ],
   database: drizzleAdapter(db, {

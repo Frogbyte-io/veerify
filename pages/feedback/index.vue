@@ -303,42 +303,44 @@
                         @pointerenter="prewarmFeedbackRoute(item.id)"
                       >
                         <CardContent class="p-4">
-                        <div class="flex items-start justify-between gap-2 mb-2">
-                          <h4 class="text-sm font-medium leading-tight line-clamp-2">{{ item.title }}</h4>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger as-child @click.stop>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                class="h-6 w-6 -mr-2 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <Icon name="lucide:more-vertical" class="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem class="text-destructive" @click.stop="confirmDelete(item)">
-                                <Icon name="lucide:trash-2" class="w-4 h-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        <p v-if="item.body" class="text-xs text-muted-foreground mb-4 line-clamp-2">{{ item.body }}</p>
-                        <div class="flex items-center justify-between mt-auto">
-                          <div class="flex items-center gap-3 text-xs text-muted-foreground">
-                            <div class="flex items-center gap-1 bg-muted px-1.5 py-0.5 rounded-md">
-                              <Icon name="lucide:chevron-up" class="w-3 h-3" />
-                              <span class="font-medium">{{ item.voteCount }}</span>
-                            </div>
-                            <div class="flex items-center gap-1">
-                              <Icon name="lucide:message-circle" class="w-3 h-3" />
-                              <span>{{ item.commentCount }}</span>
-                            </div>
+                          <div class="flex items-start justify-between gap-2 mb-2">
+                            <h4 class="text-sm font-medium leading-tight line-clamp-2">{{ item.title }}</h4>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger as-child @click.stop>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  class="h-6 w-6 -mr-2 -mt-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <Icon name="lucide:more-vertical" class="w-4 h-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem class="text-destructive" @click.stop="confirmDelete(item)">
+                                  <Icon name="lucide:trash-2" class="w-4 h-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
-                          <Badge v-if="item.category" variant="outline" class="text-[10px] px-1.5 py-0 font-normal">
-                            {{ item.category.name }}
-                          </Badge>
-                        </div>
+                          <p v-if="item.body" class="text-xs text-muted-foreground mb-4 line-clamp-2">
+                            {{ item.body }}
+                          </p>
+                          <div class="flex items-center justify-between mt-auto">
+                            <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                              <div class="flex items-center gap-1 bg-muted px-1.5 py-0.5 rounded-md">
+                                <Icon name="lucide:chevron-up" class="w-3 h-3" />
+                                <span class="font-medium">{{ item.voteCount }}</span>
+                              </div>
+                              <div class="flex items-center gap-1">
+                                <Icon name="lucide:message-circle" class="w-3 h-3" />
+                                <span>{{ item.commentCount }}</span>
+                              </div>
+                            </div>
+                            <Badge v-if="item.category" variant="outline" class="text-[10px] px-1.5 py-0 font-normal">
+                              {{ item.category.name }}
+                            </Badge>
+                          </div>
                         </CardContent>
                       </Card>
                     </VueDraggable>

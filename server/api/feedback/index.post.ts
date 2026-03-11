@@ -44,21 +44,21 @@ async function rollbackCreatedGitHubIssue(params: {
   issueNumber: number
   accessToken: string
 }) {
-  const response = await fetch(`https://api.github.com/repos/${params.owner}/${params.repo}/issues/${params.issueNumber}`, {
-    method: 'PATCH',
-    headers: createGitHubHeaders(params.accessToken),
-    body: JSON.stringify({
-      state: 'closed',
-      state_reason: 'not_planned',
-    }),
-  })
+  const response = await fetch(
+    `https://api.github.com/repos/${params.owner}/${params.repo}/issues/${params.issueNumber}`,
+    {
+      method: 'PATCH',
+      headers: createGitHubHeaders(params.accessToken),
+      body: JSON.stringify({
+        state: 'closed',
+        state_reason: 'not_planned',
+      }),
+    }
+  )
 
   if (!response.ok) {
     const rollbackError = (await response.json().catch(() => null)) as { message?: string } | null
-    console.error(
-      'Failed to rollback auto-created GitHub issue:',
-      rollbackError?.message || response.statusText
-    )
+    console.error('Failed to rollback auto-created GitHub issue:', rollbackError?.message || response.statusText)
   }
 }
 
@@ -160,9 +160,11 @@ export default defineEventHandler(async (event) => {
           headers: createGitHubHeaders(integration.accessToken),
           body: JSON.stringify({
             title: body.title,
-            body: [body.body?.trim() || '*No description provided*', '', `[View feedback on Veerify](${feedbackUrl})`].join(
-              '\n'
-            ),
+            body: [
+              body.body?.trim() || '*No description provided*',
+              '',
+              `[View feedback on Veerify](${feedbackUrl})`,
+            ].join('\n'),
             labels,
           }),
         }

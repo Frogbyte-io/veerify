@@ -50,13 +50,20 @@
 
         <div class="space-y-2">
           <Label>Vote Style</Label>
-          <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" data-testid="appearance-vote-style-selector">
+          <div
+            class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2"
+            data-testid="appearance-vote-style-selector"
+          >
             <button
               v-for="style in voteStyleOptions"
               :key="style.value"
               type="button"
               class="flex flex-col items-center gap-1.5 rounded-md border px-3 py-2.5 text-sm transition-colors hover:bg-accent"
-              :class="form.voteStyle === style.value ? 'border-primary bg-primary/5 text-primary font-medium' : 'border-border text-muted-foreground'"
+              :class="
+                form.voteStyle === style.value
+                  ? 'border-primary bg-primary/5 text-primary font-medium'
+                  : 'border-border text-muted-foreground'
+              "
               :data-testid="'appearance-vote-style-' + style.value"
               @click="form.voteStyle = style.value"
             >
@@ -188,10 +195,7 @@
       </CardHeader>
       <CardContent class="p-0">
         <!-- Board preview wrapper -->
-        <div
-          class="rounded-b-lg overflow-hidden border-t text-[13px] leading-snug"
-          :class="previewThemeClass"
-        >
+        <div class="rounded-b-lg overflow-hidden border-t text-[13px] leading-snug" :class="previewThemeClass">
           <!-- Banner: click to change -->
           <div
             class="w-full h-28 relative overflow-hidden cursor-pointer group"
@@ -208,7 +212,9 @@
             <div
               v-else
               class="absolute inset-0"
-              :style="{ background: `linear-gradient(135deg, ${form.accentColor} 0%, ${form.accentColor}cc 50%, ${form.accentColor}80 100%)` }"
+              :style="{
+                background: `linear-gradient(135deg, ${form.accentColor} 0%, ${form.accentColor}cc 50%, ${form.accentColor}80 100%)`,
+              }"
             />
             <div v-if="!previewBannerUrl" class="absolute inset-0 flex items-end px-5 pb-3">
               <p class="text-white/60 text-xs font-medium tracking-wide uppercase">Feedback Board</p>
@@ -319,11 +325,15 @@
           <!-- Actions bar -->
           <div class="px-5 pb-4 bg-background flex items-center justify-between gap-3">
             <div class="flex items-center gap-2">
-              <div class="h-8 rounded-md border bg-background px-3 flex items-center text-xs text-muted-foreground gap-1">
+              <div
+                class="h-8 rounded-md border bg-background px-3 flex items-center text-xs text-muted-foreground gap-1"
+              >
                 All Status
                 <Icon name="lucide:chevron-down" class="w-3 h-3 ml-1 opacity-60" />
               </div>
-              <div class="h-8 rounded-md border bg-background px-3 flex items-center text-xs text-muted-foreground gap-1">
+              <div
+                class="h-8 rounded-md border bg-background px-3 flex items-center text-xs text-muted-foreground gap-1"
+              >
                 Category
                 <Icon name="lucide:chevron-down" class="w-3 h-3 ml-1 opacity-60" />
               </div>
@@ -340,11 +350,7 @@
 
           <!-- Mock feedback items -->
           <div class="px-5 pb-5 space-y-3 bg-background">
-            <div
-              v-for="item in mockFeedbackItems"
-              :key="item.id"
-              class="rounded-lg border bg-card p-3 flex gap-3"
-            >
+            <div v-for="item in mockFeedbackItems" :key="item.id" class="rounded-lg border bg-card p-3 flex gap-3">
               <!-- Vote column -->
               <div class="flex flex-col items-center gap-0.5 shrink-0 pt-0.5">
                 <button

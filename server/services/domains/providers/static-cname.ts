@@ -1,10 +1,5 @@
 import { promises as dns } from 'dns'
-import {
-  dedupeDnsRecords,
-  normalizeDomainHostname,
-  type DomainProvider,
-  type DomainProviderResult,
-} from '../provider'
+import { dedupeDnsRecords, normalizeDomainHostname, type DomainProvider, type DomainProviderResult } from '../provider'
 
 function buildPendingResult(hostname: string, target: string): DomainProviderResult {
   return {

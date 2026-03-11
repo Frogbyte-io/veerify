@@ -17,7 +17,10 @@ export function normalizeDomainSettings(value: unknown): ProjectSettings {
   return { ...(value as ProjectSettings) }
 }
 
-export function buildDomainSettingsPatch(currentSettings: unknown, result: DomainProviderResult | null): ProjectSettings {
+export function buildDomainSettingsPatch(
+  currentSettings: unknown,
+  result: DomainProviderResult | null
+): ProjectSettings {
   const nextSettings = normalizeDomainSettings(currentSettings)
 
   delete nextSettings.domainProvider
@@ -56,7 +59,9 @@ export function buildDomainSettingsPatch(currentSettings: unknown, result: Domai
 
 function getDomainProvider() {
   const config = useRuntimeConfig()
-  const provider = String(config.domainProvider || 'static-cname').trim().toLowerCase()
+  const provider = String(config.domainProvider || 'static-cname')
+    .trim()
+    .toLowerCase()
 
   if (provider === 'vercel') {
     return new VercelDomainProvider()

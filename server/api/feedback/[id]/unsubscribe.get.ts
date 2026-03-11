@@ -9,11 +9,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing token' })
   }
 
-  const [sub] = await db
-    .select()
-    .from(feedbackSubscription)
-    .where(eq(feedbackSubscription.token, token))
-    .limit(1)
+  const [sub] = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.token, token)).limit(1)
 
   if (!sub) {
     // Already removed or invalid — still show a friendly message

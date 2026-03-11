@@ -38,7 +38,9 @@
             @change="onFilterChange"
           >
             <option value="">All Statuses</option>
-            <option v-for="status in availableStatuses" :key="status.value" :value="status.value">{{ status.name }}</option>
+            <option v-for="status in availableStatuses" :key="status.value" :value="status.value">
+              {{ status.name }}
+            </option>
           </select>
           <select
             v-model="categoryFilter"
@@ -83,7 +85,11 @@
         <div v-else-if="feedbackItems.length === 0" class="text-center py-10">
           <Icon name="lucide:message-square" class="w-12 h-12 mx-auto text-muted-foreground mb-3" />
           <p class="text-sm text-muted-foreground">
-            {{ searchQuery || statusFilter || categoryFilter ? 'No feedback matches your filters.' : 'No feedback submitted yet.' }}
+            {{
+              searchQuery || statusFilter || categoryFilter
+                ? 'No feedback matches your filters.'
+                : 'No feedback submitted yet.'
+            }}
           </p>
           <Button
             v-if="searchQuery || statusFilter || categoryFilter"
@@ -117,7 +123,10 @@
                   <span
                     v-if="item.category"
                     class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                    :style="{ backgroundColor: (item.category.color || '#6b7280') + '22', color: item.category.color || '#6b7280' }"
+                    :style="{
+                      backgroundColor: (item.category.color || '#6b7280') + '22',
+                      color: item.category.color || '#6b7280',
+                    }"
                   >
                     <span v-if="item.category.icon">{{ item.category.icon }}</span>
                     {{ item.category.name }}
@@ -125,7 +134,8 @@
                   <span
                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                     :style="getStatusBadgeStyle(item.status)"
-                  >{{ getStatusLabel(item.status) }}</span>
+                    >{{ getStatusLabel(item.status) }}</span
+                  >
                 </div>
               </div>
               <p v-if="item.body" class="text-xs text-muted-foreground line-clamp-2">{{ item.body }}</p>
@@ -157,7 +167,9 @@
                 :disabled="updatingStatusId === item.id"
                 @change="updateStatus(item, $event.target.value)"
               >
-                <option v-for="status in availableStatuses" :key="status.value" :value="status.value">{{ status.name }}</option>
+                <option v-for="status in availableStatuses" :key="status.value" :value="status.value">
+                  {{ status.name }}
+                </option>
               </select>
             </div>
           </div>
@@ -165,16 +177,9 @@
 
         <!-- Pagination -->
         <div v-if="!isBusy && pagination.totalPages > 1" class="flex items-center justify-between pt-2">
-          <p class="text-xs text-muted-foreground">
-            Page {{ pagination.page }} of {{ pagination.totalPages }}
-          </p>
+          <p class="text-xs text-muted-foreground">Page {{ pagination.page }} of {{ pagination.totalPages }}</p>
           <div class="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="pagination.page <= 1"
-              @click="goToPage(pagination.page - 1)"
-            >
+            <Button variant="outline" size="sm" :disabled="pagination.page <= 1" @click="goToPage(pagination.page - 1)">
               <Icon name="lucide:chevron-left" class="w-4 h-4" />
             </Button>
             <Button

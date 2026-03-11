@@ -48,6 +48,21 @@ export function resolveStatusFromCloseReason(stateReason: string | null | undefi
   return stateReason === 'completed' ? 'completed' : 'closed'
 }
 
+export function resolveCompletedLabel(settings: unknown): string {
+  if (settings && typeof settings === 'object') {
+    const typed = settings as Record<string, unknown>
+
+    for (const key of ['completedLabel', 'closedLabel']) {
+      const custom = typed[key]
+      if (typeof custom === 'string' && custom.trim()) {
+        return custom.trim()
+      }
+    }
+  }
+
+  return 'status:completed'
+}
+
 export function resolveStatusLabel(feedbackStatus: 'completed' | 'closed', settings: unknown): string {
   if (settings && typeof settings === 'object') {
     const typed = settings as Record<string, unknown>

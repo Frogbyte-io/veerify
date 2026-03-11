@@ -248,7 +248,10 @@
             @keydown.space.prevent="openFeedbackDetails(item)"
           >
             <div class="flex items-start gap-4 p-4">
-              <div class="flex flex-col items-center min-w-[48px] gap-0.5" :class="votingIds.has(item.id) ? 'opacity-50' : ''">
+              <div
+                class="flex flex-col items-center min-w-[48px] gap-0.5"
+                :class="votingIds.has(item.id) ? 'opacity-50' : ''"
+              >
                 <button
                   class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
                   :class="item.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
@@ -476,10 +479,17 @@
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <div class="flex flex-col items-center gap-0.5" :class="votingIds.has(selectedFeedbackId) ? 'opacity-50' : ''">
+                      <div
+                        class="flex flex-col items-center gap-0.5"
+                        :class="votingIds.has(selectedFeedbackId) ? 'opacity-50' : ''"
+                      >
                         <button
                           class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
-                          :class="selectedFeedback.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
+                          :class="
+                            selectedFeedback.voteType === 'upvote'
+                              ? 'text-primary'
+                              : 'text-muted-foreground hover:text-foreground'
+                          "
                           :title="selectedFeedback.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
                           :disabled="votingIds.has(selectedFeedbackId)"
                           @click="voteFromDetails('upvote')"
@@ -489,7 +499,11 @@
                         <span class="text-sm font-semibold leading-none">{{ selectedFeedback.voteCount }}</span>
                         <button
                           class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
-                          :class="selectedFeedback.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'"
+                          :class="
+                            selectedFeedback.voteType === 'downvote'
+                              ? 'text-destructive'
+                              : 'text-muted-foreground hover:text-foreground'
+                          "
                           :title="selectedFeedback.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
                           :disabled="votingIds.has(selectedFeedbackId)"
                           @click="voteFromDetails('downvote')"
@@ -670,7 +684,9 @@
                 <!-- Subscribe to post -->
                 <div class="space-y-2">
                   <p class="text-sm font-semibold">Subscribe to post</p>
-                  <p class="text-xs text-muted-foreground">Get notified by email when the status changes or new comments are posted.</p>
+                  <p class="text-xs text-muted-foreground">
+                    Get notified by email when the status changes or new comments are posted.
+                  </p>
 
                   <!-- Logged-in: one-click toggle -->
                   <template v-if="currentUser">
@@ -682,7 +698,13 @@
                       @click="toggleSubscription"
                     >
                       <Icon
-                        :name="detailSubscribeLoading ? 'lucide:loader-2' : detailIsSubscribed ? 'lucide:bell-off' : 'lucide:bell'"
+                        :name="
+                          detailSubscribeLoading
+                            ? 'lucide:loader-2'
+                            : detailIsSubscribed
+                              ? 'lucide:bell-off'
+                              : 'lucide:bell'
+                        "
                         class="w-4 h-4 mr-2"
                         :class="detailSubscribeLoading ? 'animate-spin' : ''"
                       />
@@ -1279,7 +1301,10 @@ export default {
         return this.feedbackDetailsRequests[feedbackId]
       }
 
-      const request = Promise.all([$fetch(`/api/feedback/${feedbackId}`), $fetch(`/api/feedback/${feedbackId}/comments`)])
+      const request = Promise.all([
+        $fetch(`/api/feedback/${feedbackId}`),
+        $fetch(`/api/feedback/${feedbackId}/comments`),
+      ])
         .then(([feedbackResponse, commentsResponse]) => {
           const payload = {
             feedback: feedbackResponse?.data || null,

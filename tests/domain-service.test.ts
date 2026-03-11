@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  buildDomainSettingsPatch,
-  normalizeCustomDomainInput,
-} from '../server/services/domains/domain-service'
+import { buildDomainSettingsPatch, normalizeCustomDomainInput } from '../server/services/domains/domain-service'
 import { dedupeDnsRecords } from '../server/services/domains/provider'
 import { mapVercelDomainResult } from '../server/services/domains/providers/vercel'
 
@@ -55,9 +52,7 @@ describe('domain service helpers', () => {
     expect(settings.accentColor).toBe('#ff0000')
     expect(settings.domainProvider).toBe('vercel')
     expect(settings.domainStatus).toBe('ownership_verification_required')
-    expect(settings.domainDnsRecords).toEqual([
-      { type: 'TXT', name: '_vercel.feedback.example.com', value: 'token' },
-    ])
+    expect(settings.domainDnsRecords).toEqual([{ type: 'TXT', name: '_vercel.feedback.example.com', value: 'token' }])
     expect(typeof settings.domainLastCheckedAt).toBe('string')
   })
 

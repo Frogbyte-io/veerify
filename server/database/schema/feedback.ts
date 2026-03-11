@@ -88,10 +88,10 @@ export const feedbackStatus = pgTable(
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),        // Display name: "Open", "In Progress"
-    value: text('value').notNull(),      // Machine value: "open", "in_progress" (stored in feedback.status)
-    color: text('color'),                // Hex color code
-    description: text('description'),    // Optional description
+    name: text('name').notNull(), // Display name: "Open", "In Progress"
+    value: text('value').notNull(), // Machine value: "open", "in_progress" (stored in feedback.status)
+    color: text('color'), // Hex color code
+    description: text('description'), // Optional description
     sortOrder: integer('sort_order')
       .$defaultFn(() => 0)
       .notNull(),

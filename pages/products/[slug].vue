@@ -325,7 +325,7 @@ export default {
       resource.error = null
       resource.promise = null
       resource.loadedAt = 0
-      resource.data = options.preserveData === true ? resource.data : options.data ?? null
+      resource.data = options.preserveData === true ? resource.data : (options.data ?? null)
     },
     async ensureResource(key, loader, options = {}) {
       const resource = this.tabResources[key]
@@ -363,7 +363,11 @@ export default {
       }
     },
     async ensureCategoriesLoaded(options = {}) {
-      if (!options.force && Array.isArray(this.tabResources.categories.data) && this.tabResources.categories.status === 'ready') {
+      if (
+        !options.force &&
+        Array.isArray(this.tabResources.categories.data) &&
+        this.tabResources.categories.status === 'ready'
+      ) {
         return this.tabResources.categories.data
       }
 

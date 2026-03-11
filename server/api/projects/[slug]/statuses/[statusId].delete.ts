@@ -93,9 +93,7 @@ export default defineEventHandler(async (event) => {
       .where(and(eq(feedback.projectId, project.id), eq(feedback.status, status.value)))
   }
 
-  await db
-    .delete(feedbackStatus)
-    .where(and(eq(feedbackStatus.id, status.id), eq(feedbackStatus.projectId, project.id)))
+  await db.delete(feedbackStatus).where(and(eq(feedbackStatus.id, status.id), eq(feedbackStatus.projectId, project.id)))
 
   return createSuccessResponse({ id: status.id, deleted: true })
 })

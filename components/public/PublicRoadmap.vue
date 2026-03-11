@@ -134,9 +134,7 @@
         </div>
 
         <!-- Roadmap summary -->
-        <p class="text-muted-foreground text-sm mb-6">
-          A timeline view of all feedback items grouped by status.
-        </p>
+        <p class="text-muted-foreground text-sm mb-6">A timeline view of all feedback items grouped by status.</p>
 
         <!-- Loading columns skeleton -->
         <div v-if="columnsLoading" class="flex gap-4 overflow-x-auto pb-4">
@@ -165,11 +163,7 @@
 
         <!-- Kanban columns -->
         <div v-else class="flex gap-4 overflow-x-auto pb-4">
-          <div
-            v-for="column in visibleColumns"
-            :key="column.value"
-            class="flex-shrink-0 w-72 flex flex-col"
-          >
+          <div v-for="column in visibleColumns" :key="column.value" class="flex-shrink-0 w-72 flex flex-col">
             <!-- Column header -->
             <div class="flex items-center justify-between mb-3">
               <div class="flex items-center gap-2">
@@ -304,10 +298,7 @@
             {{ selectedFeedback.body }}
           </p>
           <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span
-              class="px-2 py-0.5 rounded-full font-medium"
-              :style="statusBadgeStyle(selectedFeedback.status)"
-            >
+            <span class="px-2 py-0.5 rounded-full font-medium" :style="statusBadgeStyle(selectedFeedback.status)">
               {{ selectedFeedback.status }}
             </span>
             <span>{{ selectedFeedback.voteCount }} votes</span>

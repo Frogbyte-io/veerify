@@ -81,7 +81,9 @@
                 <span v-else class="flex flex-col items-center gap-1 text-muted-foreground group-hover:text-primary">
                   <Icon name="lucide:image-plus" class="h-5 w-5" />
                 </span>
-                <div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                <div
+                  class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100"
+                >
                   <Icon name="lucide:upload" class="h-4 w-4 text-white" />
                 </div>
               </button>

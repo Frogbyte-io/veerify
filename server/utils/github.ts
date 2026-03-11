@@ -15,6 +15,13 @@ const LABEL_COLORS: Record<string, string> = {
   completed: '0e8a16',
   closed: 'cfd3d7',
   declined: 'd93f0b',
+  'source:veerify': '6366f1',
+  'status:open': '0075ca',
+  'status:in_progress': 'fbca04',
+  'status:planned': '7057ff',
+  'status:completed': '0e8a16',
+  'status:closed': 'cfd3d7',
+  'status:declined': 'd93f0b',
 }
 
 export function parseRepoFullName(value: string) {
@@ -68,7 +75,7 @@ export async function registerGitHubWebhook(
   owner: string,
   repo: string,
   accessToken: string,
-  webhookUrl: string,
+  webhookUrl: string
 ): Promise<RegisterWebhookResult> {
   const webhookSecret = crypto.randomUUID().replace(/-/g, '')
 
@@ -115,7 +122,7 @@ export async function deleteGitHubWebhook(
   owner: string,
   repo: string,
   webhookId: string,
-  accessToken: string,
+  accessToken: string
 ): Promise<void> {
   await fetch(`https://api.github.com/repos/${owner}/${repo}/hooks/${webhookId}`, {
     method: 'DELETE',
@@ -137,7 +144,7 @@ export async function ensureGitHubLabels(
   owner: string,
   repo: string,
   labels: string[],
-  accessToken: string,
+  accessToken: string
 ): Promise<void> {
   const headers = {
     Authorization: `Bearer ${accessToken}`,
@@ -168,6 +175,6 @@ export async function ensureGitHubLabels(
           body: JSON.stringify({ color }),
         })
       }
-    }),
+    })
   )
 }
