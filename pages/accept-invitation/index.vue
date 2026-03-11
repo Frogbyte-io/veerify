@@ -23,16 +23,18 @@
 
             <template v-else>
               <template v-if="errorMessage">
-                <Alert variant="destructive">
-                  <Icon name="lucide:circle-alert" class="h-4 w-4" />
-                  <AlertTitle>Invitation unavailable</AlertTitle>
-                  <AlertDescription>{{ errorMessage }}</AlertDescription>
-                </Alert>
+                <div class="flex gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-destructive">
+                  <Icon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" />
+                  <div class="space-y-1">
+                    <p class="text-sm font-medium leading-none">Invitation unavailable</p>
+                    <p class="text-sm opacity-90">{{ errorMessage }}</p>
+                  </div>
+                </div>
 
                 <template v-if="session?.user">
                   <div class="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                    You're signed in as <span class="font-medium text-foreground">{{ session.user.email }}</span>. Try
-                    signing in with the email address this invitation was sent to.
+                    You're signed in as <span class="font-medium text-foreground">{{ session.user.email }}</span
+                    >. Try signing in with the email address this invitation was sent to.
                   </div>
                   <div class="grid gap-3">
                     <Button class="w-full" :disabled="isSwitching" @click="switchAccount">
@@ -152,11 +154,17 @@ export default {
       } catch (error) {
         console.error('Error loading invitation summary:', error)
         this.invitationSummary = null
-        this.errorMessage =
-          error?.data?.message ||
-          error?.data?.error?.message ||
-          error?.statusMessage ||
-          'This invitation is unavailable or belongs to a different email address.'
+        const raw = error?.data?.message || error?.data?.error?.message || error?.statusMessage || ''
+        // Map terse API messages to friendlier copy
+        if (!raw || /not found/i.test(raw)) {
+          this.errorMessage = 'This invitation link is invalid or has already been used.'
+        } else if (/expired/i.test(raw)) {
+          this.errorMessage = 'This invitation has expired. Ask your team to send a new one.'
+        } else if (/email/i.test(raw)) {
+          this.errorMessage = 'This invitation was sent to a different email address.'
+        } else {
+          this.errorMessage = raw
+        }
       }
     },
 
