@@ -72,6 +72,21 @@ export const selectors = {
   feedbackCreateSubmit: '[data-testid="feedback-create-submit"]',
   feedbackDeleteConfirm: '[data-testid="feedback-delete-confirm"]',
   feedbackStatTotal: '[data-testid="feedback-stat-total"]',
+  feedbackDetailPage: '[data-testid="feedback-detail-page"]',
+  feedbackDetailMain: '[data-testid="feedback-detail-main"]',
+  feedbackDetailSidebar: '[data-testid="feedback-detail-sidebar"]',
+  feedbackDetailEdit: '[data-testid="feedback-detail-edit"]',
+  feedbackDetailDelete: '[data-testid="feedback-detail-delete"]',
+  feedbackDetailEditTitle: '[data-testid="feedback-detail-edit-title"]',
+  feedbackDetailEditBody: '[data-testid="feedback-detail-edit-body"]',
+  feedbackDetailSave: '[data-testid="feedback-detail-save"]',
+  feedbackDetailCommentInput: '[data-testid="feedback-detail-comment-input"]',
+  feedbackDetailCommentSubmit: '[data-testid="feedback-detail-comment-submit"]',
+  feedbackDetailStatusSelect: '[data-testid="feedback-detail-status-select"]',
+  feedbackDetailAdminCard: '[data-testid="feedback-detail-admin-card"]',
+  feedbackDetailPin: '[data-testid="feedback-detail-pin"]',
+  feedbackDetailVisibility: '[data-testid="feedback-detail-visibility"]',
+  feedbackDetailLock: '[data-testid="feedback-detail-lock"]',
 }
 
 export const teamSwitcherItemSelector = (teamId: string) => `[data-testid="team-switcher-item-${teamId}"]`

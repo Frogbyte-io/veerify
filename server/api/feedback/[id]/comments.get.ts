@@ -74,10 +74,12 @@ export default defineEventHandler(async (event) => {
     const isAuthor =
       (userId && comment.authorUserId === userId) || (anonSessionId && comment.authorSessionId === anonSessionId)
     const isEdited = new Date(comment.updatedAt).getTime() > new Date(comment.createdAt).getTime()
+    const canManageComment = Boolean(isAuthor || isTeamMember)
     return {
       ...comment,
       author: comment.authorUserId ? row.authorUser : null,
-      canEdit: !!isAuthor,
+      canEdit: canManageComment,
+      canDelete: canManageComment,
       isEdited,
     }
   })

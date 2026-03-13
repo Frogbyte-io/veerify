@@ -39,11 +39,22 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Verify access to project
+  const isOwn = session?.user
+    ? item.feedback.authorUserId === session.user.id
+    : anonSession
+      ? item.feedback.authorSessionId === anonSession.id
+      : false
+
+  // Verify access to project and capture whether the viewer is a team member.
+  let isTeamMember = false
   if (session?.user) {
-    // Authors can always view their own feedback; non-authors require team membership
-    if (item.feedback.authorUserId !== session.user.id) {
+    try {
       await requireProjectAccess(item.feedback.projectId, session.user.id)
+      isTeamMember = true
+    } catch {
+      if (!isOwn) {
+        await requirePublicProject(item.feedback.projectId)
+      }
     }
   } else {
     await requirePublicProject(item.feedback.projectId)
@@ -95,12 +106,6 @@ export default defineEventHandler(async (event) => {
     voteType = (sessionVote?.type as 'upvote' | 'downvote') || null
   }
 
-  const isOwn = session?.user
-    ? item.feedback.authorUserId === session.user.id
-    : anonSession
-      ? item.feedback.authorSessionId === anonSession.id
-      : false
-
   // Check subscription status for logged-in users
   let isSubscribed = false
   if (session?.user) {
@@ -117,9 +122,13 @@ export default defineEventHandler(async (event) => {
     category: item.category,
     author,
     project: proj,
+    tag: item.feedback.metadata?.feedbackType || null,
     hasVoted: voteType !== null,
     voteType,
     isOwn,
     isSubscribed,
+    canEdit: isOwn || isTeamMember,
+    canDelete: isOwn || isTeamMember,
+    canManage: isTeamMember,
   })
 })

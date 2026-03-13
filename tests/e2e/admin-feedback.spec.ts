@@ -254,6 +254,86 @@ test.describe('Admin feedback workflow', () => {
     await deleteTestProject(request, sessionCookie, teamId, projectId)
   })
 
+  test('UI: feedback detail page supports edit, comment moderation, and admin controls', async ({ request, page }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+    expect(authCookies.length).toBeGreaterThan(0)
+    await page.context().addCookies(authCookies)
+
+    const teamId = await getActiveTeamId(request, sessionCookie)
+    const slug = `e2e-fb-detail-${Date.now()}`
+    const projectId = await createTestProject(request, sessionCookie, teamId, slug)
+    const setActiveTeamResponse = await page.request.post('/api/teams/active', {
+      data: { teamId },
+    })
+    expect(setActiveTeamResponse.ok()).toBeTruthy()
+
+    try {
+      const createFeedbackResponse = await request.post('/api/feedback', {
+        headers: withAuthHeaders(sessionCookie),
+        data: {
+          projectId,
+          title: 'UI detail feedback item',
+          body: 'Created for the feedback detail page workflow test.',
+          feedbackType: 'feature_request',
+        },
+      })
+      const createFeedbackPayload = await createFeedbackResponse.json()
+      expect(createFeedbackResponse.status(), `Create feedback failed: ${JSON.stringify(createFeedbackPayload)}`).toBe(
+        201
+      )
+      const feedbackId = createFeedbackPayload.data.id as string
+
+      await gotoWithRetry(page, `/feedback/${feedbackId}`)
+      await expect(page.locator(selectors.feedbackDetailPage)).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator(selectors.feedbackDetailMain)).toBeVisible()
+      await expect(page.locator(selectors.feedbackDetailSidebar)).toBeVisible()
+      await expect(page.locator(selectors.feedbackDetailAdminCard)).toBeVisible()
+      await expect(page.locator(selectors.feedbackDetailStatusSelect)).toBeVisible()
+      await expect(page.locator(selectors.feedbackDetailVisibility)).toBeVisible()
+
+      const editedTitle = `Edited detail feedback ${Date.now()}`
+      const editedBody = 'Updated from the private feedback detail page.'
+
+      await page.locator(selectors.feedbackDetailEdit).click()
+      await expect(page.locator(selectors.feedbackDetailEditTitle)).toBeVisible()
+      await page.locator(selectors.feedbackDetailEditTitle).fill(editedTitle)
+      await page.locator(selectors.feedbackDetailEditBody).fill(editedBody)
+      await page.locator(selectors.feedbackDetailSave).click()
+      await expect(page.getByRole('heading', { name: editedTitle })).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText(editedBody)).toBeVisible()
+
+      await page.locator(selectors.feedbackDetailStatusSelect).selectOption('planned')
+      await expect(page.locator(selectors.feedbackDetailStatusSelect)).toHaveValue('planned')
+
+      await page.locator(selectors.feedbackDetailPin).click()
+      await expect(page.getByText('Unpin feedback')).toBeVisible({ timeout: 10_000 })
+
+      await page.locator(selectors.feedbackDetailLock).click()
+      await expect(page.locator(selectors.feedbackDetailCommentInput)).toBeDisabled({ timeout: 10_000 })
+      await page.locator(selectors.feedbackDetailLock).click()
+      await expect(page.locator(selectors.feedbackDetailCommentInput)).toBeEnabled({ timeout: 10_000 })
+
+      const commentBody = `Detail comment ${Date.now()}`
+      const editedCommentBody = `${commentBody} edited`
+      await page.locator(selectors.feedbackDetailCommentInput).fill(commentBody)
+      await page.locator(selectors.feedbackDetailCommentSubmit).click()
+      await expect(page.getByText(commentBody)).toBeVisible({ timeout: 15_000 })
+
+      const commentCard = page.locator('[data-testid^="feedback-detail-comment-"]', { hasText: commentBody }).first()
+      await commentCard.locator('[data-testid^="comment-edit-btn-"]').click()
+      await commentCard.locator('textarea').fill(editedCommentBody)
+      await commentCard.getByRole('button', { name: 'Save comment' }).click()
+      await expect(page.getByText(editedCommentBody)).toBeVisible({ timeout: 15_000 })
+
+      page.once('dialog', (dialog) => dialog.accept())
+      await commentCard.locator('[data-testid^="comment-delete-btn-"]').click()
+      await expect(page.getByText(editedCommentBody)).not.toBeVisible({ timeout: 15_000 })
+    } finally {
+      await deleteTestProject(request, sessionCookie, teamId, projectId)
+    }
+  })
+
   test('API: delete project cascades feedback', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await getActiveTeamId(request, sessionCookie)

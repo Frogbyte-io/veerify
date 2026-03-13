@@ -5,7 +5,8 @@ import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { feedbackComment } from '~/server/database/schema/feedback'
+import { feedback, feedbackComment } from '~/server/database/schema/feedback'
+import { requireProjectAccess } from '~/server/utils/project-access'
 
 const editCommentSchema = z.object({
   body: z.string().min(1, 'Comment body is required').max(5000, 'Comment too long'),
@@ -38,16 +39,34 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Check authorship
+  const [fb] = await db.select({ projectId: feedback.projectId }).from(feedback).where(eq(feedback.id, feedbackId)).limit(1)
+  if (!fb) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Feedback not found'),
+    })
+  }
+
   const isAuthor =
     (session?.user && comment.authorUserId === session.user.id) ||
     (anonSession && comment.authorSessionId === anonSession.id)
 
-  if (!isAuthor) {
+  let isTeamMember = false
+  if (session?.user) {
+    try {
+      await requireProjectAccess(fb.projectId, session.user.id)
+      isTeamMember = true
+    } catch {
+      isTeamMember = false
+    }
+  }
+
+  if (!isAuthor && !isTeamMember) {
     throw createError({
       statusCode: 403,
       statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You can only edit your own comments'),
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You do not have permission to edit this comment'),
     })
   }
 
