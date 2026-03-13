@@ -2,10 +2,11 @@ import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { user, member } from '~/server/database/schema/index'
 import { eq } from 'drizzle-orm'
+import { getAuthHeaders } from '~/server/utils/auth-headers'
 
 export default defineEventHandler(async (event) => {
   const session = await auth.api.getSession({
-    headers: event.node.req.headers as any,
+    headers: getAuthHeaders(event),
   })
   if (!session?.user) {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
@@ -48,7 +49,7 @@ export default defineEventHandler(async (event) => {
 
   // Delegate to Better-Auth
   const result = await auth.api.createInvitation({
-    headers: event.node.req.headers as any,
+    headers: getAuthHeaders(event),
     body: {
       organizationId,
       email: normalizedEmail,

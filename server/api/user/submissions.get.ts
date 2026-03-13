@@ -2,10 +2,11 @@ import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { feedback, project } from '~/server/database/schema/feedback'
 import { eq, desc, sql } from 'drizzle-orm'
+import { getAuthHeaders } from '~/server/utils/auth-headers'
 
 export default defineEventHandler(async (event) => {
   const session = await auth.api.getSession({
-    headers: event.node.req.headers as any,
+    headers: getAuthHeaders(event),
   })
   if (!session?.user) {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })

@@ -41,10 +41,11 @@ export const users = pgTable('users', {
 
 ```typescript [Protected API Route]
 import { auth } from "~/lib/auth"
+import { getAuthHeaders } from "~/server/utils/auth-headers"
 
 export default defineEventHandler(async (event) => {
   const session = await auth.api.getSession({
-    headers: event.headers as any
+    headers: getAuthHeaders(event)
   })
   
   if (!session?.user) {
@@ -110,7 +111,7 @@ throw createError({
 ### Server Configuration
 - **Server config**: `~/lib/auth.ts`
 - **API route**: `~/server/api/auth/[...all].ts`
-- **Session validation**: `auth.api.getSession({ headers: event.headers as any })`
+- **Session validation**: `auth.api.getSession({ headers: getAuthHeaders(event) })`
 
 ### Authentication Middleware
 ```typescript
