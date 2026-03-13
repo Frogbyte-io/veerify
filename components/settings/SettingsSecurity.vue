@@ -68,17 +68,24 @@
           <h3 class="font-medium mb-4">Two-Factor Authentication</h3>
 
           <!-- 2FA Status -->
-          <div class="flex items-center justify-between p-4 border rounded-lg mb-4">
-            <div class="flex items-center gap-3">
-              <div class="p-2 rounded-full" :class="user?.twoFactorEnabled ? 'bg-green-100' : 'bg-gray-100'">
-                <Icon
-                  :name="user?.twoFactorEnabled ? 'lucide:shield-check' : 'lucide:shield'"
-                  class="h-4 w-4"
-                  :class="user?.twoFactorEnabled ? 'text-green-600' : 'text-gray-600'"
-                />
+          <div
+            data-testid="security-2fa-status-card"
+            class="mb-4 flex items-center justify-between rounded-xl border border-border/80 bg-background/60 p-4 shadow-sm"
+          >
+            <div class="flex items-center gap-4">
+              <div
+                data-testid="security-2fa-status-icon"
+                class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border"
+                :class="
+                  user?.twoFactorEnabled
+                    ? 'border-green-500/30 bg-green-500/10 text-green-500'
+                    : 'border-primary/20 bg-primary/10 text-primary'
+                "
+              >
+                <Icon :name="user?.twoFactorEnabled ? 'lucide:shield-check' : 'lucide:shield'" class="h-5 w-5" />
               </div>
-              <div>
-                <p class="font-medium">
+              <div class="space-y-1">
+                <p class="font-medium leading-none">
                   Two-Factor Authentication {{ user?.twoFactorEnabled ? 'Enabled' : 'Disabled' }}
                 </p>
                 <p class="text-sm text-muted-foreground">
@@ -90,19 +97,30 @@
                 </p>
               </div>
             </div>
-            <Badge :variant="user?.twoFactorEnabled ? 'default' : 'secondary'">
+            <Badge
+              :variant="user?.twoFactorEnabled ? 'default' : 'secondary'"
+              class="rounded-full border px-3 py-1 text-xs font-medium tracking-[0.02em]"
+            >
               {{ user?.twoFactorEnabled ? 'Active' : 'Inactive' }}
             </Badge>
           </div>
 
           <!-- 2FA Actions -->
           <div v-if="!user?.twoFactorEnabled" class="space-y-4">
-            <div class="p-4 border rounded-lg bg-blue-50 border-blue-200">
+            <div
+              data-testid="security-2fa-enable-callout"
+              class="rounded-xl border border-primary/20 bg-primary/10 p-4 shadow-sm backdrop-blur-sm"
+            >
               <div class="flex items-start gap-3">
-                <Icon name="lucide:info" class="h-5 w-5 text-blue-600 mt-0.5" />
-                <div>
-                  <h4 class="font-medium text-blue-900">Enable Two-Factor Authentication</h4>
-                  <p class="text-sm text-blue-700 mt-1">
+                <div
+                  data-testid="security-2fa-enable-callout-icon"
+                  class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-background/80 text-primary"
+                >
+                  <Icon name="lucide:shield-plus" class="h-4 w-4" />
+                </div>
+                <div class="space-y-1">
+                  <h4 class="font-medium text-foreground">Enable Two-Factor Authentication</h4>
+                  <p class="text-sm leading-6 text-muted-foreground">
                     Use an authenticator app like Google Authenticator or Authy to generate time-based codes for
                     enhanced security.
                   </p>

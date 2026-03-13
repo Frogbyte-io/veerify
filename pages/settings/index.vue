@@ -82,10 +82,12 @@ export default {
     SettingsAppearance,
   },
   data() {
+    const hasActiveOrganization = useState('hasActiveOrganization', () => null)
+
     return {
       activeTab: 'profile',
       currentOrgRole: null,
-      hasOrganization: false,
+      hasOrganization: hasActiveOrganization.value === true,
       deploymentMode: 'cloud',
     }
   },
@@ -148,10 +150,12 @@ export default {
         if (!activeOrg?.id && !activeOrg?.name) {
           this.currentOrgRole = null
           this.hasOrganization = false
+          useState('hasActiveOrganization', () => null).value = false
           return
         }
 
         this.hasOrganization = true
+        useState('hasActiveOrganization', () => null).value = true
 
         let slug = activeOrg.slug || null
         if (!slug) {

@@ -248,7 +248,10 @@
             @keydown.space.prevent="openFeedbackDetails(item)"
           >
             <div class="flex items-start gap-4 p-4">
-              <div class="flex flex-col items-center min-w-[48px] gap-0.5" :class="votingIds.has(item.id) ? 'opacity-50' : ''">
+              <div
+                class="flex flex-col items-center min-w-[48px] gap-0.5"
+                :class="votingIds.has(item.id) ? 'opacity-50' : ''"
+              >
                 <button
                   class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
                   :class="item.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
@@ -476,10 +479,17 @@
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <div class="flex flex-col items-center gap-0.5" :class="votingIds.has(selectedFeedbackId) ? 'opacity-50' : ''">
+                      <div
+                        class="flex flex-col items-center gap-0.5"
+                        :class="votingIds.has(selectedFeedbackId) ? 'opacity-50' : ''"
+                      >
                         <button
                           class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
-                          :class="selectedFeedback.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
+                          :class="
+                            selectedFeedback.voteType === 'upvote'
+                              ? 'text-primary'
+                              : 'text-muted-foreground hover:text-foreground'
+                          "
                           :title="selectedFeedback.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
                           :disabled="votingIds.has(selectedFeedbackId)"
                           @click="voteFromDetails('upvote')"
@@ -489,7 +499,11 @@
                         <span class="text-sm font-semibold leading-none">{{ selectedFeedback.voteCount }}</span>
                         <button
                           class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
-                          :class="selectedFeedback.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'"
+                          :class="
+                            selectedFeedback.voteType === 'downvote'
+                              ? 'text-destructive'
+                              : 'text-muted-foreground hover:text-foreground'
+                          "
                           :title="selectedFeedback.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
                           :disabled="votingIds.has(selectedFeedbackId)"
                           @click="voteFromDetails('downvote')"
@@ -670,7 +684,9 @@
                 <!-- Subscribe to post -->
                 <div class="space-y-2">
                   <p class="text-sm font-semibold">Subscribe to post</p>
-                  <p class="text-xs text-muted-foreground">Get notified by email when the status changes or new comments are posted.</p>
+                  <p class="text-xs text-muted-foreground">
+                    Get notified by email when the status changes or new comments are posted.
+                  </p>
 
                   <!-- Logged-in: one-click toggle -->
                   <template v-if="currentUser">
@@ -682,7 +698,13 @@
                       @click="toggleSubscription"
                     >
                       <Icon
-                        :name="detailSubscribeLoading ? 'lucide:loader-2' : detailIsSubscribed ? 'lucide:bell-off' : 'lucide:bell'"
+                        :name="
+                          detailSubscribeLoading
+                            ? 'lucide:loader-2'
+                            : detailIsSubscribed
+                              ? 'lucide:bell-off'
+                              : 'lucide:bell'
+                        "
                         class="w-4 h-4 mr-2"
                         :class="detailSubscribeLoading ? 'animate-spin' : ''"
                       />
@@ -1063,6 +1085,27 @@ export default {
       this.previousColorMode = this.$colorMode.preference
       window.addEventListener('scroll', this.handleScroll, { passive: true })
     }
+    // Use data prefetched by the roadmap page to skip the full-page loading skeleton
+    const boardCacheKey = `pubBoardData_${this.teamSlug}_${this.projectSlug}`
+    const cached = import.meta.client ? useState(boardCacheKey).value : null
+    if (cached && Date.now() - cached.cachedAt < 60_000 && cached.projectResponse?.data) {
+      const projectData = cached.projectResponse.data
+      const feedbackData = cached.feedbackResponse?.data
+      this.projectData = projectData
+      if (feedbackData?.items) {
+        this.feedbackItems = this.mergeWithLocalVotes(feedbackData.items)
+        this.pagination = feedbackData.pagination || this.pagination
+        this.warmVisibleFeedbackDetails()
+      }
+      this.isLoading = false
+      this.feedbackLoading = false
+      this.applyTheme(projectData.project?.settings?.themeMode || 'system')
+      await this.$nextTick()
+      this.setupScrollObserver()
+      this.warmRoadmapData()
+      this.checkAdminStatus()
+      return
+    }
     try {
       const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`)
       this.projectData = response?.data
@@ -1153,18 +1196,23 @@ export default {
       this.scrollObserver.observe(this.$refs.scrollSentinel)
     },
     async submitFeedback() {
-      if (!this.submitForm.title || !this.submitForm.body || !this.submitForm.authorName) return
+      const authorName = this.submitForm.authorName.trim()
+      const authorEmail = this.submitForm.authorEmail.trim()
+      if (!this.submitForm.title || !this.submitForm.body || (!this.currentUser && !authorName)) return
+
+      const payload = {
+        title: this.submitForm.title,
+        body: this.submitForm.body,
+        categoryId: this.submitForm.categoryId || null,
+        ...(!this.currentUser && authorName ? { authorName } : {}),
+        ...(!this.currentUser && authorEmail ? { authorEmail } : {}),
+      }
+
       this.isSubmitting = true
       try {
         await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback`, {
           method: 'POST',
-          body: {
-            title: this.submitForm.title,
-            body: this.submitForm.body,
-            categoryId: this.submitForm.categoryId || null,
-            authorName: this.submitForm.authorName,
-            authorEmail: this.submitForm.authorEmail || undefined,
-          },
+          body: payload,
         })
         this.showSubmitDialog = false
         this.submitForm = { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' }
@@ -1211,7 +1259,15 @@ export default {
         return this.roadmapPrefetch.promise
       }
 
-      const promise = $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`).catch(() => null)
+      const cacheKey = `pubRoadmapData_${this.teamSlug}_${this.projectSlug}`
+      const promise = $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`)
+        .then((response) => {
+          if (import.meta.client) {
+            useState(cacheKey).value = { response, cachedAt: Date.now() }
+          }
+          return response
+        })
+        .catch(() => null)
       this.roadmapPrefetch = { promise, cachedAt: now }
       return promise
     },
@@ -1245,7 +1301,10 @@ export default {
         return this.feedbackDetailsRequests[feedbackId]
       }
 
-      const request = Promise.all([$fetch(`/api/feedback/${feedbackId}`), $fetch(`/api/feedback/${feedbackId}/comments`)])
+      const request = Promise.all([
+        $fetch(`/api/feedback/${feedbackId}`),
+        $fetch(`/api/feedback/${feedbackId}/comments`),
+      ])
         .then(([feedbackResponse, commentsResponse]) => {
           const payload = {
             feedback: feedbackResponse?.data || null,
@@ -1426,7 +1485,7 @@ export default {
     openCommentOptions() {
       if (!this.detailCommentBody.trim()) return
       if (this.currentUser) {
-        this.executeCommentSubmit('', '')
+        this.executeCommentSubmit()
         return
       }
       this.commentOptionSelected = null
@@ -1442,16 +1501,18 @@ export default {
       await this.executeCommentSubmit(this.commentOptionName.trim(), this.commentOptionEmail.trim())
     },
     async executeCommentSubmit(authorName, authorEmail) {
+      const payload = {
+        body: this.detailCommentBody.trim(),
+        ...(authorName?.trim() ? { authorName: authorName.trim() } : {}),
+        ...(authorEmail?.trim() ? { authorEmail: authorEmail.trim() } : {}),
+      }
+
       this.isSubmittingDetailComment = true
       this.detailCommentError = null
       try {
         const response = await $fetch(`/api/feedback/${this.selectedFeedbackId}/comments`, {
           method: 'POST',
-          body: {
-            body: this.detailCommentBody.trim(),
-            authorName,
-            authorEmail: authorEmail || undefined,
-          },
+          body: payload,
         })
         const comment = response?.data
         if (comment) {

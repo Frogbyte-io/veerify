@@ -87,6 +87,14 @@ interface PasswordResetOptions {
   resetUrl: string
 }
 
+interface OrganizationInvitationOptions {
+  organizationName: string
+  inviterName: string
+  inviteUrl: string
+  role: string
+  teamName?: string | null
+}
+
 interface CustomDomainNotificationOptions {
   name: string
   projectName: string
@@ -222,6 +230,58 @@ If you didn't request this link, please ignore this email.
   return { subject, html, text }
 }
 
+export function getOrganizationInvitationTemplate({
+  organizationName,
+  inviterName,
+  inviteUrl,
+  role,
+  teamName,
+}: OrganizationInvitationOptions) {
+  const subject = `You're invited to join ${organizationName} on Veerify`
+
+  const safeOrganizationName = escapeHtml(organizationName)
+  const safeInviterName = escapeHtml(inviterName)
+  const safeInviteUrl = escapeHtml(inviteUrl)
+  const safeRole = escapeHtml(role)
+  const safeTeamName = teamName ? escapeHtml(teamName) : ''
+  const teamCopy = safeTeamName ? ` and join the ${safeTeamName} team` : ''
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h1 style="color: #333;">Join ${safeOrganizationName} on Veerify</h1>
+      <p>${safeInviterName} invited you to collaborate in <strong>${safeOrganizationName}</strong>${teamCopy}.</p>
+      <p>Your access will be set up with the <strong>${safeRole}</strong> role once you accept the invitation.</p>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${safeInviteUrl}"
+           style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+          Accept Invitation
+        </a>
+      </div>
+      <p>If the button doesn't work, you can also copy and paste this link in your browser:</p>
+      <p style="word-break: break-all; color: #666;">${safeInviteUrl}</p>
+      <p>This invitation link will expire automatically if it is not accepted in time.</p>
+      <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
+      <p style="color: #666; font-size: 12px;">
+        If you were not expecting this invitation, you can safely ignore this email.
+      </p>
+    </div>
+  `
+
+  const text = `Join ${organizationName} on Veerify
+
+${inviterName} invited you to collaborate in ${organizationName}${teamName ? ` and join the ${teamName} team` : ''}.
+
+Your access will be set up with the ${role} role once you accept the invitation.
+
+Accept your invitation:
+${inviteUrl}
+
+If you were not expecting this invitation, you can safely ignore this email.
+`
+
+  return { subject, html, text }
+}
+
 export function getCustomDomainConnectedTemplate({ name, projectName, domain }: CustomDomainNotificationOptions) {
   const subject = `Custom domain connected for ${projectName}`
 
@@ -299,7 +359,10 @@ interface SubscriptionConfirmationOptions {
   unsubscribeUrl: string
 }
 
-export function getSubscriptionConfirmationTemplate({ feedbackTitle, unsubscribeUrl }: SubscriptionConfirmationOptions) {
+export function getSubscriptionConfirmationTemplate({
+  feedbackTitle,
+  unsubscribeUrl,
+}: SubscriptionConfirmationOptions) {
   const subject = `You're subscribed to updates for "${feedbackTitle}"`
   const safeTitle = escapeHtml(feedbackTitle)
   const safeUnsubUrl = escapeHtml(unsubscribeUrl)

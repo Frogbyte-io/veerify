@@ -25,14 +25,14 @@
         <!-- Error -->
         <div v-else-if="error" class="text-center py-6">
           <p class="text-sm text-destructive mb-2">{{ error }}</p>
-          <Button variant="outline" size="sm" @click="loadCategories">
+          <Button variant="outline" size="sm" @click="refreshResource">
             <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
             Retry
           </Button>
         </div>
 
         <!-- Empty -->
-        <div v-else-if="categories.length === 0" class="text-center py-8">
+        <div v-else-if="localCategories.length === 0" class="text-center py-8">
           <Icon name="lucide:tags" class="w-10 h-10 mx-auto text-muted-foreground mb-3" />
           <p class="text-sm text-muted-foreground mb-3">No categories yet</p>
           <Button size="sm" @click="openCreateDialog">Add First Category</Button>
@@ -41,63 +41,68 @@
         <!-- Category List -->
         <div v-else class="space-y-2">
           <p class="text-xs text-muted-foreground">Drag categories to reorder how they appear on your public board.</p>
-          <div
-            v-for="category in categories"
-            :key="category.id"
-            :data-testid="`product-category-item-${category.id}`"
-            class="flex items-center justify-between rounded-lg border p-3 transition-colors"
-            :class="{
-              'border-primary bg-primary/5': dragOverCategoryId === category.id && draggedCategoryId !== category.id,
-            }"
-            @dragover.prevent="onCategoryDragOver(category.id)"
-            @dragenter.prevent="onCategoryDragOver(category.id)"
-            @dragleave="onCategoryDragLeave(category.id)"
-            @drop.prevent="onCategoryDrop(category.id)"
+          <VueDraggable
+            v-model="localCategories"
+            tag="div"
+            class="space-y-2"
+            :animation="180"
+            :disabled="isReordering || localCategories.length <= 1"
+            ghost-class="category-sort-ghost"
+            chosen-class="category-sort-chosen"
+            drag-class="category-sort-drag"
+            handle="[data-sort-handle='category']"
+            @start="onCategorySortStart"
+            @end="onCategorySortEnd"
           >
-            <div class="flex items-center gap-3">
-              <button
-                type="button"
-                :data-testid="`product-category-drag-handle-${category.id}`"
-                class="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md text-muted-foreground hover:bg-accent disabled:cursor-not-allowed"
-                :aria-label="`Drag to reorder ${category.name}`"
-                :disabled="isReordering"
-                draggable="true"
-                @dragstart="onCategoryDragStart(category.id, $event)"
-                @dragend="onCategoryDragEnd"
-              >
-                <Icon name="lucide:grip-vertical" class="w-4 h-4" />
-              </button>
-              <span
-                class="w-3 h-3 rounded-full flex-shrink-0"
-                :style="{ backgroundColor: category.color || '#6b7280' }"
-              />
-              <div>
-                <div class="flex items-center gap-2">
-                  <span v-if="category.icon" class="text-sm">{{ category.icon }}</span>
-                  <p class="font-medium text-sm">{{ category.name }}</p>
-                  <Badge v-if="category.isDefault" variant="secondary" class="text-xs">Default</Badge>
+            <div
+              v-for="category in localCategories"
+              :key="category.id"
+              :data-testid="`product-category-item-${category.id}`"
+              class="flex items-center justify-between rounded-lg border p-3 transition-colors duration-150"
+            >
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  :data-testid="`product-category-drag-handle-${category.id}`"
+                  data-sort-handle="category"
+                  class="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60 active:cursor-grabbing"
+                  :aria-label="`Drag to reorder ${category.name}`"
+                  :disabled="isReordering || localCategories.length <= 1"
+                >
+                  <Icon name="lucide:grip-vertical" class="w-4 h-4" />
+                </button>
+                <span
+                  class="w-3 h-3 rounded-full flex-shrink-0"
+                  :style="{ backgroundColor: category.color || '#6b7280' }"
+                />
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span v-if="category.icon" class="text-sm">{{ category.icon }}</span>
+                    <p class="font-medium text-sm">{{ category.name }}</p>
+                    <Badge v-if="category.isDefault" variant="secondary" class="text-xs">Default</Badge>
+                  </div>
+                  <p v-if="category.description" class="text-xs text-muted-foreground">
+                    {{ category.description }}
+                  </p>
                 </div>
-                <p v-if="category.description" class="text-xs text-muted-foreground">
-                  {{ category.description }}
-                </p>
+              </div>
+              <div class="flex items-center gap-1">
+                <Button variant="ghost" size="sm" :disabled="isReordering" @click="openEditDialog(category)">
+                  <Icon name="lucide:pencil" class="w-4 h-4" />
+                </Button>
+                <Button
+                  v-if="!category.isDefault"
+                  variant="ghost"
+                  size="sm"
+                  class="text-destructive hover:text-destructive"
+                  :disabled="isReordering"
+                  @click="openDeleteDialog(category)"
+                >
+                  <Icon name="lucide:trash-2" class="w-4 h-4" />
+                </Button>
               </div>
             </div>
-            <div class="flex items-center gap-1">
-              <Button variant="ghost" size="sm" :disabled="isReordering" @click="openEditDialog(category)">
-                <Icon name="lucide:pencil" class="w-4 h-4" />
-              </Button>
-              <Button
-                v-if="!category.isDefault"
-                variant="ghost"
-                size="sm"
-                class="text-destructive hover:text-destructive"
-                :disabled="isReordering"
-                @click="openDeleteDialog(category)"
-              >
-                <Icon name="lucide:trash-2" class="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
+          </VueDraggable>
         </div>
       </CardContent>
     </Card>
@@ -167,7 +172,7 @@
             >
               <option value="">None (remove category from feedback)</option>
               <option
-                v-for="cat in categories.filter((c) => c.id !== deletingCategory?.id)"
+                v-for="cat in localCategories.filter((c) => c.id !== deletingCategory?.id)"
                 :key="cat.id"
                 :value="cat.id"
               >
@@ -189,21 +194,45 @@
 </template>
 
 <script>
+import { VueDraggable } from 'vue-draggable-plus'
 import { toast } from 'vue-sonner'
+
+function sortCategories(categories) {
+  return [...categories].sort((a, b) => {
+    if ((a.sortOrder ?? 0) !== (b.sortOrder ?? 0)) {
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+    }
+    return String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+  })
+}
 
 export default {
   name: 'ProductSettingsCategories',
+  components: {
+    VueDraggable,
+  },
   props: {
     project: {
       type: Object,
       required: true,
     },
+    resourceState: {
+      type: Object,
+      required: true,
+    },
+    ensureLoaded: {
+      type: Function,
+      default: null,
+    },
+    refresh: {
+      type: Function,
+      default: null,
+    },
   },
+  emits: ['categories-updated', 'feedback-default-invalidated'],
   data() {
     return {
-      categories: [],
-      isLoading: true,
-      error: null,
+      localCategories: [],
       showCategoryDialog: false,
       showDeleteDialog: false,
       editingCategory: null,
@@ -212,8 +241,7 @@ export default {
       isSavingCategory: false,
       isDeletingCategory: false,
       isReordering: false,
-      draggedCategoryId: null,
-      dragOverCategoryId: null,
+      dragStartOrder: [],
       categoryForm: {
         name: '',
         icon: '',
@@ -222,33 +250,38 @@ export default {
       },
     }
   },
-  watch: {
-    'project.slug': {
-      handler() {
-        this.loadCategories()
-      },
-      immediate: false,
+  computed: {
+    isLoading() {
+      return ['idle', 'loading'].includes(this.resourceState?.status) && this.localCategories.length === 0
+    },
+    error() {
+      if (this.localCategories.length > 0) return null
+      if (this.resourceState?.status !== 'error') return null
+      return this.resourceState?.error || 'Failed to load categories'
     },
   },
-  async mounted() {
-    await this.loadCategories()
+  watch: {
+    'resourceState.data': {
+      handler(categories) {
+        this.localCategories = sortCategories(
+          Array.isArray(categories) ? categories.map((category) => ({ ...category })) : []
+        )
+      },
+      immediate: true,
+      deep: true,
+    },
   },
   methods: {
-    async loadCategories() {
-      this.isLoading = true
-      this.error = null
-
-      try {
-        const response = await $fetch(`/api/projects/${this.project.slug}/categories`)
-        this.categories = response?.data || []
-      } catch (err) {
-        console.error('Error loading categories:', err)
-        this.error = 'Failed to load categories'
-      } finally {
-        this.isLoading = false
-      }
+    refreshResource() {
+      if (!this.refresh) return
+      this.refresh().catch(() => {})
     },
-
+    emitCategories(categories) {
+      const nextCategories = sortCategories(categories.map((category) => ({ ...category })))
+      this.localCategories = nextCategories
+      this.$emit('categories-updated', nextCategories)
+      this.$emit('feedback-default-invalidated')
+    },
     openCreateDialog() {
       this.editingCategory = null
       this.categoryForm = { name: '', icon: '', color: '#6b7280', description: '' }
@@ -272,74 +305,47 @@ export default {
       this.showDeleteDialog = true
     },
 
-    onCategoryDragStart(categoryId, event) {
-      if (this.isReordering) {
-        event.preventDefault()
+    onCategorySortStart() {
+      this.dragStartOrder = this.localCategories.map((category) => ({ ...category }))
+    },
+
+    async onCategorySortEnd(event) {
+      if (this.isReordering || event?.oldIndex === event?.newIndex) {
+        this.dragStartOrder = []
         return
       }
 
-      this.draggedCategoryId = categoryId
-      if (event?.dataTransfer) {
-        event.dataTransfer.effectAllowed = 'move'
-        event.dataTransfer.setData('text/plain', categoryId)
-      }
-    },
-
-    onCategoryDragOver(categoryId) {
-      if (!this.draggedCategoryId || this.draggedCategoryId === categoryId) return
-      this.dragOverCategoryId = categoryId
-    },
-
-    onCategoryDragLeave(categoryId) {
-      if (this.dragOverCategoryId === categoryId) {
-        this.dragOverCategoryId = null
-      }
-    },
-
-    onCategoryDragEnd() {
-      this.draggedCategoryId = null
-      this.dragOverCategoryId = null
-    },
-
-    async onCategoryDrop(targetCategoryId) {
-      if (!this.draggedCategoryId || this.draggedCategoryId === targetCategoryId || this.isReordering) {
-        this.onCategoryDragEnd()
+      if (!this.dragStartOrder.length) {
         return
       }
 
-      const fromIndex = this.categories.findIndex((category) => category.id === this.draggedCategoryId)
-      const toIndex = this.categories.findIndex((category) => category.id === targetCategoryId)
-
-      if (fromIndex < 0 || toIndex < 0) {
-        this.onCategoryDragEnd()
-        return
-      }
-
-      const previousOrder = [...this.categories]
-      const reordered = [...this.categories]
-      const [movedCategory] = reordered.splice(fromIndex, 1)
-      reordered.splice(toIndex, 0, movedCategory)
-      this.categories = reordered
-      this.onCategoryDragEnd()
+      const previousOrder = this.dragStartOrder.map((category) => ({ ...category }))
+      this.dragStartOrder = []
       await this.persistCategoryOrder(previousOrder)
     },
 
     async persistCategoryOrder(previousOrder) {
       this.isReordering = true
+      const reorderedCategories = this.localCategories.map((category, sortOrder) => ({
+        ...category,
+        sortOrder,
+      }))
+      this.localCategories = reorderedCategories
 
       try {
         await Promise.all(
-          this.categories.map((category, sortOrder) =>
+          reorderedCategories.map((category) =>
             $fetch(`/api/projects/${this.project.slug}/categories/${category.id}`, {
               method: 'PUT',
-              body: { sortOrder },
+              body: { sortOrder: category.sortOrder },
             })
           )
         )
+        this.emitCategories(reorderedCategories)
         toast.success('Category order saved')
       } catch (err) {
         console.error('Error saving category order:', err)
-        this.categories = previousOrder
+        this.localCategories = previousOrder
         toast.error(err?.data?.error?.message || 'Failed to save category order')
       } finally {
         this.isReordering = false
@@ -358,22 +364,30 @@ export default {
           description: this.categoryForm.description || null,
         }
 
+        let savedCategory = null
         if (this.editingCategory) {
-          await $fetch(`/api/projects/${this.project.slug}/categories/${this.editingCategory.id}`, {
+          const response = await $fetch(`/api/projects/${this.project.slug}/categories/${this.editingCategory.id}`, {
             method: 'PUT',
             body,
           })
+          savedCategory = response?.data || null
           toast.success('Category updated')
         } else {
-          await $fetch(`/api/projects/${this.project.slug}/categories`, {
+          const response = await $fetch(`/api/projects/${this.project.slug}/categories`, {
             method: 'POST',
             body,
           })
+          savedCategory = response?.data || null
           toast.success('Category created')
         }
 
+        const currentCategories = this.localCategories.map((category) => ({ ...category }))
+        const nextCategories = this.editingCategory
+          ? currentCategories.map((category) => (category.id === savedCategory?.id ? savedCategory : category))
+          : [...currentCategories, savedCategory]
+
+        this.emitCategories(nextCategories.filter(Boolean))
         this.showCategoryDialog = false
-        await this.loadCategories()
       } catch (err) {
         console.error('Error saving category:', err)
         toast.error(err?.data?.error?.message || 'Failed to save category')
@@ -394,9 +408,10 @@ export default {
           },
         })
 
+        const nextCategories = this.localCategories.filter((category) => category.id !== this.deletingCategory.id)
+        this.emitCategories(nextCategories)
         toast.success('Category deleted')
         this.showDeleteDialog = false
-        await this.loadCategories()
       } catch (err) {
         console.error('Error deleting category:', err)
         toast.error(err?.data?.error?.message || 'Failed to delete category')
@@ -407,3 +422,18 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+.category-sort-ghost {
+  opacity: 0.45;
+}
+
+.category-sort-chosen {
+  border-color: hsl(var(--primary));
+  background: color-mix(in oklab, hsl(var(--primary)) 10%, transparent);
+}
+
+.category-sort-drag {
+  cursor: grabbing;
+}
+</style>

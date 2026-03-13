@@ -1,8 +1,9 @@
 export default defineEventHandler((event) => {
   const host = getHeader(event, 'host') || ''
-  const appDomain = process.env.APP_DOMAIN || 'localhost'
-  const dashboardDomain =
+  const appDomain = (process.env.APP_DOMAIN || 'localhost').trim()
+  const dashboardDomain = (
     process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
+  ).trim()
 
   // Strip port from host
   const hostWithoutPort = host.split(':')[0]
@@ -13,7 +14,7 @@ export default defineEventHandler((event) => {
     // Bare app domain — no subdomain
     teamSlug = null
   } else if (hostWithoutPort.endsWith('.' + appDomain)) {
-    // e.g. "team.veerify.com" when APP_DOMAIN=veerify.com
+    // e.g. "team.veerify.io" when APP_DOMAIN=veerify.io
     const subdomain = hostWithoutPort.slice(0, -(appDomain.length + 1))
     if (subdomain && !subdomain.includes('.')) {
       teamSlug = subdomain

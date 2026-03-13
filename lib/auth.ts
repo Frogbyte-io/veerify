@@ -4,9 +4,33 @@ import { magicLink, multiSession, organization, testUtils, twoFactor } from 'bet
 import { and, eq } from 'drizzle-orm'
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
-import { sendEmailVerificationEmail, sendMagicLinkEmail, sendPasswordResetEmail } from './email'
+import {
+  sendEmailVerificationEmail,
+  sendMagicLinkEmail,
+  sendOrganizationInvitationEmail,
+  sendPasswordResetEmail,
+} from './email'
 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
+const defaultAppBaseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+const betterAuthSecret =
+  process.env.BETTER_AUTH_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'veerify-dev-auth-secret-v1')
+
+if (!betterAuthSecret) {
+  throw new Error('BETTER_AUTH_SECRET is required in production')
+}
+
+function resolveInvitationBaseUrl(request?: Request) {
+  if (request?.url) {
+    try {
+      return new URL(request.url).origin
+    } catch {
+      // Ignore malformed request URLs and fall back to configured app URL.
+    }
+  }
+
+  return defaultAppBaseUrl
+}
 
 export const auth = betterAuth({
   // Dynamic base URL: resolves from incoming request headers (x-forwarded-host / x-forwarded-proto)
@@ -40,14 +64,14 @@ export const auth = betterAuth({
   },
   // `secret` is kept as legacy fallback for decrypting bare-hex payloads created before 1.5.
   // New data is encrypted using the envelope format defined by `secrets` below.
-  secret: process.env.BETTER_AUTH_SECRET,
+  secret: betterAuthSecret,
   // Versioned secrets for non-destructive rotation.
   // First entry = current key (encrypts all new data).
   // Remaining entries = decryption-only (previous key versions).
   // To rotate: generate a new secret, set it as BETTER_AUTH_SECRET, move the old one to
   // BETTER_AUTH_SECRET_PREV, then bump the version numbers here.
   secrets: [
-    { version: 1, value: process.env.BETTER_AUTH_SECRET! },
+    { version: 1, value: betterAuthSecret },
     ...(process.env.BETTER_AUTH_SECRET_PREV ? [{ version: 0, value: process.env.BETTER_AUTH_SECRET_PREV }] : []),
   ],
   database: drizzleAdapter(db, {
@@ -98,6 +122,32 @@ export const auth = betterAuth({
       allowUserToCreateOrganization: true,
       organizationLimit: 5,
       membershipLimit: 50,
+      sendInvitationEmail: async (data, request) => {
+        let teamName = null
+
+        if (data.invitation.teamId) {
+          const [teamRecord] = await db
+            .select()
+            .from(schema.team)
+            .where(eq(schema.team.id, data.invitation.teamId))
+            .limit(1)
+          teamName = teamRecord?.name || null
+        }
+
+        const invitationUrl = new URL(
+          `/accept-invitation?id=${encodeURIComponent(data.id)}`,
+          resolveInvitationBaseUrl(request)
+        ).toString()
+
+        await sendOrganizationInvitationEmail({
+          to: data.email,
+          organizationName: data.organization.name,
+          inviterName: data.inviter.user.name || data.inviter.user.email,
+          inviteUrl: invitationUrl,
+          role: data.role,
+          teamName,
+        })
+      },
       teams: {
         enabled: true,
         defaultTeam: {

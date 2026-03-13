@@ -42,15 +42,17 @@ export default defineEventHandler(async (event) => {
 
   // Validate that the provided status is allowed for this project
   const customStatuses = await db.select().from(feedbackStatus).where(eq(feedbackStatus.projectId, fb.projectId))
-  const allowedValues = customStatuses.length > 0
-    ? customStatuses.map((s) => s.value)
-    : SYSTEM_STATUSES.map((s) => s.value)
+  const allowedValues =
+    customStatuses.length > 0 ? customStatuses.map((s) => s.value) : SYSTEM_STATUSES.map((s) => s.value)
 
   if (!allowedValues.includes(body.status)) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, `Invalid status. Allowed values: ${allowedValues.join(', ')}`),
+      data: createErrorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        `Invalid status. Allowed values: ${allowedValues.join(', ')}`
+      ),
     })
   }
 
@@ -64,10 +66,7 @@ export default defineEventHandler(async (event) => {
   // Notify subscribers about the status change
   if (updated.status !== fb.status) {
     try {
-      const subscribers = await db
-        .select()
-        .from(feedbackSubscription)
-        .where(eq(feedbackSubscription.feedbackId, id))
+      const subscribers = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.feedbackId, id))
 
       const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
       const notificationResults = await Promise.allSettled(
@@ -81,12 +80,15 @@ export default defineEventHandler(async (event) => {
             boardUrl,
             unsubscribeUrl,
           })
-        }),
+        })
       )
 
       for (const [index, result] of notificationResults.entries()) {
         if (result.status === 'rejected') {
-          console.error(`Failed to send status notification to ${subscribers[index]?.email ?? 'unknown'}:`, result.reason)
+          console.error(
+            `Failed to send status notification to ${subscribers[index]?.email ?? 'unknown'}:`,
+            result.reason
+          )
         }
       }
     } catch (err) {

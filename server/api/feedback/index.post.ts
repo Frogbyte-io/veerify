@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
-import { validateBody } from '~/server/utils/validation'
+import { validateBody, optionalTrimmedEmail, optionalTrimmedString } from '~/server/utils/validation'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
@@ -16,6 +16,7 @@ import {
   githubIssueLink,
 } from '~/server/database/schema/feedback'
 import { sendFeedbackConfirmationEmail } from '~/lib/email'
+import { buildIssueLabels, ensureGitHubLabels } from '~/server/utils/github'
 
 const createFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
@@ -23,8 +24,8 @@ const createFeedbackSchema = z.object({
   projectId: z.string().min(1, 'Project ID is required'),
   categoryId: z.string().optional().nullable(),
   feedbackType: z.enum(['feature_request', 'bug_report', 'improvement', 'question', 'other']).optional(),
-  authorName: z.string().min(1).max(100).optional(),
-  authorEmail: z.string().email().optional(),
+  authorName: optionalTrimmedString(100),
+  authorEmail: optionalTrimmedEmail(),
 })
 
 function createGitHubHeaders(accessToken: string) {
@@ -43,21 +44,21 @@ async function rollbackCreatedGitHubIssue(params: {
   issueNumber: number
   accessToken: string
 }) {
-  const response = await fetch(`https://api.github.com/repos/${params.owner}/${params.repo}/issues/${params.issueNumber}`, {
-    method: 'PATCH',
-    headers: createGitHubHeaders(params.accessToken),
-    body: JSON.stringify({
-      state: 'closed',
-      state_reason: 'not_planned',
-    }),
-  })
+  const response = await fetch(
+    `https://api.github.com/repos/${params.owner}/${params.repo}/issues/${params.issueNumber}`,
+    {
+      method: 'PATCH',
+      headers: createGitHubHeaders(params.accessToken),
+      body: JSON.stringify({
+        state: 'closed',
+        state_reason: 'not_planned',
+      }),
+    }
+  )
 
   if (!response.ok) {
     const rollbackError = (await response.json().catch(() => null)) as { message?: string } | null
-    console.error(
-      'Failed to rollback auto-created GitHub issue:',
-      rollbackError?.message || response.statusText
-    )
+    console.error('Failed to rollback auto-created GitHub issue:', rollbackError?.message || response.statusText)
   }
 }
 
@@ -142,13 +143,16 @@ export default defineEventHandler(async (event) => {
   } | null = null
 
   if (integration?.autoCreateIssues && integration.syncEnabled && integration.accessToken) {
-    const labels = new Set<string>(['source:veerify', 'status:open'])
+    const labels = buildIssueLabels({
+      categoryLabel: categoryName,
+      feedbackStatus: 'open',
+    })
 
-    if (categoryName) {
-      labels.add(categoryName)
-    }
+    const feedbackUrl = `${getRequestURL(event).origin}/feedback/${feedbackId}`
 
     try {
+      await ensureGitHubLabels(integration.owner, integration.repo, labels, integration.accessToken)
+
       const issueResponse = await fetch(
         `https://api.github.com/repos/${integration.owner}/${integration.repo}/issues`,
         {
@@ -156,10 +160,12 @@ export default defineEventHandler(async (event) => {
           headers: createGitHubHeaders(integration.accessToken),
           body: JSON.stringify({
             title: body.title,
-            body: [body.body?.trim() || '*No description provided*', '', `Source feedback ID: ${feedbackId}`].join(
-              '\n'
-            ),
-            labels: Array.from(labels),
+            body: [
+              body.body?.trim() || '*No description provided*',
+              '',
+              `[View feedback on Veerify](${feedbackUrl})`,
+            ].join('\n'),
+            labels,
           }),
         }
       )

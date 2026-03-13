@@ -4,7 +4,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
-import { validateBody } from '~/server/utils/validation'
+import { validateBody, optionalTrimmedEmail, optionalTrimmedString } from '~/server/utils/validation'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment, feedbackSubscription } from '~/server/database/schema/feedback'
@@ -15,8 +15,8 @@ const createCommentSchema = z.object({
   body: z.string().min(1, 'Comment body is required').max(5000, 'Comment too long'),
   parentCommentId: z.string().optional().nullable(),
   isInternal: z.boolean().optional().default(false),
-  authorName: z.string().min(1).max(100).optional(),
-  authorEmail: z.string().email().optional(),
+  authorName: optionalTrimmedString(100),
+  authorEmail: optionalTrimmedEmail(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -148,12 +148,9 @@ export default defineEventHandler(async (event) => {
 
   // Notify subscribers about the new public comment (skip internal notes)
   if (!created.isInternal) {
-    const commenterName = created.authorName || (author?.name) || 'Someone'
+    const commenterName = created.authorName || author?.name || 'Someone'
     try {
-      const subscribers = await db
-        .select()
-        .from(feedbackSubscription)
-        .where(eq(feedbackSubscription.feedbackId, id))
+      const subscribers = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.feedbackId, id))
 
       const recipients = subscribers.filter((sub) => sub.email !== created.authorEmail)
       const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
@@ -169,12 +166,15 @@ export default defineEventHandler(async (event) => {
             boardUrl: baseUrl,
             unsubscribeUrl,
           })
-        }),
+        })
       )
 
       for (const [index, result] of notificationResults.entries()) {
         if (result.status === 'rejected') {
-          console.error(`Failed to send comment notification to ${recipients[index]?.email ?? 'unknown'}:`, result.reason)
+          console.error(
+            `Failed to send comment notification to ${recipients[index]?.email ?? 'unknown'}:`,
+            result.reason
+          )
         }
       }
     } catch (err) {

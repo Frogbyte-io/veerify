@@ -39,19 +39,39 @@ export function mergeMissingLabel(labels: string[], requiredLabel: string) {
   return Array.from(merged)
 }
 
-export function resolveCompletedLabel(settings: unknown) {
-  if (!settings || typeof settings !== 'object') {
-    return 'status:completed'
-  }
+/**
+ * Maps a GitHub close reason to a Veerify feedback status.
+ * - state_reason "completed"  → "completed"
+ * - state_reason "not_planned" or "duplicate" → "closed"
+ */
+export function resolveStatusFromCloseReason(stateReason: string | null | undefined): 'completed' | 'closed' {
+  return stateReason === 'completed' ? 'completed' : 'closed'
+}
 
-  const typed = settings as Record<string, unknown>
-  const candidates = [typed.completedLabel, typed.closedLabel]
+export function resolveCompletedLabel(settings: unknown): string {
+  if (settings && typeof settings === 'object') {
+    const typed = settings as Record<string, unknown>
 
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim()
+    for (const key of ['completedLabel', 'closedLabel']) {
+      const custom = typed[key]
+      if (typeof custom === 'string' && custom.trim()) {
+        return custom.trim()
+      }
     }
   }
 
   return 'status:completed'
+}
+
+export function resolveStatusLabel(feedbackStatus: 'completed' | 'closed', settings: unknown): string {
+  if (settings && typeof settings === 'object') {
+    const typed = settings as Record<string, unknown>
+    const key = feedbackStatus === 'completed' ? 'completedLabel' : 'closedLabel'
+    const custom = typed[key]
+    if (typeof custom === 'string' && custom.trim()) {
+      return custom.trim()
+    }
+  }
+
+  return feedbackStatus
 }

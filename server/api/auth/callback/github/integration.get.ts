@@ -1,5 +1,7 @@
+import { persistGithubIntegrationAccessToken } from '~/server/utils/github-integration'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
-import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
+import { resolveGithubIntegrationCallbackUrl } from '~/server/utils/github-oauth'
+import { requireProjectCategoryAccessBySlug } from '~/server/utils/project-categories'
 
 interface GithubOAuthStateCookie {
   state: string
@@ -8,13 +10,10 @@ interface GithubOAuthStateCookie {
 }
 
 export default defineEventHandler(async (event) => {
-  await requireProjectCategoryAccess(event)
-
-  const projectSlug = getRouterParam(event, 'slug')
   const code = getQuery(event).code
   const returnedState = getQuery(event).state
 
-  if (!projectSlug || typeof code !== 'string' || typeof returnedState !== 'string') {
+  if (typeof code !== 'string' || typeof returnedState !== 'string') {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
@@ -38,18 +37,15 @@ export default defineEventHandler(async (event) => {
     stateCookie = null
   }
 
-  if (
-    !stateCookie ||
-    stateCookie.state !== returnedState ||
-    stateCookie.projectSlug !== projectSlug ||
-    Date.now() - stateCookie.createdAt > 10 * 60 * 1000
-  ) {
+  if (!stateCookie || stateCookie.state !== returnedState || Date.now() - stateCookie.createdAt > 10 * 60 * 1000) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
       data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid or expired OAuth state'),
     })
   }
+
+  const { project } = await requireProjectCategoryAccessBySlug(event, stateCookie.projectSlug)
 
   const clientId = process.env.GITHUB_CLIENT_ID
   const clientSecret = process.env.GITHUB_CLIENT_SECRET
@@ -62,7 +58,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const callbackUrl = `${getRequestURL(event).origin}/api/projects/${projectSlug}/github/callback`
+  const callbackUrl = resolveGithubIntegrationCallbackUrl(event)
   const tokenResponse = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: {
@@ -102,6 +98,8 @@ export default defineEventHandler(async (event) => {
     path: '/',
   })
 
+  await persistGithubIntegrationAccessToken(project.id, tokenBody.access_token)
+
   setCookie(event, 'veerify_github_oauth_token', tokenBody.access_token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -110,5 +108,5 @@ export default defineEventHandler(async (event) => {
     maxAge: 60 * 60 * 12,
   })
 
-  return sendRedirect(event, `/products/${projectSlug}?githubConnected=1#github`)
+  return sendRedirect(event, `/products/${stateCookie.projectSlug}?githubConnected=1#github`)
 })

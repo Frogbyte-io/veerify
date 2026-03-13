@@ -31,17 +31,20 @@ export interface RateLimitConfig {
 const _store = new Map<string, number[]>()
 
 // Clean up stale entries every 5 minutes to prevent unbounded memory growth
-const _cleanup = setInterval(() => {
-  const now = Date.now()
-  for (const [key, timestamps] of _store.entries()) {
-    const fresh = timestamps.filter((t) => now - t < 3_600_000)
-    if (fresh.length === 0) {
-      _store.delete(key)
-    } else {
-      _store.set(key, fresh)
+const _cleanup = setInterval(
+  () => {
+    const now = Date.now()
+    for (const [key, timestamps] of _store.entries()) {
+      const fresh = timestamps.filter((t) => now - t < 3_600_000)
+      if (fresh.length === 0) {
+        _store.delete(key)
+      } else {
+        _store.set(key, fresh)
+      }
     }
-  }
-}, 5 * 60 * 1000)
+  },
+  5 * 60 * 1000
+)
 
 // Allow the Node.js process to exit normally even if this timer is pending
 if (typeof (_cleanup as NodeJS.Timeout).unref === 'function') {

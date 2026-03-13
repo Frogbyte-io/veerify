@@ -1,7 +1,7 @@
 import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
-import { user, member } from '~/server/database/schema/index'
-import { eq } from 'drizzle-orm'
+import { invitation, member, user } from '~/server/database/schema/index'
+import { and, eq } from 'drizzle-orm'
 import { getAuthHeaders } from '~/server/utils/auth-headers'
 
 export default defineEventHandler(async (event) => {
@@ -13,13 +13,44 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event)
-  const { email, role, organizationId, teamId } = body
+  const { email, role, organizationId, teamId, resend } = body
 
   if (!email || !organizationId) {
     throw createError({ statusCode: 400, statusMessage: 'Email and organizationId are required' })
   }
 
   const normalizedEmail = email.trim().toLowerCase()
+
+  const [existingInvitation] = await db
+    .select({
+      id: invitation.id,
+      status: invitation.status,
+      expiresAt: invitation.expiresAt,
+      teamId: invitation.teamId,
+    })
+    .from(invitation)
+    .where(
+      and(
+        eq(invitation.organizationId, organizationId),
+        eq(invitation.email, normalizedEmail),
+        eq(invitation.status, 'pending')
+      )
+    )
+    .limit(1)
+
+  if (existingInvitation && !resend) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'This person is already invited.',
+      data: {
+        code: 'INVITATION_ALREADY_EXISTS',
+        invitationId: existingInvitation.id,
+        expiresAt: existingInvitation.expiresAt,
+        teamId: existingInvitation.teamId,
+        recommendedSteps: ['Use "Send reminder" to resend the invitation or revoke the existing invite first.'],
+      },
+    })
+  }
 
   // Check whether this email is already a member of any organization
   const [existingUser] = await db.select({ id: user.id }).from(user).where(eq(user.email, normalizedEmail)).limit(1)
@@ -54,6 +85,7 @@ export default defineEventHandler(async (event) => {
       organizationId,
       email: normalizedEmail,
       role: role || 'member',
+      ...(resend ? { resend: true } : {}),
       ...(teamId ? { teamId } : {}),
     },
   })

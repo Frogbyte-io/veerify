@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 const PORT = Number(process.env.PLAYWRIGHT_PORT || 4173)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${PORT}`
+const betterAuthSecret = process.env.BETTER_AUTH_SECRET || 'playwright-e2e-secret'
 const trustedOrigins = Array.from(
   new Set([baseURL, `http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`, `http://preview-org.localhost:${PORT}`])
 )
@@ -35,6 +36,7 @@ export default defineConfig({
         reuseExistingServer: !process.env.CI,
         env: {
           ...process.env,
+          BETTER_AUTH_SECRET: betterAuthSecret,
           BETTER_AUTH_URL: baseURL,
           BETTER_AUTH_TRUSTED_ORIGINS: trustedOrigins.join(','),
         },

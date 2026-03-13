@@ -1,6 +1,5 @@
 <template>
   <div class="space-y-6">
-    <!-- Custom Domain Input -->
     <Card>
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
@@ -22,59 +21,58 @@
               class="font-mono"
             />
             <Button :disabled="isSaving" @click="save">
-              <Icon v-if="isSaving" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+              <Icon v-if="isSaving" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
               Save
             </Button>
           </div>
           <p class="text-xs text-muted-foreground">
-            Enter a subdomain you control, e.g.
-            <code class="font-mono bg-muted px-1 py-0.5 rounded">feedback.yourapp.com</code>.
+            Enter a subdomain you control, for example
+            <code class="rounded bg-muted px-1 py-0.5 font-mono">feedback.yourapp.com</code>.
           </p>
         </div>
 
-        <!-- Verification Status -->
-        <div v-if="form.customDomain" class="rounded-md border p-4 space-y-3">
+        <div
+          v-if="form.customDomain"
+          class="space-y-3 rounded-md border p-4 transition-colors"
+          :class="statusPanelClass"
+        >
           <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <span
-                class="flex h-2 w-2 rounded-full"
-                :class="{
-                  'bg-green-500': verifyStatus === 'verified',
-                  'bg-yellow-500': verifyStatus === 'unverified',
-                  'bg-muted-foreground': verifyStatus === 'idle',
-                  'bg-blue-500 animate-pulse': verifyStatus === 'checking',
-                }"
-              />
-              <span class="text-sm font-medium">
-                <span v-if="verifyStatus === 'idle'">Not checked yet</span>
-                <span v-else-if="verifyStatus === 'checking'">Checking DNS…</span>
-                <span v-else-if="verifyStatus === 'verified'" class="text-green-600 dark:text-green-400"
-                  >CNAME verified</span
-                >
-                <span v-else class="text-yellow-600 dark:text-yellow-400">CNAME not detected</span>
-              </span>
+            <div class="flex items-start gap-3">
+              <span class="flex h-2 w-2 rounded-full" :class="statusDotClass" />
+              <div class="space-y-1">
+                <p data-testid="product-domain-status-title" class="text-sm font-medium" :class="statusTextClass">
+                  {{ statusTitle }}
+                </p>
+                <p v-if="statusHint" data-testid="product-domain-status-hint" class="text-xs text-muted-foreground">
+                  {{ statusHint }}
+                </p>
+              </div>
             </div>
             <Button variant="outline" size="sm" :disabled="verifyStatus === 'checking'" @click="verify">
-              <Icon v-if="verifyStatus === 'checking'" name="lucide:loader-2" class="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              <Icon v-else name="lucide:search-check" class="w-3.5 h-3.5 mr-1.5" />
+              <Icon v-if="verifyStatus === 'checking'" name="lucide:loader-2" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <Icon v-else name="lucide:search-check" class="mr-1.5 h-3.5 w-3.5" />
               Check DNS
             </Button>
           </div>
 
-          <div v-if="verifyResult" class="text-xs text-muted-foreground space-y-1">
-            <p>
+          <div v-if="verifyResult" class="space-y-1 text-xs text-muted-foreground">
+            <p v-if="verifyResult.expected">
               <span class="font-medium">Expected:</span>
-              <code class="ml-1 font-mono bg-muted px-1 py-0.5 rounded">{{ verifyResult.expected }}</code>
+              <code class="ml-1 rounded bg-muted px-1 py-0.5 font-mono">{{ verifyResult.expected }}</code>
             </p>
             <p v-if="verifyResult.resolvedTo.length">
               <span class="font-medium">Resolved to:</span>
-              <code v-for="c in verifyResult.resolvedTo" :key="c" class="ml-1 font-mono bg-muted px-1 py-0.5 rounded">{{
-                c
-              }}</code>
+              <code
+                v-for="value in verifyResult.resolvedTo"
+                :key="value"
+                class="ml-1 rounded bg-muted px-1 py-0.5 font-mono"
+              >
+                {{ value }}
+              </code>
             </p>
             <p v-else>
-              No CNAME record found for
-              <code class="font-mono bg-muted px-1 py-0.5 rounded">{{ form.customDomain }}</code
+              No matching DNS records found for
+              <code class="rounded bg-muted px-1 py-0.5 font-mono">{{ form.customDomain }}</code
               >.
             </p>
           </div>
@@ -82,60 +80,52 @@
       </CardContent>
     </Card>
 
-    <!-- Setup Instructions -->
     <Card>
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:terminal" class="h-5 w-5" />
-          How to point your CNAME
+          DNS Setup
         </CardTitle>
         <CardDescription>
-          Add a CNAME record with your DNS provider pointing your subdomain to Veerify.
+          Add the DNS records below with your DNS provider, then verify the domain here.
         </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
-        <!-- DNS Record Summary -->
-        <div class="rounded-md bg-muted p-4 space-y-3">
-          <p class="text-sm font-medium">Add this DNS record:</p>
-          <div class="grid grid-cols-3 gap-3 text-sm">
-            <div class="space-y-1">
-              <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium">Type</p>
-              <code class="block font-mono bg-background border rounded px-2 py-1">CNAME</code>
-            </div>
-            <div class="space-y-1">
-              <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium">Name / Host</p>
-              <code class="block font-mono bg-background border rounded px-2 py-1 truncate">{{
-                hostPart || 'feedback'
-              }}</code>
-            </div>
-            <div class="space-y-1">
-              <p class="text-xs text-muted-foreground uppercase tracking-wider font-medium">Value / Target</p>
-              <code class="block font-mono bg-background border rounded px-2 py-1 truncate">{{ cnameTarget }}</code>
+        <div class="space-y-3 rounded-md bg-muted p-4">
+          <p class="text-sm font-medium">Required DNS records</p>
+          <div v-if="displayDnsRecords.length" class="space-y-3">
+            <div
+              v-for="(record, index) in displayDnsRecords"
+              :key="`${record.type}-${record.name}-${record.value}-${index}`"
+              class="grid grid-cols-1 gap-3 rounded-md border bg-background p-3 text-sm md:grid-cols-3"
+            >
+              <div class="space-y-1">
+                <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</p>
+                <code class="block rounded border bg-background px-2 py-1 font-mono">{{ record.type }}</code>
+              </div>
+              <div class="space-y-1">
+                <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Name / Host</p>
+                <code class="block break-all rounded border bg-background px-2 py-1 font-mono">{{ record.name }}</code>
+              </div>
+              <div class="space-y-1">
+                <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Value / Target</p>
+                <code class="block break-all rounded border bg-background px-2 py-1 font-mono">{{ record.value }}</code>
+              </div>
             </div>
           </div>
+          <p v-else class="text-sm text-muted-foreground">Save a domain to generate the required DNS records.</p>
           <p class="text-xs text-muted-foreground">
             TTL can be set to <strong>Auto</strong> or <strong>3600</strong>. DNS changes can take up to 48 hours to
             propagate, though usually much faster.
           </p>
         </div>
 
-        <!-- Provider Selector -->
-        <div class="space-y-3">
-          <div class="flex items-center gap-2">
-            <Label for="provider-select" class="shrink-0">Step-by-step for</Label>
-            <select
-              id="provider-select"
-              v-model="selectedProvider"
-              class="flex h-8 w-full max-w-xs rounded-md border border-input bg-background px-3 py-1 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
-          </div>
-
-          <ol v-if="activeProvider" class="list-decimal list-inside space-y-2 text-sm text-muted-foreground pl-1">
-            <li v-for="(step, i) in activeProvider.steps" :key="i" v-html="step" />
-          </ol>
-        </div>
+        <ol class="list-inside list-decimal space-y-2 pl-1 text-sm text-muted-foreground">
+          <li>Save the domain if you have not already done so.</li>
+          <li>Add every DNS record shown above with your DNS provider.</li>
+          <li>Wait for DNS propagation.</li>
+          <li>Click <strong>Check DNS</strong> until the domain becomes verified.</li>
+        </ol>
       </CardContent>
     </Card>
   </div>
@@ -159,116 +149,134 @@ export default {
         customDomain: this.project.customDomain || '',
       },
       isSaving: false,
-      verifyStatus: 'idle', // idle | checking | verified | unverified
+      verifyStatus: 'idle',
       verifyResult: null,
-      selectedProvider: 'cloudflare',
     }
   },
   computed: {
     cnameTarget() {
-      return useRuntimeConfig().public.cnameTarget || 'cname.veerify.com'
+      return useRuntimeConfig().public.cnameTarget || 'cname.veerify.io'
     },
-    activeProvider() {
-      return this.providers.find((p) => p.id === this.selectedProvider) || this.providers[0]
+    storedDomainRecords() {
+      const records = this.project?.settings?.domainDnsRecords
+      if (!Array.isArray(records)) return []
+      return this.normalizeDnsRecords(
+        records.filter((record) => {
+          return (
+            record &&
+            typeof record.type === 'string' &&
+            typeof record.name === 'string' &&
+            typeof record.value === 'string'
+          )
+        })
+      )
     },
-    hostPart() {
+    fallbackDnsRecord() {
       const domain = this.form.customDomain?.trim()
-      if (!domain) return ''
-      // Extract the subdomain portion (everything before the registrable domain)
-      // e.g. "feedback.myapp.com" → "feedback"
-      const parts = domain.split('.')
-      if (parts.length > 2) return parts.slice(0, parts.length - 2).join('.')
-      return domain
+      if (!domain) return []
+      return this.normalizeDnsRecords([
+        {
+          type: 'CNAME',
+          name: domain,
+          value: this.cnameTarget,
+        },
+      ])
     },
-    providers() {
-      const cname = this.escapeHtml(this.cnameTarget)
-      const host = this.escapeHtml(this.hostPart || 'feedback')
-      return [
-        {
-          id: 'cloudflare',
-          name: 'Cloudflare',
-          icon: 'lucide:cloud',
-          steps: [
-            'Log in to <strong>dash.cloudflare.com</strong> and select your domain.',
-            'Go to <strong>DNS → Records</strong>.',
-            `Click <strong>Add record</strong>. Set Type to <strong>CNAME</strong>, Name to <code class="font-mono bg-muted px-1 rounded">${host}</code>, and Target to <code class="font-mono bg-muted px-1 rounded">${cname}</code>.`,
-            '<strong>Disable the orange proxy cloud</strong> (set to DNS only — grey cloud) so the CNAME passes through correctly.',
-            'Click <strong>Save</strong>.',
-          ],
-        },
-        {
-          id: 'namecheap',
-          name: 'Namecheap',
-          icon: 'lucide:shield',
-          steps: [
-            'Sign in to <strong>namecheap.com</strong> and go to <strong>Domain List</strong>.',
-            'Click <strong>Manage</strong> next to your domain, then select the <strong>Advanced DNS</strong> tab.',
-            'Click <strong>Add New Record</strong>.',
-            `Set Type to <strong>CNAME Record</strong>, Host to <code class="font-mono bg-muted px-1 rounded">${host}</code>, and Value to <code class="font-mono bg-muted px-1 rounded">${cname}</code>.`,
-            'Click the green tick to save.',
-          ],
-        },
-        {
-          id: 'godaddy',
-          name: 'GoDaddy',
-          icon: 'lucide:server',
-          steps: [
-            'Sign in to <strong>godaddy.com</strong> and open <strong>My Products → DNS</strong>.',
-            'Select your domain and click <strong>Add</strong>.',
-            `Set Type to <strong>CNAME</strong>, Name to <code class="font-mono bg-muted px-1 rounded">${host}</code>, and Value to <code class="font-mono bg-muted px-1 rounded">${cname}</code>.`,
-            'Set TTL to <strong>1 hour</strong> (or leave as default).',
-            'Click <strong>Save</strong>.',
-          ],
-        },
-        {
-          id: 'route53',
-          name: 'AWS Route 53',
-          icon: 'lucide:database',
-          steps: [
-            'Open the <strong>Route 53</strong> console and choose <strong>Hosted zones</strong>.',
-            'Select your hosted zone.',
-            'Click <strong>Create record</strong>.',
-            `Set Record type to <strong>CNAME</strong>, Record name to <code class="font-mono bg-muted px-1 rounded">${host}</code>, and Value to <code class="font-mono bg-muted px-1 rounded">${cname}</code>.`,
-            'Click <strong>Create records</strong>.',
-          ],
-        },
-        {
-          id: 'vercel',
-          name: 'Vercel DNS',
-          icon: 'lucide:triangle',
-          steps: [
-            'Go to your <strong>Vercel dashboard → Domains</strong>.',
-            'Select your domain and go to the <strong>DNS</strong> tab.',
-            'Click <strong>Add</strong>.',
-            `Set Type to <strong>CNAME</strong>, Name to <code class="font-mono bg-muted px-1 rounded">${host}</code>, and Value to <code class="font-mono bg-muted px-1 rounded">${cname}</code>.`,
-            'Click <strong>Add record</strong>.',
-          ],
-        },
-        {
-          id: 'squarespace',
-          name: 'Squarespace / Google Domains',
-          icon: 'lucide:layout',
-          steps: [
-            'Open your domain settings in <strong>Squarespace</strong> (or <strong>Google Domains</strong>).',
-            'Go to <strong>DNS → Custom records</strong>.',
-            'Click <strong>Add record</strong>.',
-            `Set Type to <strong>CNAME</strong>, Host name to <code class="font-mono bg-muted px-1 rounded">${host}</code>, and Data to <code class="font-mono bg-muted px-1 rounded">${cname}</code>.`,
-            'Save the record.',
-          ],
-        },
-        {
-          id: 'other',
-          name: 'Other',
-          icon: 'lucide:help-circle',
-          steps: [
-            'Log in to your DNS provider and navigate to the DNS management panel for your domain.',
-            'Look for an option to add a new record.',
-            `Add a <strong>CNAME</strong> record with the name/host set to <code class="font-mono bg-muted px-1 rounded">${host}</code> and the value/target set to <code class="font-mono bg-muted px-1 rounded">${cname}</code>.`,
-            'Set TTL to <strong>Auto</strong> or <strong>3600</strong> (1 hour).',
-            'Save the record. Changes may take up to 48 hours to propagate.',
-          ],
-        },
-      ]
+    displayDnsRecords() {
+      if (Array.isArray(this.verifyResult?.dnsRecords) && this.verifyResult.dnsRecords.length > 0) {
+        return this.normalizeDnsRecords(this.verifyResult.dnsRecords)
+      }
+      if (this.storedDomainRecords.length > 0) {
+        return this.storedDomainRecords
+      }
+      return this.fallbackDnsRecord
+    },
+    effectiveDomainStatus() {
+      if (this.verifyResult?.status) return this.verifyResult.status
+      return this.project?.settings?.domainStatus || null
+    },
+    hasStoredVerifiedDomain() {
+      return this.project?.settings?.domainStatus === 'active'
+    },
+    statusPresentation() {
+      if (this.verifyStatus === 'checking') return 'checking'
+
+      if (this.verifyResult) {
+        if (this.verifyResult.verified) return 'active'
+        if (this.verifyResult.status === 'ownership_verification_required') {
+          return 'ownership_verification_required'
+        }
+        if (this.hasStoredVerifiedDomain) {
+          return 'dns_incomplete'
+        }
+        return 'dns_required'
+      }
+
+      if (this.effectiveDomainStatus === 'active') return 'active'
+      if (this.effectiveDomainStatus === 'ownership_verification_required') {
+        return 'ownership_verification_required'
+      }
+      if (this.effectiveDomainStatus === 'dns_required') return 'dns_required'
+      return 'idle'
+    },
+    statusTitle() {
+      if (this.statusPresentation === 'checking') return 'Checking DNS...'
+      if (this.statusPresentation === 'active') return 'Domain verified'
+      if (this.statusPresentation === 'ownership_verification_required') return 'Ownership verification required'
+      if (this.statusPresentation === 'dns_incomplete') return 'DNS configuration incomplete'
+      if (this.statusPresentation === 'dns_required') return 'DNS not configured yet'
+      return 'Not checked yet'
+    },
+    statusHint() {
+      if (this.statusPresentation === 'active') {
+        return 'The current DNS records match the required setup.'
+      }
+      if (this.statusPresentation === 'ownership_verification_required') {
+        return 'Add the verification records below to finish connecting this domain.'
+      }
+      if (this.statusPresentation === 'dns_incomplete') {
+        return 'The domain is added, but the latest DNS check did not find the required records.'
+      }
+      if (this.statusPresentation === 'dns_required') {
+        return 'Add the required DNS records below, then check again.'
+      }
+      return ''
+    },
+    statusDotClass() {
+      if (this.statusPresentation === 'checking') return 'bg-blue-500 animate-pulse'
+      if (this.statusPresentation === 'active') return 'bg-green-500'
+      if (
+        this.statusPresentation === 'ownership_verification_required' ||
+        this.statusPresentation === 'dns_incomplete' ||
+        this.statusPresentation === 'dns_required'
+      ) {
+        return 'bg-amber-500'
+      }
+      return 'bg-muted-foreground'
+    },
+    statusTextClass() {
+      if (this.statusPresentation === 'active') return 'text-green-600 dark:text-green-400'
+      if (this.statusPresentation === 'checking') return 'text-blue-600 dark:text-blue-400'
+      if (
+        this.statusPresentation === 'ownership_verification_required' ||
+        this.statusPresentation === 'dns_incomplete' ||
+        this.statusPresentation === 'dns_required'
+      ) {
+        return 'text-amber-700 dark:text-amber-300'
+      }
+      return ''
+    },
+    statusPanelClass() {
+      if (this.statusPresentation === 'active') return 'border-green-500/30 bg-green-500/5'
+      if (this.statusPresentation === 'checking') return 'border-blue-500/30 bg-blue-500/5'
+      if (
+        this.statusPresentation === 'ownership_verification_required' ||
+        this.statusPresentation === 'dns_incomplete' ||
+        this.statusPresentation === 'dns_required'
+      ) {
+        return 'border-amber-500/30 bg-amber-500/5'
+      }
+      return ''
     },
   },
   watch: {
@@ -286,13 +294,37 @@ export default {
     },
   },
   methods: {
-    escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;')
+    normalizeDnsRecords(records) {
+      const seen = new Set()
+      const seenCnameHosts = new Set()
+      const normalized = []
+
+      for (const record of records) {
+        const nextRecord = {
+          type: String(record.type || '')
+            .trim()
+            .toUpperCase(),
+          name: String(record.name || '')
+            .trim()
+            .toLowerCase()
+            .replace(/\.$/, ''),
+          value: String(record.value || '').trim(),
+        }
+
+        if (!nextRecord.type || !nextRecord.name || !nextRecord.value) continue
+
+        const key = `${nextRecord.type}:${nextRecord.name}:${nextRecord.value}`
+        if (seen.has(key)) continue
+        if (nextRecord.type === 'CNAME' && seenCnameHosts.has(nextRecord.name)) continue
+
+        seen.add(key)
+        if (nextRecord.type === 'CNAME') {
+          seenCnameHosts.add(nextRecord.name)
+        }
+        normalized.push(nextRecord)
+      }
+
+      return normalized
     },
 
     async save() {
@@ -329,13 +361,13 @@ export default {
         this.verifyStatus = result.verified ? 'verified' : 'unverified'
 
         if (result.verified) {
-          toast.success('CNAME verified successfully!')
+          toast.success('Domain verified successfully!')
         } else {
-          toast.warning('CNAME not found yet — DNS may still be propagating.')
+          toast.warning('Domain is not fully configured yet. DNS may still be propagating.')
         }
       } catch (err) {
         console.error('DNS check failed:', err)
-        toast.error('DNS check failed. Please try again.')
+        toast.error(err?.data?.error?.message || 'DNS check failed. Please try again.')
         this.verifyStatus = 'idle'
       }
     },

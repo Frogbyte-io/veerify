@@ -164,6 +164,72 @@
       </CardContent>
     </Card>
 
+    <!-- Pending Team Invitations -->
+    <Card
+      v-if="currentTeam && !isDefaultTeam(currentTeam) && (isLoadingInvitations || pendingInvitations.length > 0)"
+      data-testid="team-pending-invitations"
+    >
+      <CardHeader>
+        <CardTitle class="flex items-center gap-2">
+          <Icon name="lucide:mail" class="h-5 w-5" />
+          Pending Invites
+        </CardTitle>
+        <CardDescription
+          >Outstanding invitations for {{ currentTeam.name }} that have not yet been accepted.</CardDescription
+        >
+      </CardHeader>
+      <CardContent>
+        <div v-if="isLoadingInvitations" class="space-y-2">
+          <Skeleton class="h-14 w-full" />
+          <Skeleton class="h-14 w-full" />
+        </div>
+        <div v-else class="space-y-2">
+          <div
+            v-for="invitation in pendingInvitations"
+            :key="invitation.id"
+            data-testid="team-pending-invitation-row"
+            class="flex items-center justify-between rounded-lg border p-3"
+          >
+            <div class="min-w-0">
+              <p class="font-medium truncate">{{ invitation.email }}</p>
+              <p class="text-xs text-muted-foreground">
+                Invited {{ formatDate(invitation.createdAt) }} &middot; Expires {{ formatDate(invitation.expiresAt) }}
+              </p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="resendingInvitationId === invitation.id || cancellingInvitationId === invitation.id"
+                @click="resendInvitation(invitation)"
+              >
+                <Icon
+                  v-if="resendingInvitationId === invitation.id"
+                  name="lucide:loader-2"
+                  class="h-4 w-4 animate-spin"
+                />
+                <span v-else>Send reminder</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="text-red-600 hover:text-red-700"
+                :disabled="cancellingInvitationId === invitation.id || resendingInvitationId === invitation.id"
+                @click="cancelInvitation(invitation.id)"
+              >
+                <Icon
+                  v-if="cancellingInvitationId === invitation.id"
+                  name="lucide:loader-2"
+                  class="h-4 w-4 animate-spin"
+                />
+                <span v-else>Revoke</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
     <!-- Danger Zone -->
     <Card v-if="currentTeam && !isDefaultTeam(currentTeam)" class="border-red-200">
       <CardHeader>
@@ -195,7 +261,6 @@
               data-testid="team-create-name"
               v-model="newTeamName"
               placeholder="Platform Team"
-              @input="generateNewTeamSlug"
             />
           </div>
           <div class="space-y-2">
@@ -236,7 +301,7 @@
         </div>
         <DialogFooter>
           <Button variant="outline" @click="showInviteDialog = false">Cancel</Button>
-          <Button :disabled="isInviting || !inviteEmail.trim()" @click="inviteToTeam">
+          <Button :disabled="isInviting || !isValidInviteEmail" @click="inviteToTeam">
             <Icon v-if="isInviting" name="lucide:loader-2" class="h-4 w-4 mr-2 animate-spin" />
             Send Invite
           </Button>
@@ -288,13 +353,17 @@ export default {
       teamName: '',
       teamSlug: '',
       teamMembers: [],
+      pendingInvitations: [],
       isLoading: true,
       isLoadingMembers: false,
+      isLoadingInvitations: false,
       isSavingTeam: false,
       isCreatingTeam: false,
       isInviting: false,
       isDeletingTeam: false,
       switchingTeamId: null,
+      cancellingInvitationId: null,
+      resendingInvitationId: null,
       showCreateTeamDialog: false,
       showInviteDialog: false,
       showDeleteTeamDialog: false,
@@ -319,8 +388,17 @@ export default {
         (this.teamSlug.trim() && this.teamSlug.trim() !== this.currentTeam?.slug)
       )
     },
+    isValidInviteEmail() {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.inviteEmail.trim())
+    },
     additionalTeams() {
       return this.allTeams.filter((t) => !this.isDefaultTeam(t))
+    },
+  },
+
+  watch: {
+    newTeamName(newName) {
+      this.newTeamSlug = this.slugify(newName)
     },
   },
 
@@ -392,7 +470,7 @@ export default {
     async handleActiveTeamChanged() {
       await this.syncActiveTeamContext()
       this.allTeams = await this.fetchAllTeams()
-      await this.loadTeamMembers()
+      await Promise.all([this.loadTeamMembers(), this.loadPendingInvitations()])
     },
 
     async resolveOrganizationId() {
@@ -442,7 +520,7 @@ export default {
         this.allTeams = allTeams
         this.organizations = organizations
 
-        await this.loadTeamMembers()
+        await Promise.all([this.loadTeamMembers(), this.loadPendingInvitations()])
       } catch (error) {
         console.error('Error during team settings initialization:', error)
         toast.error('Failed to load team settings')
@@ -484,6 +562,40 @@ export default {
       }
     },
 
+    async resolveOrganizationSlug() {
+      if (this.activeOrganization?.slug) {
+        return this.activeOrganization.slug
+      }
+
+      const organization = this.organizations.find((entry) => entry.id === this.currentTeam?.organizationId)
+      return organization?.slug || null
+    },
+
+    async loadPendingInvitations() {
+      if (!this.currentTeam?.id || this.isDefaultTeam(this.currentTeam)) {
+        this.pendingInvitations = []
+        return
+      }
+
+      const organizationSlug = await this.resolveOrganizationSlug()
+      if (!organizationSlug) {
+        this.pendingInvitations = []
+        return
+      }
+
+      try {
+        this.isLoadingInvitations = true
+        const response = await $fetch(`/api/orgs/${organizationSlug}/invitations`)
+        const invitations = response?.data || []
+        this.pendingInvitations = invitations.filter((invitation) => invitation.teamId === this.currentTeam.id)
+      } catch (error) {
+        console.error('Error loading pending team invitations:', error)
+        this.pendingInvitations = []
+      } finally {
+        this.isLoadingInvitations = false
+      }
+    },
+
     async switchToTeam(team) {
       if (team.id === this.currentTeam?.id || this.switchingTeamId) return
 
@@ -510,7 +622,7 @@ export default {
           this.activeOrganization = await this.fetchActiveOrganization()
         }
 
-        await this.loadTeamMembers()
+        await Promise.all([this.loadTeamMembers(), this.loadPendingInvitations()])
 
         // Notify other components (sidebar TeamSwitcher, pages)
         if (import.meta.client) {
@@ -567,8 +679,8 @@ export default {
       }
     },
 
-    generateNewTeamSlug() {
-      this.newTeamSlug = this.newTeamName
+    slugify(value) {
+      return value
         .toLowerCase()
         .replace(/[^a-z0-9\s-]/g, '')
         .replace(/\s+/g, '-')
@@ -605,7 +717,7 @@ export default {
 
           await this.syncActiveTeamContext()
           this.allTeams = await this.fetchAllTeams()
-          await this.loadTeamMembers()
+          await Promise.all([this.loadTeamMembers(), this.loadPendingInvitations()])
 
           // Notify other components
           if (import.meta.client) {
@@ -651,15 +763,68 @@ export default {
         })
         this.showInviteDialog = false
         this.inviteEmail = ''
+        await this.loadPendingInvitations()
         toast.success('Invitation sent')
       } catch (error) {
         console.error('Error inviting team member:', error)
-        const message = error?.data?.statusMessage || 'Failed to send invitation'
+        const message =
+          error?.statusMessage ||
+          error?.data?.statusMessage ||
+          error?.data?.error?.message ||
+          'Failed to send invitation'
         const steps = error?.data?.data?.recommendedSteps
         const hint = steps ? `\n${steps[0]}` : ''
         toast.error(message + hint)
       } finally {
         this.isInviting = false
+      }
+    },
+
+    async resendInvitation(invitation) {
+      const organizationId = await this.resolveOrganizationId()
+      if (!organizationId || !this.currentTeam?.id) {
+        toast.error('No active workspace context')
+        return
+      }
+
+      try {
+        this.resendingInvitationId = invitation.id
+        await $fetch('/api/organizations/invite', {
+          method: 'POST',
+          body: {
+            organizationId,
+            email: invitation.email,
+            role: invitation.role,
+            teamId: this.currentTeam.id,
+            resend: true,
+          },
+        })
+        await this.loadPendingInvitations()
+        toast.success('Invitation reminder sent')
+      } catch (error) {
+        console.error('Error resending team invitation:', error)
+        const message =
+          error?.statusMessage ||
+          error?.data?.statusMessage ||
+          error?.data?.error?.message ||
+          'Failed to resend invitation'
+        toast.error(message)
+      } finally {
+        this.resendingInvitationId = null
+      }
+    },
+
+    async cancelInvitation(invitationId) {
+      try {
+        this.cancellingInvitationId = invitationId
+        await authClient.organization.cancelInvitation({ invitationId })
+        this.pendingInvitations = this.pendingInvitations.filter((invitation) => invitation.id !== invitationId)
+        toast.success('Invitation revoked')
+      } catch (error) {
+        console.error('Error cancelling team invitation:', error)
+        toast.error('Failed to revoke invitation')
+      } finally {
+        this.cancellingInvitationId = null
       }
     },
 
@@ -691,7 +856,7 @@ export default {
         this.allTeams = this.allTeams.filter((t) => t.id !== deletedTeamId)
 
         await this.syncActiveTeamContext()
-        await this.loadTeamMembers()
+        await Promise.all([this.loadTeamMembers(), this.loadPendingInvitations()])
 
         // Notify other components
         if (import.meta.client) {

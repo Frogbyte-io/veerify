@@ -15,7 +15,9 @@ export default defineEventHandler(async (event) => {
 
   // If no custom statuses configured, return system defaults
   if (statuses.length === 0) {
-    return createSuccessResponse(SYSTEM_STATUSES.map((s) => ({ ...s, id: null, projectId: project.id, createdAt: null })))
+    return createSuccessResponse(
+      SYSTEM_STATUSES.map((s) => ({ ...s, id: null, projectId: project.id, createdAt: null }))
+    )
   }
 
   return createSuccessResponse(statuses)

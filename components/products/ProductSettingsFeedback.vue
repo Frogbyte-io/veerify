@@ -10,7 +10,7 @@
             </CardTitle>
             <CardDescription>Browse and manage all feedback submitted to this product.</CardDescription>
           </div>
-          <div class="text-sm text-muted-foreground" v-if="!isLoading && pagination.total > 0">
+          <div v-if="!isBusy && pagination.total > 0" class="text-sm text-muted-foreground">
             {{ pagination.total }} item{{ pagination.total !== 1 ? 's' : '' }}
           </div>
         </div>
@@ -19,34 +19,43 @@
         <!-- Filters -->
         <div class="flex flex-col sm:flex-row gap-2">
           <div class="relative flex-1">
-            <Icon name="lucide:search" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Icon
+              name="lucide:search"
+              class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+            />
             <Input
               v-model="searchQuery"
               placeholder="Search feedback..."
               class="pl-9"
+              data-testid="product-feedback-search"
               @input="onSearchInput"
             />
           </div>
           <select
             v-model="statusFilter"
+            data-testid="product-feedback-status-filter"
             class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             @change="onFilterChange"
           >
             <option value="">All Statuses</option>
-            <option v-for="s in statuses" :key="s.value" :value="s.value">{{ s.name }}</option>
+            <option v-for="status in availableStatuses" :key="status.value" :value="status.value">
+              {{ status.name }}
+            </option>
           </select>
           <select
             v-model="categoryFilter"
+            data-testid="product-feedback-category-filter"
             class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             @change="onFilterChange"
           >
             <option value="">All Categories</option>
-            <option v-for="cat in categories" :key="cat.id" :value="cat.id">
-              {{ cat.icon ? `${cat.icon} ` : '' }}{{ cat.name }}
+            <option v-for="category in categories" :key="category.id" :value="category.id">
+              {{ category.icon ? `${category.icon} ` : '' }}{{ category.name }}
             </option>
           </select>
           <select
             v-model="sortBy"
+            data-testid="product-feedback-sort-filter"
             class="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             @change="onFilterChange"
           >
@@ -58,15 +67,15 @@
         </div>
 
         <!-- Loading -->
-        <div v-if="isLoading" class="space-y-3">
+        <div v-if="isBusy" class="space-y-3" data-testid="product-feedback-loading">
           <Skeleton v-for="n in 5" :key="n" class="h-14 w-full" />
         </div>
 
         <!-- Error -->
-        <div v-else-if="error" class="text-center py-8">
+        <div v-else-if="displayError" class="text-center py-8">
           <Icon name="lucide:alert-circle" class="w-10 h-10 mx-auto text-destructive mb-3" />
-          <p class="text-sm text-destructive mb-3">{{ error }}</p>
-          <Button variant="outline" size="sm" @click="loadFeedback">
+          <p class="text-sm text-destructive mb-3">{{ displayError }}</p>
+          <Button variant="outline" size="sm" @click="retryLoadFeedback">
             <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
             Retry
           </Button>
@@ -76,15 +85,25 @@
         <div v-else-if="feedbackItems.length === 0" class="text-center py-10">
           <Icon name="lucide:message-square" class="w-12 h-12 mx-auto text-muted-foreground mb-3" />
           <p class="text-sm text-muted-foreground">
-            {{ searchQuery || statusFilter || categoryFilter ? 'No feedback matches your filters.' : 'No feedback submitted yet.' }}
+            {{
+              searchQuery || statusFilter || categoryFilter
+                ? 'No feedback matches your filters.'
+                : 'No feedback submitted yet.'
+            }}
           </p>
-          <Button v-if="searchQuery || statusFilter || categoryFilter" variant="ghost" size="sm" class="mt-2" @click="clearFilters">
+          <Button
+            v-if="searchQuery || statusFilter || categoryFilter"
+            variant="ghost"
+            size="sm"
+            class="mt-2"
+            @click="clearFilters"
+          >
             Clear filters
           </Button>
         </div>
 
         <!-- Feedback List -->
-        <div v-else class="divide-y divide-border rounded-lg border">
+        <div v-else class="divide-y divide-border rounded-lg border" data-testid="product-feedback-list">
           <div
             v-for="item in feedbackItems"
             :key="item.id"
@@ -104,7 +123,10 @@
                   <span
                     v-if="item.category"
                     class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                    :style="{ backgroundColor: (item.category.color || '#6b7280') + '22', color: item.category.color || '#6b7280' }"
+                    :style="{
+                      backgroundColor: (item.category.color || '#6b7280') + '22',
+                      color: item.category.color || '#6b7280',
+                    }"
                   >
                     <span v-if="item.category.icon">{{ item.category.icon }}</span>
                     {{ item.category.name }}
@@ -112,7 +134,8 @@
                   <span
                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
                     :style="getStatusBadgeStyle(item.status)"
-                  >{{ getStatusLabel(item.status) }}</span>
+                    >{{ getStatusLabel(item.status) }}</span
+                  >
                 </div>
               </div>
               <p v-if="item.body" class="text-xs text-muted-foreground line-clamp-2">{{ item.body }}</p>
@@ -144,27 +167,19 @@
                 :disabled="updatingStatusId === item.id"
                 @change="updateStatus(item, $event.target.value)"
               >
-                <option v-for="s in statuses" :key="s.value" :value="s.value">{{ s.name }}</option>
+                <option v-for="status in availableStatuses" :key="status.value" :value="status.value">
+                  {{ status.name }}
+                </option>
               </select>
             </div>
           </div>
         </div>
 
         <!-- Pagination -->
-        <div
-          v-if="!isLoading && pagination.totalPages > 1"
-          class="flex items-center justify-between pt-2"
-        >
-          <p class="text-xs text-muted-foreground">
-            Page {{ pagination.page }} of {{ pagination.totalPages }}
-          </p>
+        <div v-if="!isBusy && pagination.totalPages > 1" class="flex items-center justify-between pt-2">
+          <p class="text-xs text-muted-foreground">Page {{ pagination.page }} of {{ pagination.totalPages }}</p>
           <div class="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              :disabled="pagination.page <= 1"
-              @click="goToPage(pagination.page - 1)"
-            >
+            <Button variant="outline" size="sm" :disabled="pagination.page <= 1" @click="goToPage(pagination.page - 1)">
               <Icon name="lucide:chevron-left" class="w-4 h-4" />
             </Button>
             <Button
@@ -194,6 +209,25 @@ const FALLBACK_STATUSES = [
   { value: 'declined', name: 'Declined', color: '#ef4444' },
 ]
 
+const DEFAULT_FEEDBACK_QUERY = {
+  page: 1,
+  limit: 20,
+  sortBy: 'createdAt',
+  sortOrder: 'desc',
+  search: '',
+  status: '',
+  categoryId: '',
+}
+
+function createPaginationState() {
+  return {
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1,
+  }
+}
+
 export default {
   name: 'ProductSettingsFeedback',
 
@@ -202,97 +236,218 @@ export default {
       type: Object,
       required: true,
     },
+    resourceState: {
+      type: Object,
+      required: true,
+    },
+    categories: {
+      type: Array,
+      default: () => [],
+    },
+    statuses: {
+      type: Array,
+      default: () => [],
+    },
+    ensureLoaded: {
+      type: Function,
+      default: null,
+    },
+    refresh: {
+      type: Function,
+      default: null,
+    },
   },
+
+  emits: ['feedback-default-updated'],
 
   data() {
     return {
       feedbackItems: [],
-      categories: [],
-      statuses: FALLBACK_STATUSES,
-      isLoading: true,
+      isLoading: false,
       error: null,
       searchQuery: '',
       statusFilter: '',
       categoryFilter: '',
-      sortBy: 'createdAt',
-      pagination: {
-        page: 1,
-        limit: 20,
-        total: 0,
-        totalPages: 1,
-      },
+      sortBy: DEFAULT_FEEDBACK_QUERY.sortBy,
+      pagination: createPaginationState(),
       searchDebounceTimer: null,
       updatingStatusId: null,
+      hasHydratedFromResource: false,
     }
+  },
+  computed: {
+    availableStatuses() {
+      return this.statuses.length > 0 ? this.statuses : FALLBACK_STATUSES
+    },
+    isInitialResourceLoading() {
+      return ['idle', 'loading'].includes(this.resourceState?.status) && !this.hasHydratedFromResource
+    },
+    isBusy() {
+      return this.isLoading || this.isInitialResourceLoading
+    },
+    displayError() {
+      if (this.error) return this.error
+      if (this.feedbackItems.length > 0) return null
+      if (this.resourceState?.status !== 'error') return null
+      return this.resourceState?.error || 'Failed to load feedback'
+    },
   },
 
   watch: {
+    'resourceState.data': {
+      handler(payload) {
+        if (!payload) return
+        if (!this.hasHydratedFromResource || this.isDefaultQuery()) {
+          this.applyFeedbackPayload(payload)
+        }
+      },
+      immediate: true,
+      deep: true,
+    },
+    'resourceState.status': {
+      handler(status) {
+        if (status === 'ready' && this.isDefaultQuery() && this.resourceState?.data) {
+          this.applyFeedbackPayload(this.resourceState.data)
+          return
+        }
+
+        if (status === 'error' && !this.hasHydratedFromResource) {
+          this.error = this.resourceState?.error || 'Failed to load feedback'
+        }
+      },
+      immediate: true,
+    },
     'project.id': {
       handler() {
-        this.resetAndLoad()
+        clearTimeout(this.searchDebounceTimer)
+        this.feedbackItems = []
+        this.error = null
+        this.searchQuery = ''
+        this.statusFilter = ''
+        this.categoryFilter = ''
+        this.sortBy = DEFAULT_FEEDBACK_QUERY.sortBy
+        this.pagination = createPaginationState()
+        this.hasHydratedFromResource = false
       },
       immediate: false,
     },
   },
-
-  async mounted() {
-    await Promise.all([this.loadCategories(), this.loadStatuses(), this.loadFeedback()])
+  beforeUnmount() {
+    clearTimeout(this.searchDebounceTimer)
   },
-
   methods: {
-    async loadCategories() {
-      try {
-        const response = await $fetch(`/api/projects/${this.project.slug}/categories`)
-        this.categories = response?.data || []
-      } catch {
-        // non-critical; swallow silently
+    getCurrentQuery() {
+      return {
+        page: this.pagination.page,
+        limit: this.pagination.limit,
+        sortBy: this.sortBy,
+        sortOrder: DEFAULT_FEEDBACK_QUERY.sortOrder,
+        search: this.searchQuery.trim(),
+        status: this.statusFilter,
+        categoryId: this.categoryFilter,
       }
     },
+    isDefaultQuery() {
+      const query = this.getCurrentQuery()
+      return (
+        query.page === DEFAULT_FEEDBACK_QUERY.page &&
+        query.limit === DEFAULT_FEEDBACK_QUERY.limit &&
+        query.sortBy === DEFAULT_FEEDBACK_QUERY.sortBy &&
+        query.sortOrder === DEFAULT_FEEDBACK_QUERY.sortOrder &&
+        query.search === DEFAULT_FEEDBACK_QUERY.search &&
+        query.status === DEFAULT_FEEDBACK_QUERY.status &&
+        query.categoryId === DEFAULT_FEEDBACK_QUERY.categoryId
+      )
+    },
+    buildQueryParams() {
+      const query = this.getCurrentQuery()
+      const params = new URLSearchParams({
+        projectId: this.project.id,
+        page: String(query.page),
+        limit: String(query.limit),
+        sortBy: query.sortBy,
+        sortOrder: query.sortOrder,
+      })
 
-    async loadStatuses() {
-      try {
-        const response = await $fetch(`/api/projects/${this.project.slug}/statuses`)
-        const data = response?.data || []
-        if (data.length > 0) this.statuses = data
-      } catch {
-        // non-critical; keep fallback statuses
+      if (query.search) params.set('search', query.search)
+      if (query.status) params.set('status', query.status)
+      if (query.categoryId) params.set('categoryId', query.categoryId)
+
+      return params
+    },
+    applyFeedbackPayload(payload) {
+      this.feedbackItems = Array.isArray(payload?.items) ? payload.items : []
+      this.pagination = payload?.pagination || createPaginationState()
+      this.error = null
+      this.hasHydratedFromResource = true
+    },
+    buildDefaultPayloadFromLocalState() {
+      return {
+        items: this.feedbackItems.map((item) => ({ ...item })),
+        pagination: { ...this.pagination },
+        query: { ...DEFAULT_FEEDBACK_QUERY },
       }
     },
-
-    getStatusLabel(value) {
-      const s = this.statuses.find((s) => s.value === value)
-      return s ? s.name : value
+    async retryLoadFeedback() {
+      await this.loadFeedback({ force: true })
     },
+    async loadFeedback(options = {}) {
+      const isDefaultQuery = this.isDefaultQuery()
 
-    getStatusBadgeStyle(value) {
-      const s = this.statuses.find((s) => s.value === value)
-      const color = s?.color || '#6b7280'
-      return { backgroundColor: color + '22', color }
-    },
+      if (isDefaultQuery && !options.force && this.resourceState?.status === 'ready' && this.resourceState?.data) {
+        this.applyFeedbackPayload(this.resourceState.data)
+        return
+      }
 
-    async loadFeedback() {
+      if (isDefaultQuery && options.force && this.refresh) {
+        this.isLoading = true
+        this.error = null
+        try {
+          const payload = await this.refresh()
+          this.applyFeedbackPayload(payload)
+          this.$emit('feedback-default-updated', payload)
+        } catch (err) {
+          console.error('Error loading feedback:', err)
+          this.error = err?.data?.error?.message || 'Failed to load feedback'
+        } finally {
+          this.isLoading = false
+        }
+        return
+      }
+
+      if (isDefaultQuery && this.ensureLoaded && !this.resourceState?.data) {
+        this.isLoading = true
+        this.error = null
+        try {
+          const payload = await this.ensureLoaded()
+          this.applyFeedbackPayload(payload)
+        } catch (err) {
+          console.error('Error loading feedback:', err)
+          this.error = err?.data?.error?.message || 'Failed to load feedback'
+        } finally {
+          this.isLoading = false
+        }
+        return
+      }
+
       this.isLoading = true
       this.error = null
 
       try {
-        const params = new URLSearchParams({
-          projectId: this.project.id,
-          page: String(this.pagination.page),
-          limit: String(this.pagination.limit),
-          sortBy: this.sortBy,
-          sortOrder: 'desc',
-        })
+        const response = await $fetch(`/api/feedback?${this.buildQueryParams().toString()}`)
+        const payload = {
+          items: response?.data?.items || [],
+          pagination: response?.data?.pagination || createPaginationState(),
+          query: this.getCurrentQuery(),
+        }
 
-        if (this.searchQuery.trim()) params.set('search', this.searchQuery.trim())
-        if (this.statusFilter) params.set('status', this.statusFilter)
-        if (this.categoryFilter) params.set('categoryId', this.categoryFilter)
-
-        const response = await $fetch(`/api/feedback?${params}`)
-        this.feedbackItems = response?.data?.items || []
-        this.pagination = response?.data?.pagination || this.pagination
+        this.applyFeedbackPayload(payload)
+        if (isDefaultQuery) {
+          this.$emit('feedback-default-updated', this.buildDefaultPayloadFromLocalState())
+        }
       } catch (err) {
         console.error('Error loading feedback:', err)
-        this.error = 'Failed to load feedback'
+        this.error = err?.data?.error?.message || 'Failed to load feedback'
       } finally {
         this.isLoading = false
       }
@@ -315,16 +470,9 @@ export default {
       this.searchQuery = ''
       this.statusFilter = ''
       this.categoryFilter = ''
-      this.pagination.page = 1
+      this.sortBy = DEFAULT_FEEDBACK_QUERY.sortBy
+      this.pagination.page = DEFAULT_FEEDBACK_QUERY.page
       this.loadFeedback()
-    },
-
-    resetAndLoad() {
-      this.pagination.page = 1
-      this.feedbackItems = []
-      this.loadFeedback()
-      this.loadCategories()
-      this.loadStatuses()
     },
 
     goToPage(page) {
@@ -344,6 +492,9 @@ export default {
           method: 'PATCH',
           body: { status: newStatus },
         })
+        if (this.isDefaultQuery()) {
+          this.$emit('feedback-default-updated', this.buildDefaultPayloadFromLocalState())
+        }
         toast.success('Status updated')
       } catch (err) {
         item.status = previousStatus
@@ -351,6 +502,17 @@ export default {
       } finally {
         this.updatingStatusId = null
       }
+    },
+
+    getStatusLabel(value) {
+      const status = this.availableStatuses.find((item) => item.value === value)
+      return status ? status.name : value
+    },
+
+    getStatusBadgeStyle(value) {
+      const status = this.availableStatuses.find((item) => item.value === value)
+      const color = status?.color || '#6b7280'
+      return { backgroundColor: color + '22', color }
     },
 
     formatDate(dateStr) {

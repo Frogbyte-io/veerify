@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { mergeMissingLabel, resolveCompletedLabel, verifyGithubWebhookSignature } from '../server/utils/github-webhook'
+import { mergeMissingLabel, resolveStatusLabel, verifyGithubWebhookSignature } from '../server/utils/github-webhook'
 
 describe('github webhook utils', () => {
   it('verifies a valid github webhook signature', () => {
@@ -20,9 +20,10 @@ describe('github webhook utils', () => {
     expect(labels.filter((label) => label === 'status:completed')).toHaveLength(1)
   })
 
-  it('resolves completed label from integration settings when provided', () => {
-    expect(resolveCompletedLabel({ completedLabel: 'done' })).toBe('done')
-    expect(resolveCompletedLabel({ closedLabel: 'closed' })).toBe('closed')
-    expect(resolveCompletedLabel({})).toBe('status:completed')
+  it('resolves feedback status labels from integration settings when provided', () => {
+    expect(resolveStatusLabel('completed', { completedLabel: 'done' })).toBe('done')
+    expect(resolveStatusLabel('closed', { closedLabel: 'closed' })).toBe('closed')
+    expect(resolveStatusLabel('completed', {})).toBe('completed')
+    expect(resolveStatusLabel('closed', {})).toBe('closed')
   })
 })

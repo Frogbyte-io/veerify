@@ -68,6 +68,27 @@ async function deleteTestProject(request: APIRequestContext, sessionCookie: stri
   })
 }
 
+async function createFeedbackItem(
+  request: APIRequestContext,
+  sessionCookie: string,
+  projectId: string,
+  overrides: Record<string, unknown> = {}
+) {
+  const response = await request.post('/api/feedback', {
+    headers: withAuthHeaders(sessionCookie),
+    data: {
+      projectId,
+      title: `E2E Feedback ${Date.now()}`,
+      body: 'Feedback created for e2e authorization coverage.',
+      ...overrides,
+    },
+  })
+
+  const payload = await response.json()
+  expect(response.status(), `Create feedback failed: ${JSON.stringify(payload)}`).toBe(201)
+  return payload.data.id as string
+}
+
 function getErrorCode(payload: any) {
   return payload?.error?.code || payload?.data?.error?.code
 }
@@ -199,6 +220,112 @@ test.describe('Multi-tenant authorization', () => {
     expect(anonResponse.status()).toBe(201)
 
     // Cleanup
+    await deleteTestProject(request, sessionCookie, teamId, projectId)
+  })
+
+  test('POST /api/feedback accepts blank optional identity fields for authenticated users', async ({ request }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const teamId = await getActiveTeamId(request, sessionCookie)
+
+    const slug = `e2e-feedback-auth-blank-${Date.now()}`
+    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+
+    const response = await request.post('/api/feedback', {
+      headers: withAuthHeaders(sessionCookie),
+      data: {
+        projectId,
+        title: 'Authenticated blank identity feedback',
+        body: 'Should succeed even when optional identity fields are blank.',
+        authorName: '',
+        authorEmail: '',
+      },
+    })
+
+    const payload = await response.json()
+    expect(response.status(), `Authenticated feedback submit failed: ${JSON.stringify(payload)}`).toBe(201)
+
+    await deleteTestProject(request, sessionCookie, teamId, projectId)
+  })
+
+  test('POST /api/feedback rejects blank anonymous author names after normalization', async ({ request }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const teamId = await getActiveTeamId(request, sessionCookie)
+
+    const slug = `e2e-feedback-anon-blank-${Date.now()}`
+    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+
+    const response = await request.post('/api/feedback', {
+      headers: anonymousHeaders('/feedback'),
+      data: {
+        projectId,
+        title: 'Anonymous blank identity feedback',
+        body: 'Should fail when the anonymous name is blank.',
+        authorName: '   ',
+        authorEmail: '',
+      },
+    })
+
+    const payload = await response.json()
+    expect(response.status()).toBe(400)
+    expect(getErrorCode(payload)).toBe('VALIDATION_ERROR')
+    expect(payload?.error?.message || payload?.data?.error?.message).toContain('Name is required')
+
+    await deleteTestProject(request, sessionCookie, teamId, projectId)
+  })
+
+  test('POST /api/feedback/[id]/comments accepts blank optional identity fields for authenticated users', async ({
+    request,
+  }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const teamId = await getActiveTeamId(request, sessionCookie)
+
+    const slug = `e2e-comment-auth-blank-${Date.now()}`
+    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+    const feedbackId = await createFeedbackItem(request, sessionCookie, projectId, {
+      title: 'Comment target for authenticated blank identity coverage',
+    })
+
+    const response = await request.post(`/api/feedback/${feedbackId}/comments`, {
+      headers: withAuthHeaders(sessionCookie, '/feedback'),
+      data: {
+        body: 'Authenticated comments should tolerate blank optional identity fields.',
+        authorName: '',
+        authorEmail: '',
+      },
+    })
+
+    const payload = await response.json()
+    expect(response.status(), `Authenticated comment submit failed: ${JSON.stringify(payload)}`).toBe(201)
+
+    await deleteTestProject(request, sessionCookie, teamId, projectId)
+  })
+
+  test('POST /api/feedback/[id]/comments rejects blank anonymous author names after normalization', async ({
+    request,
+  }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const teamId = await getActiveTeamId(request, sessionCookie)
+
+    const slug = `e2e-comment-anon-blank-${Date.now()}`
+    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+    const feedbackId = await createFeedbackItem(request, sessionCookie, projectId, {
+      title: 'Comment target for anonymous blank identity coverage',
+    })
+
+    const response = await request.post(`/api/feedback/${feedbackId}/comments`, {
+      headers: anonymousHeaders(`/feedback/${feedbackId}`),
+      data: {
+        body: 'Anonymous comments should fail when the name is blank.',
+        authorName: '   ',
+        authorEmail: '',
+      },
+    })
+
+    const payload = await response.json()
+    expect(response.status()).toBe(400)
+    expect(getErrorCode(payload)).toBe('VALIDATION_ERROR')
+    expect(payload?.error?.message || payload?.data?.error?.message).toContain('Name is required')
+
     await deleteTestProject(request, sessionCookie, teamId, projectId)
   })
 

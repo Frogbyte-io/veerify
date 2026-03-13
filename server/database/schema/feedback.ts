@@ -88,10 +88,10 @@ export const feedbackStatus = pgTable(
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),        // Display name: "Open", "In Progress"
-    value: text('value').notNull(),      // Machine value: "open", "in_progress" (stored in feedback.status)
-    color: text('color'),                // Hex color code
-    description: text('description'),    // Optional description
+    name: text('name').notNull(), // Display name: "Open", "In Progress"
+    value: text('value').notNull(), // Machine value: "open", "in_progress" (stored in feedback.status)
+    color: text('color'), // Hex color code
+    description: text('description'), // Optional description
     sortOrder: integer('sort_order')
       .$defaultFn(() => 0)
       .notNull(),
@@ -293,6 +293,7 @@ export const githubIntegration = pgTable(
     repo: text('repo').notNull(), // GitHub repo name
     installationId: text('installation_id'), // GitHub App installation ID
     accessToken: text('access_token'), // Encrypted access token
+    webhookId: text('webhook_id'), // GitHub webhook ID for this integration
     webhookSecret: text('webhook_secret'), // Webhook secret for verification
     syncEnabled: boolean('sync_enabled')
       .$defaultFn(() => true)

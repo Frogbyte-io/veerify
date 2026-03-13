@@ -64,51 +64,70 @@
           </div>
 
           <div class="space-y-2">
-            <Label for="organization-logo">Logo URL</Label>
-            <Input
-              id="organization-logo"
-              data-testid="organization-logo-input"
-              v-model="organizationLogo"
-              :disabled="!canEditOrganization || isSaving"
-              placeholder="https://example.com/logo.png"
-            />
-            <div class="space-y-2">
-              <Input
-                id="organization-logo-upload"
+            <Label>Logo</Label>
+            <div class="flex items-center gap-4">
+              <button
+                type="button"
+                :disabled="!canEditOrganization || isSaving"
+                class="group relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-border bg-muted transition-colors hover:border-primary hover:bg-muted/70 disabled:pointer-events-none disabled:opacity-50"
+                @click="$refs.logoFileInput.click()"
+              >
+                <img
+                  v-if="logoPreviewUrl || (organizationLogo && !removeLogo)"
+                  :src="logoPreviewUrl || organizationLogo"
+                  alt="Organization logo"
+                  class="h-full w-full object-cover"
+                />
+                <span v-else class="flex flex-col items-center gap-1 text-muted-foreground group-hover:text-primary">
+                  <Icon name="lucide:image-plus" class="h-5 w-5" />
+                </span>
+                <div
+                  class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <Icon name="lucide:upload" class="h-4 w-4 text-white" />
+                </div>
+              </button>
+
+              <input
+                ref="logoFileInput"
                 :key="logoInputKey"
                 data-testid="organization-logo-upload-input"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
+                class="hidden"
                 :disabled="!canEditOrganization || isSaving"
                 @change="handleLogoFileSelect"
               />
-              <div class="flex flex-wrap items-center gap-2">
-                <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 2 MB.</p>
-                <p v-if="logoFile" class="text-xs text-muted-foreground">
-                  Selected: <span class="font-medium text-foreground">{{ logoFile.name }}</span>
+
+              <div class="flex flex-col gap-1.5">
+                <p class="text-sm font-medium">
+                  <span v-if="logoFile">{{ logoFile.name }}</span>
+                  <span v-else-if="organizationLogo && !removeLogo" class="text-muted-foreground">Logo uploaded</span>
+                  <span v-else class="text-muted-foreground">No logo</span>
                 </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <Button
-                  v-if="logoFile"
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-testid="organization-logo-clear-selection"
-                  @click="clearSelectedLogoFile"
-                >
-                  Clear selection
-                </Button>
-                <Button
-                  v-if="showLogoRemoveButton"
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-testid="organization-logo-remove"
-                  @click="markLogoForRemoval"
-                >
-                  Remove logo
-                </Button>
+                <p class="text-xs text-muted-foreground">JPEG, PNG, or WebP. Max 2 MB.</p>
+                <div class="flex gap-2">
+                  <Button
+                    v-if="logoFile"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="organization-logo-clear-selection"
+                    @click="clearSelectedLogoFile"
+                  >
+                    Clear
+                  </Button>
+                  <Button
+                    v-if="showLogoRemoveButton"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="organization-logo-remove"
+                    @click="markLogoForRemoval"
+                  >
+                    Remove
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -261,19 +280,30 @@
               <p class="text-xs text-muted-foreground">
                 Invited as <span class="capitalize">{{ inv.role }}</span>
                 <span v-if="inv.teamName"> to {{ inv.teamName }}</span>
-                &middot; Expires {{ formatDate(inv.expiresAt) }}
+                &middot; Sent {{ formatDate(inv.createdAt) }} &middot; Expires {{ formatDate(inv.expiresAt) }}
               </p>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              class="text-red-600 hover:text-red-700 shrink-0"
-              :disabled="cancellingInvitationId === inv.id"
-              @click="cancelInvitation(inv.id)"
-            >
-              <Icon v-if="cancellingInvitationId === inv.id" name="lucide:loader-2" class="h-4 w-4 animate-spin" />
-              <span v-else>Cancel</span>
-            </Button>
+            <div class="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="resendingInvitationId === inv.id || cancellingInvitationId === inv.id"
+                @click="resendInvitation(inv)"
+              >
+                <Icon v-if="resendingInvitationId === inv.id" name="lucide:loader-2" class="h-4 w-4 animate-spin" />
+                <span v-else>Send reminder</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                class="text-red-600 hover:text-red-700"
+                :disabled="cancellingInvitationId === inv.id || resendingInvitationId === inv.id"
+                @click="cancelInvitation(inv.id)"
+              >
+                <Icon v-if="cancellingInvitationId === inv.id" name="lucide:loader-2" class="h-4 w-4 animate-spin" />
+                <span v-else>Revoke</span>
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>
@@ -442,6 +472,7 @@ export default {
 
       // Cancel invitation
       cancellingInvitationId: null,
+      resendingInvitationId: null,
     }
   },
 
@@ -800,7 +831,11 @@ export default {
         toast.success('Invitation sent')
       } catch (error) {
         console.error('Error inviting member:', error)
-        const message = error?.data?.statusMessage || error?.data?.error?.message || 'Failed to send invitation'
+        const message =
+          error?.statusMessage ||
+          error?.data?.statusMessage ||
+          error?.data?.error?.message ||
+          'Failed to send invitation'
         const steps = error?.data?.data?.recommendedSteps
         const hint = steps ? `\n${steps[0]}` : ''
         toast.error(message + hint)
@@ -814,12 +849,41 @@ export default {
         this.cancellingInvitationId = invitationId
         await authClient.organization.cancelInvitation({ invitationId })
         this.pendingInvitations = this.pendingInvitations.filter((inv) => inv.id !== invitationId)
-        toast.success('Invitation cancelled')
+        toast.success('Invitation revoked')
       } catch (error) {
         console.error('Error cancelling invitation:', error)
         toast.error('Failed to cancel invitation')
       } finally {
         this.cancellingInvitationId = null
+      }
+    },
+
+    async resendInvitation(invitation) {
+      if (!this.organizationDetails?.id) return
+      try {
+        this.resendingInvitationId = invitation.id
+        await $fetch('/api/organizations/invite', {
+          method: 'POST',
+          body: {
+            organizationId: this.organizationDetails.id,
+            email: invitation.email,
+            role: invitation.role,
+            ...(invitation.teamId ? { teamId: invitation.teamId } : {}),
+            resend: true,
+          },
+        })
+        await this.loadPendingInvitations()
+        toast.success('Invitation reminder sent')
+      } catch (error) {
+        console.error('Error resending invitation:', error)
+        const message =
+          error?.statusMessage ||
+          error?.data?.statusMessage ||
+          error?.data?.error?.message ||
+          'Failed to resend invitation'
+        toast.error(message)
+      } finally {
+        this.resendingInvitationId = null
       }
     },
 

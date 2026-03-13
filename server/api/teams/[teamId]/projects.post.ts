@@ -12,6 +12,14 @@ const createProjectSchema = z.object({
   slug: commonSchemas.slug,
   description: z.string().max(1000, 'Description too long').optional().nullable(),
   customDomain: z.string().max(253, 'Domain too long').optional().nullable(),
+  isPublic: z.boolean().optional().default(true),
+  settings: z
+    .object({
+      changelogEnabled: z.boolean().optional(),
+      roadmapEnabled: z.boolean().optional(),
+    })
+    .optional()
+    .nullable(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -92,7 +100,8 @@ export default defineEventHandler(async (event) => {
         name: body.name,
         description: body.description || null,
         customDomain: body.customDomain || null,
-        isPublic: true,
+        isPublic: body.isPublic ?? true,
+        settings: body.settings ?? null,
         createdAt: now,
         updatedAt: now,
       })

@@ -39,16 +39,10 @@
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form @submit.prevent="createWorkspace" class="space-y-4">
+            <form class="space-y-4" @submit.prevent="createWorkspace">
               <div class="space-y-2">
                 <Label for="org-name">Workspace name</Label>
-                <Input
-                  id="org-name"
-                  v-model="orgName"
-                  placeholder="Acme Inc."
-                  :disabled="isCreatingOrg"
-                  @input="generateSlug"
-                />
+                <Input id="org-name" v-model="orgName" placeholder="Acme Inc." :disabled="isCreatingOrg" />
               </div>
               <div class="space-y-2">
                 <Label for="org-slug">URL</Label>
@@ -60,7 +54,7 @@
                     :disabled="isCreatingOrg"
                     class="flex-1"
                   />
-                  <span class="text-sm text-muted-foreground whitespace-nowrap">.veerify.com</span>
+                  <span class="text-sm text-muted-foreground whitespace-nowrap">.veerify.io</span>
                 </div>
                 <p class="text-xs text-muted-foreground">
                   This will be your public workspace URL. You can change it later.
@@ -257,9 +251,15 @@ export default {
     },
   },
 
+  watch: {
+    orgName(newName) {
+      this.orgSlug = this.slugify(newName)
+    },
+  },
+
   methods: {
-    generateSlug() {
-      this.orgSlug = this.orgName
+    slugify(value) {
+      return value
         .toLowerCase()
         .replace(/[^a-z0-9\s-]/g, '')
         .replace(/\s+/g, '-')
@@ -344,7 +344,8 @@ export default {
             })
             successCount++
           } catch (error) {
-            const statusMessage = error?.data?.statusMessage || error?.message || 'Failed to send'
+            const statusMessage =
+              error?.statusMessage || error?.data?.statusMessage || error?.message || 'Failed to send'
             const steps = error?.data?.data?.recommendedSteps
             const detail = steps ? ` — ${steps[0]}` : ''
             errors.push(`${email}: ${statusMessage}${detail}`)
@@ -366,7 +367,7 @@ export default {
           }, 1500)
         }
       } catch (error) {
-        this.inviteError = error?.message || 'Failed to send invitations'
+        this.inviteError = error?.statusMessage || error?.message || 'Failed to send invitations'
         console.error('Error sending invitations:', error)
       } finally {
         this.isInviting = false

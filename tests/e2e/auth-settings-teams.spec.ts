@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test'
 import { expectRedirectToLogin, loginViaProgrammaticPage, loginViaUi } from './helpers/auth'
 import { selectors } from './helpers/selectors'
-import { createTeamFromSettings, getActiveTeamViaApi, switchTeamFromSidebar } from './helpers/teams'
+import {
+  createTeamFromSettings,
+  ensureTeamAndOrganizationContext,
+  getActiveTeamViaApi,
+  switchTeamFromSidebar,
+} from './helpers/teams'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -12,8 +17,70 @@ test('unauthenticated user is redirected from protected route to login', async (
   await expectRedirectToLogin(page, '/settings')
 })
 
+test('root loading splash describes feedback collection before redirecting to login', async ({ page }) => {
+  const sessionPath = '**/api/auth/get-session**'
+
+  await page.route(sessionPath, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await route.continue()
+  })
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+
+  await expect(page.getByRole('heading', { name: 'Veerify' })).toBeVisible()
+  await expect(page.getByText('Feedback collection and management')).toBeVisible()
+  await expect(page.getByText('Feedback management and verification')).toHaveCount(0)
+
+  await expect(page).toHaveURL(/\/login/)
+  await expect(page.locator(selectors.loginEmail)).toBeVisible()
+
+  await page.unroute(sessionPath)
+})
+
 test('user can sign in through login form and land in dashboard', async ({ page }) => {
   await loginViaUi(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+})
+
+test('onboarding slug mirrors the full workspace name while typing', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  await page.goto('/onboarding')
+  await expect(page.getByRole('heading', { name: 'Create your workspace' })).toBeVisible()
+
+  const workspaceNameInput = page.getByLabel('Workspace name')
+  const workspaceSlugInput = page.getByLabel('URL')
+
+  await workspaceNameInput.click()
+  await workspaceNameInput.type('Frogbyte', { delay: 40 })
+  await expect(workspaceSlugInput).toHaveValue('frogbyte')
+
+  await workspaceNameInput.type(' Labs', { delay: 40 })
+  await expect(workspaceSlugInput).toHaveValue('frogbyte-labs')
+})
+
+test('team creation slug mirrors the full team name while typing', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
+
+  await page.goto('/settings#team')
+  await page.waitForFunction(() => {
+    const tab = document.querySelector('[data-testid="settings-tab-team"]') as any
+    return Boolean(tab?.__vueParentComponent)
+  })
+
+  await expect(page.locator(selectors.teamOpenCreateDialog)).toBeVisible({ timeout: 20_000 })
+  await page.locator(selectors.teamOpenCreateDialog).click()
+
+  const createDialog = page.getByRole('dialog', { name: 'Create Team' })
+  const teamNameInput = createDialog.getByLabel('Team Name')
+  const teamSlugInput = createDialog.getByLabel('Subdomain Slug')
+
+  await teamNameInput.click()
+  await teamNameInput.type('DotMatrixLabs', { delay: 40 })
+  await expect(teamSlugInput).toHaveValue('dotmatrixlabs')
+
+  await teamNameInput.type(' Ops', { delay: 40 })
+  await expect(teamSlugInput).toHaveValue('dotmatrixlabs-ops')
 })
 
 test('settings navigation tabs render expected sections', async ({ page }) => {
@@ -32,6 +99,20 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await page.locator(selectors.settingsTabSecurity).click()
   await expect(page).toHaveURL(/#security/)
   await expect(page.getByRole('heading', { name: 'Security' })).toBeVisible()
+  await expect(page.locator(selectors.securityTwoFactorStatusCard)).toBeVisible()
+  await expect(page.locator(selectors.securityTwoFactorEnableCallout)).toBeVisible()
+
+  const enableCalloutClasses = await page.locator(selectors.securityTwoFactorEnableCallout).getAttribute('class')
+  expect(enableCalloutClasses).toContain('bg-primary/10')
+  expect(enableCalloutClasses).toContain('border-primary/20')
+
+  const statusIconBox = await page.locator(selectors.securityTwoFactorStatusIcon).boundingBox()
+  const calloutIconBox = await page.locator(selectors.securityTwoFactorEnableCalloutIcon).boundingBox()
+
+  expect(statusIconBox).not.toBeNull()
+  expect(calloutIconBox).not.toBeNull()
+  expect(Math.abs((statusIconBox?.width || 0) - (statusIconBox?.height || 0))).toBeLessThanOrEqual(1)
+  expect(Math.abs((calloutIconBox?.width || 0) - (calloutIconBox?.height || 0))).toBeLessThanOrEqual(1)
 
   await page.locator(selectors.settingsTabNotifications).click()
   await expect(page).toHaveURL(/#notifications/)
@@ -52,6 +133,27 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await page.locator(selectors.settingsTabAppearance).click()
   await expect(page).toHaveURL(/#appearance/)
   await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
+})
+
+test('settings team tab renders immediately when organization lookup is slow', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
+
+  const organizationPath = '**/api/auth/organization/get-full-organization'
+  const organizationResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/auth/organization/get-full-organization')
+  )
+
+  await page.route(organizationPath, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_200))
+    await route.continue()
+  })
+
+  await page.goto('/settings', { waitUntil: 'domcontentloaded' })
+  await expect(page.locator(selectors.settingsTabTeam)).toBeVisible({ timeout: 250 })
+
+  await organizationResponse
+  await page.unroute(organizationPath)
 })
 
 test('user can create a new team from settings team tab', async ({ page }) => {
@@ -171,4 +273,42 @@ test('settings team panel tracks active team selected in sidebar', async ({ page
   await switchTeamFromSidebar(page, { teamId: teamB.id, expectedName: teamB.name })
   await expect(page.locator(selectors.teamNameInput)).toHaveValue(teamB.name)
   await expect(page.getByText('No active team. Create a team to continue.')).toHaveCount(0)
+})
+
+test('team settings show pending invites and allow reminder and revoke actions', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+  await createTeamFromSettings(page, `E2E Invite Team ${Date.now()}`)
+
+  const inviteEmail = `pending-team-invite-${Date.now()}@example.com`
+
+  await expect(page.getByRole('button', { name: 'Invite to Team' })).toBeVisible()
+  await page.getByRole('button', { name: 'Invite to Team' }).click()
+
+  const inviteDialog = page.getByRole('dialog', { name: 'Invite to Team' })
+  await expect(inviteDialog).toBeVisible()
+  await inviteDialog.getByLabel('Email').fill(inviteEmail)
+  await inviteDialog.getByRole('button', { name: 'Send Invite' }).click()
+
+  const pendingInvites = page.locator(selectors.teamPendingInvitations)
+  await expect(pendingInvites).toBeVisible({ timeout: 20_000 })
+
+  const inviteRow = pendingInvites.locator(selectors.teamPendingInvitationRow).filter({ hasText: inviteEmail })
+  await expect(inviteRow).toBeVisible({ timeout: 20_000 })
+
+  const resendResponsePromise = page.waitForResponse((response) => {
+    return (
+      response.url().includes('/api/organizations/invite') &&
+      response.request().method() === 'POST' &&
+      (response.request().postData() || '').includes('"resend":true')
+    )
+  })
+
+  await inviteRow.getByRole('button', { name: 'Send reminder' }).click()
+  const resendResponse = await resendResponsePromise
+  expect(resendResponse.ok()).toBeTruthy()
+  await expect(inviteRow).toBeVisible()
+
+  await inviteRow.getByRole('button', { name: 'Revoke' }).click()
+  await expect(inviteRow).toHaveCount(0)
 })

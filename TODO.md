@@ -53,7 +53,7 @@ MVP
 - [ ] For the new product form, add options between what type of product to create, like public feedback board, private feedback collection form, or in the future roadmaps/etc.. Make it a multi-step guide that explains the different options and helps users choose the right one for their needs. Different features can be combined based on the product type (e.g. a public feedback board would have voting and commenting enabled, while a private feedback form would just collect submissions from a third party form without showing them publicly).
 - [ ] Export feedback to Google Sheets / Excel / Airtable
 - [x] Roadmap page — public timeline view based on feedback status tags
-  - Added `/roadmap` sub-page on public boards (e.g. `team.veerify.com/project-slug/roadmap`); new `GET /api/public/t/[teamSlug]/[projectSlug]/roadmap` endpoint returns feedback items grouped by status; `PublicRoadmap.vue` renders a horizontal kanban-style view with status columns; tab navigation added to `PublicFeedbackBoard.vue` linking to the roadmap.
+  - Added `/roadmap` sub-page on public boards (e.g. `team.veerify.io/project-slug/roadmap`); new `GET /api/public/t/[teamSlug]/[projectSlug]/roadmap` endpoint returns feedback items grouped by status; `PublicRoadmap.vue` renders a horizontal kanban-style view with status columns; tab navigation added to `PublicFeedbackBoard.vue` linking to the roadmap.
 - [ ] Sync roadmaps to GitHub Projects
 - [x] Customizable vote style (thumbs, arrows, ducks, rockets, etc.)
   - Added `voteStyle` setting (arrows/thumbs/rockets/hearts) to project appearance settings. Vote icons on the public board are now driven by this setting. Configured in `ProductSettingsAppearance.vue` and rendered dynamically via a `voteIcons` computed in `PublicFeedbackBoard.vue`; validated server-side in `server/api/projects/[slug].put.ts`.
@@ -157,22 +157,22 @@ MVP
 ## Technical Debt
 
 - [x] **#4 — Validate feedback status against project's allowed statuses**
-  `server/api/feedback/[id]/status.patch.ts` accepts any string up to 80 chars. Validate that the provided status actually exists in the project's `feedbackStatus` table before applying it.
+      `server/api/feedback/[id]/status.patch.ts` accepts any string up to 80 chars. Validate that the provided status actually exists in the project's `feedbackStatus` table before applying it.
 
 - [ ] **#5 — Tighten rate limiting on anonymous feedback submission**
-  `server/api/feedback/index.post.ts` uses the `standard` limit (60/min) for unauthenticated requests. Switch anonymous submissions to the `strict` limit (5/min per IP) to prevent spam.
+      `server/api/feedback/index.post.ts` uses the `standard` limit (60/min) for unauthenticated requests. Switch anonymous submissions to the `strict` limit (5/min per IP) to prevent spam.
 
 - [ ] **#6 — Require UPLOAD_TOKEN_SECRET as a hard requirement**
-  `server/utils/upload-token.ts` silently falls back to `BETTER_AUTH_SECRET` when `UPLOAD_TOKEN_SECRET` is not set. Rotating the auth secret silently breaks all upload tokens. Should error at startup if missing, and note this in `.env.example`.
+      `server/utils/upload-token.ts` silently falls back to `BETTER_AUTH_SECRET` when `UPLOAD_TOKEN_SECRET` is not set. Rotating the auth secret silently breaks all upload tokens. Should error at startup if missing, and note this in `.env.example`.
 
 - [ ] **#7 — Add composite database indexes for common query patterns**
-  `server/database/schema/feedback.ts` is missing performance indexes:
+      `server/database/schema/feedback.ts` is missing performance indexes:
   - `(projectId, createdAt)` on `feedback` — used for paginated project feedback lists
   - `(feedbackId, createdAt)` on `feedbackComment` — used for threaded comment sorting
-  Add via schema change + `yarn db:generate` + `yarn db:migrate`.
+    Add via schema change + `yarn db:generate` + `yarn db:migrate`.
 
 - [ ] **#8 — Replace `as any` header casts with `getRequestHeaders()`**
-  The pattern `event.node.req.headers as any` is repeated across 5+ server files. Replace with Nuxt's built-in `getRequestHeaders(event)` or a shared typed helper.
+      The pattern `event.node.req.headers as any` is repeated across 5+ server files. Replace with Nuxt's built-in `getRequestHeaders(event)` or a shared typed helper.
 
 - [ ] **#9 — Replace `console.error()` with structured logging**
-  Fire-and-forget failures (email notifications, GitHub API calls) only produce raw stack traces. Introduce a simple structured logger that includes context (feedbackId, userId, orgId) to make production debugging tractable.
+      Fire-and-forget failures (email notifications, GitHub API calls) only produce raw stack traces. Introduce a simple structured logger that includes context (feedbackId, userId, orgId) to make production debugging tractable.

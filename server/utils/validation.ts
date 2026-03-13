@@ -7,6 +7,35 @@ import { z } from 'zod'
 import type { H3Event } from 'h3'
 import { ErrorCode, createErrorResponse } from './response'
 
+function normalizeOptionalStringValue(value: unknown) {
+  if (typeof value !== 'string') {
+    return value
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+export function optionalTrimmedString(maxLength: number, tooLongMessage?: string) {
+  return z.preprocess(
+    normalizeOptionalStringValue,
+    z
+      .string()
+      .max(maxLength, tooLongMessage || `Must be ${maxLength} characters or fewer`)
+      .optional()
+  )
+}
+
+export function optionalTrimmedEmail(invalidMessage?: string) {
+  return z.preprocess(
+    normalizeOptionalStringValue,
+    z
+      .string()
+      .email(invalidMessage || 'Invalid email format')
+      .optional()
+  )
+}
+
 /**
  * Validates request body against a Zod schema
  * @param event - H3 event

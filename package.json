@@ -33,7 +33,8 @@
     "test:e2e:worktree": "node scripts/worktree-run.mjs yarn test:e2e",
     "snapshot:dashboard": "node scripts/snapshot-dashboard.mjs",
     "codex:mcp:chrome:setup": "node scripts/setup-codex-chrome-mcp.mjs",
-    "codex:mcp:chrome:status": "codex mcp get chrome-devtools"
+    "codex:mcp:chrome:status": "codex mcp get chrome-devtools",
+    "vercel:setup-domain-provider": "node scripts/setup-vercel-domain-provider.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.922.0",
@@ -46,6 +47,8 @@
     "@scalar/nuxt": "^0.5.66",
     "@tailwindcss/vite": "^4.1.8",
     "@types/pg": "^8.15.4",
+    "@vercel/analytics": "^1.6.1",
+    "@vue/server-renderer": "3.5.27",
     "@vueuse/core": "^14.2.1",
     "better-auth": "^1.5.0",
     "class-variance-authority": "^0.7.1",
@@ -62,8 +65,8 @@
     "tailwindcss": "^4.1.8",
     "tw-animate-css": "^1.3.4",
     "vanilla-colorful": "^0.7.2",
-    "@vue/server-renderer": "3.5.27",
     "vue": "3.5.27",
+    "vue-draggable-plus": "^0.6.1",
     "vue-router": "^4.5.1",
     "vue-sonner": "^2.0.1",
     "zod": "^4.3.6"
