@@ -3,14 +3,10 @@ import { db } from '~/server/database/drizzle'
 import { invitation, member, user } from '~/server/database/schema/index'
 import { and, eq } from 'drizzle-orm'
 import { getAuthHeaders } from '~/server/utils/auth-headers'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const session = await auth.api.getSession({
-    headers: getAuthHeaders(event),
-  })
-  if (!session?.user) {
-    throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
-  }
+  await requireAuth(event)
 
   const body = await readBody(event)
   const { email, role, organizationId, teamId, resend } = body
