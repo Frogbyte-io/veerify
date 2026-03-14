@@ -83,6 +83,27 @@ test('team creation slug mirrors the full team name while typing', async ({ page
   await expect(teamSlugInput).toHaveValue('dotmatrixlabs-ops')
 })
 
+test('product creation slug mirrors the full product name while typing', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
+
+  await page.goto('/products')
+  await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'New Product' }).click()
+
+  const createDialog = page.getByRole('dialog', { name: 'Create New Product' })
+  const productNameInput = createDialog.getByLabel('Product Name')
+  const productSlugInput = createDialog.getByLabel('URL Slug')
+
+  await productNameInput.click()
+  await productNameInput.type('DotMatrixLabs', { delay: 40 })
+  await expect(productSlugInput).toHaveValue('dotmatrixlabs')
+
+  await productNameInput.type(' Ops', { delay: 40 })
+  await expect(productSlugInput).toHaveValue('dotmatrixlabs-ops')
+})
+
 test('settings navigation tabs render expected sections', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 

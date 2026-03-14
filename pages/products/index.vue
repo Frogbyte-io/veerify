@@ -76,15 +76,33 @@
             <p v-if="product.description" class="text-sm text-muted-foreground mb-4 line-clamp-2">
               {{ product.description }}
             </p>
-            <div class="flex items-center justify-between text-sm text-muted-foreground">
-              <div class="flex items-center gap-1">
-                <Icon name="lucide:message-square" class="w-4 h-4" />
-                <span>{{ product.feedbackCount || 0 }} feedback</span>
-              </div>
-              <div v-if="product.customDomain" class="flex items-center gap-1">
-                <Icon name="lucide:globe" class="w-4 h-4" />
-                <span>{{ product.customDomain }}</span>
-              </div>
+            <div class="flex flex-wrap items-center gap-1.5 mb-3">
+              <span
+                v-if="product.settings?.feedbackEnabled !== false"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+              >
+                <Icon name="lucide:message-square" class="w-3 h-3" />
+                Feedback
+                <span class="opacity-60">· {{ product.feedbackCount || 0 }}</span>
+              </span>
+              <span
+                v-if="product.settings?.roadmapEnabled === true"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300"
+              >
+                <Icon name="lucide:map" class="w-3 h-3" />
+                Roadmap
+              </span>
+              <span
+                v-if="product.settings?.changelogEnabled === true"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+              >
+                <Icon name="lucide:newspaper" class="w-3 h-3" />
+                Changelog
+              </span>
+            </div>
+            <div v-if="product.customDomain" class="flex items-center gap-1 text-sm text-muted-foreground">
+              <Icon name="lucide:globe" class="w-4 h-4" />
+              <span>{{ product.customDomain }}</span>
             </div>
           </div>
           <div class="border-t px-6 py-3 flex items-center justify-between">
@@ -93,7 +111,7 @@
               @click.prevent="openPublicPage(product)"
             >
               <Icon name="lucide:external-link" class="w-3 h-3" />
-              View Public Page
+              View Public Board
             </span>
             <button class="text-sm text-muted-foreground hover:text-foreground" @click.prevent="copyPublicUrl(product)">
               <Icon name="lucide:copy" class="w-4 h-4" />
@@ -134,7 +152,12 @@
             <div class="space-y-4">
               <div class="space-y-2">
                 <Label for="name">Product Name</Label>
-                <Input id="name" v-model="form.name" placeholder="My Awesome App" @input="generateSlug" />
+                <Input
+                  id="name"
+                  v-model="form.name"
+                  placeholder="My Awesome App"
+                  @update:model-value="generateSlug"
+                />
               </div>
               <div class="space-y-2">
                 <Label for="slug">URL Slug</Label>
@@ -371,13 +394,17 @@ export default {
       }
     },
 
-    generateSlug() {
-      this.form.slug = this.form.name
+    slugify(value) {
+      return String(value || '')
         .toLowerCase()
         .replace(/[^a-z0-9\s-]/g, '')
         .replace(/\s+/g, '-')
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '')
+    },
+
+    generateSlug(value) {
+      this.form.slug = this.slugify(value)
     },
 
     handleDialogOpenChange(open) {
