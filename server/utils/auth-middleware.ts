@@ -8,6 +8,7 @@ import { eq, and } from 'drizzle-orm'
 import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { member } from '~/server/database/schema/auth'
+import { getAuthHeaders } from './auth-headers'
 import { ErrorCode, createErrorResponse } from './response'
 
 export interface AuthSession {
@@ -40,7 +41,7 @@ export interface AuthSession {
  */
 export async function requireAuth(event: H3Event): Promise<AuthSession> {
   const session = await auth.api.getSession({
-    headers: event.node.req.headers as any,
+    headers: getAuthHeaders(event),
   })
 
   if (!session?.user) {
@@ -63,7 +64,7 @@ export async function requireAuth(event: H3Event): Promise<AuthSession> {
 export async function optionalAuth(event: H3Event): Promise<AuthSession | null> {
   try {
     const session = await auth.api.getSession({
-      headers: event.node.req.headers as any,
+      headers: getAuthHeaders(event),
     })
 
     if (!session?.user) {

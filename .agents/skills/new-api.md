@@ -34,13 +34,14 @@ Use this template. Adapt imports to only what is actually needed.
 ```typescript
 import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
+import { getAuthHeaders } from '~/server/utils/auth-headers'
 // import { tableName } from '~/server/database/schema/auth'
 // import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   // 1. Validate session
   const session = await auth.api.getSession({
-    headers: event.node.req.headers as any,
+    headers: getAuthHeaders(event),
   })
   if (!session?.user) {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
@@ -69,7 +70,7 @@ Replace the hard session guard with a soft check:
 ```typescript
 // Session is optional — anonymous requests are allowed
 const session = await auth.api.getSession({
-  headers: event.node.req.headers as any,
+  headers: getAuthHeaders(event),
 })
 const userId = session?.user?.id ?? null
 ```

@@ -1,4 +1,5 @@
 import { auth } from '~/lib/auth'
+import { getAuthHeaders } from '~/server/utils/auth-headers'
 
 export default defineNuxtPlugin(async () => {
   const event = useRequestEvent()
@@ -6,7 +7,7 @@ export default defineNuxtPlugin(async () => {
 
   try {
     const session = await auth.api.getSession({
-      headers: event.node.req.headers as any,
+      headers: getAuthHeaders(event),
     })
 
     const sessionRecord = session?.session as { activeOrganizationId?: string | null } | null | undefined
