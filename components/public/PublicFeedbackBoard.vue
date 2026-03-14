@@ -126,6 +126,7 @@
             Feedback
           </span>
           <NuxtLink
+            v-if="roadmapEnabled"
             :to="roadmapPath"
             prefetch-on="interaction"
             class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
@@ -1023,6 +1024,9 @@ export default {
     },
     roadmapPath() {
       return `/${this.projectSlug}/roadmap`
+    },
+    roadmapEnabled() {
+      return this.projectData?.project?.settings?.roadmapEnabled === true
     },
     customFooterBranding() {
       return this.projectData?.project?.settings?.customFooterBranding?.trim() || ''

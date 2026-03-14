@@ -63,8 +63,22 @@
       <p class="text-muted-foreground">{{ error }}</p>
     </div>
 
+    <!-- Roadmap disabled -->
+    <div v-else-if="projectData && !roadmapEnabled" class="max-w-4xl mx-auto px-4 py-24 text-center">
+      <Icon name="lucide:map" class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+      <h1 class="text-2xl font-bold mb-2">Roadmap not available</h1>
+      <p class="text-muted-foreground mb-6">The roadmap feature is not enabled for this product.</p>
+      <NuxtLink
+        :to="feedbackBoardPath"
+        class="inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+      >
+        <Icon name="lucide:message-square" class="w-4 h-4" />
+        View Feedback Board
+      </NuxtLink>
+    </div>
+
     <!-- Main Content -->
-    <div v-else-if="projectData" class="flex-1 flex flex-col">
+    <div v-else-if="projectData && roadmapEnabled" class="flex-1 flex flex-col">
       <!-- Banner -->
       <div class="w-full h-24 md:h-36 overflow-hidden relative">
         <div class="absolute inset-x-0" style="top: -30px; bottom: -30px" :style="bannerInnerStyle">
@@ -384,6 +398,9 @@ export default {
     },
     feedbackBoardPath() {
       return `/${this.projectSlug}`
+    },
+    roadmapEnabled() {
+      return this.projectData?.project?.settings?.roadmapEnabled === true
     },
     authRedirectTarget() {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}/roadmap`)

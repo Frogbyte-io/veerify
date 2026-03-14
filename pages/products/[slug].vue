@@ -120,6 +120,7 @@
 
 <script>
 import ProductSettingsGeneral from '~/components/products/ProductSettingsGeneral.vue'
+import ProductSettingsFeatures from '~/components/products/ProductSettingsFeatures.vue'
 import ProductSettingsCategories from '~/components/products/ProductSettingsCategories.vue'
 import ProductSettingsStatuses from '~/components/products/ProductSettingsStatuses.vue'
 import ProductSettingsAppearance from '~/components/products/ProductSettingsAppearance.vue'
@@ -163,6 +164,7 @@ export default {
   name: 'ProductSettingsPage',
   components: {
     ProductSettingsGeneral,
+    ProductSettingsFeatures,
     ProductSettingsCategories,
     ProductSettingsStatuses,
     ProductSettingsAppearance,
@@ -178,22 +180,34 @@ export default {
       isLoading: true,
       error: null,
       activeTab: 'general',
-      tabs: [
-        { id: 'general', label: 'General', icon: 'lucide:settings' },
-        { id: 'feedback', label: 'Feedback', icon: 'lucide:message-square' },
-        { id: 'categories', label: 'Categories', icon: 'lucide:tags' },
-        { id: 'statuses', label: 'Statuses', icon: 'lucide:circle-dot' },
-        { id: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
-        { id: 'github', label: 'GitHub', icon: 'lucide:github' },
-        { id: 'domain', label: 'Custom Domain', icon: 'lucide:globe' },
-        { id: 'embed', label: 'Embed', icon: 'lucide:code-2' },
-        { id: 'danger', label: 'Danger Zone', icon: 'lucide:alert-triangle' },
-      ],
       tabResources: createTabResources(),
       idleWarmupHandle: null,
     }
   },
   computed: {
+    enabledFeatures() {
+      const settings = this.projectData?.settings || {}
+      return {
+        feedbackEnabled: settings.feedbackEnabled !== false,
+        roadmapEnabled: settings.roadmapEnabled === true,
+        changelogEnabled: settings.changelogEnabled === true,
+      }
+    },
+    tabs() {
+      const all = [
+        { id: 'general', label: 'General', icon: 'lucide:settings' },
+        { id: 'features', label: 'Features', icon: 'lucide:layout-grid' },
+        { id: 'feedback', label: 'Feedback', icon: 'lucide:message-square', requiresFeature: 'feedbackEnabled' },
+        { id: 'categories', label: 'Categories', icon: 'lucide:tags', requiresFeature: 'feedbackEnabled' },
+        { id: 'statuses', label: 'Statuses', icon: 'lucide:circle-dot', requiresFeature: 'feedbackEnabled' },
+        { id: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
+        { id: 'github', label: 'GitHub', icon: 'lucide:github', requiresFeature: 'feedbackEnabled' },
+        { id: 'domain', label: 'Custom Domain', icon: 'lucide:globe' },
+        { id: 'embed', label: 'Embed', icon: 'lucide:code-2' },
+        { id: 'danger', label: 'Danger Zone', icon: 'lucide:alert-triangle' },
+      ]
+      return all.filter((tab) => !tab.requiresFeature || this.enabledFeatures[tab.requiresFeature])
+    },
     publicBoardUrl() {
       if (!import.meta.client || !this.projectData) return ''
       const teamSlug = this.projectData.team?.slug
@@ -207,6 +221,7 @@ export default {
     currentComponent() {
       const componentMap = {
         general: 'ProductSettingsGeneral',
+        features: 'ProductSettingsFeatures',
         feedback: 'ProductSettingsFeedback',
         categories: 'ProductSettingsCategories',
         statuses: 'ProductSettingsStatuses',
@@ -267,9 +282,18 @@ export default {
     const hash = window.location.hash.replace('#', '')
     if (
       hash &&
-      ['general', 'feedback', 'categories', 'statuses', 'appearance', 'github', 'domain', 'embed', 'danger'].includes(
-        hash
-      )
+      [
+        'general',
+        'features',
+        'feedback',
+        'categories',
+        'statuses',
+        'appearance',
+        'github',
+        'domain',
+        'embed',
+        'danger',
+      ].includes(hash)
     ) {
       this.activeTab = hash
     }
@@ -550,6 +574,12 @@ export default {
       this.projectData = { ...this.projectData, ...updatedProject }
       if (Array.isArray(this.projectData?.categories)) {
         this.setResourceReady('categories', this.cloneResourceArray(this.projectData.categories))
+      }
+      // If the active tab is no longer visible after a feature toggle, reset to general
+      const visibleTabIds = this.tabs.map((t) => t.id)
+      if (!visibleTabIds.includes(this.activeTab)) {
+        this.activeTab = 'general'
+        window.history.replaceState(null, '', '#general')
       }
     },
     onCategoriesUpdated(categories) {
