@@ -159,20 +159,17 @@ MVP
 - [x] **#4 — Validate feedback status against project's allowed statuses**
       `server/api/feedback/[id]/status.patch.ts` accepts any string up to 80 chars. Validate that the provided status actually exists in the project's `feedbackStatus` table before applying it.
 
-- [ ] **#5 — Tighten rate limiting on anonymous feedback submission**
-      `server/api/feedback/index.post.ts` uses the `standard` limit (60/min) for unauthenticated requests. Switch anonymous submissions to the `strict` limit (5/min per IP) to prevent spam.
+- [x] **#5 — Tighten rate limiting on anonymous feedback submission**
+      `server/api/feedback/index.post.ts` already applies `rateLimits.strict` (5/min) for anonymous requests and `rateLimits.standard` (60/min) for authenticated users.
 
 - [ ] **#6 — Require UPLOAD_TOKEN_SECRET as a hard requirement**
       `server/utils/upload-token.ts` silently falls back to `BETTER_AUTH_SECRET` when `UPLOAD_TOKEN_SECRET` is not set. Rotating the auth secret silently breaks all upload tokens. Should error at startup if missing, and note this in `.env.example`.
 
-- [ ] **#7 — Add composite database indexes for common query patterns**
-      `server/database/schema/feedback.ts` is missing performance indexes:
-  - `(projectId, createdAt)` on `feedback` — used for paginated project feedback lists
-  - `(feedbackId, createdAt)` on `feedbackComment` — used for threaded comment sorting
-    Add via schema change + `yarn db:generate` + `yarn db:migrate`.
+- [x] **#7 — Add composite database indexes for common query patterns**
+      Added `feedback_project_created_at_idx` on `(projectId, createdAt)` for paginated feedback lists and `comment_feedback_created_at_idx` on `(feedbackId, createdAt)` for threaded comment sorting. Migration `0016_unknown_sentinel.sql`.
 
-- [ ] **#8 — Replace `as any` header casts with `getRequestHeaders()`**
-      The pattern `event.node.req.headers as any` is repeated across 5+ server files. Replace with Nuxt's built-in `getRequestHeaders(event)` or a shared typed helper.
+- [x] **#8 — Replace `as any` header casts with `getRequestHeaders()`**
+      All auth header access already uses `getAuthHeaders(event)` (which wraps `getRequestHeaders`). No `as any` header casts remain in server code.
 
 - [ ] **#9 — Replace `console.error()` with structured logging**
       Fire-and-forget failures (email notifications, GitHub API calls) only produce raw stack traces. Introduce a simple structured logger that includes context (feedbackId, userId, orgId) to make production debugging tractable.

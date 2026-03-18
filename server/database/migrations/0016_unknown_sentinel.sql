@@ -1,0 +1,2 @@
+CREATE INDEX "feedback_project_created_at_idx" ON "feedback" USING btree ("project_id","created_at");--> statement-breakpoint
+CREATE INDEX "comment_feedback_created_at_idx" ON "feedback_comment" USING btree ("feedback_id","created_at");

@@ -204,6 +204,8 @@ export const feedback = pgTable(
     hiddenIdx: index('feedback_hidden_idx').on(table.isHidden),
     // Composite index for project + status queries
     projectStatusIdx: index('feedback_project_status_idx').on(table.projectId, table.status),
+    // Composite index for paginated project feedback lists sorted by date
+    projectCreatedAtIdx: index('feedback_project_created_at_idx').on(table.projectId, table.createdAt),
   })
 )
 
@@ -391,6 +393,8 @@ export const feedbackComment = pgTable(
     parentIdx: index('comment_parent_idx').on(table.parentCommentId),
     // Index for internal vs public comments
     internalIdx: index('comment_internal_idx').on(table.isInternal),
+    // Composite index for threaded comment sorting by date
+    feedbackCreatedAtIdx: index('comment_feedback_created_at_idx').on(table.feedbackId, table.createdAt),
   })
 )
 
