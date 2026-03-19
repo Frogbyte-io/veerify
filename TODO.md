@@ -162,8 +162,8 @@ MVP
 - [x] **#5 — Tighten rate limiting on anonymous feedback submission**
       `server/api/feedback/index.post.ts` already applies `rateLimits.strict` (5/min) for anonymous requests and `rateLimits.standard` (60/min) for authenticated users.
 
-- [ ] **#6 — Require UPLOAD_TOKEN_SECRET as a hard requirement**
-      `server/utils/upload-token.ts` silently falls back to `BETTER_AUTH_SECRET` when `UPLOAD_TOKEN_SECRET` is not set. Rotating the auth secret silently breaks all upload tokens. Should error at startup if missing, and note this in `.env.example`.
+- [x] **#6 — Require UPLOAD_TOKEN_SECRET as a hard requirement**
+      Removed `BETTER_AUTH_SECRET` fallback from `nuxt.config.ts`; added Nitro server plugin `server/plugins/validate-env.ts` that refuses to start if `UPLOAD_TOKEN_SECRET` is missing; updated `.env.example` to document it as required.
 
 - [x] **#7 — Add composite database indexes for common query patterns**
       Added `feedback_project_created_at_idx` on `(projectId, createdAt)` for paginated feedback lists and `comment_feedback_created_at_idx` on `(feedbackId, createdAt)` for threaded comment sorting. Migration `0016_unknown_sentinel.sql`.

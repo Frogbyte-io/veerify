@@ -58,7 +58,7 @@ export default defineNuxtConfig({
     storageForcePathStyle: process.env.STORAGE_FORCE_PATH_STYLE === 'true',
     storagePublicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL || '',
     storageLocalDir: process.env.STORAGE_LOCAL_DIR || '.data/storage',
-    uploadTokenSecret: process.env.UPLOAD_TOKEN_SECRET || process.env.BETTER_AUTH_SECRET || '',
+    uploadTokenSecret: process.env.UPLOAD_TOKEN_SECRET || '',
     nodemailer: {
       from: process.env.MAIL_FROM,
       host: process.env.SMTP_HOST,
