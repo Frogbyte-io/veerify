@@ -13,6 +13,9 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { getStorageProvider } from '~/server/utils/storage'
 import { buildFinalObjectKey, transformImageForKind, validateImageUploadInput } from '~/server/utils/storage/media'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('orgs')
 import { verifyUploadToken } from '~/server/utils/upload-token'
 
 const updateOrganizationSchema = z
@@ -122,7 +125,7 @@ export default defineEventHandler(async (event) => {
     })
 
     storage.deleteObject(uploadPayload.tempKey).catch((err) => {
-      console.error('Failed to delete temporary uploaded organization logo:', err)
+      logger.error('Failed to delete temporary uploaded organization logo', { error: err instanceof Error ? err.message : err })
     })
 
     nextLogo = storage.getPublicUrl(finalAssetKey)
@@ -157,7 +160,7 @@ export default defineEventHandler(async (event) => {
     const storage = getStorageProvider()
     for (const key of pendingDeletes) {
       storage.deleteObject(key).catch((err) => {
-        console.error(`Failed to delete replaced organization logo "${key}":`, err)
+        logger.error('Failed to delete replaced organization logo', { key, error: err instanceof Error ? err.message : err })
       })
     }
   }

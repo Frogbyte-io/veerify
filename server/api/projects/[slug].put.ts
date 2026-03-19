@@ -21,6 +21,9 @@ import {
   type UploadAssetKind,
 } from '~/server/utils/storage/media'
 import { verifyUploadToken } from '~/server/utils/upload-token'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('projects')
 
 const projectSettingsSchema = z
   .object({
@@ -114,7 +117,7 @@ async function consumeUploadAsset(input: {
   })
 
   storage.deleteObject(payload.tempKey).catch((err) => {
-    console.error('Failed to delete temporary uploaded asset:', err)
+    logger.error('Failed to delete temporary uploaded asset', { error: err instanceof Error ? err.message : err })
   })
 
   return {
@@ -274,7 +277,7 @@ export default defineEventHandler(async (event) => {
       projectName: updated.name,
       domain: requestedDomain!,
     }).catch((err) => {
-      console.error('Failed to send custom domain connected email:', err)
+      logger.error('Failed to send custom domain connected email', { projectName: updated.name, error: err instanceof Error ? err.message : err })
     })
   }
 
@@ -282,7 +285,7 @@ export default defineEventHandler(async (event) => {
     const storage = getStorage()
     for (const key of pendingDeletes) {
       storage.deleteObject(key).catch((err) => {
-        console.error(`Failed to delete replaced asset "${key}":`, err)
+        logger.error('Failed to delete replaced asset', { key, error: err instanceof Error ? err.message : err })
       })
     }
   }

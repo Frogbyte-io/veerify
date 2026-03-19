@@ -1,3 +1,7 @@
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('mail')
+
 export default defineEventHandler(async (event) => {
   let body = await readBody(event)
   const { sendMail } = useNodeMailer()
@@ -28,7 +32,7 @@ export default defineEventHandler(async (event) => {
       messageId: result.messageId,
     }
   } catch (error) {
-    console.error('Email sending error:', error)
+    logger.error('Email sending failed', { error: error instanceof Error ? error.message : error })
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
 
     throw createError({

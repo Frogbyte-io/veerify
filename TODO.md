@@ -171,5 +171,5 @@ MVP
 - [x] **#8 — Replace `as any` header casts with `getRequestHeaders()`**
       All auth header access already uses `getAuthHeaders(event)` (which wraps `getRequestHeaders`). No `as any` header casts remain in server code.
 
-- [ ] **#9 — Replace `console.error()` with structured logging**
-      Fire-and-forget failures (email notifications, GitHub API calls) only produce raw stack traces. Introduce a simple structured logger that includes context (feedbackId, userId, orgId) to make production debugging tractable.
+- [x] **#9 — Replace `console.error()` with structured logging**
+      Introduced `server/utils/logger.ts` using `consola` (already shipped with Nuxt). All `console.error()` calls in server and lib code replaced with structured `logger.error()` calls that include context objects (feedbackId, userId, projectName, key, etc.). Each module creates a tagged child logger (e.g. `feedback`, `github`, `db`, `auth`) for easy filtering.

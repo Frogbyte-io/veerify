@@ -10,6 +10,9 @@ import {
   getStatusChangeNotificationTemplate,
   getNewCommentNotificationTemplate,
 } from './email-templates'
+import { createConsola } from 'consola'
+
+const logger = createConsola().withTag('veerify').withTag('email')
 
 interface EmailOptions {
   to: string
@@ -79,7 +82,7 @@ export async function sendEmail(options: EmailOptions) {
         messageId: result.messageId,
       }
     } catch (error) {
-      console.error('Email sending error:', error)
+      logger.error('Email sending failed', { error: error instanceof Error ? error.message : error })
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Failed to send email',

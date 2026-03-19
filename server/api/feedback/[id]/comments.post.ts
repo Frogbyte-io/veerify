@@ -10,6 +10,9 @@ import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment, feedbackSubscription } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
 import { sendNewCommentNotificationEmail } from '~/lib/email'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('feedback')
 
 const createCommentSchema = z.object({
   body: z.string().min(1, 'Comment body is required').max(5000, 'Comment too long'),
@@ -171,14 +174,11 @@ export default defineEventHandler(async (event) => {
 
       for (const [index, result] of notificationResults.entries()) {
         if (result.status === 'rejected') {
-          console.error(
-            `Failed to send comment notification to ${recipients[index]?.email ?? 'unknown'}:`,
-            result.reason
-          )
+          logger.error('Failed to send comment notification', { feedbackId: id, email: recipients[index]?.email, error: result.reason instanceof Error ? result.reason.message : result.reason })
         }
       }
     } catch (err) {
-      console.error('Failed to fetch subscribers for comment notification:', err)
+      logger.error('Failed to fetch subscribers for comment notification', { feedbackId: id, error: err instanceof Error ? err.message : err })
     }
   }
 

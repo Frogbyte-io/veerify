@@ -80,6 +80,9 @@ import {
   resolveStatusLabel,
   verifyGithubWebhookSignature,
 } from '~/server/utils/github-webhook'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('github')
 
 interface GithubWebhookPayload {
   action?: string
@@ -279,7 +282,7 @@ export default defineEventHandler(async (event) => {
     labelPatched = patchResponse.ok
     if (!patchResponse.ok) {
       const errorBody = (await patchResponse.json().catch(() => null)) as { message?: string } | null
-      console.error('Failed to patch GitHub issue labels:', errorBody?.message || patchResponse.statusText)
+      logger.error('Failed to patch GitHub issue labels', { error: errorBody?.message || patchResponse.statusText })
     }
   }
 

@@ -9,6 +9,9 @@ import {
   normalizeDomainSettings,
   verifyProjectCustomDomain,
 } from '~/server/services/domains/domain-service'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('projects')
 
 export default defineEventHandler(async (event) => {
   const { session, project: selectedProject } = await requireProjectCategoryAccess(event)
@@ -33,7 +36,7 @@ export default defineEventHandler(async (event) => {
       projectName: selectedProject.name,
       domain,
     }).catch((err) => {
-      console.error('Failed to send custom domain verified email:', err)
+      logger.error('Failed to send custom domain verified email', { projectName: selectedProject.name, domain, error: err instanceof Error ? err.message : err })
     })
   }
 

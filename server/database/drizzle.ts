@@ -1,7 +1,10 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool, type PoolConfig } from 'pg'
 import * as schema from './schema/index'
+import { createLogger } from '~/server/utils/logger'
 import 'dotenv/config'
+
+const log = createLogger('db')
 
 const poolConfig: PoolConfig = process.env.DATABASE_URL
   ? {
@@ -21,20 +24,9 @@ const pool = new Pool(poolConfig)
 
 pool.on('error', (err: Error & { code?: string }) => {
   if (err.code === 'ECONNREFUSED') {
-    console.error(
-      '\n' +
-        '╔══════════════════════════════════════════════════════════════╗\n' +
-        '║  ❌ Could not connect to PostgreSQL                        ║\n' +
-        '║                                                            ║\n' +
-        '║  Make sure the database is running:                        ║\n' +
-        '║    docker compose -f docker-compose-dev.yml up -d          ║\n' +
-        '║                                                            ║\n' +
-        '║  Then restart the dev server:                              ║\n' +
-        '║    yarn dev                                                ║\n' +
-        '╚══════════════════════════════════════════════════════════════╝\n'
-    )
+    log.error('Could not connect to PostgreSQL. Make sure the database is running: docker compose -f docker-compose-dev.yml up -d', { code: err.code })
   } else {
-    console.error('PostgreSQL pool error:', err)
+    log.error('PostgreSQL pool error', { error: err.message, code: err.code })
   }
 })
 

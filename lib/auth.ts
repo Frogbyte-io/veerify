@@ -10,6 +10,9 @@ import {
   sendOrganizationInvitationEmail,
   sendPasswordResetEmail,
 } from './email'
+import { createConsola } from 'consola'
+
+const logger = createConsola().withTag('veerify').withTag('auth')
 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
 const defaultAppBaseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
@@ -106,7 +109,7 @@ export const auth = betterAuth({
         name: user.name || user.email.split('@')[0],
         verificationUrl: url,
       }).catch((error) => {
-        console.error('Failed to send verification email:', error)
+        logger.error('Failed to send verification email', { userId: user.id, error: error instanceof Error ? error.message : error })
       })
     },
     sendOnSignUp: true,
@@ -224,7 +227,7 @@ export const auth = betterAuth({
               })
             }
           } catch (error) {
-            console.error('[auth] afterAcceptInvitation: failed to add user to default team', error)
+            logger.error('afterAcceptInvitation: failed to add user to default team', { userId: user.id, error: error instanceof Error ? error.message : error })
           }
         },
       },

@@ -7,6 +7,9 @@ import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackSubscription } from '~/server/database/schema/feedback'
 import { sendFeedbackSubscriptionConfirmationEmail } from '~/lib/email'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('feedback')
 
 const subscribeSchema = z.object({
   email: z.string().email().optional(),
@@ -84,7 +87,7 @@ export default defineEventHandler(async (event) => {
       to: subscriberEmail,
       feedbackTitle: fb.title,
       unsubscribeUrl,
-    }).catch((err) => console.error('Failed to send subscription confirmation email:', err))
+    }).catch((err) => logger.error('Failed to send subscription confirmation email', { feedbackId: id, error: err instanceof Error ? err.message : err }))
   }
 
   setResponseStatus(event, 201)

@@ -8,6 +8,9 @@ import { db } from '~/server/database/drizzle'
 import { feedback, feedbackStatus, feedbackSubscription } from '~/server/database/schema/feedback'
 import { sendStatusChangeNotificationEmail } from '~/lib/email'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('feedback')
 
 const updateStatusSchema = z.object({
   status: z.string().trim().min(1).max(80),
@@ -85,14 +88,11 @@ export default defineEventHandler(async (event) => {
 
       for (const [index, result] of notificationResults.entries()) {
         if (result.status === 'rejected') {
-          console.error(
-            `Failed to send status notification to ${subscribers[index]?.email ?? 'unknown'}:`,
-            result.reason
-          )
+          logger.error('Failed to send status notification', { feedbackId: id, email: subscribers[index]?.email, error: result.reason instanceof Error ? result.reason.message : result.reason })
         }
       }
     } catch (err) {
-      console.error('Failed to fetch subscribers for status notification:', err)
+      logger.error('Failed to fetch subscribers for status notification', { feedbackId: id, error: err instanceof Error ? err.message : err })
     }
   }
 

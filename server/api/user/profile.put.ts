@@ -3,6 +3,9 @@ import { db } from '~/server/database/drizzle'
 import { user } from '~/server/database/schema/auth'
 import { eq } from 'drizzle-orm'
 import { getAuthHeaders } from '~/server/utils/auth-headers'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('user')
 
 export default defineEventHandler(async (event) => {
   try {
@@ -64,7 +67,7 @@ export default defineEventHandler(async (event) => {
       user: updatedUser[0],
     }
   } catch (error) {
-    console.error('Profile update error:', error)
+    logger.error('Profile update failed', { error: error instanceof Error ? error.message : error })
 
     if (error && typeof error === 'object' && 'statusCode' in error) {
       throw error
