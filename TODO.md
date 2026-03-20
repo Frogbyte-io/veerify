@@ -51,7 +51,8 @@ MVP
 - [ ] Integrations with form providers (Tally, Jotform, Google Forms, etc.)
 - [ ] Simple form website for collecting feedback publicly and adding it to the board without a public board (for internal use or private feedback collection)
 - [ ] For the new product form, add options between what type of product to create, like public feedback board, private feedback collection form, or in the future roadmaps/etc.. Make it a multi-step guide that explains the different options and helps users choose the right one for their needs. Different features can be combined based on the product type (e.g. a public feedback board would have voting and commenting enabled, while a private feedback form would just collect submissions from a third party form without showing them publicly).
-- [ ] Export feedback to Google Sheets / Excel / Airtable
+- [x] Export feedback to Google Sheets / Excel / Airtable
+  - Added CSV export endpoint at `GET /api/feedback/export` (authenticated, supports all existing filters). Export button added to `pages/feedback/index.vue` toolbar; downloads a `.csv` file with title, status, category, product, votes, comments, author, GitHub issue link, and timestamps.
 - [x] Roadmap page — public timeline view based on feedback status tags
   - Added `/roadmap` sub-page on public boards (e.g. `team.veerify.io/project-slug/roadmap`); new `GET /api/public/t/[teamSlug]/[projectSlug]/roadmap` endpoint returns feedback items grouped by status; `PublicRoadmap.vue` renders a horizontal kanban-style view with status columns; tab navigation added to `PublicFeedbackBoard.vue` linking to the roadmap.
 - [ ] Sync roadmaps to GitHub Projects

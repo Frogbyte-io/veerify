@@ -43,6 +43,16 @@
               </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <Button
+            variant="outline"
+            data-testid="feedback-export-button"
+            :disabled="selectedProjectIds.length === 0 || isExporting"
+            @click="exportCsv"
+          >
+            <Icon v-if="isExporting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+            <Icon v-else name="lucide:download" class="w-4 h-4 mr-2" />
+            Export
+          </Button>
           <Button data-testid="feedback-add-button" :disabled="!canCreateFeedback" @click="openCreateDialog()">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
             Add Feedback
@@ -789,6 +799,8 @@ export default {
       ],
       createForm: { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' },
 
+      isExporting: false,
+
       showDeleteDialog: false,
       isDeleting: false,
       feedbackToDelete: null,
@@ -1362,6 +1374,35 @@ export default {
         alert(err?.data?.error?.message || 'Failed to delete feedback')
       } finally {
         this.isDeleting = false
+      }
+    },
+
+    async exportCsv() {
+      if (this.selectedProjectIds.length === 0) return
+
+      this.isExporting = true
+      try {
+        const params = new URLSearchParams({
+          projectIds: this.selectedProjectIds.join(','),
+        })
+        if (this.searchQuery.trim()) params.set('search', this.searchQuery.trim())
+        if (this.statusFilter) params.set('status', this.statusFilter)
+        params.set('sortBy', this.sortBy)
+        params.set('sortOrder', this.sortOrder)
+
+        const csv = await $fetch(`/api/feedback/export?${params}`, { responseType: 'text' })
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `feedback-export-${new Date().toISOString().slice(0, 10)}.csv`
+        link.click()
+        URL.revokeObjectURL(url)
+      } catch (err) {
+        console.error('Error exporting feedback:', err)
+        alert('Failed to export feedback. Please try again.')
+      } finally {
+        this.isExporting = false
       }
     },
 
