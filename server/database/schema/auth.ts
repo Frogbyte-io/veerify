@@ -15,6 +15,8 @@ export const user = pgTable('user', {
     .$defaultFn(() => /* @__PURE__ */ new Date())
     .notNull(),
   twoFactorEnabled: boolean('two_factor_enabled').$defaultFn(() => false),
+  // User preferences (notification settings, etc.)
+  settings: jsonb('settings').$type<Record<string, any>>(),
   // GitHub authentication fields
   githubId: text('github_id').unique(),
   githubLogin: text('github_login'),

@@ -120,6 +120,13 @@
       "when": 1773855721231,
       "tag": "0016_unknown_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1774253976185,
+      "tag": "0017_wealthy_captain_midlands",
+      "breakpoints": true
     }
   ]
 }

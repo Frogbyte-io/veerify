@@ -38,7 +38,8 @@ MVP
 - [x] Allow users to create an account or log in directly from the public feedback board (top-right button)
 - [x] Add REST API docs UI (`/api/openapi.json` exists; add Scalar or Swagger UI)
   - Added Scalar docs route at `/api-docs` via `nuxt.config.ts`, documented in `README.md`, and covered by `tests/e2e/api-docs.spec.ts`.
-- [ ] Notifications infrastructure (real-time or polling for in-app notifications)
+- [x] Notifications infrastructure (real-time or polling for in-app notifications)
+  - Added `notification` table (migration `0017_wealthy_captain_midlands.sql`) and `settings` jsonb column on `user` for notification preferences. `server/utils/notifications.ts` utility creates notifications respecting user preferences. CRUD API at `server/api/notifications/` (list with cursor pagination, mark read, delete, unread count, preferences GET/PUT). Trigger points wired: new feedback, status change, and new comment create in-app notifications for project team members. `NotificationBell` component in dashboard header with polling (30s), dropdown list, mark-read on click, and dismiss. `SettingsNotifications` rewritten with real preference toggles (email, in-app, per-type: new feedback, status changes, comments).
 - [ ] Create embeddable widgets for customers to add to their own website
 - [ ] Migrate to Nuxt 4
 - [x] Anti-spam: IP-based rate limiting, duplicate content detection, user reputation scoring, CAPTCHA (optional)

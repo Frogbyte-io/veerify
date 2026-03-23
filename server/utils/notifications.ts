@@ -1,0 +1,130 @@
+import { eq, inArray } from 'drizzle-orm'
+import { db } from '~/server/database/drizzle'
+import { notification } from '~/server/database/schema/feedback'
+import { project } from '~/server/database/schema/feedback'
+import { teamMember, user } from '~/server/database/schema/auth'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('notifications')
+
+export type NotificationType =
+  | 'status_change'
+  | 'new_comment'
+  | 'new_feedback'
+  | 'feedback_pinned'
+
+interface CreateNotificationParams {
+  userId: string
+  type: NotificationType
+  title: string
+  body?: string
+  link?: string
+  feedbackId?: string
+  projectId?: string
+  actorUserId?: string
+  actorName?: string
+}
+
+/**
+ * Creates an in-app notification for a single user.
+ */
+export async function createNotification(params: CreateNotificationParams) {
+  try {
+    const [created] = await db
+      .insert(notification)
+      .values({
+        id: crypto.randomUUID(),
+        userId: params.userId,
+        type: params.type,
+        title: params.title,
+        body: params.body || null,
+        link: params.link || null,
+        feedbackId: params.feedbackId || null,
+        projectId: params.projectId || null,
+        actorUserId: params.actorUserId || null,
+        actorName: params.actorName || null,
+        isRead: false,
+        createdAt: new Date(),
+      })
+      .returning()
+    return created
+  } catch (err) {
+    logger.error('Failed to create notification', {
+      userId: params.userId,
+      type: params.type,
+      error: err instanceof Error ? err.message : err,
+    })
+    return null
+  }
+}
+
+/**
+ * Creates in-app notifications for all team members of a project,
+ * optionally excluding a specific user (e.g. the actor who triggered the event).
+ */
+export async function notifyProjectTeam(
+  projectId: string,
+  excludeUserId: string | null,
+  params: Omit<CreateNotificationParams, 'userId' | 'projectId'>
+) {
+  try {
+    // Get the project's team
+    const [proj] = await db
+      .select({ teamId: project.teamId })
+      .from(project)
+      .where(eq(project.id, projectId))
+      .limit(1)
+
+    if (!proj) return
+
+    // Get all team members
+    const members = await db
+      .select({ userId: teamMember.userId })
+      .from(teamMember)
+      .where(eq(teamMember.teamId, proj.teamId))
+
+    // Create notifications for each member (excluding the actor)
+    const recipientIds = members.filter((m) => m.userId !== excludeUserId).map((m) => m.userId)
+
+    if (recipientIds.length === 0) return
+
+    // Check notification preferences for recipients
+    const users = await db
+      .select({ id: user.id, settings: user.settings })
+      .from(user)
+      .where(inArray(user.id, recipientIds))
+
+    // Map notification type to preference key
+    const prefKeyMap: Record<string, string> = {
+      new_feedback: 'newFeedback',
+      status_change: 'statusChanges',
+      new_comment: 'newComments',
+    }
+    const prefKey = prefKeyMap[params.type]
+
+    const filteredRecipients = users.filter((u) => {
+      const prefs = u.settings?.notificationPreferences
+      // Default to enabled if no preferences set
+      if (!prefs) return true
+      if (prefs.inAppNotifications === false) return false
+      if (prefKey && prefs[prefKey] === false) return false
+      return true
+    })
+
+    await Promise.allSettled(
+      filteredRecipients.map((u) =>
+        createNotification({
+          ...params,
+          userId: u.id,
+          projectId,
+        })
+      )
+    )
+  } catch (err) {
+    logger.error('Failed to notify project team', {
+      projectId,
+      type: params.type,
+      error: err instanceof Error ? err.message : err,
+    })
+  }
+}

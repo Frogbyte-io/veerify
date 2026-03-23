@@ -5,43 +5,71 @@
       <p class="text-sm text-muted-foreground">Configure how you receive notifications about your projects.</p>
     </div>
     <div class="p-6">
-      <div class="space-y-6">
+      <div v-if="isLoading" class="space-y-6">
+        <Skeleton v-for="i in 5" :key="i" class="h-12 w-full" />
+      </div>
+      <div v-else-if="error" class="text-center py-6">
+        <p class="text-sm text-destructive mb-2">Failed to load preferences</p>
+        <Button variant="outline" size="sm" @click="fetchPreferences">Retry</Button>
+      </div>
+      <div v-else class="space-y-6">
         <div class="flex items-center justify-between">
           <div>
             <h3 class="font-medium">Email Notifications</h3>
-            <p class="text-sm text-muted-foreground">Receive email updates about project activities</p>
+            <p class="text-sm text-muted-foreground">Receive email updates about subscribed feedback items</p>
           </div>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" class="sr-only peer" checked @change="handleEmailNotificationsChange" />
-            <div
-              class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
-            />
-          </label>
+          <Switch
+            :checked="preferences.emailNotifications"
+            @update:checked="updatePreference('emailNotifications', $event)"
+          />
         </div>
 
         <div class="flex items-center justify-between">
           <div>
-            <h3 class="font-medium">Push Notifications</h3>
-            <p class="text-sm text-muted-foreground">Receive push notifications on your devices</p>
+            <h3 class="font-medium">In-App Notifications</h3>
+            <p class="text-sm text-muted-foreground">Show notifications in the dashboard notification bell</p>
           </div>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" class="sr-only peer" checked />
-            <div
-              class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
-            />
-          </label>
+          <Switch
+            :checked="preferences.inAppNotifications"
+            @update:checked="updatePreference('inAppNotifications', $event)"
+          />
         </div>
+
+        <SidebarSeparator />
+
+        <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Notification Types</p>
+
         <div class="flex items-center justify-between">
           <div>
-            <h3 class="font-medium">Marketing Communications</h3>
-            <p class="text-sm text-muted-foreground">Updates about new features and company news</p>
+            <h3 class="font-medium">New Feedback</h3>
+            <p class="text-sm text-muted-foreground">When someone submits feedback to your projects</p>
           </div>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" class="sr-only peer" />
-            <div
-              class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
-            />
-          </label>
+          <Switch
+            :checked="preferences.newFeedback"
+            @update:checked="updatePreference('newFeedback', $event)"
+          />
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-medium">Status Changes</h3>
+            <p class="text-sm text-muted-foreground">When a feedback item's status is updated</p>
+          </div>
+          <Switch
+            :checked="preferences.statusChanges"
+            @update:checked="updatePreference('statusChanges', $event)"
+          />
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-medium">New Comments</h3>
+            <p class="text-sm text-muted-foreground">When someone comments on feedback in your projects</p>
+          </div>
+          <Switch
+            :checked="preferences.newComments"
+            @update:checked="updatePreference('newComments', $event)"
+          />
         </div>
       </div>
     </div>
@@ -51,20 +79,51 @@
 <script>
 export default {
   name: 'SettingsNotifications',
+  data() {
+    return {
+      isLoading: true,
+      error: false,
+      isSaving: false,
+      preferences: {
+        emailNotifications: true,
+        inAppNotifications: true,
+        newFeedback: true,
+        statusChanges: true,
+        newComments: true,
+      },
+    }
+  },
   methods: {
-    handleEmailNotificationsChange(_event) {
-      fetch('/api/mail/send-mail', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to: 'test@test.com',
-          subject: 'Test Email',
-          html: '<p>Hello, this is a test email</p>',
-        }),
-      })
+    async fetchPreferences() {
+      this.isLoading = true
+      this.error = false
+      try {
+        const res = await $fetch('/api/notifications/preferences')
+        if (res.success) {
+          this.preferences = { ...this.preferences, ...res.data }
+        }
+      } catch {
+        this.error = true
+      } finally {
+        this.isLoading = false
+      }
     },
+    async updatePreference(key, value) {
+      const previous = this.preferences[key]
+      this.preferences[key] = value
+      try {
+        await $fetch('/api/notifications/preferences', {
+          method: 'PUT',
+          body: { [key]: value },
+        })
+      } catch {
+        // Revert on failure
+        this.preferences[key] = previous
+      }
+    },
+  },
+  mounted() {
+    this.fetchPreferences()
   },
 }
 </script>

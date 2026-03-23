@@ -9,6 +9,7 @@ import { feedback, feedbackStatus, feedbackSubscription } from '~/server/databas
 import { sendStatusChangeNotificationEmail } from '~/lib/email'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 import { createLogger } from '~/server/utils/logger'
+import { notifyProjectTeam } from '~/server/utils/notifications'
 
 const logger = createLogger('feedback')
 
@@ -66,7 +67,20 @@ export default defineEventHandler(async (event) => {
     .where(eq(feedback.id, id))
     .returning()
 
-  // Notify subscribers about the status change
+  // Create in-app notifications for team members about the status change
+  if (updated.status !== fb.status) {
+    notifyProjectTeam(fb.projectId, session.user.id, {
+      type: 'status_change',
+      title: `Status changed to "${updated.status}"`,
+      body: updated.title,
+      link: `/feedback?id=${id}`,
+      feedbackId: id,
+      actorUserId: session.user.id,
+      actorName: session.user.name,
+    })
+  }
+
+  // Notify email subscribers about the status change
   if (updated.status !== fb.status) {
     try {
       const subscribers = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.feedbackId, id))

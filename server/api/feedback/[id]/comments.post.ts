@@ -11,6 +11,7 @@ import { feedback, feedbackComment, feedbackSubscription } from '~/server/databa
 import { user } from '~/server/database/schema/auth'
 import { sendNewCommentNotificationEmail } from '~/lib/email'
 import { createLogger } from '~/server/utils/logger'
+import { notifyProjectTeam } from '~/server/utils/notifications'
 
 const logger = createLogger('feedback')
 
@@ -149,7 +150,21 @@ export default defineEventHandler(async (event) => {
     author = authorUser || null
   }
 
-  // Notify subscribers about the new public comment (skip internal notes)
+  // Create in-app notifications for team members about the new comment
+  if (!created.isInternal) {
+    const actorName = created.authorName || author?.name || 'Someone'
+    notifyProjectTeam(fb.projectId, session?.user?.id || null, {
+      type: 'new_comment',
+      title: `New comment by ${actorName}`,
+      body: fb.title,
+      link: `/feedback?id=${id}`,
+      feedbackId: id,
+      actorUserId: session?.user?.id,
+      actorName: actorName,
+    })
+  }
+
+  // Notify email subscribers about the new public comment (skip internal notes)
   if (!created.isInternal) {
     const commenterName = created.authorName || author?.name || 'Someone'
     try {

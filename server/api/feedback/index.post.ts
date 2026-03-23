@@ -18,6 +18,7 @@ import {
 import { sendFeedbackConfirmationEmail } from '~/lib/email'
 import { buildIssueLabels, ensureGitHubLabels } from '~/server/utils/github'
 import { createLogger } from '~/server/utils/logger'
+import { notifyProjectTeam } from '~/server/utils/notifications'
 
 const logger = createLogger('feedback')
 
@@ -282,6 +283,18 @@ export default defineEventHandler(async (event) => {
       editUrl,
     }).catch((err) => logger.error('Failed to send feedback confirmation email', { feedbackId: createdFeedback.id, error: err instanceof Error ? err.message : err }))
   }
+
+  // Create in-app notifications for team members about the new feedback
+  const authorName = createdFeedback.authorName || session?.user?.name || 'Someone'
+  notifyProjectTeam(createdFeedback.projectId, session?.user?.id || null, {
+    type: 'new_feedback',
+    title: `New feedback: "${createdFeedback.title}"`,
+    body: `Submitted by ${authorName}`,
+    link: `/feedback?id=${createdFeedback.id}`,
+    feedbackId: createdFeedback.id,
+    actorUserId: session?.user?.id,
+    actorName: authorName,
+  })
 
   setResponseStatus(event, 201)
   return createSuccessResponse(responseFeedback)
