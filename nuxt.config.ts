@@ -16,6 +16,11 @@ const deploymentMode =
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
   devtools: { enabled: true },
+  nitro: {
+    experimental: {
+      websocket: true,
+    },
+  },
   devServer: {
     host: '::',
   },

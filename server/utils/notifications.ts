@@ -4,6 +4,7 @@ import { notification } from '~/server/database/schema/feedback'
 import { project } from '~/server/database/schema/feedback'
 import { teamMember, user } from '~/server/database/schema/auth'
 import { createLogger } from '~/server/utils/logger'
+import { sendToUser } from '~/server/utils/ws-connections'
 
 const logger = createLogger('notifications')
 
@@ -47,6 +48,15 @@ export async function createNotification(params: CreateNotificationParams) {
         createdAt: new Date(),
       })
       .returning()
+
+    // Push to connected WebSocket clients in real-time
+    if (created) {
+      sendToUser(params.userId, {
+        type: 'notification',
+        data: created,
+      })
+    }
+
     return created
   } catch (err) {
     logger.error('Failed to create notification', {

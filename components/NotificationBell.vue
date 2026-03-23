@@ -81,6 +81,8 @@
 </template>
 
 <script>
+import { authClient } from '~/lib/auth-client'
+
 export default {
   name: 'NotificationBell',
   data() {
@@ -91,7 +93,11 @@ export default {
       isLoadingMore: false,
       hasMore: false,
       nextCursor: null,
+      ws: null,
+      wsReconnectTimer: null,
+      wsReconnectAttempts: 0,
       pollInterval: null,
+      useWebSocket: true,
     }
   },
   methods: {
@@ -112,11 +118,114 @@ export default {
         this.isLoading = false
       }
     },
+    async connectWebSocket() {
+      if (!import.meta.client) return
+
+      // Get session token for WS authentication
+      const { data: session } = await authClient.useSession(useFetch)
+      const token = session.value?.session?.token
+      if (!token) {
+        this.fallbackToPolling()
+        return
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${protocol}//${window.location.host}/_ws?token=${encodeURIComponent(token)}`
+
+      try {
+        this.ws = new WebSocket(wsUrl)
+
+        this.ws.onopen = () => {
+          this.wsReconnectAttempts = 0
+          // Stop polling if it was running as fallback
+          this.stopPolling()
+        }
+
+        this.ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data)
+            if (msg.type === 'notification') {
+              // Prepend the new notification to the list
+              this.notifications.unshift(msg.data)
+              this.unreadCount++
+            }
+          } catch {
+            // Ignore non-JSON messages (e.g. "pong")
+          }
+        }
+
+        this.ws.onclose = (event) => {
+          this.ws = null
+          // Don't reconnect if closed intentionally (code 4001 = auth failure)
+          if (event.code === 4001) {
+            this.fallbackToPolling()
+            return
+          }
+          this.scheduleReconnect()
+        }
+
+        this.ws.onerror = () => {
+          // onclose will fire after onerror, handling reconnect there
+        }
+
+        // Keep-alive ping every 30 seconds
+        this.startPing()
+      } catch {
+        this.fallbackToPolling()
+      }
+    },
+    startPing() {
+      this.stopPing()
+      this._pingInterval = setInterval(() => {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send('ping')
+        }
+      }, 30000)
+    },
+    stopPing() {
+      if (this._pingInterval) {
+        clearInterval(this._pingInterval)
+        this._pingInterval = null
+      }
+    },
+    scheduleReconnect() {
+      if (this.wsReconnectAttempts >= 5) {
+        this.fallbackToPolling()
+        return
+      }
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+      const delay = Math.min(1000 * Math.pow(2, this.wsReconnectAttempts), 16000)
+      this.wsReconnectAttempts++
+      this.wsReconnectTimer = setTimeout(() => {
+        this.connectWebSocket()
+      }, delay)
+    },
+    fallbackToPolling() {
+      this.useWebSocket = false
+      this.startPolling()
+    },
+    startPolling() {
+      this.stopPolling()
+      this.pollInterval = setInterval(() => {
+        this.pollUnreadCount()
+      }, 30000)
+    },
+    stopPolling() {
+      if (this.pollInterval) {
+        clearInterval(this.pollInterval)
+        this.pollInterval = null
+      }
+    },
     async pollUnreadCount() {
       try {
         const res = await $fetch('/api/notifications/unread-count')
         if (res.success) {
-          this.unreadCount = res.data.unreadCount
+          // If unread count increased, refetch to get new items
+          if (res.data.unreadCount > this.unreadCount) {
+            await this.fetchNotifications()
+          } else {
+            this.unreadCount = res.data.unreadCount
+          }
         }
       } catch {
         // Silently fail
@@ -152,7 +261,6 @@ export default {
       }
     },
     async handleClick(item) {
-      // Mark as read
       if (!item.isRead) {
         try {
           await $fetch('/api/notifications/read', {
@@ -165,7 +273,6 @@ export default {
           // Continue with navigation even if marking read fails
         }
       }
-      // Navigate if link is present
       if (item.link) {
         navigateTo(item.link)
       }
@@ -207,18 +314,26 @@ export default {
       if (diffDays < 7) return `${diffDays}d ago`
       return date.toLocaleDateString()
     },
+    cleanup() {
+      this.stopPolling()
+      this.stopPing()
+      if (this.wsReconnectTimer) {
+        clearTimeout(this.wsReconnectTimer)
+        this.wsReconnectTimer = null
+      }
+      if (this.ws) {
+        this.ws.onclose = null // Prevent reconnect on intentional close
+        this.ws.close()
+        this.ws = null
+      }
+    },
   },
   mounted() {
     this.fetchNotifications()
-    // Poll for unread count every 30 seconds
-    this.pollInterval = setInterval(() => {
-      this.pollUnreadCount()
-    }, 30000)
+    this.connectWebSocket()
   },
   beforeUnmount() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval)
-    }
+    this.cleanup()
   },
 }
 </script>
