@@ -686,34 +686,93 @@
                 <div class="space-y-2">
                   <p class="text-sm font-semibold">Subscribe to post</p>
                   <p class="text-xs text-muted-foreground">
-                    Get notified by email when the status changes or new comments are posted.
+                    Get notified when the status changes or new comments are posted.
                   </p>
 
-                  <!-- Logged-in: one-click toggle -->
+                  <!-- Logged-in: channel selection + toggle -->
                   <template v-if="currentUser">
-                    <Button
-                      size="sm"
-                      :variant="detailIsSubscribed ? 'default' : 'outline'"
-                      class="w-full"
-                      :disabled="detailSubscribeLoading"
-                      @click="toggleSubscription"
-                    >
-                      <Icon
-                        :name="
-                          detailSubscribeLoading
-                            ? 'lucide:loader-2'
-                            : detailIsSubscribed
-                              ? 'lucide:bell-off'
-                              : 'lucide:bell'
-                        "
-                        class="w-4 h-4 mr-2"
-                        :class="detailSubscribeLoading ? 'animate-spin' : ''"
-                      />
-                      {{ detailIsSubscribed ? 'Unsubscribe' : 'Get notified' }}
-                    </Button>
+                    <div v-if="!detailIsSubscribed" class="space-y-2">
+                      <div class="flex gap-1 rounded-md border p-0.5">
+                        <button
+                          v-for="opt in [
+                            { value: 'both', label: 'Both', icon: 'lucide:bell-ring' },
+                            { value: 'app', label: 'App', icon: 'lucide:smartphone' },
+                            { value: 'email', label: 'Email', icon: 'lucide:mail' },
+                          ]"
+                          :key="opt.value"
+                          class="flex-1 flex items-center justify-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
+                          :class="
+                            detailSubscribeChannel === opt.value
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                          "
+                          @click="detailSubscribeChannel = opt.value"
+                        >
+                          <Icon :name="opt.icon" class="w-3 h-3" />
+                          {{ opt.label }}
+                        </button>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        class="w-full"
+                        :disabled="detailSubscribeLoading"
+                        @click="toggleSubscription"
+                      >
+                        <Icon
+                          :name="detailSubscribeLoading ? 'lucide:loader-2' : 'lucide:bell'"
+                          class="w-4 h-4 mr-2"
+                          :class="detailSubscribeLoading ? 'animate-spin' : ''"
+                        />
+                        Get notified
+                      </Button>
+                    </div>
+                    <div v-else class="space-y-2">
+                      <div class="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Icon name="lucide:check-circle" class="w-3.5 h-3.5 text-green-500" />
+                        <span>
+                          Subscribed via
+                          {{ detailSubscribeChannel === 'both' ? 'app & email' : detailSubscribeChannel }}
+                        </span>
+                      </div>
+                      <div class="flex gap-1 rounded-md border p-0.5">
+                        <button
+                          v-for="opt in [
+                            { value: 'both', label: 'Both', icon: 'lucide:bell-ring' },
+                            { value: 'app', label: 'App', icon: 'lucide:smartphone' },
+                            { value: 'email', label: 'Email', icon: 'lucide:mail' },
+                          ]"
+                          :key="opt.value"
+                          class="flex-1 flex items-center justify-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors"
+                          :class="
+                            detailSubscribeChannel === opt.value
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                          "
+                          @click="updateSubscriptionChannel(opt.value)"
+                        >
+                          <Icon :name="opt.icon" class="w-3 h-3" />
+                          {{ opt.label }}
+                        </button>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        class="w-full"
+                        :disabled="detailSubscribeLoading"
+                        @click="toggleSubscription"
+                      >
+                        <Icon
+                          :name="detailSubscribeLoading ? 'lucide:loader-2' : 'lucide:bell-off'"
+                          class="w-4 h-4 mr-2"
+                          :class="detailSubscribeLoading ? 'animate-spin' : ''"
+                        />
+                        Unsubscribe
+                      </Button>
+                    </div>
                   </template>
 
-                  <!-- Anonymous: email prompt inline -->
+                  <!-- Anonymous: email prompt inline (email channel only) -->
                   <template v-else>
                     <div v-if="!detailSubscribeSuccess" class="space-y-2">
                       <Input
@@ -937,6 +996,7 @@ export default {
       feedbackDetailsRequests: {},
       votingIds: new Set(),
       detailIsSubscribed: false,
+      detailSubscribeChannel: 'both',
       detailSubscribeLoading: false,
       detailSubscribeEmail: '',
       detailSubscribeSuccess: false,
@@ -1340,6 +1400,7 @@ export default {
         this.selectedFeedback = payload?.feedback || null
         this.selectedFeedbackComments = Array.isArray(payload?.comments) ? payload.comments : []
         this.detailIsSubscribed = Boolean(payload?.feedback?.isSubscribed)
+        this.detailSubscribeChannel = payload?.feedback?.subscribeChannel || 'both'
         this.detailSubscribeEmail = ''
         this.detailSubscribeSuccess = false
       } catch (err) {
@@ -1653,7 +1714,10 @@ export default {
           await $fetch(`/api/feedback/${this.selectedFeedbackId}/subscribe`, { method: 'DELETE' })
           this.detailIsSubscribed = false
         } else {
-          await $fetch(`/api/feedback/${this.selectedFeedbackId}/subscribe`, { method: 'POST' })
+          await $fetch(`/api/feedback/${this.selectedFeedbackId}/subscribe`, {
+            method: 'POST',
+            body: { channel: this.detailSubscribeChannel },
+          })
           this.detailIsSubscribed = true
         }
       } catch (err) {
@@ -1661,6 +1725,19 @@ export default {
         alert(err?.data?.error?.message || 'Failed to update subscription. Please try again.')
       } finally {
         this.detailSubscribeLoading = false
+      }
+    },
+    async updateSubscriptionChannel(channel) {
+      if (!this.selectedFeedbackId || !this.detailIsSubscribed) return
+      const previousChannel = this.detailSubscribeChannel
+      this.detailSubscribeChannel = channel
+      try {
+        await $fetch(`/api/feedback/${this.selectedFeedbackId}/subscribe`, {
+          method: 'POST',
+          body: { channel },
+        })
+      } catch {
+        this.detailSubscribeChannel = previousChannel
       }
     },
     async subscribeAnonymous() {

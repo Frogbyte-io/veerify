@@ -11,7 +11,7 @@ import { feedback, feedbackComment, feedbackSubscription } from '~/server/databa
 import { user } from '~/server/database/schema/auth'
 import { sendNewCommentNotificationEmail } from '~/lib/email'
 import { createLogger } from '~/server/utils/logger'
-import { notifyProjectTeam } from '~/server/utils/notifications'
+import { notifyProjectTeam, notifyFeedbackSubscribers } from '~/server/utils/notifications'
 
 const logger = createLogger('feedback')
 
@@ -150,36 +150,43 @@ export default defineEventHandler(async (event) => {
     author = authorUser || null
   }
 
-  // Create in-app notifications for team members about the new comment
+  // Notify about the new public comment (skip internal notes)
   if (!created.isInternal) {
     const actorName = created.authorName || author?.name || 'Someone'
-    notifyProjectTeam(fb.projectId, session?.user?.id || null, {
-      type: 'new_comment',
+    const notifParams = {
+      type: 'new_comment' as const,
       title: `New comment by ${actorName}`,
       body: fb.title,
       link: `/feedback?id=${id}`,
       feedbackId: id,
       actorUserId: session?.user?.id,
       actorName: actorName,
-    })
-  }
+    }
 
-  // Notify email subscribers about the new public comment (skip internal notes)
-  if (!created.isInternal) {
-    const commenterName = created.authorName || author?.name || 'Someone'
+    // In-app notifications for team members
+    notifyProjectTeam(fb.projectId, session?.user?.id || null, notifParams)
+
+    // In-app notifications for non-team-member subscribers (app/both channel)
+    notifyFeedbackSubscribers(id, session?.user?.id || null, [], {
+      ...notifParams,
+      projectId: fb.projectId,
+    })
+
+    // Email notifications for subscribers (email/both channel)
     try {
       const subscribers = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.feedbackId, id))
-
-      const recipients = subscribers.filter((sub) => sub.email !== created.authorEmail)
+      const emailRecipients = subscribers.filter(
+        (sub) => sub.email !== created.authorEmail && (sub.notifyChannel === 'email' || sub.notifyChannel === 'both')
+      )
       const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
 
       const notificationResults = await Promise.allSettled(
-        recipients.map((sub) => {
+        emailRecipients.map((sub) => {
           const unsubscribeUrl = `${baseUrl}/api/feedback/${id}/unsubscribe?token=${sub.token}`
           return sendNewCommentNotificationEmail({
             to: sub.email,
             feedbackTitle: fb.title,
-            commenterName,
+            commenterName: actorName,
             commentBody: created.body,
             boardUrl: baseUrl,
             unsubscribeUrl,
@@ -189,7 +196,7 @@ export default defineEventHandler(async (event) => {
 
       for (const [index, result] of notificationResults.entries()) {
         if (result.status === 'rejected') {
-          logger.error('Failed to send comment notification', { feedbackId: id, email: recipients[index]?.email, error: result.reason instanceof Error ? result.reason.message : result.reason })
+          logger.error('Failed to send comment notification', { feedbackId: id, email: emailRecipients[index]?.email, error: result.reason instanceof Error ? result.reason.message : result.reason })
         }
       }
     } catch (err) {

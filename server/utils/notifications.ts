@@ -1,6 +1,6 @@
-import { eq, inArray } from 'drizzle-orm'
+import { eq, and, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { notification } from '~/server/database/schema/feedback'
+import { notification, feedbackSubscription } from '~/server/database/schema/feedback'
 import { project } from '~/server/database/schema/feedback'
 import { teamMember, user } from '~/server/database/schema/auth'
 import { createLogger } from '~/server/utils/logger'
@@ -133,6 +133,60 @@ export async function notifyProjectTeam(
   } catch (err) {
     logger.error('Failed to notify project team', {
       projectId,
+      type: params.type,
+      error: err instanceof Error ? err.message : err,
+    })
+  }
+}
+
+/**
+ * Creates in-app notifications for logged-in users subscribed to a feedback item
+ * whose notifyChannel is 'app' or 'both'.
+ * Excludes a specific user (e.g. the actor) and any users already notified as team members.
+ */
+export async function notifyFeedbackSubscribers(
+  feedbackId: string,
+  excludeUserId: string | null,
+  excludeUserIds: string[],
+  params: Omit<CreateNotificationParams, 'userId'>
+) {
+  try {
+    // Get subscribers with 'app' or 'both' channel who have a userId (logged-in)
+    const subscribers = await db
+      .select({
+        userId: feedbackSubscription.userId,
+        notifyChannel: feedbackSubscription.notifyChannel,
+      })
+      .from(feedbackSubscription)
+      .where(
+        and(
+          eq(feedbackSubscription.feedbackId, feedbackId),
+          isNotNull(feedbackSubscription.userId)
+        )
+      )
+
+    // Filter to app/both channels, exclude actor and already-notified team members
+    const allExcluded = new Set([...excludeUserIds, ...(excludeUserId ? [excludeUserId] : [])])
+    const recipients = subscribers.filter(
+      (s) =>
+        s.userId &&
+        !allExcluded.has(s.userId) &&
+        (s.notifyChannel === 'app' || s.notifyChannel === 'both')
+    )
+
+    if (recipients.length === 0) return
+
+    await Promise.allSettled(
+      recipients.map((s) =>
+        createNotification({
+          ...params,
+          userId: s.userId!,
+        })
+      )
+    )
+  } catch (err) {
+    logger.error('Failed to notify feedback subscribers', {
+      feedbackId,
       type: params.type,
       error: err instanceof Error ? err.message : err,
     })

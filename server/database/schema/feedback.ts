@@ -398,7 +398,7 @@ export const feedbackComment = pgTable(
   })
 )
 
-// Feedback subscriptions - email notification opt-in per feedback item
+// Feedback subscriptions - notification opt-in per feedback item
 export const feedbackSubscription = pgTable(
   'feedback_subscription',
   {
@@ -409,6 +409,9 @@ export const feedbackSubscription = pgTable(
     email: text('email').notNull(),
     // Optional: link to a registered user account
     userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+    // Notification channel: 'email', 'app', or 'both'
+    // Anonymous subscribers are always 'email' (no account for in-app)
+    notifyChannel: text('notify_channel').default('email').notNull(),
     // Opaque token used in one-click unsubscribe links
     token: text('token').notNull(),
     createdAt: timestamp('created_at')

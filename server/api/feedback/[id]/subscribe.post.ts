@@ -13,6 +13,9 @@ const logger = createLogger('feedback')
 
 const subscribeSchema = z.object({
   email: z.string().email().optional(),
+  // Notification channel: 'email' (default), 'app' (in-app only), or 'both'
+  // Anonymous users are always 'email' regardless of what they pass
+  channel: z.enum(['email', 'app', 'both']).optional().default('email'),
 })
 
 export default defineEventHandler(async (event) => {
@@ -58,6 +61,9 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Anonymous users can only use email channel (no account for in-app)
+  const notifyChannel = session?.user ? body.channel : 'email'
+
   // Check if already subscribed
   const [existing] = await db
     .select()
@@ -66,7 +72,14 @@ export default defineEventHandler(async (event) => {
     .limit(1)
 
   if (existing) {
-    return createSuccessResponse({ subscribed: true, email: subscriberEmail })
+    // Update channel preference if it changed
+    if (existing.notifyChannel !== notifyChannel) {
+      await db
+        .update(feedbackSubscription)
+        .set({ notifyChannel })
+        .where(eq(feedbackSubscription.id, existing.id))
+    }
+    return createSuccessResponse({ subscribed: true, email: subscriberEmail, channel: notifyChannel })
   }
 
   const token = crypto.randomUUID()
@@ -75,6 +88,7 @@ export default defineEventHandler(async (event) => {
     feedbackId: id,
     email: subscriberEmail,
     userId: session?.user?.id || null,
+    notifyChannel,
     token,
     createdAt: new Date(),
   })
@@ -91,5 +105,5 @@ export default defineEventHandler(async (event) => {
   }
 
   setResponseStatus(event, 201)
-  return createSuccessResponse({ subscribed: true, email: subscriberEmail })
+  return createSuccessResponse({ subscribed: true, email: subscriberEmail, channel: notifyChannel })
 })

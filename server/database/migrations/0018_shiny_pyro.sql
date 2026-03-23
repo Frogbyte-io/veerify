@@ -1,0 +1,1 @@
+ALTER TABLE "feedback_subscription" ADD COLUMN "notify_channel" text DEFAULT 'email' NOT NULL;

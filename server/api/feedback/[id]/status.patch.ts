@@ -9,7 +9,7 @@ import { feedback, feedbackStatus, feedbackSubscription } from '~/server/databas
 import { sendStatusChangeNotificationEmail } from '~/lib/email'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 import { createLogger } from '~/server/utils/logger'
-import { notifyProjectTeam } from '~/server/utils/notifications'
+import { notifyProjectTeam, notifyFeedbackSubscribers } from '~/server/utils/notifications'
 
 const logger = createLogger('feedback')
 
@@ -67,27 +67,35 @@ export default defineEventHandler(async (event) => {
     .where(eq(feedback.id, id))
     .returning()
 
-  // Create in-app notifications for team members about the status change
+  // Notify about the status change
   if (updated.status !== fb.status) {
-    notifyProjectTeam(fb.projectId, session.user.id, {
-      type: 'status_change',
+    const notifParams = {
+      type: 'status_change' as const,
       title: `Status changed to "${updated.status}"`,
       body: updated.title,
       link: `/feedback?id=${id}`,
       feedbackId: id,
       actorUserId: session.user.id,
       actorName: session.user.name,
-    })
-  }
+    }
 
-  // Notify email subscribers about the status change
-  if (updated.status !== fb.status) {
+    // In-app notifications for team members
+    notifyProjectTeam(fb.projectId, session.user.id, notifParams)
+
+    // In-app notifications for non-team-member subscribers (app/both channel)
+    notifyFeedbackSubscribers(id, session.user.id, [], {
+      ...notifParams,
+      projectId: fb.projectId,
+    })
+
+    // Email notifications for subscribers (email/both channel)
     try {
       const subscribers = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.feedbackId, id))
+      const emailRecipients = subscribers.filter((s) => s.notifyChannel === 'email' || s.notifyChannel === 'both')
 
       const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
       const notificationResults = await Promise.allSettled(
-        subscribers.map((sub) => {
+        emailRecipients.map((sub) => {
           const unsubscribeUrl = `${baseUrl}/api/feedback/${id}/unsubscribe?token=${sub.token}`
           const boardUrl = baseUrl
           return sendStatusChangeNotificationEmail({
@@ -102,7 +110,7 @@ export default defineEventHandler(async (event) => {
 
       for (const [index, result] of notificationResults.entries()) {
         if (result.status === 'rejected') {
-          logger.error('Failed to send status notification', { feedbackId: id, email: subscribers[index]?.email, error: result.reason instanceof Error ? result.reason.message : result.reason })
+          logger.error('Failed to send status notification', { feedbackId: id, email: emailRecipients[index]?.email, error: result.reason instanceof Error ? result.reason.message : result.reason })
         }
       }
     } catch (err) {

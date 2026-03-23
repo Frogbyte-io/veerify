@@ -108,13 +108,15 @@ export default defineEventHandler(async (event) => {
 
   // Check subscription status for logged-in users
   let isSubscribed = false
+  let subscribeChannel: string | null = null
   if (session?.user) {
     const [sub] = await db
-      .select({ id: feedbackSubscription.id })
+      .select({ id: feedbackSubscription.id, notifyChannel: feedbackSubscription.notifyChannel })
       .from(feedbackSubscription)
       .where(and(eq(feedbackSubscription.feedbackId, id), eq(feedbackSubscription.email, session.user.email)))
       .limit(1)
     isSubscribed = Boolean(sub)
+    subscribeChannel = sub?.notifyChannel || null
   }
 
   return createSuccessResponse({
@@ -127,6 +129,7 @@ export default defineEventHandler(async (event) => {
     voteType,
     isOwn,
     isSubscribed,
+    subscribeChannel,
     canEdit: isOwn || isTeamMember,
     canDelete: isOwn || isTeamMember,
     canManage: isTeamMember,
