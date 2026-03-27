@@ -8,7 +8,7 @@ export default defineWebSocketHandler({
   async open(peer) {
     // Authenticate via token passed as query parameter
     // The client sends: ws://host/_ws?token=<session-token>
-    const url = peer.request?.url || peer.url
+    const url = peer.request?.url || peer.websocket.url
     let token: string | null = null
 
     if (url) {
@@ -39,8 +39,7 @@ export default defineWebSocketHandler({
       }
 
       // Store userId on the peer context for later use
-      peer.ctx = peer.ctx || {}
-      peer.ctx.userId = session.user.id
+      peer.context.userId = session.user.id
 
       addConnection(session.user.id, peer)
       peer.send(JSON.stringify({ type: 'connected', userId: session.user.id }))
@@ -60,14 +59,14 @@ export default defineWebSocketHandler({
   },
 
   close(peer) {
-    const userId = peer.ctx?.userId
+    const userId = typeof peer.context.userId === 'string' ? peer.context.userId : null
     if (userId) {
       removeConnection(userId, peer)
     }
   },
 
   error(peer, error) {
-    const userId = peer.ctx?.userId
+    const userId = typeof peer.context.userId === 'string' ? peer.context.userId : null
     logger.error('WS error', { userId, error: error?.message })
     if (userId) {
       removeConnection(userId, peer)

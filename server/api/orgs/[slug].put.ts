@@ -14,9 +14,9 @@ import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { getStorageProvider } from '~/server/utils/storage'
 import { buildFinalObjectKey, transformImageForKind, validateImageUploadInput } from '~/server/utils/storage/media'
 import { createLogger } from '~/server/utils/logger'
+import { verifyUploadToken } from '~/server/utils/upload-token'
 
 const logger = createLogger('orgs')
-import { verifyUploadToken } from '~/server/utils/upload-token'
 
 const updateOrganizationSchema = z
   .object({

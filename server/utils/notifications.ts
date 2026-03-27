@@ -1,7 +1,6 @@
 import { eq, and, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { notification, feedbackSubscription } from '~/server/database/schema/feedback'
-import { project } from '~/server/database/schema/feedback'
+import { notification, feedbackSubscription, project } from '~/server/database/schema/feedback'
 import { teamMember, user } from '~/server/database/schema/auth'
 import { createLogger } from '~/server/utils/logger'
 import { sendToUser } from '~/server/utils/ws-connections'

@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool, type PoolConfig } from 'pg'
 import * as schema from './schema/index'
-import { createLogger } from '~/server/utils/logger'
+import { createLogger } from '../utils/logger'
 import 'dotenv/config'
 
 const log = createLogger('db')

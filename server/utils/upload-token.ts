@@ -26,7 +26,7 @@ function getUploadTokenSecret() {
     throw createError({
       statusCode: 500,
       statusMessage: 'Upload token secret missing',
-      data: createErrorResponse(ErrorCode.INTERNAL_ERROR, 'Missing UPLOAD_TOKEN_SECRET or BETTER_AUTH_SECRET'),
+      data: createErrorResponse(ErrorCode.INTERNAL_ERROR, 'Missing UPLOAD_TOKEN_SECRET'),
     })
   }
   return secret
