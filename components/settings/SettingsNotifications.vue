@@ -19,8 +19,8 @@
             <p class="text-sm text-muted-foreground">Receive email updates about subscribed feedback items</p>
           </div>
           <Switch
-            :checked="preferences.emailNotifications"
-            @update:checked="updatePreference('emailNotifications', $event)"
+            :model-value="preferences.emailNotifications"
+            @update:model-value="updatePreference('emailNotifications', $event)"
           />
         </div>
 
@@ -30,8 +30,8 @@
             <p class="text-sm text-muted-foreground">Show notifications in the dashboard notification bell</p>
           </div>
           <Switch
-            :checked="preferences.inAppNotifications"
-            @update:checked="updatePreference('inAppNotifications', $event)"
+            :model-value="preferences.inAppNotifications"
+            @update:model-value="updatePreference('inAppNotifications', $event)"
           />
         </div>
 
@@ -45,8 +45,8 @@
             <p class="text-sm text-muted-foreground">When someone submits feedback to your projects</p>
           </div>
           <Switch
-            :checked="preferences.newFeedback"
-            @update:checked="updatePreference('newFeedback', $event)"
+            :model-value="preferences.newFeedback"
+            @update:model-value="updatePreference('newFeedback', $event)"
           />
         </div>
 
@@ -56,8 +56,8 @@
             <p class="text-sm text-muted-foreground">When a feedback item's status is updated</p>
           </div>
           <Switch
-            :checked="preferences.statusChanges"
-            @update:checked="updatePreference('statusChanges', $event)"
+            :model-value="preferences.statusChanges"
+            @update:model-value="updatePreference('statusChanges', $event)"
           />
         </div>
 
@@ -67,8 +67,8 @@
             <p class="text-sm text-muted-foreground">When someone comments on feedback in your projects</p>
           </div>
           <Switch
-            :checked="preferences.newComments"
-            @update:checked="updatePreference('newComments', $event)"
+            :model-value="preferences.newComments"
+            @update:model-value="updatePreference('newComments', $event)"
           />
         </div>
       </div>

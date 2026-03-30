@@ -209,7 +209,7 @@
                   </div>
                 </div>
                 <Switch
-                  :checked="form.isPublic"
+                  :model-value="form.isPublic"
                   class="shrink-0 ml-3 mt-0.5"
                   @click.stop="form.isPublic = !form.isPublic"
                 />
@@ -234,7 +234,7 @@
                   </div>
                 </div>
                 <Switch
-                  :checked="form.changelogEnabled"
+                  :model-value="form.changelogEnabled"
                   class="shrink-0 ml-3 mt-0.5"
                   @click.stop="form.changelogEnabled = !form.changelogEnabled"
                 />
@@ -261,7 +261,7 @@
                   </div>
                 </div>
                 <Switch
-                  :checked="form.roadmapEnabled"
+                  :model-value="form.roadmapEnabled"
                   class="shrink-0 ml-3 mt-0.5"
                   @click.stop="form.roadmapEnabled = !form.roadmapEnabled"
                 />
