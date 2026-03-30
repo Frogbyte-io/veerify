@@ -14,6 +14,8 @@ const PORT = Number(process.env.PLAYWRIGHT_PORT || 4173)
 const TEAM_SLUG = process.env.E2E_TEAM_SLUG || 'preview-org'
 const PROJECT_SLUG = process.env.E2E_PROJECT_SLUG || 'demo'
 const PUBLIC_PAGE = process.env.E2E_PUBLIC_PAGE_URL || `http://${TEAM_SLUG}.localhost:${PORT}/${PROJECT_SLUG}`
+const CUSTOM_DOMAIN = process.env.E2E_CUSTOM_DOMAIN || 'feedback.demo.localhost'
+const CUSTOM_DOMAIN_PAGE = `http://${CUSTOM_DOMAIN}:${PORT}`
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const STORAGE_DRIVER = process.env.STORAGE_DRIVER || 'local'
@@ -181,6 +183,41 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
     // Submit Feedback button should be visible
     await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
+  })
+
+  test('custom domain root serves the public board instead of redirecting to login', async ({ page }) => {
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+    const updateResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+      data: { customDomain: CUSTOM_DOMAIN },
+      headers: { 'content-type': 'application/json' },
+    })
+    expect(updateResponse.ok()).toBe(true)
+
+    try {
+      await page.goto(CUSTOM_DOMAIN_PAGE, { waitUntil: 'domcontentloaded' })
+      await waitForPageReady(page)
+
+      await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
+      await expect.poll(() => page.url()).toBe(`${CUSTOM_DOMAIN_PAGE}/`)
+      await expect.poll(() => page.url()).not.toContain('/login')
+
+      const roadmapTab = page.getByRole('link', { name: 'Roadmap' })
+      await expect(roadmapTab).toBeVisible()
+      await roadmapTab.click()
+      await expect.poll(() => page.url()).toBe(`${CUSTOM_DOMAIN_PAGE}/roadmap`)
+
+      const feedbackTab = page.getByRole('link', { name: 'Feedback' }).first()
+      await expect(feedbackTab).toBeVisible()
+      await feedbackTab.click()
+      await expect.poll(() => page.url()).toBe(`${CUSTOM_DOMAIN_PAGE}/`)
+    } finally {
+      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+        data: { customDomain: null },
+        headers: { 'content-type': 'application/json' },
+      })
+      expect(resetResponse.ok()).toBe(true)
+    }
   })
 
   test('public board navigation switches between feedback and roadmap pages', async ({ page }) => {

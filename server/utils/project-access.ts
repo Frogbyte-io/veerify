@@ -116,3 +116,25 @@ export async function resolvePublicProjectByTeam(teamSlug: string, projectSlug: 
 
   return { team: t, project: proj }
 }
+
+/**
+ * Finds a public project by its configured custom domain.
+ * Returns null when the hostname is not mapped to a public project.
+ */
+export async function findPublicProjectByDomain(hostname: string) {
+  const normalizedHostname = hostname.trim().toLowerCase().replace(/\.$/, '')
+  if (!normalizedHostname) return null
+
+  const [proj] = await db
+    .select()
+    .from(project)
+    .where(and(eq(project.customDomain, normalizedHostname), eq(project.isPublic, true)))
+    .limit(1)
+
+  if (!proj) return null
+
+  const [t] = await db.select().from(team).where(eq(team.id, proj.teamId)).limit(1)
+  if (!t) return null
+
+  return { team: t, project: proj }
+}

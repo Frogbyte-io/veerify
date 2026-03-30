@@ -1,32 +1,54 @@
-export default defineEventHandler((event) => {
+import { findPublicProjectByDomain } from '~/server/utils/project-access'
+
+function normalizeHostname(value: string) {
+  return value.trim().toLowerCase().replace(/\.$/, '')
+}
+
+function isPageRequest(pathname: string) {
+  return !pathname.startsWith('/api/') && !pathname.startsWith('/_nuxt/') && pathname !== '/favicon.ico'
+}
+
+export default defineEventHandler(async (event) => {
+  event.context.teamSubdomain = null
+  event.context.publicProjectSlug = null
+
+  const pathname = getRequestURL(event).pathname
+  if (!isPageRequest(pathname)) {
+    return
+  }
+
   const host = getHeader(event, 'host') || ''
-  const appDomain = (process.env.APP_DOMAIN || 'localhost').trim()
-  const dashboardDomain = (
+  const appDomain = normalizeHostname(process.env.APP_DOMAIN || 'localhost')
+  const dashboardDomain = normalizeHostname(
     process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
-  ).trim()
-
-  // Strip port from host
-  const hostWithoutPort = host.split(':')[0]
-
-  let teamSlug: string | null = null
+  )
+  const hostWithoutPort = normalizeHostname(host.split(':')[0] || '')
 
   if (hostWithoutPort === appDomain || hostWithoutPort === dashboardDomain) {
-    // Bare app domain — no subdomain
-    teamSlug = null
-  } else if (hostWithoutPort.endsWith('.' + appDomain)) {
-    // e.g. "team.veerify.io" when APP_DOMAIN=veerify.io
+    return
+  }
+
+  if (hostWithoutPort.endsWith('.' + appDomain)) {
     const subdomain = hostWithoutPort.slice(0, -(appDomain.length + 1))
     if (subdomain && !subdomain.includes('.')) {
-      teamSlug = subdomain
-    }
-  } else if (appDomain === 'localhost' && hostWithoutPort.endsWith('.localhost')) {
-    // Development: "team.localhost" — endsWith check handles the case above already,
-    // but this explicit branch covers when APP_DOMAIN is left as default "localhost".
-    const subdomain = hostWithoutPort.slice(0, -'.localhost'.length)
-    if (subdomain && !subdomain.includes('.')) {
-      teamSlug = subdomain
+      event.context.teamSubdomain = subdomain
+      return
     }
   }
 
-  event.context.teamSubdomain = teamSlug
+  if (appDomain === 'localhost' && hostWithoutPort.endsWith('.localhost')) {
+    const subdomain = hostWithoutPort.slice(0, -'.localhost'.length)
+    if (subdomain && !subdomain.includes('.')) {
+      event.context.teamSubdomain = subdomain
+      return
+    }
+  }
+
+  const publicProject = await findPublicProjectByDomain(hostWithoutPort)
+  if (!publicProject) {
+    return
+  }
+
+  event.context.teamSubdomain = publicProject.team.slug
+  event.context.publicProjectSlug = publicProject.project.slug
 })

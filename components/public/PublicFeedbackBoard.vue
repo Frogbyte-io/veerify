@@ -1083,6 +1083,9 @@ export default {
       return encodeURIComponent(window.location.href)
     },
     roadmapPath() {
+      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
+        return '/roadmap'
+      }
       return `/${this.projectSlug}/roadmap`
     },
     roadmapEnabled() {

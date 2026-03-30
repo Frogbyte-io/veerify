@@ -397,6 +397,9 @@ export default {
       return `${protocol}//${dashboardDomain}${port}`
     },
     feedbackBoardPath() {
+      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
+        return '/'
+      }
       return `/${this.projectSlug}`
     },
     roadmapEnabled() {

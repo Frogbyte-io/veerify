@@ -30,15 +30,37 @@ export default {
     teamSubdomain() {
       return useState('teamSubdomain').value
     },
+    publicProjectSlug() {
+      return useState('publicProjectSlug').value
+    },
     slugParts() {
       const params = useRoute().params.slug
       return Array.isArray(params) ? params : params ? [params] : []
     },
     projectSlug() {
-      return this.slugParts[0] || null
+      if (!this.publicProjectSlug) {
+        return this.slugParts[0] || null
+      }
+
+      const firstSegment = this.slugParts[0] || null
+      if (!firstSegment || firstSegment === 'roadmap' || firstSegment === this.publicProjectSlug) {
+        return this.publicProjectSlug
+      }
+
+      return null
     },
     subPage() {
-      return this.slugParts[1] || null
+      if (!this.publicProjectSlug) {
+        return this.slugParts[1] || null
+      }
+
+      const firstSegment = this.slugParts[0] || null
+      if (firstSegment === 'roadmap') return 'roadmap'
+      if (firstSegment === this.publicProjectSlug) {
+        return this.slugParts[1] || null
+      }
+
+      return null
     },
   },
 }

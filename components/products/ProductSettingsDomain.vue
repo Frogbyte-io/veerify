@@ -55,7 +55,7 @@
             </Button>
           </div>
 
-          <div v-if="verifyResult" class="space-y-1 text-xs text-muted-foreground">
+          <div v-if="verifyResult && !verifyResult.verified" class="space-y-1 text-xs text-muted-foreground">
             <p v-if="verifyResult.expected">
               <span class="font-medium">Expected:</span>
               <code class="ml-1 rounded bg-muted px-1 py-0.5 font-mono">{{ verifyResult.expected }}</code>
@@ -91,13 +91,13 @@
         </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
-        <div class="space-y-3 rounded-md bg-muted p-4">
+        <div class="space-y-3">
           <p class="text-sm font-medium">Required DNS records</p>
           <div v-if="displayDnsRecords.length" class="space-y-3">
             <div
               v-for="(record, index) in displayDnsRecords"
               :key="`${record.type}-${record.name}-${record.value}-${index}`"
-              class="grid grid-cols-1 gap-3 rounded-md border bg-background p-3 text-sm md:grid-cols-3"
+              class="grid grid-cols-1 gap-3 rounded-md border bg-muted/50 p-3 text-sm md:grid-cols-[auto_1fr_1fr]"
             >
               <div class="space-y-1">
                 <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</p>
@@ -105,11 +105,21 @@
               </div>
               <div class="space-y-1">
                 <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Name / Host</p>
-                <code class="block break-all rounded border bg-background px-2 py-1 font-mono">{{ record.name }}</code>
+                <div class="flex items-center gap-1">
+                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{ record.name }}</code>
+                  <Button variant="ghost" size="icon" class="h-7 w-7 shrink-0" @click="copyToClipboard(record.name)">
+                    <Icon :name="copiedField === record.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
               <div class="space-y-1">
                 <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Value / Target</p>
-                <code class="block break-all rounded border bg-background px-2 py-1 font-mono">{{ record.value }}</code>
+                <div class="flex items-center gap-1">
+                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{ record.value }}</code>
+                  <Button variant="ghost" size="icon" class="h-7 w-7 shrink-0" @click="copyToClipboard(record.value)">
+                    <Icon :name="copiedField === record.value ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -117,6 +127,11 @@
           <p class="text-xs text-muted-foreground">
             TTL can be set to <strong>Auto</strong> or <strong>3600</strong>. DNS changes can take up to 48 hours to
             propagate, though usually much faster.
+          </p>
+          <p class="text-xs text-muted-foreground">
+            <strong>Note:</strong> Some DNS providers only require the subdomain part (e.g.
+            <code class="rounded bg-muted px-1 py-0.5 font-mono">feedback</code>) in the Name / Host field, as they
+            automatically append your base domain.
           </p>
         </div>
 
@@ -151,6 +166,8 @@ export default {
       isSaving: false,
       verifyStatus: 'idle',
       verifyResult: null,
+      copiedField: null,
+      copiedTimer: null,
     }
   },
   computed: {
@@ -225,7 +242,7 @@ export default {
       if (this.statusPresentation === 'ownership_verification_required') return 'Ownership verification required'
       if (this.statusPresentation === 'dns_incomplete') return 'DNS configuration incomplete'
       if (this.statusPresentation === 'dns_required') return 'DNS not configured yet'
-      return 'Not checked yet'
+      return 'Pending verification'
     },
     statusHint() {
       if (this.statusPresentation === 'active') {
@@ -240,6 +257,9 @@ export default {
       if (this.statusPresentation === 'dns_required') {
         return 'Add the required DNS records below, then check again.'
       }
+      if (this.statusPresentation === 'idle') {
+        return 'Add the DNS records below, then click Check DNS to verify.'
+      }
       return ''
     },
     statusDotClass() {
@@ -248,7 +268,8 @@ export default {
       if (
         this.statusPresentation === 'ownership_verification_required' ||
         this.statusPresentation === 'dns_incomplete' ||
-        this.statusPresentation === 'dns_required'
+        this.statusPresentation === 'dns_required' ||
+        this.statusPresentation === 'idle'
       ) {
         return 'bg-amber-500'
       }
@@ -260,7 +281,8 @@ export default {
       if (
         this.statusPresentation === 'ownership_verification_required' ||
         this.statusPresentation === 'dns_incomplete' ||
-        this.statusPresentation === 'dns_required'
+        this.statusPresentation === 'dns_required' ||
+        this.statusPresentation === 'idle'
       ) {
         return 'text-amber-700 dark:text-amber-300'
       }
@@ -272,7 +294,8 @@ export default {
       if (
         this.statusPresentation === 'ownership_verification_required' ||
         this.statusPresentation === 'dns_incomplete' ||
-        this.statusPresentation === 'dns_required'
+        this.statusPresentation === 'dns_required' ||
+        this.statusPresentation === 'idle'
       ) {
         return 'border-amber-500/30 bg-amber-500/5'
       }
@@ -294,6 +317,15 @@ export default {
     },
   },
   methods: {
+    copyToClipboard(text) {
+      navigator.clipboard.writeText(text)
+      this.copiedField = text
+      if (this.copiedTimer) clearTimeout(this.copiedTimer)
+      this.copiedTimer = setTimeout(() => {
+        this.copiedField = null
+      }, 2000)
+    },
+
     normalizeDnsRecords(records) {
       const seen = new Set()
       const seenCnameHosts = new Set()

@@ -1,6 +1,11 @@
 <template>
   <div>
-    <PublicTeamProducts v-if="teamSubdomain" :team-slug="teamSubdomain" />
+    <PublicFeedbackBoard
+      v-if="teamSubdomain && publicProjectSlug"
+      :team-slug="teamSubdomain"
+      :project-slug="publicProjectSlug"
+    />
+    <PublicTeamProducts v-else-if="teamSubdomain" :team-slug="teamSubdomain" />
     <NuxtLayout v-else name="clean">
       <div class="min-h-screen flex items-center justify-center bg-background">
         <div class="text-center">
@@ -22,6 +27,9 @@ export default {
   computed: {
     teamSubdomain() {
       return useState('teamSubdomain').value
+    },
+    publicProjectSlug() {
+      return useState('publicProjectSlug').value
     },
   },
   async mounted() {

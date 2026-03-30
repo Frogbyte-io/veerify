@@ -20,5 +20,10 @@ export default defineNuxtPlugin(() => {
     }
   }
 
-  useState('teamSubdomain', () => teamSlug)
+  const teamSubdomainState = useState<string | null>('teamSubdomain', () => null)
+  if (!teamSubdomainState.value && teamSlug) {
+    teamSubdomainState.value = teamSlug
+  }
+
+  useState<string | null>('publicProjectSlug', () => null)
 })
