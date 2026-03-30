@@ -28,10 +28,10 @@
           </div>
         </div>
         <Switch
-          :checked="localFeatures.feedbackEnabled"
+          :model-value="localFeatures.feedbackEnabled"
           :disabled="savingFeature === 'feedbackEnabled'"
           class="shrink-0 ml-4 mt-0.5"
-          @update:checked="toggleFeature('feedbackEnabled', $event)"
+          @update:model-value="toggleFeature('feedbackEnabled', $event)"
         />
       </div>
 
@@ -55,10 +55,10 @@
           </div>
         </div>
         <Switch
-          :checked="localFeatures.roadmapEnabled"
+          :model-value="localFeatures.roadmapEnabled"
           :disabled="savingFeature === 'roadmapEnabled'"
           class="shrink-0 ml-4 mt-0.5"
-          @update:checked="toggleFeature('roadmapEnabled', $event)"
+          @update:model-value="toggleFeature('roadmapEnabled', $event)"
         />
       </div>
 
@@ -80,18 +80,41 @@
           </div>
         </div>
         <Switch
-          :checked="localFeatures.changelogEnabled"
+          :model-value="localFeatures.changelogEnabled"
           :disabled="savingFeature === 'changelogEnabled'"
           class="shrink-0 ml-4 mt-0.5"
-          @update:checked="toggleFeature('changelogEnabled', $event)"
+          @update:model-value="toggleFeature('changelogEnabled', $event)"
         />
       </div>
     </div>
+
+    <!-- Disable Feature Confirmation Dialog -->
+    <Dialog :open="showDisableDialog" @update:open="cancelDisable">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Disable {{ disableFeatureLabel }}?</DialogTitle>
+          <DialogDescription>
+            Your data will not be deleted, but the public and private {{ disableFeatureLabel.toLowerCase() }} will be
+            hidden. There will be no way to view the {{ disableFeatureDataLabel }} until this feature is re-enabled.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="flex-row justify-end gap-2 sm:gap-2">
+          <Button variant="outline" @click="cancelDisable">Cancel</Button>
+          <Button variant="destructive" @click="confirmDisable">Disable</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <script>
 import { toast } from 'vue-sonner'
+
+const FEATURE_LABELS = {
+  feedbackEnabled: { label: 'Feedback Board', dataLabel: 'feedback data' },
+  roadmapEnabled: { label: 'Roadmap', dataLabel: 'roadmap data' },
+  changelogEnabled: { label: 'Changelog', dataLabel: 'changelog entries' },
+}
 
 export default {
   name: 'ProductSettingsFeatures',
@@ -108,12 +131,23 @@ export default {
   data() {
     return {
       savingFeature: null,
+      showDisableDialog: false,
+      pendingDisableFeature: null,
       localFeatures: {
         feedbackEnabled: this.project?.settings?.feedbackEnabled !== false,
         roadmapEnabled: this.project?.settings?.roadmapEnabled === true,
         changelogEnabled: this.project?.settings?.changelogEnabled === true,
       },
     }
+  },
+
+  computed: {
+    disableFeatureLabel() {
+      return FEATURE_LABELS[this.pendingDisableFeature]?.label || ''
+    },
+    disableFeatureDataLabel() {
+      return FEATURE_LABELS[this.pendingDisableFeature]?.dataLabel || ''
+    },
   },
 
   watch: {
@@ -127,7 +161,28 @@ export default {
   },
 
   methods: {
-    async toggleFeature(feature, value) {
+    toggleFeature(feature, value) {
+      if (!value) {
+        this.pendingDisableFeature = feature
+        this.showDisableDialog = true
+        return
+      }
+      this.saveFeature(feature, value)
+    },
+
+    confirmDisable() {
+      const feature = this.pendingDisableFeature
+      this.showDisableDialog = false
+      this.pendingDisableFeature = null
+      this.saveFeature(feature, false)
+    },
+
+    cancelDisable() {
+      this.showDisableDialog = false
+      this.pendingDisableFeature = null
+    },
+
+    async saveFeature(feature, value) {
       this.localFeatures[feature] = value
       this.savingFeature = feature
 
