@@ -336,7 +336,7 @@
 </template>
 
 <script>
-import { authClient } from '~/lib/auth-client'
+import { completePublicAuthHandoffFromUrl, fetchPublicAuthSession } from '~/lib/public-auth-handoff'
 
 const FEEDBACK_BOARD_PREFETCH_CACHE_TTL_MS = 60_000
 
@@ -476,7 +476,7 @@ export default {
       this.columnsLoading = false
       this.applyTheme(data.project?.settings?.themeMode || 'system')
       this.warmFeedbackBoardData()
-      this.checkCurrentUser()
+      await this.checkCurrentUser()
       return
     }
     try {
@@ -486,7 +486,7 @@ export default {
       this.columns = data.columns || []
       this.applyTheme(this.projectData.project.settings?.themeMode || 'system')
       this.warmFeedbackBoardData()
-      this.checkCurrentUser()
+      await this.checkCurrentUser()
     } catch (err) {
       console.error('Error loading roadmap:', err)
       this.error = 'This roadmap could not be found.'
@@ -538,9 +538,15 @@ export default {
     },
     async checkCurrentUser() {
       if (!import.meta.client) return
+
+      const handoffCompleted = await completePublicAuthHandoffFromUrl().catch(() => false)
+
       try {
-        const sessionResult = await authClient.getSession()
-        this.currentUser = sessionResult?.data?.user || null
+        const sessionResult = await fetchPublicAuthSession()
+        this.currentUser = sessionResult?.user || null
+        if (handoffCompleted && this.currentUser) {
+          await $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
+        }
       } catch {
         this.currentUser = null
       }

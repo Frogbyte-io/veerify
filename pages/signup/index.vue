@@ -113,7 +113,7 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
-import { resolveSafeRedirectTarget } from '~/lib/auth-redirect'
+import { resolvePostAuthRedirectTarget, resolveSafeRedirectTarget } from '~/lib/auth-redirect'
 
 export default {
   name: 'SignUpPage',
@@ -135,6 +135,10 @@ export default {
   methods: {
     async resolveRedirectTarget(rawRedirect, fallback = '/dashboard') {
       return resolveSafeRedirectTarget(rawRedirect, fallback)
+    },
+
+    async resolvePostAuthTarget(rawRedirect, fallback = '/dashboard') {
+      return resolvePostAuthRedirectTarget(rawRedirect, fallback)
     },
 
     async handleSubmit() {
@@ -162,7 +166,7 @@ export default {
           this.error = result.error.message || 'Sign up failed'
         } else {
           $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
-          const target = await this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
+          const target = await this.resolvePostAuthTarget(this.$route.query.redirect, '/dashboard')
           if (target.startsWith('http://') || target.startsWith('https://')) {
             window.location.href = target
           } else {
@@ -182,7 +186,7 @@ export default {
       this.error = ''
 
       try {
-        const callbackURL = await this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
+        const callbackURL = await this.resolvePostAuthTarget(this.$route.query.redirect, '/dashboard')
         await authClient.signIn.social({
           provider: 'github',
           callbackURL,

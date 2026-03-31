@@ -1,4 +1,5 @@
 import { authClient } from '~/lib/auth-client'
+import { resolvePostAuthRedirectTarget } from '~/lib/auth-redirect'
 
 export default defineNuxtRouteMiddleware(async (to, _from) => {
   // Skip middleware on server-side during generation/build
@@ -63,8 +64,12 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
         return
       }
       const redirect = to.query.redirect
-      if (redirect && typeof redirect === 'string' && redirect.startsWith('/')) {
-        return navigateTo(redirect)
+      if (redirect && typeof redirect === 'string') {
+        const target = await resolvePostAuthRedirectTarget(redirect, '/dashboard')
+        if (target.startsWith('http://') || target.startsWith('https://')) {
+          return navigateTo(target, { external: true })
+        }
+        return navigateTo(target)
       }
       return navigateTo('/dashboard')
     }

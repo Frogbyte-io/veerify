@@ -43,6 +43,22 @@ export function parseRedirectUrl(rawRedirect: string): URL | null {
   }
 }
 
+export function getMainAppUrl() {
+  if (!import.meta.client) {
+    return ''
+  }
+
+  const config = useRuntimeConfig()
+  const appDomain = normalizeHostname(String(config.public.appDomain || 'localhost'))
+  const dashboardDomain = normalizeHostname(
+    String(config.public.dashboardDomain || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`))
+  )
+  const protocol = window.location.protocol
+  const port = dashboardDomain === 'localhost' ? `:${window.location.port}` : ''
+
+  return `${protocol}//${dashboardDomain}${port}`
+}
+
 export async function resolveSafeRedirectTarget(rawRedirect: unknown, fallback = '/dashboard'): Promise<string> {
   if (!rawRedirect || typeof rawRedirect !== 'string') {
     return fallback
@@ -99,4 +115,43 @@ export async function resolveSafeRedirectTarget(rawRedirect: unknown, fallback =
   }
 
   return fallback
+}
+
+export async function resolvePostAuthRedirectTarget(rawRedirect: unknown, fallback = '/dashboard'): Promise<string> {
+  const target = await resolveSafeRedirectTarget(rawRedirect, fallback)
+
+  if (!import.meta.client || target.startsWith('/')) {
+    return target
+  }
+
+  const parsed = parseRedirectUrl(target)
+  if (!parsed) {
+    return fallback
+  }
+
+  const redirectHost = normalizeHostname(parsed.hostname)
+  const config = useRuntimeConfig()
+  const appDomain = normalizeHostname(String(config.public.appDomain || 'localhost'))
+  const dashboardDomain = normalizeHostname(
+    String(config.public.dashboardDomain || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`))
+  )
+  const currentHost = normalizeHostname(window.location.hostname)
+
+  if (
+    isAppHostedRedirectHost({
+      redirectHost,
+      currentHost,
+      appDomain,
+      dashboardDomain,
+    })
+  ) {
+    return parsed.toString()
+  }
+
+  const mainAppUrl = getMainAppUrl()
+  if (!mainAppUrl) {
+    return parsed.toString()
+  }
+
+  return `${mainAppUrl}/api/public/auth/handoff/start?target=${encodeURIComponent(parsed.toString())}`
 }

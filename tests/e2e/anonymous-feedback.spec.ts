@@ -220,6 +220,41 @@ test.describe('Anonymous feedback sessions', () => {
     }
   })
 
+  test('custom domain login handoff restores authenticated state on the public board', async ({ page }) => {
+    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+
+    const updateResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+      data: { customDomain: CUSTOM_DOMAIN },
+      headers: { 'content-type': 'application/json' },
+    })
+    expect(updateResponse.ok()).toBe(true)
+
+    try {
+      await page.context().clearCookies()
+      await page.goto(`/login?redirect=${encodeURIComponent(CUSTOM_DOMAIN_PAGE)}`)
+      await page.getByTestId('login-email').fill(TEST_EMAIL)
+      await page.getByTestId('login-password').fill(TEST_PASSWORD)
+      await page.getByTestId('login-submit').click()
+
+      await page.waitForURL(
+        (url) => url.origin === new URL(CUSTOM_DOMAIN_PAGE).origin && url.pathname === new URL(CUSTOM_DOMAIN_PAGE).pathname,
+        {
+          timeout: 30_000,
+        }
+      )
+
+      await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible()
+      await expect(page.getByRole('link', { name: 'Sign in / Join' })).toHaveCount(0)
+    } finally {
+      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+        data: { customDomain: null },
+        headers: { 'content-type': 'application/json' },
+      })
+      expect(resetResponse.ok()).toBe(true)
+    }
+  })
+
   test('public board navigation switches between feedback and roadmap pages', async ({ page }) => {
     await gotoPublicPage(page)
 

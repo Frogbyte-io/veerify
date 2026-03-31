@@ -948,7 +948,7 @@
 </template>
 
 <script>
-import { authClient } from '~/lib/auth-client'
+import { completePublicAuthHandoffFromUrl, fetchPublicAuthSession } from '~/lib/public-auth-handoff'
 
 const ROADMAP_PREFETCH_CACHE_TTL_MS = 60_000
 const FEEDBACK_DETAILS_PREFETCH_CACHE_TTL_MS = 30_000
@@ -1170,7 +1170,7 @@ export default {
       await this.$nextTick()
       this.setupScrollObserver()
       this.warmRoadmapData()
-      this.checkAdminStatus()
+      await this.checkAdminStatus()
       return
     }
     try {
@@ -1179,7 +1179,7 @@ export default {
       this.applyTheme(this.projectData?.project?.settings?.themeMode || 'system')
       await this.loadFeedback()
       this.warmRoadmapData()
-      this.checkAdminStatus()
+      await this.checkAdminStatus()
     } catch (err) {
       console.error('Error loading project:', err)
       this.error = 'This feedback page could not be found.'
@@ -1606,16 +1606,31 @@ export default {
     },
     async checkAdminStatus() {
       if (!import.meta.client) return
+
+      const handoffCompleted = await completePublicAuthHandoffFromUrl().catch(() => false)
+
       try {
-        const sessionResult = await authClient.getSession()
-        if (!sessionResult?.data?.user) return
-        this.currentUser = sessionResult.data.user
-        this.submitForm.authorName = sessionResult.data.user.name || ''
-        this.submitForm.authorEmail = sessionResult.data.user.email || ''
+        const sessionResult = await fetchPublicAuthSession()
+        const currentUser = sessionResult?.user || null
+
+        this.currentUser = currentUser
+        this.isAdmin = false
+        this.submitForm.authorName = currentUser?.name || ''
+        this.submitForm.authorEmail = currentUser?.email || ''
+
+        if (!currentUser) {
+          return
+        }
+
+        if (handoffCompleted) {
+          await $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
+        }
+
         const response = await $fetch('/api/teams/list-user')
         const teams = response?.data || []
         this.isAdmin = teams.some((t) => t.slug === this.teamSlug)
       } catch {
+        this.currentUser = null
         this.isAdmin = false
       }
     },

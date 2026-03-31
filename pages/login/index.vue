@@ -178,7 +178,7 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
-import { resolveSafeRedirectTarget } from '~/lib/auth-redirect'
+import { resolvePostAuthRedirectTarget, resolveSafeRedirectTarget } from '~/lib/auth-redirect'
 
 export default {
   name: 'LoginPage',
@@ -203,6 +203,10 @@ export default {
       return resolveSafeRedirectTarget(rawRedirect, fallback)
     },
 
+    async resolvePostAuthTarget(rawRedirect, fallback = '/dashboard') {
+      return resolvePostAuthRedirectTarget(rawRedirect, fallback)
+    },
+
     async handleSubmit() {
       if (!this.email || !this.password) {
         this.error = 'Please enter both email and password'
@@ -222,7 +226,7 @@ export default {
           this.error = result.error.message || 'Sign in failed'
         } else {
           $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
-          const target = await this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
+          const target = await this.resolvePostAuthTarget(this.$route.query.redirect, '/dashboard')
           // Hard reload when adding an account to clear all in-memory session caches
           if (this.$route.query.addAccount === 'true') {
             window.location.href = target
@@ -250,7 +254,7 @@ export default {
       this.error = ''
 
       try {
-        const callbackURL = await this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
+        const callbackURL = await this.resolvePostAuthTarget(this.$route.query.redirect, '/dashboard')
 
         const result = await authClient.signIn.magicLink({
           email: this.email,
@@ -275,7 +279,7 @@ export default {
       this.error = ''
 
       try {
-        const callbackURL = await this.resolveRedirectTarget(this.$route.query.redirect, '/dashboard')
+        const callbackURL = await this.resolvePostAuthTarget(this.$route.query.redirect, '/dashboard')
         await authClient.signIn.social({
           provider: 'github',
           callbackURL,
