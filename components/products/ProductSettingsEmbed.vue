@@ -80,6 +80,8 @@
 </template>
 
 <script>
+import { buildPublicBoardUrl } from '~/lib/public-board-url'
+
 export default {
   name: 'ProductSettingsEmbed',
   props: {
@@ -100,13 +102,12 @@ export default {
   computed: {
     publicBoardUrl() {
       if (!import.meta.client || !this.project) return ''
-      const teamSlug = this.project.team?.slug
-      if (!teamSlug) return ''
-      const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
-      const protocol = window.location.protocol
-      const port = window.location.port
-      const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : ''
-      return `${protocol}//${teamSlug}.${appDomain}${portSuffix}/${this.project.slug}`
+      return buildPublicBoardUrl({
+        project: this.project,
+        appDomain: useRuntimeConfig().public.appDomain || 'localhost',
+        protocol: window.location.protocol,
+        port: window.location.port,
+      })
     },
     iframeSnippet() {
       const width = this.options.width || '100%'

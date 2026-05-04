@@ -129,6 +129,7 @@ import ProductSettingsDomain from '~/components/products/ProductSettingsDomain.v
 import ProductSettingsEmbed from '~/components/products/ProductSettingsEmbed.vue'
 import ProductSettingsDanger from '~/components/products/ProductSettingsDanger.vue'
 import ProductSettingsFeedback from '~/components/products/ProductSettingsFeedback.vue'
+import { buildPublicBoardUrl } from '~/lib/public-board-url'
 
 const DEFAULT_FEEDBACK_QUERY = {
   page: 1,
@@ -210,13 +211,12 @@ export default {
     },
     publicBoardUrl() {
       if (!import.meta.client || !this.projectData) return ''
-      const teamSlug = this.projectData.team?.slug
-      if (!teamSlug) return ''
-      const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
-      const protocol = window.location.protocol
-      const port = window.location.port
-      const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : ''
-      return `${protocol}//${teamSlug}.${appDomain}${portSuffix}/${this.projectData.slug}`
+      return buildPublicBoardUrl({
+        project: this.projectData,
+        appDomain: useRuntimeConfig().public.appDomain || 'localhost',
+        protocol: window.location.protocol,
+        port: window.location.port,
+      })
     },
     currentComponent() {
       const componentMap = {

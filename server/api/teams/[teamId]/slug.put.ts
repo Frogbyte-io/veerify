@@ -6,6 +6,7 @@ import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { commonSchemas, validateBody } from '~/server/utils/validation'
 import { isReservedSlug } from '~/server/utils/reserved-slugs'
+import { registerTeamPublicDomainBestEffort } from '~/server/services/domains/domain-service'
 
 const updateSlugSchema = z.object({
   slug: commonSchemas.slug,
@@ -62,6 +63,8 @@ export default defineEventHandler(async (event) => {
     .set({ slug: body.slug, updatedAt: new Date() })
     .where(eq(team.id, teamId))
     .returning()
+
+  await registerTeamPublicDomainBestEffort(updated.slug, { teamId: updated.id })
 
   return createSuccessResponse(updated)
 })

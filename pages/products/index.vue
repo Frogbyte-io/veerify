@@ -286,6 +286,7 @@
 
 <script>
 import { toast } from 'vue-sonner'
+import { buildPublicBoardUrl } from '~/lib/public-board-url'
 
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 
@@ -453,12 +454,13 @@ export default {
     },
 
     getProductPublicUrl(product) {
-      const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
-      const teamSlug = this.activeTeamSlug || '...'
-      const protocol = window.location.protocol
-      const port = window.location.port
-      const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : ''
-      return `${protocol}//${teamSlug}.${appDomain}${portSuffix}/${product.slug}`
+      return buildPublicBoardUrl({
+        project: product,
+        teamSlug: this.activeTeamSlug || '...',
+        appDomain: useRuntimeConfig().public.appDomain || 'localhost',
+        protocol: window.location.protocol,
+        port: window.location.port,
+      })
     },
 
     openPublicPage(product) {

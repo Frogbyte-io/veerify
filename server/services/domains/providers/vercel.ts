@@ -236,10 +236,23 @@ export class VercelDomainProvider implements DomainProvider {
   async registerProjectDomain(input: { hostname: string }) {
     const hostname = normalizeDomainHostname(input.hostname)
     const { projectId } = this.getConfig()
-    await this.request(`/v10/projects/${encodeURIComponent(projectId)}/domains${this.buildQuery()}`, {
-      method: 'POST',
-      body: JSON.stringify({ name: hostname }),
-    })
+    try {
+      await this.request(`/v10/projects/${encodeURIComponent(projectId)}/domains${this.buildQuery()}`, {
+        method: 'POST',
+        body: JSON.stringify({ name: hostname }),
+      })
+    } catch (error: unknown) {
+      const err = error as { statusCode?: number; statusMessage?: string; message?: string }
+      const message = err.statusMessage || err.message || ''
+      const isAlreadyRegistered =
+        err.statusCode === 409 ||
+        /already (exists|assigned|in use|registered|added)/i.test(message) ||
+        /domain.*already/i.test(message)
+
+      if (!isAlreadyRegistered) {
+        throw error
+      }
+    }
     return this.getMappedDomainResult(hostname)
   }
 

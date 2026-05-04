@@ -83,6 +83,7 @@
 
 <script>
 import { toast } from 'vue-sonner'
+import { buildPublicBoardUrl } from '~/lib/public-board-url'
 
 export default {
   name: 'ProductSettingsGeneral',
@@ -115,14 +116,13 @@ export default {
     },
     publicUrl() {
       if (!import.meta.client) return ''
-      const teamSlug = this.project.team?.slug
-      if (!teamSlug) return ''
-      const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
-      const protocol = window.location.protocol
-      const port = window.location.port
-      const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : ''
-      const productSlug = this.form.slug || this.project.slug || '...'
-      return `${protocol}//${teamSlug}.${appDomain}${portSuffix}/${productSlug}`
+      return buildPublicBoardUrl({
+        project: this.project,
+        projectSlug: this.form.slug || this.project.slug || '...',
+        appDomain: useRuntimeConfig().public.appDomain || 'localhost',
+        protocol: window.location.protocol,
+        port: window.location.port,
+      })
     },
   },
   watch: {

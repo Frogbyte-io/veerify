@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildDomainSettingsPatch, normalizeCustomDomainInput } from '../server/services/domains/domain-service'
+import {
+  buildDomainSettingsPatch,
+  buildTeamSubdomainHostname,
+  normalizeCustomDomainInput,
+} from '../server/services/domains/domain-service'
 import { dedupeDnsRecords } from '../server/services/domains/provider'
 import { mapVercelDomainResult } from '../server/services/domains/providers/vercel'
 
@@ -9,6 +13,11 @@ describe('domain service helpers', () => {
     expect(normalizeCustomDomainInput(' Feedback.Example.com. ')).toBe('feedback.example.com')
     expect(normalizeCustomDomainInput('')).toBeNull()
     expect(normalizeCustomDomainInput(null)).toBeNull()
+  })
+
+  it('builds production team subdomain hostnames', () => {
+    expect(buildTeamSubdomainHostname(' DotMatrixLabs ', 'Veerify.io.')).toBe('dotmatrixlabs.veerify.io')
+    expect(buildTeamSubdomainHostname('dotmatrixlabs', 'localhost')).toBeNull()
   })
 
   it('deduplicates dns records by type, name, and value', () => {

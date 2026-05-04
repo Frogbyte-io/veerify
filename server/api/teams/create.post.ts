@@ -6,6 +6,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { commonSchemas, validateBody } from '~/server/utils/validation'
 import { isReservedSlug } from '~/server/utils/reserved-slugs'
+import { registerTeamPublicDomainBestEffort } from '~/server/services/domains/domain-service'
 
 const createTeamSchema = z.object({
   name: z.string().min(1, 'Team name is required').max(100, 'Team name too long'),
@@ -73,6 +74,8 @@ export default defineEventHandler(async (event) => {
     role: 'admin',
     createdAt: now,
   })
+
+  await registerTeamPublicDomainBestEffort(newTeam.slug, { teamId: newTeam.id })
 
   setResponseStatus(event, 201)
   return createSuccessResponse(newTeam)
