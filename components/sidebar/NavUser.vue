@@ -11,7 +11,7 @@
       </div>
 
       <!-- Show user dropdown when authenticated -->
-      <DropdownMenu v-else-if="user">
+      <DropdownMenu v-else-if="user" @update:open="handleMenuOpen">
         <DropdownMenuTrigger as-child>
           <SidebarMenuButton
             data-testid="nav-user-trigger"
@@ -105,6 +105,11 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+import {
+  clearDashboardBootstrapCache,
+  fetchDashboardBootstrap,
+  getCachedDashboardBootstrap,
+} from '~/lib/dashboard-bootstrap-client'
 
 const NAV_USER_CACHE_MAX_AGE_MS = 5 * 60 * 1000
 
@@ -170,7 +175,6 @@ export default {
 
   async mounted() {
     await this.initializeSession()
-    this.loadOtherAccounts()
   },
 
   beforeUnmount() {
@@ -185,6 +189,14 @@ export default {
     },
 
     async fetchSessionState() {
+      const bootstrap = getCachedDashboardBootstrap() || (await fetchDashboardBootstrap().catch(() => null))
+      if (bootstrap?.session) {
+        return {
+          session: bootstrap.session,
+          sessionRef: null,
+        }
+      }
+
       const { data: session } = await authClient.useSession(useFetch)
       return {
         session: session.value || null,
@@ -210,6 +222,7 @@ export default {
     },
 
     startSessionWatcher(sessionRef) {
+      if (!sessionRef) return
       this.stopSessionWatcher?.()
       this.stopSessionWatcher = watch(sessionRef, (nextSession) => {
         navUserCache.session = nextSession || null
@@ -261,6 +274,12 @@ export default {
       }
     },
 
+    handleMenuOpen(open) {
+      if (open && this.otherAccounts.length === 0) {
+        this.loadOtherAccounts()
+      }
+    },
+
     async switchAccount(sessionToken) {
       if (this.switchingAccount) return
       this.switchingAccount = true
@@ -287,6 +306,7 @@ export default {
       try {
         await authClient.signOut()
         clearNavUserSessionCache()
+        clearDashboardBootstrapCache()
         this.session = null
         this.isPending = false
         await navigateTo('/login')

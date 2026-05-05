@@ -117,6 +117,11 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+import {
+  clearDashboardBootstrapCache,
+  fetchDashboardBootstrap,
+  getCachedDashboardBootstrap,
+} from '~/lib/dashboard-bootstrap-client'
 
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 const TEAM_SWITCHER_CACHE_MAX_AGE_MS = 5 * 60 * 1000
@@ -239,9 +244,24 @@ export default {
       }
     },
 
-    async fetchAndCacheTeamContext() {
+    async fetchTeamContextFromBootstrap() {
+      const bootstrap = getCachedDashboardBootstrap() || (await fetchDashboardBootstrap())
+      if (!bootstrap?.teamContext) return null
+
+      return {
+        activeTeam: bootstrap.teamContext.activeTeam || null,
+        teams: bootstrap.teamContext.teams || [],
+        activeOrganization: bootstrap.teamContext.activeOrganization || null,
+      }
+    },
+
+    async fetchAndCacheTeamContext(options = {}) {
       if (!teamSwitcherCache.pendingRequest) {
-        teamSwitcherCache.pendingRequest = this.fetchTeamContext()
+        const { preferBootstrap = true } = options
+        teamSwitcherCache.pendingRequest = (preferBootstrap
+          ? this.fetchTeamContextFromBootstrap().then((context) => context || this.fetchTeamContext())
+          : this.fetchTeamContext()
+        )
           .then((context) => {
             teamSwitcherCache.activeTeam = context.activeTeam
             teamSwitcherCache.teams = context.teams
@@ -287,7 +307,7 @@ export default {
           this.isLoadingTeams = true
         }
         this.teamsError = null
-        await this.fetchAndCacheTeamContext()
+        await this.fetchAndCacheTeamContext({ preferBootstrap: !force })
         this.applyTeamContextFromCache()
         this.teamsError = null
         this.isLoadingTeams = false
@@ -353,6 +373,7 @@ export default {
         }
 
         clearTeamContextCache()
+        clearDashboardBootstrapCache()
         this.emitActiveTeamChanged()
         await this.initializeTeams({ force: true, silent: true })
       } catch (error) {

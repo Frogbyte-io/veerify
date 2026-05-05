@@ -92,6 +92,7 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+import { clearDashboardBootstrapCache } from '~/lib/dashboard-bootstrap-client'
 import { toast } from 'vue-sonner'
 
 export default {
@@ -181,6 +182,7 @@ export default {
           await authClient.organization.setActive({
             organizationId: this.invitationSummary.organizationId,
           })
+          clearDashboardBootstrapCache()
         }
 
         if (this.invitationSummary?.teamId) {
@@ -188,6 +190,7 @@ export default {
             method: 'POST',
             body: { teamId: this.invitationSummary.teamId },
           }).catch(() => null)
+          clearDashboardBootstrapCache()
         }
 
         this.wasAccepted = true

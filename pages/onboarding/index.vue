@@ -214,6 +214,7 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+import { clearDashboardBootstrapCache } from '~/lib/dashboard-bootstrap-client'
 
 export default {
   name: 'OnboardingPage',
@@ -292,6 +293,7 @@ export default {
           await authClient.organization.setActive({
             organizationId: this.createdOrgId,
           })
+          clearDashboardBootstrapCache()
 
           // Resolve team context so the session has activeTeamId
           await $fetch('/api/teams/active').catch(() => null)

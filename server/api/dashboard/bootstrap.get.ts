@@ -1,10 +1,10 @@
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { listTeamsForUser } from '~/server/utils/dashboard-bootstrap'
+import { getDashboardBootstrapData } from '~/server/utils/dashboard-bootstrap'
 import { createSuccessResponse } from '~/server/utils/response'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teams = await listTeamsForUser(session.user.id)
+  const bootstrap = await getDashboardBootstrapData(session)
 
-  return createSuccessResponse(teams)
+  return createSuccessResponse(bootstrap)
 })

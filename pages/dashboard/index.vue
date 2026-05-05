@@ -339,7 +339,7 @@
 </template>
 
 <script>
-import { authClient } from '~/lib/auth-client'
+import { fetchDashboardBootstrap } from '~/lib/dashboard-bootstrap-client'
 
 export default {
   name: 'DashboardPage',
@@ -375,32 +375,51 @@ export default {
       try {
         this.isLoading = true
 
-        // Merge any anonymous feedback/votes into the authenticated account.
-        // This covers the OAuth redirect flow where login/signup pages aren't involved.
-        $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
+        this.scheduleAnonymousMerge()
 
-        const [sessionResult, orgsResult] = await Promise.all([
-          authClient.useSession(useFetch),
-          authClient.organization.list().catch(() => ({ data: [] })),
-        ])
-
-        const session = sessionResult.data.value
+        const bootstrap = await fetchDashboardBootstrap()
+        const session = bootstrap?.session
         this.userName = session?.user?.name || 'there'
 
-        const orgs = Array.isArray(orgsResult.data) ? orgsResult.data : []
-        this.hasOrganization = orgs.length > 0
-
-        // Load data for the relevant dashboard type
+        this.hasOrganization = Boolean(bootstrap?.teamContext?.activeOrganization)
         if (this.hasOrganization) {
-          await this.loadWorkspaceStats()
+          this.stats = bootstrap?.workspace?.stats || this.stats
+          this.statsLoading = false
         } else {
-          await this.loadSubmissions()
+          const personal = bootstrap?.personal || {}
+          this.recentSubmissions = personal.recentSubmissions || []
+          this.submissionCount = personal.submissionCount || 0
+          this.completedCount = personal.completedCount || 0
+          this.totalVotes = personal.totalVotes || 0
+          this.statsLoading = false
         }
       } catch (error) {
         console.error('Dashboard initialization error:', error)
       } finally {
         this.isLoading = false
       }
+    },
+
+    scheduleAnonymousMerge() {
+      if (!import.meta.client) return
+
+      try {
+        if (sessionStorage.getItem('veerify:anonymous-merge-scheduled') === '1') return
+        sessionStorage.setItem('veerify:anonymous-merge-scheduled', '1')
+      } catch {
+        // Ignore storage failures and still schedule the best-effort merge.
+      }
+
+      const merge = () => {
+        $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
+      }
+
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(merge, { timeout: 3000 })
+        return
+      }
+
+      window.setTimeout(merge, 1500)
     },
 
     async loadWorkspaceStats() {

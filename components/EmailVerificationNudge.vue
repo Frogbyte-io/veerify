@@ -34,6 +34,7 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+import { fetchDashboardBootstrap, getCachedDashboardBootstrap } from '~/lib/dashboard-bootstrap-client'
 
 export default {
   name: 'EmailVerificationNudge',
@@ -66,13 +67,9 @@ export default {
   async mounted() {
     if (import.meta.client) {
       try {
-        const { data: session } = await authClient.useSession(useFetch)
-        this.session = session.value || null
+        const bootstrap = getCachedDashboardBootstrap() || (await fetchDashboardBootstrap())
+        this.session = bootstrap?.session || null
         this.isPending = false
-
-        watch(session, (next) => {
-          this.session = next || null
-        })
       } catch {
         this.isPending = false
       }

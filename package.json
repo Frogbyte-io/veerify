@@ -20,6 +20,7 @@
     "postbuild": "drizzle-kit migrate && tsx scripts/seed.ts",
     "vercel-build": "drizzle-kit migrate && nuxt build",
     "domains:ensure-team-subdomains": "tsx scripts/ensure-team-subdomains.ts",
+    "teams:backfill-default-memberships": "tsx scripts/backfill-default-team-memberships.ts",
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "typecheck": "vue-tsc --noEmit",

@@ -211,12 +211,30 @@ test('user can switch teams using sidebar team switcher', async ({ page }) => {
 })
 
 test('sidebar team switcher data stays cached across client-side route changes', async ({ page }) => {
-  const listUserTeamsPath = '/api/teams/list-user'
+  const bootstrapPath = '/api/dashboard/bootstrap'
+  const oldInitialLoadPaths = [
+    '/api/teams/list-user',
+    '/api/teams/active',
+    '/api/auth/organization/get-full-organization',
+    '/api/dashboard/stats',
+    '/api/notifications/unread-count',
+  ]
+  let bootstrapRequestCount = 0
   let listUserTeamsRequestCount = 0
+  const oldInitialLoadRequestCounts = new Map(oldInitialLoadPaths.map((path) => [path, 0]))
 
   page.on('request', (request) => {
-    if (request.url().includes(listUserTeamsPath)) {
+    const url = request.url()
+    if (url.includes(bootstrapPath)) {
+      bootstrapRequestCount += 1
+    }
+    if (url.includes('/api/teams/list-user')) {
       listUserTeamsRequestCount += 1
+    }
+    for (const path of oldInitialLoadPaths) {
+      if (url.includes(path)) {
+        oldInitialLoadRequestCounts.set(path, (oldInitialLoadRequestCounts.get(path) || 0) + 1)
+      }
     }
   })
 
@@ -224,7 +242,10 @@ test('sidebar team switcher data stays cached across client-side route changes',
   await page.goto('/dashboard')
   await expect(page.locator(selectors.teamSwitcherActiveName)).toBeVisible({ timeout: 20_000 })
 
-  await expect.poll(() => listUserTeamsRequestCount, { timeout: 20_000 }).toBeGreaterThan(0)
+  await expect.poll(() => bootstrapRequestCount, { timeout: 20_000 }).toBeGreaterThan(0)
+  for (const path of oldInitialLoadPaths) {
+    expect(oldInitialLoadRequestCounts.get(path), `${path} should not be part of initial dashboard load`).toBe(0)
+  }
 
   const baselineRequestCount = listUserTeamsRequestCount
 
@@ -239,6 +260,31 @@ test('sidebar team switcher data stays cached across client-side route changes',
   await expect(page.locator(selectors.teamSwitcherTrigger)).not.toContainText('Loading teams...')
 
   expect(listUserTeamsRequestCount).toBe(baselineRequestCount)
+})
+
+test('dashboard bootstrap returns workspace context for authenticated users', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
+
+  const response = await page.request.get('/api/dashboard/bootstrap')
+  expect(response.ok()).toBeTruthy()
+
+  const payload = await response.json()
+  expect(payload.success).toBeTruthy()
+  expect(payload.data.session.user.email).toBe(TEST_EMAIL)
+  expect(payload.data.teamContext.teams.length).toBeGreaterThan(0)
+  expect(payload.data.teamContext.activeTeam.id).toBeTruthy()
+  expect(payload.data.workspace.stats).toMatchObject({
+    totalFeedback: expect.any(Number),
+    projectCount: expect.any(Number),
+    memberCount: expect.any(Number),
+  })
+  expect(payload.data.notifications.unreadCount).toEqual(expect.any(Number))
+})
+
+test('dashboard bootstrap rejects unauthenticated users', async ({ request }) => {
+  const response = await request.get('/api/dashboard/bootstrap')
+  expect(response.status()).toBe(401)
 })
 
 test('sidebar user section stays hydrated across client-side route changes', async ({ page }) => {

@@ -1,5 +1,5 @@
 <template>
-  <DropdownMenu>
+  <DropdownMenu @update:open="handleOpenChange">
     <DropdownMenuTrigger as-child>
       <Button
         variant="ghost"
@@ -81,7 +81,7 @@
 </template>
 
 <script>
-import { authClient } from '~/lib/auth-client'
+import { fetchDashboardBootstrap, getCachedDashboardBootstrap } from '~/lib/dashboard-bootstrap-client'
 
 export default {
   name: 'NotificationBell',
@@ -98,7 +98,14 @@ export default {
       wsReconnectAttempts: 0,
       pollInterval: null,
       useWebSocket: true,
+      hasLoadedNotifications: false,
     }
+  },
+  mounted() {
+    this.initializeFromBootstrap()
+  },
+  beforeUnmount() {
+    this.cleanup()
   },
   methods: {
     async fetchNotifications() {
@@ -111,6 +118,7 @@ export default {
           this.unreadCount = res.data.unreadCount
           this.hasMore = res.data.hasMore
           this.nextCursor = res.data.nextCursor
+          this.hasLoadedNotifications = true
         }
       } catch {
         // Silently fail — bell just shows no notifications
@@ -118,12 +126,10 @@ export default {
         this.isLoading = false
       }
     },
-    async connectWebSocket() {
+    async connectWebSocket(sessionToken = null) {
       if (!import.meta.client) return
 
-      // Get session token for WS authentication
-      const { data: session } = await authClient.useSession(useFetch)
-      const token = session.value?.session?.token
+      const token = sessionToken || getCachedDashboardBootstrap()?.session?.session?.token
       if (!token) {
         this.fallbackToPolling()
         return
@@ -231,6 +237,36 @@ export default {
         // Silently fail
       }
     },
+    async initializeFromBootstrap() {
+      try {
+        const bootstrap = getCachedDashboardBootstrap() || (await fetchDashboardBootstrap())
+        this.unreadCount = bootstrap?.notifications?.unreadCount || 0
+        this.isLoading = false
+        this.scheduleRealtimeConnection(bootstrap?.session?.session?.token || null)
+      } catch {
+        this.isLoading = false
+        this.fallbackToPolling()
+      }
+    },
+    scheduleRealtimeConnection(sessionToken) {
+      if (!import.meta.client) return
+
+      const connect = () => {
+        this.connectWebSocket(sessionToken)
+      }
+
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(connect, { timeout: 5000 })
+        return
+      }
+
+      window.setTimeout(connect, 2000)
+    },
+    handleOpenChange(open) {
+      if (open && !this.hasLoadedNotifications) {
+        this.fetchNotifications()
+      }
+    },
     async loadMore() {
       if (!this.nextCursor || this.isLoadingMore) return
       this.isLoadingMore = true
@@ -327,13 +363,6 @@ export default {
         this.ws = null
       }
     },
-  },
-  mounted() {
-    this.fetchNotifications()
-    this.connectWebSocket()
-  },
-  beforeUnmount() {
-    this.cleanup()
   },
 }
 </script>

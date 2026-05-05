@@ -1,7 +1,12 @@
 import { authClient } from '~/lib/auth-client'
+import {
+  clearDashboardBootstrapCache,
+  fetchDashboardBootstrap,
+  getCachedDashboardBootstrap,
+} from '~/lib/dashboard-bootstrap-client'
 import { resolvePostAuthRedirectTarget } from '~/lib/auth-redirect'
 
-export default defineNuxtRouteMiddleware(async (to, _from) => {
+export default defineNuxtRouteMiddleware(async (to) => {
   // Skip middleware on server-side during generation/build
   if (import.meta.server) {
     return
@@ -30,35 +35,54 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     return
   }
 
+  // Protected routes that require authentication
+  const protectedRoutes = [
+    '/dashboard',
+    '/settings',
+    '/reports',
+    '/feedback',
+    '/help',
+    '/products',
+    '/onboarding',
+    '/submissions',
+  ]
+
+  // Auth routes that should redirect to dashboard if user is already logged in
+  const authRoutes = ['/login', '/signup', '/auth']
+
+  // Token-based feedback edit page is public even though /feedback is a protected prefix
+  const isFeedbackEditPage = /^\/feedback\/[^/]+\/edit$/.test(to.path)
+  const isProtectedRoute = !isFeedbackEditPage && protectedRoutes.some((route) => to.path.startsWith(route))
+
+  const isAuthRoute = authRoutes.some((route) => to.path.startsWith(route))
+
   try {
-    const { data: session } = await authClient.useSession(useFetch)
+    if (isProtectedRoute) {
+      const cachedBootstrap = getCachedDashboardBootstrap()
+      if (cachedBootstrap?.session?.user) {
+        return
+      }
 
-    // Protected routes that require authentication
-    const protectedRoutes = [
-      '/dashboard',
-      '/settings',
-      '/reports',
-      '/feedback',
-      '/help',
-      '/products',
-      '/onboarding',
-      '/submissions',
-    ]
+      if (to.path.startsWith('/dashboard')) {
+        const bootstrap = await fetchDashboardBootstrap()
+        if (bootstrap?.session?.user) {
+          return
+        }
+        clearDashboardBootstrapCache()
+        return navigateTo('/login')
+      }
 
-    // Auth routes that should redirect to dashboard if user is already logged in
-    const authRoutes = ['/login', '/signup', '/auth']
-
-    // Token-based feedback edit page is public even though /feedback is a protected prefix
-    const isFeedbackEditPage = /^\/feedback\/[^/]+\/edit$/.test(to.path)
-    const isProtectedRoute = !isFeedbackEditPage && protectedRoutes.some((route) => to.path.startsWith(route))
-
-    const isAuthRoute = authRoutes.some((route) => to.path.startsWith(route))
-
-    if (isProtectedRoute && !session.value?.user) {
-      return navigateTo('/login')
+      const { data: session } = await authClient.useSession(useFetch)
+      if (!session.value?.user) {
+        return navigateTo('/login')
+      }
+      return
     }
 
-    if (isAuthRoute && session.value?.user) {
+    if (isAuthRoute) {
+      const { data: session } = await authClient.useSession(useFetch)
+      if (!session.value?.user) return
+
       // Allow adding a new account without being redirected away
       if (to.query.addAccount === 'true') {
         return
@@ -74,6 +98,10 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
       return navigateTo('/dashboard')
     }
   } catch (error) {
+    if (isProtectedRoute) {
+      clearDashboardBootstrapCache()
+      return navigateTo('/login')
+    }
     console.error('Auth middleware error:', error)
   }
 })
