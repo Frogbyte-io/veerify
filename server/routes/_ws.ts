@@ -1,5 +1,11 @@
 import { auth } from '~/lib/auth'
-import { addConnection, removeConnection } from '~/server/utils/ws-connections'
+import {
+  addConnection,
+  removeConnection,
+  removePeerFromAllChannels,
+  subscribePeer,
+  unsubscribePeer,
+} from '~/server/utils/ws-connections'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('ws')
@@ -50,26 +56,60 @@ export default defineWebSocketHandler({
     }
   },
 
-  message(peer, message) {
+  async message(peer, message) {
     // Handle ping/pong for keep-alive
     const text = message.text()
     if (text === 'ping') {
       peer.send('pong')
+      return
+    }
+
+    let payload: Record<string, unknown>
+    try {
+      payload = JSON.parse(text)
+    } catch {
+      // Non-JSON frames are ignored rather than closing the socket.
+      return
+    }
+
+    if (!payload || typeof payload !== 'object') return
+
+    const userId = typeof peer.context.userId === 'string' ? peer.context.userId : null
+    if (!userId) return
+
+    const channel = typeof payload.channel === 'string' ? payload.channel : null
+    if (!channel) return
+
+    if (payload.action === 'subscribe') {
+      const result = await subscribePeer(peer, channel, userId)
+      peer.send(
+        JSON.stringify(
+          result.ok ? { type: 'subscribed', channel } : { type: 'subscribe_error', channel, reason: result.reason }
+        )
+      )
+      return
+    }
+
+    if (payload.action === 'unsubscribe') {
+      await unsubscribePeer(peer, channel)
+      peer.send(JSON.stringify({ type: 'unsubscribed', channel }))
     }
   },
 
-  close(peer) {
+  async close(peer) {
     const userId = typeof peer.context.userId === 'string' ? peer.context.userId : null
     if (userId) {
       removeConnection(userId, peer)
     }
+    await removePeerFromAllChannels(peer)
   },
 
-  error(peer, error) {
+  async error(peer, error) {
     const userId = typeof peer.context.userId === 'string' ? peer.context.userId : null
     logger.error('WS error', { userId, error: error?.message })
     if (userId) {
       removeConnection(userId, peer)
     }
+    await removePeerFromAllChannels(peer)
   },
 })
