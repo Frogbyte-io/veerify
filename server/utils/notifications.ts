@@ -1,17 +1,14 @@
 import { eq, and, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { notification, feedbackSubscription, project } from '~/server/database/schema/feedback'
+import { feedbackSubscription, project } from '~/server/database/schema/feedback'
+import { notification } from '~/server/database/schema/notifications'
 import { teamMember, user } from '~/server/database/schema/auth'
 import { createLogger } from '~/server/utils/logger'
 import { sendToUser } from '~/server/utils/ws-connections'
 
 const logger = createLogger('notifications')
 
-export type NotificationType =
-  | 'status_change'
-  | 'new_comment'
-  | 'new_feedback'
-  | 'feedback_pinned'
+export type NotificationType = 'status_change' | 'new_comment' | 'new_feedback' | 'feedback_pinned'
 
 interface CreateNotificationParams {
   userId: string
@@ -78,11 +75,7 @@ export async function notifyProjectTeam(
 ) {
   try {
     // Get the project's team
-    const [proj] = await db
-      .select({ teamId: project.teamId })
-      .from(project)
-      .where(eq(project.id, projectId))
-      .limit(1)
+    const [proj] = await db.select({ teamId: project.teamId }).from(project).where(eq(project.id, projectId)).limit(1)
 
     if (!proj) return
 
@@ -157,20 +150,12 @@ export async function notifyFeedbackSubscribers(
         notifyChannel: feedbackSubscription.notifyChannel,
       })
       .from(feedbackSubscription)
-      .where(
-        and(
-          eq(feedbackSubscription.feedbackId, feedbackId),
-          isNotNull(feedbackSubscription.userId)
-        )
-      )
+      .where(and(eq(feedbackSubscription.feedbackId, feedbackId), isNotNull(feedbackSubscription.userId)))
 
     // Filter to app/both channels, exclude actor and already-notified team members
     const allExcluded = new Set([...excludeUserIds, ...(excludeUserId ? [excludeUserId] : [])])
     const recipients = subscribers.filter(
-      (s) =>
-        s.userId &&
-        !allExcluded.has(s.userId) &&
-        (s.notifyChannel === 'app' || s.notifyChannel === 'both')
+      (s) => s.userId && !allExcluded.has(s.userId) && (s.notifyChannel === 'app' || s.notifyChannel === 'both')
     )
 
     if (recipients.length === 0) return

@@ -3,7 +3,7 @@ import { eq, desc, and, lt, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { db } from '~/server/database/drizzle'
-import { notification } from '~/server/database/schema/feedback'
+import { notification } from '~/server/database/schema/notifications'
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
