@@ -175,3 +175,17 @@ MVP
 
 - [x] **#9 — Replace `console.error()` with structured logging**
       Introduced `server/utils/logger.ts` using `consola` (already shipped with Nuxt). All `console.error()` calls in server and lib code replaced with structured `logger.error()` calls that include context objects (feedbackId, userId, projectName, key, etc.). Each module creates a tagged child logger (e.g. `feedback`, `github`, `db`, `auth`) for easy filtering.
+
+## Support Platform — Stage 00: Foundations
+
+Plan: `docs/plans/2026-08-11-support-platform/stage-00-foundations.md`. Read `design.md` in the same
+directory first. Infrastructure only — no support tables, endpoints, or UI in this stage.
+
+- [ ] **SUP-00-1** Split `server/database/schema/feedback.ts` into `feedback.ts`, `notifications.ts`, `imports.ts`, `changelog.ts`; add empty `support.ts`; re-export from `index.ts`; verify `yarn db:generate` emits no migration
+- [ ] **SUP-00-2** Add `server/services/realtime/` with `types.ts`, `redis.ts` (ioredis, separate pub/sub connections), `memory.ts`, and driver selection; versioned thin envelopes; unit tests for envelope routing
+- [ ] **SUP-00-3** Rewrite `server/utils/ws-connections.ts` for channel subscriptions (`team:`, `inbox:`, `conversation:`, `user:`) with subscribe-time authorization; keep existing notification delivery working
+- [ ] **SUP-00-4** Add client realtime helper: reconnect with backoff, resubscribe, refetch-on-reconnect, idle-disconnect after 5 min with refetch-on-focus
+- [ ] **SUP-00-5** Add a store adapter to `server/utils/rate-limit.ts` (`memory` | `redis`) reusing the Redis connection; no call-site changes
+- [ ] **SUP-00-6** Add `server/services/scheduler/` with Vercel Cron and Nitro scheduled-task backends behind one registration API; no tasks registered yet
+- [ ] **SUP-00-7** Add `Dockerfile` + `.dockerignore`; extend production `docker-compose.yml` with `app`, `valkey`, `minio`, and Caddy on-demand TLS; add `valkey` to dev compose; document the VM path in `README.md`
+- [ ] **SUP-00-8** Update `.env.example` (`REDIS_URL`, `REALTIME_DRIVER`, `RATE_LIMIT_STORE`) and `docs/agent/context-map.md`
