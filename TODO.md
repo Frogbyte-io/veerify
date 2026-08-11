@@ -182,10 +182,17 @@ Plan: `docs/plans/2026-08-11-support-platform/stage-00-foundations.md`. Read `de
 directory first. Infrastructure only — no support tables, endpoints, or UI in this stage.
 
 - [ ] **SUP-00-1** Split `server/database/schema/feedback.ts` into `feedback.ts`, `notifications.ts`, `imports.ts`, `changelog.ts`; add empty `support.ts`; re-export from `index.ts`; verify `yarn db:generate` emits no migration
-- [ ] **SUP-00-2** Add `server/services/realtime/` with `types.ts`, `redis.ts` (ioredis, separate pub/sub connections), `memory.ts`, and driver selection; versioned thin envelopes; unit tests for envelope routing
-- [ ] **SUP-00-3** Rewrite `server/utils/ws-connections.ts` for channel subscriptions (`team:`, `inbox:`, `conversation:`, `user:`) with subscribe-time authorization; keep existing notification delivery working
+  - Partially done in `bd31097`: `notification` extracted to `notifications.ts`, empty `support.ts` added, `yarn db:generate` confirmed to emit no migration.
+  - **Remaining:** `importRun`/`importRunIssue`/`changelogPost` are uncommitted work in progress, so their extraction into `imports.ts` and `changelog.ts` sits in the working tree to be committed alongside that feature. Check this item off once that lands.
+- [x] **SUP-00-2** Add `server/services/realtime/` with `types.ts`, `redis.ts` (ioredis, separate pub/sub connections), `memory.ts`, and driver selection; versioned thin envelopes; unit tests for envelope routing
+  - `26d1847`. Driver written against the Redis wire protocol via `ioredis`, not a vendor SDK, so Upstash and Valkey are the same code behind one `REDIS_URL`. `sanitizeEnvelope()` strips unknown keys, enforcing "identifiers only, never record contents" in code rather than by convention. 18 unit tests.
+- [x] **SUP-00-3** Rewrite `server/utils/ws-connections.ts` for channel subscriptions (`team:`, `inbox:`, `conversation:`, `user:`) with subscribe-time authorization; keep existing notification delivery working
+  - `cdd56dd`. Authorization in `server/utils/realtime-channels.ts`, checked at subscribe time and failing closed. `inbox:`/`conversation:` deny until Stage 02 supplies the tables. Peers capped at 50 channels. Legacy `sendToUser` retained unchanged — see SUP-00-9.
 - [ ] **SUP-00-4** Add client realtime helper: reconnect with backoff, resubscribe, refetch-on-reconnect, idle-disconnect after 5 min with refetch-on-focus
 - [ ] **SUP-00-5** Add a store adapter to `server/utils/rate-limit.ts` (`memory` | `redis`) reusing the Redis connection; no call-site changes
 - [ ] **SUP-00-6** Add `server/services/scheduler/` with Vercel Cron and Nitro scheduled-task backends behind one registration API; no tasks registered yet
 - [ ] **SUP-00-7** Add `Dockerfile` + `.dockerignore`; extend production `docker-compose.yml` with `app`, `valkey`, `minio`, and Caddy on-demand TLS; add `valkey` to dev compose; document the VM path in `README.md`
 - [ ] **SUP-00-8** Update `.env.example` (`REDIS_URL`, `REALTIME_DRIVER`, `RATE_LIMIT_STORE`) and `docs/agent/context-map.md`
+- [ ] **SUP-00-9** Migrate `NotificationBell.vue` off direct WS payloads onto the channel system: publish a thin envelope on `user:<id>` and have the client refetch the list and unread count instead of unshifting `msg.data`
+  - Surfaced during SUP-00-3. `sendToUser()` pushes full notification objects, which the envelope design disallows, so it was left in place unchanged. Its in-memory map is process-local, so notifications still do not cross instances — the component's 30s polling fallback is load-bearing until this lands and must not be removed before then.
+  - Needs a decision on scope: the `notification` table has no `teamId`, so either the envelope's `teamId` becomes optional for user-scoped events, or notifications gain a team scope.
