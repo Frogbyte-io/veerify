@@ -1,13 +1,15 @@
 /**
  * Rate limiting utilities
  *
- * Implements a sliding window rate limiter using an in-memory Map.
- * Works correctly for single-instance deployments. For multi-instance
- * deployments, swap the in-memory store for a shared Redis backend
- * (e.g. @upstash/ratelimit).
+ * Implements a sliding window rate limiter. Storage is pluggable via
+ * `server/services/rate-limit/` — an in-memory store (default, correct for a
+ * single instance) or a Redis-backed store (correct across instances),
+ * selected the same way the realtime driver is: `RATE_LIMIT_STORE` env var,
+ * inferred from `REDIS_URL` when unset.
  */
 
 import type { H3Event } from 'h3'
+import { getRateLimitStore } from '~/server/services/rate-limit'
 import { ErrorCode, createErrorResponse } from './response'
 
 export interface RateLimitConfig {
@@ -27,30 +29,6 @@ export interface RateLimitConfig {
   identifier?: string
 }
 
-// In-memory store: key → array of request timestamps (ms)
-const _store = new Map<string, number[]>()
-
-// Clean up stale entries every 5 minutes to prevent unbounded memory growth
-const _cleanup = setInterval(
-  () => {
-    const now = Date.now()
-    for (const [key, timestamps] of _store.entries()) {
-      const fresh = timestamps.filter((t) => now - t < 3_600_000)
-      if (fresh.length === 0) {
-        _store.delete(key)
-      } else {
-        _store.set(key, fresh)
-      }
-    }
-  },
-  5 * 60 * 1000
-)
-
-// Allow the Node.js process to exit normally even if this timer is pending
-if (typeof (_cleanup as NodeJS.Timeout).unref === 'function') {
-  ;(_cleanup as NodeJS.Timeout).unref()
-}
-
 /**
  * Checks whether a client is within its rate limit for the given configuration.
  * Uses a sliding window algorithm.
@@ -62,21 +40,9 @@ if (typeof (_cleanup as NodeJS.Timeout).unref === 'function') {
 export async function checkRateLimit(event: H3Event, config: RateLimitConfig): Promise<boolean> {
   const clientId = getClientId(event)
   const key = `${config.identifier ?? 'default'}:${clientId}`
-  const now = Date.now()
   const windowMs = config.windowSeconds * 1000
 
-  // Retrieve existing timestamps and discard those outside the current window
-  const timestamps = (_store.get(key) ?? []).filter((t) => now - t < windowMs)
-
-  if (timestamps.length >= config.maxRequests) {
-    return false
-  }
-
-  // Record this request
-  timestamps.push(now)
-  _store.set(key, timestamps)
-
-  return true
+  return getRateLimitStore().consume(key, windowMs, config.maxRequests)
 }
 
 /**
