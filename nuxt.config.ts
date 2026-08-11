@@ -19,6 +19,15 @@ export default defineNuxtConfig({
   nitro: {
     experimental: {
       websocket: true,
+      // Self-hosted scheduler backend — see server/services/scheduler/.
+      // No-op on Vercel: the Vercel Cron backend is used there instead, and
+      // startScheduleRunner() is skipped in Nitro's dev/test env anyway.
+      tasks: true,
+    },
+    scheduledTasks: {
+      // Trivial example proving the self-hosted backend wires up (Stage 00).
+      // Real consumers land in Stage 03 (IMAP poll) and Stage 06 (SLA sweeper).
+      '*/15 * * * *': ['example:ping'],
     },
   },
   devServer: {
