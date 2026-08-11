@@ -1,22 +1,8 @@
-import Redis, { type RedisOptions } from 'ioredis'
+import { createRedisConnection, getSharedRedisClient } from '~/server/services/redis/client'
 import { createLogger } from '~/server/utils/logger'
 import { parseEnvelope, type RealtimeDriver, type RealtimeEnvelope, type RealtimeHandler } from '../types'
 
 const logger = createLogger('realtime')
-
-/** Exponential backoff capped at 10s, so a broker outage does not spin. */
-function retryStrategy(times: number): number {
-  return Math.min(times * 200, 10_000)
-}
-
-function baseOptions(): RedisOptions {
-  return {
-    retryStrategy,
-    // Queue commands issued while disconnected rather than throwing at call sites.
-    enableOfflineQueue: true,
-    maxRetriesPerRequest: null,
-  }
-}
 
 /**
  * Redis pub/sub driver.
@@ -26,22 +12,16 @@ function baseOptions(): RedisOptions {
  * behind one `REDIS_URL`. Swapping providers is a connection string, not a port.
  *
  * Two connections are required: a Redis connection in subscriber mode cannot
- * issue any other command, so publishing needs its own socket.
+ * issue any other command, so publishing needs its own socket. The publisher
+ * uses the process-wide shared client (also used by the rate limiter); the
+ * subscriber is a dedicated connection built from the same factory.
  */
 export function createRedisDriver(url: string): RealtimeDriver {
-  const publisher = new Redis(url, baseOptions())
-  const subscriber = new Redis(url, baseOptions())
+  const publisher = getSharedRedisClient(url)
+  const subscriber = createRedisConnection(url, 'realtime-subscriber')
 
   /** Local fan-out map. One Redis subscription per channel, many handlers per channel. */
   const handlers = new Map<string, Set<RealtimeHandler>>()
-
-  publisher.on('error', (error: Error) => {
-    logger.error('Realtime publisher error', { error: error.message })
-  })
-
-  subscriber.on('error', (error: Error) => {
-    logger.error('Realtime subscriber error', { error: error.message })
-  })
 
   // ioredis restores subscriptions itself after a reconnect, but re-issuing is
   // idempotent and guards against a dropped SUBSCRIBE during the handshake.
@@ -121,7 +101,12 @@ export function createRedisDriver(url: string): RealtimeDriver {
 
     async close() {
       handlers.clear()
-      await Promise.allSettled([subscriber.quit(), publisher.quit()])
+      // `publisher` is the process-wide shared client and may still be in use
+      // by other subsystems (e.g. the rate limiter) — this driver only owns
+      // its dedicated subscriber connection, so only that one is quit here.
+      await subscriber.quit().catch((error: Error) => {
+        logger.error('Failed to close realtime subscriber cleanly', { error: error.message })
+      })
     },
   }
 }
