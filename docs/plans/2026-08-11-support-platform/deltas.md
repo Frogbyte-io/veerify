@@ -117,3 +117,36 @@ completed in one commit without swallowing unrelated WIP.
 SUP-00-1 shipped the `notification` half only; the `imports.ts` / `changelog.ts` half sits in the working
 tree to be committed with the feature that introduced those tables. Stage boundaries that assume a clean
 tree should say so.
+
+### D-10 — Committed tests depended on an uncommitted vitest alias
+
+**Found:** integrating SUP-00-4/5. **Status:** fixed in `5efd3c8`.
+
+`tests/realtime-channels.test.ts` (shipped in `cdd56dd`) transitively imports
+`~/server/database/drizzle`. The `~` alias was defined only in an **uncommitted** edit to
+`vitest.config.ts` sitting in the working tree, so the test passed locally and failed to even collect
+on a clean checkout. `tests/domain-service.test.ts` had been broken the same way for some time.
+
+Two independent agents hit this and both correctly diagnosed it as pre-existing rather than
+self-inflicted.
+
+**Lesson for this program:** `yarn harness:verify` passing in a dirty working tree does not prove the
+committed state is green. When the tree is dirty, verify against the committed config before claiming a
+gate passed — `git show HEAD:<config> > tmp && yarn vitest run -c tmp` is enough.
+
+### D-11 — Agent branch names collide with stale worktrees
+
+**Found:** re-dispatching Stage 00. **Status:** worked around; needs an orchestration rule.
+
+Worktrees from the first (spend-limit-killed) wave still held `agent/SUP-00-6-scheduler`, so the
+replacement agent could not use its assigned branch name and fell back to
+`agent/SUP-00-6-scheduler-r2`. It flagged this clearly, which is the only reason integration was not
+confusing.
+
+Separately, every agent in both waves was created on a stale base and had to recover by branching from
+`feat/support-stage-00-foundations` explicitly. The Step 0 base check added in wave two worked — all
+three agents detected the problem and recovered on their own.
+
+**Rule:** always give dispatched agents an explicit base ref and an explicit branch name, tell them to
+verify the base before starting, and clean up dead worktrees (`git worktree prune` plus deleting
+abandoned `agent/*` branches) before re-dispatching a previously used item id.
