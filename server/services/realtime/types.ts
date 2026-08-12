@@ -14,15 +14,32 @@ export const REALTIME_ENVELOPE_VERSION = 1
  * The only fields an envelope may carry. `sanitizeEnvelope` strips everything
  * else, so a future caller cannot smuggle a message body through the broker.
  */
-export const REALTIME_ENVELOPE_FIELDS = ['v', 'type', 'teamId', 'inboxId', 'conversationId', 'messageId'] as const
+export const REALTIME_ENVELOPE_FIELDS = [
+  'v',
+  'type',
+  'teamId',
+  'userId',
+  'inboxId',
+  'conversationId',
+  'messageId',
+] as const
 
 export interface RealtimeEnvelope {
   /** Envelope version. A deploy leaves old and new instances running side by side. */
   v: number
   /** Dot-namespaced event name, e.g. `conversation.updated`. */
   type: string
-  /** Always present — every realtime event in this app is tenant-scoped. */
-  teamId: string
+  /**
+   * Scope identifiers. At least one is required, and it must match the channel
+   * the envelope is published on — see `envelopeMatchesChannel`.
+   *
+   * `teamId` is not universally mandatory: a `user:<id>` event is scoped by the
+   * user, who may belong to several teams, so demanding a team there would be
+   * meaningless. The invariant is "every envelope is scoped", not "every
+   * envelope has a teamId".
+   */
+  teamId?: string
+  userId?: string
   inboxId?: string
   conversationId?: string
   messageId?: string
@@ -106,19 +123,52 @@ export function sanitizeEnvelope(input: unknown): RealtimeEnvelope | null {
 
   if (typeof raw.v !== 'number' || !Number.isInteger(raw.v) || raw.v < 1) return null
   if (!isNonEmptyString(raw.type)) return null
-  if (!isNonEmptyString(raw.teamId)) return null
 
   const envelope: RealtimeEnvelope = {
     v: raw.v,
     type: raw.type,
-    teamId: raw.teamId,
   }
 
+  if (isNonEmptyString(raw.teamId)) envelope.teamId = raw.teamId
+  if (isNonEmptyString(raw.userId)) envelope.userId = raw.userId
   if (isNonEmptyString(raw.inboxId)) envelope.inboxId = raw.inboxId
   if (isNonEmptyString(raw.conversationId)) envelope.conversationId = raw.conversationId
   if (isNonEmptyString(raw.messageId)) envelope.messageId = raw.messageId
 
+  // An unscoped envelope has nothing to authorize against and nothing to route
+  // by, so it is rejected outright rather than delivered to whoever happens to
+  // be listening.
+  if (!envelope.teamId && !envelope.userId && !envelope.inboxId && !envelope.conversationId) {
+    return null
+  }
+
   return envelope
+}
+
+/**
+ * Does this envelope belong on this channel?
+ *
+ * Checked at publish time. Without it, nothing stops a `team:A` event being
+ * published to `team:B` — subscribe-time authorization proves a listener may
+ * hear channel B, not that the payload was ever meant for it. Both halves are
+ * needed for tenant isolation to actually hold.
+ */
+export function envelopeMatchesChannel(envelope: RealtimeEnvelope, channel: string): boolean {
+  const parsed = parseChannel(channel)
+  if (!parsed) return false
+
+  switch (parsed.scope) {
+    case 'team':
+      return envelope.teamId === parsed.id
+    case 'user':
+      return envelope.userId === parsed.id
+    case 'inbox':
+      return envelope.inboxId === parsed.id
+    case 'conversation':
+      return envelope.conversationId === parsed.id
+    default:
+      return false
+  }
 }
 
 /** Parse a wire message. Returns null on malformed JSON or an invalid envelope. */
@@ -134,7 +184,9 @@ export function parseEnvelope(message: string): RealtimeEnvelope | null {
 export function createEnvelope(input: Omit<RealtimeEnvelope, 'v'> & { v?: number }): RealtimeEnvelope {
   const envelope = sanitizeEnvelope({ ...input, v: input.v ?? REALTIME_ENVELOPE_VERSION })
   if (!envelope) {
-    throw new Error('Invalid realtime envelope: `type` and `teamId` are required')
+    throw new Error(
+      'Invalid realtime envelope: `type` is required, plus at least one scope id (teamId, userId, inboxId, or conversationId)'
+    )
   }
   return envelope
 }

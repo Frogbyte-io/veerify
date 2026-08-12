@@ -1,7 +1,13 @@
 import { createLogger } from '~/server/utils/logger'
 import { createMemoryDriver } from './drivers/memory'
 import { createRedisDriver } from './drivers/redis'
-import { createEnvelope, type RealtimeDriver, type RealtimeEnvelope, type RealtimeHandler } from './types'
+import {
+  createEnvelope,
+  envelopeMatchesChannel,
+  type RealtimeDriver,
+  type RealtimeEnvelope,
+  type RealtimeHandler,
+} from './types'
 
 export * from './types'
 
@@ -56,7 +62,21 @@ export async function publishRealtime(
   input: Omit<RealtimeEnvelope, 'v'> & { v?: number }
 ): Promise<void> {
   try {
-    await getRealtimeDriver().publish(channel, createEnvelope(input))
+    const envelope = createEnvelope(input)
+
+    // Refuse to publish an envelope onto a channel it does not belong to.
+    // Subscribe-time authorization proves a listener may hear this channel; it
+    // does not prove the payload was meant for it. A team:A event published to
+    // team:B would otherwise reach every legitimately-subscribed listener of B.
+    if (!envelopeMatchesChannel(envelope, channel)) {
+      logger.error('Refused to publish realtime envelope: scope does not match channel', {
+        channel,
+        type: envelope.type,
+      })
+      return
+    }
+
+    await getRealtimeDriver().publish(channel, envelope)
   } catch (error) {
     logger.error('publishRealtime failed', {
       channel,

@@ -5,6 +5,7 @@ import {
   REALTIME_ENVELOPE_VERSION,
   conversationChannel,
   createEnvelope,
+  envelopeMatchesChannel,
   inboxChannel,
   parseChannel,
   parseEnvelope,
@@ -67,12 +68,27 @@ describe('realtime envelopes', () => {
   })
 
   it('rejects envelopes missing required identity', () => {
-    expect(sanitizeEnvelope({ v: 1, type: 'x' })).toBeNull()
     expect(sanitizeEnvelope({ v: 1, teamId: 't1' })).toBeNull()
     expect(sanitizeEnvelope({ type: 'x', teamId: 't1' })).toBeNull()
     expect(sanitizeEnvelope({ v: 0, type: 'x', teamId: 't1' })).toBeNull()
     expect(sanitizeEnvelope({ v: 1.5, type: 'x', teamId: 't1' })).toBeNull()
     expect(sanitizeEnvelope({ v: 1, type: '', teamId: 't1' })).toBeNull()
+  })
+
+  it('rejects an envelope with no scope at all', () => {
+    // Nothing to authorize against and nothing to route by.
+    expect(sanitizeEnvelope({ v: 1, type: 'x' })).toBeNull()
+    expect(sanitizeEnvelope({ v: 1, type: 'x', messageId: 'm1' })).toBeNull()
+  })
+
+  it('accepts a user-scoped envelope with no teamId', () => {
+    // A notification belongs to a user who may be in several teams, so
+    // requiring a teamId here would be meaningless. See delta D-01.
+    expect(sanitizeEnvelope({ v: 1, type: 'notification.created', userId: 'u1' })).toEqual({
+      v: 1,
+      type: 'notification.created',
+      userId: 'u1',
+    })
   })
 
   it('rejects non-objects', () => {
@@ -100,6 +116,37 @@ describe('realtime envelopes', () => {
 
   it('throws when building an envelope without required identity', () => {
     expect(() => createEnvelope({ type: 'x', teamId: '' })).toThrow()
+    expect(() => createEnvelope({ type: 'x' })).toThrow()
+  })
+})
+
+describe('envelopeMatchesChannel', () => {
+  it('accepts an envelope whose scope matches its channel', () => {
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', teamId: 't1' }), 'team:t1')).toBe(true)
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', userId: 'u1' }), 'user:u1')).toBe(true)
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', inboxId: 'i1' }), 'inbox:i1')).toBe(true)
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', conversationId: 'c1' }), 'conversation:c1')).toBe(true)
+  })
+
+  it('rejects a cross-tenant publish', () => {
+    // The case subscribe-time authorization cannot catch: every listener on
+    // team:t2 is legitimately subscribed, so without this check they would all
+    // receive another tenant's event.
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', teamId: 't1' }), 'team:t2')).toBe(false)
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', userId: 'u1' }), 'user:u2')).toBe(false)
+  })
+
+  it('rejects an envelope scoped on a different axis than the channel', () => {
+    // A team-scoped envelope must not ride a user channel even if both ids exist.
+    const envelope = createEnvelope({ type: 'x', teamId: 't1', userId: 'u1' })
+    expect(envelopeMatchesChannel(envelope, 'team:t1')).toBe(true)
+    expect(envelopeMatchesChannel(envelope, 'user:u1')).toBe(true)
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', teamId: 't1' }), 'user:t1')).toBe(false)
+  })
+
+  it('rejects malformed channels', () => {
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', teamId: 't1' }), 'nonsense')).toBe(false)
+    expect(envelopeMatchesChannel(createEnvelope({ type: 'x', teamId: 't1' }), '')).toBe(false)
   })
 })
 
