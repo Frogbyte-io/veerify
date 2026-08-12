@@ -11,6 +11,171 @@ services:
       - '5432:5432'
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    container_name: veerify-valkey
+    image: valkey/valkey:9
+    restart: always
+    # Internal broker only (realtime pub/sub + rate-limit store) — not
+    # published to the host. No ACL/password by default; keep it off any
+    # network that isn't already trusted (the compose default network).
+    command: ['valkey-server', '--save', '60', '1']
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    container_name: veerify-minio
+    image: minio/minio:latest
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      # Reused as the app's S3 credentials too (STORAGE_ACCESS_KEY_ID /
+      # STORAGE_SECRET_ACCESS_KEY) — MinIO's root user *is* the app's S3
+      # user in this single-tenant deployment.
+      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_ACCESS_KEY}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-setup:
+    container_name: veerify-minio-setup
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      STORAGE_BUCKET: ${STORAGE_BUCKET}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY}
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 \"$$STORAGE_ACCESS_KEY_ID\" \"$$STORAGE_SECRET_ACCESS_KEY\"; do
+        echo 'waiting for minio...';
+        sleep 1;
+      done;
+      mc mb --ignore-existing local/\"$$STORAGE_BUCKET\";
+      mc anonymous set download local/\"$$STORAGE_BUCKET\";
+      "
+
+  app:
+    container_name: veerify-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      # --- Database (connects to the `db` service directly, not localhost) ---
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+
+      # --- Auth ---
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_SECRET_PREV: ${BETTER_AUTH_SECRET_PREV:-}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+
+      # --- Domains / deployment mode ---
+      APP_DOMAIN: ${APP_DOMAIN}
+      APP_DASHBOARD_DOMAIN: ${APP_DASHBOARD_DOMAIN}
+      APP_DEPLOYMENT_MODE: self-hosted
+      CNAME_TARGET: ${CNAME_TARGET:-}
+      DOMAIN_PROVIDER: ${DOMAIN_PROVIDER:-static-cname}
+      VERCEL_API_TOKEN: ${VERCEL_API_TOKEN:-}
+      VERCEL_PROJECT_ID: ${VERCEL_PROJECT_ID:-}
+      VERCEL_TEAM_ID: ${VERCEL_TEAM_ID:-}
+      VERCEL_TEAM_SLUG: ${VERCEL_TEAM_SLUG:-}
+
+      # --- Mail (point at a real relay; Mailpit is dev-only) ---
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      MAIL_FROM: ${MAIL_FROM}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME}
+
+      # --- Storage (MinIO, fronted publicly by Caddy at STORAGE_DOMAIN —
+      # presigned upload URLs must be browser-reachable, not just
+      # container-internal) ---
+      STORAGE_DRIVER: s3
+      STORAGE_BUCKET: ${STORAGE_BUCKET}
+      STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
+      STORAGE_ENDPOINT: https://${STORAGE_DOMAIN}
+      STORAGE_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID}
+      STORAGE_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY}
+      STORAGE_FORCE_PATH_STYLE: 'true'
+      STORAGE_PUBLIC_BASE_URL: https://${STORAGE_DOMAIN}/${STORAGE_BUCKET}
+      UPLOAD_TOKEN_SECRET: ${UPLOAD_TOKEN_SECRET}
+
+      # --- Realtime / rate limiting (Redis-protocol; valkey is the
+      # self-hosted broker, wire-compatible with the same ioredis driver
+      # used against Upstash on cloud) ---
+      REDIS_URL: redis://valkey:6379
+      REALTIME_DRIVER: redis
+      RATE_LIMIT_STORE: redis
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', '--spider', 'http://127.0.0.1:3000/']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    container_name: veerify-caddy
+    image: caddy:2-alpine
+    restart: always
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      APP_DASHBOARD_DOMAIN: ${APP_DASHBOARD_DOMAIN}
+      STORAGE_DOMAIN: ${STORAGE_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:2019/config/']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   db_data:
+  valkey_data:
+  minio_data:
+  caddy_data:
+  caddy_config:

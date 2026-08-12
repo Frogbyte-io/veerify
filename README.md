@@ -229,6 +229,54 @@ For local development, start the database with Docker Compose:
 docker compose up -d
 ```
 
+### Self-hosting on a VM
+
+`docker-compose.yml` runs the full stack — the app, Postgres, [Valkey](https://valkey.io/) (Redis-protocol
+broker for realtime + rate limiting), MinIO (S3-compatible object storage), and [Caddy](https://caddyserver.com/)
+(reverse proxy + automatic HTTPS) — on a single machine. No other setup is required beyond Docker and DNS.
+
+#### Prerequisites
+
+- A VM (or bare-metal host) with Docker Engine and the Compose plugin installed.
+- Two DNS `A`/`AAAA` records pointed at the VM's public IP:
+  - `APP_DASHBOARD_DOMAIN` (e.g. `app.veerify.io`) — the dashboard/login/API host.
+  - `APP_DOMAIN` (e.g. `veerify.io`) — the base host for team public boards (`<team-slug>.APP_DOMAIN`).
+- A third record for `STORAGE_DOMAIN` (e.g. `assets.veerify.io`) pointed at the same IP. Uploads (logos,
+  banners) are presigned directly against MinIO, so this host must be reachable from customers' browsers —
+  it is proxied by Caddy, not exposed on its own port.
+- Ports `80` and `443` open and free on the host (Caddy binds both; port 80 is required for ACME's HTTP-01
+  challenge as well as HTTP→HTTPS redirects).
+
+#### Environment
+
+Copy `.env.example` to `.env` and fill in every value used by `docker-compose.yml` — at minimum:
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `APP_DOMAIN`,
+`APP_DASHBOARD_DOMAIN`, SMTP settings pointed at a real relay (Mailpit is dev-only and is not part of the
+production stack), `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_DOMAIN`,
+and `UPLOAD_TOKEN_SECRET`. `STORAGE_ACCESS_KEY_ID`/`STORAGE_SECRET_ACCESS_KEY` double as the MinIO root
+credentials — there is no separate MinIO admin password to set.
+
+#### Bring the stack up
+
+```bash
+docker compose up -d --build
+```
+
+This builds the app image, starts Postgres/Valkey/MinIO, creates and publishes the MinIO bucket, runs
+database migrations on container start (before the app begins serving), and brings Caddy up in front of
+everything. `docker compose logs -f app` shows migration output and server startup.
+
+#### Custom domains (`project.customDomain`)
+
+When a team points a customer-owned domain at a project's public board, Caddy issues that domain's TLS
+certificate automatically on first request (on-demand TLS) — no manual cert management, no restart. The
+customer only needs a `CNAME`/`A` record pointing their domain at this VM; verification and DNS-target
+guidance is the same as on the CNAME/Vercel-based flow (see `CNAME_TARGET` above).
+
+Certificate issuance for arbitrary hosts is gated by an `ask` check in `Caddyfile` so the proxy can't be
+abused as an open certificate-issuance relay — see the comments in `Caddyfile` and D-07 in
+`docs/plans/2026-08-11-support-platform/deltas.md` for what that endpoint needs to validate.
+
 #### Preview the production build locally:
 
 ```bash
