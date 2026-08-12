@@ -150,3 +150,44 @@ three agents detected the problem and recovered on their own.
 **Rule:** always give dispatched agents an explicit base ref and an explicit branch name, tell them to
 verify the base before starting, and clean up dead worktrees (`git worktree prune` plus deleting
 abandoned `agent/*` branches) before re-dispatching a previously used item id.
+
+### D-12 — Caddy on-demand TLS needs an app endpoint that does not exist
+
+**Found:** SUP-00-7. **Status:** queued as SUP-00-10.
+
+`Caddyfile` gates certificate issuance behind `on_demand_tls.ask` pointing at
+`http://app:3000/api/system/tls-ask`. That route does not exist. Caddy treats a non-2xx ask response as
+"deny", so the stack **fails closed**: no certificate is issued for any host, and custom domains serve no
+HTTPS at all.
+
+This is the right failure direction — without the gate it would be an open certificate-issuance relay
+that gets the deployment rate-limited by Let's Encrypt — but the self-hosted stack is not usable for
+custom domains until the endpoint lands.
+
+The design assumed self-hosting was mostly a packaging exercise. It is not: the custom-domain feature
+needs a deployment-mode-specific validation surface that the cloud path gets from Vercel for free.
+
+### D-13 — `yarn build` is unsafe for production images
+
+**Found:** SUP-00-7. **Status:** handled in the Dockerfile; worth knowing repo-wide.
+
+`package.json`'s `postbuild` runs `drizzle-kit migrate && tsx scripts/seed.ts`, and `scripts/seed.ts`
+creates fixed-password test accounts (`test@preview.local` / `password123`). Any production image built
+with plain `yarn build` would ship those credentials.
+
+The Dockerfile therefore runs `yarn nuxt build` and performs migrations separately in
+`docker-entrypoint.sh`. **Any future build tooling must avoid `yarn build` for the same reason.** The
+seeding-on-postbuild arrangement is a footgun that deserves revisiting independently of this program.
+
+### D-14 — Environment problems masquerade as code problems
+
+**Found:** integrating SUP-00-7. **Status:** informational.
+
+The SUP-00-7 agent reported two typecheck errors, one in a file merged and verified clean minutes
+earlier. Re-running typecheck on the integration branch was clean. Root cause: the `D:` drive was at
+100% (65 MB free of 50 GB), so the agent hit `ENOSPC` during `yarn install` and worked around it by
+junctioning `node_modules`, leaving `.nuxt` incompletely generated.
+
+**Lesson:** when a subagent reports failures in files it never touched, re-verify on the integration
+branch before believing the report. Disk exhaustion, partial installs, and missing generated types all
+surface as plausible-looking type errors.
