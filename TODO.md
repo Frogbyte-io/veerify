@@ -209,3 +209,27 @@ directory first. Infrastructure only — no support tables, endpoints, or UI in 
   - The legacy per-user path (`sendToUser`, `addConnection`, `removeConnection`, the `userConnections` map) is **deleted**, not deprecated — notifications now cross instances. The 30s polling remains as a connect-failure fallback but is no longer load-bearing.
   - Surfaced during SUP-00-3. `sendToUser()` pushes full notification objects, which the envelope design disallows, so it was left in place unchanged. Its in-memory map is process-local, so notifications still do not cross instances — the component's 30s polling fallback is load-bearing until this lands and must not be removed before then.
   - Needs a decision on scope: the `notification` table has no `teamId`, so either the envelope's `teamId` becomes optional for user-scoped events, or notifications gain a team scope.
+
+## Support Platform — Stage 01: Contact identity
+
+Plan: `docs/plans/2026-08-11-support-platform/stage-01-contacts.md`. Read `design.md` and `deltas.md`
+first. Integration branch is **`support-platform`**, not `main` (delta D-17).
+
+**Hard constraint:** `server/database/schema/feedback.ts` gets no `contactId`, no backfill, and no data
+migration. The single permitted change is an index on `authorEmail`. See "Why contacts and feedback stay
+separate" in `design.md`.
+
+- [ ] **SUP-01-1** Add `contact`, `contactIdentity`, `supportCompany`, `contactLink` to `server/database/schema/support.ts` with all indexes; generate migration; add index on `feedback.authorEmail`
+- [ ] **SUP-01-2** Add `requireContactAccess` to `server/utils/support-access.ts`; unit tests for the 404/403 split
+- [ ] **SUP-01-3** Add contact CRUD endpoints (list, create, get, update, delete) with team scoping and cursor pagination
+- [ ] **SUP-01-4** Add `POST /api/support/contacts/[id]/merge` with transactional repointing and tombstone; unit tests for collision and self-merge cases
+- [ ] **SUP-01-5** Add `GET /api/support/contacts/[id]/timeline` returning `linked` and `probableFeedback` separately, plus link/unlink endpoints; per-team auto-link setting defaulting to off
+- [ ] **SUP-01-6** Add `supportCompany` CRUD endpoints
+- [ ] **SUP-01-7** Build `/support/contacts` list page (search, pagination, skeletons, error retry)
+- [ ] **SUP-01-8** Build `/support/contacts/[id]` detail page: attributes, identities, timeline with visually distinct Linked vs Possible matches, one-click link, merge dialog
+- [ ] **SUP-01-9** Register support contact routes in `server/utils/openapi.ts`
+
+## Support Platform — Cross-cutting
+
+- [ ] **SUP-X-1** Add a guarded Redis integration suite (delta D-15). Nothing currently exercises the Redis driver or the Lua rate-limit script against a real server — only the memory driver and fakes. Skip when no `REDIS_URL` is reachable, following the `test:e2e:if-available` pattern
+- [ ] **SUP-X-2** Gate `scripts/seed.ts` behind an explicit env flag (delta D-13). `yarn build` runs `postbuild` → seed, which creates `test@preview.local` / `password123` in whatever database it points at
