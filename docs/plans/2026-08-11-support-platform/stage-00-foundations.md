@@ -119,8 +119,10 @@ registered in this stage — Stage 03 and Stage 06 are the first consumers.
 
 ## TODO items
 
-Append to `TODO.md` when dispatching. Item 1 must merge before 2–4 to avoid schema conflicts; 5, 6, 7 are
-independent of the rest.
+Append to `TODO.md` when dispatching. The real ordering is **2 → 3 → 4** (adapter, then WS layer, then
+client); item 1 is fully independent, and 5, 6, 7 depend only on 2. An earlier version of this doc
+claimed item 1 had to merge first to avoid schema conflicts — that was wrong, items 2–4 do not touch
+`server/database/schema/**` at all. See delta D-05.
 
 - [ ] Split `server/database/schema/feedback.ts` into `feedback.ts`, `notifications.ts`, `imports.ts`, `changelog.ts`; add empty `support.ts`; re-export from `index.ts`; verify `yarn db:generate` emits no migration
 - [ ] Add `server/services/realtime/` with `types.ts`, `redis.ts` (ioredis, separate pub/sub connections), `memory.ts`, and driver selection; versioned thin envelopes; unit tests for envelope routing

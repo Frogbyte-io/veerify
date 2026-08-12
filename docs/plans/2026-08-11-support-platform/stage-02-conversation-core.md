@@ -126,6 +126,7 @@ Items 1 and 2 block everything else. Items 5, 6, and 7 can run in parallel once 
 
 - [ ] Add inbox and conversation tables to `server/database/schema/support.ts` with all indexes; generate migration
 - [ ] Extend `server/utils/support-access.ts` with `requireInboxAccess`, `requireConversationAccess`, `resolveInboxByAddress`; unit tests including the team-admin bypass
+- [ ] **Replace the deny branch in `server/utils/realtime-channels.ts`.** `inbox:` and `conversation:` currently deny unconditionally because these tables did not exist in Stage 00, and `tests/realtime-channels.test.ts` asserts that denial. Swap it for `requireInboxAccess` / `requireConversationAccess` and update those tests — otherwise the agent UI silently receives no realtime events. See delta D-04
 - [ ] Implement `displayId` allocation via `supportCounter` with `SELECT … FOR UPDATE` in the insert transaction; concurrency test with 100 parallel inserts
 - [ ] Add inbox CRUD + membership endpoints
 - [ ] Add conversation list/create/get/patch endpoints with filters and cursor pagination; emit `activity` messages on every status, priority, and assignee change

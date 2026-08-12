@@ -48,7 +48,7 @@ A peer subscribing to unbounded channels forces one authorization query per requ
 subscription per channel — a cheap denial-of-service. The plan specified subscribe-time authorization
 but no bound on subscription count.
 
-**Fold into `design.md`** under Realtime.
+**Folded into `design.md`** under Realtime on 2026-08-12.
 
 ### D-04 — Stage 02 must replace the support-channel deny branch
 
@@ -59,7 +59,7 @@ tables do not exist yet. It fails closed, and there is a test asserting the deni
 consciously replace that branch with `requireInboxAccess` / `requireConversationAccess` rather than
 discovering it at runtime.
 
-**Action:** add an explicit item to `stage-02-conversation-core.md`.
+**Done:** explicit item added to `stage-02-conversation-core.md` on 2026-08-12.
 
 ### D-05 — Stage 00's internal dependency note was wrong
 
@@ -69,7 +69,7 @@ discovering it at runtime.
 true — items 2, 3, and 4 do not touch `server/database/schema/**` at all. The real dependency is
 2 → 3 → 4 (adapter, then WS layer, then client), with 1 fully independent.
 
-**Action:** fix the ordering note in the stage doc.
+**Done:** ordering note corrected in `stage-00-foundations.md` on 2026-08-12.
 
 ### D-06 — Redis connection needs to be shared, not per-subsystem
 
@@ -191,3 +191,32 @@ junctioning `node_modules`, leaving `.nuxt` incompletely generated.
 **Lesson:** when a subagent reports failures in files it never touched, re-verify on the integration
 branch before believing the report. Disk exhaustion, partial installs, and missing generated types all
 surface as plausible-looking type errors.
+
+### D-15 — Nothing tests the Redis driver against real Redis
+
+**Found:** Stage 00 boundary review. **Status:** open, recommended before Stage 02.
+
+Every realtime and rate-limit test covers the **memory** driver or a fake client. The Redis driver's
+reconnect-and-resubscribe path, and the rate limiter's Lua sliding window, have never run against an
+actual Redis.
+
+That is uncomfortable because cross-instance delivery is the entire premise of Stage 00, and Stage 02's
+first acceptance criterion — "two agents on two instances see each other's messages" — is the first
+thing that would expose a driver bug, by which point the agent UI is already built on top of it.
+
+`docker-compose-dev.yml` now ships `valkey`, so a guarded integration suite is cheap: follow the
+`test:e2e:if-available` pattern, skip when no `REDIS_URL` is reachable, and cover publish/subscribe
+across two driver instances, resubscribe after a forced disconnect, and the rate limiter's atomicity
+under concurrent consumption.
+
+### D-16 — `envelopeMatchesChannel` closes a gap subscribe-time auth cannot
+
+**Found:** SUP-00-9. **Status:** implemented in `b6404a9`.
+
+Stage 00 specified subscribe-time authorization and treated that as sufficient for tenant isolation. It
+is not. Authorization proves a listener _may_ hear a channel; it says nothing about whether a given
+payload belonged there. A `team:A` envelope published to `team:B` would have reached every
+legitimately-subscribed listener of B, and no check anywhere would have objected.
+
+Publish now verifies the envelope's scope matches the channel. **Both halves are required** — fold this
+into any future channel work rather than assuming the subscribe check covers it.

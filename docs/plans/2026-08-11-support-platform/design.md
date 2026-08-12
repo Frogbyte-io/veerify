@@ -116,8 +116,24 @@ authorized endpoint. Three benefits: reconnect-and-reload is just "refetch the l
 anyway), payload size is a non-issue, and **a subscription bug can never leak another tenant's ticket
 contents** — which in a multi-tenant support product is the argument on its own.
 
-**Channels:** `team:<id>`, `inbox:<id>`, `conversation:<id>`. Authorization is checked **at subscribe
-time**, not at publish time.
+**Channels:** `team:<id>`, `inbox:<id>`, `conversation:<id>`, `user:<id>`. Authorization is checked **at
+subscribe time**, not at publish time.
+
+**Two checks, not one.** Subscribe-time authorization proves a listener _may_ hear a channel; it cannot
+prove a payload was meant for it. So publish also verifies that the envelope's scope matches the channel
+(`envelopeMatchesChannel`) — otherwise nothing stops a `team:A` event reaching every legitimately
+subscribed listener of `team:B`.
+
+**Envelopes are scoped, not necessarily team-scoped.** Each envelope must carry at least one scope id,
+and it must match its channel. `teamId` is not universally required: a `user:<id>` event is scoped by the
+user, who may belong to several teams. Requiring a team there was an early mistake that blocked
+notifications from using the channel system at all — see delta D-01.
+
+**Peers are capped at 50 channels** (`MAX_CHANNELS_PER_PEER`). Unbounded subscribes would mean one
+authorization query and one broker subscription per request — a cheap denial-of-service.
+
+**Never spread an envelope into a wire frame.** Nest it: `{ type, channel, event }`. Spreading lets the
+envelope's own `type` overwrite the frame type and silently breaks client dispatch (delta D-02).
 
 ### Mail intake
 
