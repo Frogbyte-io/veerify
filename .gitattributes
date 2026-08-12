@@ -1,0 +1,4 @@
+# Shell scripts must keep LF line endings regardless of core.autocrlf so
+# they run correctly inside Linux containers (a CRLF shebang breaks `/bin/sh`).
+*.sh text eol=lf
+Caddyfile text eol=lf
