@@ -11,7 +11,7 @@ Format: what was found, why it matters, what to do.
 
 ### D-01 — `sendToUser` payloads conflict with thin envelopes
 
-**Found:** SUP-00-3. **Status:** deferred to SUP-00-9.
+**Found:** SUP-00-3. **Status:** RESOLVED in `b6404a9` + `3b0ab10` (2026-08-12).
 
 Stage 00 asked for both "envelopes carry no record contents" and "existing notification delivery must
 keep working unchanged". Those are incompatible: `NotificationBell.vue` is a live WebSocket consumer
@@ -220,3 +220,13 @@ legitimately-subscribed listener of B, and no check anywhere would have objected
 
 Publish now verifies the envelope's scope matches the channel. **Both halves are required** — fold this
 into any future channel work rather than assuming the subscribe check covers it.
+
+### D-17 — Integration target moved off `main`
+
+**Found:** Stage 00 close-out. **Status:** in effect from Stage 01.
+
+Stage 00 was integrated directly onto `main`. From Stage 01 the integration branch is
+**`support-platform`**, and `main` is left alone until the program is ready to land as a whole.
+
+Dispatched agents must be given `support-platform` as their explicit base ref, not `main` and not
+whatever the worktree defaults to — see D-11 for why the base must be stated rather than assumed.
