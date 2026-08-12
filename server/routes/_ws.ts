@@ -1,11 +1,6 @@
 import { auth } from '~/lib/auth'
-import {
-  addConnection,
-  removeConnection,
-  removePeerFromAllChannels,
-  subscribePeer,
-  unsubscribePeer,
-} from '~/server/utils/ws-connections'
+import { removePeerFromAllChannels, subscribePeer, unsubscribePeer } from '~/server/utils/ws-connections'
+import { userChannel } from '~/server/services/realtime'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('ws')
@@ -47,7 +42,14 @@ export default defineWebSocketHandler({
       // Store userId on the peer context for later use
       peer.context.userId = session.user.id
 
-      addConnection(session.user.id, peer)
+      logger.info('WebSocket connected', { userId: session.user.id })
+
+      // Every peer listens to its own user channel automatically. Doing it here
+      // rather than making the client ask means the client never has to know or
+      // send its own user id, and the subscription cannot be spoofed — the id
+      // comes from the validated session, not from the wire.
+      await subscribePeer(peer, userChannel(session.user.id), session.user.id)
+
       peer.send(JSON.stringify({ type: 'connected', userId: session.user.id }))
     } catch (err) {
       logger.error('WS auth failed', { error: err instanceof Error ? err.message : err })
@@ -98,18 +100,13 @@ export default defineWebSocketHandler({
 
   async close(peer) {
     const userId = typeof peer.context.userId === 'string' ? peer.context.userId : null
-    if (userId) {
-      removeConnection(userId, peer)
-    }
+    logger.info('WebSocket disconnected', { userId })
     await removePeerFromAllChannels(peer)
   },
 
   async error(peer, error) {
     const userId = typeof peer.context.userId === 'string' ? peer.context.userId : null
     logger.error('WS error', { userId, error: error?.message })
-    if (userId) {
-      removeConnection(userId, peer)
-    }
     await removePeerFromAllChannels(peer)
   },
 })

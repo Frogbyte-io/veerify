@@ -4,7 +4,7 @@ import { feedbackSubscription, project } from '~/server/database/schema/feedback
 import { notification } from '~/server/database/schema/notifications'
 import { teamMember, user } from '~/server/database/schema/auth'
 import { createLogger } from '~/server/utils/logger'
-import { sendToUser } from '~/server/utils/ws-connections'
+import { publishRealtime, userChannel } from '~/server/services/realtime'
 
 const logger = createLogger('notifications')
 
@@ -45,11 +45,15 @@ export async function createNotification(params: CreateNotificationParams) {
       })
       .returning()
 
-    // Push to connected WebSocket clients in real-time
+    // Announce to the user's connected clients across every instance.
+    //
+    // Only the id travels — the client refetches through the normal authorized
+    // endpoint. That is what makes this safe to broadcast: a subscription bug
+    // can leak the existence of a notification, never its contents.
     if (created) {
-      sendToUser(params.userId, {
-        type: 'notification',
-        data: created,
+      void publishRealtime(userChannel(params.userId), {
+        type: 'notification.created',
+        userId: params.userId,
       })
     }
 

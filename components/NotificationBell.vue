@@ -1,12 +1,7 @@
 <template>
   <DropdownMenu @update:open="handleOpenChange">
     <DropdownMenuTrigger as-child>
-      <Button
-        variant="ghost"
-        size="icon"
-        class="relative h-8 w-8"
-        data-testid="notification-bell"
-      >
+      <Button variant="ghost" size="icon" class="relative h-8 w-8" data-testid="notification-bell">
         <Icon name="lucide:bell" class="h-4 w-4" />
         <span
           v-if="unreadCount > 0"
@@ -19,13 +14,7 @@
     <DropdownMenuContent align="end" class="w-80">
       <div class="flex items-center justify-between px-3 py-2">
         <span class="text-sm font-semibold">Notifications</span>
-        <Button
-          v-if="unreadCount > 0"
-          variant="ghost"
-          size="sm"
-          class="h-auto px-2 py-1 text-xs"
-          @click="markAllRead"
-        >
+        <Button v-if="unreadCount > 0" variant="ghost" size="sm" class="h-auto px-2 py-1 text-xs" @click="markAllRead">
           Mark all read
         </Button>
       </div>
@@ -66,13 +55,7 @@
       </ScrollArea>
       <DropdownMenuSeparator v-if="hasMore" />
       <div v-if="hasMore" class="p-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          class="w-full text-xs"
-          :disabled="isLoadingMore"
-          @click.prevent="loadMore"
-        >
+        <Button variant="ghost" size="sm" class="w-full text-xs" :disabled="isLoadingMore" @click.prevent="loadMore">
           {{ isLoadingMore ? 'Loading...' : 'Load more' }}
         </Button>
       </div>
@@ -150,10 +133,14 @@ export default {
         this.ws.onmessage = (event) => {
           try {
             const msg = JSON.parse(event.data)
-            if (msg.type === 'notification') {
-              // Prepend the new notification to the list
-              this.notifications.unshift(msg.data)
-              this.unreadCount++
+
+            // Events carry identifiers only, never notification contents, so
+            // refetch through the normal authorized endpoint rather than
+            // rendering anything that arrived over the socket. This also
+            // self-heals after a reconnect gap, since the refetch returns the
+            // current list rather than only what we happened to receive.
+            if (msg.type === 'event' && msg.event?.type === 'notification.created') {
+              this.fetchNotifications()
             }
           } catch {
             // Ignore non-JSON messages (e.g. "pong")

@@ -11,73 +11,19 @@ import {
 const logger = createLogger('ws')
 
 /* -------------------------------------------------------------------------- */
-/* Legacy per-user delivery                                                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * In-memory map of authenticated userId → connected peers.
- *
- * KNOWN LIMITATION: this is process-local, so a notification created on one
- * instance does not reach a peer connected to another. That is why
- * `NotificationBell.vue` keeps its 30-second polling fallback — do not remove it.
- *
- * This path is retained unchanged because `NotificationBell` pushes full
- * notification objects over the wire, which the channel system below
- * deliberately does not allow. Migrating it to thin envelopes plus a client
- * refetch is tracked as SUP-00-9.
- */
-const userConnections = new Map<string, Set<Peer>>()
-
-/** Register a peer for a userId */
-export function addConnection(userId: string, peer: Peer) {
-  let peers = userConnections.get(userId)
-  if (!peers) {
-    peers = new Set()
-    userConnections.set(userId, peers)
-  }
-  peers.add(peer)
-  logger.info('WebSocket connected', { userId, totalPeers: peers.size })
-}
-
-/** Remove a peer for a userId */
-export function removeConnection(userId: string, peer: Peer) {
-  const peers = userConnections.get(userId)
-  if (peers) {
-    peers.delete(peer)
-    if (peers.size === 0) {
-      userConnections.delete(userId)
-    }
-    logger.info('WebSocket disconnected', { userId, remainingPeers: peers?.size ?? 0 })
-  }
-}
-
-/**
- * Send a JSON message to all connected peers for a given userId on THIS instance.
- * Returns the number of peers the message was sent to.
- */
-export function sendToUser(userId: string, data: Record<string, any>): number {
-  const peers = userConnections.get(userId)
-  if (!peers || peers.size === 0) return 0
-
-  const message = JSON.stringify(data)
-  let sent = 0
-  for (const peer of peers) {
-    try {
-      peer.send(message)
-      sent++
-    } catch (err) {
-      logger.error('Failed to send WS message', {
-        userId,
-        error: err instanceof Error ? err.message : err,
-      })
-    }
-  }
-  return sent
-}
-
-/* -------------------------------------------------------------------------- */
 /* Channel subscriptions                                                       */
 /* -------------------------------------------------------------------------- */
+
+/*
+ * There is deliberately no per-user peer map here any more.
+ *
+ * The old `sendToUser` held a process-local Map of userId → peers, which meant a
+ * notification created on one instance never reached a peer connected to
+ * another. Peers now auto-subscribe to their own `user:<id>` channel on connect
+ * (see `server/routes/_ws.ts`), so the channel registry below covers that case
+ * and does so across instances. Resurrecting a local map would reintroduce the
+ * bug Stage 00 existed to fix.
+ */
 
 /** Upper bound on channels a single peer may join, to bound abuse. */
 const MAX_CHANNELS_PER_PEER = 50
