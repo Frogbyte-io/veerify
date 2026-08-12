@@ -300,9 +300,32 @@ async function seed(client: Client) {
   console.log('[seed] Created 3 feedback items for Demo Project')
 }
 
+/**
+ * Should this run be refused?
+ *
+ * This script creates accounts with fixed, published passwords
+ * (`test@preview.local` / `password123`). It is wired into `postbuild`, so a
+ * plain `yarn build` pointed at a real database would create them there.
+ *
+ * The original guard only checked `VERCEL_ENV`, which left self-hosted
+ * deployments and any local production build unprotected. `NODE_ENV` covers
+ * those. `ALLOW_PRODUCTION_SEED=true` exists for the rare deliberate case, e.g.
+ * seeding a staging database that legitimately reports itself as production.
+ */
+function productionSeedBlockReason(): string | null {
+  if (process.env.ALLOW_PRODUCTION_SEED === 'true') return null
+  if (process.env.VERCEL_ENV === 'production') return 'VERCEL_ENV=production'
+  if (process.env.NODE_ENV === 'production') return 'NODE_ENV=production'
+  return null
+}
+
 async function main() {
-  if (process.env.VERCEL_ENV === 'production') {
-    console.log('[seed] Production detected, skipping.')
+  const blockReason = productionSeedBlockReason()
+  if (blockReason) {
+    console.log(
+      `[seed] Refusing to seed: ${blockReason}. This script creates accounts with fixed, published ` +
+        `passwords. Set ALLOW_PRODUCTION_SEED=true only if you are certain this database is not production.`
+    )
     return
   }
 
