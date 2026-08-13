@@ -223,7 +223,8 @@ separate" in `design.md`.
 - [x] **SUP-01-2** Add `requireContactAccess` to `server/utils/support-access.ts`; unit tests for the 404/403 split
 - [x] **SUP-01-3** Add contact CRUD endpoints (list, create, get, update, delete) with team scoping and cursor pagination
 - [x] **SUP-01-4** Add `POST /api/support/contacts/[id]/merge` with transactional repointing and tombstone; unit tests for collision and self-merge cases
-- [ ] **SUP-01-10** Correct Stage 01 integrity and concurrency: validate same-team `companyId` on create/update; use a validated `(createdAt, id)` cursor; lock and revalidate both merge contacts inside one transaction; add PostgreSQL-backed endpoint tests.
+- [x] **SUP-01-10** Correct Stage 01 integrity and concurrency: validate same-team `companyId` on create/update; use a validated `(createdAt, id)` cursor; lock and revalidate both merge contacts inside one transaction; add PostgreSQL-backed endpoint tests.
+  - `3360f98`, `b25525f`, `ab6fdb2`: same-team company checks, opaque stable cursor, locked/revalidated merge and tombstone update guards, plus focused and guarded PostgreSQL E2E coverage. Independent review approved after two fix rounds.
 - [ ] **SUP-01-5** Add `supportTeamSettings` (`teamId` primary key, `autoLinkFeedback` default `false`, timestamps) and `GET /api/support/contacts/[id]/timeline` returning `linked` and `probableFeedback` separately, plus link/unlink endpoints. Changing this team-scoped setting requires team membership.
 - [ ] **SUP-01-6** Add `supportCompany` CRUD endpoints
 - [ ] **SUP-01-7** Build `/support/contacts` list page (search, pagination, skeletons, error retry)
