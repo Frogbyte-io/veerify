@@ -182,8 +182,8 @@ Plan: `docs/plans/2026-08-11-support-platform/stage-00-foundations.md`. Read `de
 directory first. Infrastructure only — no support tables, endpoints, or UI in this stage.
 
 - [x] **SUP-00-1** Split `server/database/schema/feedback.ts` into `feedback.ts`, `notifications.ts`, `imports.ts`, `changelog.ts`; add empty `support.ts`; re-export from `index.ts`; verify `yarn db:generate` emits no migration
-  - Partially done in `bd31097`: `notification` extracted to `notifications.ts`, empty `support.ts` added, `yarn db:generate` confirmed to emit no migration.
-  - **Remaining:** `importRun`/`importRunIssue`/`changelogPost` are uncommitted work in progress, so their extraction into `imports.ts` and `changelog.ts` sits in the working tree to be committed alongside that feature. Check this item off once that lands.
+  - `bd31097`: `notification` extracted to `notifications.ts`, empty `support.ts` added, `yarn db:generate` confirmed to emit no migration.
+  - `imports.ts` and `changelog.ts` are **not part of this branch**. The `importRun`/`importRunIssue`/`changelogPost` tables and the feature built on them live on `sleekplan-export`, where that split is already done. Nothing further is owed here.
 - [x] **SUP-00-2** Add `server/services/realtime/` with `types.ts`, `redis.ts` (ioredis, separate pub/sub connections), `memory.ts`, and driver selection; versioned thin envelopes; unit tests for envelope routing
   - `26d1847`. Driver written against the Redis wire protocol via `ioredis`, not a vendor SDK, so Upstash and Valkey are the same code behind one `REDIS_URL`. `sanitizeEnvelope()` strips unknown keys, enforcing "identifiers only, never record contents" in code rather than by convention. 18 unit tests.
 - [x] **SUP-00-3** Rewrite `server/utils/ws-connections.ts` for channel subscriptions (`team:`, `inbox:`, `conversation:`, `user:`) with subscribe-time authorization; keep existing notification delivery working
