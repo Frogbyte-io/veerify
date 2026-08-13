@@ -28,3 +28,7 @@ test-results
 
 # Agent git worktrees (nested checkouts of this repo)
 .claude/worktrees/
+
+# Sleekplan/CSV import test exports dropped in the repo root by manual importer runs.
+# These contain real customer data (names, email addresses) and must never be committed.
+export-*.csv
