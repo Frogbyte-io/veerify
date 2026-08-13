@@ -113,15 +113,16 @@ test.describe.serial('support contact integrity', () => {
     }
   })
 
-  test('serializes inverse merges and preserves identities and links', async ({ request }) => {
+  test('serializes concurrent inverse merges and preserves identities and links', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await activeTeamId(request, sessionCookie)
 
-    // A deterministic sequential inverse request verifies the same
-    // post-lock revalidation that a competing request observes, while
-    // avoiding a scheduler-dependent Promise.all race in the test runner.
-    for (let iteration = 0; iteration < 3; iteration += 1) {
-      const ids: string[] = [randomUUID(), randomUUID()]
+    // Repeat the actual inverse race. The a/b prefixes make the first request
+    // and second request acquire rows in opposite request order when an
+    // implementation omits stable lock ordering, exposing a deadlock instead
+    // of allowing the test to silently become sequential.
+    for (let iteration = 0; iteration < 5; iteration += 1) {
+      const ids: string[] = [`merge-race-${iteration}-a-${randomUUID()}`, `merge-race-${iteration}-b-${randomUUID()}`]
       const createdAt = new Date()
       await db.insert(contact).values(
         ids.map((id) => ({ id, teamId, name: id, createdAt, updatedAt: createdAt }))
@@ -148,29 +149,34 @@ test.describe.serial('support contact integrity', () => {
       )
 
       try {
-        const first = await request.post(`/api/support/contacts/${ids[0]}/merge`, {
-          headers: withAuthHeaders(sessionCookie),
-          data: { sourceContactId: ids[1] },
-        })
-        expect(first.status()).toBe(200)
-
-        const inverse = await request.post(`/api/support/contacts/${ids[1]}/merge`, {
-          headers: withAuthHeaders(sessionCookie),
-          data: { sourceContactId: ids[0] },
-        })
-        expect(inverse.status()).toBe(400)
+        const [first, inverse] = await Promise.all([
+          request.post(`/api/support/contacts/${ids[0]}/merge`, {
+            headers: withAuthHeaders(sessionCookie),
+            data: { sourceContactId: ids[1] },
+            timeout: 15_000,
+          }),
+          request.post(`/api/support/contacts/${ids[1]}/merge`, {
+            headers: withAuthHeaders(sessionCookie),
+            data: { sourceContactId: ids[0] },
+            timeout: 15_000,
+          }),
+        ])
+        expect([first.status(), inverse.status()].sort()).toEqual([200, 400])
 
         const rows = await db.select().from(contact).where(inArray(contact.id, ids))
         expect(rows).toHaveLength(2)
-        expect(rows.filter((row) => row.mergedIntoContactId === null).map((row) => row.id)).toEqual([ids[0]])
-        expect(rows.find((row) => row.id === ids[1])?.mergedIntoContactId).toBe(ids[0])
+        const activeRows = rows.filter((row) => row.mergedIntoContactId === null)
+        expect(activeRows).toHaveLength(1)
+        const survivorId = activeRows[0].id
+        const tombstone = rows.find((row) => row.id !== survivorId)
+        expect(tombstone?.mergedIntoContactId).toBe(survivorId)
 
         const identities = await db.select().from(contactIdentity).where(inArray(contactIdentity.contactId, ids))
         const links = await db.select().from(contactLink).where(inArray(contactLink.contactId, ids))
         expect(identities).toHaveLength(2)
-        expect(identities.every((identity) => identity.contactId === ids[0])).toBe(true)
+        expect(identities.every((identity) => identity.contactId === survivorId)).toBe(true)
         expect(links).toHaveLength(2)
-        expect(links.every((link) => link.contactId === ids[0])).toBe(true)
+        expect(links.every((link) => link.contactId === survivorId)).toBe(true)
       } finally {
         await db.delete(contact).where(inArray(contact.id, ids))
       }
