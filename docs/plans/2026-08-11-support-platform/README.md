@@ -6,7 +6,34 @@ conversation UI, so that support and product feedback live on one platform.
 **Created:** August 11, 2026
 
 **Read `design.md` first.** It holds the architecture, data model, and the reasoning behind decisions
-that individual stage docs assume without re-arguing.
+that individual stage docs assume without re-arguing. Then read `deltas.md` — it records what the plan
+got wrong once implementation started, and several entries contradict the original stage docs.
+
+---
+
+## Current state — updated August 13, 2026
+
+**Integration branch: `support-platform`.** Not `main`. See delta D-17.
+
+|                    |                                                                  |
+| ------------------ | ---------------------------------------------------------------- |
+| Stage 00           | **Complete** — 10/10 items                                       |
+| Stage 01           | **In progress** — SUP-01-1 … SUP-01-4 done; next is **SUP-01-5** |
+| Gates              | `yarn harness:verify` green — 138 tests, 0 lint errors           |
+| Open cross-cutting | SUP-X-1 (Redis integration suite, delta D-15)                    |
+
+**Related branches.** `sleekplan-export` holds an unrelated changelog + Sleekplan/CSV import feature
+that was recovered from the working tree. Both branches define a migration `0019`, so merging them
+requires regenerating one side's migration. Keep them apart unless you deliberately reconcile that.
+
+**Before starting, verify your base** — several dispatched agents have silently begun on a stale commit:
+
+```
+git branch --show-current          # expect: support-platform
+ls docs/plans/2026-08-11-support-platform/
+ls server/services/realtime/
+ls server/api/support/contacts/
+```
 
 ---
 
@@ -14,9 +41,9 @@ that individual stage docs assume without re-arguing.
 
 | Stage                                | Title                     | Depends on | Status  |
 | ------------------------------------ | ------------------------- | ---------- | ------- |
-| [00](stage-00-foundations.md)        | Foundations               | —          | Ready   |
-| [01](stage-01-contacts.md)           | Contact identity          | 00         | Blocked |
-| [02](stage-02-conversation-core.md)  | Inbox + conversation core | 00, 01     | Blocked |
+| [00](stage-00-foundations.md)        | Foundations               | —          | DONE    |
+| [01](stage-01-contacts.md)           | Contact identity          | 00         | ACTIVE  |
+| [02](stage-02-conversation-core.md)  | Inbox + conversation core | 00, 01     | Next    |
 | [03](stage-03-inbound-email.md)      | Inbound email             | 02         | Blocked |
 | [04](stage-04-outbound-replies.md)   | Outbound replies          | 03         | Blocked |
 | [05](stage-05-agent-productivity.md) | Agent productivity        | 02, 04     | Blocked |
@@ -71,14 +98,20 @@ Issues, no new tooling.
 1. **One stage at a time enters `TODO.md`.** When a stage becomes unblocked, the orchestrator appends
    that stage's `## TODO items` block to `TODO.md` as `- [ ]` lines. Do not front-load all stages —
    it produces an unreadable backlog and invites agents to pick up blocked work.
-2. Each item is dispatched to one subagent on `agent/<ITEM-ID>-<slug>` cut from latest `origin/main`.
-3. Subagents never edit `TODO.md` and never push to `main`.
+2. Each item is dispatched to one subagent on `agent/<ITEM-ID>-<slug>` **cut explicitly from
+   `support-platform`** — never `main`, and never whatever the worktree happens to default to.
+   Every agent dispatched so far that was not given an explicit base ref started on a stale commit
+   and could not read its own spec (deltas D-08, D-11).
+3. Subagents never edit `TODO.md`, and never push to `main` or `support-platform`.
 4. The orchestrator merges sequentially, running `yarn harness:verify` after each merge.
-5. Items are checked off only after merge + verification on `main`.
+5. Items are checked off only after merge + verification on `support-platform`.
+
+**Before reusing an item id**, delete any abandoned `agent/*` branch and prune dead worktrees —
+a stale branch name silently forces the replacement agent onto a different one (delta D-11).
 
 **Stage exit criteria.** A stage is done when all its items are checked off, its acceptance criteria in
 the stage doc are demonstrated, `docs/qa/manual-feature-checklist.md` has been updated, and
-`yarn harness:verify` is green on `main`.
+`yarn harness:verify` is green on `support-platform`.
 
 ## Conventions for every stage
 
