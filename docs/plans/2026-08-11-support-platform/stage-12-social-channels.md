@@ -44,12 +44,12 @@ Per channel:
 4. Duplicate webhook delivery does not duplicate the message.
 5. The composer reflects the channel's messaging window and capabilities, warning before send rather
    than failing after.
-6. `yarn harness:verify` green on `main`.
+6. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 
 - [ ] Add inbox capability flags (`supportsAttachments`, `supportsRichText`, `messagingWindowHours`, `requiresTemplateOutsideWindow`) and surface them in the composer
-- [ ] Generalize the Stage 03 webhook idempotency and inbound pipeline for non-email channels
+- [ ] Generalize the Stage 03 webhook idempotency and inbound pipeline for non-email channels, and route outbound sends through Stage 04's durable `supportOutboundDelivery` outbox
 - [ ] Implement the WhatsApp Business channel: connection flow, webhook, inbound normalization, outbound send, 24-hour window handling with template messages
 - [ ] Implement the Facebook and Instagram DM channel: connection flow, webhook, inbound, outbound, 7-day window handling
 - [ ] Implement the X channel: connection flow, webhook, inbound, outbound, DM rate limit handling

@@ -96,7 +96,7 @@ feedback stay separate by design — see `design.md`.
    conversation.
 8. **The public board shows no contact identity or ticket content for linked feedback.** Verified by
    E2E against the public board as an anonymous visitor.
-9. `yarn harness:verify` green on `main`.
+9. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

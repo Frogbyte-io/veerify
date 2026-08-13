@@ -243,12 +243,20 @@ unique `(conversationId, userId)`.
 **`supportTag`** / **`conversationTag`** — team-scoped tags and their join table.
 
 **`supportEmailEvent`** — inbound idempotency and audit.
-`id`, `inboxId` (FK, cascade), `provider`, `providerEventId`, `rawStorageKey`, `processedAt`,
-`resultConversationId`, `error`, `createdAt`. Index: unique `(provider, providerEventId)`.
+`id`, `inboxId` (FK, cascade), `provider`, `providerEventId`, `rawStorageKey`, `status`
+(`processing` | `processed` | `failed`), `attemptCount`, `leaseExpiresAt`, `processedAt`,
+`resultConversationId`, `error`, `createdAt`. Index: unique `(provider, providerEventId)`. A unique key
+is not enough: a failed claim must be replayable without duplicating a processed event.
+
+**`supportOutboundDelivery`** — durable outbound-delivery outbox (Stage 04).
+`id`, `messageId` (FK conversationMessage, cascade), `kind`, `payload` (jsonb with storage/credential
+references only), `idempotencyKey`, `status`, `attemptCount`, `leaseExpiresAt`, `lastError`, timestamps.
+Unique `(messageId, kind)`. Message insertion and outbox enqueue are one transaction; a worker claims
+and retries delivery. Later CSAT and social-channel sends reuse it.
 
 ### Later stages
 
-Introduced by the stage that needs them: `businessHours`, `slaPolicy`, `slaTarget` and the SLA columns on
+Introduced by the stage that needs them: `businessHours`, `slaPolicy`, `slaTarget`, `slaBreach` and the SLA columns on
 `conversation` (Stage 06); `cannedResponse`, `macro` (Stage 05); `automationRule`, `automationRuleRun`
 (Stage 07); `csatSurvey`, `csatResponse` (Stage 08).
 
@@ -284,7 +292,7 @@ Introduced by the stage that needs them: `businessHours`, `slaPolicy`, `slaTarge
   `displayId` allocation under concurrent inserts, cross-tenant isolation on every new endpoint.
 - **E2E (`playwright`)** — agent replies to a ticket; a customer reply threads onto the same
   conversation; two agents see each other's messages live; conversation converts to feedback.
-- **Every stage must leave `yarn harness:verify` green on `main`.**
+- **Every stage must leave `yarn harness:verify` green on `support-platform` until the program lands on `main`.**
 
 ## Risks
 

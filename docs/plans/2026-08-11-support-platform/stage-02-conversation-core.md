@@ -118,7 +118,7 @@ toggles in `SettingsNotifications`. Reuse the existing infrastructure; do not bu
    conversation endpoint. Cross-tenant isolation is tested.
 6. Deleting an inbox does not orphan conversations — the FK is `restrict`; the API returns a clear 409.
 7. `/support` redirects to `/login` when signed out.
-8. `yarn harness:verify` green on `main`.
+8. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

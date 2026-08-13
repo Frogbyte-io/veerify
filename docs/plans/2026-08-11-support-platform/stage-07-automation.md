@@ -58,7 +58,7 @@ touching the engine.
    before and after.
 4. A failing webhook action is recorded as `failed` and the remaining actions still apply.
 5. A disabled rule never runs and never appears in dry-run results.
-6. `yarn harness:verify` green on `main`.
+6. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

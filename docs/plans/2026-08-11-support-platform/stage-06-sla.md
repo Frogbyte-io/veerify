@@ -17,8 +17,11 @@ breach escalation.
   (jsonb: inbox, priority, tag, company), `isDefault`, `sortOrder`, timestamps.
 - **`slaTarget`** — `id`, `slaPolicyId`, `metric` (`first_response` | `next_response` | `resolution`),
   `priority`, `targetMinutes`.
+- **`slaBreach`** — `id`, `conversationId`, `metric`, `breachedAt`, `notifiedAt`, timestamps; unique
+  `(conversationId, metric)`. It records once-only state per metric.
 - **Columns added to `conversation`** — `slaPolicyId`, `firstResponseDueAt`, `nextResponseDueAt`,
-  `resolutionDueAt`, `slaBreachedAt`, `slaPausedAt`, `slaPausedMinutes`.
+  `resolutionDueAt`, `slaPausedAt`, `slaPausedMinutes`. There is deliberately no single
+  `slaBreachedAt`: one conversation can breach several metrics.
 
 ## Behaviour
 
@@ -30,8 +33,8 @@ breach escalation.
   reply, accumulating into `slaPausedMinutes`. This is the behaviour agents expect from Zendesk and
   getting it wrong makes every SLA number wrong.
 - `firstResponseAt` is already stamped by Stage 04.
-- A breach sweeper runs on the Stage 00 scheduler (every 5 minutes), stamps `slaBreachedAt`, dispatches
-  the `sla_breach` notification, and writes an `activity` message.
+- A breach sweeper runs on the Stage 00 scheduler (every 5 minutes), inserts the unique `slaBreach`
+  row, dispatches the `sla_breach` notification, and writes an `activity` message.
 - Escalation actions on breach: notify assignee, notify a supervisor, raise priority. Configured per
   policy.
 
@@ -48,15 +51,15 @@ breach escalation.
    DST boundary and across a configured holiday.
 2. Moving a conversation to `pending` pauses the timer; a customer reply resumes it, and the paused
    minutes are excluded from elapsed time.
-3. The sweeper stamps breach exactly once per conversation per metric — re-running it does not duplicate
-   notifications.
+3. The sweeper inserts one unique breach row per conversation per metric — re-running it does not
+   duplicate notifications.
 4. A conversation with no matching policy and no default has null due dates and is never reported as
    breached.
-5. `yarn harness:verify` green on `main`.
+5. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 
-- [ ] Add `businessHours`, `slaPolicy`, `slaTarget` tables and SLA columns on `conversation`; generate migration
+- [ ] Add `businessHours`, `slaPolicy`, `slaTarget`, and per-metric `slaBreach` tables plus SLA columns on `conversation`; generate migration
 - [ ] Implement business-hours-aware duration arithmetic (timezone, DST, holidays) as a pure module with heavy unit-test coverage
 - [ ] Implement policy matching on create and on priority/tag change, with `sortOrder` precedence and default fallback
 - [ ] Implement timer pause on `pending` and resume on customer reply, accumulating `slaPausedMinutes`

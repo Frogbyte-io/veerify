@@ -19,7 +19,7 @@ edits `feedback.ts`, it is wrong.
 
 ### 1. Schema
 
-Add `contact`, `contactIdentity`, `supportCompany`, `contactLink` to `server/database/schema/support.ts`
+Add `contact`, `contactIdentity`, `supportCompany`, `contactLink`, and `supportTeamSettings` to `server/database/schema/support.ts`
 exactly as specified in `design.md` → Data model → Stage 01. Generate the migration with
 `yarn db:generate`.
 
@@ -29,6 +29,8 @@ Two constraints worth calling out because they carry the design:
   at most one contact per team, and what makes merge tractable.
 - `contactLink` is unique on `(contactId, entityType, entityId)` and lives in the support schema pointing
   outward. Feedback never references a contact.
+- `supportTeamSettings` is one row per team (`teamId` primary key) and begins with
+  `autoLinkFeedback boolean not null default false`; it is the durable home for support-only team policy.
 
 ### 2. Access utilities
 
@@ -64,7 +66,9 @@ contact into itself, or into an already-merged contact, is a 400.
   `WHERE feedback.authorEmail = contact.email OR feedback.authorUserId = contact.userId`, scoped to
   projects in the contact's team. **Suggestions only.** The response must not present them as confirmed.
 
-Auto-linking is a per-team setting stored on `team`-scoped support settings and is **off by default**.
+Auto-linking is stored in `supportTeamSettings`, a dedicated team-scoped table with `teamId` as its
+primary key and `autoLinkFeedback` defaulting to `false`. It is **off by default**; do not store this
+privacy-sensitive support control in generic team JSON.
 When off, `contactLink` rows are created only by explicit agent action (`source: 'agent'`).
 
 Add an index on `feedback.authorEmail` to keep the probable-match query cheap. This is an index-only
@@ -93,17 +97,24 @@ stage.
    as `contactLink` rows.
 5. Deleting a contact removes its identities and links and leaves all feedback rows untouched.
 6. A user outside the team gets 403 on every contact endpoint. Cross-tenant isolation is tested.
-7. `yarn harness:verify` green on `main`.
+7. A company from another team cannot be attached or read through a contact; this is covered by a
+   PostgreSQL-backed route test.
+8. Concurrent or inverse merges cannot create a cycle, lose a link, or move rows after either contact
+   becomes a tombstone.
+9. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 
-Item 1 blocks the rest. Items 4 and 5 can run in parallel once 1–3 land.
+The already-completed schema/access/CRUD/merge tasks are followed by the corrective integrity task.
+That corrective task blocks the remaining Stage 01 work. The timeline/settings and company work may run
+in parallel after it; UI work waits for the APIs it renders.
 
 - [ ] Add `contact`, `contactIdentity`, `supportCompany`, `contactLink` to `server/database/schema/support.ts`; generate migration; add index on `feedback.authorEmail`
 - [ ] Create `server/utils/support-access.ts` with `requireContactAccess`; unit tests for the 404/403 split
 - [ ] Add contact CRUD endpoints (`list`, `create`, `get`, `update`, `delete`) with team scoping and cursor pagination
 - [ ] Add `POST /api/support/contacts/[id]/merge` with transactional repointing and tombstone; unit tests for collision and self-merge cases
-- [ ] Add `GET /api/support/contacts/[id]/timeline` returning `linked` and `probableFeedback` separately, plus link/unlink endpoints; per-team auto-link setting defaulting to off
+- [ ] Correct contact integrity and merge concurrency: same-team `companyId` validation, validated composite cursor, stable in-transaction locks and revalidation, and PostgreSQL-backed endpoint tests
+- [ ] Add `supportTeamSettings` plus `GET /api/support/contacts/[id]/timeline` returning `linked` and `probableFeedback` separately, link/unlink endpoints, and a default-off team-scoped auto-link control
 - [ ] Add `supportCompany` CRUD endpoints
 - [ ] Build `/support/contacts` list page (search, pagination, skeletons, error retry)
 - [ ] Build `/support/contacts/[id]` detail page with attributes, identities, timeline with visually distinct Linked vs Possible matches, one-click link, and merge dialog
@@ -119,3 +130,5 @@ Item 1 blocks the rest. Items 4 and 5 can run in parallel once 1–3 land.
   distinction as a requirement, not polish.
 - **Merge under concurrency.** Two agents merging overlapping contacts simultaneously must not
   half-repoint. One transaction, row locks on both contacts.
+- **Cross-tenant foreign keys.** A foreign key proves a company exists, not that it belongs to the
+  contact's team. Validate that relation in the mutation transaction and cover it with a route test.

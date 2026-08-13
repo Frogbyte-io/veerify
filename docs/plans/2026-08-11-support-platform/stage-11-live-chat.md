@@ -61,7 +61,7 @@ inbox.
 4. With no agent available, the widget collects an email and the exchange becomes an email conversation.
 5. Widget styling is unaffected by the host page's CSS.
 6. A visitor cannot subscribe to any conversation other than their own.
-7. `yarn harness:verify` green on `main`.
+7. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

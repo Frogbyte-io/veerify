@@ -61,8 +61,10 @@ failure a helpdesk can have. Test against a real mail client, not only Mailpit.
 
 1. Inserts the message with `deliveryStatus: 'pending'`.
 2. Publishes the realtime envelope immediately — the agent UI must not wait on SMTP.
-3. Dispatches the send.
-4. Updates `deliveryStatus` to `sent` or `failed` with `deliveryError`, and publishes again.
+3. In the same transaction, enqueues a durable `supportOutboundDelivery` outbox row keyed to the
+   message. A worker claims and sends it; request-lifetime background promises are not reliable across
+   restarts or serverless termination.
+4. The worker updates `deliveryStatus` to `sent` or `failed` with `deliveryError`, and publishes again.
 5. Sets `firstResponseAt` if this is the first agent reply — Stage 06's SLA timers depend on it, so it
    is set here even though SLA does not exist yet.
 
@@ -111,13 +113,16 @@ the reply — silent delivery failure is worse than a visible error.
 6. A hard bounce marks the message `bounced` and writes a visible `activity` line into the thread.
 7. `firstResponseAt` is stamped on the first agent reply and not overwritten by later ones.
 8. The agent UI shows the message immediately, before the send resolves.
-9. `yarn harness:verify` green on `main`.
+9. Restarting the sender after the message transaction commits still sends the queued reply once; a
+   retry never creates a second provider delivery for the same idempotency key.
+10. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 
 - [ ] Extend `lib/email.ts` with an optional options bag (from, replyTo, cc, headers, attachments); confirm all existing call sites are unaffected
 - [ ] Add `lib/support-email.ts`: Message-ID generation, References chain assembly with trimming, quoted-history block, signature appending; unit tests for chain assembly
-- [ ] Wire `POST /api/support/conversations/[id]/messages` for `kind: 'outgoing'`: optimistic insert, immediate realtime publish, async send, delivery status update, `firstResponseAt` stamping
+- [ ] Add `supportOutboundDelivery` (message id, payload/credential references, attempt count, status, lease, idempotency key, timestamps) and a bounded retry/claim worker. Reuse it for agent replies, auto-replies, and later CSAT/social sends.
+- [ ] Wire `POST /api/support/conversations/[id]/messages` for `kind: 'outgoing'`: transactional optimistic insert plus outbox enqueue, immediate realtime publish, worker delivery-status update, and `firstResponseAt` stamping
 - [ ] Enforce server-side that `kind: 'note'` never dispatches mail
 - [ ] Implement per-inbox From/Reply-To/signature with a settings warning when the address is not provider-authorized
 - [ ] Implement agent attachment upload via the existing presign flow with size cap and type allowlist

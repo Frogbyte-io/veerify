@@ -115,7 +115,7 @@ registered in this stage — Stage 03 and Stage 06 are the first consumers.
 5. Killing Redis degrades realtime only — HTTP requests keep serving, and the app reconnects when Redis
    returns.
 6. `NotificationBell` behaves exactly as before.
-7. `yarn harness:verify` green on `main`.
+7. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

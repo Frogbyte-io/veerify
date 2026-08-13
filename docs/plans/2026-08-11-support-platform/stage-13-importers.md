@@ -47,7 +47,7 @@ existing adapter shape; do not build a second import system.
 4. Interrupting an import and resuming completes without duplicating or skipping.
 5. An unmatched agent is surfaced for explicit resolution rather than silently dropped.
 6. A failed attachment download is recorded as an issue and the run continues.
-7. `yarn harness:verify` green on `main`.
+7. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

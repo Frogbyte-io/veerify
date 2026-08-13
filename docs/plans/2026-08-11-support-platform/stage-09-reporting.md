@@ -50,7 +50,7 @@ mode.
 3. Rollup recomputation is idempotent — running it twice for the same date yields identical rows.
 4. Today's partial data appears without a rollup run.
 5. Timezone handling is correct: a team in UTC+13 sees days bucketed by their own calendar.
-6. `yarn harness:verify` green on `main`.
+6. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

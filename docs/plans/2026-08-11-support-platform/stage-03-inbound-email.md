@@ -36,9 +36,11 @@ Every driver produces `InboundMessage`. **Nothing downstream may know which prov
 Order of operations matters and is a correctness requirement:
 
 1. Verify the provider signature. Reject 401 on failure.
-2. Persist a `supportEmailEvent` row keyed on `(provider, providerEventId)`. **On unique-constraint
-   violation, return 200 immediately** — the provider is retrying a delivery already processed.
-   Providers retry aggressively; a duplicate must never create a second ticket.
+2. Atomically claim a `supportEmailEvent` row keyed on `(provider, providerEventId)`. It records
+   `status` (`processing` | `processed` | `failed`), `attemptCount`, and a lease timestamp. A duplicate
+   already `processed` returns 200; a stale or failed claim is safely replayed; an active claim returns
+   200 without creating another ticket. Providers retry aggressively, but a crash after claiming an
+   event must not permanently lose the email.
 3. Archive the raw payload to storage (`rawStorageKey`) before parsing, so a parse failure is
    debuggable and replayable.
 4. Parse to `InboundMessage`.
@@ -48,7 +50,8 @@ Order of operations matters and is a correctness requirement:
 7. Resolve or create the conversation.
 8. Insert the `incoming` message and attachments, update `lastActivityAt` and `lastCustomerReplyAt`,
    publish realtime envelopes.
-9. Stamp `processedAt` and `resultConversationId` on the event.
+9. Stamp `processedAt` and `resultConversationId` on the event. On failure, record a sanitized error,
+   release or expire the lease, and let provider retry or scheduled replay recover it.
 
 Apply the Stage 00 rate limiter, keyed per inbox.
 
@@ -105,19 +108,21 @@ pass/fail result.
 2. A reply to that conversation's outbound message threads onto the **same** conversation.
 3. Delivering the identical webhook payload twice creates **exactly one** conversation and returns 200
    both times.
-4. An email with attachments and inline images stores both; inline images render in the thread.
-5. A `<script>` tag in inbound HTML does not execute in the agent UI.
-6. An out-of-office auto-reply does not reopen a resolved conversation.
-7. An email to an unknown address is recorded with an error and returns 200, not 404.
-8. Quote stripping produces a clean body across Gmail, Outlook, and Apple Mail samples.
-9. `yarn harness:verify` green on `main`.
+4. A simulated crash after an event claim is replayed after its lease expires and still creates exactly
+   one conversation.
+5. An email with attachments and inline images stores both; inline images render in the thread.
+6. A `<script>` tag in inbound HTML does not execute in the agent UI.
+7. An out-of-office auto-reply does not reopen a resolved conversation.
+8. An email to an unknown address is recorded with an error and returns 200, not 404.
+9. Quote stripping produces a clean body across Gmail, Outlook, and Apple Mail samples.
+10. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 
 - [ ] Add `server/services/support-channels/` with `types.ts` and normalized `InboundMessage`; driver selection from `SUPPORT_CHANNEL_PROVIDER`
 - [ ] Implement the Postmark webhook driver with signature verification and payload normalization; unit tests against captured fixtures
 - [ ] Implement the Mailgun webhook driver with signature verification and payload normalization
-- [ ] Add `POST /api/support/inbound/[provider]` with the ordered pipeline: verify → idempotency insert → archive raw → parse → resolve inbox → resolve contact → thread → persist → publish; per-inbox rate limiting
+- [ ] Add `supportEmailEvent` claim/replay state (`processing`/`processed`/`failed`, attempts, lease) and a guarded scheduled replay job; add `POST /api/support/inbound/[provider]` with verify → atomic claim → archive raw → parse → resolve inbox → resolve contact → thread → persist → publish → mark processed; per-inbox rate limiting
 - [ ] Implement threading resolution (Message-ID/References, then thread key, then bounded subject+contact fallback); unit tests including the never-merge-across-contacts case
 - [ ] Implement reply-quote and signature stripping for Gmail/Outlook/Apple Mail; retain the raw body in metadata; unit tests against fixtures
 - [ ] Implement inbound HTML sanitization with a strict allowlist and sandboxed-iframe rendering in the thread pane
@@ -136,5 +141,6 @@ pass/fail result.
 - **Mail loops.** An auto-reply meeting an auto-reply generates unbounded traffic. Auto-response
   detection ships in this stage even though auto-reply _sending_ is Stage 04 — the detection has to exist
   before anything can be sent.
-- **Provider retry storms.** The idempotency insert precedes all processing, and unknown-address
-  deliveries return 200.
+- **Provider retry storms and crashes.** Completed events return 200 without duplicate processing,
+  while failed or expired claims remain replayable. Unknown-address deliveries return 200 only after
+  their terminal error is recorded.

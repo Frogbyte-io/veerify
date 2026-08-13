@@ -46,7 +46,7 @@ appearance settings (banner, colors, light/dark mode) so it looks like part of t
 4. A portal reply is indistinguishable from an email reply on the agent side, including SLA resume.
 5. Portal pages inherit the product's public appearance settings and work on a custom domain.
 6. Rate limiting blocks submission floods.
-7. `yarn harness:verify` green on `main`.
+7. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

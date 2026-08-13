@@ -18,7 +18,8 @@
 
 ## Behaviour
 
-- Sent on the configured trigger, after `delayMinutes`, via the Stage 00 scheduler.
+- Sent on the configured trigger, after `delayMinutes`, through Stage 04's durable
+  `supportOutboundDelivery` outbox rather than a request-lifetime send.
 - **One-click rating in the email.** Each rating option is a distinct tokenized URL, so the customer
   rates without logging in and without a page load first. Landing on that URL records the rating and
   then offers the optional free-text follow-up.
@@ -42,7 +43,7 @@
    window.
 4. A conversation resolved with no agent reply is never surveyed.
 5. A contact who opted out receives nothing.
-6. `yarn harness:verify` green on `main`.
+6. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 

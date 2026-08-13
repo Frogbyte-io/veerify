@@ -230,3 +230,47 @@ Stage 00 was integrated directly onto `main`. From Stage 01 the integration bran
 
 Dispatched agents must be given `support-platform` as their explicit base ref, not `main` and not
 whatever the worktree defaults to — see D-11 for why the base must be stated rather than assumed.
+
+### D-18 — Stage 01 mutations lacked relational tenant checks and merge locks
+
+**Found:** code review of SUP-01-1 through SUP-01-4. **Status:** queued as SUP-01-10.
+
+`contact.companyId` has an ordinary foreign key, which proves the company exists but not that it belongs
+to the contact's team. Create/update must validate same-team ownership inside their transaction. The
+merge endpoint also read both contacts before entering its transaction, despite the stage requiring row
+locks; overlapping or inverse merges could therefore race. The correction adds same-team validation, a
+stable `(createdAt, id)` cursor, in-transaction stable-order locks and revalidation, and PostgreSQL-backed
+endpoint tests.
+
+### D-19 — Auto-link setting needed an explicit ownership model
+
+**Found:** plan review before SUP-01-5. **Status:** resolved in plan; add `supportTeamSettings`.
+
+The plan said auto-linking was team-scoped but named no table, column, or authorization rule. It now uses
+`supportTeamSettings` with `teamId` as primary key and `autoLinkFeedback` defaulting to false. Do not put
+this privacy-sensitive support control in generic team JSON.
+
+### D-20 — Unique inbound-event insertion alone loses failed deliveries
+
+**Found:** plan review of Stage 03. **Status:** resolved in plan.
+
+Returning 200 for every duplicate after inserting an event is correct only after processing completes. A
+crash during archive, parsing, or persistence would otherwise leave the provider believing delivery
+succeeded while no ticket exists. `supportEmailEvent` now has claim/lease/replay state and a scheduled
+replay path; processed events remain idempotent.
+
+### D-21 — Outbound sends require a durable outbox
+
+**Found:** plan review of Stage 04. **Status:** resolved in plan.
+
+Sending from a request-lifetime background promise loses retries on process restart or serverless
+termination. Stage 04 now writes `supportOutboundDelivery` in the same transaction as its message, then
+uses a bounded claim/retry worker. CSAT and social channels reuse this mechanism.
+
+### D-22 — A single SLA breach timestamp cannot represent per-metric breaches
+
+**Found:** plan review of Stage 06. **Status:** resolved in plan.
+
+The acceptance criterion requires once-only breach processing for first-response, next-response, and
+resolution independently, but `conversation.slaBreachedAt` represented only one instant. Stage 06 now
+uses unique `(conversationId, metric)` `slaBreach` rows.
