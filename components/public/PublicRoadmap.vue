@@ -145,6 +145,17 @@
             <Icon name="lucide:map" class="w-4 h-4 inline mr-1.5" />
             Roadmap
           </span>
+          <NuxtLink
+            v-if="changelogEnabled"
+            :to="changelogPath"
+            prefetch-on="interaction"
+            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
+            @pointerenter="warmChangelogData"
+            @focus="warmChangelogData"
+          >
+            <Icon name="lucide:newspaper" class="w-4 h-4 inline mr-1.5" />
+            Changelog
+          </NuxtLink>
         </div>
 
         <!-- Roadmap summary -->
@@ -339,6 +350,7 @@
 import { completePublicAuthHandoffFromUrl, fetchPublicAuthSession } from '~/lib/public-auth-handoff'
 
 const FEEDBACK_BOARD_PREFETCH_CACHE_TTL_MS = 60_000
+const CHANGELOG_PREFETCH_CACHE_TTL_MS = 60_000
 
 export default {
   name: 'PublicRoadmap',
@@ -359,6 +371,7 @@ export default {
       bannerError: false,
       currentUser: null,
       feedbackBoardPrefetch: null,
+      changelogPrefetch: null,
       showDetailsDialog: false,
       detailsLoading: false,
       selectedFeedback: null,
@@ -402,8 +415,17 @@ export default {
       }
       return `/${this.projectSlug}`
     },
+    changelogPath() {
+      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
+        return '/changelog'
+      }
+      return `/${this.projectSlug}/changelog`
+    },
     roadmapEnabled() {
       return this.projectData?.project?.settings?.roadmapEnabled === true
+    },
+    changelogEnabled() {
+      return this.projectData?.project?.settings?.changelogEnabled === true
     },
     authRedirectTarget() {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}/roadmap`)
@@ -476,6 +498,7 @@ export default {
       this.columnsLoading = false
       this.applyTheme(data.project?.settings?.themeMode || 'system')
       this.warmFeedbackBoardData()
+      this.warmChangelogData()
       await this.checkCurrentUser()
       return
     }
@@ -486,6 +509,7 @@ export default {
       this.columns = data.columns || []
       this.applyTheme(this.projectData.project.settings?.themeMode || 'system')
       this.warmFeedbackBoardData()
+      this.warmChangelogData()
       await this.checkCurrentUser()
     } catch (err) {
       console.error('Error loading roadmap:', err)
@@ -524,6 +548,28 @@ export default {
         .catch(() => null)
 
       this.feedbackBoardPrefetch = { promise, cachedAt: now }
+      return promise
+    },
+    warmChangelogData() {
+      if (!this.changelogEnabled) return Promise.resolve(null)
+
+      const now = Date.now()
+      const cachedAt = this.changelogPrefetch?.cachedAt || 0
+      if (this.changelogPrefetch?.promise && now - cachedAt < CHANGELOG_PREFETCH_CACHE_TTL_MS) {
+        return this.changelogPrefetch.promise
+      }
+
+      const cacheKey = `pubChangelogData_${this.teamSlug}_${this.projectSlug}`
+      const promise = $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/changelog`)
+        .then((response) => {
+          if (import.meta.client) {
+            useState(cacheKey).value = { response, cachedAt: Date.now() }
+          }
+          return response
+        })
+        .catch(() => null)
+
+      this.changelogPrefetch = { promise, cachedAt: now }
       return promise
     },
     applyTheme(mode) {

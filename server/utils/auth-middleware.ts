@@ -9,6 +9,7 @@ import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { member } from '~/server/database/schema/auth'
 import { getAuthHeaders } from './auth-headers'
+import { createDatabaseUnavailableError, isDatabaseConnectionError } from './database-errors'
 import { ErrorCode, createErrorResponse } from './response'
 
 export interface AuthSession {
@@ -40,9 +41,17 @@ export interface AuthSession {
  * @throws 401 Unauthorized if no valid session
  */
 export async function requireAuth(event: H3Event): Promise<AuthSession> {
-  const session = await auth.api.getSession({
-    headers: getAuthHeaders(event),
-  })
+  let session
+  try {
+    session = await auth.api.getSession({
+      headers: getAuthHeaders(event),
+    })
+  } catch (error) {
+    if (isDatabaseConnectionError(error)) {
+      createDatabaseUnavailableError()
+    }
+    throw error
+  }
 
   if (!session?.user) {
     throw createError({
@@ -73,6 +82,9 @@ export async function optionalAuth(event: H3Event): Promise<AuthSession | null> 
 
     return session as AuthSession
   } catch (error) {
+    if (isDatabaseConnectionError(error)) {
+      createDatabaseUnavailableError()
+    }
     return null
   }
 }

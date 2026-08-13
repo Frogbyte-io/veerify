@@ -272,6 +272,15 @@
                 <Icon name="lucide:arrow-left" class="w-4 h-4 mr-2" />
                 Back
               </Button>
+              <Button
+                variant="ghost"
+                :disabled="isCreating"
+                data-testid="create-product-import-cta"
+                @click="createProduct(true)"
+              >
+                <Icon name="lucide:database-zap" class="w-4 h-4 mr-2" />
+                Migrate existing board
+              </Button>
               <Button :disabled="isCreating" @click="createProduct">
                 <Icon v-if="isCreating" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
                 Create Product
@@ -301,6 +310,7 @@ export default {
       showCreateDialog: false,
       currentStep: 1,
       isCreating: false,
+      openImportAfterCreate: false,
       activeTeamId: '',
       activeTeamSlug: '',
       activeOrgSlug: '',
@@ -423,13 +433,14 @@ export default {
       }
     },
 
-    async createProduct() {
+    async createProduct(openImportAfterCreate = false) {
       if (!this.activeTeamId || !this.form.name || !this.form.slug) return
 
       this.isCreating = true
+      this.openImportAfterCreate = openImportAfterCreate
 
       try {
-        await $fetch(`/api/teams/${this.activeTeamId}/projects`, {
+        const response = await $fetch(`/api/teams/${this.activeTeamId}/projects`, {
           method: 'POST',
           body: {
             name: this.form.name,
@@ -443,13 +454,18 @@ export default {
           },
         })
 
+        const createdSlug = response?.data?.slug || this.form.slug
         this.handleDialogOpenChange(false)
         await this.loadProducts()
+        if (this.openImportAfterCreate) {
+          await this.$router.push(`/products/${createdSlug}#import`)
+        }
       } catch (err) {
         console.error('Error creating product:', err)
         toast.error(err?.data?.error?.message || 'Failed to create product')
       } finally {
         this.isCreating = false
+        this.openImportAfterCreate = false
       }
     },
 

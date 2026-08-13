@@ -125,6 +125,8 @@ import ProductSettingsCategories from '~/components/products/ProductSettingsCate
 import ProductSettingsStatuses from '~/components/products/ProductSettingsStatuses.vue'
 import ProductSettingsAppearance from '~/components/products/ProductSettingsAppearance.vue'
 import ProductSettingsGithub from '~/components/products/ProductSettingsGithub.vue'
+import ProductSettingsImport from '~/components/products/ProductSettingsImport.vue'
+import ProductSettingsChangelog from '~/components/products/ProductSettingsChangelog.vue'
 import ProductSettingsDomain from '~/components/products/ProductSettingsDomain.vue'
 import ProductSettingsEmbed from '~/components/products/ProductSettingsEmbed.vue'
 import ProductSettingsDanger from '~/components/products/ProductSettingsDanger.vue'
@@ -158,6 +160,8 @@ function createTabResources() {
     feedbackDefault: createResourceState(),
     githubIntegration: createResourceState(),
     githubRepos: createResourceState(),
+    importRuns: createResourceState([]),
+    changelogPosts: createResourceState(),
   }
 }
 
@@ -170,6 +174,8 @@ export default {
     ProductSettingsStatuses,
     ProductSettingsAppearance,
     ProductSettingsGithub,
+    ProductSettingsImport,
+    ProductSettingsChangelog,
     ProductSettingsDomain,
     ProductSettingsEmbed,
     ProductSettingsDanger,
@@ -201,8 +207,10 @@ export default {
         { id: 'feedback', label: 'Feedback', icon: 'lucide:message-square', requiresFeature: 'feedbackEnabled' },
         { id: 'categories', label: 'Categories', icon: 'lucide:tags', requiresFeature: 'feedbackEnabled' },
         { id: 'statuses', label: 'Statuses', icon: 'lucide:circle-dot', requiresFeature: 'feedbackEnabled' },
+        { id: 'changelog', label: 'Changelog', icon: 'lucide:newspaper' },
         { id: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
         { id: 'github', label: 'GitHub', icon: 'lucide:github', requiresFeature: 'feedbackEnabled' },
+        { id: 'import', label: 'Import', icon: 'lucide:database-zap' },
         { id: 'domain', label: 'Custom Domain', icon: 'lucide:globe' },
         { id: 'embed', label: 'Embed', icon: 'lucide:code-2' },
         { id: 'danger', label: 'Danger Zone', icon: 'lucide:alert-triangle' },
@@ -225,8 +233,10 @@ export default {
         feedback: 'ProductSettingsFeedback',
         categories: 'ProductSettingsCategories',
         statuses: 'ProductSettingsStatuses',
+        changelog: 'ProductSettingsChangelog',
         appearance: 'ProductSettingsAppearance',
         github: 'ProductSettingsGithub',
+        import: 'ProductSettingsImport',
         domain: 'ProductSettingsDomain',
         embed: 'ProductSettingsEmbed',
         danger: 'ProductSettingsDanger',
@@ -273,6 +283,26 @@ export default {
             refreshRepos: () => this.refreshGithubRepos(),
             isActive: this.activeTab === 'github',
           }
+        case 'import':
+          return {
+            ...baseProps,
+            resourceState: this.tabResources.importRuns,
+            categories: this.tabResources.categories.data || [],
+            statuses: this.tabResources.statuses.data || [],
+            ensureLoaded: () => this.ensureImportRunsLoaded(),
+            refresh: () => this.refreshImportRuns(),
+            ensureCategoriesLoaded: () => this.ensureCategoriesLoaded(),
+            ensureStatusesLoaded: () => this.ensureStatusesLoaded(),
+            isActive: this.activeTab === 'import',
+          }
+        case 'changelog':
+          return {
+            ...baseProps,
+            resourceState: this.tabResources.changelogPosts,
+            ensureLoaded: () => this.ensureChangelogLoaded(),
+            refresh: () => this.refreshChangelog(),
+            isActive: this.activeTab === 'changelog',
+          }
         default:
           return baseProps
       }
@@ -288,8 +318,10 @@ export default {
         'feedback',
         'categories',
         'statuses',
+        'changelog',
         'appearance',
         'github',
+        'import',
         'domain',
         'embed',
         'danger',
@@ -459,6 +491,32 @@ export default {
     async refreshGithubRepos() {
       return this.ensureGithubReposLoaded({ force: true })
     },
+    async ensureImportRunsLoaded(options = {}) {
+      return this.ensureResource(
+        'importRuns',
+        async () => {
+          const response = await $fetch(`/api/projects/${this.projectData.slug}/imports`)
+          return Array.isArray(response?.data) ? response.data : []
+        },
+        { force: options.force === true, fallbackError: 'Failed to load import history' }
+      )
+    },
+    async refreshImportRuns() {
+      return this.ensureImportRunsLoaded({ force: true })
+    },
+    async ensureChangelogLoaded(options = {}) {
+      return this.ensureResource(
+        'changelogPosts',
+        async () => {
+          const response = await $fetch(`/api/projects/${this.projectData.slug}/changelog`)
+          return Array.isArray(response?.data) ? response.data : []
+        },
+        { force: options.force === true, fallbackError: 'Failed to load changelog posts' }
+      )
+    },
+    async refreshChangelog() {
+      return this.ensureChangelogLoaded({ force: true })
+    },
     cancelIdleWarmup() {
       if (!import.meta.client || !this.idleWarmupHandle) return
 
@@ -481,6 +539,7 @@ export default {
         this.idleWarmupHandle = null
         this.ensureStatusesLoaded().catch(() => {})
         this.ensureDefaultFeedbackLoaded().catch(() => {})
+        this.ensureChangelogLoaded().catch(() => {})
         this.ensureGithubIntegrationLoaded().catch(() => {})
       }
 
@@ -513,6 +572,14 @@ export default {
           ])
         case 'github':
           return this.ensureGithubIntegrationLoaded()
+        case 'import':
+          return Promise.all([
+            this.ensureCategoriesLoaded(),
+            this.ensureStatusesLoaded(),
+            this.ensureImportRunsLoaded(),
+          ])
+        case 'changelog':
+          return this.ensureChangelogLoaded()
         default:
           return null
       }

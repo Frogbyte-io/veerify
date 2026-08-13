@@ -1,7 +1,12 @@
 <template>
   <div>
+    <PublicChangelog
+      v-if="teamSubdomain && projectSlug && subPage === 'changelog'"
+      :team-slug="teamSubdomain"
+      :project-slug="projectSlug"
+    />
     <PublicRoadmap
-      v-if="teamSubdomain && projectSlug && subPage === 'roadmap'"
+      v-else-if="teamSubdomain && projectSlug && subPage === 'roadmap'"
       :team-slug="teamSubdomain"
       :project-slug="projectSlug"
     />
@@ -43,7 +48,12 @@ export default {
       }
 
       const firstSegment = this.slugParts[0] || null
-      if (!firstSegment || firstSegment === 'roadmap' || firstSegment === this.publicProjectSlug) {
+      if (
+        !firstSegment ||
+        firstSegment === 'roadmap' ||
+        firstSegment === 'changelog' ||
+        firstSegment === this.publicProjectSlug
+      ) {
         return this.publicProjectSlug
       }
 
@@ -56,6 +66,7 @@ export default {
 
       const firstSegment = this.slugParts[0] || null
       if (firstSegment === 'roadmap') return 'roadmap'
+      if (firstSegment === 'changelog') return 'changelog'
       if (firstSegment === this.publicProjectSlug) {
         return this.slugParts[1] || null
       }
