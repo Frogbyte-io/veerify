@@ -30,6 +30,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireTeamMembership } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { contact } from '~/server/database/schema/support'
+import { decodeContactCursor, encodeContactCursor } from '~/server/utils/contact-cursor'
 
 const querySchema = z.object({
   teamId: z.string().min(1),
@@ -57,14 +58,20 @@ export default defineEventHandler(async (event) => {
   }
 
   if (query.cursor) {
-    conditions.push(lt(contact.createdAt, new Date(query.cursor)))
+    const cursor = decodeContactCursor(query.cursor)
+    conditions.push(
+      or(
+        lt(contact.createdAt, cursor.createdAt),
+        and(eq(contact.createdAt, cursor.createdAt), lt(contact.id, cursor.id))
+      )!
+    )
   }
 
   const rows = await db
     .select()
     .from(contact)
     .where(and(...conditions))
-    .orderBy(desc(contact.createdAt))
+    .orderBy(desc(contact.createdAt), desc(contact.id))
     .limit(query.limit + 1)
 
   const hasMore = rows.length > query.limit
@@ -73,6 +80,11 @@ export default defineEventHandler(async (event) => {
   return createSuccessResponse({
     contacts: items,
     hasMore,
-    nextCursor: hasMore ? items[items.length - 1].createdAt.toISOString() : null,
+    nextCursor: hasMore
+      ? encodeContactCursor({
+          createdAt: items[items.length - 1].createdAt,
+          id: items[items.length - 1].id,
+        })
+      : null,
   })
 })

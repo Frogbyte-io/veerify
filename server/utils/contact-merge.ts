@@ -48,6 +48,19 @@ export function canMerge(survivor: MergeableContact, loser: MergeableContact): M
 }
 
 /**
+ * A tombstone remains addressable for stale references, but it is no longer a
+ * writable contact. Callers must evaluate this after locking the row so a
+ * merge that wins the race cannot be followed by an update to the loser.
+ */
+export function canUpdateContact(candidate: MergeableContact): MergeCheck {
+  if (candidate.mergedIntoContactId) {
+    return { ok: false, reason: 'Contact has already been merged' }
+  }
+
+  return { ok: true }
+}
+
+/**
  * Combine attributes, survivor winning on key collisions.
  *
  * The survivor is the record an agent chose to keep, so its values are the more

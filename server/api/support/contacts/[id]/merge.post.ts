@@ -20,7 +20,7 @@
  *       404: { description: Contact not found }
  */
 import { z } from 'zod'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
@@ -53,18 +53,48 @@ export default defineEventHandler(async (event) => {
   }
 
   await db.transaction(async (tx) => {
+    // Lock both rows in a deterministic order. This serializes inverse and
+    // overlapping merges before any identities or links are moved.
+    const lockedContacts = await tx
+      .select()
+      .from(contact)
+      .where(inArray(contact.id, [survivorId, body.sourceContactId]))
+      .orderBy(asc(contact.id))
+      .for('update')
+
+    const lockedSurvivor = lockedContacts.find((row) => row.id === survivorId)
+    const lockedLoser = lockedContacts.find((row) => row.id === body.sourceContactId)
+    if (!lockedSurvivor || !lockedLoser) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Not Found',
+        data: createErrorResponse(ErrorCode.NOT_FOUND, 'Contact not found'),
+      })
+    }
+
+    // Re-read the guards after acquiring both locks. A competing merge may
+    // have tombstoned either row while the access checks above were running.
+    const lockedCheck = canMerge(lockedSurvivor, lockedLoser)
+    if (!lockedCheck.ok) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Bad Request',
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, lockedCheck.reason),
+      })
+    }
+
     // Links first. `contactLink` is unique on (contactId, entityType, entityId),
     // so if both contacts link to the same entity, repointing would violate it.
     // Drop the loser's duplicates before moving the rest.
     const survivorLinks = await tx
       .select({ entityType: contactLink.entityType, entityId: contactLink.entityId })
       .from(contactLink)
-      .where(eq(contactLink.contactId, survivor.id))
+      .where(eq(contactLink.contactId, lockedSurvivor.id))
 
     const loserLinks = await tx
       .select({ id: contactLink.id, entityType: contactLink.entityType, entityId: contactLink.entityId })
       .from(contactLink)
-      .where(eq(contactLink.contactId, loser.id))
+      .where(eq(contactLink.contactId, lockedLoser.id))
 
     const survivorKeys = new Set(survivorLinks.map((l) => `${l.entityType}:${l.entityId}`))
     const duplicateIds = loserLinks.filter((l) => survivorKeys.has(`${l.entityType}:${l.entityId}`)).map((l) => l.id)
@@ -73,30 +103,36 @@ export default defineEventHandler(async (event) => {
       await tx.delete(contactLink).where(inArray(contactLink.id, duplicateIds))
     }
 
-    await tx.update(contactLink).set({ contactId: survivor.id }).where(eq(contactLink.contactId, loser.id))
+    await tx
+      .update(contactLink)
+      .set({ contactId: lockedSurvivor.id })
+      .where(eq(contactLink.contactId, lockedLoser.id))
 
     // Identities are unique on (teamId, kind, value) and both contacts are in
     // the same team, so the database already guarantees no collision here.
-    await tx.update(contactIdentity).set({ contactId: survivor.id }).where(eq(contactIdentity.contactId, loser.id))
+    await tx
+      .update(contactIdentity)
+      .set({ contactId: lockedSurvivor.id })
+      .where(eq(contactIdentity.contactId, lockedLoser.id))
 
     await tx
       .update(contact)
       .set({
-        ...backfillContactFields(survivor, loser),
-        attributes: mergeAttributes(survivor.attributes, loser.attributes),
+        ...backfillContactFields(lockedSurvivor, lockedLoser),
+        attributes: mergeAttributes(lockedSurvivor.attributes, lockedLoser.attributes),
         updatedAt: new Date(),
       })
-      .where(eq(contact.id, survivor.id))
+      .where(eq(contact.id, lockedSurvivor.id))
 
     // Tombstone rather than delete, so anything still holding the old id
     // resolves to the survivor instead of 404ing.
     await tx
       .update(contact)
-      .set({ mergedIntoContactId: survivor.id, updatedAt: new Date() })
-      .where(and(eq(contact.id, loser.id), eq(contact.teamId, survivor.teamId)))
+      .set({ mergedIntoContactId: lockedSurvivor.id, updatedAt: new Date() })
+      .where(and(eq(contact.id, lockedLoser.id), eq(contact.teamId, lockedSurvivor.teamId)))
   })
 
-  const [merged] = await db.select().from(contact).where(eq(contact.id, survivor.id)).limit(1)
+  const [merged] = await db.select().from(contact).where(eq(contact.id, survivorId)).limit(1)
 
   return createSuccessResponse({ contact: merged, mergedFrom: loser.id })
 })
