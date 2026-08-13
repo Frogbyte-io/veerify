@@ -196,6 +196,8 @@ export const feedback = pgTable(
     authorUserIdx: index('feedback_author_user_idx').on(table.authorUserId),
     // Index for querying by author (session)
     authorSessionIdx: index('feedback_author_session_idx').on(table.authorSessionId),
+    // Index for the Stage 01 support "probable match" query (contact.email -> feedback.authorEmail)
+    authorEmailIdx: index('feedback_author_email_idx').on(table.authorEmail),
     // Index for sorting by vote count
     voteCountIdx: index('feedback_vote_count_idx').on(table.voteCount),
     // Index for pinned items
