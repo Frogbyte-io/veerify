@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { backfillContactFields, canMerge, mergeAttributes, type MergeableContact } from '../server/utils/contact-merge'
+import { backfillContactFields, canMerge, canUpdateContact, mergeAttributes, type MergeableContact } from '../server/utils/contact-merge'
 
 function contact(overrides: Partial<MergeableContact> = {}): MergeableContact {
   return {
@@ -48,6 +48,19 @@ describe('canMerge', () => {
     expect(canMerge(contact({ id: 'a', mergedIntoContactId: 'z' }), contact({ id: 'b' }))).toMatchObject({
       ok: false,
     })
+  })
+})
+
+describe('canUpdateContact', () => {
+  it('rejects a tombstone after a concurrent merge', () => {
+    expect(canUpdateContact(contact({ mergedIntoContactId: 'survivor' }))).toEqual({
+      ok: false,
+      reason: 'Contact has already been merged',
+    })
+  })
+
+  it('allows an active contact to be updated', () => {
+    expect(canUpdateContact(contact())).toEqual({ ok: true })
   })
 })
 

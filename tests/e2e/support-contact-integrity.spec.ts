@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../server/database/drizzle'
-import { contact, supportCompany } from '../../server/database/schema/support'
+import { contact, contactIdentity, contactLink, supportCompany } from '../../server/database/schema/support'
 import { team } from '../../server/database/schema/auth'
 import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
@@ -83,7 +83,7 @@ test.describe.serial('support contact integrity', () => {
     }
   })
 
-  test('serializes inverse merges and never creates a cycle', async ({ request }) => {
+  test('rejects updates to a merged tombstone', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await activeTeamId(request, sessionCookie)
     const ids: string[] = [randomUUID(), randomUUID()]
@@ -93,24 +93,87 @@ test.describe.serial('support contact integrity', () => {
     )
 
     try {
-      const [first, second] = await Promise.all([
-        request.post(`/api/support/contacts/${ids[0]}/merge`, {
-          headers: withAuthHeaders(sessionCookie),
-          data: { sourceContactId: ids[1] },
-        }),
-        request.post(`/api/support/contacts/${ids[1]}/merge`, {
-          headers: withAuthHeaders(sessionCookie),
-          data: { sourceContactId: ids[0] },
-        }),
-      ])
+      const mergeResponse = await request.post(`/api/support/contacts/${ids[0]}/merge`, {
+        headers: withAuthHeaders(sessionCookie),
+        data: { sourceContactId: ids[1] },
+      })
+      expect(mergeResponse.status()).toBe(200)
 
-      expect([first.status(), second.status()].sort()).toEqual([200, 400])
-      const rows = await db.select().from(contact).where(inArray(contact.id, ids))
-      expect(rows).toHaveLength(2)
-      expect(rows.filter((row) => row.mergedIntoContactId === null)).toHaveLength(1)
-      expect(rows.filter((row) => row.mergedIntoContactId !== null)).toHaveLength(1)
+      const updateResponse = await request.put(`/api/support/contacts/${ids[1]}`, {
+        headers: withAuthHeaders(sessionCookie),
+        data: { name: 'must remain a tombstone' },
+      })
+      expect(updateResponse.status()).toBe(400)
+
+      const [tombstone] = await db.select().from(contact).where(eq(contact.id, ids[1]))
+      expect(tombstone.mergedIntoContactId).toBe(ids[0])
+      expect(tombstone.name).toBe(ids[1])
     } finally {
       await db.delete(contact).where(inArray(contact.id, ids))
+    }
+  })
+
+  test('serializes inverse merges and preserves identities and links', async ({ request }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const teamId = await activeTeamId(request, sessionCookie)
+
+    // A deterministic sequential inverse request verifies the same
+    // post-lock revalidation that a competing request observes, while
+    // avoiding a scheduler-dependent Promise.all race in the test runner.
+    for (let iteration = 0; iteration < 3; iteration += 1) {
+      const ids: string[] = [randomUUID(), randomUUID()]
+      const createdAt = new Date()
+      await db.insert(contact).values(
+        ids.map((id) => ({ id, teamId, name: id, createdAt, updatedAt: createdAt }))
+      )
+      await db.insert(contactIdentity).values(
+        ids.map((id, index) => ({
+          id: randomUUID(),
+          contactId: id,
+          teamId,
+          kind: 'email',
+          value: `merge-${iteration}-${index}-${id}@example.com`,
+          createdAt,
+        }))
+      )
+      await db.insert(contactLink).values(
+        ids.map((id, index) => ({
+          id: randomUUID(),
+          contactId: id,
+          entityType: 'feedback',
+          entityId: `merge-${iteration}-${index}-${id}`,
+          source: 'agent',
+          createdAt,
+        }))
+      )
+
+      try {
+        const first = await request.post(`/api/support/contacts/${ids[0]}/merge`, {
+          headers: withAuthHeaders(sessionCookie),
+          data: { sourceContactId: ids[1] },
+        })
+        expect(first.status()).toBe(200)
+
+        const inverse = await request.post(`/api/support/contacts/${ids[1]}/merge`, {
+          headers: withAuthHeaders(sessionCookie),
+          data: { sourceContactId: ids[0] },
+        })
+        expect(inverse.status()).toBe(400)
+
+        const rows = await db.select().from(contact).where(inArray(contact.id, ids))
+        expect(rows).toHaveLength(2)
+        expect(rows.filter((row) => row.mergedIntoContactId === null).map((row) => row.id)).toEqual([ids[0]])
+        expect(rows.find((row) => row.id === ids[1])?.mergedIntoContactId).toBe(ids[0])
+
+        const identities = await db.select().from(contactIdentity).where(inArray(contactIdentity.contactId, ids))
+        const links = await db.select().from(contactLink).where(inArray(contactLink.contactId, ids))
+        expect(identities).toHaveLength(2)
+        expect(identities.every((identity) => identity.contactId === ids[0])).toBe(true)
+        expect(links).toHaveLength(2)
+        expect(links.every((link) => link.contactId === ids[0])).toBe(true)
+      } finally {
+        await db.delete(contact).where(inArray(contact.id, ids))
+      }
     }
   })
 })

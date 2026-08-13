@@ -22,6 +22,7 @@ import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
+import { canUpdateContact } from '~/server/utils/contact-merge'
 import { requireContactAccess } from '~/server/utils/support-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { db } from '~/server/database/drizzle'
@@ -41,15 +42,42 @@ export default defineEventHandler(async (event) => {
   const contactId = getRouterParam(event, 'id') as string
   const body = bodySchema.parse(await readBody(event))
 
-  const existing = await requireContactAccess(contactId, session.user.id)
+  await requireContactAccess(contactId, session.user.id)
 
   try {
     return await db.transaction(async (tx) => {
+      // The access check above establishes the caller's team membership. The
+      // row itself must be re-read and locked here: a merge may have turned
+      // this contact into a tombstone while the request was entering its
+      // transaction.
+      const [lockedContact] = await tx
+        .select()
+        .from(contact)
+        .where(eq(contact.id, contactId))
+        .for('update')
+
+      if (!lockedContact) {
+        throw createError({
+          statusCode: 404,
+          statusMessage: 'Not Found',
+          data: createErrorResponse(ErrorCode.NOT_FOUND, 'Contact not found'),
+        })
+      }
+
+      const updateCheck = canUpdateContact(lockedContact)
+      if (!updateCheck.ok) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Bad Request',
+          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, updateCheck.reason),
+        })
+      }
+
       if (body.companyId) {
         const [company] = await tx
           .select({ id: supportCompany.id })
           .from(supportCompany)
-          .where(and(eq(supportCompany.id, body.companyId), eq(supportCompany.teamId, existing.teamId)))
+          .where(and(eq(supportCompany.id, body.companyId), eq(supportCompany.teamId, lockedContact.teamId)))
           .limit(1)
 
         if (!company) {
@@ -77,15 +105,15 @@ export default defineEventHandler(async (event) => {
 
       // Keep the email identity in step with the column. If they drift, inbound
       // mail resolves to a contact whose displayed address is something else.
-      if (body.email !== undefined && body.email !== existing.email) {
-        if (existing.email) {
+      if (body.email !== undefined && body.email !== lockedContact.email) {
+        if (lockedContact.email) {
           await tx
             .delete(contactIdentity)
             .where(
               and(
                 eq(contactIdentity.contactId, contactId),
                 eq(contactIdentity.kind, 'email'),
-                eq(contactIdentity.value, existing.email)
+                eq(contactIdentity.value, lockedContact.email)
               )
             )
         }
@@ -94,7 +122,7 @@ export default defineEventHandler(async (event) => {
           await tx.insert(contactIdentity).values({
             id: randomUUID(),
             contactId,
-            teamId: existing.teamId,
+            teamId: lockedContact.teamId,
             kind: 'email',
             value: body.email,
             createdAt: new Date(),
