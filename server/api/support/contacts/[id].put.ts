@@ -25,7 +25,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireContactAccess } from '~/server/utils/support-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { db } from '~/server/database/drizzle'
-import { contact, contactIdentity } from '~/server/database/schema/support'
+import { contact, contactIdentity, supportCompany } from '~/server/database/schema/support'
 
 const bodySchema = z.object({
   name: z.string().trim().max(200).nullable().optional(),
@@ -45,6 +45,22 @@ export default defineEventHandler(async (event) => {
 
   try {
     return await db.transaction(async (tx) => {
+      if (body.companyId) {
+        const [company] = await tx
+          .select({ id: supportCompany.id })
+          .from(supportCompany)
+          .where(and(eq(supportCompany.id, body.companyId), eq(supportCompany.teamId, existing.teamId)))
+          .limit(1)
+
+        if (!company) {
+          throw createError({
+            statusCode: 400,
+            statusMessage: 'Bad Request',
+            data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Company is not part of this team'),
+          })
+        }
+      }
+
       const [updated] = await tx
         .update(contact)
         .set({
