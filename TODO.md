@@ -181,7 +181,7 @@ MVP
 Plan: `docs/plans/2026-08-11-support-platform/stage-00-foundations.md`. Read `design.md` in the same
 directory first. Infrastructure only — no support tables, endpoints, or UI in this stage.
 
-- [ ] **SUP-00-1** Split `server/database/schema/feedback.ts` into `feedback.ts`, `notifications.ts`, `imports.ts`, `changelog.ts`; add empty `support.ts`; re-export from `index.ts`; verify `yarn db:generate` emits no migration
+- [x] **SUP-00-1** Split `server/database/schema/feedback.ts` into `feedback.ts`, `notifications.ts`, `imports.ts`, `changelog.ts`; add empty `support.ts`; re-export from `index.ts`; verify `yarn db:generate` emits no migration
   - Partially done in `bd31097`: `notification` extracted to `notifications.ts`, empty `support.ts` added, `yarn db:generate` confirmed to emit no migration.
   - **Remaining:** `importRun`/`importRunIssue`/`changelogPost` are uncommitted work in progress, so their extraction into `imports.ts` and `changelog.ts` sits in the working tree to be committed alongside that feature. Check this item off once that lands.
 - [x] **SUP-00-2** Add `server/services/realtime/` with `types.ts`, `redis.ts` (ioredis, separate pub/sub connections), `memory.ts`, and driver selection; versioned thin envelopes; unit tests for envelope routing
@@ -219,7 +219,7 @@ first. Integration branch is **`support-platform`**, not `main` (delta D-17).
 migration. The single permitted change is an index on `authorEmail`. See "Why contacts and feedback stay
 separate" in `design.md`.
 
-- [ ] **SUP-01-1** Add `contact`, `contactIdentity`, `supportCompany`, `contactLink` to `server/database/schema/support.ts` with all indexes; generate migration; add index on `feedback.authorEmail`
+- [x] **SUP-01-1** Add `contact`, `contactIdentity`, `supportCompany`, `contactLink` to `server/database/schema/support.ts` with all indexes; generate migration; add index on `feedback.authorEmail`
 - [ ] **SUP-01-2** Add `requireContactAccess` to `server/utils/support-access.ts`; unit tests for the 404/403 split
 - [ ] **SUP-01-3** Add contact CRUD endpoints (list, create, get, update, delete) with team scoping and cursor pagination
 - [ ] **SUP-01-4** Add `POST /api/support/contacts/[id]/merge` with transactional repointing and tombstone; unit tests for collision and self-merge cases
