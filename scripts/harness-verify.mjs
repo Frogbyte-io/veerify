@@ -9,6 +9,12 @@ const steps = [
   { label: 'Unit tests', command: yarnCommand, args: ['test'], shell: isWindows },
   { label: 'Lint', command: yarnCommand, args: ['lint'], shell: isWindows },
   { label: 'E2E (guarded)', command: yarnCommand, args: ['test:e2e:if-available'], shell: isWindows },
+  {
+    label: 'Redis integration (guarded)',
+    command: yarnCommand,
+    args: ['test:integration:if-available'],
+    shell: isWindows,
+  },
 ]
 
 const timings = []

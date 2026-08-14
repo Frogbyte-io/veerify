@@ -25,6 +25,7 @@ Run these after every change:
 - `yarn test`
 - `yarn lint`
 - `yarn test:e2e:if-available`
+- `yarn test:integration:if-available`
 
 Or run the harness command:
 
@@ -45,6 +46,15 @@ Or run the harness command:
 
 - `yarn test:e2e:if-available` must run Playwright only when environment is cloud/CI or `PLAYWRIGHT_FORCE=1`, and a database is configured and reachable.
 - If the guarded Playwright command skips, report the skip reason in updates/final output.
+
+## Redis Integration Guard
+
+- `yarn test:integration:if-available` runs the real Redis driver and rate-limit suite only when Redis is
+  reachable at `REDIS_URL` (defaults to `redis://localhost:6379`). Start it with
+  `docker compose -f docker-compose-dev.yml up -d valkey`.
+- Unlike the Playwright guard, this one is not restricted to cloud/CI — it runs locally by default
+  whenever Redis is up.
+- If it skips, report the skip reason in updates/final output.
 
 ## UI Change Rule
 

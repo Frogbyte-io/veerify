@@ -15,6 +15,8 @@ export default defineConfig({
   test: {
     globals: true,
     include: ['tests/**/*.test.ts'],
-    exclude: ['tests/e2e/**'],
+    // e2e requires Playwright; integration requires a real Redis. Both run via
+    // their own `*:if-available` guarded script, never the default `yarn test`.
+    exclude: ['tests/e2e/**', 'tests/integration/**'],
   },
 })

@@ -27,6 +27,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:if-available": "node scripts/run-playwright-if-available.mjs",
+    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "test:integration:if-available": "node scripts/run-redis-integration-if-available.mjs",
     "harness:context": "node scripts/harness-context.mjs",
     "harness:docs": "node scripts/harness-docs-check.mjs",
     "harness:verify": "node scripts/harness-verify.mjs",
