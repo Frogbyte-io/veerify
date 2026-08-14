@@ -300,3 +300,22 @@ request time — the TS source is not necessarily present in a Vercel serverless
 compiled output, so a runtime filesystem scan would work in dev and self-hosted but silently produce an
 empty spec on Vercel. This is repo-wide scope (fixes all 24 files, not just support's 16), so it was not
 done inside a support-platform stage item.
+
+### D-24 — `isUniqueViolation` never matched a real drizzle error
+
+**Found:** live-server verification after SUP-X-1. **Status:** RESOLVED in `b6b9514` (2026-08-14).
+
+`drizzle-orm`'s node-postgres driver throws `DrizzleQueryError`, which wraps the real `pg` error — the
+one carrying `.code` — in `.cause` rather than exposing it on the top-level error object.
+`isUniqueViolation()` only ever checked the top-level error, so it never matched anything, and every
+unique-constraint conflict across the support platform (contact create/update, company create/update,
+contact link create) leaked as a raw 500 with a stack trace instead of the intended 409.
+
+**Caught by:** POSTing a duplicate company name against a running dev server, per the user's request to
+verify the platform against a real server rather than just unit tests. No existing test caught this,
+because the only prior coverage was indirect, through endpoint tests that presumably constructed a raw
+`{code: '23505'}` object rather than the real wrapped shape.
+
+**Lesson for this program:** a helper with no dedicated unit test, exercised only indirectly through
+other tests that may not reproduce the real error shape, is a live gap even when everything is green.
+`isUniqueViolation()` now has its own test file asserting the exact wrapped shape.
