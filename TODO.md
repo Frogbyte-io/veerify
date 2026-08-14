@@ -227,7 +227,8 @@ separate" in `design.md`.
   - `3360f98`, `b25525f`, `ab6fdb2`: same-team company checks, opaque stable cursor, locked/revalidated merge and tombstone update guards, plus focused and guarded PostgreSQL E2E coverage. Independent review approved after two fix rounds.
 - [x] **SUP-01-5** Add `supportTeamSettings` (`teamId` primary key, `autoLinkFeedback` default `false`, timestamps) and `GET /api/support/contacts/[id]/timeline` returning `linked` and `probableFeedback` separately, plus link/unlink endpoints. Changing this team-scoped setting requires team membership.
   - `d97812f`, merged in `6e30379`. `buildContactTimeline()` in `server/utils/support-timeline.ts` dedupes: a feedback item that is explicitly linked is excluded from `probableFeedback`, so it can never appear in both sections. Link creation locks the contact row and validates the target feedback is in the same team before inserting.
-- [ ] **SUP-01-6** Add `supportCompany` CRUD endpoints
+- [x] **SUP-01-6** Add `supportCompany` CRUD endpoints
+  - `c3b3060`. Mirrors the contact CRUD conventions; `requireCompanyAccess` added to support-access.ts. `server/utils/list-cursor.ts` extracted so the cursor logic is shared with contacts rather than duplicated.
 - [ ] **SUP-01-7** Build `/support/contacts` list page (search, pagination, skeletons, error retry)
 - [ ] **SUP-01-8** Build `/support/contacts/[id]` detail page: attributes, identities, timeline with visually distinct Linked vs Possible matches, one-click link, merge dialog
 - [ ] **SUP-01-9** Register support contact routes in `server/utils/openapi.ts`
