@@ -274,3 +274,29 @@ uses a bounded claim/retry worker. CSAT and social channels reuse this mechanism
 The acceptance criterion requires once-only breach processing for first-response, next-response, and
 resolution independently, but `conversation.slaBreachedAt` represented only one instant. Stage 06 now
 uses unique `(conversationId, metric)` `slaBreach` rows.
+
+### D-23 — `server/utils/openapi.ts` has no route-registration mechanism
+
+**Found:** SUP-01-9. **Status:** worked around; real fix queued as SUP-X-3.
+
+The stage-01 plan said "register support contact routes in `server/utils/openapi.ts`", assuming it held
+a route registry. It does not — it is only type helpers and `commonSchemas`. The actual served spec is
+hand-written in `server/api/openapi.json.get.ts` with `paths: {}` hardcoded empty and the comment "Paths
+will be added as routes are implemented".
+
+**This predates support-platform.** 24 endpoint files across the whole app — auth, github, orgs, and now
+all of support — carry `@openapi` JSDoc blocks in the standard `swagger-jsdoc` YAML-comment format, and
+none of them have ever been read by anything. `js-yaml` is present only transitively (via eslint), so
+even a scanner couldn't be added without a real dependency.
+
+**What was done:** the nine support path entries were hand-transcribed into `openapi.json.get.ts`'s
+`paths` object, matching the source JSDoc exactly, plus `Contact` and `SupportCompany` schema components.
+This makes the served `/api/openapi.json` correct for support today, but it is duplication that will
+drift the moment an endpoint's JSDoc changes without a matching manual edit.
+
+**Real fix, not done here:** a build-time scan of `server/api/**/*.ts` for `@openapi` blocks, parsed with
+`js-yaml` (added as a direct dependency) and merged into the served spec. Must run at build time, not
+request time — the TS source is not necessarily present in a Vercel serverless deployment, only the
+compiled output, so a runtime filesystem scan would work in dev and self-hosted but silently produce an
+empty spec on Vercel. This is repo-wide scope (fixes all 24 files, not just support's 16), so it was not
+done inside a support-platform stage item.

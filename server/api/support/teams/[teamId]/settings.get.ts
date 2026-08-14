@@ -5,6 +5,14 @@
  *     tags: [Support]
  *     summary: Get support team settings
  *     operationId: getSupportTeamSettings
+ *     parameters:
+ *       - in: path
+ *         name: teamId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Support team settings }
+ *       403: { description: Not a member of the team }
  */
 import { eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'

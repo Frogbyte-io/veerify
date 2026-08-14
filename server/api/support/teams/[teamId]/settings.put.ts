@@ -5,6 +5,14 @@
  *     tags: [Support]
  *     summary: Change support team settings
  *     operationId: updateSupportTeamSettings
+ *     parameters:
+ *       - in: path
+ *         name: teamId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Support team settings updated }
+ *       403: { description: Not a member of the team }
  */
 import { z } from 'zod'
 import { createSuccessResponse } from '~/server/utils/response'
