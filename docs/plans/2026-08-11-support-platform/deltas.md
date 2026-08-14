@@ -194,7 +194,7 @@ surface as plausible-looking type errors.
 
 ### D-15 — Nothing tests the Redis driver against real Redis
 
-**Found:** Stage 00 boundary review. **Status:** open, recommended before Stage 02.
+**Found:** Stage 00 boundary review. **Status:** RESOLVED in `a751c6a` (2026-08-14).
 
 Every realtime and rate-limit test covers the **memory** driver or a fake client. The Redis driver's
 reconnect-and-resubscribe path, and the rate limiter's Lua sliding window, have never run against an
