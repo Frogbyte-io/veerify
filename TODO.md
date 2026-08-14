@@ -229,11 +229,14 @@ separate" in `design.md`.
   - `d97812f`, merged in `6e30379`. `buildContactTimeline()` in `server/utils/support-timeline.ts` dedupes: a feedback item that is explicitly linked is excluded from `probableFeedback`, so it can never appear in both sections. Link creation locks the contact row and validates the target feedback is in the same team before inserting.
 - [x] **SUP-01-6** Add `supportCompany` CRUD endpoints
   - `c3b3060`. Mirrors the contact CRUD conventions; `requireCompanyAccess` added to support-access.ts. `server/utils/list-cursor.ts` extracted so the cursor logic is shared with contacts rather than duplicated.
-- [ ] **SUP-01-7** Build `/support/contacts` list page (search, pagination, skeletons, error retry)
-- [ ] **SUP-01-8** Build `/support/contacts/[id]` detail page: attributes, identities, timeline with visually distinct Linked vs Possible matches, one-click link, merge dialog
+- [x] **SUP-01-7** Build `/support/contacts` list page (search, pagination, skeletons, error retry)
+  - `04e9a8e`. Manual 300ms debounce (no external dep, matches the rest of the codebase), cursor-based Load more, reacts to team switches via the existing `veerify:active-team-changed` event.
+- [x] **SUP-01-8** Build `/support/contacts/[id]` detail page: attributes, identities, timeline with visually distinct Linked vs Possible matches, one-click link, merge dialog
+  - `04e9a8e`. Possible matches renders in a dashed amber-tinted panel with an explicit "not confirmed" caption — deliberately unmistakable, not merely different, from Linked. Verified end-to-end against a live dev server and database: created a contact, inserted a feedback row with a matching email, confirmed it surfaced as a probable match, linked it, confirmed it moved to Linked and vanished from Possible matches, unlinked, confirmed it reverted, then merged two contacts and confirmed backfill semantics. No browser preview was available in this environment, so this was verified via authenticated curl against the real API plus SSR HTML fetches of both pages — not a visual check.
 - [ ] **SUP-01-9** Register support contact routes in `server/utils/openapi.ts`
 
 ## Support Platform — Cross-cutting
 
 - [ ] **SUP-X-1** Add a guarded Redis integration suite (delta D-15). Nothing currently exercises the Redis driver or the Lua rate-limit script against a real server — only the memory driver and fakes. Skip when no `REDIS_URL` is reachable, following the `test:e2e:if-available` pattern
-- [ ] **SUP-X-2** Gate `scripts/seed.ts` behind an explicit env flag (delta D-13). `yarn build` runs `postbuild` → seed, which creates `test@preview.local` / `password123` in whatever database it points at
+- [x] **SUP-X-2** Gate `scripts/seed.ts` behind an explicit env flag (delta D-13). `yarn build` runs `postbuild` → seed, which creates `test@preview.local` / `password123` in whatever database it points at
+  - Board entry was stale. `productionSeedBlockReason()` in `scripts/seed.ts` refuses to run when `NODE_ENV=production` or `VERCEL_ENV=production`, with `ALLOW_PRODUCTION_SEED=true` as a deliberate override. Verified: blocks under both env vars, proceeds with the override set.
