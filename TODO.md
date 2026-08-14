@@ -233,7 +233,10 @@ separate" in `design.md`.
   - `04e9a8e`. Manual 300ms debounce (no external dep, matches the rest of the codebase), cursor-based Load more, reacts to team switches via the existing `veerify:active-team-changed` event.
 - [x] **SUP-01-8** Build `/support/contacts/[id]` detail page: attributes, identities, timeline with visually distinct Linked vs Possible matches, one-click link, merge dialog
   - `04e9a8e`. Possible matches renders in a dashed amber-tinted panel with an explicit "not confirmed" caption — deliberately unmistakable, not merely different, from Linked. Verified end-to-end against a live dev server and database: created a contact, inserted a feedback row with a matching email, confirmed it surfaced as a probable match, linked it, confirmed it moved to Linked and vanished from Possible matches, unlinked, confirmed it reverted, then merged two contacts and confirmed backfill semantics. No browser preview was available in this environment, so this was verified via authenticated curl against the real API plus SSR HTML fetches of both pages — not a visual check.
-- [ ] **SUP-01-9** Register support contact routes in `server/utils/openapi.ts`
+- [x] **SUP-01-9** Register support contact routes in `server/utils/openapi.ts`
+  - `e01ac73`. `openapi.ts` turned out to have no route registry (delta D-23) — hand-transcribed the 9 support path templates into `openapi.json.get.ts` instead, matching the source JSDoc exactly. Verified by fetching `/api/openapi.json` from a running server: valid JSON, all 9 paths present. Real fix (build-time JSDoc scanner, repo-wide) queued as SUP-X-3.
+
+**Stage 01 complete.** All items SUP-01-1 through SUP-01-9 done.
 
 ## Support Platform — Cross-cutting
 
