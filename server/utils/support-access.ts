@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm'
 // can be unit tested outside the Nitro runtime.
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
-import { contact } from '~/server/database/schema/support'
+import { contact, supportCompany } from '~/server/database/schema/support'
 import { teamMember } from '~/server/database/schema/auth'
 import { createErrorResponse, ErrorCode } from './response'
 
@@ -34,6 +34,28 @@ export async function requireContactAccess(contactId: string, userId: string) {
       statusCode: 404,
       statusMessage: 'Not Found',
       data: createErrorResponse(ErrorCode.NOT_FOUND, 'Contact not found'),
+    })
+  }
+
+  await requireTeamMembership(row.teamId, userId)
+
+  return row
+}
+
+/**
+ * Verify the user may act on a company, via membership of the company's team.
+ *
+ * Same 404/403 split as `requireContactAccess`, for the same reason: company
+ * ids are opaque and only ever shown to users who already have team access.
+ */
+export async function requireCompanyAccess(companyId: string, userId: string) {
+  const [row] = await db.select().from(supportCompany).where(eq(supportCompany.id, companyId)).limit(1)
+
+  if (!row) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Company not found'),
     })
   }
 

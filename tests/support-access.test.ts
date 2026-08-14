@@ -25,7 +25,8 @@ vi.mock('~/server/database/drizzle', () => {
   return { db: { select: chain } }
 })
 
-const { requireContactAccess, requireTeamMembership } = await import('~/server/utils/support-access')
+const { requireContactAccess, requireCompanyAccess, requireTeamMembership } =
+  await import('~/server/utils/support-access')
 
 async function expectStatus(promise: Promise<unknown>, statusCode: number) {
   await expect(promise).rejects.toMatchObject({ statusCode })
@@ -65,6 +66,28 @@ describe('requireContactAccess', () => {
 
     await expectStatus(requireContactAccess('missing', 'u1'), 404)
     expect(queued.length).toBe(0)
+  })
+})
+
+describe('requireCompanyAccess', () => {
+  it('returns the company when the user is a member of its team', async () => {
+    queueResult([{ id: 'co1', teamId: 't1', name: 'Acme' }])
+    queueResult([{ id: 'm1', role: 'member' }])
+
+    await expect(requireCompanyAccess('co1', 'u1')).resolves.toMatchObject({ id: 'co1', teamId: 't1' })
+  })
+
+  it('throws 404 when the company does not exist', async () => {
+    queueResult([])
+
+    await expectStatus(requireCompanyAccess('missing', 'u1'), 404)
+  })
+
+  it('throws 403 when the company exists but the user is not in its team', async () => {
+    queueResult([{ id: 'co1', teamId: 't1' }])
+    queueResult([])
+
+    await expectStatus(requireCompanyAccess('co1', 'outsider'), 403)
   })
 })
 
