@@ -13,7 +13,7 @@
 //
 // See `docs/plans/2026-08-11-support-platform/design.md` → Data model → Stage 01.
 
-import { pgTable, text, timestamp, jsonb, uniqueIndex, index, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, jsonb, uniqueIndex, index, boolean, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { user, team } from './auth'
 
 // Support companies - the Zendesk "organization" concept, named to avoid
@@ -154,3 +154,20 @@ export const contactLink = pgTable(
     entityIdx: index('contact_link_entity_idx').on(table.entityType, table.entityId),
   })
 )
+
+// Team-scoped support policy. This intentionally does not live in generic
+// team JSON: support privacy controls need an explicit ownership boundary.
+export const supportTeamSettings = pgTable('support_team_settings', {
+  teamId: text('team_id')
+    .primaryKey()
+    .references(() => team.id, { onDelete: 'cascade' }),
+  autoLinkFeedback: boolean('auto_link_feedback')
+    .default(false)
+    .notNull(),
+  createdAt: timestamp('created_at')
+    .$defaultFn(() => new Date())
+    .notNull(),
+  updatedAt: timestamp('updated_at')
+    .$defaultFn(() => new Date())
+    .notNull(),
+})

@@ -1,0 +1,25 @@
+/**
+ * @openapi
+ * /api/support/teams/{teamId}/settings:
+ *   get:
+ *     tags: [Support]
+ *     summary: Get support team settings
+ *     operationId: getSupportTeamSettings
+ */
+import { eq } from 'drizzle-orm'
+import { createSuccessResponse } from '~/server/utils/response'
+import { requireAuth } from '~/server/utils/auth-middleware'
+import { requireTeamMembership } from '~/server/utils/support-access'
+import { db } from '~/server/database/drizzle'
+import { supportTeamSettings } from '~/server/database/schema/support'
+
+export default defineEventHandler(async (event) => {
+  const session = await requireAuth(event)
+  const teamId = getRouterParam(event, 'teamId') as string
+  await requireTeamMembership(teamId, session.user.id)
+
+  const [settings] = await db.select().from(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId)).limit(1)
+  return createSuccessResponse({
+    settings: settings ?? { teamId, autoLinkFeedback: false, createdAt: null, updatedAt: null },
+  })
+})
