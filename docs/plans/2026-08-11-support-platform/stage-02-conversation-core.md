@@ -32,8 +32,8 @@ first reader, but it is created here so mail intake needs no migration.
 the only product signal an email carries. `supportInboxAddress` holds `id`, `inboxId` (FK cascade),
 `address` (unique), `projectId` (FK project, set null — null means unattributed), `isPrimary`,
 `createdAt`. Teams want several addresses per inbox: one per product, plus general team addresses.
-`supportInbox.emailAddress` remains the primary *sending* identity; `supportInboxAddress` governs what
-the inbox *receives*.
+`supportInbox.emailAddress` remains the primary _sending_ identity; `supportInboxAddress` governs what
+the inbox _receives_.
 
 `conversation` gains a nullable `projectId` (FK project, set null) for the resolved product.
 
@@ -56,20 +56,20 @@ Extend `server/utils/support-access.ts`:
 
 ### 3. API
 
-| Route                                          | Method          | Notes                                                             |
-| ---------------------------------------------- | --------------- | ----------------------------------------------------------------- |
-| `/api/support/inboxes`                         | GET/POST        | Team-scoped list and create                                       |
-| `/api/support/inboxes/[id]`                    | GET/PUT/DELETE  | Detail, settings, delete                                          |
-| `/api/support/inboxes/[id]/addresses`          | GET/POST/DELETE | Receiving addresses and their optional product mapping            |
-| `/api/support/inboxes/[id]/members`            | GET/POST/DELETE | Agent membership                                                  |
+| Route                                          | Method          | Notes                                                                      |
+| ---------------------------------------------- | --------------- | -------------------------------------------------------------------------- |
+| `/api/support/inboxes`                         | GET/POST        | Team-scoped list and create                                                |
+| `/api/support/inboxes/[id]`                    | GET/PUT/DELETE  | Detail, settings, delete                                                   |
+| `/api/support/inboxes/[id]/addresses`          | GET/POST/DELETE | Receiving addresses and their optional product mapping                     |
+| `/api/support/inboxes/[id]/members`            | GET/POST/DELETE | Agent membership                                                           |
 | `/api/support/conversations`                   | GET             | Filter by inbox, status, assignee, tag, contact, product; cursor-paginated |
-| `/api/support/conversations`                   | POST            | Manual creation — the Stage 02 entry point                        |
-| `/api/support/conversations/[id]`              | GET             | Detail with contact and participants                              |
-| `/api/support/conversations/[id]`              | PATCH           | Status, priority, assignee, subject, product                      |
-| `/api/support/conversations/[id]/messages`     | GET/POST        | Thread; `POST` accepts `kind` of `outgoing` or `note`             |
-| `/api/support/conversations/[id]/participants` | POST/DELETE     | CC and followers                                                  |
-| `/api/support/conversations/[id]/tags`         | POST/DELETE     | Tag assignment                                                    |
-| `/api/support/tags`                            | GET/POST/DELETE | Team tag management                                               |
+| `/api/support/conversations`                   | POST            | Manual creation — the Stage 02 entry point                                 |
+| `/api/support/conversations/[id]`              | GET             | Detail with contact and participants                                       |
+| `/api/support/conversations/[id]`              | PATCH           | Status, priority, assignee, subject, product                               |
+| `/api/support/conversations/[id]/messages`     | GET/POST        | Thread; `POST` accepts `kind` of `outgoing` or `note`                      |
+| `/api/support/conversations/[id]/participants` | POST/DELETE     | CC and followers                                                           |
+| `/api/support/conversations/[id]/tags`         | POST/DELETE     | Tag assignment                                                             |
+| `/api/support/tags`                            | GET/POST/DELETE | Team tag management                                                        |
 
 **Activity messages.** Every mutation through `PATCH /conversations/[id]` that changes status, priority,
 or assignee also writes a `conversationMessage` with `kind: 'activity'` describing the change. This is
@@ -108,17 +108,23 @@ board). Stage 02 builds only the first.
 
 **Sidebar** — `components/sidebar/AppSidebar.vue`:
 
-- **Rename the existing `Support` group to `System`.** It contains only *Settings* and is a mis-named
+- **Rename the existing `Support` group to `System`.** It contains only _Settings_ and is a mis-named
   misc group; the name is needed for the real module. This is a rename, not a move — Settings stays put.
-- Add a **`Support` group** with *Inbox* (`/support`) and *Contacts* (`/support/contacts`), inside the
+- Add a **`Support` group** with _Inbox_ (`/support`) and _Contacts_ (`/support/contacts`), inside the
   `hasActiveOrganization === true` block alongside `Feedback` and `Management`. This also closes the
   Stage 01 loose end where contacts were reachable only by URL.
 - `/support` prefix added to `protectedRoutes` in `middleware/auth.global.ts`.
 
 **Team module enablement** — a new **Tools** tab in `pages/settings/index.vue`:
 
-- Lists Feedback / Roadmap / Changelog / Support as **per-team** module toggles, stored in
-  `supportTeamSettings` for support (`supportEnabled`, default false) and alongside it for the others.
+- Lists Feedback / Roadmap / Changelog / Support as **per-team** module toggles, stored in a new
+  `teamModuleSettings` table (`server/database/schema/teams.ts`) — **not** in `supportTeamSettings`,
+  which delta D-19 reserved for support-only policy. Defaults mirror the existing per-project ones:
+  `feedbackEnabled` true, the rest false. See delta **D-31** for the full rationale, including why a
+  `feedbackEnabled` default of false would hide the feedback nav for every existing team on deploy.
+- **Team level is a master switch; the per-project toggle still applies and both must be on.** A product
+  with feedback enabled inside a team with feedback disabled shows nothing (delta D-31).
+- This is the one migration expected in the rest of Stage 02 (`0023`), and it belongs to this item.
 - Drives sidebar group visibility. `Roadmap` and `Changelog` are currently hardcoded `disabled: true`
   placeholders in `AppSidebar.vue`; this replaces that with real state, so the tab is not
   support-specific scaffolding.
