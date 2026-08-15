@@ -124,7 +124,9 @@ export default defineEventHandler(async (event) => {
       type: 'conversation_assigned',
       title: `Conversation #${existing.displayId} was assigned to you`,
       body: existing.subject || undefined,
-      link: `/support?conversation=${conversationId}`,
+      // Matches the query key `/support` writes when a conversation is
+      // selected, so the link round-trips with the page's own URL sync.
+      link: `/support?conversationId=${conversationId}`,
       actorUserId: session.user.id,
       actorName: session.user.name,
     })
