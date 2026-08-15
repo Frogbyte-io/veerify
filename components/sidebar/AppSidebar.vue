@@ -176,11 +176,24 @@ const managementItems: SidebarNavItem[] = [
   },
 ]
 
-const supportItems: SidebarNavItem[] = [
+const systemItems: SidebarNavItem[] = [
   {
     title: 'Settings',
     url: '/settings',
     icon: 'lucide:settings',
+  },
+]
+
+const supportModuleItems: SidebarNavItem[] = [
+  {
+    title: 'Inbox',
+    url: '/support',
+    icon: 'lucide:inbox',
+  },
+  {
+    title: 'Contacts',
+    url: '/support/contacts',
+    icon: 'lucide:contact',
   },
 ]
 </script>
@@ -267,14 +280,35 @@ const supportItems: SidebarNavItem[] = [
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <!-- Support Section -->
+        <SidebarGroup>
+          <SidebarGroupLabel>Support</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem v-for="item in supportModuleItems" :key="item.title">
+                <SidebarMenuButton
+                  as-child
+                  :tooltip="item.title"
+                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                >
+                  <NuxtLink :to="item.url" prefetch-on="interaction">
+                    <Icon :name="item.icon" class="!size-5 shrink-0" />
+                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
+                  </NuxtLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </template>
 
-      <!-- Support Section (always visible) -->
+      <!-- System Section (always visible) -->
       <SidebarGroup>
-        <SidebarGroupLabel>Support</SidebarGroupLabel>
+        <SidebarGroupLabel>System</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            <SidebarMenuItem v-for="item in supportItems" :key="item.title">
+            <SidebarMenuItem v-for="item in systemItems" :key="item.title">
               <SidebarMenuButton
                 as-child
                 :tooltip="item.title"
