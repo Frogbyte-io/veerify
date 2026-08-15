@@ -348,7 +348,7 @@ Caught by sending a merge request with the wrong field name during a manual walk
 The plan said "`/support` in `AppSidebar.vue`" and "inbox settings UI" without saying where enablement or
 configuration lived, and three facts in the existing code made the obvious readings wrong:
 
-1. **`AppSidebar.vue` already has a group literally named "Support"** — containing only *Settings*. It is
+1. **`AppSidebar.vue` already has a group literally named "Support"** — containing only _Settings_. It is
    a mis-named misc/system group. Adding a support module collides with it, so it is renamed **System**.
 2. **The sidebar does not react to feature toggles at all.** `Roadmap` and `Changelog` are hardcoded
    `disabled: true` placeholders. "Which modules does this workspace use" was already an unsolved
@@ -390,7 +390,7 @@ Resolution order: the receiving address's mapping, then an agent override on the
 (Stage 10) and chat (Stage 11) submissions attribute from page context instead.
 
 `supportInbox.emailAddress` is retained as the primary sending identity; `supportInboxAddress` governs
-what the inbox *receives*.
+what the inbox _receives_.
 
 ### D-28 — Module toggles want a team-admin role that does not yet exist
 
@@ -409,7 +409,7 @@ an already-oversized Stage 02.
 the app today.
 
 **If revisited:** restrict module enable/disable to `teamMember.role === 'admin'`, keep `/support/settings`
-open to members, and note that the design's freeze on `teamMember.role` was about keeping *support*
+open to members, and note that the design's freeze on `teamMember.role` was about keeping _support_
 permissions off it (those live on `supportInboxMember.role`) — workspace administration is arguably a
 different question. Whoever picks this up should decide deliberately rather than treating the freeze as
 either binding or irrelevant.
@@ -474,3 +474,41 @@ to Stage 02 is **withdrawn** — framing 3's read-only Home pages reuse the exis
 channel instead, so Stage 02 needs no change for this at all.
 
 The full detail is in `stage-09b-home.md`.
+
+### D-31 — Module toggles have no defined home, and `supportTeamSettings` is the wrong one
+
+**Found:** planning SUP-02-12. **Status:** resolved in plan (2026-08-15). Not yet implemented.
+
+`stage-02-conversation-core.md` said the Tools tab's module toggles are "stored in `supportTeamSettings`
+for support (`supportEnabled`, default false) **and alongside it for the others**". That last clause is
+not a design — it names no table for Feedback, Roadmap, or Changelog.
+
+The obvious reading, extending `supportTeamSettings`, is wrong. Delta **D-19** established that table
+specifically as the durable home for **support-only** team policy, with `autoLinkFeedback` deliberately
+kept out of generic team JSON because it is privacy-sensitive. Putting `feedbackEnabled` /
+`roadmapEnabled` / `changelogEnabled` in a table named `support_team_settings` misfiles three unrelated
+flags and makes the table's purpose incoherent for whoever reads it next.
+
+**Decision: a new `teamModuleSettings` table**, in a new `server/database/schema/teams.ts`, re-exported
+from `index.ts` (the same shape Stage 00's SUP-00-1 split established — one file per domain).
+
+`teamId` (PK, FK team cascade), `supportEnabled`, `feedbackEnabled`, `roadmapEnabled`,
+`changelogEnabled`, `createdAt`, `updatedAt`.
+
+`supportTeamSettings` is left alone, still holding `autoLinkFeedback` only.
+
+**Defaults mirror the existing per-project ones** in `ProductSettingsFeatures.vue`, so enabling a module
+at team level does not silently change what a product already shows: `feedbackEnabled` **true**,
+everything else **false**. Note `feedbackEnabled` defaulting true is what keeps existing workspaces
+working unchanged after the migration — a default of false would hide the feedback nav for every current
+team on deploy.
+
+**Precedence against the existing per-project toggles: team level is a master switch, and both must be
+on.** A product with `settings.feedbackEnabled === true` in a team whose `feedbackEnabled` is false shows
+nothing. The team toggle governs whether the module exists for that team at all; the per-project toggle
+governs whether a given product uses it. This ordering matters for the Stage 10 per-product Support
+toggle too (delta D-26), which is subordinate to the team-level Support module in exactly the same way.
+
+**This is the one migration expected in the rest of Stage 02** (`0023`). Both agents were told to
+coordinate before generating one — this is that coordination. Agent 1's remaining items (SUP-02-8, 02-14,
+02-15, 02-16) need no schema change, so `0023` belongs to SUP-02-12.

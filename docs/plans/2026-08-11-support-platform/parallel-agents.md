@@ -153,10 +153,12 @@ error condition.
 
 1. **`TODO.md` is edited by whoever integrates, in a separate `chore(todo):` commit** — never inside a
    feature commit. Check an item off only after it is merged into `support-platform` and verified there.
-2. **No migrations without coordinating first.** Neither agent's remaining items should need a schema
-   change; the Stage 02 tables all landed in SUP-02-1 (`0022`). If you believe you need one, **stop and
-   say so** — two agents generating `0023` independently is the exact collision the README documents
-   between `support-platform` and `sleekplan-export`.
+2. **No migrations without coordinating first.** Two agents generating `0023` independently is the exact
+   collision the README documents between `support-platform` and `sleekplan-export`.
+   **`0023` is already spoken for**: it belongs to Agent 2's SUP-02-12, which adds the `teamModuleSettings`
+   table (delta D-31). None of Agent 1's items (SUP-02-8, 02-14, 02-15, 02-16) should need a schema change
+   — every table they touch landed in SUP-02-1 (`0022`). If you find you need one anyway, **stop and say
+   so** before running `yarn db:generate`.
 3. **Read before writing.** `.agents/CLAUDE.md`, then `design.md`, then `deltas.md` (several entries
    override the original stage docs), then `stage-02-conversation-core.md`.
 4. **Options API only.** No `<script setup>`, no Composition API. This trips up UI work constantly.
