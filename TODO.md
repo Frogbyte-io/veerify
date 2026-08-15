@@ -176,6 +176,15 @@ MVP
 - [x] **#9 — Replace `console.error()` with structured logging**
       Introduced `server/utils/logger.ts` using `consola` (already shipped with Nuxt). All `console.error()` calls in server and lib code replaced with structured `logger.error()` calls that include context objects (feedbackId, userId, projectName, key, etc.). Each module creates a tagged child logger (e.g. `feedback`, `github`, `db`, `auth`) for easy filtering.
 
+- [ ] **#10 — Sidebar visibility rules are inconsistent between nav items**
+      `AppSidebar.vue`'s `personalItems` computed conditionally hides `Dashboard` based on `hasActiveOrganization`, while `Roadmap`/`Changelog` are permanently `disabled: true` regardless of state, and everything else is either always shown or gated on the `hasActiveOrganization === true` block. Three different rules for "should this nav item show" in one component. Surfaced while designing Stage 09b (Home) in the support-platform plan — worth auditing once Home ships, since it adds a fourth item with its own visibility rule.
+
+- [ ] **#11 — Roadmap and Changelog sidebar entries are permanently disabled, not state-gated**
+      `feedbackItems` in `AppSidebar.vue` hardcodes `disabled: true` on `Roadmap` and `Changelog` unconditionally — not "disabled until a feature is enabled," just disabled. A user clicking either sees a dead nav item with no explanation of why or whether it will ever work. Either wire them to real state (they are already real, shippable features per `TODO.md`'s MVP section) or remove them until they are.
+
+- [ ] **#12 — No UI to switch between organizations, only teams within one**
+      `TeamSwitcher.vue` lets a user switch teams inside the active organization but has no affordance for moving to a _different_ organization the user belongs to. If a user is a member of more than one organization there is currently no visible way to change which one is active from the sidebar. Worth scoping properly (where does org switching live — same picker, a separate control?) rather than folding into the support-platform Home work, since it is a pre-existing gap unrelated to support.
+
 ## Support Platform — Stage 00: Foundations
 
 Plan: `docs/plans/2026-08-11-support-platform/stage-00-foundations.md`. Read `design.md` in the same
@@ -245,3 +254,32 @@ separate" in `design.md`.
 - [x] **SUP-X-2** Gate `scripts/seed.ts` behind an explicit env flag (delta D-13). `yarn build` runs `postbuild` → seed, which creates `test@preview.local` / `password123` in whatever database it points at
   - Board entry was stale. `productionSeedBlockReason()` in `scripts/seed.ts` refuses to run when `NODE_ENV=production` or `VERCEL_ENV=production`, with `ALLOW_PRODUCTION_SEED=true` as a deliberate override. Verified: blocks under both env vars, proceeds with the override set.
 - [ ] **SUP-X-3** (repo-wide, not support-specific) Build a build-time scanner that parses the `@openapi` JSDoc blocks already present on 24 endpoint files — auth, github, orgs, and support — and merges them into `server/api/openapi.json.get.ts`'s served `paths`, replacing the hand-maintained duplicate added for support in SUP-01-9 (delta D-23). Must run at build time: a request-time filesystem scan of `server/api/**/*.ts` would work in dev and self-hosted but produce an empty spec on Vercel, where only compiled output ships. Add `js-yaml` as a direct dependency — currently present only transitively via eslint.
+- [ ] **SUP-X-4** Restrict module enable/disable in the `/settings` Tools tab to team admins (delta D-28). Deferred deliberately: `teamMember.role` has `admin` and `member` with currently equivalent permissions, and `design.md` freezes those semantics. Would be the first real differentiation of that column. Read D-28 before acting — the freeze was about keeping _support_ permissions off `teamMember.role`, which is arguably a different question from workspace administration.
+
+## Support Platform — Stage 02: Inbox + conversation core
+
+Plan: `docs/plans/2026-08-11-support-platform/stage-02-conversation-core.md`. Read `design.md` and
+`deltas.md` first. Integration branch is **`support-platform`**.
+
+UI and configuration model settled 2026-08-14 (deltas D-26, D-27, D-28). Two surfaces, deliberately
+separate: the **agent workspace** (`/support`, team-scoped, this stage) and the **customer entry point**
+(per-product, public board, deferred to Stage 10).
+
+- [x] **SUP-02-1** Add inbox and conversation tables to `server/database/schema/support.ts` with all indexes, including `supportInboxAddress` and the nullable `conversation.projectId`; generate migration
+  - `019cf71`, merged `21ec059`. `supportInbox`, `supportInboxAddress`, `supportInboxMember`, `conversation` (with `projectId`), `supportCounter`, `conversationMessage`, `conversationAttachment`, `conversationParticipant`, `supportTag`/`conversationTag`, `supportEmailEvent` — 11 tables, 22 FKs, 27 indexes, migration `0022_lowly_machine_man.sql`. FK actions verified against `design.md` directly from the generated SQL (`restrict` on `conversation.inboxId`/`contactId`, `cascade` on team-owned rows, `set null` elsewhere). `design.md` had no column/index spec for `supportTag`/`conversationTag` beyond one line — filled in following the file's existing conventions; flagged for confirmation when the tag endpoints are built.
+- [ ] **SUP-02-2** Extend `server/utils/support-access.ts` with `requireInboxAccess`, `requireConversationAccess`, `resolveInboxByAddress`; unit tests including the team-admin bypass
+- [ ] **SUP-02-3** Replace the unconditional deny branch for `inbox:`/`conversation:` in `server/utils/realtime-channels.ts` with real access checks; update `tests/realtime-channels.test.ts` (delta D-04)
+- [ ] **SUP-02-4** Implement `displayId` allocation via `supportCounter` with `SELECT … FOR UPDATE`; concurrency test with 100 parallel inserts
+- [ ] **SUP-02-5** Add inbox CRUD + membership endpoints
+- [ ] **SUP-02-6** Add receiving-address endpoints with per-address product mapping and same-team `projectId` validation
+- [ ] **SUP-02-7** Add conversation list/create/get/patch endpoints with filters (including product) and cursor pagination; emit `activity` messages on every status, priority, assignee, and product change
+- [ ] **SUP-02-8** Add message, participant, and tag endpoints; publish thin realtime envelopes on `conversation:` and `inbox:` for every write
+- [ ] **SUP-02-9** Build the `/support` three-pane UI: inbox switcher, filtered conversation list, thread pane rendering all four message kinds, contact drawer
+- [ ] **SUP-02-10** Build the composer with an unmistakable reply/note toggle; messages stored only, not sent, in this stage
+- [ ] **SUP-02-11** Rename the existing `Support` sidebar group to `System`; add a real `Support` group with Inbox and Contacts; add `/support` to `protectedRoutes`
+- [ ] **SUP-02-12** Add the per-team Tools tab to `/settings` with module toggles driving sidebar visibility, replacing the hardcoded `disabled: true` Roadmap/Changelog placeholders. Team membership only — no `teamMember.role` check (delta D-28)
+- [ ] **SUP-02-13** Implement module disable semantics: hide nav and stop inbound processing while preserving conversations and contacts
+- [ ] **SUP-02-14** Build `/support/settings` with inbox name, signature, agent membership, and the receiving-address list with product mapping
+- [ ] **SUP-02-15** Add `conversation_assigned` and `conversation_mention` notification types and preference toggles
+- [ ] **SUP-02-16** Register support inbox and conversation routes in the OpenAPI spec (hand-transcribe into `openapi.json.get.ts` until SUP-X-3 lands)
+- [ ] **SUP-02-17** Add E2E coverage: create conversation, reply, add note, change status, verify activity message and live update
