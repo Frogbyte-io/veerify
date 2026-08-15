@@ -9,6 +9,9 @@
 /** Postgres `unique_violation`. */
 const UNIQUE_VIOLATION = '23505'
 
+/** Postgres `foreign_key_violation`. */
+const FOREIGN_KEY_VIOLATION = '23503'
+
 /** How many `.cause` links to unwrap before giving up. Real chains are one deep; this is a safety bound, not a design target. */
 const MAX_CAUSE_DEPTH = 5
 
@@ -36,6 +39,33 @@ export function isUniqueViolation(error: unknown, constraint?: string): boolean 
     const code = (current as { code?: unknown }).code
 
     if (code === UNIQUE_VIOLATION) {
+      if (!constraint) return true
+      const name = (current as { constraint?: unknown }).constraint
+      return typeof name === 'string' && name === constraint
+    }
+
+    current = (current as { cause?: unknown }).cause
+    depth++
+  }
+
+  return false
+}
+
+/**
+ * Did this error come from an `onDelete: 'restrict'` foreign key?
+ *
+ * Used to turn a delete blocked by a dependent row (e.g. an inbox that still
+ * has conversations) into a clean 409 rather than a 500. Same `.cause`
+ * unwrapping as `isUniqueViolation`, for the same reason.
+ */
+export function isForeignKeyViolation(error: unknown, constraint?: string): boolean {
+  let current = error
+  let depth = 0
+
+  while (current && typeof current === 'object' && depth < MAX_CAUSE_DEPTH) {
+    const code = (current as { code?: unknown }).code
+
+    if (code === FOREIGN_KEY_VIOLATION) {
       if (!constraint) return true
       const name = (current as { constraint?: unknown }).constraint
       return typeof name === 'string' && name === constraint

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isUniqueViolation } from '../server/utils/support-errors'
+import { isForeignKeyViolation, isUniqueViolation } from '../server/utils/support-errors'
 
 describe('isUniqueViolation', () => {
   it('matches a raw pg-style error with code 23505', () => {
@@ -49,5 +49,36 @@ describe('isUniqueViolation', () => {
     expect(isUniqueViolation(undefined)).toBe(false)
     expect(isUniqueViolation('not an error')).toBe(false)
     expect(isUniqueViolation(new Error('plain error, no code'))).toBe(false)
+  })
+})
+
+describe('isForeignKeyViolation', () => {
+  it('matches a raw pg-style error with code 23503', () => {
+    expect(isForeignKeyViolation({ code: '23503' })).toBe(true)
+  })
+
+  it('matches when the real error is wrapped in .cause, like DrizzleQueryError', () => {
+    const pgError = { code: '23503', constraint: 'conversation_inbox_id_support_inbox_id_fk' }
+    const drizzleQueryError = { message: 'Failed query: delete from "support_inbox" ...', cause: pgError }
+
+    expect(isForeignKeyViolation(drizzleQueryError)).toBe(true)
+  })
+
+  it('matches a specific constraint name through the wrapper', () => {
+    const wrapped = { cause: { code: '23503', constraint: 'conversation_inbox_id_support_inbox_id_fk' } }
+
+    expect(isForeignKeyViolation(wrapped, 'conversation_inbox_id_support_inbox_id_fk')).toBe(true)
+    expect(isForeignKeyViolation(wrapped, 'some_other_fk')).toBe(false)
+  })
+
+  it('does not match a different error code, wrapped or not', () => {
+    expect(isForeignKeyViolation({ code: '23505' })).toBe(false)
+    expect(isForeignKeyViolation({ cause: { code: '23505' } })).toBe(false)
+  })
+
+  it('does not match non-error inputs', () => {
+    expect(isForeignKeyViolation(null)).toBe(false)
+    expect(isForeignKeyViolation(undefined)).toBe(false)
+    expect(isForeignKeyViolation('not an error')).toBe(false)
   })
 })
