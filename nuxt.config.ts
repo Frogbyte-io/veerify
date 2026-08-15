@@ -26,7 +26,8 @@ export default defineNuxtConfig({
     },
     scheduledTasks: {
       // Trivial example proving the self-hosted backend wires up (Stage 00).
-      // Real consumers land in Stage 03 (IMAP poll) and Stage 06 (SLA sweeper).
+      // Real consumers land in Stage 06 (SLA sweeper), Stage 08 (CSAT dispatch),
+      // and Stage 09 (nightly rollups). Mail intake is webhook-only.
       '*/15 * * * *': ['example:ping'],
     },
   },

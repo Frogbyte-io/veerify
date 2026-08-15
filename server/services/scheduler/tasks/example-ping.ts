@@ -1,7 +1,7 @@
 /**
  * Trivial no-op task proving the scheduler mechanism wires up on both
- * backends. Not a real task — Stage 03 (IMAP poll) and Stage 06 (SLA
- * sweeper) are the first real consumers of `defineScheduledTask`.
+ * backends. Not a real task — Stage 06 (SLA sweeper) and Stage 08 (CSAT
+ * dispatch) are the first real consumers of `defineScheduledTask`.
  *
  * Imported by both backend adapters (`server/tasks/example/ping.ts` for
  * self-hosted, `server/api/cron/example-ping.get.ts` for Vercel) so

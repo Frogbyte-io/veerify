@@ -6,8 +6,8 @@ const registry = new Map<string, ScheduledTaskDefinition>()
 /**
  * Register a scheduled task.
  *
- * This is the single call site future stages use (Stage 03's IMAP poll,
- * Stage 06's SLA sweeper). Registration only stores the definition in a
+ * This is the single call site future stages use (Stage 06's SLA sweeper,
+ * Stage 08's CSAT dispatch). Registration only stores the definition in a
  * process-wide map — actually running it on a schedule is the job of the
  * backend-specific adapter (`server/tasks/**` for self-hosted,
  * `server/api/cron/*.get.ts` for Vercel), both of which look the
