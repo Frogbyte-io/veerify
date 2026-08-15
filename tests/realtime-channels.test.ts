@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { authorizeChannelWith, type ChannelAuthDeps } from '../server/utils/realtime-channels'
 
-function deps(isMember = false): ChannelAuthDeps {
-  return { isTeamMember: vi.fn(async () => isMember) }
+function deps(isMember = false, canAccessInbox = false, canAccessConversation = false): ChannelAuthDeps {
+  return {
+    isTeamMember: vi.fn(async () => isMember),
+    canAccessInbox: vi.fn(async () => canAccessInbox),
+    canAccessConversation: vi.fn(async () => canAccessConversation),
+  }
 }
 
 describe('authorizeChannelWith', () => {
@@ -36,17 +40,42 @@ describe('authorizeChannelWith', () => {
     expect(d.isTeamMember).toHaveBeenCalledWith('t42', 'u1')
   })
 
-  it('denies support channels until Stage 02 introduces the tables', async () => {
-    // Fails closed rather than allowing. Stage 02 replaces this branch with
-    // requireInboxAccess / requireConversationAccess.
-    await expect(authorizeChannelWith('inbox:i1', 'u1', deps(true))).resolves.toEqual({
+  it('allows an inbox channel when the peer has inbox access', async () => {
+    await expect(authorizeChannelWith('inbox:i1', 'u1', deps(false, true))).resolves.toEqual({ allowed: true })
+  })
+
+  it('denies an inbox channel when the peer has no inbox access', async () => {
+    // Fails closed. Collapses requireInboxAccess's 404/403 split into one
+    // "Forbidden" — that distinction is API-facing detail, not useful here.
+    await expect(authorizeChannelWith('inbox:i1', 'u1', deps(false, false))).resolves.toEqual({
       allowed: false,
-      reason: 'Support channels are not available yet',
+      reason: 'Forbidden',
     })
-    await expect(authorizeChannelWith('conversation:c1', 'u1', deps(true))).resolves.toEqual({
+  })
+
+  it('checks inbox access against the requested inbox, not the user id', async () => {
+    const d = deps(false, true)
+    await authorizeChannelWith('inbox:i42', 'u1', d)
+    expect(d.canAccessInbox).toHaveBeenCalledWith('i42', 'u1')
+  })
+
+  it('allows a conversation channel when the peer has conversation access', async () => {
+    await expect(authorizeChannelWith('conversation:c1', 'u1', deps(false, false, true))).resolves.toEqual({
+      allowed: true,
+    })
+  })
+
+  it('denies a conversation channel when the peer has no conversation access', async () => {
+    await expect(authorizeChannelWith('conversation:c1', 'u1', deps(false, false, false))).resolves.toEqual({
       allowed: false,
-      reason: 'Support channels are not available yet',
+      reason: 'Forbidden',
     })
+  })
+
+  it('checks conversation access against the requested conversation, not the user id', async () => {
+    const d = deps(false, false, true)
+    await authorizeChannelWith('conversation:c42', 'u1', d)
+    expect(d.canAccessConversation).toHaveBeenCalledWith('c42', 'u1')
   })
 
   it('denies unknown or malformed channels', async () => {

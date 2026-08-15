@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { teamMember } from '~/server/database/schema/auth'
 import { parseChannel } from '~/server/services/realtime'
+import { requireConversationAccess, requireInboxAccess } from '~/server/utils/support-access'
 
 /**
  * Subscribe-time authorization for realtime channels.
@@ -22,6 +23,8 @@ function deny(reason: string): ChannelAuthResult {
 
 export interface ChannelAuthDeps {
   isTeamMember(teamId: string, userId: string): Promise<boolean>
+  canAccessInbox(inboxId: string, userId: string): Promise<boolean>
+  canAccessConversation(conversationId: string, userId: string): Promise<boolean>
 }
 
 /**
@@ -47,12 +50,10 @@ export async function authorizeChannelWith(
       return (await deps.isTeamMember(parsed.id, userId)) ? ALLOW : deny('Forbidden')
 
     case 'inbox':
+      return (await deps.canAccessInbox(parsed.id, userId)) ? ALLOW : deny('Forbidden')
+
     case 'conversation':
-      // Stage 02 seam. `supportInbox` and `conversation` do not exist yet, so
-      // there is nothing to authorize against. Fail closed rather than allow —
-      // Stage 02 replaces this branch with a `requireInboxAccess` /
-      // `requireConversationAccess` lookup.
-      return deny('Support channels are not available yet')
+      return (await deps.canAccessConversation(parsed.id, userId)) ? ALLOW : deny('Forbidden')
 
     default:
       return deny('Unknown channel')
@@ -69,7 +70,29 @@ async function isTeamMember(teamId: string, userId: string): Promise<boolean> {
   return Boolean(row)
 }
 
+// `requireInboxAccess` / `requireConversationAccess` throw 404/403 to carry
+// API-facing detail. That distinction is not useful at subscribe time — a
+// peer that cannot see an inbox and a peer whose inbox does not exist should
+// both simply fail to join the channel — so both outcomes collapse to false.
+async function canAccessInbox(inboxId: string, userId: string): Promise<boolean> {
+  try {
+    await requireInboxAccess(inboxId, userId)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function canAccessConversation(conversationId: string, userId: string): Promise<boolean> {
+  try {
+    await requireConversationAccess(conversationId, userId)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Authorize a peer's subscription request against the database. */
 export function authorizeChannel(channel: string, userId: string): Promise<ChannelAuthResult> {
-  return authorizeChannelWith(channel, userId, { isTeamMember })
+  return authorizeChannelWith(channel, userId, { isTeamMember, canAccessInbox, canAccessConversation })
 }
