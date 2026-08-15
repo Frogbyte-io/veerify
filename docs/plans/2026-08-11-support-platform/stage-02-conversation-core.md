@@ -20,12 +20,22 @@ filter. Replies in this stage are stored, not sent — Stage 04 sends them.
 ### 1. Schema
 
 Add to `server/database/schema/support.ts`, per `design.md` → Data model → Stage 02: `supportInbox`,
-`supportInboxMember`, `conversation`, `supportCounter`, `conversationMessage`,
+`supportInboxAddress`, `supportInboxMember`, `conversation`, `supportCounter`, `conversationMessage`,
 `conversationAttachment`, `conversationParticipant`, `supportTag`, `conversationTag`,
 `supportEmailEvent`.
 
 `supportEmailEvent` is created here even though Stage 03 is its first writer — it keeps the inbound
-pipeline from needing a migration mid-stage.
+pipeline from needing a migration mid-stage. The same applies to `supportInboxAddress`: Stage 03 is its
+first reader, but it is created here so mail intake needs no migration.
+
+**Multi-address inboxes (delta D-27).** One team inbox serves every product, so the receiving address is
+the only product signal an email carries. `supportInboxAddress` holds `id`, `inboxId` (FK cascade),
+`address` (unique), `projectId` (FK project, set null — null means unattributed), `isPrimary`,
+`createdAt`. Teams want several addresses per inbox: one per product, plus general team addresses.
+`supportInbox.emailAddress` remains the primary *sending* identity; `supportInboxAddress` governs what
+the inbox *receives*.
+
+`conversation` gains a nullable `projectId` (FK project, set null) for the resolved product.
 
 **`displayId` allocation.** A `supportCounter` row per team, incremented with `SELECT … FOR UPDATE`
 inside the same transaction as the conversation insert. Not a sequence, because the number must be
@@ -50,11 +60,12 @@ Extend `server/utils/support-access.ts`:
 | ---------------------------------------------- | --------------- | ----------------------------------------------------------------- |
 | `/api/support/inboxes`                         | GET/POST        | Team-scoped list and create                                       |
 | `/api/support/inboxes/[id]`                    | GET/PUT/DELETE  | Detail, settings, delete                                          |
+| `/api/support/inboxes/[id]/addresses`          | GET/POST/DELETE | Receiving addresses and their optional product mapping            |
 | `/api/support/inboxes/[id]/members`            | GET/POST/DELETE | Agent membership                                                  |
-| `/api/support/conversations`                   | GET             | Filter by inbox, status, assignee, tag, contact; cursor-paginated |
+| `/api/support/conversations`                   | GET             | Filter by inbox, status, assignee, tag, contact, product; cursor-paginated |
 | `/api/support/conversations`                   | POST            | Manual creation — the Stage 02 entry point                        |
 | `/api/support/conversations/[id]`              | GET             | Detail with contact and participants                              |
-| `/api/support/conversations/[id]`              | PATCH           | Status, priority, assignee, subject                               |
+| `/api/support/conversations/[id]`              | PATCH           | Status, priority, assignee, subject, product                      |
 | `/api/support/conversations/[id]/messages`     | GET/POST        | Thread; `POST` accepts `kind` of `outgoing` or `note`             |
 | `/api/support/conversations/[id]/participants` | POST/DELETE     | CC and followers                                                  |
 | `/api/support/conversations/[id]/tags`         | POST/DELETE     | Tag assignment                                                    |
@@ -91,13 +102,42 @@ Options API throughout. Skeletons while loading; error states with retry.
 
 ### 5. Navigation and settings
 
-- `/support` in `components/sidebar/AppSidebar.vue`.
+Settled in deltas D-26 and D-28. Two surfaces were previously conflated and are now separate: the
+**agent workspace** (`/support`, team-scoped) and the **customer entry point** (per-product, public
+board). Stage 02 builds only the first.
+
+**Sidebar** — `components/sidebar/AppSidebar.vue`:
+
+- **Rename the existing `Support` group to `System`.** It contains only *Settings* and is a mis-named
+  misc group; the name is needed for the real module. This is a rename, not a move — Settings stays put.
+- Add a **`Support` group** with *Inbox* (`/support`) and *Contacts* (`/support/contacts`), inside the
+  `hasActiveOrganization === true` block alongside `Feedback` and `Management`. This also closes the
+  Stage 01 loose end where contacts were reachable only by URL.
 - `/support` prefix added to `protectedRoutes` in `middleware/auth.global.ts`.
-- `supportEnabled` added to the feature toggles in `components/products/ProductSettingsFeatures.vue`,
-  alongside `feedbackEnabled` / `roadmapEnabled` / `changelogEnabled`.
-- A Support tab in `pages/products/[slug].vue` filtering to inboxes with `projectId` set to that product.
-- Inbox settings UI: name, linked product, signature, agent membership. Channel configuration is
-  Stage 03.
+
+**Team module enablement** — a new **Tools** tab in `pages/settings/index.vue`:
+
+- Lists Feedback / Roadmap / Changelog / Support as **per-team** module toggles, stored in
+  `supportTeamSettings` for support (`supportEnabled`, default false) and alongside it for the others.
+- Drives sidebar group visibility. `Roadmap` and `Changelog` are currently hardcoded `disabled: true`
+  placeholders in `AppSidebar.vue`; this replaces that with real state, so the tab is not
+  support-specific scaffolding.
+- **Disabling Support hides the nav group and stops inbound processing, but preserves conversations and
+  contacts.** Re-enabling restores them intact. Follow the wording contract already set by the
+  `ProductSettingsFeatures.vue` disable dialog: "Your data will not be deleted."
+- **Permissions: team membership only**, matching every other settings surface today. Restricting module
+  toggles to admins was considered and deliberately deferred — see delta D-28. Do not introduce a
+  `teamMember.role` check here.
+
+**Inbox configuration** — in-context at `/support/settings`, **not** a global settings tab. Stages 05–07
+add macros, SLA, and automation to this surface, which would make a `/settings` tab unreasonably deep.
+Stage 02 covers: inbox name, signature, agent membership, and the receiving-address list with each
+address's optional product mapping. Channel and provider configuration is Stage 03.
+
+**Not in this stage:** the per-product `supportEnabled` toggle in `ProductSettingsFeatures.vue` and the
+product Support tab. The customer-facing entry point they would control is the Stage 10 customer portal,
+so shipping the toggle here would mean a switch that visibly does nothing for seven stages. Deferred to
+Stage 10.
 
 ### 6. Notifications
 
@@ -118,23 +158,30 @@ toggles in `SettingsNotifications`. Reuse the existing infrastructure; do not bu
    conversation endpoint. Cross-tenant isolation is tested.
 6. Deleting an inbox does not orphan conversations — the FK is `restrict`; the API returns a clear 409.
 7. `/support` redirects to `/login` when signed out.
-8. `yarn harness:verify` green on `support-platform`.
+8. Disabling Support in the Tools tab hides the sidebar group; re-enabling restores it with all
+   conversations and contacts intact.
+9. An inbox with three receiving addresses, two mapped to products, resolves each to the correct
+   `conversation.projectId`; an agent override persists and is not reverted by later activity.
+10. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 
 Items 1 and 2 block everything else. Items 5, 6, and 7 can run in parallel once the API lands.
 
-- [ ] Add inbox and conversation tables to `server/database/schema/support.ts` with all indexes; generate migration
+- [ ] Add inbox and conversation tables to `server/database/schema/support.ts` with all indexes, including `supportInboxAddress` and the nullable `conversation.projectId`; generate migration
 - [ ] Extend `server/utils/support-access.ts` with `requireInboxAccess`, `requireConversationAccess`, `resolveInboxByAddress`; unit tests including the team-admin bypass
 - [ ] **Replace the deny branch in `server/utils/realtime-channels.ts`.** `inbox:` and `conversation:` currently deny unconditionally because these tables did not exist in Stage 00, and `tests/realtime-channels.test.ts` asserts that denial. Swap it for `requireInboxAccess` / `requireConversationAccess` and update those tests — otherwise the agent UI silently receives no realtime events. See delta D-04
 - [ ] Implement `displayId` allocation via `supportCounter` with `SELECT … FOR UPDATE` in the insert transaction; concurrency test with 100 parallel inserts
 - [ ] Add inbox CRUD + membership endpoints
-- [ ] Add conversation list/create/get/patch endpoints with filters and cursor pagination; emit `activity` messages on every status, priority, and assignee change
+- [ ] Add receiving-address endpoints (`/api/support/inboxes/[id]/addresses`) with per-address product mapping and same-team `projectId` validation
+- [ ] Add conversation list/create/get/patch endpoints with filters (including product) and cursor pagination; emit `activity` messages on every status, priority, assignee, and product change
 - [ ] Add message, participant, and tag endpoints; publish thin realtime envelopes on `conversation:` and `inbox:` for every write
 - [ ] Build the `/support` three-pane UI: inbox switcher, filtered conversation list, thread pane rendering all four message kinds, contact drawer
 - [ ] Build the composer with an unmistakable reply/note toggle; messages are stored only, not sent, in this stage
-- [ ] Add `/support` to `AppSidebar.vue` and `protectedRoutes`; add `supportEnabled` toggle and the product Support tab
-- [ ] Add inbox settings UI (name, linked product, signature, agents)
+- [ ] Rename the existing `Support` sidebar group to `System`; add a real `Support` group with Inbox and Contacts; add `/support` to `protectedRoutes`
+- [ ] Add the per-team Tools tab to `/settings` with Feedback/Roadmap/Changelog/Support module toggles driving sidebar visibility, replacing the hardcoded `disabled: true` placeholders; team membership only, no role check (delta D-28)
+- [ ] Implement disable semantics: hide nav and stop inbound processing while preserving conversations and contacts
+- [ ] Build `/support/settings` with inbox name, signature, agent membership, and the receiving-address list with product mapping
 - [ ] Add `conversation_assigned` and `conversation_mention` notification types and preference toggles
 - [ ] Register support inbox and conversation routes in `server/utils/openapi.ts`
 - [ ] Add E2E coverage: create conversation, reply, add note, change status, verify activity message and live update

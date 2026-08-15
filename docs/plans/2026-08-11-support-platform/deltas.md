@@ -319,3 +319,158 @@ because the only prior coverage was indirect, through endpoint tests that presum
 **Lesson for this program:** a helper with no dedicated unit test, exercised only indirectly through
 other tests that may not reproduce the real error shape, is a live gap even when everything is green.
 `isUniqueViolation()` now has its own test file asserting the exact wrapped shape.
+
+### D-25 — Zod `.parse()` in support endpoints returned 500 instead of 400
+
+**Found:** live-server support-case walkthrough after Stage 01. **Status:** RESOLVED (2026-08-14).
+
+All seven support POST/PUT endpoints validated request bodies with a bare `bodySchema.parse(await
+readBody(event))`. Zod throws on failure, nothing caught it, and the result was an uncaught 500 with a
+stack trace where a 400 was intended. The repo already had `validateBody()` in
+`server/utils/validation.ts`, which wraps `safeParse` and throws a structured 400 — every non-support
+endpoint uses it. Support simply never adopted it.
+
+Caught by sending a merge request with the wrong field name during a manual walkthrough. Fixed across
+`contacts/index.post`, `contacts/[id].put`, `contacts/[id]/merge.post`, `contacts/[id]/links.post`,
+`companies/index.post`, `companies/[id].put`, and `teams/[teamId]/settings.put`.
+
+**Convention for Stage 02 onward:** support endpoints use `validateBody(event, schema)`. Never call
+`.parse()` directly on a request body.
+
+---
+
+## Stage 02 (planning)
+
+### D-26 — Support configuration had no defined home in the UI
+
+**Found:** UI design discussion before Stage 02. **Status:** resolved in plan (2026-08-14).
+
+The plan said "`/support` in `AppSidebar.vue`" and "inbox settings UI" without saying where enablement or
+configuration lived, and three facts in the existing code made the obvious readings wrong:
+
+1. **`AppSidebar.vue` already has a group literally named "Support"** — containing only *Settings*. It is
+   a mis-named misc/system group. Adding a support module collides with it, so it is renamed **System**.
+2. **The sidebar does not react to feature toggles at all.** `Roadmap` and `Changelog` are hardcoded
+   `disabled: true` placeholders. "Which modules does this workspace use" was already an unsolved
+   problem; support did not introduce it.
+3. **Feature toggles are per-project only** (`project.settings.feedbackEnabled` and friends), but an
+   inbox is team-scoped. A per-product toggle alone structurally cannot configure support.
+
+**Decisions:**
+
+- Two distinct surfaces, previously conflated: the **agent workspace** (`/support`, team-scoped) and the
+  **customer entry point** (per-product, public board). They get separate controls.
+- **Enablement is per team**, in a new **Tools** tab in `/settings`, listing Feedback / Roadmap /
+  Changelog / Support. It drives sidebar visibility, which retroactively fixes point 2 above.
+- **Inbox configuration is in-context** at `/support/settings`, not in global settings — Stages 05–07 add
+  macros, SLA, and automation to it, which would make a global tab unreasonably deep.
+- **Switching Support off** hides nav and stops inbound processing, but preserves conversations and
+  contacts, matching the existing per-product disable dialog's "data will not be deleted" contract.
+- **Contacts join the sidebar** under the new Support group, closing the Stage 01 loose end where they
+  were reachable only by URL.
+
+### D-27 — One shared inbox needs multi-address routing to attribute products
+
+**Found:** UI design discussion before Stage 02. **Status:** resolved in plan (2026-08-14).
+
+All products feed one team inbox, and agents filter by product. But **email carries no product signal** —
+a customer mailing `support@acme.com` gives nothing to attribute from, so with one address every email
+ticket would arrive unattributed and per-product reporting in Stage 09 would be meaningless.
+
+`supportInbox.emailAddress` is a single unique column and cannot express "three addresses, two mapped to
+products". Two schema additions follow, neither in the original design:
+
+- **`supportInboxAddress`** — `id`, `inboxId` (FK cascade), `address` (unique), `projectId` (FK project,
+  set null — null means unattributed), `isPrimary`, `createdAt`. Teams genuinely want several addresses
+  per inbox: one per product, plus general team addresses.
+- **`conversation.projectId`** — nullable FK to project. The design's conversation table has
+  `linkedFeedbackId` but no product link.
+
+Resolution order: the receiving address's mapping, then an agent override on the conversation. Portal
+(Stage 10) and chat (Stage 11) submissions attribute from page context instead.
+
+`supportInbox.emailAddress` is retained as the primary sending identity; `supportInboxAddress` governs
+what the inbox *receives*.
+
+### D-28 — Module toggles want a team-admin role that does not yet exist
+
+**Found:** UI design discussion before Stage 02. **Status:** DEFERRED — future reference, not scheduled.
+
+Enabling or disabling a whole module has a much larger blast radius than editing a signature: switching
+Support off stops inbound mail for the entire team. That argues for restricting module toggles to admins
+while leaving day-to-day inbox configuration open to team members.
+
+**It is not being built now.** `teamMember.role` has `admin` and `member` with **currently equivalent
+permissions**, and `design.md` explicitly states "`teamMember.role` semantics are not changed". Acting on
+this would be the first real differentiation of that column, and it is not worth pulling that change into
+an already-oversized Stage 02.
+
+**For now:** module toggles require team membership only, consistent with every other settings surface in
+the app today.
+
+**If revisited:** restrict module enable/disable to `teamMember.role === 'admin'`, keep `/support/settings`
+open to members, and note that the design's freeze on `teamMember.role` was about keeping *support*
+permissions off it (those live on `supportInboxMember.role`) — workspace administration is arguably a
+different question. Whoever picks this up should decide deliberately rather than treating the freeze as
+either binding or irrelevant.
+
+### D-29 — IMAP driver dropped from Stage 03
+
+**Found:** scope decision (2026-08-14). **Status:** resolved in plan.
+
+Inbound email is **webhook-only**. The IMAP polling driver is removed from Stage 03, taking with it the
+scheduled-poll registration, encrypted IMAP credential storage in `channelConfig`, and the parallel
+poll-vs-webhook code path.
+
+The Stage 00 scheduler is unaffected and still required — Stage 06's SLA breach sweeper, Stage 08's CSAT
+dispatch, and Stage 09's nightly rollups all use it. Only mail intake stops depending on it.
+
+Self-hosted deployments now require a webhook-capable mail provider. If IMAP is ever reinstated for
+self-hosters with no provider, it re-enters as an additional driver behind the same `InboundMessage`
+normalization — the adapter boundary in Stage 03 is what keeps that possible.
+
+### D-30 — The team picker's "Workspace" entry is not an organization scope
+
+**Found:** org-workspace request (2026-08-14). **Status:** recorded; addressed by Stage 09b, not
+scheduled. Went through three framings before settling — see below.
+
+`TeamSwitcher.vue` renders a "Workspace" row above the team list, styled like a team entry, and it reads
+as a cross-team scope. It is not one:
+
+- `switchToDefaultTeam()` resolves the team **named `Default`** and activates it. The app remains in a
+  single-team scope.
+- `additionalTeams` filters `name !== 'Default'`, hiding that team from the list and silently reusing it
+  as an org proxy.
+- `displaySubtitle` renders "All projects" in that state, which is **false** the moment a second team
+  owns a project.
+
+**Why it matters here:** anyone assessing a cross-team view will look at this component and conclude the
+scope already exists and only needs new pages hung off it. It does not — the visible affordance is a team
+in disguise, and the resolution below removes it rather than building behind it.
+
+**Three framings, in order:**
+
+1. **"Organization workspace"** — org-wide stats with a per-team breakdown. Rejected: organization
+   membership does not imply membership of every team in it, so an org-wide page showing only a user's
+   subset is a partial view of something claiming to be complete, and "show everything in the org" is the
+   obvious wrong shortcut.
+2. **"Home" as a picker entry** — a third option alongside the teams that reroutes every team-scoped
+   surface (`/support`, `/feedback`, `/products`) into a cross-team aggregate while selected. Fixed the
+   authorization framing but introduced a harder one: clicking through from an aggregate view to one
+   team-owned item raises the question of whether the picker's selection silently changes underneath the
+   user. Every surface would need its own answer, "new conversation" has no implicit team while Home is
+   selected, and a live cross-team inbox needs new realtime fan-out approaching `MAX_CHANNELS_PER_PEER`.
+3. **"Home" as a fixed sidebar destination, decoupled from the picker (current).** The picker goes back to
+   being purely team selection — the "Workspace" row is **deleted**, not replaced with a scope resolver.
+   Home becomes its own small set of read-only cross-team pages (`/home`, `/home/inbox`,
+   `/home/feedback`) with their own narrow endpoints, linking out to the real, team-scoped pages for
+   everything. `/support` and `/feedback` are untouched. The click-through question stops existing because
+   Home never claims to represent the user's current context.
+
+**Consequences of the final framing:** the stage's dependency is Stage 02 only (personal reads need no
+`supportMetricDaily` rollups). It renames `/dashboard` to `/home`, made unconditionally visible rather
+than gated on organization state. And a `team:<id>` realtime-publish requirement that framing 2 had added
+to Stage 02 is **withdrawn** — framing 3's read-only Home pages reuse the existing `user:<id>` notification
+channel instead, so Stage 02 needs no change for this at all.
+
+The full detail is in `stage-09b-home.md`.

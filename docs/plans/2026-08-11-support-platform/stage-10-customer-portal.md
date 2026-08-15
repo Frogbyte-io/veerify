@@ -16,6 +16,16 @@ Ticket submission form, ticket list, ticket detail with reply, on the existing p
 infrastructure. Reuses `anonymousSession`, `server/utils/public-auth-handoff.ts`, and the host-based
 routing already handling public boards in `pages/[...slug].vue`.
 
+**Also in — the per-product Support toggle, deferred here from Stage 02** (deltas D-26, D-27).
+`supportEnabled` joins `feedbackEnabled` / `roadmapEnabled` / `changelogEnabled` in
+`ProductSettingsFeatures.vue`, plus a Support tab in `pages/products/[slug].vue`. This stage is where
+they finally control something: the public entry point on that product's board.
+
+The toggle is **subordinate to the team-level Support module** in the `/settings` Tools tab. With the
+module off, per-product toggles have no effect and should read as unavailable rather than silently
+inert. Portal submissions attribute their product from page context, so they need no
+`supportInboxAddress` mapping.
+
 ## Behaviour
 
 - **Submission** — name, email, subject, message, attachments, and optional per-inbox custom fields.
@@ -51,8 +61,10 @@ appearance settings (banner, colors, light/dark mode) so it looks like part of t
 ## TODO items
 
 - [ ] Add per-inbox portal visibility setting (off / submit-only / submit-and-track) and custom field config
+- [ ] Add `supportEnabled` to `ProductSettingsFeatures.vue` and a product Support tab, gated on the team-level Support module being enabled (deferred from Stage 02)
 - [ ] Build the public ticket submission form with attachments, rate limiting, and existing anti-spam measures
 - [ ] Implement contact resolution or creation from a portal submission via `contactIdentity`
+- [ ] Set `conversation.projectId` from page context on portal submissions
 - [ ] Implement magic-link verification granting a scoped, expiring contact session for anonymous customers
 - [ ] Implement logged-in customer access via `contactIdentity` on `kind: 'user'`
 - [ ] Build the ticket list and detail pages with reply, inheriting public appearance settings

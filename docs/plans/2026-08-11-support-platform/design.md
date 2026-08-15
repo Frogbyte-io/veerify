@@ -18,8 +18,11 @@ public domains.
 | Contact ↔ feedback relation | **Separate.** Linked explicitly via `contactLink`, never structurally coupled |
 | Conversation statuses       | **Fixed set**, not per-inbox customizable                                     |
 | Realtime broker             | **Redis only**, via the Redis wire protocol                                   |
-| Mail intake                 | **Adapter**: provider webhook first, IMAP second                              |
+| Mail intake                 | **Adapter**: provider webhook                                                 |
 | Knowledge base              | **Deferred**, dropped from this program                                       |
+| Mail intake protocol        | **Webhook only.** IMAP polling dropped (delta D-29)                           |
+| Inbox per team              | **One shared inbox, many receiving addresses**; product resolved per address  |
+| Module enablement           | **Per team**, in a Tools tab in `/settings` (delta D-26)                      |
 | Parity target               | Full Zendesk/Freshdesk parity, staged                                         |
 
 ### Why email-only first
@@ -34,9 +37,23 @@ An inbox is one channel endpoint (`support@acme.com`). Teams need more than one 
 and some want one desk spanning several products. Modelling the inbox as its own entity with a `type`
 column means Stage 11 (chat) and Stage 12 (social) are new inbox types rather than a schema rewrite.
 
-Products still get a Support tab; it filters to inboxes linked to that product via
-`supportInbox.projectId`, and `supportEnabled` joins the existing feature toggles in
-`ProductSettingsFeatures.vue`.
+### How products map onto one inbox
+
+A team runs **one shared inbox** with **many receiving addresses**. Each address optionally maps to a
+product, so `billing@acme.com` attributes to Billing while `support@acme.com` stays unattributed. Agents
+work one queue and filter by product; they can override the product on any conversation.
+
+This exists because **email carries no product signal**. With a single address, every email ticket would
+arrive unattributed and per-product reporting in Stage 09 would be meaningless. Portal (Stage 10) and
+chat (Stage 11) submissions attribute from page context instead and need no address mapping.
+
+`supportInbox.emailAddress` is the primary *sending* identity; `supportInboxAddress` governs what the
+inbox *receives*. See delta D-27.
+
+Products get a Support tab and a `supportEnabled` feature toggle in `ProductSettingsFeatures.vue`
+**from Stage 10**, not Stage 02 — the customer-facing entry point they control is the customer portal,
+so shipping them earlier would mean a switch that does nothing. Module enablement for the agent-facing
+side is per team, in a Tools tab in `/settings`, and is independent of any product toggle (delta D-26).
 
 ### Why contacts and feedback stay separate
 
@@ -144,7 +161,11 @@ envelope's own `type` overwrite the frame type and silently breaks client dispat
   `/api/support/inbound/[provider]`. Signature verified, then recorded in `supportEmailEvent` for
   idempotency before any processing — providers retry, and a duplicate delivery must not create a
   second ticket.
-- **`imap` driver** (Stage 03): scheduled poll for self-hosted deployments with no provider.
+
+**Webhook only.** The IMAP polling driver was dropped (delta D-29), taking with it the scheduled poll,
+encrypted IMAP credentials, and the parallel intake path. Self-hosted deployments require a
+webhook-capable mail provider. The Stage 00 scheduler is still required by Stages 06, 08, and 09 — only
+mail intake stops depending on it.
 
 ### Deployment
 
@@ -154,7 +175,8 @@ duration cap and no instance pinning. But the repo cannot currently self-host at
 Stage 00 closes this.
 
 Scheduling differs by mode: Vercel Cron on cloud, Nitro scheduled tasks on VM, behind one interface.
-Needed by Stage 03 (IMAP poll) and Stage 06 (SLA sweeper).
+Needed by Stage 06 (SLA sweeper), Stage 08 (CSAT dispatch), and Stage 09 (nightly rollups). Mail intake
+does not use it — inbound is webhook-only (delta D-29).
 
 ---
 
@@ -199,21 +221,30 @@ Indexes: unique `(contactId, entityType, entityId)`; `(entityType, entityId)`.
 `defaultAssigneeUserId` (FK user, set null), `isEnabled`, `createdAt`, `updatedAt`.
 Indexes: unique `(teamId, slug)`; unique `(emailAddress)`; `(teamId)`; `(projectId)`.
 
+**`supportInboxAddress`** — the addresses one inbox receives on, and the product each maps to. Teams run
+one inbox per team but want several addresses: one per product, plus general team addresses.
+`id`, `inboxId` (FK, cascade), `address` (unique), `projectId` (FK project, set null — null means
+unattributed), `isPrimary`, `createdAt`.
+Indexes: unique `(address)`; `(inboxId)`; `(projectId)`.
+
 **`supportInboxMember`** — support permissions live here. **`teamMember.role` semantics are not
-changed.**
+changed.** Module enablement in the Tools tab requires team membership only; restricting it to team
+admins was considered and deferred (delta D-28).
 `id`, `inboxId` (FK, cascade), `userId` (FK user, cascade), `role` (`agent` | `supervisor` | `admin`),
 `createdAt`. Indexes: unique `(inboxId, userId)`; `(userId)`.
 
 **`conversation`**
 `id`, `inboxId` (FK, restrict), `teamId` (FK, cascade — denormalized for team-scoped queries and
-isolation checks), `contactId` (FK contact, restrict), `displayId` (integer, human-readable ticket
-number), `subject`, `status` (`open` | `pending` | `resolved` | `snoozed` | `closed`), `priority`
+isolation checks), `contactId` (FK contact, restrict), `projectId` (FK project, set null — the resolved
+product, from the receiving address's mapping or an agent override), `displayId` (integer,
+human-readable ticket number), `subject`, `status` (`open` | `pending` | `resolved` | `snoozed` |
+`closed`), `priority`
 (`low` | `normal` | `high` | `urgent`, nullable), `assigneeUserId` (FK user, set null),
 `linkedFeedbackId` (FK feedback, set null), `channelThreadKey` (root RFC Message-ID),
 `firstResponseAt`, `resolvedAt`, `snoozedUntil`, `lastActivityAt`, `lastCustomerReplyAt`,
 `lastAgentReplyAt`, `metadata` (jsonb), `createdAt`, `updatedAt`.
 Indexes: unique `(teamId, displayId)`; `(teamId, status, lastActivityAt)`; `(inboxId, status)`;
-`(assigneeUserId, status)`; `(contactId, createdAt)`; `(channelThreadKey)`.
+`(assigneeUserId, status)`; `(contactId, createdAt)`; `(channelThreadKey)`; `(projectId, status)`.
 
 **`supportCounter`** — per-team `displayId` allocation. A row per team incremented with
 `SELECT … FOR UPDATE` inside the same transaction as the conversation insert.
@@ -270,9 +301,11 @@ Introduced by the stage that needs them: `businessHours`, `slaPolicy`, `slaTarge
 | 2   | New `server/services/realtime/` with `redis` (ioredis) and `memory` drivers; rewrite `ws-connections.ts` to channel subscriptions with subscribe-time authorization       | 00    | In-memory fan-out is broken across instances on both Vercel and any multi-instance self-host                                                                                      |
 | 3   | `Dockerfile` + production `docker-compose.yml` with `app`, `valkey`, `minio`, and Caddy                                                                                   | 00    | There is no Dockerfile today and prod compose runs only Postgres — self-hosting is currently impossible. Caddy on-demand TLS is what makes `project.customDomain` work off-Vercel |
 | 4   | Store adapter for `server/utils/rate-limit.ts` (`memory` \| `redis`), reusing the same Redis                                                                              | 00    | Same in-memory flaw, already flagged in `TODO.md`. Inbound webhooks need throttling that holds across instances                                                                   |
-| 5   | Scheduler abstraction (Vercel Cron \| Nitro scheduled task)                                                                                                               | 00    | Needed by the IMAP poll (03) and the SLA breach sweeper (06)                                                                                                                      |
+| 5   | Scheduler abstraction (Vercel Cron \| Nitro scheduled task)                                                                                                               | 00    | Needed by the SLA breach sweeper (06), CSAT dispatch (08), and nightly rollups (09). Not by mail intake — inbound is webhook-only                                                 |
 | 6   | New `server/utils/support-access.ts`: `requireInboxAccess`, `requireConversationAccess`, `requireContactAccess`, `resolveInboxByAddress`                                  | 02    | Mirrors `project-access.ts`. Support permissions go on `supportInboxMember.role`; **`teamMember` semantics unchanged**                                                            |
-| 7   | `/support` added to `AppSidebar.vue` and to `protectedRoutes` in `middleware/auth.global.ts`; `supportEnabled` added to product feature toggles                           | 02    | Route-guard rule 10 in `.agents/CLAUDE.md`                                                                                                                                        |
+| 7   | `AppSidebar.vue`: existing mis-named `Support` group renamed to `System`; new `Support` group with Inbox and Contacts; `/support` added to `protectedRoutes`               | 02    | Route-guard rule 10 in `.agents/CLAUDE.md`. The old group holds only Settings; the name is needed for the real module (delta D-26)                                                |
+| 7b  | New per-team **Tools** tab in `/settings` with Feedback/Roadmap/Changelog/Support module toggles driving sidebar visibility                                                | 02    | Feature toggles are per-project today, but an inbox is team-scoped. Also replaces the hardcoded `disabled: true` Roadmap/Changelog placeholders in `AppSidebar.vue`               |
+| 7c  | `supportEnabled` added to `ProductSettingsFeatures.vue` and a product Support tab                                                                                          | 10    | Deferred from 02: the customer-facing entry point these control is the Stage 10 portal, so shipping them earlier means a switch that does nothing                                 |
 | 8   | New notification types in `server/utils/notifications.ts` (`conversation_assigned`, `conversation_mention`, `sla_breach`) + preference toggles in `SettingsNotifications` | 02/06 | Reuses shipped notification infrastructure rather than building a parallel one                                                                                                    |
 | 9   | Extend `lib/email.ts` with an options bag (custom From/Reply-To, `In-Reply-To`/`References`/`Message-ID`, attachments); add `lib/support-email.ts`                        | 04    | Today it only sends fixed transactional templates. Without real RFC-5322 threading every reply opens a new ticket                                                                 |
 | 10  | Register support routes in `server/utils/openapi.ts`                                                                                                                      | 02+   | Public API docs are published at `/api-docs`                                                                                                                                      |

@@ -8,10 +8,15 @@ conversation rather than opening a new ticket.
 
 ## Scope
 
-**In:** the channel adapter, provider webhook driver, IMAP driver, MIME parsing, threading, contact
-resolution, attachment ingest, inbox channel configuration UI.
+**In:** the channel adapter, provider webhook drivers, MIME parsing, threading, contact resolution,
+product attribution from the receiving address, attachment ingest, inbox channel configuration UI.
 
 **Out:** sending anything. Stage 04 owns all outbound mail, including auto-replies.
+
+**Out — IMAP.** Inbound is **webhook-only** (delta D-29). There is no polling driver, no scheduled mail
+fetch, and no IMAP credential storage. Self-hosted deployments require a webhook-capable mail provider.
+If IMAP is ever reinstated it enters as another driver behind the same `InboundMessage` normalization,
+which is what the adapter boundary below exists to allow.
 
 ## Work
 
@@ -24,7 +29,6 @@ resolution, attachment ingest, inbox channel configuration UI.
   `cc[]`, `subject`, `text`, `html`, `attachments[]`, `receivedAt`, `rawHeaders`.
 - `webhook/postmark.ts`, `webhook/mailgun.ts` — signature verification plus provider payload →
   `InboundMessage`.
-- `imap.ts` — poll a mailbox, parse MIME, produce the same shape.
 - `index.ts` — driver selection from `SUPPORT_CHANNEL_PROVIDER`.
 
 Every driver produces `InboundMessage`. **Nothing downstream may know which provider it came from.**
@@ -44,10 +48,13 @@ Order of operations matters and is a correctness requirement:
 3. Archive the raw payload to storage (`rawStorageKey`) before parsing, so a parse failure is
    debuggable and replayable.
 4. Parse to `InboundMessage`.
-5. Resolve the inbox via `resolveInboxByAddress` against `to[]` and `cc[]`. No match → record the event
-   with an error and return 200; do not 404, or the provider will retry forever.
+5. Resolve the inbox via `resolveInboxByAddress` against `to[]` and `cc[]`, matching against
+   `supportInboxAddress` rows. No match → record the event with an error and return 200; do not 404, or
+   the provider will retry forever.
 6. Resolve or create the contact.
-7. Resolve or create the conversation.
+7. Resolve or create the conversation. On creation, set `conversation.projectId` from the matched
+   `supportInboxAddress.projectId` (null when the address is unmapped) — see delta D-27. Never overwrite
+   the product on an existing conversation; an agent may have corrected it.
 8. Insert the `incoming` message and attachments, update `lastActivityAt` and `lastCustomerReplyAt`,
    publish realtime envelopes.
 9. Stamp `processedAt` and `resultConversationId` on the event. On failure, record a sanitized error,
@@ -89,17 +96,11 @@ Look up `contactIdentity` on `(teamId, 'email', fromAddress)`. Create the contac
 using the `From` display name. `cc[]` addresses become `conversationParticipant` rows with `role: 'cc'`,
 creating contacts for them as needed.
 
-### 6. IMAP driver
+### 6. Inbox configuration UI
 
-Register a scheduled task through the Stage 00 scheduler. Poll, fetch unseen messages, feed the same
-pipeline, mark seen only after successful processing. Store credentials encrypted in
-`supportInbox.channelConfig`.
-
-### 7. Inbox configuration UI
-
-Channel tab on inbox settings: provider selection, inbound address, the forwarding address to point MX
-or a forwarding rule at, webhook signing secret, IMAP credentials, and a connection test with a clear
-pass/fail result.
+Channel tab on `/support/settings`: provider selection, the `supportInboxAddress` list with each
+address's optional product mapping, the forwarding address to point MX or a forwarding rule at, the
+webhook signing secret, and a connection test with a clear pass/fail result.
 
 ## Acceptance criteria
 
@@ -115,7 +116,10 @@ pass/fail result.
 7. An out-of-office auto-reply does not reopen a resolved conversation.
 8. An email to an unknown address is recorded with an error and returns 200, not 404.
 9. Quote stripping produces a clean body across Gmail, Outlook, and Apple Mail samples.
-10. `yarn harness:verify` green on `support-platform`.
+10. An email to a product-mapped address creates a conversation with that `projectId`; an email to an
+    unmapped address creates one with `projectId` null. A reply to a conversation whose product an agent
+    corrected does not revert it.
+11. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
 
@@ -129,8 +133,8 @@ pass/fail result.
 - [ ] Implement attachment ingest to storage with inline `Content-ID` mapping and a per-message size cap
 - [ ] Implement auto-response detection (`Auto-Submitted`, `X-Autoreply`, null return-path) so bounces do not reopen or loop
 - [ ] Implement contact and CC-participant resolution from `From` and `Cc`
-- [ ] Implement the IMAP driver with encrypted credentials and a scheduled poll via the Stage 00 scheduler
-- [ ] Build the inbox channel configuration UI with provider setup, forwarding address, and a connection test
+- [ ] Implement product attribution on conversation creation from the matched `supportInboxAddress.projectId`, never overwriting an existing conversation's product
+- [ ] Build the inbox channel configuration UI on `/support/settings` with provider setup, the receiving-address list with per-address product mapping, forwarding address, and a connection test
 - [ ] Add E2E coverage: inbound mail creates a ticket, a reply threads onto it, a duplicate delivery does not double it
 
 ## Risks

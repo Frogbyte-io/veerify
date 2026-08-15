@@ -52,6 +52,7 @@ ls server/api/support/contacts/
 | [07](stage-07-automation.md)         | Automation rules          | 02, 04     | Blocked |
 | [08](stage-08-csat.md)               | CSAT                      | 04         | Blocked |
 | [09](stage-09-reporting.md)          | Reporting                 | 02, 06     | Blocked |
+| [09b](stage-09b-home.md)             | Home (cross-team)         | 02         | Future  |
 | [10](stage-10-customer-portal.md)    | Customer portal           | 02         | Blocked |
 | [11](stage-11-live-chat.md)          | Live chat                 | 00, 02     | Blocked |
 | [12](stage-12-social-channels.md)    | Social channels           | 03, 11     | Blocked |
@@ -60,6 +61,11 @@ ls server/api/support/contacts/
 **Deferred, not planned:** Knowledge base / help center. Dropped from this program on August 11, 2026.
 Stage 10 (customer portal) ships its ticket list and submit form without KB integration; wire the two
 together if and when the KB is revived.
+
+**Recorded but not scheduled:** Stage 09b (Home), added August 14, 2026. It is a future task with an
+outline-level doc only. Per the dispatch protocol it has **not** been added to `TODO.md` — stages enter
+the board when they become unblocked, not before. It also renames `/dashboard` to `/home`, so it touches
+the post-login landing route; schedule it when that churn is acceptable.
 
 ## Dependency graph
 
@@ -70,6 +76,7 @@ together if and when the KB is revived.
                                  │                                            ├─→ 06 SLA ─→ 09 Reporting
                                  │                                            ├─→ 07 Automation
                                  │                                            └─→ 08 CSAT
+                                 ├─→ 09b Home (cross-team)
                                  ├─→ 10 Customer portal
                                  ├─→ 13 Importers
                                  └─→ 11 Live chat ─→ 12 Social channels
@@ -87,6 +94,9 @@ Nothing else starts until it is merged and verified on `main`.
 - After 04: stages 05, 06, 07, and 08 are mutually independent. This is the widest fan-out in the program
   — up to four agents.
 - Stage 09 needs 06. Stage 12 needs both 03 and 11.
+- Stage 09b (Home) needs only 02, despite its number — it is a personal cross-team view, not an
+  org-stats page, so it needs no rollups. It sits at 09b at the requester's direction and can be pulled
+  forward into the post-02 parallel group whenever wanted.
 
 **First usable product is Stage 04.** At that point a team can run real email support end to end.
 Stages 05–07 make it competitive with Freshdesk. 08–10 close the gap. 11–13 are expansion.
