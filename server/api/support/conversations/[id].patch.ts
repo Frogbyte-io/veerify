@@ -29,6 +29,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { diffConversationPatch, recordConversationActivity } from '~/server/utils/conversation-activity'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
+import { notifyUser } from '~/server/utils/notifications'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { conversation } from '~/server/database/schema/support'
@@ -112,6 +113,22 @@ export default defineEventHandler(async (event) => {
     inboxId: existing.inboxId,
     conversationId,
   })
+
+  // Tell the new assignee they now own this ticket. Fire-and-forget: a
+  // notification failure must not turn a successful update into a failed
+  // request, and `notifyUser` swallows its own errors. Self-assignment is
+  // skipped - the actor already knows.
+  const assigneeChange = changes.find((change) => change.field === 'assigneeUserId')
+  if (assigneeChange?.to && assigneeChange.to !== session.user.id) {
+    void notifyUser(assigneeChange.to, {
+      type: 'conversation_assigned',
+      title: `Conversation #${existing.displayId} was assigned to you`,
+      body: existing.subject || undefined,
+      link: `/support?conversation=${conversationId}`,
+      actorUserId: session.user.id,
+      actorName: session.user.name,
+    })
+  }
 
   return createSuccessResponse({ conversation: updated, changed: true })
 })

@@ -71,6 +71,32 @@
             @update:model-value="updatePreference('newComments', $event)"
           />
         </div>
+
+        <SidebarSeparator />
+
+        <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Support</p>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-medium">Conversation Assigned</h3>
+            <p class="text-sm text-muted-foreground">When a support conversation is assigned to you</p>
+          </div>
+          <Switch
+            :model-value="preferences.conversationAssigned"
+            @update:model-value="updatePreference('conversationAssigned', $event)"
+          />
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-medium">Mentions</h3>
+            <p class="text-sm text-muted-foreground">When a teammate mentions you in a support conversation</p>
+          </div>
+          <Switch
+            :model-value="preferences.conversationMentions"
+            @update:model-value="updatePreference('conversationMentions', $event)"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -90,6 +116,8 @@ export default {
         newFeedback: true,
         statusChanges: true,
         newComments: true,
+        conversationAssigned: true,
+        conversationMentions: true,
       },
     }
   },

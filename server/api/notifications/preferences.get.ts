@@ -10,6 +10,11 @@ const DEFAULT_PREFERENCES = {
   newFeedback: true,
   statusChanges: true,
   newComments: true,
+  // Support notifications default on: being handed a ticket, or named in a
+  // note, is directed at one specific person and is the kind of thing they
+  // are expected to act on.
+  conversationAssigned: true,
+  conversationMentions: true,
 }
 
 export default defineEventHandler(async (event) => {
