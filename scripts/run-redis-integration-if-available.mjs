@@ -66,7 +66,7 @@ if (!redisAvailable) {
 }
 
 const command = process.platform === 'win32' ? 'yarn.cmd' : 'yarn'
-const result = spawnSync(command, ['test:integration'], {
+const result = spawnSync(command, ['test:integration', 'tests/integration/redis.test.ts'], {
   stdio: 'inherit',
   env: { ...process.env, REDIS_URL: redisUrl },
   shell: process.platform === 'win32',

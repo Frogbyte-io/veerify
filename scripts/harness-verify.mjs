@@ -15,6 +15,12 @@ const steps = [
     args: ['test:integration:if-available'],
     shell: isWindows,
   },
+  {
+    label: 'Postgres integration (guarded)',
+    command: yarnCommand,
+    args: ['test:integration:postgres:if-available'],
+    shell: isWindows,
+  },
 ]
 
 const timings = []

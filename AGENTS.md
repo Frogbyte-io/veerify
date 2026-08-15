@@ -26,6 +26,7 @@ Run these after every change:
 - `yarn lint`
 - `yarn test:e2e:if-available`
 - `yarn test:integration:if-available`
+- `yarn test:integration:postgres:if-available`
 
 Or run the harness command:
 
@@ -54,6 +55,15 @@ Or run the harness command:
   `docker compose -f docker-compose-dev.yml up -d valkey`.
 - Unlike the Playwright guard, this one is not restricted to cloud/CI — it runs locally by default
   whenever Redis is up.
+- If it skips, report the skip reason in updates/final output.
+
+## Postgres Integration Guard
+
+- `yarn test:integration:postgres:if-available` runs concurrency tests that need a real database (e.g.
+  the `displayId` allocation test) only when Postgres is reachable via `PG*`/`DATABASE_URL`. Start it with
+  `docker compose -f docker-compose-dev.yml up -d db`, then `yarn db:migrate`.
+- Guarded separately from the Redis suite, not bundled — a machine with one dependency but not the other
+  still gets partial coverage instead of an all-or-nothing skip.
 - If it skips, report the skip reason in updates/final output.
 
 ## UI Change Rule
