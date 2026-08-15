@@ -26,6 +26,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireContactAccess } from '~/server/utils/support-access'
 import { backfillContactFields, canMerge, mergeAttributes } from '~/server/utils/contact-merge'
+import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, contactLink } from '~/server/database/schema/support'
 
@@ -36,7 +37,7 @@ const bodySchema = z.object({
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const survivorId = getRouterParam(event, 'id') as string
-  const body = bodySchema.parse(await readBody(event))
+  const body = await validateBody(event, bodySchema)
 
   // Access is checked on BOTH contacts. Holding access to the survivor says
   // nothing about the source, and the source id comes straight from the request.

@@ -20,6 +20,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireContactAccess } from '~/server/utils/support-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
+import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactLink } from '~/server/database/schema/support'
 import { feedback, project } from '~/server/database/schema/feedback'
@@ -32,7 +33,7 @@ const bodySchema = z.object({
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const contactId = getRouterParam(event, 'id') as string
-  const body = bodySchema.parse(await readBody(event))
+  const body = await validateBody(event, bodySchema)
   const accessibleContact = await requireContactAccess(contactId, session.user.id)
 
   try {

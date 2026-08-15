@@ -25,6 +25,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { canUpdateContact } from '~/server/utils/contact-merge'
 import { requireContactAccess } from '~/server/utils/support-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
+import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, supportCompany } from '~/server/database/schema/support'
 
@@ -40,7 +41,7 @@ const bodySchema = z.object({
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const contactId = getRouterParam(event, 'id') as string
-  const body = bodySchema.parse(await readBody(event))
+  const body = await validateBody(event, bodySchema)
 
   await requireContactAccess(contactId, session.user.id)
 
