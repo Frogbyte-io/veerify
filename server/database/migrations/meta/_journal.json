@@ -162,6 +162,13 @@
       "when": 1786781894184,
       "tag": "0022_lowly_machine_man",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786829971011,
+      "tag": "0023_clammy_omega_sentinel",
+      "breakpoints": true
     }
   ]
 }

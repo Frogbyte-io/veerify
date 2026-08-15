@@ -48,6 +48,7 @@ import SettingsTeam from '~/components/settings/SettingsTeam.vue'
 import SettingsBilling from '~/components/settings/SettingsBilling.vue'
 import SettingsStatus from '~/components/settings/SettingsStatus.vue'
 import SettingsAppearance from '~/components/settings/SettingsAppearance.vue'
+import SettingsTools from '~/components/settings/SettingsTools.vue'
 
 const baseTabs = [
   { key: 'profile', label: 'Profile', icon: 'lucide:user' },
@@ -55,6 +56,7 @@ const baseTabs = [
   { key: 'notifications', label: 'Notifications', icon: 'lucide:bell' },
   { key: 'organization', label: 'Workspace', icon: 'lucide:building-2' },
   { key: 'team', label: 'Teams', icon: 'lucide:users' },
+  { key: 'tools', label: 'Tools', icon: 'lucide:layout-grid' },
   { key: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
 ]
 
@@ -67,6 +69,7 @@ const componentMap = {
   billing: 'SettingsBilling',
   status: 'SettingsStatus',
   appearance: 'SettingsAppearance',
+  tools: 'SettingsTools',
 }
 
 export default {
@@ -80,6 +83,7 @@ export default {
     SettingsBilling,
     SettingsStatus,
     SettingsAppearance,
+    SettingsTools,
   },
   data() {
     const hasActiveOrganization = useState('hasActiveOrganization', () => null)
@@ -105,8 +109,10 @@ export default {
       return this.tabs.filter((tab) => {
         // Billing is hidden during the beta period
         if (tab.key === 'billing') return false
-        // Teams and status are only visible in workspace context
-        if (['team', 'status'].includes(tab.key) && !this.hasOrganization) {
+        // Teams, tools, and status are only visible in workspace context —
+        // module enablement is per team, so it has no meaning for a personal
+        // account.
+        if (['team', 'tools', 'status'].includes(tab.key) && !this.hasOrganization) {
           return false
         }
         if (tab.key === 'status') {
