@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { and, eq, ne } from 'drizzle-orm'
-import { db } from '../../server/database/drizzle'
+import { db } from './helpers/db'
 import { feedback, project } from '../../server/database/schema/feedback'
 import { contact, contactLink, supportTeamSettings } from '../../server/database/schema/support'
 import { team } from '../../server/database/schema/auth'

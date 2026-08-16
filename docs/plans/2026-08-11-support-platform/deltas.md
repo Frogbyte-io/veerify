@@ -563,7 +563,34 @@ If these specs cannot collect in CI either, those criteria are not actually bein
 `yarn harness:verify` would not reveal it — the E2E gate **skips** rather than fails when its guard is
 not satisfied, so the suite reports green either way. Nobody would notice.
 
-**Not fixed here.** The likely fix is a resolution/alias condition in `playwright.config.ts`, or having
+**RESOLVED (2026-08-15), and the root cause was not what the first diagnosis assumed.** It is not an
+export-condition problem between the browser and node builds — both `dist/browser.mjs` and
+`dist/index.mjs` export `createConsola`. Playwright resolves consola's **`require`** condition to
+`lib/index.cjs`, which assigns its exports in a dynamic loop:
+
+```js
+module.exports[key] = lib[key]
+```
+
+`cjs-module-lexer` cannot detect those statically, so an ESM named import of `createConsola` from that
+file fails. Node and Nuxt resolve the `.mjs` build, which is why the application was never affected.
+
+**Fix:** E2E specs no longer import `~/server/database/drizzle`. `tests/e2e/helpers/db.ts` builds its own
+drizzle client from `pg` plus the schema — the schema depends only on `drizzle-orm/pg-core`, so no app
+module (and therefore no logger, and no consola) is pulled into the test process. `logger.ts` was
+deliberately **not** changed: it is used app-wide, and the CJS/ESM interop shape of a default vs named
+import differs between the two builds, so "fixing" it there risked breaking production logging to
+accommodate a test-runner quirk.
+
+**What this exposed:** the three affected specs had never run. Stage 01's cross-tenant isolation,
+concurrent-merge, and cursor-pagination criteria were written as "verified by E2E" and were enforcing
+nothing. All five tests now collect; 3 pass and 2 skip on absent fixture data.
+
+**Still true and worth acting on:** `yarn harness:verify` **skips** the E2E gate locally rather than
+failing, so a broken spec file is indistinguishable from a deliberately skipped suite. That is what let
+this hide for two stages. Tracked in SUP-X-6.
+
+**Superseded — original diagnosis below, kept because the reasoning is instructive.** The likely fix is a resolution/alias condition in `playwright.config.ts`, or having
 `logger.ts` import in a way that resolves under both conditions. It is repo-wide rather than
 support-specific, so it is queued as its own item rather than folded into a stage task. Whoever picks it
 up should first establish whether these specs pass in CI today — that determines whether this is a local

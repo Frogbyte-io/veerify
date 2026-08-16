@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
-import { db } from '../../server/database/drizzle'
+import { db } from './helpers/db'
 import { contact, conversation, supportInbox } from '../../server/database/schema/support'
 import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
