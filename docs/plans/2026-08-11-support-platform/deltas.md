@@ -536,3 +536,35 @@ delta D-24, where `isUniqueViolation()` was exercised only indirectly and never 
 returns 200 **without** creating a conversation. It must not 404 or error — the sender is a mail provider
 that would otherwise retry forever, which is the same reasoning the plan already applies to mail arriving
 at an unknown address.
+
+### D-33 — E2E specs that import `db` cannot be collected locally
+
+**Found:** SUP-02-17. **Status:** open, pre-existing, not support-specific.
+
+Any Playwright spec importing `~/server/database/drizzle` fails to collect with:
+
+```
+SyntaxError: The requested module 'consola' does not provide an export named 'createConsola'
+Error: No tests found.
+```
+
+`server/utils/logger.ts` does `import { createConsola } from 'consola'`, and `db` pulls it in
+transitively. consola 3.4.2 **does** export `createConsola` — from `dist/index.mjs`, behind its
+`exports["."].node` condition. Playwright's loader resolves the `default` (browser) condition instead,
+which does not.
+
+**This is pre-existing and not caused by the new spec.** `tests/e2e/support-contact-timeline.spec.ts`,
+written in Stage 01, fails identically — verified by running it directly. At least three specs are
+affected (`support-contact-timeline`, `support-contact-integrity`, and the new
+`support-conversation-flow`).
+
+**Why it matters:** several Stage 01 and Stage 02 acceptance criteria are worded as "verified by E2E".
+If these specs cannot collect in CI either, those criteria are not actually being enforced anywhere, and
+`yarn harness:verify` would not reveal it — the E2E gate **skips** rather than fails when its guard is
+not satisfied, so the suite reports green either way. Nobody would notice.
+
+**Not fixed here.** The likely fix is a resolution/alias condition in `playwright.config.ts`, or having
+`logger.ts` import in a way that resolves under both conditions. It is repo-wide rather than
+support-specific, so it is queued as its own item rather than folded into a stage task. Whoever picks it
+up should first establish whether these specs pass in CI today — that determines whether this is a local
+inconvenience or a silent hole in the whole E2E gate.
