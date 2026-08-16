@@ -595,3 +595,34 @@ this hide for two stages. Tracked in SUP-X-6.
 support-specific, so it is queued as its own item rather than folded into a stage task. Whoever picks it
 up should first establish whether these specs pass in CI today — that determines whether this is a local
 inconvenience or a silent hole in the whole E2E gate.
+
+### D-34 — The channel config UI cannot collect what SUP-03-13 asked for
+
+**Found:** SUP-03-13. **Status:** resolved by narrowing the item (2026-08-15).
+
+`stage-03-inbound-email.md` §6 specifies a channel tab with "provider selection … the webhook signing
+secret, and a connection test". Two of those must not exist as written, because SUP-03-1..03-3 put that
+configuration in the **deployment environment**, not per-inbox settings:
+
+- `SUPPORT_CHANNEL_PROVIDER` — one provider per deployment, not per inbox.
+- `SUPPORT_POSTMARK_WEBHOOK_USER` / `_PASSWORD`, `SUPPORT_MAILGUN_SIGNING_KEY` — env vars.
+
+A provider dropdown would imply per-inbox choice that does not exist, and the app cannot write `.env`
+anyway. A secret field is worse: it would either do nothing, or push a webhook credential into
+`supportInbox.channelConfig`, where **any team member can read and edit it** — a real security
+regression, traded for a form that looks complete.
+
+**Built instead:** a read-only Channel card plus `GET /api/support/channel-status`, reporting which
+provider is selected, whether its driver resolves, whether its credentials are present, the **names** of
+any missing variables (never values), the webhook URL to register, and the address to point MX or a
+forwarding rule at.
+
+This is more useful than the connection test the plan asked for. The realistic failure is not an
+unreachable provider, it is a deployment where `SUPPORT_CHANNEL_PROVIDER` is set but the credentials are
+not — inbound mail is then rejected silently, and nothing in the product says so. The card reads "Not
+receiving mail" and names what to set.
+
+**Known duplication:** `REQUIRED_ENV` in the endpoint hard-codes which env vars each provider needs.
+That belongs on `ChannelDriver` as an `isConfigured()`, but `server/services/support-channels/**` is the
+other agent's territory this stage, so it was flagged rather than edited. Adding a provider currently
+means updating that map too.
