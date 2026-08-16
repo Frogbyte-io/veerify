@@ -81,7 +81,7 @@
                         type="email"
                         placeholder="m@example.com"
                         required
-                        :disabled="isLoading"
+                        :disabled="isLoading || !isHydrated"
                       />
                     </div>
                     <div class="grid gap-3">
@@ -97,10 +97,15 @@
                         v-model="password"
                         type="password"
                         required
-                        :disabled="isLoading"
+                        :disabled="isLoading || !isHydrated"
                       />
                     </div>
-                    <Button data-testid="login-submit" type="submit" class="w-full" :disabled="isLoading">
+                    <Button
+                      data-testid="login-submit"
+                      type="submit"
+                      class="w-full"
+                      :disabled="isLoading || !isHydrated"
+                    >
                       {{ isLoading ? 'Signing in...' : 'Sign in' }}
                     </Button>
                   </div>
@@ -136,10 +141,10 @@
                           type="email"
                           placeholder="m@example.com"
                           required
-                          :disabled="isLoading"
+                          :disabled="isLoading || !isHydrated"
                         />
                       </div>
-                      <Button type="submit" class="w-full" :disabled="isLoading">
+                      <Button type="submit" class="w-full" :disabled="isLoading || !isHydrated">
                         <Icon name="lucide:wand-sparkles" class="w-4 h-4 mr-2" />
                         {{ isLoading ? 'Sending link...' : 'Send magic link' }}
                       </Button>
@@ -190,7 +195,18 @@ export default {
       error: '',
       loginMethod: 'password',
       magicLinkSent: false,
+      // False until Vue has hydrated. The submit buttons are `type="submit"`
+      // inside a `@submit.prevent` form, so a click landing before hydration
+      // performs a NATIVE form submission: the page reloads to `/login?`, the
+      // typed credentials are silently discarded, no request is made and no
+      // error is shown. Gating the button on this closes that window - and
+      // because automation waits for a control to be enabled, it also makes
+      // scripted sign-in deterministic instead of a race.
+      isHydrated: false,
     }
+  },
+  mounted() {
+    this.isHydrated = true
   },
   computed: {
     signupLink() {
