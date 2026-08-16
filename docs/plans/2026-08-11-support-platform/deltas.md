@@ -512,3 +512,27 @@ toggle too (delta D-26), which is subordinate to the team-level Support module i
 **This is the one migration expected in the rest of Stage 02** (`0023`). Both agents were told to
 coordinate before generating one — this is that coordination. Agent 1's remaining items (SUP-02-8, 02-14,
 02-15, 02-16) need no schema change, so `0023` belongs to SUP-02-12.
+
+### D-32 — "Disabling Support stops inbound processing" cannot be built in Stage 02
+
+**Found:** SUP-02-13. **Status:** split; enforcement half moved to Stage 03 (2026-08-15).
+
+SUP-02-13 asked for three things when a team switches the Support module off: hide the nav, stop inbound
+processing, and preserve conversations and contacts. Only two are Stage 02 work.
+
+- **Hide the nav** — delivered in SUP-02-12. The sidebar reads `teamModuleSettings` and the Support group
+  disappears when `supportEnabled` is false.
+- **Preserve data** — no work. Nothing in the disable path deletes anything; the flag is a boolean on a
+  settings row, entirely separate from the conversation tables.
+- **Stop inbound processing** — **there is no inbound processing in Stage 02.** The mail pipeline is
+  Stage 03. A guard written now would sit in a file that does not exist, against a code path nothing
+  exercises, and could not be tested until Stage 03 lands.
+
+Writing an untestable guard early is how a check ends up silently wrong — the same failure mode as
+delta D-24, where `isUniqueViolation()` was exercised only indirectly and never actually matched.
+
+**Moved to Stage 03**, as an explicit item in `stage-03-inbound-email.md`: the inbound endpoint checks
+`teamModuleSettings.supportEnabled` for the resolved inbox's team and, when false, records the event and
+returns 200 **without** creating a conversation. It must not 404 or error — the sender is a mail provider
+that would otherwise retry forever, which is the same reasoning the plan already applies to mail arriving
+at an unknown address.

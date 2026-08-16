@@ -115,6 +115,9 @@ webhook signing secret, and a connection test with a clear pass/fail result.
 6. A `<script>` tag in inbound HTML does not execute in the agent UI.
 7. An out-of-office auto-reply does not reopen a resolved conversation.
 8. An email to an unknown address is recorded with an error and returns 200, not 404.
+   8b. An email to an inbox whose team has the Support module switched off is recorded and returns 200
+   without creating a conversation; existing conversations and contacts are untouched, and re-enabling
+   the module resumes normal processing (delta D-32).
 9. Quote stripping produces a clean body across Gmail, Outlook, and Apple Mail samples.
 10. An email to a product-mapped address creates a conversation with that `projectId`; an email to an
     unmapped address creates one with `projectId` null. A reply to a conversation whose product an agent
@@ -132,6 +135,7 @@ webhook signing secret, and a connection test with a clear pass/fail result.
 - [ ] Implement inbound HTML sanitization with a strict allowlist and sandboxed-iframe rendering in the thread pane
 - [ ] Implement attachment ingest to storage with inline `Content-ID` mapping and a per-message size cap
 - [ ] Implement auto-response detection (`Auto-Submitted`, `X-Autoreply`, null return-path) so bounces do not reopen or loop
+- [ ] Honour the team's Support module switch: if `teamModuleSettings.supportEnabled` is false for the resolved inbox's team, record the event and return 200 **without** creating a conversation (delta D-32, moved here from SUP-02-13). Do not 404 or error — the sender is a mail provider that would retry forever, the same reasoning already applied to unknown addresses
 - [ ] Implement contact and CC-participant resolution from `From` and `Cc`
 - [ ] Implement product attribution on conversation creation from the matched `supportInboxAddress.projectId`, never overwriting an existing conversation's product
 - [ ] Build the inbox channel configuration UI on `/support/settings` with provider setup, the receiving-address list with per-address product mapping, forwarding address, and a connection test
