@@ -37,6 +37,7 @@ import { stripQuotedReply } from '~/server/utils/inbound-content'
 import { sanitizeInboundHtml } from '~/server/utils/inbound-sanitize'
 import { isAutoResponse } from '~/server/utils/inbound-autoresponse'
 import { resolveCcParticipants, resolveOrCreateContact } from '~/server/utils/inbound-contacts'
+import { ingestInboundAttachments, rewriteInlineCidReferences } from '~/server/utils/inbound-attachments'
 import {
   attachInboundEventInbox,
   claimInboundEvent,
@@ -48,7 +49,12 @@ import {
 import { checkRateLimit } from '~/server/utils/rate-limit'
 import { getStorageProvider } from '~/server/utils/storage'
 import { db } from '~/server/database/drizzle'
-import { conversation, conversationMessage, supportInboxAddress } from '~/server/database/schema/support'
+import {
+  conversation,
+  conversationAttachment,
+  conversationMessage,
+  supportInboxAddress,
+} from '~/server/database/schema/support'
 // Module toggles live in their own schema file, not the support one (delta D-31).
 import { teamModuleSettings } from '~/server/database/schema/teams'
 
@@ -189,7 +195,6 @@ export default defineEventHandler(async (event) => {
     }
 
     const stripped = stripQuotedReply({ text: message.text, html: message.html })
-    const safeHtml = sanitizeInboundHtml(message.html)
 
     // The inbox's own addresses, so a support address in Cc never becomes a
     // contact or a participant on its own thread.
@@ -198,6 +203,23 @@ export default defineEventHandler(async (event) => {
       .from(supportInboxAddress)
       .where(eq(supportInboxAddress.inboxId, inbox.id))
     const ownAddresses = new Set(ownAddressRows.map((row) => row.address.toLowerCase()))
+
+    // ---- SUP-03-8: attachments -------------------------------------------
+    // Ahead of the transaction, because storage writes cannot roll back and
+    // the inline rewrite needs attachment ids before any row exists. A rolled
+    // back transaction therefore leaves orphaned objects rather than orphaned
+    // rows, which is the right way round: unreferenced bytes are collectable,
+    // a row pointing at nothing is not.
+    const attachments = await ingestInboundAttachments({
+      attachments: message.attachments,
+      eventId,
+      provider: driver.name,
+    })
+
+    // Rewrite `cid:` to our own attachment route BEFORE sanitizing, so the
+    // sanitizer judges an ordinary same-origin path by its normal rules
+    // instead of being taught about `cid:`.
+    const safeHtml = sanitizeInboundHtml(rewriteInlineCidReferences(message.html, attachments.inlineByContentId))
 
     const result = await db.transaction(async (tx) => {
       // ---- 6. Contact ----------------------------------------------------
@@ -268,6 +290,22 @@ export default defineEventHandler(async (event) => {
         metadata: { rawBody: stripped.rawBody, matchedBy: thread.matchedBy },
         createdAt: message.receivedAt,
       })
+
+      if (attachments.stored.length > 0) {
+        await tx.insert(conversationAttachment).values(
+          attachments.stored.map((file) => ({
+            id: file.id,
+            messageId,
+            storageKey: file.storageKey,
+            fileName: file.fileName,
+            contentType: file.contentType,
+            sizeBytes: file.sizeBytes,
+            isInline: file.isInline,
+            contentId: file.contentId,
+            createdAt: message.receivedAt,
+          }))
+        )
+      }
 
       // ---- SUP-03-11: CC participants -------------------------------------
       await resolveCcParticipants(tx, {
