@@ -306,18 +306,33 @@ test('sidebar user section stays hydrated across client-side route changes', asy
   await expect(page.locator(selectors.navUserLoading)).toHaveCount(0)
 })
 
-test('roadmap and changelog sidebar buttons are disabled', async ({ page }) => {
+test('roadmap and changelog are hidden until their team module is enabled', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
   await page.goto('/dashboard')
 
   const sidebar = page.locator('[data-testid="app-sidebar"]')
-  const roadmapButton = sidebar.getByRole('button', { name: 'Roadmap' })
-  const changelogButton = sidebar.getByRole('button', { name: 'Changelog' })
 
-  await expect(roadmapButton).toBeDisabled()
-  await expect(changelogButton).toBeDisabled()
+  // Both modules default to off (SUP-02-12, delta D-31), so neither entry
+  // renders at all for a team that has not enabled them.
+  await expect(sidebar.getByRole('button', { name: 'Roadmap' })).toHaveCount(0)
+  await expect(sidebar.getByRole('button', { name: 'Changelog' })).toHaveCount(0)
+
+  // Whether shown or hidden, neither ever renders as a working link: the
+  // dashboard pages do not exist yet, so the entries stay disabled
+  // placeholders even once the module is on. See Technical Debt #11.
   await expect(sidebar.locator('a[href="/roadmap"]')).toHaveCount(0)
   await expect(sidebar.locator('a[href="/changelog"]')).toHaveCount(0)
+})
+
+test('support nav is hidden until the support module is enabled', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await page.goto('/dashboard')
+
+  const sidebar = page.locator('[data-testid="app-sidebar"]')
+
+  // supportEnabled defaults to false, so the whole Support group is absent.
+  await expect(sidebar.locator('a[href="/support"]')).toHaveCount(0)
+  await expect(sidebar.locator('a[href="/support/contacts"]')).toHaveCount(0)
 })
 
 test('settings team panel tracks active team selected in sidebar', async ({ page }) => {
