@@ -65,10 +65,21 @@ if (!postgresAvailable) {
 }
 
 const command = process.platform === 'win32' ? 'yarn.cmd' : 'yarn'
-const result = spawnSync(command, ['test:integration', 'tests/integration/support-counter.test.ts'], {
-  stdio: 'inherit',
-  shell: process.platform === 'win32',
-})
+
+// Run every integration spec except the Redis one, which has its own runner and
+// its own reachability guard. Deliberately a pattern rather than a list of
+// filenames: this previously named `support-counter.test.ts` explicitly, so a
+// second Postgres integration suite was added and silently never ran. Naming
+// files here means the gate quietly stops covering whatever nobody remembered
+// to add.
+const result = spawnSync(
+  command,
+  ['test:integration', 'tests/integration/', '--exclude', 'tests/integration/redis.test.ts'],
+  {
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  }
+)
 
 if (result.error) {
   throw result.error

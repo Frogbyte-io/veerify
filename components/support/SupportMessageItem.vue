@@ -30,7 +30,8 @@
       <span class="text-xs text-amber-700/70 dark:text-amber-400/70">· only visible to your team</span>
       <span class="ml-auto text-xs text-muted-foreground">{{ formattedTime }}</span>
     </div>
-    <p class="text-sm text-foreground whitespace-pre-wrap break-words">{{ messageBody }}</p>
+    <SupportMessageHtml v-if="renderableHtml" :html="renderableHtml" />
+    <p v-else class="text-sm text-foreground whitespace-pre-wrap break-words">{{ messageBody }}</p>
     <p class="text-xs text-muted-foreground mt-1.5">— {{ senderDisplayName }}</p>
   </div>
 
@@ -52,7 +53,8 @@
           isOutgoing ? 'bg-primary text-primary-foreground rounded-br-sm' : 'bg-muted text-foreground rounded-bl-sm'
         "
       >
-        <p class="text-sm whitespace-pre-wrap break-words">{{ messageBody }}</p>
+        <SupportMessageHtml v-if="renderableHtml" :html="renderableHtml" />
+        <p v-else class="text-sm whitespace-pre-wrap break-words">{{ messageBody }}</p>
       </div>
       <div class="flex items-center gap-1.5 mt-1 px-1">
         <span class="text-xs text-muted-foreground">{{ formattedTime }}</span>
@@ -92,13 +94,24 @@ export default {
       return this.message.kind === 'outgoing'
     },
 
+    /**
+     * HTML is rendered only inside `SupportMessageHtml`'s sandboxed iframe,
+     * never via `v-html`. `bodyHtml` is already sanitized on ingest
+     * (`server/utils/inbound-sanitize.ts`); the iframe is the second of the two
+     * layers `design.md` requires, not a substitute for the first.
+     *
+     * Only inbound mail carries HTML. Agent replies and notes are composed as
+     * plain text, so they keep the simpler text rendering.
+     */
+    renderableHtml() {
+      if (this.message.kind === 'activity') return null
+      return this.message.bodyHtml || null
+    },
+
     messageBody() {
-      // `bodyHtml` is sanitized on ingest per design.md, but Stage 02 has no
-      // mail pipeline yet - messages here are agent/API-created. Never
-      // `v-html` provider content (see design.md Risks); fall back to the
-      // plain-text `body` and only use `bodyHtml` as a last resort, stripped
-      // of markup rather than rendered.
       if (this.message.body) return this.message.body
+      // Last resort: HTML with no plain-text alternative, shown as text rather
+      // than rendered. `renderableHtml` handles the normal case above.
       if (this.message.bodyHtml) return this.stripHtml(this.message.bodyHtml)
       return ''
     },
