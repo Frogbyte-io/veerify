@@ -1,20 +1,11 @@
-# Stage 02 — Parallel agent split
+# Stage 03 — Parallel agent split
 
-**Created:** August 15, 2026. **Applies to:** the remainder of Stage 02 only.
+**Created:** August 15, 2026. **Applies to:** Stage 03 (inbound email).
+**Supersedes** the Stage 02 split, which is complete (17/17). The Stage 02 retrospective at the bottom is
+worth reading — three of its findings change how this stage should be worked.
 
-Two Claude sessions are working this stage concurrently. This document is the contract between them.
-**Agent 1 reads this first.** Agent 2 wrote it and is working from `D:\veerify`.
-
----
-
-## Why this exists
-
-Both sessions were previously operating on the **same working tree** (`D:\veerify`). On 2026-08-15 that
-nearly caused a collision: Agent 2 dispatched subagents for SUP-02-2 and SUP-02-4 at the same time Agent 1
-was committing those exact items. Nothing was lost only because Agent 2's subagents hit the session limit
-before committing. That was luck.
-
-Separate worktrees remove the shared-file hazard. This document removes the duplicated-work hazard.
+Two Claude sessions work this stage concurrently. This document is the contract between them.
+**Agent 1 reads this first.** Agent 2 wrote it and works from `D:\veerify`.
 
 ---
 
@@ -23,156 +14,197 @@ Separate worktrees remove the shared-file hazard. This document removes the dupl
 |                   | Agent 1                 | Agent 2            |
 | ----------------- | ----------------------- | ------------------ |
 | Working directory | **`D:\veerify-agent1`** | `D:\veerify`       |
-| Branch            | **`agent1/stage-02`**   | `support-platform` |
+| Branch            | **`agent1/stage-03`**   | `support-platform` |
 
-The worktree and branch **already exist** — created by Agent 2, with `.env` copied in. Agent 1 does not
-need to create them. Just:
+The worktree at `D:\veerify-agent1` already exists from Stage 02 with `node_modules` installed. Cut a
+**fresh branch** — do not continue on `agent1/stage-02`:
 
 ```bash
 cd D:/veerify-agent1
-git status          # expect: On branch agent1/stage-02
-yarn install        # node_modules is NOT shared between worktrees
+git fetch origin
+git checkout -b agent1/stage-03 origin/support-platform
 ```
 
-If `D:\veerify-agent1` is inaccessible (different Windows user, permissions), recreate it anywhere you
-can write:
+Shared and still true: the Postgres dev container is shared between worktrees, and ports 3001–3004 are in
+use — start dev servers above that.
 
-```bash
-git -C D:/veerify worktree add -b agent1/stage-02 <your-path> support-platform
+---
+
+## Why the split is different this stage
+
+Stage 02 divided cleanly into API and UI. Stage 03 does not, because **SUP-03-4 (the inbound endpoint) is
+an integration point that consumes almost everything else**: threading, quote stripping, sanitization,
+auto-response detection, contact resolution, attribution, and attachments all meet inside it.
+
+So the seam is **pipeline vs pure modules**, not API vs UI. Agent 1 owns the wire and the endpoint;
+Agent 2 owns the pure content-processing modules the endpoint calls, plus the UI that renders the result.
+
+That only works if both sides agree the function signatures **before** writing code — see the next
+section. In Stage 02, two correct-in-isolation pieces produced a broken feature where they met; this is
+the mitigation.
+
+---
+
+## Agreed module interfaces — do not diverge without saying so
+
+Agent 2 implements these. Agent 1 imports them. If you need to change a signature, **say so before
+changing it** rather than adapting locally.
+
+```ts
+// server/services/support-channels/types.ts   (Agent 1 defines, both consume)
+export interface InboundMessage {
+  messageId: string | null // RFC Message-ID, angle brackets stripped
+  inReplyTo: string | null
+  references: string[] // oldest → newest
+  from: { address: string; name?: string }
+  to: { address: string; name?: string }[]
+  cc: { address: string; name?: string }[]
+  subject: string | null
+  text: string | null
+  html: string | null
+  attachments: InboundAttachment[]
+  receivedAt: Date
+  rawHeaders: Record<string, string>
+}
+
+// server/utils/inbound-threading.ts           (Agent 2)
+// `tx` so the caller can resolve inside its own transaction.
+export async function resolveThread(
+  tx: Tx,
+  inbox: { id: string; teamId: string },
+  message: InboundMessage,
+  contactId: string
+): Promise<{ conversationId: string | null; matchedBy: 'message-id' | 'thread-key' | 'subject' | null }>
+
+// server/utils/inbound-content.ts             (Agent 2) - pure
+export function stripQuotedReply(input: { text: string | null; html: string | null }): {
+  body: string // quoted history and signature removed
+  rawBody: string // untouched, for conversationMessage.metadata
+}
+
+// server/utils/inbound-sanitize.ts            (Agent 2) - pure
+export function sanitizeInboundHtml(html: string | null): string | null
+
+// server/utils/inbound-autoresponse.ts        (Agent 2) - pure
+export function isAutoResponse(headers: Record<string, string>): boolean
 ```
 
-…and say so in your first report, so Agent 2 knows the path changed.
-
-### Two things that are shared and will bite you
-
-- **The Postgres dev database is shared.** Both worktrees point at the same `veerify-db` container. Read
-  and write freely, but see the migration rule below.
-- **Ports collide.** If you run `yarn dev`, use a different port than 3001 (Agent 2 uses 3001):
-  `PORT=3002 yarn dev`.
+`resolveThread` returning `conversationId: null` means "no match, create a new conversation" — it never
+creates one itself. `matchedBy` exists so the endpoint can log why, and so the never-merge-across-contacts
+rule is testable from the outside.
 
 ---
 
 ## Work split
 
-Assigned by **file territory**, not by convenience — the split is chosen so the two agents touch disjoint
-files.
+### Agent 1 — intake pipeline
 
-### Agent 1 — server + notifications + docs
+Order matters: **1 → 2 → 3 first**, which depend on nothing of Agent 2's. By the time you reach 4, the
+pure modules should have landed.
 
-- [ ] **SUP-02-8** Message, participant, and tag endpoints; publish thin realtime envelopes on
-      `conversation:` and `inbox:` for every write.
-      Use the existing `publishConversationEvent()` in `server/utils/support-realtime.ts` — do not write a
-      second publisher.
-      **This is the critical path**: Agent 2's thread pane (SUP-02-9) cannot render messages until the
-      `GET .../messages` endpoint exists. Do this first.
-- [ ] **SUP-02-14** Build `/support/settings`: inbox name, signature, agent membership, and the
-      receiving-address list with product mapping. APIs already exist (SUP-02-5, SUP-02-6).
-- [ ] **SUP-02-15** Add `conversation_assigned` and `conversation_mention` notification types and
-      preference toggles. Reuse the existing notification infrastructure; do not build a parallel one.
-      Touches `server/utils/notifications.ts` and `components/settings/SettingsNotifications.vue` only.
-- [ ] **SUP-02-16** Register support inbox and conversation routes in the OpenAPI spec. Hand-transcribe
-      into `server/api/openapi.json.get.ts` (delta D-23 — there is no route registry; SUP-X-3 is the real
-      fix and is not in this stage).
+- [ ] **SUP-03-1** Channel adapter, `types.ts`, `InboundMessage`, driver selection from `SUPPORT_CHANNEL_PROVIDER`
+- [ ] **SUP-03-2** Postmark webhook driver — signature verification, payload → `InboundMessage`, unit tests against captured fixtures
+- [ ] **SUP-03-3** Mailgun webhook driver — same shape
+- [ ] **SUP-03-4** `supportEmailEvent` claim/replay state + `POST /api/support/inbound/[provider]`, per-inbox rate limiting. **The order of operations in the stage doc is a correctness requirement, not a suggestion** — signature, then atomic claim, then archive raw, then parse
+- [ ] **SUP-03-8** Attachment ingest to storage, inline `Content-ID` mapping, per-message size cap
+- [ ] **SUP-03-10** Honour `teamModuleSettings.supportEnabled` — record the event, return 200, create nothing
+- [ ] **SUP-03-11** Contact and CC-participant resolution from `From` and `Cc`
+- [ ] **SUP-03-12** Product attribution from the matched `supportInboxAddress.projectId`
 
-### Agent 2 — agent UI + navigation
+### Agent 2 — content modules, rendering, E2E
 
-- [ ] **SUP-02-9** `/support` three-pane UI (inbox switcher, conversation list, thread pane, contact drawer)
-- [ ] **SUP-02-10** Composer with the reply/note toggle
-- [ ] **SUP-02-11** Sidebar: rename the existing `Support` group to `System`, add a real `Support` group
-- [ ] **SUP-02-12** Per-team Tools tab in `/settings`
-- [ ] **SUP-02-13** Module disable semantics
-- [ ] **SUP-02-17** E2E coverage — **last**, after both sides land
+- [ ] **SUP-X-5** Fix Playwright collection first — it blocks SUP-03-14 and, more importantly, may mean the E2E gate has been enforcing nothing for two stages
+- [ ] **SUP-03-5** Threading resolution
+- [ ] **SUP-03-6** Quote and signature stripping
+- [ ] **SUP-03-9** Auto-response detection
+- [ ] **SUP-03-7** HTML sanitization + sandboxed-iframe rendering in the thread pane
+- [ ] **SUP-03-13** Channel configuration UI on `/support/settings`
+- [ ] **SUP-03-14** E2E: inbound mail creates a ticket, a reply threads onto it, a duplicate delivery does not double it
 
-### File boundaries — do not cross without saying so
+### File boundaries
 
-| Agent 1 owns                                    | Agent 2 owns                        |
-| ----------------------------------------------- | ----------------------------------- |
-| `server/api/support/conversations/[id]/**`      | `pages/support/index.vue`           |
-| `server/api/support/tags/**`                    | `components/support/**`             |
-| `pages/support/settings.vue`                    | `components/sidebar/AppSidebar.vue` |
-| `server/utils/notifications.ts`                 | `pages/settings/index.vue`          |
-| `components/settings/SettingsNotifications.vue` | `middleware/auth.global.ts`         |
-| `server/api/openapi.json.get.ts`                |                                     |
+| Agent 1 owns                          | Agent 2 owns                                          |
+| ------------------------------------- | ----------------------------------------------------- |
+| `server/services/support-channels/**` | `server/utils/inbound-threading.ts`                   |
+| `server/api/support/inbound/**`       | `server/utils/inbound-content.ts`                     |
+| `server/utils/inbound-events.ts`      | `server/utils/inbound-sanitize.ts`                    |
+| `server/utils/inbound-contacts.ts`    | `server/utils/inbound-autoresponse.ts`                |
+|                                       | `components/support/**`, `pages/support/settings.vue` |
+|                                       | `tests/e2e/**`, `playwright.config.ts`                |
 
-`server/utils/support-realtime.ts` and `server/utils/conversation-activity.ts` are **shared and stable** —
-read them, extend only if genuinely necessary, and flag it if you do.
+**Shared, read-only unless flagged:** `server/utils/support-realtime.ts`,
+`server/utils/conversation-activity.ts`, `server/utils/support-access.ts`, `server/database/schema/**`.
+
+**No migrations are expected this stage** — every table inbound email touches landed in `0022`. If you
+believe you need one, stop and say so first.
 
 ---
 
-## Syncing — through `support-platform`, not with each other
+## Syncing
 
-**Do not merge `agent1/stage-02` and `support-platform` into each other ad hoc, and never merge Agent 2's
-in-progress work directly.** `support-platform` is the single integration point. Both agents pull from it
-and push finished items to it.
-
-### Pull often — at minimum at the start of every item
+Unchanged from Stage 02, and it worked: **`support-platform` is the single integration point.** Pull from
+it at the start of every item; push finished items to it only after `yarn harness:verify` is green _after_
+merging `origin/support-platform` into your branch.
 
 ```bash
-cd D:/veerify-agent1
-git fetch origin
-git merge origin/support-platform      # bring in Agent 2's landed work
-```
-
-Doing this at least once per item keeps divergence to hours, not days. If it has been more than ~2 hours
-of active work, pull again before starting anything new.
-
-### Push a finished item
-
-Only after the item is complete **and** `yarn harness:verify` is green:
-
-```bash
-# 1. sync first, so you verify what the merge will actually produce
-git fetch origin
-git merge origin/support-platform
-yarn harness:verify                    # must be green AFTER the merge, not before
-
-# 2. integrate
-git checkout support-platform
-git pull --rebase origin support-platform
-git merge --no-ff agent1/stage-02
-yarn harness:verify                    # green again on the integration branch
+git fetch origin && git merge origin/support-platform
+yarn harness:verify          # must be green after the merge, not before
+git checkout support-platform && git pull --rebase origin support-platform
+git merge --no-ff agent1/stage-03
+yarn harness:verify
 git push origin support-platform
-
-# 3. return to your branch
-git checkout agent1/stage-02
-git merge support-platform             # fast-forward, keeps the branches level
+git checkout agent1/stage-03 && git merge support-platform
 ```
 
-**A push race is expected occasionally** — both agents push to `support-platform`. If `git push` is
-rejected, `git pull --rebase origin support-platform`, re-run `yarn harness:verify`, and push again. Do
-not force-push.
-
-**`git checkout support-platform` will fail** if Agent 2 has it checked out in `D:\veerify` — git does not
-allow one branch in two worktrees. If that happens, push your branch (`git push -u origin
-agent1/stage-02`), report it as ready, and let Agent 2 integrate it. That is the normal fallback, not an
-error condition.
+`git checkout support-platform` fails while Agent 2 has it checked out — that is expected. Push your
+branch, say it is ready, and Agent 2 integrates. **Push races happened twice in Stage 02**; on rejection,
+`git pull --rebase`, re-verify, push again. Never force-push.
 
 ---
 
-## Rules that are not negotiable
+## Rules
 
-1. **`TODO.md` is edited by whoever integrates, in a separate `chore(todo):` commit** — never inside a
-   feature commit. Check an item off only after it is merged into `support-platform` and verified there.
-2. **No migrations without coordinating first.** Two agents generating `0023` independently is the exact
-   collision the README documents between `support-platform` and `sleekplan-export`.
-   **`0023` is already spoken for**: it belongs to Agent 2's SUP-02-12, which adds the `teamModuleSettings`
-   table (delta D-31). None of Agent 1's items (SUP-02-8, 02-14, 02-15, 02-16) should need a schema change
-   — every table they touch landed in SUP-02-1 (`0022`). If you find you need one anyway, **stop and say
-   so** before running `yarn db:generate`.
-3. **Read before writing.** `.agents/CLAUDE.md`, then `design.md`, then `deltas.md` (several entries
-   override the original stage docs), then `stage-02-conversation-core.md`.
-4. **Options API only.** No `<script setup>`, no Composition API. This trips up UI work constantly.
-5. **Report ambiguity, don't silently resolve it.** Both agents have already hit undocumented gaps —
-   `supportTag`'s columns, `isPrimary` exclusivity, activity-message privacy. Each was flagged in
+1. **`TODO.md` is edited by whoever integrates**, in a separate `chore(todo):` commit. Never inside a
+   feature commit.
+2. **Read before writing:** `.agents/CLAUDE.md`, then `design.md`, then `deltas.md` (33 entries; several
+   override the stage docs), then `stage-03-inbound-email.md`.
+3. **Options API only** for new components.
+4. **`validateBody(event, schema)`** — never a bare `.parse()` on a request body (delta D-25).
+5. **Report ambiguity, don't silently resolve it.** Every undocumented gap hit so far was flagged in
    `TODO.md` rather than buried. Keep doing that.
+6. **Never run `prettier --write .`** on Windows. `core.autocrlf=true` plus no `endOfLine` in
+   `.prettierrc` means ~110 files "fail" `format:check` on line endings alone, all false positives. Use
+   `npx prettier --check --end-of-line=auto .` to see the truth, and format only the files you touched.
+   See SUP-X-6.
 
 ---
 
-## Current state at time of writing (`8b59521`)
+## What Stage 02 taught, that applies here
 
-Stage 02 is **7/17**. SUP-02-1 through SUP-02-7 are done, merged, and pushed. `origin/support-platform`
-and local are in sync; the working tree is clean.
+**1. Correct-in-isolation is not correct.** SUP-02-15's notification linked to
+`/support?conversationId=…` — the right key, verified against what the page writes. But the page only
+ever _read_ `inboxId` back, so the link never opened the conversation. Neither agent could have caught it
+alone. **This stage has far more seams than that one**, which is why the module signatures are pinned
+above. When you consume the other agent's function, check its actual behaviour, not just its name.
 
-Verification gates in `yarn harness:verify`: agent docs map, typecheck, unit tests, lint, guarded E2E,
-guarded Redis integration, guarded Postgres integration. All currently green. Lint reports ~158 warnings
-and **0 errors** — the warnings are pre-existing; do not "fix" them as part of a feature item.
+**2. Subagents die on `yarn install`.** Every subagent dispatched into a fresh worktree during Stage 02
+burned its budget on install and hit the session limit before validating; two produced usable code but
+neither ran a single test. Work inline in your own worktree where `node_modules` already exists.
+
+**3. Green gates can mean nothing ran.** `yarn harness:verify` reports success when the E2E guard
+**skips**, and Playwright currently cannot collect any spec importing `db` (delta D-33). Two stages of
+"verified by E2E" acceptance criteria may be enforcing nothing. `format:check` is not in the gate at all.
+If an item's acceptance criterion says E2E, confirm the spec actually _ran_ — and if it cannot, verify by
+hand against a live server and say so plainly rather than claiming coverage.
+
+---
+
+## State at time of writing (`06d7be2`)
+
+Stage 02 **complete, 17/17**. `origin/support-platform` and local are in sync, working tree clean, all
+`harness:verify` gates green: agent docs map, typecheck, 198 unit tests, lint (0 errors / 158 pre-existing
+warnings), guarded E2E, guarded Redis, guarded Postgres.
+
+Open cross-cutting items: **SUP-X-3** (build-time OpenAPI scanner), **SUP-X-4** (admin-only module
+toggles, deliberately deferred — read D-28 first), **SUP-X-5** (Playwright collection — assigned to Agent
+2 above), **SUP-X-6** (format gate + CRLF).

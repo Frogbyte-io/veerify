@@ -259,6 +259,28 @@ separate" in `design.md`.
 
 - [ ] **SUP-X-6** (repo-wide) `format:check` is not part of `yarn harness:verify`, and is unusable on Windows. Two separate problems: (1) the gate every stage validates against never runs `prettier --check`, which is how ~40 files drifted far enough for CI to fail on them; (2) `.prettierrc` sets no `endOfLine`, so with `core.autocrlf=true` every text file in a Windows working tree fails on line endings alone — 110 files locally, all false positives, since git stores LF and CI checks out LF. Verified: `npx prettier --check --end-of-line=auto .` passes repo-wide today, so there is no real drift right now. Fix is likely `"endOfLine": "auto"` in `.prettierrc` plus adding the check to `scripts/harness-verify.mjs`.
 
+## Support Platform — Stage 03: Inbound email
+
+Plan: `docs/plans/2026-08-11-support-platform/stage-03-inbound-email.md`. Read `design.md` and
+`deltas.md` first, then `parallel-agents.md` for the two-agent split and the agreed module signatures.
+
+**Webhook only** — the IMAP driver was dropped (delta D-29). Inbound is Postmark/Mailgun webhooks.
+
+- [ ] **SUP-03-1** Add `server/services/support-channels/` with `types.ts` and normalized `InboundMessage`; driver selection from `SUPPORT_CHANNEL_PROVIDER`
+- [ ] **SUP-03-2** Implement the Postmark webhook driver with signature verification and payload normalization; unit tests against captured fixtures
+- [ ] **SUP-03-3** Implement the Mailgun webhook driver with signature verification and payload normalization
+- [ ] **SUP-03-4** Add `supportEmailEvent` claim/replay state and `POST /api/support/inbound/[provider]` (verify → atomic claim → archive raw → parse → resolve inbox → resolve contact → thread → persist → publish → mark processed); per-inbox rate limiting
+- [ ] **SUP-03-5** Implement threading resolution (Message-ID/References, then thread key, then bounded subject+contact fallback); unit tests including the never-merge-across-contacts case
+- [ ] **SUP-03-6** Implement reply-quote and signature stripping for Gmail/Outlook/Apple Mail; retain the raw body in metadata; unit tests against fixtures
+- [ ] **SUP-03-7** Implement inbound HTML sanitization with a strict allowlist and sandboxed-iframe rendering in the thread pane
+- [ ] **SUP-03-8** Implement attachment ingest to storage with inline `Content-ID` mapping and a per-message size cap
+- [ ] **SUP-03-9** Implement auto-response detection (`Auto-Submitted`, `X-Autoreply`, null return-path) so bounces do not reopen or loop
+- [ ] **SUP-03-10** Honour the team's Support module switch: if `teamModuleSettings.supportEnabled` is false for the resolved inbox's team, record the event and return 200 without creating a conversation (delta D-32, moved from SUP-02-13)
+- [ ] **SUP-03-11** Implement contact and CC-participant resolution from `From` and `Cc`
+- [ ] **SUP-03-12** Implement product attribution on conversation creation from the matched `supportInboxAddress.projectId`, never overwriting an existing conversation's product
+- [ ] **SUP-03-13** Build the inbox channel configuration UI on `/support/settings` with provider setup, the receiving-address list with per-address product mapping, forwarding address, and a connection test
+- [ ] **SUP-03-14** Add E2E coverage: inbound mail creates a ticket, a reply threads onto it, a duplicate delivery does not double it. **Blocked on SUP-X-5** — Playwright cannot collect specs that import `db`
+
 ## Support Platform — Stage 02: Inbox + conversation core
 
 Plan: `docs/plans/2026-08-11-support-platform/stage-02-conversation-core.md`. Read `design.md` and
