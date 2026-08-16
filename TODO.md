@@ -269,9 +269,13 @@ Plan: `docs/plans/2026-08-11-support-platform/stage-03-inbound-email.md`. Read `
 
 **Webhook only** — the IMAP driver was dropped (delta D-29). Inbound is Postmark/Mailgun webhooks.
 
-- [ ] **SUP-03-1** Add `server/services/support-channels/` with `types.ts` and normalized `InboundMessage`; driver selection from `SUPPORT_CHANNEL_PROVIDER`
-- [ ] **SUP-03-2** Implement the Postmark webhook driver with signature verification and payload normalization; unit tests against captured fixtures
-- [ ] **SUP-03-3** Implement the Mailgun webhook driver with signature verification and payload normalization
+- [x] **SUP-03-1** Add `server/services/support-channels/` with `types.ts` and normalized `InboundMessage`; driver selection from `SUPPORT_CHANNEL_PROVIDER`
+  - `3f65831` (agent 1), merged in `b5e8e80`. `InboundMessage` matches the contract pinned in `parallel-agents.md` exactly. `rawHeaders` keys are lowercased by the drivers, which `isAutoResponse` also does defensively — harmless overlap.
+  - A **compile-time assertion** now lives in `tests/inbound-threading.test.ts` proving `InboundMessage` satisfies the structural `ThreadableMessage` that `resolveThread` takes. Nothing calls `resolveThread` with one until SUP-03-4, so without it the seam between the two agents would go unchecked until integration — the exact way Stage 02's deep-link bug got in.
+- [x] **SUP-03-2** Implement the Postmark webhook driver with signature verification and payload normalization; unit tests against captured fixtures
+  - `3f65831` (agent 1).
+- [x] **SUP-03-3** Implement the Mailgun webhook driver with signature verification and payload normalization
+  - `3f65831` (agent 1).
 - [ ] **SUP-03-4** Add `supportEmailEvent` claim/replay state and `POST /api/support/inbound/[provider]` (verify → atomic claim → archive raw → parse → resolve inbox → resolve contact → thread → persist → publish → mark processed); per-inbox rate limiting
 - [x] **SUP-03-5** Implement threading resolution (Message-ID/References, then thread key, then bounded subject+contact fallback); unit tests including the never-merge-across-contacts case
   - `server/utils/inbound-threading.ts`. Header matches are inbox-scoped but deliberately **not** contact-scoped — a CC'd participant replying is a different contact on the same thread. The subject heuristic is fenced four ways (same inbox, same contact, open/pending, 7-day window); the contact scope is what stops two customers mailing "Invoice question" landing in one conversation. 13 unit tests on the exported `normalizeSubject` (stacked prefixes, `Re[2]:`, localised AW/WG/SV/RES, and "Refund request" surviving a naive prefix strip) plus 10 against real Postgres.
