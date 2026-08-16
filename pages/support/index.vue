@@ -267,6 +267,10 @@ export default {
 
         if (initialInboxId) {
           await this.selectInbox(initialInboxId)
+          // Deep link from a conversation_assigned notification
+          // (`/support?conversationId=…`). Opened after the inbox loads,
+          // because selectInbox clears any current selection.
+          await this.openRequestedConversation()
         }
       } catch {
         this.inboxesError = 'Failed to load inboxes. Please try again.'
@@ -308,6 +312,18 @@ export default {
 
       await Promise.all([this.loadInboxMembers(), this.loadConversations(true)])
       this.subscribeInbox()
+    },
+
+    async openRequestedConversation() {
+      const requested = this.$route.query.conversationId
+      if (typeof requested !== 'string' || !requested) return
+      if (this.selectedConversationId === requested) return
+
+      // The target may sit beyond the first page of the list, or in a
+      // different inbox than the one that opened, so select it directly rather
+      // than looking it up in `this.conversations`. selectConversation surfaces
+      // its own error state if the id is unreadable.
+      await this.selectConversation(requested)
     },
 
     async loadInboxMembers() {
