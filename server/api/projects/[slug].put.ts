@@ -277,7 +277,10 @@ export default defineEventHandler(async (event) => {
       projectName: updated.name,
       domain: requestedDomain!,
     }).catch((err) => {
-      logger.error('Failed to send custom domain connected email', { projectName: updated.name, error: err instanceof Error ? err.message : err })
+      logger.error('Failed to send custom domain connected email', {
+        projectName: updated.name,
+        error: err instanceof Error ? err.message : err,
+      })
     })
   }
 

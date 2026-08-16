@@ -198,8 +198,8 @@
           <CardHeader>
             <CardTitle>Receiving addresses</CardTitle>
             <CardDescription>
-              An inbound email carries no product signal of its own — the address it arrived at is what attributes
-              it to a product. Setting a new primary address clears the previous one.
+              An inbound email carries no product signal of its own — the address it arrived at is what attributes it to
+              a product. Setting a new primary address clears the previous one.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
@@ -283,9 +283,8 @@
           <DialogHeader>
             <DialogTitle>Remove agent</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove
-              "{{ memberPendingRemoval?.userName || memberPendingRemoval?.userEmail }}" from this inbox? They will
-              lose access to its conversations.
+              Are you sure you want to remove "{{ memberPendingRemoval?.userName || memberPendingRemoval?.userEmail }}"
+              from this inbox? They will lose access to its conversations.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -312,17 +311,12 @@
           <DialogHeader>
             <DialogTitle>Remove address</DialogTitle>
             <DialogDescription>
-              Are you sure you want to remove "{{ addressPendingRemoval?.address }}"? Mail sent to this address will
-              no longer reach this inbox.
+              Are you sure you want to remove "{{ addressPendingRemoval?.address }}"? Mail sent to this address will no
+              longer reach this inbox.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button
-              variant="outline"
-              @click="isRemoveAddressDialogOpen = false"
-            >
-              Cancel
-            </Button>
+            <Button variant="outline" @click="isRemoveAddressDialogOpen = false"> Cancel </Button>
             <Button
               variant="destructive"
               :disabled="removingAddressId === addressPendingRemoval?.id"

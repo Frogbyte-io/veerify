@@ -39,7 +39,9 @@ export default defineEventHandler(async (event) => {
   // conversation's participant by id.
   const [deleted] = await db
     .delete(conversationParticipant)
-    .where(and(eq(conversationParticipant.id, participantId), eq(conversationParticipant.conversationId, conversationId)))
+    .where(
+      and(eq(conversationParticipant.id, participantId), eq(conversationParticipant.conversationId, conversationId))
+    )
     .returning({ id: conversationParticipant.id })
 
   if (!deleted) {

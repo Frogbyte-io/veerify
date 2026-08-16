@@ -899,7 +899,9 @@ export default defineEventHandler((event) => {
           parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
           responses: {
             '200': { description: 'Participant added' },
-            '400': { description: 'Neither or both of contactId/userId set, or the target does not belong to this team' },
+            '400': {
+              description: 'Neither or both of contactId/userId set, or the target does not belong to this team',
+            },
             '403': { description: 'Not a member of this inbox or a team admin' },
             '404': { description: 'Conversation not found' },
             '409': { description: 'This participant is already on the conversation' },

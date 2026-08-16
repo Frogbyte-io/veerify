@@ -20,11 +20,7 @@ const DEFAULT_PREFERENCES = {
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
 
-  const [dbUser] = await db
-    .select({ settings: user.settings })
-    .from(user)
-    .where(eq(user.id, session.user.id))
-    .limit(1)
+  const [dbUser] = await db.select({ settings: user.settings }).from(user).where(eq(user.id, session.user.id)).limit(1)
 
   const prefs = {
     ...DEFAULT_PREFERENCES,

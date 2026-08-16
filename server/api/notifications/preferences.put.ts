@@ -25,11 +25,7 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, preferencesSchema)
 
   // Get current settings
-  const [dbUser] = await db
-    .select({ settings: user.settings })
-    .from(user)
-    .where(eq(user.id, session.user.id))
-    .limit(1)
+  const [dbUser] = await db.select({ settings: user.settings }).from(user).where(eq(user.id, session.user.id)).limit(1)
 
   const currentSettings = dbUser?.settings || {}
   const currentPrefs = currentSettings.notificationPreferences || {}
@@ -37,10 +33,7 @@ export default defineEventHandler(async (event) => {
   const updatedPrefs = { ...currentPrefs, ...body }
   const updatedSettings = { ...currentSettings, notificationPreferences: updatedPrefs }
 
-  await db
-    .update(user)
-    .set({ settings: updatedSettings, updatedAt: new Date() })
-    .where(eq(user.id, session.user.id))
+  await db.update(user).set({ settings: updatedSettings, updatedAt: new Date() }).where(eq(user.id, session.user.id))
 
   return createSuccessResponse(updatedPrefs)
 })

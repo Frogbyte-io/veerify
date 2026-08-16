@@ -175,11 +175,7 @@ export async function notifyUser(
   params: Omit<CreateNotificationParams, 'userId'>
 ): Promise<Awaited<ReturnType<typeof createNotification>>> {
   try {
-    const [recipient] = await db
-      .select({ settings: user.settings })
-      .from(user)
-      .where(eq(user.id, userId))
-      .limit(1)
+    const [recipient] = await db.select({ settings: user.settings }).from(user).where(eq(user.id, userId)).limit(1)
 
     if (!recipient) return null
     if (!prefersNotification(recipient.settings, params.type)) return null

@@ -68,12 +68,7 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-3">
-            <Button
-              v-if="canEditFeedback"
-              data-testid="feedback-detail-edit"
-              variant="outline"
-              @click="openEditDialog"
-            >
+            <Button v-if="canEditFeedback" data-testid="feedback-detail-edit" variant="outline" @click="openEditDialog">
               <Icon name="lucide:pencil" class="mr-2 h-4 w-4" />
               Edit feedback
             </Button>
@@ -107,7 +102,11 @@
                 <div class="flex shrink-0 items-center gap-3 lg:w-[88px] lg:flex-col">
                   <button
                     class="flex h-12 w-12 items-center justify-center rounded-2xl border"
-                    :class="item.voteType === 'upvote' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'"
+                    :class="
+                      item.voteType === 'upvote'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border text-muted-foreground'
+                    "
                     :disabled="isVoting"
                     @click="toggleVote('upvote')"
                   >
@@ -119,7 +118,11 @@
                   </div>
                   <button
                     class="flex h-12 w-12 items-center justify-center rounded-2xl border"
-                    :class="item.voteType === 'downvote' ? 'border-destructive bg-destructive/10 text-destructive' : 'border-border text-muted-foreground'"
+                    :class="
+                      item.voteType === 'downvote'
+                        ? 'border-destructive bg-destructive/10 text-destructive'
+                        : 'border-border text-muted-foreground'
+                    "
                     :disabled="isVoting"
                     @click="toggleVote('downvote')"
                   >
@@ -128,7 +131,9 @@
                 </div>
 
                 <div class="flex-1 space-y-5">
-                  <p v-if="item.body" class="whitespace-pre-line text-sm leading-7 text-foreground/85">{{ item.body }}</p>
+                  <p v-if="item.body" class="whitespace-pre-line text-sm leading-7 text-foreground/85">
+                    {{ item.body }}
+                  </p>
                   <p v-else class="italic text-muted-foreground">No description provided.</p>
 
                   <div class="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -141,7 +146,9 @@
                         </Avatar>
                         <div class="min-w-0">
                           <div class="truncate text-sm font-medium">{{ displayAuthorName }}</div>
-                          <div class="text-xs text-muted-foreground">{{ item.isOwn ? 'Your submission' : 'Submitted feedback' }}</div>
+                          <div class="text-xs text-muted-foreground">
+                            {{ item.isOwn ? 'Your submission' : 'Submitted feedback' }}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -192,7 +199,11 @@
                   :key="comment.id"
                   :data-testid="`feedback-detail-comment-${comment.id}`"
                   class="rounded-2xl border p-5"
-                  :class="comment.isInternal ? 'border-amber-200 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20' : 'bg-background/80'"
+                  :class="
+                    comment.isInternal
+                      ? 'border-amber-200 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20'
+                      : 'bg-background/80'
+                  "
                 >
                   <div class="flex items-start gap-4">
                     <Avatar class="mt-0.5 h-10 w-10 shrink-0">
@@ -203,17 +214,32 @@
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div class="min-w-0">
                           <div class="flex flex-wrap items-center gap-2">
-                            <span class="truncate text-sm font-medium">{{ comment.authorName || comment.author?.name || 'Anonymous' }}</span>
+                            <span class="truncate text-sm font-medium">{{
+                              comment.authorName || comment.author?.name || 'Anonymous'
+                            }}</span>
                             <Badge v-if="comment.isInternal" variant="outline">Internal</Badge>
                             <span v-if="comment.isEdited" class="text-xs italic text-muted-foreground">(edited)</span>
                           </div>
                           <div class="mt-1 text-xs text-muted-foreground">{{ formatDate(comment.createdAt) }}</div>
                         </div>
                         <div v-if="comment.canEdit || comment.canDelete" class="flex items-center gap-2 self-start">
-                          <Button v-if="comment.canEdit" :data-testid="`comment-edit-btn-${comment.id}`" size="sm" variant="ghost" @click="startEditComment(comment)">
+                          <Button
+                            v-if="comment.canEdit"
+                            :data-testid="`comment-edit-btn-${comment.id}`"
+                            size="sm"
+                            variant="ghost"
+                            @click="startEditComment(comment)"
+                          >
                             <Icon name="lucide:pencil" class="h-4 w-4" />
                           </Button>
-                          <Button v-if="comment.canDelete" :data-testid="`comment-delete-btn-${comment.id}`" size="sm" variant="ghost" class="text-destructive hover:text-destructive" @click="deleteComment(comment)">
+                          <Button
+                            v-if="comment.canDelete"
+                            :data-testid="`comment-delete-btn-${comment.id}`"
+                            size="sm"
+                            variant="ghost"
+                            class="text-destructive hover:text-destructive"
+                            @click="deleteComment(comment)"
+                          >
                             <Icon name="lucide:trash-2" class="h-4 w-4" />
                           </Button>
                         </div>
@@ -223,15 +249,23 @@
                         <div class="mt-4 space-y-3">
                           <Textarea v-model="editingCommentBody" rows="4" :disabled="isSavingComment" />
                           <div class="flex flex-wrap gap-3">
-                            <Button size="sm" variant="outline" :disabled="isSavingComment" @click="cancelEditComment">Cancel</Button>
-                            <Button size="sm" :disabled="!editingCommentBody.trim() || isSavingComment" @click="saveEditComment(comment)">
+                            <Button size="sm" variant="outline" :disabled="isSavingComment" @click="cancelEditComment"
+                              >Cancel</Button
+                            >
+                            <Button
+                              size="sm"
+                              :disabled="!editingCommentBody.trim() || isSavingComment"
+                              @click="saveEditComment(comment)"
+                            >
                               <Icon v-if="isSavingComment" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
                               Save comment
                             </Button>
                           </div>
                         </div>
                       </template>
-                      <p v-else class="mt-4 whitespace-pre-line text-sm leading-7 text-foreground/85">{{ comment.body }}</p>
+                      <p v-else class="mt-4 whitespace-pre-line text-sm leading-7 text-foreground/85">
+                        {{ comment.body }}
+                      </p>
                     </div>
                   </div>
                 </article>
@@ -242,14 +276,18 @@
                   <div>
                     <h3 class="text-base font-semibold">Add a comment</h3>
                     <p class="mt-1 text-sm text-muted-foreground">
-                      {{ item.isLocked ? 'Comments are locked for this feedback.' : 'Keep the discussion moving with public updates or internal notes.' }}
+                      {{
+                        item.isLocked
+                          ? 'Comments are locked for this feedback.'
+                          : 'Keep the discussion moving with public updates or internal notes.'
+                      }}
                     </p>
                   </div>
                   <label
                     v-if="canManageFeedback"
                     class="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-sm text-muted-foreground"
                   >
-                    <input v-model="isInternalComment" type="checkbox" class="rounded border-border" >
+                    <input v-model="isInternalComment" type="checkbox" class="rounded border-border" />
                     <Icon name="lucide:lock" class="h-4 w-4" />
                     Internal note
                   </label>
@@ -263,9 +301,15 @@
                 />
                 <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p v-if="detailCommentError" class="text-sm text-destructive">{{ detailCommentError }}</p>
-                  <div v-else-if="item.isLocked" class="text-sm text-muted-foreground">Unlock comments from the admin card to continue the thread.</div>
+                  <div v-else-if="item.isLocked" class="text-sm text-muted-foreground">
+                    Unlock comments from the admin card to continue the thread.
+                  </div>
                   <div v-else class="text-sm text-muted-foreground">
-                    {{ canManageFeedback ? 'Workspace members can post public comments or internal notes.' : 'Your comment will be visible in the thread.' }}
+                    {{
+                      canManageFeedback
+                        ? 'Workspace members can post public comments or internal notes.'
+                        : 'Your comment will be visible in the thread.'
+                    }}
                   </div>
                   <Button
                     data-testid="feedback-detail-comment-submit"
@@ -315,10 +359,23 @@
                 </div>
                 <div class="rounded-2xl border bg-muted/20 p-4">
                   <div class="text-sm font-medium">Subscribe to updates</div>
-                  <p class="mt-1 text-sm text-muted-foreground">Get notified when the status changes or when new comments arrive.</p>
-                  <Button class="mt-4 w-full" :variant="item.isSubscribed ? 'default' : 'outline'" :disabled="detailSubscribeLoading" @click="toggleSubscription">
+                  <p class="mt-1 text-sm text-muted-foreground">
+                    Get notified when the status changes or when new comments arrive.
+                  </p>
+                  <Button
+                    class="mt-4 w-full"
+                    :variant="item.isSubscribed ? 'default' : 'outline'"
+                    :disabled="detailSubscribeLoading"
+                    @click="toggleSubscription"
+                  >
                     <Icon
-                      :name="detailSubscribeLoading ? 'lucide:loader-2' : item.isSubscribed ? 'lucide:bell-off' : 'lucide:bell'"
+                      :name="
+                        detailSubscribeLoading
+                          ? 'lucide:loader-2'
+                          : item.isSubscribed
+                            ? 'lucide:bell-off'
+                            : 'lucide:bell'
+                      "
                       class="mr-2 h-4 w-4"
                       :class="detailSubscribeLoading ? 'animate-spin' : ''"
                     />
@@ -346,7 +403,9 @@
                 </div>
                 <div class="rounded-2xl border bg-muted/20 p-4">
                   <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Type</div>
-                  <div class="mt-2 text-sm font-medium">{{ feedbackTypeLabel(item.tag) || item.tag || 'Unspecified' }}</div>
+                  <div class="mt-2 text-sm font-medium">
+                    {{ feedbackTypeLabel(item.tag) || item.tag || 'Unspecified' }}
+                  </div>
                 </div>
               </div>
             </section>
@@ -357,7 +416,9 @@
               class="rounded-[28px] border bg-card p-6 shadow-sm"
             >
               <h2 class="text-lg font-semibold">Admin Controls</h2>
-              <p class="mt-1 text-sm text-muted-foreground">Same moderation options as the public detail view, plus workspace controls.</p>
+              <p class="mt-1 text-sm text-muted-foreground">
+                Same moderation options as the public detail view, plus workspace controls.
+              </p>
               <div class="mt-5 space-y-3">
                 <button
                   data-testid="feedback-detail-pin"
@@ -367,9 +428,19 @@
                 >
                   <div>
                     <div class="font-medium">{{ item.isPinned ? 'Unpin feedback' : 'Pin feedback' }}</div>
-                    <div class="mt-1 text-sm text-muted-foreground">{{ item.isPinned ? 'Remove this item from the top of lists.' : 'Keep this item at the top of boards and lists.' }}</div>
+                    <div class="mt-1 text-sm text-muted-foreground">
+                      {{
+                        item.isPinned
+                          ? 'Remove this item from the top of lists.'
+                          : 'Keep this item at the top of boards and lists.'
+                      }}
+                    </div>
                   </div>
-                  <Icon :name="adminAction === 'pin' ? 'lucide:loader-2' : item.isPinned ? 'lucide:pin-off' : 'lucide:pin'" class="h-5 w-5 shrink-0" :class="adminAction === 'pin' ? 'animate-spin' : ''" />
+                  <Icon
+                    :name="adminAction === 'pin' ? 'lucide:loader-2' : item.isPinned ? 'lucide:pin-off' : 'lucide:pin'"
+                    class="h-5 w-5 shrink-0"
+                    :class="adminAction === 'pin' ? 'animate-spin' : ''"
+                  />
                 </button>
                 <button
                   data-testid="feedback-detail-visibility"
@@ -378,10 +449,24 @@
                   @click="toggleVisibility"
                 >
                   <div>
-                    <div class="font-medium">{{ item.isHidden ? 'Make feedback visible' : 'Hide from public board' }}</div>
-                    <div class="mt-1 text-sm text-muted-foreground">{{ item.isHidden ? 'Return this item to the public board.' : 'Keep handling private while preserving the record.' }}</div>
+                    <div class="font-medium">
+                      {{ item.isHidden ? 'Make feedback visible' : 'Hide from public board' }}
+                    </div>
+                    <div class="mt-1 text-sm text-muted-foreground">
+                      {{
+                        item.isHidden
+                          ? 'Return this item to the public board.'
+                          : 'Keep handling private while preserving the record.'
+                      }}
+                    </div>
                   </div>
-                  <Icon :name="adminAction === 'visibility' ? 'lucide:loader-2' : item.isHidden ? 'lucide:eye' : 'lucide:eye-off'" class="h-5 w-5 shrink-0" :class="adminAction === 'visibility' ? 'animate-spin' : ''" />
+                  <Icon
+                    :name="
+                      adminAction === 'visibility' ? 'lucide:loader-2' : item.isHidden ? 'lucide:eye' : 'lucide:eye-off'
+                    "
+                    class="h-5 w-5 shrink-0"
+                    :class="adminAction === 'visibility' ? 'animate-spin' : ''"
+                  />
                 </button>
                 <button
                   data-testid="feedback-detail-lock"
@@ -391,9 +476,19 @@
                 >
                   <div>
                     <div class="font-medium">{{ item.isLocked ? 'Unlock comments' : 'Lock comments' }}</div>
-                    <div class="mt-1 text-sm text-muted-foreground">{{ item.isLocked ? 'Allow the thread to continue.' : 'Freeze new replies while the team resolves the item.' }}</div>
+                    <div class="mt-1 text-sm text-muted-foreground">
+                      {{
+                        item.isLocked
+                          ? 'Allow the thread to continue.'
+                          : 'Freeze new replies while the team resolves the item.'
+                      }}
+                    </div>
                   </div>
-                  <Icon :name="adminAction === 'lock' ? 'lucide:loader-2' : item.isLocked ? 'lucide:unlock' : 'lucide:lock'" class="h-5 w-5 shrink-0" :class="adminAction === 'lock' ? 'animate-spin' : ''" />
+                  <Icon
+                    :name="adminAction === 'lock' ? 'lucide:loader-2' : item.isLocked ? 'lucide:unlock' : 'lucide:lock'"
+                    class="h-5 w-5 shrink-0"
+                    :class="adminAction === 'lock' ? 'animate-spin' : ''"
+                  />
                 </button>
               </div>
             </section>
@@ -446,7 +541,11 @@
             </div>
             <DialogFooter>
               <Button variant="outline" :disabled="isSavingFeedback" @click="showEditDialog = false">Cancel</Button>
-              <Button data-testid="feedback-detail-save" :disabled="!editForm.title.trim() || !editForm.body.trim() || isSavingFeedback" @click="saveFeedback">
+              <Button
+                data-testid="feedback-detail-save"
+                :disabled="!editForm.title.trim() || !editForm.body.trim() || isSavingFeedback"
+                @click="saveFeedback"
+              >
                 <Icon v-if="isSavingFeedback" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
                 Save changes
               </Button>

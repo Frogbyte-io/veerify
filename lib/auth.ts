@@ -109,7 +109,10 @@ export const auth = betterAuth({
         name: user.name || user.email.split('@')[0],
         verificationUrl: url,
       }).catch((error) => {
-        logger.error('Failed to send verification email', { userId: user.id, error: error instanceof Error ? error.message : error })
+        logger.error('Failed to send verification email', {
+          userId: user.id,
+          error: error instanceof Error ? error.message : error,
+        })
       })
     },
     sendOnSignUp: true,
@@ -227,7 +230,10 @@ export const auth = betterAuth({
               })
             }
           } catch (error) {
-            logger.error('afterAcceptInvitation: failed to add user to default team', { userId: user.id, error: error instanceof Error ? error.message : error })
+            logger.error('afterAcceptInvitation: failed to add user to default team', {
+              userId: user.id,
+              error: error instanceof Error ? error.message : error,
+            })
           }
         },
       },

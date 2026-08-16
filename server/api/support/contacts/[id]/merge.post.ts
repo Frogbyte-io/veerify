@@ -104,10 +104,7 @@ export default defineEventHandler(async (event) => {
       await tx.delete(contactLink).where(inArray(contactLink.id, duplicateIds))
     }
 
-    await tx
-      .update(contactLink)
-      .set({ contactId: lockedSurvivor.id })
-      .where(eq(contactLink.contactId, lockedLoser.id))
+    await tx.update(contactLink).set({ contactId: lockedSurvivor.id }).where(eq(contactLink.contactId, lockedLoser.id))
 
     // Identities are unique on (teamId, kind, value) and both contacts are in
     // the same team, so the database already guarantees no collision here.

@@ -55,7 +55,7 @@ read views.
 
 **Out:** any change to the team picker beyond removing the misleading row described below — it does not
 gain a Home option. Any change to `/support`, `/feedback`, or their APIs — they stay purely team-scoped.
-Per-team or organization-wide *statistics* (needs Stage 09; recorded as a later extension). Cross-team
+Per-team or organization-wide _statistics_ (needs Stage 09; recorded as a later extension). Cross-team
 contact merging or conversation moves. Creating anything from a Home page — creation still happens inside
 a team.
 
@@ -84,7 +84,7 @@ resolution layer is needed behind it.
 `pages/dashboard/index.vue` already has two modes:
 
 - **Personal** (no active organization) — "Welcome, {name}", My Submissions / Completed / Total Votes.
-- **Workspace** (organization active) — "Dashboard", *"Overview of your team's feedback activity"*,
+- **Workspace** (organization active) — "Dashboard", _"Overview of your team's feedback activity"_,
   scoped to the **active team**.
 
 The renamed `/home` keeps the workspace mode's presence (so it is still useful once teams exist) but is

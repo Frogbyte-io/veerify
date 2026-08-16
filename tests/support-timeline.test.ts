@@ -4,9 +4,7 @@ import { buildContactTimeline, isAutoLinkEnabled } from '../server/utils/support
 
 describe('support contact timeline', () => {
   it('keeps authoritative links separate and removes linked feedback from suggestions', () => {
-    const linked = [
-      { id: 'link-1', entityType: 'feedback', entityId: 'feedback-1', source: 'agent' },
-    ]
+    const linked = [{ id: 'link-1', entityType: 'feedback', entityId: 'feedback-1', source: 'agent' }]
     const probableFeedback = [
       { id: 'feedback-1', projectId: 'project-1', authorEmail: 'customer@example.com' },
       { id: 'feedback-2', projectId: 'project-1', authorEmail: 'customer@example.com' },

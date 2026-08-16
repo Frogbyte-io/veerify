@@ -36,7 +36,11 @@ export default defineEventHandler(async (event) => {
       projectName: selectedProject.name,
       domain,
     }).catch((err) => {
-      logger.error('Failed to send custom domain verified email', { projectName: selectedProject.name, domain, error: err instanceof Error ? err.message : err })
+      logger.error('Failed to send custom domain verified email', {
+        projectName: selectedProject.name,
+        domain,
+        error: err instanceof Error ? err.message : err,
+      })
     })
   }
 

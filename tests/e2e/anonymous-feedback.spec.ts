@@ -237,7 +237,8 @@ test.describe('Anonymous feedback sessions', () => {
       await page.getByTestId('login-submit').click()
 
       await page.waitForURL(
-        (url) => url.origin === new URL(CUSTOM_DOMAIN_PAGE).origin && url.pathname === new URL(CUSTOM_DOMAIN_PAGE).pathname,
+        (url) =>
+          url.origin === new URL(CUSTOM_DOMAIN_PAGE).origin && url.pathname === new URL(CUSTOM_DOMAIN_PAGE).pathname,
         {
           timeout: 30_000,
         }

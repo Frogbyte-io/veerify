@@ -51,11 +51,7 @@ export default defineEventHandler(async (event) => {
       // row itself must be re-read and locked here: a merge may have turned
       // this contact into a tombstone while the request was entering its
       // transaction.
-      const [lockedContact] = await tx
-        .select()
-        .from(contact)
-        .where(eq(contact.id, contactId))
-        .for('update')
+      const [lockedContact] = await tx.select().from(contact).where(eq(contact.id, contactId)).for('update')
 
       if (!lockedContact) {
         throw createError({

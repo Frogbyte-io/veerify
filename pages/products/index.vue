@@ -152,12 +152,7 @@
             <div class="space-y-4">
               <div class="space-y-2">
                 <Label for="name">Product Name</Label>
-                <Input
-                  id="name"
-                  v-model="form.name"
-                  placeholder="My Awesome App"
-                  @update:model-value="generateSlug"
-                />
+                <Input id="name" v-model="form.name" placeholder="My Awesome App" @update:model-value="generateSlug" />
               </div>
               <div class="space-y-2">
                 <Label for="slug">URL Slug</Label>

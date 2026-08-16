@@ -62,7 +62,9 @@ async function rollbackCreatedGitHubIssue(params: {
 
   if (!response.ok) {
     const rollbackError = (await response.json().catch(() => null)) as { message?: string } | null
-    logger.error('Failed to rollback auto-created GitHub issue', { error: rollbackError?.message || response.statusText })
+    logger.error('Failed to rollback auto-created GitHub issue', {
+      error: rollbackError?.message || response.statusText,
+    })
   }
 }
 
@@ -176,7 +178,11 @@ export default defineEventHandler(async (event) => {
 
       if (!issueResponse.ok) {
         const issueError = (await issueResponse.json().catch(() => null)) as { message?: string } | null
-        logger.error('Failed to auto-create GitHub issue', { feedbackId, projectId: body.projectId, error: issueError?.message || issueResponse.statusText })
+        logger.error('Failed to auto-create GitHub issue', {
+          feedbackId,
+          projectId: body.projectId,
+          error: issueError?.message || issueResponse.statusText,
+        })
       } else {
         createdIssue = (await issueResponse.json()) as {
           number: number
@@ -185,7 +191,11 @@ export default defineEventHandler(async (event) => {
         }
       }
     } catch (error) {
-      logger.error('Auto-create GitHub issue failed', { feedbackId, projectId: body.projectId, error: error instanceof Error ? error.message : error })
+      logger.error('Auto-create GitHub issue failed', {
+        feedbackId,
+        projectId: body.projectId,
+        error: error instanceof Error ? error.message : error,
+      })
     }
   }
 
@@ -257,7 +267,10 @@ export default defineEventHandler(async (event) => {
             accessToken: integration.accessToken,
           })
         } catch (rollbackError) {
-          logger.error('GitHub issue rollback request failed', { feedbackId, error: rollbackError instanceof Error ? rollbackError.message : rollbackError })
+          logger.error('GitHub issue rollback request failed', {
+            feedbackId,
+            error: rollbackError instanceof Error ? rollbackError.message : rollbackError,
+          })
         }
       }
 
@@ -281,7 +294,12 @@ export default defineEventHandler(async (event) => {
       feedbackTitle: createdFeedback.title,
       projectName: proj.name,
       editUrl,
-    }).catch((err) => logger.error('Failed to send feedback confirmation email', { feedbackId: createdFeedback.id, error: err instanceof Error ? err.message : err }))
+    }).catch((err) =>
+      logger.error('Failed to send feedback confirmation email', {
+        feedbackId: createdFeedback.id,
+        error: err instanceof Error ? err.message : err,
+      })
+    )
   }
 
   // Create in-app notifications for team members about the new feedback

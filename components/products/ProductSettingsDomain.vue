@@ -106,7 +106,9 @@
               <div class="space-y-1">
                 <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Name / Host</p>
                 <div class="flex items-center gap-1">
-                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{ record.name }}</code>
+                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{
+                    record.name
+                  }}</code>
                   <Button variant="ghost" size="icon" class="h-7 w-7 shrink-0" @click="copyToClipboard(record.name)">
                     <Icon :name="copiedField === record.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
                   </Button>
@@ -115,7 +117,9 @@
               <div class="space-y-1">
                 <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Value / Target</p>
                 <div class="flex items-center gap-1">
-                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{ record.value }}</code>
+                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{
+                    record.value
+                  }}</code>
                   <Button variant="ghost" size="icon" class="h-7 w-7 shrink-0" @click="copyToClipboard(record.value)">
                     <Icon :name="copiedField === record.value ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
                   </Button>

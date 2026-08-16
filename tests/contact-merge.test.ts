@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { backfillContactFields, canMerge, canUpdateContact, mergeAttributes, type MergeableContact } from '../server/utils/contact-merge'
+import {
+  backfillContactFields,
+  canMerge,
+  canUpdateContact,
+  mergeAttributes,
+  type MergeableContact,
+} from '../server/utils/contact-merge'
 
 function contact(overrides: Partial<MergeableContact> = {}): MergeableContact {
   return {

@@ -36,7 +36,9 @@ const dashboardBootstrapCache: {
 }
 
 function isCacheFresh() {
-  return dashboardBootstrapCache.data && Date.now() - dashboardBootstrapCache.loadedAt < DASHBOARD_BOOTSTRAP_CACHE_MAX_AGE_MS
+  return (
+    dashboardBootstrapCache.data && Date.now() - dashboardBootstrapCache.loadedAt < DASHBOARD_BOOTSTRAP_CACHE_MAX_AGE_MS
+  )
 }
 
 export function getCachedDashboardBootstrap() {

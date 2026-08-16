@@ -9,7 +9,10 @@ import {
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 
-export async function resolveAllowedPublicRedirectTarget(event: Parameters<typeof getRequestURL>[0], rawTarget: string) {
+export async function resolveAllowedPublicRedirectTarget(
+  event: Parameters<typeof getRequestURL>[0],
+  rawTarget: string
+) {
   const parsed = parseRedirectUrl(rawTarget)
 
   if (!parsed || parsed.username || parsed.password) {

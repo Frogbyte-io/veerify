@@ -133,11 +133,7 @@ export const contactIdentity = pgTable(
   (table) => ({
     // Unique identifier within a team - makes an email (or other identifier) resolve
     // to at most one contact per team, and makes contact merge tractable
-    uniqueTeamKindValue: uniqueIndex('contact_identity_team_kind_value_idx').on(
-      table.teamId,
-      table.kind,
-      table.value
-    ),
+    uniqueTeamKindValue: uniqueIndex('contact_identity_team_kind_value_idx').on(table.teamId, table.kind, table.value),
     // Index for querying all identities of a contact
     contactIdx: index('contact_identity_contact_idx').on(table.contactId),
   })
@@ -183,9 +179,7 @@ export const supportTeamSettings = pgTable('support_team_settings', {
   teamId: text('team_id')
     .primaryKey()
     .references(() => team.id, { onDelete: 'cascade' }),
-  autoLinkFeedback: boolean('auto_link_feedback')
-    .default(false)
-    .notNull(),
+  autoLinkFeedback: boolean('auto_link_feedback').default(false).notNull(),
   createdAt: timestamp('created_at')
     .$defaultFn(() => new Date())
     .notNull(),
@@ -224,14 +218,10 @@ export const supportInbox = pgTable(
     forwardAddress: text('forward_address'),
     fromName: text('from_name'),
     signature: text('signature'),
-    autoReplyEnabled: boolean('auto_reply_enabled')
-      .default(false)
-      .notNull(),
+    autoReplyEnabled: boolean('auto_reply_enabled').default(false).notNull(),
     autoReplyTemplate: text('auto_reply_template'),
     defaultAssigneeUserId: text('default_assignee_user_id').references(() => user.id, { onDelete: 'set null' }),
-    isEnabled: boolean('is_enabled')
-      .default(true)
-      .notNull(),
+    isEnabled: boolean('is_enabled').default(true).notNull(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
@@ -260,9 +250,7 @@ export const supportInboxAddress = pgTable(
       .references(() => supportInbox.id, { onDelete: 'cascade' }),
     address: text('address').notNull(),
     projectId: text('project_id').references(() => project.id, { onDelete: 'set null' }),
-    isPrimary: boolean('is_primary')
-      .default(false)
-      .notNull(),
+    isPrimary: boolean('is_primary').default(false).notNull(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
@@ -306,9 +294,7 @@ export const supportCounter = pgTable('support_counter', {
   teamId: text('team_id')
     .primaryKey()
     .references(() => team.id, { onDelete: 'cascade' }),
-  nextConversationDisplayId: integer('next_conversation_display_id')
-    .default(1)
-    .notNull(),
+  nextConversationDisplayId: integer('next_conversation_display_id').default(1).notNull(),
 })
 
 // Conversations - the core support ticket entity.
@@ -331,9 +317,7 @@ export const conversation = pgTable(
     displayId: integer('display_id').notNull(),
     subject: text('subject'),
     // 'open' | 'pending' | 'resolved' | 'snoozed' | 'closed'
-    status: text('status')
-      .default('open')
-      .notNull(),
+    status: text('status').default('open').notNull(),
     // 'low' | 'normal' | 'high' | 'urgent', nullable
     priority: text('priority'),
     assigneeUserId: text('assignee_user_id').references(() => user.id, { onDelete: 'set null' }),
@@ -389,9 +373,7 @@ export const conversationMessage = pgTable(
     senderKind: text('sender_kind').notNull(),
     senderContactId: text('sender_contact_id').references(() => contact.id, { onDelete: 'set null' }),
     senderUserId: text('sender_user_id').references(() => user.id, { onDelete: 'set null' }),
-    isPrivate: boolean('is_private')
-      .default(false)
-      .notNull(),
+    isPrivate: boolean('is_private').default(false).notNull(),
     channelMessageId: text('channel_message_id'),
     inReplyTo: text('in_reply_to'),
     channelHeaders: jsonb('channel_headers').$type<Record<string, any>>(),
@@ -426,9 +408,7 @@ export const conversationAttachment = pgTable(
     fileName: text('file_name').notNull(),
     contentType: text('content_type'),
     sizeBytes: integer('size_bytes'),
-    isInline: boolean('is_inline')
-      .default(false)
-      .notNull(),
+    isInline: boolean('is_inline').default(false).notNull(),
     contentId: text('content_id'),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
@@ -506,10 +486,7 @@ export const conversationTag = pgTable(
       .notNull(),
   },
   (table) => ({
-    uniqueConversationTag: uniqueIndex('conversation_tag_conversation_tag_idx').on(
-      table.conversationId,
-      table.tagId
-    ),
+    uniqueConversationTag: uniqueIndex('conversation_tag_conversation_tag_idx').on(table.conversationId, table.tagId),
     tagIdx: index('conversation_tag_tag_idx').on(table.tagId),
   })
 )
@@ -529,9 +506,7 @@ export const supportEmailEvent = pgTable(
     rawStorageKey: text('raw_storage_key'),
     // 'processing' | 'processed' | 'failed'
     status: text('status').default('processing').notNull(),
-    attemptCount: integer('attempt_count')
-      .default(0)
-      .notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
     leaseExpiresAt: timestamp('lease_expires_at'),
     processedAt: timestamp('processed_at'),
     resultConversationId: text('result_conversation_id').references(() => conversation.id, {

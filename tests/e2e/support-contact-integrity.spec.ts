@@ -59,9 +59,9 @@ test.describe.serial('support contact integrity', () => {
     const createdAt = new Date('2020-01-01T00:00:00.000Z')
     const ids: string[] = [randomUUID(), randomUUID(), randomUUID()]
 
-    await db.insert(contact).values(
-      ids.map((id) => ({ id, teamId, name: `cursor-${id}`, createdAt, updatedAt: createdAt }))
-    )
+    await db
+      .insert(contact)
+      .values(ids.map((id) => ({ id, teamId, name: `cursor-${id}`, createdAt, updatedAt: createdAt })))
 
     try {
       const seen: string[] = []
@@ -73,7 +73,11 @@ test.describe.serial('support contact integrity', () => {
         )
         expect(response.ok()).toBeTruthy()
         const payload = await response.json()
-        seen.push(...payload.data.contacts.filter((item: { id: string }) => ids.includes(item.id)).map((item: { id: string }) => item.id))
+        seen.push(
+          ...payload.data.contacts
+            .filter((item: { id: string }) => ids.includes(item.id))
+            .map((item: { id: string }) => item.id)
+        )
         cursor = payload.data.nextCursor
       } while (cursor)
 
@@ -88,9 +92,9 @@ test.describe.serial('support contact integrity', () => {
     const teamId = await activeTeamId(request, sessionCookie)
     const ids: string[] = [randomUUID(), randomUUID()]
 
-    await db.insert(contact).values(
-      ids.map((id) => ({ id, teamId, name: id, createdAt: new Date(), updatedAt: new Date() }))
-    )
+    await db
+      .insert(contact)
+      .values(ids.map((id) => ({ id, teamId, name: id, createdAt: new Date(), updatedAt: new Date() })))
 
     try {
       const mergeResponse = await request.post(`/api/support/contacts/${ids[0]}/merge`, {
@@ -124,9 +128,7 @@ test.describe.serial('support contact integrity', () => {
     for (let iteration = 0; iteration < 5; iteration += 1) {
       const ids: string[] = [`merge-race-${iteration}-a-${randomUUID()}`, `merge-race-${iteration}-b-${randomUUID()}`]
       const createdAt = new Date()
-      await db.insert(contact).values(
-        ids.map((id) => ({ id, teamId, name: id, createdAt, updatedAt: createdAt }))
-      )
+      await db.insert(contact).values(ids.map((id) => ({ id, teamId, name: id, createdAt, updatedAt: createdAt })))
       await db.insert(contactIdentity).values(
         ids.map((id, index) => ({
           id: randomUUID(),

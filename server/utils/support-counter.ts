@@ -17,11 +17,7 @@ import { supportCounter } from '~/server/database/schema/support'
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export async function allocateConversationDisplayId(tx: Tx, teamId: string): Promise<number> {
-  const [existing] = await tx
-    .select()
-    .from(supportCounter)
-    .where(eq(supportCounter.teamId, teamId))
-    .for('update')
+  const [existing] = await tx.select().from(supportCounter).where(eq(supportCounter.teamId, teamId)).for('update')
 
   if (existing) {
     await tx
@@ -48,11 +44,7 @@ export async function allocateConversationDisplayId(tx: Tx, teamId: string): Pro
     return 1
   }
 
-  const [row] = await tx
-    .select()
-    .from(supportCounter)
-    .where(eq(supportCounter.teamId, teamId))
-    .for('update')
+  const [row] = await tx.select().from(supportCounter).where(eq(supportCounter.teamId, teamId)).for('update')
 
   if (!row) {
     throw new Error(`support_counter row for team ${teamId} vanished between insert and re-select`)

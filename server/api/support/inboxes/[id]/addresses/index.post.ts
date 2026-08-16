@@ -69,10 +69,7 @@ export default defineEventHandler(async (event) => {
   try {
     return await db.transaction(async (tx) => {
       if (body.isPrimary) {
-        await tx
-          .update(supportInboxAddress)
-          .set({ isPrimary: false })
-          .where(eq(supportInboxAddress.inboxId, inboxId))
+        await tx.update(supportInboxAddress).set({ isPrimary: false }).where(eq(supportInboxAddress.inboxId, inboxId))
       }
 
       const [created] = await tx

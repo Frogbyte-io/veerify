@@ -13,7 +13,7 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
   const response = await request.get('/api/teams/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
-  return ((await response.json()).data.id as string)
+  return (await response.json()).data.id as string
 }
 
 test.describe.serial('support contact timeline', () => {
@@ -37,14 +37,32 @@ test.describe.serial('support contact timeline', () => {
     const foreignFeedbackId = randomUUID()
     const email = `timeline-${contactId}@example.com`
     const now = new Date()
-    await db.insert(contact).values({ id: contactId, teamId, name: 'Timeline contact', email, createdAt: now, updatedAt: now })
+    await db
+      .insert(contact)
+      .values({ id: contactId, teamId, name: 'Timeline contact', email, createdAt: now, updatedAt: now })
     await db.insert(feedback).values([
-      { id: ownFeedbackId, projectId: ownProject.id, title: 'Own probable feedback', authorEmail: email, createdAt: now, updatedAt: now },
-      { id: foreignFeedbackId, projectId: otherProject.id, title: 'Foreign feedback', authorEmail: email, createdAt: now, updatedAt: now },
+      {
+        id: ownFeedbackId,
+        projectId: ownProject.id,
+        title: 'Own probable feedback',
+        authorEmail: email,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: foreignFeedbackId,
+        projectId: otherProject.id,
+        title: 'Foreign feedback',
+        authorEmail: email,
+        createdAt: now,
+        updatedAt: now,
+      },
     ])
 
     try {
-      const timeline = await request.get(`/api/support/contacts/${contactId}/timeline`, { headers: withAuthHeaders(sessionCookie) })
+      const timeline = await request.get(`/api/support/contacts/${contactId}/timeline`, {
+        headers: withAuthHeaders(sessionCookie),
+      })
       expect(timeline.ok()).toBeTruthy()
       const initial = (await timeline.json()).data
       expect(initial.linked).toEqual([])
@@ -71,12 +89,16 @@ test.describe.serial('support contact timeline', () => {
       })
       expect(duplicate.status()).toBe(409)
 
-      const linkedTimeline = await request.get(`/api/support/contacts/${contactId}/timeline`, { headers: withAuthHeaders(sessionCookie) })
+      const linkedTimeline = await request.get(`/api/support/contacts/${contactId}/timeline`, {
+        headers: withAuthHeaders(sessionCookie),
+      })
       const linkedPayload = (await linkedTimeline.json()).data
       expect(linkedPayload.linked).toHaveLength(1)
       expect(linkedPayload.probableFeedback).toEqual([])
 
-      const defaultSettings = await request.get(`/api/support/teams/${teamId}/settings`, { headers: withAuthHeaders(sessionCookie) })
+      const defaultSettings = await request.get(`/api/support/teams/${teamId}/settings`, {
+        headers: withAuthHeaders(sessionCookie),
+      })
       expect((await defaultSettings.json()).data.settings.autoLinkFeedback).toBe(false)
       const settingResponse = await request.put(`/api/support/teams/${teamId}/settings`, {
         headers: withAuthHeaders(sessionCookie),
@@ -84,16 +106,23 @@ test.describe.serial('support contact timeline', () => {
       })
       expect(settingResponse.ok()).toBeTruthy()
 
-      const unlink = await request.delete(`/api/support/contacts/${contactId}/links/${link.id}`, { headers: withAuthHeaders(sessionCookie) })
+      const unlink = await request.delete(`/api/support/contacts/${contactId}/links/${link.id}`, {
+        headers: withAuthHeaders(sessionCookie),
+      })
       expect(unlink.ok()).toBeTruthy()
-      const unlinkAgain = await request.delete(`/api/support/contacts/${contactId}/links/${link.id}`, { headers: withAuthHeaders(sessionCookie) })
+      const unlinkAgain = await request.delete(`/api/support/contacts/${contactId}/links/${link.id}`, {
+        headers: withAuthHeaders(sessionCookie),
+      })
       expect(unlinkAgain.status()).toBe(404)
 
-      const deleteContact = await request.delete(`/api/support/contacts/${contactId}`, { headers: withAuthHeaders(sessionCookie) })
+      const deleteContact = await request.delete(`/api/support/contacts/${contactId}`, {
+        headers: withAuthHeaders(sessionCookie),
+      })
       expect(deleteContact.ok()).toBeTruthy()
-      const feedbackAfterContactDelete = await db.select({ id: feedback.id }).from(feedback).where(
-        and(eq(feedback.id, ownFeedbackId), eq(feedback.projectId, ownProject.id))
-      )
+      const feedbackAfterContactDelete = await db
+        .select({ id: feedback.id })
+        .from(feedback)
+        .where(and(eq(feedback.id, ownFeedbackId), eq(feedback.projectId, ownProject.id)))
       expect(feedbackAfterContactDelete).toEqual([{ id: ownFeedbackId }])
     } finally {
       await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))

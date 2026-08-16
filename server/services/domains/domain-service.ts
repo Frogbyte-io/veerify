@@ -108,8 +108,7 @@ export async function registerTeamPublicDomain(teamSlug: string) {
 export async function registerTeamPublicDomainBestEffort(teamSlug: string, context: Record<string, unknown> = {}) {
   try {
     await registerTeamPublicDomain(teamSlug)
-  }
-  catch (error) {
+  } catch (error) {
     logger.error('Failed to register generated team public domain', {
       teamSlug,
       ...context,

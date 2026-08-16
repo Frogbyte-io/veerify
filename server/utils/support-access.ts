@@ -3,7 +3,14 @@ import { eq, and } from 'drizzle-orm'
 // can be unit tested outside the Nitro runtime.
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
-import { contact, supportCompany, supportInbox, supportInboxMember, supportInboxAddress, conversation } from '~/server/database/schema/support'
+import {
+  contact,
+  supportCompany,
+  supportInbox,
+  supportInboxMember,
+  supportInboxAddress,
+  conversation,
+} from '~/server/database/schema/support'
 import { teamMember } from '~/server/database/schema/auth'
 import { createErrorResponse, ErrorCode } from './response'
 
