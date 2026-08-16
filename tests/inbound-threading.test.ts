@@ -1,6 +1,25 @@
 import { describe, expect, it } from 'vitest'
 
+import type { InboundMessage } from '../server/services/support-channels/types'
+import type { ThreadableMessage } from '../server/utils/inbound-threading'
 import { normalizeSubject, SUBJECT_FALLBACK_WINDOW_DAYS } from '../server/utils/inbound-threading'
+
+/**
+ * Compile-time proof that the two halves of Stage 03 actually fit.
+ *
+ * `resolveThread` takes a structural `ThreadableMessage` rather than importing
+ * `InboundMessage`, so `server/utils` does not depend on
+ * `server/services/support-channels`. That is only safe if an `InboundMessage`
+ * really does satisfy it — and nothing calls `resolveThread` with one yet
+ * (the endpoint is SUP-03-4), so without this assertion the seam would go
+ * unchecked until integration.
+ *
+ * Stage 02 shipped a feature that was correct on both sides and broken where
+ * they met, precisely because no check spanned the boundary. `yarn typecheck`
+ * fails here if either side drifts.
+ */
+const _inboundMessageSatisfiesThreadable: ThreadableMessage = {} as InboundMessage
+void _inboundMessageSatisfiesThreadable
 
 /**
  * Subject normalization is where the threading fallback most easily goes wrong,

@@ -97,7 +97,7 @@ const POLICY: sanitizeHtml.IOptions = {
   nonTextTags: ['style', 'script', 'textarea', 'option', 'noscript'],
 
   transformTags: {
-    a: (tagName, attribs) => {
+    a: (tagName: string, attribs: Record<string, string>) => {
       const href = (attribs.href ?? '').trim()
 
       // `allowedSchemes` only governs URLs that *have* a scheme, so a relative
@@ -109,7 +109,9 @@ const POLICY: sanitizeHtml.IOptions = {
       if (!isAbsoluteSafe) {
         // `title` is the only other attribute the allowlist permits here, so
         // keeping it is the whole of "drop the link, keep everything else".
-        return { tagName, attribs: attribs.title ? { title: attribs.title } : {} }
+        const kept: Record<string, string> = {}
+        if (attribs.title) kept.title = attribs.title
+        return { tagName, attribs: kept }
       }
 
       // Any surviving link leaves the app. `noopener` stops `window.opener`
