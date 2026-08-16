@@ -8,7 +8,48 @@ import { publishRealtime, userChannel } from '~/server/services/realtime'
 
 const logger = createLogger('notifications')
 
-export type NotificationType = 'status_change' | 'new_comment' | 'new_feedback' | 'feedback_pinned'
+export type NotificationType =
+  | 'status_change'
+  | 'new_comment'
+  | 'new_feedback'
+  | 'feedback_pinned'
+  | 'conversation_assigned'
+  | 'conversation_mention'
+
+/**
+ * Which user preference key gates each notification type.
+ *
+ * A type absent from this map is ungated and always delivered (subject to the
+ * global `inAppNotifications` switch) - `feedback_pinned` has no toggle of its
+ * own today. Keys must stay in step with `DEFAULT_PREFERENCES` in
+ * `server/api/notifications/preferences.get.ts` and the zod whitelist in
+ * `preferences.put.ts`, or a toggle silently does nothing.
+ */
+const PREFERENCE_KEY_BY_TYPE: Partial<Record<NotificationType, string>> = {
+  new_feedback: 'newFeedback',
+  status_change: 'statusChanges',
+  new_comment: 'newComments',
+  conversation_assigned: 'conversationAssigned',
+  conversation_mention: 'conversationMentions',
+}
+
+/** The slice of `user.settings` this module reads. */
+interface NotificationSettings {
+  notificationPreferences?: Record<string, boolean | undefined> | null
+}
+
+/** Does this user's settings blob permit an in-app notification of this type? */
+function prefersNotification(settings: NotificationSettings | null | undefined, type: NotificationType): boolean {
+  const prefs = settings?.notificationPreferences
+  // No preferences saved yet - default to enabled, matching the API defaults.
+  if (!prefs) return true
+  if (prefs.inAppNotifications === false) return false
+
+  const key = PREFERENCE_KEY_BY_TYPE[type]
+  if (key && prefs[key] === false) return false
+
+  return true
+}
 
 interface CreateNotificationParams {
   userId: string
@@ -100,22 +141,7 @@ export async function notifyProjectTeam(
       .from(user)
       .where(inArray(user.id, recipientIds))
 
-    // Map notification type to preference key
-    const prefKeyMap: Record<string, string> = {
-      new_feedback: 'newFeedback',
-      status_change: 'statusChanges',
-      new_comment: 'newComments',
-    }
-    const prefKey = prefKeyMap[params.type]
-
-    const filteredRecipients = users.filter((u) => {
-      const prefs = u.settings?.notificationPreferences
-      // Default to enabled if no preferences set
-      if (!prefs) return true
-      if (prefs.inAppNotifications === false) return false
-      if (prefKey && prefs[prefKey] === false) return false
-      return true
-    })
+    const filteredRecipients = users.filter((u) => prefersNotification(u.settings, params.type))
 
     await Promise.allSettled(
       filteredRecipients.map((u) =>
@@ -132,6 +158,40 @@ export async function notifyProjectTeam(
       type: params.type,
       error: err instanceof Error ? err.message : err,
     })
+  }
+}
+
+/**
+ * Creates an in-app notification for one user, honouring their preferences.
+ *
+ * `createNotification` deliberately does not check preferences - the fan-out
+ * helpers below batch that lookup across many recipients. Single-recipient
+ * events (a support conversation being assigned, an agent being mentioned)
+ * have no batch to amortise, so they need this wrapper rather than calling
+ * `createNotification` directly and silently ignoring the user's toggles.
+ */
+export async function notifyUser(
+  userId: string,
+  params: Omit<CreateNotificationParams, 'userId'>
+): Promise<Awaited<ReturnType<typeof createNotification>>> {
+  try {
+    const [recipient] = await db
+      .select({ settings: user.settings })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1)
+
+    if (!recipient) return null
+    if (!prefersNotification(recipient.settings, params.type)) return null
+
+    return await createNotification({ ...params, userId })
+  } catch (err) {
+    logger.error('Failed to notify user', {
+      userId,
+      type: params.type,
+      error: err instanceof Error ? err.message : err,
+    })
+    return null
   }
 }
 
