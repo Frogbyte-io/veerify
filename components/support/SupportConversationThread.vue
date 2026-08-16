@@ -134,14 +134,15 @@
         </template>
       </div>
 
-      <!-- Composer slot - SUP-02-10 builds the reply/note toggle here. -->
-      <div class="border-t p-3">
-        <slot name="composer">
+      <!-- The composer owns its own border and padding: in note mode it tints
+           the full width of the strip, which a wrapper's padding would break. -->
+      <slot name="composer">
+        <div class="border-t p-3">
           <div class="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
-            Composer coming soon.
+            Select a conversation to reply.
           </div>
-        </slot>
-      </div>
+        </div>
+      </slot>
     </template>
   </div>
 </template>

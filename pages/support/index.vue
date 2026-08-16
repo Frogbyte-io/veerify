@@ -73,7 +73,15 @@
             @retry-messages="loadMessages"
             @update-conversation="patchConversation"
             @toggle-contact-panel="showContactPanel = !showContactPanel"
-          />
+          >
+            <template #composer>
+              <SupportComposer
+                v-if="selectedConversationId"
+                :conversation-id="selectedConversationId"
+                @posted="loadMessages"
+              />
+            </template>
+          </SupportConversationThread>
         </div>
       </div>
     </div>
@@ -280,9 +288,8 @@ export default {
     },
 
     async loadTags() {
-      // Best effort: the tags endpoint is not confirmed to exist yet (owned by
-      // a concurrently-developed item, SUP-02-8). If it 404s, the tag filter
-      // simply stays hidden - no fallback/fake data.
+      // Best effort: a team with no tags yet, or a failed lookup, hides the tag
+      // filter rather than showing an empty control - no fallback/fake data.
       if (!this.activeTeamId) return
       try {
         const response = await $fetch('/api/support/tags', { params: { teamId: this.activeTeamId } })
@@ -470,9 +477,6 @@ export default {
       this.messagesError = null
 
       try {
-        // This endpoint is being built concurrently (SUP-02-8) and may not
-        // exist yet - a 404 here is expected until it lands, and is handled
-        // by the normal error state below, not stubbed or faked.
         const response = await $fetch(`/api/support/conversations/${this.selectedConversationId}/messages`)
         const items = response?.data?.messages || []
         this.messages = [...items].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
