@@ -498,9 +498,16 @@ export const supportEmailEvent = pgTable(
   'support_email_event',
   {
     id: text('id').primaryKey(),
-    inboxId: text('inbox_id')
-      .notNull()
-      .references(() => supportInbox.id, { onDelete: 'cascade' }),
+    // Nullable, because the row is keyed on the *delivery*, not on an inbox:
+    // it is claimed as soon as the provider signature verifies, which is
+    // before parsing has revealed which address the mail was sent to, and
+    // mail to an unrecognised address never resolves to an inbox at all.
+    // Stage 03 requires recording both of those cases - "no match → record the
+    // event with an error and return 200", and the same for a team with
+    // support disabled - which a NOT NULL column makes impossible.
+    // `resultConversationId` below is nullable for exactly this reason
+    // already; this is the same category of field (delta D-34).
+    inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
     provider: text('provider').notNull(),
     providerEventId: text('provider_event_id').notNull(),
     rawStorageKey: text('raw_storage_key'),
