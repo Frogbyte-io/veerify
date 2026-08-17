@@ -626,3 +626,46 @@ receiving mail" and names what to set.
 That belongs on `ChannelDriver` as an `isConfigured()`, but `server/services/support-channels/**` is the
 other agent's territory this stage, so it was flagged rather than edited. Adding a provider currently
 means updating that map too.
+---
+
+### D-35 — `supportEmailEvent.inboxId` cannot be `NOT NULL`
+
+**Found:** implementing SUP-03-4. **Status:** resolved in code (2026-08-16), migration `0024`.
+
+`stage-03-inbound-email.md` requires recording an event in two cases where no inbox exists:
+
+- step 5 — "No match → **record the event with an error** and return 200; do not 404, or the provider
+  will retry forever";
+- **SUP-03-10** — support disabled for the team → "**record the event**, return 200, create nothing".
+
+`supportEmailEvent.inboxId` landed `NOT NULL` in SUP-02-1, which makes both rows impossible to write.
+`design.md` says only "`inboxId` (FK, cascade)" and never states nullability, so this was not a mistake
+against the design — the design simply did not cover it.
+
+This is **not** fixable by reordering. Mail to an unrecognised address resolves to no inbox at any point
+in the pipeline, so there is no ordering under which the row becomes writable. The mandated order makes
+it worse but is not the cause: the claim happens as soon as the signature verifies, which is before
+parsing has revealed the recipient at all.
+
+**Decision: `inboxId` is nullable** (`0024_concerned_violations.sql`, a single `DROP NOT NULL`).
+
+The row is keyed on the **delivery**, not on an inbox — `(provider, providerEventId)` is its unique key.
+The inbox is something processing may discover, and may legitimately never discover. That is the same
+category of field as `resultConversationId` in the same table, which was already nullable for exactly
+this reason, and matches `contact.userId`, `conversation.projectId`, and `supportInboxAddress.projectId`
+elsewhere in the schema. The `NOT NULL` was the inconsistency.
+
+Null therefore reads as "not attributed to an inbox": unmatched recipient, disabled team, or a payload
+that failed to parse before resolution was reached. Anything scoped to an inbox must filter
+`inboxId IS NOT NULL` rather than assume presence.
+
+Risk was nil: the table had zero rows, Stage 03 is its first writer, and `0024` was free. `onDelete`
+stays `cascade` — deleting an inbox still discards its raw event log, which is arguably wrong for an
+audit trail but is what `design.md` specifies, and changing it is a separate decision.
+
+**Migrations were declared unlikely for Stage 03.** This one was raised before being written rather than
+generated quietly, per the agent contract.
+
+**Numbering note:** recorded as D-34 in commit `fc24223`, before a collision with the
+channel-config delta above. Renumbered to D-35 on merge; the code comments were updated to match,
+but that commit message still says D-34.

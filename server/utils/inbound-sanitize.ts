@@ -72,6 +72,9 @@ const POLICY: sanitizeHtml.IOptions = {
     'h5',
     'h6',
     'hr',
+    // Only survives when `transformTags` below confirms the src is one of our
+    // own stored attachments. A remote src is still dropped.
+    'img',
   ],
 
   allowedAttributes: {
@@ -81,6 +84,11 @@ const POLICY: sanitizeHtml.IOptions = {
     // Kept so table structure survives; they cannot carry behaviour.
     td: ['colspan', 'rowspan'],
     th: ['colspan', 'rowspan'],
+    // `img` is allowed only for inline attachments already stored by SUP-03-8
+    // and rewritten to our own attachment route. The `transformTags` entry
+    // below is what enforces that; this list only says which attributes may
+    // survive once it has.
+    img: ['src', 'alt', 'title'],
   },
 
   // http/https/mailto only. This is what stops `javascript:`, `data:` (inline
@@ -122,6 +130,32 @@ const POLICY: sanitizeHtml.IOptions = {
         attribs: { ...attribs, href, target: '_blank', rel: 'noopener noreferrer nofollow' },
       }
     },
+
+    // Inline attachment images only (SUP-03-8). By the time HTML reaches the
+    // sanitizer, `cid:` references to attachments that actually arrived have
+    // already been rewritten to `/api/support/attachments/<id>`, which is
+    // same-origin and access-checked.
+    //
+    // Anything else is dropped rather than rewritten: a remote `src` is a
+    // tracking pixel that fires the moment an agent opens the ticket and leaks
+    // their IP to the sender, and a surviving `cid:` refers to something that
+    // never arrived. The prefix test is deliberately literal — a scheme-bearing
+    // URL like `https://evil/api/support/attachments/x` fails it, because the
+    // match is anchored at the start of the string.
+    img: (tagName, attribs) => {
+      const src = (attribs.src ?? '').trim()
+      const isOwnAttachment = /^\/api\/support\/attachments\/[A-Za-z0-9-]+$/.test(src)
+
+      if (!isOwnAttachment) {
+        // `sanitize-html` drops a tag whose transform yields no tag name.
+        return { tagName: '', attribs: {} }
+      }
+
+      const kept: Record<string, string> = { src }
+      if (attribs.alt) kept.alt = attribs.alt
+      if (attribs.title) kept.title = attribs.title
+      return { tagName, attribs: kept }
+    },
   },
 }
 
@@ -138,7 +172,15 @@ export function sanitizeInboundHtml(html: string | null): string | null {
   const clean = sanitizeHtml(html, POLICY).trim()
 
   // Tags with no text (an empty table shell, say) are not renderable content.
-  if (!clean || !clean.replace(/<[^>]*>/g, '').trim()) return null
+  //
+  // A surviving `<img>` is the exception, and only became one when SUP-03-8
+  // started allowing inline attachment images: a mail whose whole body is a
+  // screenshot has no text at all, and nulling it would render the message
+  // blank. Any `img` still present here has already been proved to point at
+  // our own attachment route by the transform above.
+  const hasText = Boolean(clean.replace(/<[^>]*>/g, '').trim())
+  const hasImage = /<img\b/i.test(clean)
+  if (!clean || (!hasText && !hasImage)) return null
 
   return clean
 }
