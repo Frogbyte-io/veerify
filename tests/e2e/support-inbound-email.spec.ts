@@ -68,6 +68,19 @@ test.describe.serial('inbound email', () => {
     const createdInboxIds: string[] = []
     const providerEventIds: string[] = []
 
+    // `supportEnabled` defaults to FALSE for every team (delta D-31), and the
+    // inbound endpoint honours it by design (SUP-03-10): it records the event,
+    // returns 200, and creates nothing. Without switching the module on first,
+    // every assertion below fails against a correctly working pipeline.
+    const modulesBefore = await request.get(`/api/teams/${teamId}/modules`, { headers })
+    const supportWasEnabled = Boolean((await modulesBefore.json())?.data?.modules?.supportEnabled)
+
+    const enableSupport = await request.put(`/api/teams/${teamId}/modules`, {
+      headers,
+      data: { supportEnabled: true },
+    })
+    expect(enableSupport.ok()).toBeTruthy()
+
     try {
       const inboxResponse = await request.post('/api/support/inboxes', {
         headers,
@@ -182,6 +195,12 @@ test.describe.serial('inbound email', () => {
         await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
       }
       await db.delete(contact).where(eq(contact.email, 'customer@example.com'))
+
+      // The seed team is shared with every other spec, so put the module back
+      // the way it was rather than leaving Support switched on behind us.
+      if (!supportWasEnabled) {
+        await request.put(`/api/teams/${teamId}/modules`, { headers, data: { supportEnabled: false } })
+      }
     }
   })
 })
