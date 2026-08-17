@@ -13,7 +13,7 @@ import { supportEmailEvent } from '~/server/database/schema/support'
  * exists but nothing was created. The lease is what makes such a claim
  * reclaimable.
  *
- * `inboxId` is nullable here on purpose (delta D-34) — the row is keyed on the
+ * `inboxId` is nullable here on purpose (delta D-35) — the row is keyed on the
  * delivery, and the recipient inbox is something processing may discover, or
  * may legitimately never discover.
  */

@@ -115,6 +115,88 @@
           </CardContent>
         </Card>
 
+        <!-- Channel (SUP-03-13) -->
+        <Card data-testid="support-settings-channel">
+          <CardHeader>
+            <CardTitle>Channel</CardTitle>
+            <CardDescription>
+              How inbound mail reaches this inbox. The provider and its webhook credentials are set once per deployment
+              as environment variables, not here — so this shows what is configured rather than editing it.
+            </CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div v-if="isLoadingChannel" class="space-y-2">
+              <Skeleton v-for="i in 3" :key="i" class="h-10 w-full" />
+            </div>
+
+            <div v-else-if="channelError" class="text-sm">
+              <p class="text-destructive mb-2">Could not load channel status</p>
+              <Button variant="outline" size="sm" @click="loadChannelStatus">Retry</Button>
+            </div>
+
+            <template v-else-if="channel">
+              <div class="flex items-center gap-2">
+                <span
+                  class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium"
+                  :class="
+                    channelReady
+                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                      : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                  "
+                  data-testid="support-settings-channel-state"
+                >
+                  <Icon :name="channelReady ? 'lucide:check-circle-2' : 'lucide:alert-triangle'" class="w-3.5 h-3.5" />
+                  {{ channelReady ? 'Ready to receive' : 'Not receiving mail' }}
+                </span>
+                <span class="text-sm text-muted-foreground"
+                  >Provider: <strong>{{ channel.provider }}</strong></span
+                >
+              </div>
+
+              <p v-if="!channel.driverAvailable" class="text-sm text-muted-foreground">
+                <code>SUPPORT_CHANNEL_PROVIDER</code> is set to <code>{{ channel.provider }}</code
+                >, which is not one of {{ channel.supportedProviders.join(', ') }}. Inbound mail is rejected until it
+                names a supported provider.
+              </p>
+
+              <div v-else-if="channel.missingEnvVars.length > 0" class="text-sm text-muted-foreground">
+                <p class="mb-1">
+                  Credentials are missing, so inbound mail is rejected. An unset credential never means “accept
+                  anything”. Set these and restart:
+                </p>
+                <ul class="list-disc pl-5 space-y-0.5">
+                  <li v-for="name in channel.missingEnvVars" :key="name">
+                    <code>{{ name }}</code>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="space-y-1">
+                <Label>Webhook URL to register with {{ channel.provider }}</Label>
+                <div class="flex items-center gap-2">
+                  <Input :model-value="webhookUrl" readonly data-testid="support-settings-channel-webhook" />
+                  <Button variant="outline" size="sm" @click="copy(webhookUrl)">Copy</Button>
+                </div>
+              </div>
+
+              <div v-if="primaryAddress" class="space-y-1">
+                <Label>Forward mail to</Label>
+                <div class="flex items-center gap-2">
+                  <Input :model-value="primaryAddress" readonly data-testid="support-settings-channel-forward" />
+                  <Button variant="outline" size="sm" @click="copy(primaryAddress)">Copy</Button>
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  Point an MX record or a forwarding rule at this address. Add more addresses below to route different
+                  products into this inbox.
+                </p>
+              </div>
+              <p v-else class="text-sm text-muted-foreground">
+                Add a receiving address below before pointing mail at this inbox.
+              </p>
+            </template>
+          </CardContent>
+        </Card>
+
         <!-- Agents -->
         <Card>
           <CardHeader>
@@ -374,6 +456,11 @@ export default {
       generalSignature: '',
       isSavingGeneral: false,
 
+      // channel
+      channel: null,
+      isLoadingChannel: true,
+      channelError: null,
+
       // agents
       newMemberUserId: '',
       newMemberRole: 'agent',
@@ -414,10 +501,28 @@ export default {
         this.generalSignature !== (this.selectedInbox.signature || '')
       )
     },
+    channelReady() {
+      return Boolean(this.channel?.driverAvailable && this.channel?.credentialsConfigured)
+    },
+
+    webhookUrl() {
+      if (!this.channel || !import.meta.client) return ''
+      return `${window.location.origin}${this.channel.inboundPath}`
+    },
+
+    /**
+     * The address a provider or MX record should point at. Prefers the one
+     * flagged primary, since that is the inbox's canonical receiving address.
+     */
+    primaryAddress() {
+      const list = this.addresses || []
+      return (list.find((a) => a.isPrimary) || list[0])?.address || ''
+    },
   },
 
   async mounted() {
     await this.initPage()
+    await this.loadChannelStatus()
     if (import.meta.client) {
       window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
     }
@@ -638,6 +743,29 @@ export default {
         toast.error(this.extractErrorMessage(err, 'Failed to remove agent'))
       } finally {
         this.removingMemberId = null
+      }
+    },
+
+    async loadChannelStatus() {
+      this.isLoadingChannel = true
+      this.channelError = null
+      try {
+        const response = await $fetch('/api/support/channel-status')
+        this.channel = response?.data || null
+      } catch (err) {
+        this.channelError = err?.data?.error?.message || 'Failed to load channel status'
+      } finally {
+        this.isLoadingChannel = false
+      }
+    },
+
+    async copy(value) {
+      if (!import.meta.client || !value) return
+      try {
+        await navigator.clipboard.writeText(value)
+        toast.success('Copied')
+      } catch {
+        toast.error('Could not copy to clipboard')
       }
     },
 

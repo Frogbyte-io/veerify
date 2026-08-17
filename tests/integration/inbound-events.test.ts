@@ -53,7 +53,7 @@ describe('claimInboundEvent', () => {
     const row = await readEvent(providerEventId)
     expect(row.status).toBe('processing')
     expect(row.attemptCount).toBe(1)
-    // Nullable on purpose - the inbox is not known at claim time (delta D-34).
+    // Nullable on purpose - the inbox is not known at claim time (delta D-35).
     expect(row.inboxId).toBeNull()
   })
 

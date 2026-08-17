@@ -506,7 +506,7 @@ export const supportEmailEvent = pgTable(
     // event with an error and return 200", and the same for a team with
     // support disabled - which a NOT NULL column makes impossible.
     // `resultConversationId` below is nullable for exactly this reason
-    // already; this is the same category of field (delta D-34).
+    // already; this is the same category of field (delta D-35).
     inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
     provider: text('provider').notNull(),
     providerEventId: text('provider_event_id').notNull(),
