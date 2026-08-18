@@ -1,8 +1,12 @@
 import { timingSafeEqual } from 'node:crypto'
 import {
+  authorizationForDomains,
   normalizeHeaders,
   normalizeMessageId,
   parseReferences,
+  type ChannelConfiguration,
+  type FetchImpl,
+  type SendingAuthorization,
   type ChannelDriver,
   type InboundAddress,
   type InboundAttachment,
@@ -114,10 +118,69 @@ export class PostmarkChannelDriver implements ChannelDriver {
 
   private readonly user: string
   private readonly password: string
+  private readonly apiToken: string
+  private readonly fetchImpl: FetchImpl
 
-  constructor(credentials?: { user?: string; password?: string }) {
+  constructor(credentials?: {
+    user?: string
+    password?: string
+    /**
+     * Postmark's ACCOUNT token, not a server token - `/domains` is an
+     * account-level endpoint and a server token returns 401 there. Named
+     * explicitly so an operator does not paste the wrong one and read the
+     * resulting `unknown` as "the check is broken".
+     */
+    apiToken?: string
+    fetchImpl?: FetchImpl
+  }) {
     this.user = (credentials?.user ?? process.env.SUPPORT_POSTMARK_WEBHOOK_USER ?? '').trim()
     this.password = (credentials?.password ?? process.env.SUPPORT_POSTMARK_WEBHOOK_PASSWORD ?? '').trim()
+    this.apiToken = (credentials?.apiToken ?? process.env.SUPPORT_POSTMARK_ACCOUNT_TOKEN ?? '').trim()
+    this.fetchImpl = credentials?.fetchImpl ?? ((input, init) => fetch(input, init))
+  }
+
+  isConfigured(): ChannelConfiguration {
+    const missing: string[] = []
+    if (!this.user) missing.push('SUPPORT_POSTMARK_WEBHOOK_USER')
+    if (!this.password) missing.push('SUPPORT_POSTMARK_WEBHOOK_PASSWORD')
+
+    return { configured: missing.length === 0, missing }
+  }
+
+  async checkSendingAuthorization(address: string): Promise<SendingAuthorization> {
+    if (!this.apiToken) {
+      return { status: 'unknown', reason: 'Set SUPPORT_POSTMARK_ACCOUNT_TOKEN to verify sending domains' }
+    }
+
+    let verified: string[]
+    try {
+      const response = await this.fetchImpl('https://api.postmarkapp.com/domains?count=500&offset=0', {
+        headers: { Accept: 'application/json', 'X-Postmark-Account-Token': this.apiToken },
+      })
+
+      if (!response.ok) {
+        // Deliberately not 'unauthorized': a 500 from Postmark says nothing
+        // about whether the address is allowed.
+        return { status: 'unknown', reason: `Postmark returned ${response.status}` }
+      }
+
+      const body = (await response.json()) as {
+        Domains?: { Name?: string; DKIMVerified?: boolean; ReturnPathDomainVerified?: boolean }[]
+      }
+
+      verified = (body.Domains ?? [])
+        // A domain can be listed on the account without having passed DKIM.
+        // Sending as one of those fails at send time, which is the failure
+        // this check exists to pre-empt, so listed-but-unverified is not
+        // authorization.
+        .filter((domain) => domain.DKIMVerified && domain.ReturnPathDomainVerified)
+        .map((domain) => (domain.Name ?? '').trim().toLowerCase())
+        .filter((name) => name.length > 0)
+    } catch (error) {
+      return { status: 'unknown', reason: error instanceof Error ? error.message : 'Postmark lookup failed' }
+    }
+
+    return authorizationForDomains(address, verified)
   }
 
   verifySignature(input: InboundVerificationInput): boolean {

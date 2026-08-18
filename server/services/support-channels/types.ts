@@ -68,6 +68,62 @@ export interface InboundVerificationInput {
   authorization?: string
 }
 
+/**
+ * Which env vars a provider still needs. Names only, never values - the
+ * channel card built in SUP-03-13 is visible to any team member.
+ *
+ * Lives on the driver because delta D-34 flagged the alternative: a
+ * `REQUIRED_ENV` map hard-coded in `channel-status.get.ts`, which meant adding
+ * a provider silently meant editing two places.
+ */
+export interface ChannelConfiguration {
+  configured: boolean
+  missing: string[]
+}
+
+/**
+ * Whether the provider will accept mail sent as a given address.
+ *
+ * `unknown` is a first-class answer and not a failure mode. "Not authorized"
+ * and "could not check" are different things, and a settings warning that
+ * confuses them would cry wolf on every deployment that has not set an API
+ * credential - which today is all of them.
+ */
+export type SendingAuthorization =
+  | { status: 'authorized' }
+  | { status: 'unauthorized'; verifiedDomains: string[] }
+  | { status: 'unknown'; reason: string }
+
+/** Injected so the provider lookups are testable without a network. */
+export type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>
+
+/** Lowercased domain of an email address, or null when there isn't one. */
+export function emailDomain(address: string): string | null {
+  const at = address.lastIndexOf('@')
+  if (at < 0) return null
+  const domain = address
+    .slice(at + 1)
+    .trim()
+    .toLowerCase()
+  return domain.length > 0 ? domain : null
+}
+
+/**
+ * Shared verdict logic: does `address` sit on one of `verifiedDomains`?
+ *
+ * Both providers differ only in how they report their domain list, so the
+ * comparison itself is kept in one place - a case-sensitivity slip here would
+ * warn about a perfectly good From address.
+ */
+export function authorizationForDomains(address: string, verifiedDomains: string[]): SendingAuthorization {
+  const domain = emailDomain(address)
+  if (!domain) {
+    return { status: 'unknown', reason: `Could not read a domain from "${address}"` }
+  }
+
+  return verifiedDomains.includes(domain) ? { status: 'authorized' } : { status: 'unauthorized', verifiedDomains }
+}
+
 export interface ChannelDriver {
   /** Stable identifier, also the `[provider]` route segment and `supportEmailEvent.provider`. */
   readonly name: string
@@ -88,6 +144,21 @@ export interface ChannelDriver {
 
   /** Provider payload → normalized message. Throws on a payload it cannot read. */
   parse(payload: unknown): InboundMessage
+
+  /**
+   * Which credentials this driver is still missing. Stage 04 addition: the
+   * driver is the only thing that knows what it needs (delta D-34).
+   */
+  isConfigured(): ChannelConfiguration
+
+  /**
+   * Whether the provider is authorized to send as `address`.
+   *
+   * Stage 04 addition. `supportInbox.emailAddress` is free text, so a team can
+   * set a From the provider will reject - and per the stage doc that must be
+   * caught in settings rather than silently at send time.
+   */
+  checkSendingAuthorization(address: string): Promise<SendingAuthorization>
 }
 
 /** Strip the angle brackets RFC 5322 wraps message identifiers in. */
