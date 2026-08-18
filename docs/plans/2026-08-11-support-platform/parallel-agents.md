@@ -72,13 +72,20 @@ export interface SendEmailOptions {
   from?: { address: string; name?: string }
   replyTo?: string
   headers?: Record<string, string> // Message-ID, In-Reply-To, References, Auto-Submitted
-  attachments?: OutboundAttachment[]
+  attachments?: EmailAttachment[]
 }
 
-export interface OutboundAttachment {
+// CORRECTED in SUP-04-1 (7740503). The pinned version below had `storageKey`
+// on the attachment `sendEmail` takes, which conflated two different shapes
+// and would have forced `lib/` to import `server/utils/storage`. There are two
+// types, and the delivery worker is the bridge between them:
+//
+//   EmailAttachment   (lib/email.ts)  - already resolved to bytes
+//   OutboundAttachment(outbox row)    - a storage key, resolved by the worker
+export interface EmailAttachment {
   filename: string
-  contentType: string
-  storageKey: string // resolved to a stream by the worker, never inlined into the outbox row
+  content: Buffer | Readable
+  contentType?: string
   cid?: string // set for inline images
 }
 
@@ -183,6 +190,34 @@ again. Never force-push.
 5. **Report ambiguity, don't silently resolve it.** This document exists because of that rule.
 6. **Never run `prettier --write .`** on Windows. Use `npx prettier --check --end-of-line=auto .` and
    format only the files you touched. See SUP-X-6.
+
+---
+
+## SUP-04-1 has landed (`7740503`) — Agent 2 is unblocked
+
+`lib/email.ts`'s options bag and `ChannelDriver`'s outbound surface are on
+`agent1/stage-04`. Three things Agent 2 should know:
+
+1. **The attachment type in the pinned contract was wrong and is corrected above.**
+   `sendEmail` takes bytes, not a storage key.
+2. **`Message-ID` / `In-Reply-To` / `References` are lifted out of the `headers`
+   bag onto nodemailer's `messageId` / `inReplyTo` / `references` options.** Pass
+   them either way — `buildMailPayload` lifts them for you, case-insensitively —
+   but read them off the typed fields, not `payload.headers`.
+   Worth recording: the original justification for this (that a raw header would
+   produce a duplicate `Message-ID`) is **false**. Verified against MailComposer:
+   nodemailer emits exactly one either way, and the option wins when both are set.
+   The lifting stays for a different reason — one canonical path, and typed
+   fields the worker can read — but nobody should repeat the wrong rationale.
+3. **`checkSendingAuthorization` returns `unknown` when no API credential is set**,
+   which is every deployment today. SUP-04-6 must render that as "cannot verify",
+   **not** as a warning that the address is unauthorized. The three new env vars
+   are optional and documented in `.env.example`.
+
+**Not independently confirmed:** the exact Postmark and Mailgun endpoint and
+credential pairings are written from documentation, not from a live call. Before
+SUP-04-6 presents an `authorized` / `unauthorized` verdict as fact, one real call
+against each provider is worth making — delta D-24 is the precedent.
 
 ---
 
