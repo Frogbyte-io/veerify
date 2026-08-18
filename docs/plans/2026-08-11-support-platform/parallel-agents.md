@@ -1,7 +1,10 @@
 # Stage 04 — Parallel agent split
 
 **Created:** August 17, 2026. **Applies to:** Stage 04 (outbound replies).
-**Status: PROPOSED by Agent 1, awaiting Agent 2's ratification.** Stage 03's split was written by Agent 2
+**Status: PROPOSED by Agent 1, awaiting Agent 2's ratification of the split.** The three questions
+this document originally left open have since been **answered against the code** — see below; one of them
+reverses Agent 1's first instinct and changes migration `0025`.
+**Status detail:** Stage 03's split was written by Agent 2
 before any code; this stage had none when Agent 1 started, and no `SUP-04-*` ids existed on the board.
 Rather than assume ownership, Agent 1 drafted this. **Agent 2: amend or confirm before either side writes
 code.** The Stage 03 retrospective at the bottom is worth reading — two of its findings change this stage.
@@ -110,12 +113,12 @@ the stage's headline risk. **Both agents should assert this in a test on their o
 
 Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Agent 2, so it lands first.
 
-- [ ] **SUP-04-1** `lib/email.ts` options bag; confirm all 10 existing call sites are unaffected
+- [ ] **SUP-04-1** `lib/email.ts` options bag; confirm all 10 existing call sites are unaffected. Also add the outbound surface to `ChannelDriver` that SUP-04-6 needs (see answered question 3), folding in delta D-34's `isConfigured()` cleanup
 - [ ] **SUP-04-3** `supportOutboundDelivery` table, **migration `0025`**, and the bounded claim/retry worker
 - [ ] **SUP-04-4** Wire `messages/index.post.ts` for `kind: 'outgoing'` — in-transaction outbox enqueue, worker delivery-status update
 - [ ] **SUP-04-5** Server-side enforcement that `kind: 'note'` never dispatches
 - [ ] **SUP-04-8** Auto-reply with all four guards
-- [ ] **SUP-04-9** `POST /api/support/delivery/[provider]` delivery and bounce webhooks; hard bounce writes an `activity` message
+- [ ] **SUP-04-9** `POST /api/support/delivery/[provider]` delivery and bounce webhooks, keyed on the new `supportDeliveryEvent` table (**not** `supportEmailEvent` — see answered question 1); hard bounce writes an `activity` message
 
 ### Agent 2 — composition, identity, UI, E2E
 
@@ -140,8 +143,9 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 **Shared, read-only unless flagged:** `server/utils/storage/**`, `server/utils/upload-token.ts`,
 `server/utils/support-realtime.ts`, `server/utils/support-access.ts`.
 
-**One migration is expected this stage — `0025`, and it belongs to SUP-04-3 (Agent 1).**
-`supportOutboundDelivery` is specified in `design.md` but has never been created; the schema is at `0024`.
+**One migration is expected this stage — `0025`, and it belongs to SUP-04-3 (Agent 1).** It creates
+**two** tables: `supportOutboundDelivery` (specified in `design.md` but never created — the schema is at
+`0024`) and `supportDeliveryEvent` (answered question 1). It does **not** alter `supportEmailEvent`.
 If you believe you need a second migration, stop and say so first.
 
 ---
@@ -182,25 +186,68 @@ again. Never force-push.
 
 ---
 
-## Open questions Agent 2 should weigh in on
+## Questions that were open, and their answers
 
-1. **Does `POST /api/support/delivery/[provider]` share `supportEmailEvent` with inbound?** The stage doc
-   says "reusing the `supportEmailEvent` idempotency _pattern_", which does not settle whether it is the
-   same table. The table's unique key is `(provider, providerEventId)`; if a provider draws inbound and
-   delivery event ids from one namespace, sharing is safe and cheap, and `inboxId` is already nullable
-   (delta D-35) so a delivery event that resolves to no inbox is writable. If the namespaces can collide,
-   a delivery event could be silently swallowed as a duplicate inbound one. **Agent 1's inclination is to
-   share the table and add a `kind` column to the unique key**, but this is a schema decision inside
-   migration `0025` and should be agreed first.
+All three were resolved against the code before Agent 2 picked the stage up. **The first one reverses
+Agent 1's original inclination**, so it is worth reading rather than skimming.
 
-2. **Where does the `Message-ID` domain come from?** `supportInbox.emailAddress` is the sending identity,
-   so its domain is the obvious source, but the design never says so and a mismatch between the
-   `Message-ID` domain and the `From` domain is a deliverability signal some providers penalise.
+### 1. The delivery webhook gets its own table. Do not share `supportEmailEvent`.
 
-3. **Is `SUP-04-6`'s "provider-authorized" check performable?** Postmark and Mailgun both expose verified
-   sending domains over their APIs, but `server/services/support-channels/**` has no outbound-facing
-   driver surface yet. This may need a `ChannelDriver` method, which is Agent 1's file — flag it rather
-   than adding one from the UI side.
+The proposal originally leaned toward sharing the table and adding a `kind` column to the unique key.
+**That is wrong, and `kind` would not have fixed it.**
+
+`extractEventId` is what settles it. Both drivers key on one identifier per _email_:
+
+- Postmark: `MessageID`, its own id for the inbound message.
+- Mailgun: the RFC `Message-Id`, because "Mailgun's inbound routes carry no delivery id of their own"
+  (`webhook/mailgun.ts:223`), with the signing token deliberately rejected because it changes per retry.
+
+So `supportEmailEvent`'s semantic is **one email, one row** — that collapsing is the entire point, it is
+what stops a provider retry becoming a second ticket. Delivery events have the opposite semantic: **one
+event, one row.** A single outbound message legitimately produces several — Delivery, then Open, then
+possibly Bounce or SpamComplaint — and they all describe the same message.
+
+Key them the way inbound is keyed and only the _first_ event per message is ever recorded. Every later
+one is swallowed as a duplicate, **including the hard bounce**. That is precisely the silent delivery
+failure acceptance criterion 6 exists to prevent, and it would look like the feature working. Adding
+`kind` does not help: all of a message's delivery events would still share one `providerEventId`.
+
+The delivery event also wants columns `supportEmailEvent` has not got — a `messageId` FK to
+`conversationMessage`, the record type, the recipient — while `rawStorageKey`, `resultConversationId` and
+`inboxId` are dead weight for it.
+
+**Decision:** migration `0025` creates **two** tables — `supportOutboundDelivery` (the outbox) and
+`supportDeliveryEvent` (webhook idempotency), the latter keyed per event, not per message. This also
+means Stage 03's `claimInboundEvent` and its `onConflict` target are **not touched**, which matters: that
+path was just live-verified across 34 checks and altering its unique index for an unrelated event stream
+is pure regression risk for no gain.
+
+`design.md` supports the reading — it scopes `supportEmailEvent` to "inbound idempotency and audit", and
+the stage doc asks to reuse the _pattern_, which is what a second table does.
+
+**Still to confirm against captured fixtures, not from memory** — exactly which field is per-event for
+each provider (Mailgun's `event-data.id` looks right; Postmark's Delivery payload may carry no event id
+of its own, in which case the key must be composed from record type + message id + recipient). Stage 03
+built its drivers against captured fixtures for this reason; do the same here.
+
+### 2. The `Message-ID` domain comes from the inbox, falling back to `MAIL_FROM`.
+
+`supportInbox.emailAddress` is the sending identity and its domain is the right source — but it is
+**nullable** (`schema/support.ts:217`, no `.notNull()`), so it cannot be relied on alone.
+
+**Decision:** use the domain of `supportInbox.emailAddress`; when it is null, fall back to the domain of
+the `MAIL_FROM` env var, which is what the transport sends as today. That keeps the `Message-ID` domain
+aligned with the `From` domain in both cases, which was the deliverability concern behind the question.
+
+### 3. `SUP-04-6`'s provider-authorization check needs a new `ChannelDriver` method — Agent 1 adds it.
+
+Confirmed by reading the interface: `ChannelDriver` is `name`, `verifySignature`, `extractEventId`,
+`parse` (`support-channels/types.ts:72-91`). **It has no outbound surface whatsoever**, so there is
+nowhere for "is this address authorized to send" to live today.
+
+**Decision:** Agent 1 adds the driver method as part of SUP-04-1, so SUP-04-6 has something to call.
+Agent 2 should consume it and **not** add one from the UI side. Fold in the `isConfigured()` cleanup that
+delta D-34 flagged at the same time, since both are the same missing capability surface.
 
 ---
 
