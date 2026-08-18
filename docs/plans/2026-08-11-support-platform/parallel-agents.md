@@ -1,11 +1,15 @@
-# Stage 03 — Parallel agent split
+# Stage 04 — Parallel agent split
 
-**Created:** August 15, 2026. **Applies to:** Stage 03 (inbound email).
-**Supersedes** the Stage 02 split, which is complete (17/17). The Stage 02 retrospective at the bottom is
-worth reading — three of its findings change how this stage should be worked.
+**Created:** August 17, 2026. **Applies to:** Stage 04 (outbound replies).
+**Status: PROPOSED by Agent 1, awaiting Agent 2's ratification of the split.** The three questions
+this document originally left open have since been **answered against the code** — see below; one of them
+reverses Agent 1's first instinct and changes migration `0025`.
+**Status detail:** Stage 03's split was written by Agent 2
+before any code; this stage had none when Agent 1 started, and no `SUP-04-*` ids existed on the board.
+Rather than assume ownership, Agent 1 drafted this. **Agent 2: amend or confirm before either side writes
+code.** The Stage 03 retrospective at the bottom is worth reading — two of its findings change this stage.
 
-Two Claude sessions work this stage concurrently. This document is the contract between them.
-**Agent 1 reads this first.** Agent 2 wrote it and works from `D:\veerify`.
+**Supersedes** the Stage 03 split, which is complete (14/14).
 
 ---
 
@@ -14,151 +18,157 @@ Two Claude sessions work this stage concurrently. This document is the contract 
 |                   | Agent 1                 | Agent 2            |
 | ----------------- | ----------------------- | ------------------ |
 | Working directory | **`D:\veerify-agent1`** | `D:\veerify`       |
-| Branch            | **`agent1/stage-03`**   | `support-platform` |
+| Branch            | **`agent1/stage-04`**   | `support-platform` |
 
-The worktree at `D:\veerify-agent1` already exists from Stage 02 with `node_modules` installed. Cut a
-**fresh branch** — do not continue on `agent1/stage-02`:
-
-```bash
-cd D:/veerify-agent1
-git fetch origin
-git checkout -b agent1/stage-03 origin/support-platform
-```
+`agent1/stage-04` is cut from **local `support-platform` at `350f5f3`**, not `origin/support-platform`.
+At the time of writing origin is two commits behind local — `a6e58f5` (the SUP-03-14 E2E fix) and its
+merge `350f5f3` are integrated locally but unpushed. Branching from origin would have silently dropped
+the fix. **Agent 2: push `support-platform` when convenient**, so the next branch cut from origin is safe.
 
 Shared and still true: the Postgres dev container is shared between worktrees, and ports 3001–3004 are in
 use — start dev servers above that.
 
 ---
 
-## Why the split is different this stage
+## Why the split is what it is
 
-Stage 02 divided cleanly into API and UI. Stage 03 does not, because **SUP-03-4 (the inbound endpoint) is
-an integration point that consumes almost everything else**: threading, quote stripping, sanitization,
-auto-response detection, contact resolution, attribution, and attachments all meet inside it.
+Stage 03's seam was **pipeline vs pure modules**, because the inbound endpoint was an integration point
+consuming everything else. Stage 04 has the mirror-image shape: the **outbound send path** is the
+integration point, and it consumes the generic sender, the composition helpers, per-inbox identity, and
+attachments all at once.
 
-So the seam is **pipeline vs pure modules**, not API vs UI. Agent 1 owns the wire and the endpoint;
-Agent 2 owns the pure content-processing modules the endpoint calls, plus the UI that renders the result.
+So the same seam carries over, pointing the other way. **Agent 1 owns durability and the wire** — the
+outbox table, the worker, the send trigger, the provider webhooks. **Agent 2 owns composition, identity,
+and everything the agent sees** — the pure RFC-5322 helpers, per-inbox From/signature, attachment upload,
+delivery-status UI, and the round-trip E2E.
 
-That only works if both sides agree the function signatures **before** writing code — see the next
-section. In Stage 02, two correct-in-isolation pieces produced a broken feature where they met; this is
-the mitigation.
+Two items are deliberately placed against that grain, and it is worth saying why:
+
+- **Auto-reply (SUP-04-8) is Agent 1's**, though it reads like a content feature. It fires from
+  `server/api/support/inbound/[provider].post.ts` — Agent 1's file from Stage 03 — and enqueues onto
+  Agent 1's outbox. Splitting it would put three of its four guards on one side of a seam and the trigger
+  on the other.
+- **Attachment upload (SUP-04-7) is Agent 2's**, though Stage 03's attachment _ingest_ was Agent 1's. The
+  agent-side flow is composer UI plus the existing presign utilities; it touches none of the outbox.
 
 ---
 
 ## Agreed module interfaces — do not diverge without saying so
 
-Agent 2 implements these. Agent 1 imports them. If you need to change a signature, **say so before
-changing it** rather than adapting locally.
+This is the mitigation that worked in Stage 03 and it is more important here, because the send path
+touches both agents' code in a single call. If you need to change a signature, **say so before changing
+it** rather than adapting locally.
 
 ```ts
-// server/services/support-channels/types.ts   (Agent 1 defines, both consume)
-export interface InboundMessage {
-  messageId: string | null // RFC Message-ID, angle brackets stripped
-  inReplyTo: string | null
-  references: string[] // oldest → newest
-  from: { address: string; name?: string }
-  to: { address: string; name?: string }[]
-  cc: { address: string; name?: string }[]
-  subject: string | null
-  text: string | null
-  html: string | null
-  attachments: InboundAttachment[]
-  receivedAt: Date
-  rawHeaders: Record<string, string>
+// lib/email.ts                                (Agent 1 extends, both consume)
+// Existing call sites pass { to, subject, html, text } and MUST keep working
+// untouched - every new field is optional.
+export interface SendEmailOptions {
+  to: string | string[]
+  cc?: string[]
+  subject: string
+  html?: string
+  text?: string
+  from?: { address: string; name?: string }
+  replyTo?: string
+  headers?: Record<string, string> // Message-ID, In-Reply-To, References, Auto-Submitted
+  attachments?: OutboundAttachment[]
 }
 
-// server/utils/inbound-threading.ts           (Agent 2)
-// `tx` so the caller can resolve inside its own transaction.
-export async function resolveThread(
-  tx: Tx,
-  inbox: { id: string; teamId: string },
-  message: InboundMessage,
-  contactId: string
-): Promise<{ conversationId: string | null; matchedBy: 'message-id' | 'thread-key' | 'subject' | null }>
-
-// server/utils/inbound-content.ts             (Agent 2) - pure
-export function stripQuotedReply(input: { text: string | null; html: string | null }): {
-  body: string // quoted history and signature removed
-  rawBody: string // untouched, for conversationMessage.metadata
+export interface OutboundAttachment {
+  filename: string
+  contentType: string
+  storageKey: string // resolved to a stream by the worker, never inlined into the outbox row
+  cid?: string // set for inline images
 }
 
-// server/utils/inbound-sanitize.ts            (Agent 2) - pure
-export function sanitizeInboundHtml(html: string | null): string | null
+// lib/support-email.ts                        (Agent 2) - pure, no db, no io
+export function generateMessageId(input: { messageId: string; domain: string }): string
 
-// server/utils/inbound-autoresponse.ts        (Agent 2) - pure
-export function isAutoResponse(headers: Record<string, string>): boolean
+// `existing` is oldest -> newest. Trimming keeps the FIRST entry and the most
+// recent ones - a broken root is what mail clients will not tolerate.
+export function buildReferences(input: { existing: string[]; inReplyTo: string | null; maxEntries?: number }): string[]
+
+export function buildQuotedHistory(input: {
+  previous: { fromName: string; sentAt: Date; body: string; bodyHtml: string | null }[]
+}): { html: string; text: string }
+
+export function appendSignature(input: { html: string; text: string; signature: string | null }): {
+  html: string
+  text: string
+}
 ```
 
-`resolveThread` returning `conversationId: null` means "no match, create a new conversation" — it never
-creates one itself. `matchedBy` exists so the endpoint can log why, and so the never-merge-across-contacts
-rule is testable from the outside.
+`generateMessageId` returns the value **with angle brackets stripped**, matching how Stage 03 stores
+`InboundMessage.messageId` — the worker adds the brackets when it writes the header. This is the single
+most likely place for a silent mismatch: Stage 03's threading matches on the stripped form, so a
+bracketed value stored on `channelMessageId` would make every customer reply open a new ticket, which is
+the stage's headline risk. **Both agents should assert this in a test on their own side.**
 
 ---
 
 ## Work split
 
-### Agent 1 — intake pipeline
+### Agent 1 — outbound pipeline and delivery durability
 
-Order matters: **1 → 2 → 3 first**, which depend on nothing of Agent 2's. By the time you reach 4, the
-pure modules should have landed.
+Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Agent 2, so it lands first.
 
-- [ ] **SUP-03-1** Channel adapter, `types.ts`, `InboundMessage`, driver selection from `SUPPORT_CHANNEL_PROVIDER`
-- [ ] **SUP-03-2** Postmark webhook driver — signature verification, payload → `InboundMessage`, unit tests against captured fixtures
-- [ ] **SUP-03-3** Mailgun webhook driver — same shape
-- [ ] **SUP-03-4** `supportEmailEvent` claim/replay state + `POST /api/support/inbound/[provider]`, per-inbox rate limiting. **The order of operations in the stage doc is a correctness requirement, not a suggestion** — signature, then atomic claim, then archive raw, then parse
-- [ ] **SUP-03-8** Attachment ingest to storage, inline `Content-ID` mapping, per-message size cap
-- [ ] **SUP-03-10** Honour `teamModuleSettings.supportEnabled` — record the event, return 200, create nothing
-- [ ] **SUP-03-11** Contact and CC-participant resolution from `From` and `Cc`
-- [ ] **SUP-03-12** Product attribution from the matched `supportInboxAddress.projectId`
+- [ ] **SUP-04-1** `lib/email.ts` options bag; confirm all 10 existing call sites are unaffected. Also add the outbound surface to `ChannelDriver` that SUP-04-6 needs (see answered question 3), folding in delta D-34's `isConfigured()` cleanup
+- [ ] **SUP-04-3** `supportOutboundDelivery` table, **migration `0025`**, and the bounded claim/retry worker
+- [ ] **SUP-04-4** Wire `messages/index.post.ts` for `kind: 'outgoing'` — in-transaction outbox enqueue, worker delivery-status update
+- [ ] **SUP-04-5** Server-side enforcement that `kind: 'note'` never dispatches
+- [ ] **SUP-04-8** Auto-reply with all four guards
+- [ ] **SUP-04-9** `POST /api/support/delivery/[provider]` delivery and bounce webhooks, keyed on the new `supportDeliveryEvent` table (**not** `supportEmailEvent` — see answered question 1); hard bounce writes an `activity` message
 
-### Agent 2 — content modules, rendering, E2E
+### Agent 2 — composition, identity, UI, E2E
 
-- [ ] **SUP-X-5** Fix Playwright collection first — it blocks SUP-03-14 and, more importantly, may mean the E2E gate has been enforcing nothing for two stages
-- [ ] **SUP-03-5** Threading resolution
-- [ ] **SUP-03-6** Quote and signature stripping
-- [ ] **SUP-03-9** Auto-response detection
-- [ ] **SUP-03-7** HTML sanitization + sandboxed-iframe rendering in the thread pane
-- [ ] **SUP-03-13** Channel configuration UI on `/support/settings`
-- [ ] **SUP-03-14** E2E: inbound mail creates a ticket, a reply threads onto it, a duplicate delivery does not double it
+- [ ] **SUP-04-2** `lib/support-email.ts` with unit tests for chain assembly and trimming
+- [ ] **SUP-04-6** Per-inbox From/Reply-To/signature + a settings warning when the address is not provider-authorized
+- [ ] **SUP-04-7** Agent attachment upload via the existing presign flow, with size cap and type allowlist
+- [ ] **SUP-04-10** Delivery status in the thread UI (pending/sent/failed/bounced) with a retry action
+- [ ] **SUP-04-11** E2E: inbound mail → agent reply → customer reply threads back
 
 ### File boundaries
 
-| Agent 1 owns                          | Agent 2 owns                                          |
-| ------------------------------------- | ----------------------------------------------------- |
-| `server/services/support-channels/**` | `server/utils/inbound-threading.ts`                   |
-| `server/api/support/inbound/**`       | `server/utils/inbound-content.ts`                     |
-| `server/utils/inbound-events.ts`      | `server/utils/inbound-sanitize.ts`                    |
-| `server/utils/inbound-contacts.ts`    | `server/utils/inbound-autoresponse.ts`                |
-|                                       | `components/support/**`, `pages/support/settings.vue` |
-|                                       | `tests/e2e/**`, `playwright.config.ts`                |
+| Agent 1 owns                                        | Agent 2 owns                        |
+| --------------------------------------------------- | ----------------------------------- |
+| `lib/email.ts`                                      | `lib/support-email.ts`              |
+| `server/api/support/delivery/**`                    | `components/support/**`             |
+| `server/api/support/conversations/[id]/messages/**` | `pages/support/**`                  |
+| `server/utils/outbound-delivery.ts`                 | `server/api/support/attachments/**` |
+| `server/services/support-channels/**`               | `server/api/support/inboxes/**`     |
+| `server/api/support/inbound/**`                     | `tests/e2e/**`                      |
+| `server/database/schema/support.ts`                 |                                     |
 
-**Shared, read-only unless flagged:** `server/utils/support-realtime.ts`,
-`server/utils/conversation-activity.ts`, `server/utils/support-access.ts`, `server/database/schema/**`.
+**Shared, read-only unless flagged:** `server/utils/storage/**`, `server/utils/upload-token.ts`,
+`server/utils/support-realtime.ts`, `server/utils/support-access.ts`.
 
-**No migrations are expected this stage** — every table inbound email touches landed in `0022`. If you
-believe you need one, stop and say so first.
+**One migration is expected this stage — `0025`, and it belongs to SUP-04-3 (Agent 1).** It creates
+**two** tables: `supportOutboundDelivery` (specified in `design.md` but never created — the schema is at
+`0024`) and `supportDeliveryEvent` (answered question 1). It does **not** alter `supportEmailEvent`.
+If you believe you need a second migration, stop and say so first.
 
 ---
 
 ## Syncing
 
-Unchanged from Stage 02, and it worked: **`support-platform` is the single integration point.** Pull from
-it at the start of every item; push finished items to it only after `yarn harness:verify` is green _after_
-merging `origin/support-platform` into your branch.
+Unchanged, and it has worked for two stages: **`support-platform` is the single integration point.** Pull
+from it at the start of every item; push finished items to it only after `yarn harness:verify` is green
+_after_ merging `origin/support-platform` into your branch.
 
 ```bash
 git fetch origin && git merge origin/support-platform
 yarn harness:verify          # must be green after the merge, not before
 git checkout support-platform && git pull --rebase origin support-platform
-git merge --no-ff agent1/stage-03
+git merge --no-ff agent1/stage-04
 yarn harness:verify
 git push origin support-platform
-git checkout agent1/stage-03 && git merge support-platform
+git checkout agent1/stage-04 && git merge support-platform
 ```
 
 `git checkout support-platform` fails while Agent 2 has it checked out — that is expected. Push your
-branch, say it is ready, and Agent 2 integrates. **Push races happened twice in Stage 02**; on rejection,
-`git pull --rebase`, re-verify, push again. Never force-push.
+branch, say it is ready, and Agent 2 integrates. On push rejection, `git pull --rebase`, re-verify, push
+again. Never force-push.
 
 ---
 
@@ -166,45 +176,129 @@ branch, say it is ready, and Agent 2 integrates. **Push races happened twice in 
 
 1. **`TODO.md` is edited by whoever integrates**, in a separate `chore(todo):` commit. Never inside a
    feature commit.
-2. **Read before writing:** `.agents/CLAUDE.md`, then `design.md`, then `deltas.md` (33 entries; several
-   override the stage docs), then `stage-03-inbound-email.md`.
+2. **Read before writing:** `.agents/CLAUDE.md`, then `design.md`, then `deltas.md` (35 entries; several
+   override the stage docs), then `stage-04-outbound-replies.md`.
 3. **Options API only** for new components.
 4. **`validateBody(event, schema)`** — never a bare `.parse()` on a request body (delta D-25).
-5. **Report ambiguity, don't silently resolve it.** Every undocumented gap hit so far was flagged in
-   `TODO.md` rather than buried. Keep doing that.
-6. **Never run `prettier --write .`** on Windows. `core.autocrlf=true` plus no `endOfLine` in
-   `.prettierrc` means ~110 files "fail" `format:check` on line endings alone, all false positives. Use
-   `npx prettier --check --end-of-line=auto .` to see the truth, and format only the files you touched.
-   See SUP-X-6.
+5. **Report ambiguity, don't silently resolve it.** This document exists because of that rule.
+6. **Never run `prettier --write .`** on Windows. Use `npx prettier --check --end-of-line=auto .` and
+   format only the files you touched. See SUP-X-6.
 
 ---
 
-## What Stage 02 taught, that applies here
+## Questions that were open, and their answers
 
-**1. Correct-in-isolation is not correct.** SUP-02-15's notification linked to
-`/support?conversationId=…` — the right key, verified against what the page writes. But the page only
-ever _read_ `inboxId` back, so the link never opened the conversation. Neither agent could have caught it
-alone. **This stage has far more seams than that one**, which is why the module signatures are pinned
-above. When you consume the other agent's function, check its actual behaviour, not just its name.
+All three were resolved against the code before Agent 2 picked the stage up. **The first one reverses
+Agent 1's original inclination**, so it is worth reading rather than skimming.
 
-**2. Subagents die on `yarn install`.** Every subagent dispatched into a fresh worktree during Stage 02
-burned its budget on install and hit the session limit before validating; two produced usable code but
-neither ran a single test. Work inline in your own worktree where `node_modules` already exists.
+### 1. The delivery webhook gets its own table. Do not share `supportEmailEvent`.
 
-**3. Green gates can mean nothing ran.** `yarn harness:verify` reports success when the E2E guard
-**skips**, and Playwright currently cannot collect any spec importing `db` (delta D-33). Two stages of
-"verified by E2E" acceptance criteria may be enforcing nothing. `format:check` is not in the gate at all.
-If an item's acceptance criterion says E2E, confirm the spec actually _ran_ — and if it cannot, verify by
-hand against a live server and say so plainly rather than claiming coverage.
+The proposal originally leaned toward sharing the table and adding a `kind` column to the unique key.
+**That is wrong, and `kind` would not have fixed it.**
+
+`extractEventId` is what settles it. Both drivers key on one identifier per _email_:
+
+- Postmark: `MessageID`, its own id for the inbound message.
+- Mailgun: the RFC `Message-Id`, because "Mailgun's inbound routes carry no delivery id of their own"
+  (`webhook/mailgun.ts:223`), with the signing token deliberately rejected because it changes per retry.
+
+So `supportEmailEvent`'s semantic is **one email, one row** — that collapsing is the entire point, it is
+what stops a provider retry becoming a second ticket. Delivery events have the opposite semantic: **one
+event, one row.** A single outbound message legitimately produces several — Delivery, then Open, then
+possibly Bounce or SpamComplaint — and they all describe the same message.
+
+Key them the way inbound is keyed and only the _first_ event per message is ever recorded. Every later
+one is swallowed as a duplicate, **including the hard bounce**. That is precisely the silent delivery
+failure acceptance criterion 6 exists to prevent, and it would look like the feature working. Adding
+`kind` does not help: all of a message's delivery events would still share one `providerEventId`.
+
+The delivery event also wants columns `supportEmailEvent` has not got — a `messageId` FK to
+`conversationMessage`, the record type, the recipient — while `rawStorageKey`, `resultConversationId` and
+`inboxId` are dead weight for it.
+
+**Decision:** migration `0025` creates **two** tables — `supportOutboundDelivery` (the outbox) and
+`supportDeliveryEvent` (webhook idempotency), the latter keyed per event, not per message. This also
+means Stage 03's `claimInboundEvent` and its `onConflict` target are **not touched**, which matters: that
+path was just live-verified across 34 checks and altering its unique index for an unrelated event stream
+is pure regression risk for no gain.
+
+`design.md` supports the reading — it scopes `supportEmailEvent` to "inbound idempotency and audit", and
+the stage doc asks to reuse the _pattern_, which is what a second table does.
+
+**Still to confirm against captured fixtures, not from memory** — exactly which field is per-event for
+each provider (Mailgun's `event-data.id` looks right; Postmark's Delivery payload may carry no event id
+of its own, in which case the key must be composed from record type + message id + recipient). Stage 03
+built its drivers against captured fixtures for this reason; do the same here.
+
+### 2. The `Message-ID` domain comes from the inbox, falling back to `MAIL_FROM`.
+
+`supportInbox.emailAddress` is the sending identity and its domain is the right source — but it is
+**nullable** (`schema/support.ts:217`, no `.notNull()`), so it cannot be relied on alone.
+
+**Decision:** use the domain of `supportInbox.emailAddress`; when it is null, fall back to the domain of
+the `MAIL_FROM` env var, which is what the transport sends as today. That keeps the `Message-ID` domain
+aligned with the `From` domain in both cases, which was the deliverability concern behind the question.
+
+### 3. `SUP-04-6`'s provider-authorization check needs a new `ChannelDriver` method — Agent 1 adds it.
+
+Confirmed by reading the interface: `ChannelDriver` is `name`, `verifySignature`, `extractEventId`,
+`parse` (`support-channels/types.ts:72-91`). **It has no outbound surface whatsoever**, so there is
+nowhere for "is this address authorized to send" to live today.
+
+**Decision:** Agent 1 adds the driver method as part of SUP-04-1, so SUP-04-6 has something to call.
+Agent 2 should consume it and **not** add one from the UI side. Fold in the `isConfigured()` cleanup that
+delta D-34 flagged at the same time, since both are the same missing capability surface.
 
 ---
 
-## State at time of writing (`06d7be2`)
+## What Stage 03 taught, that applies here
 
-Stage 02 **complete, 17/17**. `origin/support-platform` and local are in sync, working tree clean, all
-`harness:verify` gates green: agent docs map, typecheck, 198 unit tests, lint (0 errors / 158 pre-existing
-warnings), guarded E2E, guarded Redis, guarded Postgres.
+**1. The pinned-signature discipline worked, and the compile-time assertion is why.** SUP-03-1 added an
+assertion in `tests/inbound-threading.test.ts` proving `InboundMessage` satisfied the structural type
+`resolveThread` accepted — nothing called it across the seam until SUP-03-4, so without the assertion the
+seam would have gone unchecked until integration. **Do the same here** for the `channelMessageId` bracket
+convention above, which is this stage's equivalent trap.
+
+**2. Crossing into the other agent's file is fine when flagged, and it was.** SUP-03-8 needed `<img>`
+allowed in Agent 2's sanitizer; Agent 1 made the edit, and Agent 2 reviewed it and confirmed the anchoring
+held. That is the right pattern — the failure mode is the silent edit, not the edit.
+
+**3. A green gate can still mean nothing ran.** `yarn harness:verify` **skips** the E2E, Redis, and
+Postgres gates when their services are unreachable rather than failing, so on a box with Docker down
+"green" means typecheck, unit tests, and lint only. SUP-03-14's spec sat written-but-never-executed for
+exactly this reason. If an item's acceptance criterion says E2E, confirm the spec actually _ran_.
+
+**4. Acceptance criterion 1 cannot be met by this suite.** "Arrives in the same thread in Gmail **and**
+Outlook" needs real mailboxes at both providers. Mailpit will not catch client-specific threading quirks —
+the stage doc says so itself. Plan to verify this by hand and say plainly that it was manual, or descope it
+deliberately. Do not let it be quietly satisfied by a Mailpit assertion.
+
+---
+
+## State at time of writing (`350f5f3`)
+
+Stage 03 **complete, 14/14**; the inbound pipeline is live-verified end to end (34 checks against a real
+server, Postgres and MinIO) and the Playwright suite is 37 passed / 1 skipped / 0 failed.
+
+`yarn harness:verify` on `agent1/stage-04` is green: agent docs map, typecheck 54.7s, 198 unit tests, lint
+0 errors / 168 warnings. **E2E, Redis and Postgres gates skipped** — Docker is not up on this box, per
+finding 3 above.
+
+**Two Stage 04 items are already partly delivered by Stage 02**, which narrows SUP-04-4:
+
+- **`firstResponseAt` is already stamped** in `messages/index.post.ts:83-87`, on the first `outgoing`
+  message only and guarded against overwrite. Acceptance criterion 7 is satisfied today; SUP-04-4 needs to
+  preserve it, not build it.
+- **The realtime publish is already immediate**, after the transaction commits and before any send
+  (`messages/index.post.ts:96`). Acceptance criterion 8 is structurally satisfied; the outbox enqueue must
+  go inside the existing transaction without moving that publish.
 
 Open cross-cutting items: **SUP-X-3** (build-time OpenAPI scanner), **SUP-X-4** (admin-only module
-toggles, deliberately deferred — read D-28 first), **SUP-X-5** (Playwright collection — assigned to Agent
-2 above), **SUP-X-6** (format gate + CRLF).
+toggles, deferred — read D-28 first), **SUP-X-6** (format gate + CRLF, and the skipping-gate problem in
+finding 3).
+
+**One Stage 03 loose end lands in Agent 1's lap this stage:** delta D-34 flagged that `REQUIRED_ENV` in
+`channel-status.get.ts` hard-codes each provider's env vars, and that it belongs on `ChannelDriver` as
+`isConfigured()`. Agent 2 could not fix it because `server/services/support-channels/**` was Agent 1's
+territory. SUP-04-9 adds a second provider surface to that same map, so it is worth fixing now rather than
+duplicating the duplication.

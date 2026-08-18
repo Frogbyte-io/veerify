@@ -262,6 +262,41 @@ separate" in `design.md`.
   - Still open, in SUP-X-6: `harness:verify` **skips** the E2E gate rather than failing it, so a broken spec file looks identical to a deliberately skipped suite. That is what let this hide for two stages.
 - [ ] **SUP-X-6** (repo-wide) `format:check` is not part of `yarn harness:verify`, and is unusable on Windows. Two separate problems: (1) the gate every stage validates against never runs `prettier --check`, which is how ~40 files drifted far enough for CI to fail on them; (2) `.prettierrc` sets no `endOfLine`, so with `core.autocrlf=true` every text file in a Windows working tree fails on line endings alone — 110 files locally, all false positives, since git stores LF and CI checks out LF. Verified: `npx prettier --check --end-of-line=auto .` passes repo-wide today, so there is no real drift right now. Fix is likely `"endOfLine": "auto"` in `.prettierrc` plus adding the check to `scripts/harness-verify.mjs`.
 
+## Support Platform — Stage 04: Outbound replies
+
+Plan: `docs/plans/2026-08-11-support-platform/stage-04-outbound-replies.md`. Read `design.md` and
+`deltas.md` first, then `parallel-agents.md` for the two-agent split and the agreed module signatures.
+
+**The split is PROPOSED, not agreed.** Agent 1 drafted it because no Stage 04 contract and no `SUP-04-*`
+ids existed when the stage opened; Agent 2 wrote the Stage 03 one. **Agent 2 should ratify or amend
+`parallel-agents.md`** — but the three questions it originally left open are now **answered against the
+code**, so the stage is not blocked on them.
+
+**One migration expected: `0025`**, belonging to SUP-04-3, creating **two** tables:
+`supportOutboundDelivery` (specified in `design.md`, never created; the schema is at `0024`) and
+`supportDeliveryEvent`. It does **not** alter `supportEmailEvent` — delivery webhooks must not share that
+table. Its key is one row per _email_, deliberately collapsing retries, whereas one outbound message
+produces many delivery events (Delivery, Open, Bounce). Sharing it would swallow every event after the
+first, **including the hard bounce**, which is exactly the silent failure acceptance criterion 6 exists to
+catch. Reasoning in full in `parallel-agents.md`.
+
+**Narrowed by Stage 02, before anyone starts:** `firstResponseAt` stamping and the immediate realtime
+publish — acceptance criteria 7 and 8 — already ship in `messages/index.post.ts:83-96`. SUP-04-4 must
+preserve them, not build them.
+
+- [ ] **SUP-04-1** (agent 1) Extend `lib/email.ts` with an optional options bag (from, replyTo, cc, headers, attachments); confirm all existing call sites are unaffected. All 10 are inside `lib/email.ts` itself and pass exactly `{ to, subject, html, text }`, so the blast radius is contained. Also adds the outbound surface to `ChannelDriver`, which has none today — SUP-04-6 has nothing to call without it
+- [ ] **SUP-04-2** (agent 2) Add `lib/support-email.ts`: Message-ID generation, References chain assembly with trimming, quoted-history block, signature appending; unit tests for chain assembly
+- [ ] **SUP-04-3** (agent 1) Add `supportOutboundDelivery` (message id, payload/credential references, attempt count, status, lease, idempotency key, timestamps) and a bounded retry/claim worker. Reuse it for agent replies, auto-replies, and later CSAT/social sends (delta D-21)
+- [ ] **SUP-04-4** (agent 1) Wire `POST /api/support/conversations/[id]/messages` for `kind: 'outgoing'`: transactional optimistic insert plus outbox enqueue, immediate realtime publish, worker delivery-status update, and `firstResponseAt` stamping
+- [ ] **SUP-04-5** (agent 1) Enforce server-side that `kind: 'note'` never dispatches mail
+- [ ] **SUP-04-6** (agent 2) Implement per-inbox From/Reply-To/signature with a settings warning when the address is not provider-authorized
+- [ ] **SUP-04-7** (agent 2) Implement agent attachment upload via the existing presign flow with size cap and type allowlist
+- [ ] **SUP-04-8** (agent 1) Implement auto-reply with once-per-conversation, auto-response, `Auto-Submitted`, and per-contact rate-limit guards. All four ship together or auto-reply does not ship — it is the mail-loop vector
+- [ ] **SUP-04-9** (agent 1) Add `POST /api/support/delivery/[provider]` for delivery and bounce webhooks, keyed per event on the new `supportDeliveryEvent` table rather than `supportEmailEvent`; map to `deliveryStatus` and write an `activity` message on hard bounce
+- [ ] **SUP-04-10** (agent 2) Surface delivery status in the thread UI (pending, sent, failed, bounced) with a retry action on failure
+- [ ] **SUP-04-11** (agent 2) Add E2E coverage for the full round trip: inbound mail → agent reply → customer reply threads back
+  - **Acceptance criterion 1 is not reachable from this suite.** "Same thread in Gmail _and_ Outlook" needs real mailboxes at both providers, and the stage doc says outright that Mailpit will not catch client-specific quirks. Verify by hand and record it as manual, or descope it deliberately — do not let a Mailpit assertion quietly stand in for it.
+
 ## Support Platform — Stage 03: Inbound email
 
 Plan: `docs/plans/2026-08-11-support-platform/stage-03-inbound-email.md`. Read `design.md` and
