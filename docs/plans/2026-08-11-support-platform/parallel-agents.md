@@ -232,6 +232,26 @@ against each provider is worth making — delta D-24 is the precedent.
 
 ---
 
+## SUP-04-6 has landed (`ebe8d1d`) — Agent 1 has something to call for SUP-04-4
+
+`buildOutboundIdentity` is in `lib/support-email.ts` (pinned above); `supportInbox.emailAddress` and
+`fromName` are now editable via `PUT /api/support/inboxes/{id}` (they were columns nobody could ever
+set — no endpoint or UI wrote them before this). Two things Agent 1 should know before wiring SUP-04-4:
+
+1. **Reply-To is the same address as From**, not a distinct setting. There is no Reply-To column in the
+   schema and no per-conversation reply-address token — Stage 03 threads on `Message-ID`/`References`,
+   so there is nothing for a distinct Reply-To to buy. If SUP-04-4 needs something other than
+   `buildOutboundIdentity`'s output verbatim, say so before diverging.
+2. **`buildOutboundIdentity` does not guard against a null `emailAddress`.** `supportInbox.emailAddress`
+   has no `.notNull()` — SUP-04-4 must check for it before calling this and decide what an inbox with no
+   sending address does at send time (this stage's settings warning only covers the case where an
+   address is set but unauthorized; an unset address is a different, prior condition).
+
+The Postmark/Mailgun live-call verification noted above as unconfirmed is still unconfirmed — not
+addressed by this item, which only consumes `checkSendingAuthorization`'s return shape, not its accuracy.
+
+---
+
 ## Questions that were open, and their answers
 
 All three were resolved against the code before Agent 2 picked the stage up. **The first one reverses
