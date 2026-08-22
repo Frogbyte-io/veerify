@@ -95,6 +95,76 @@
               <Label for="general-name">Name</Label>
               <Input id="general-name" v-model="generalName" class="mt-2" :disabled="isSavingGeneral" />
             </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label for="general-from-address">From address</Label>
+                <Input
+                  id="general-from-address"
+                  v-model="generalEmailAddress"
+                  type="email"
+                  placeholder="support@yourdomain.com"
+                  class="mt-2"
+                  :disabled="isSavingGeneral"
+                />
+                <p class="text-sm text-muted-foreground mt-1">Used as the From on outgoing replies.</p>
+              </div>
+              <div>
+                <Label for="general-from-name">From name</Label>
+                <Input
+                  id="general-from-name"
+                  v-model="generalFromName"
+                  placeholder="Acme Support"
+                  class="mt-2"
+                  :disabled="isSavingGeneral"
+                />
+              </div>
+            </div>
+
+            <div v-if="isLoadingSendingStatus" class="space-y-2">
+              <Skeleton class="h-10 w-full" />
+            </div>
+            <div v-else-if="sendingStatusError" class="text-sm">
+              <p class="text-destructive mb-2">{{ sendingStatusError }}</p>
+              <Button variant="outline" size="sm" @click="loadSendingStatus">Retry</Button>
+            </div>
+            <template v-else-if="sendingStatus">
+              <p v-if="!sendingStatus.address" class="text-sm text-muted-foreground">
+                Set a From address above to have it checked against your provider.
+              </p>
+              <div
+                v-else-if="sendingStatus.authorization.status === 'unauthorized'"
+                class="flex items-start gap-2 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 p-3 text-sm"
+                data-testid="support-settings-sending-unauthorized"
+              >
+                <Icon name="lucide:alert-triangle" class="w-4 h-4 mt-0.5 shrink-0" />
+                <span>
+                  "{{ sendingStatus.address }}" is not on a domain your provider is verified to send from. Replies sent
+                  as this address may be rejected. Verify the domain with your provider, or use an address on a verified
+                  domain.
+                </span>
+              </div>
+              <div
+                v-else-if="sendingStatus.authorization.status === 'authorized'"
+                class="flex items-center gap-2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 p-3 text-sm"
+                data-testid="support-settings-sending-authorized"
+              >
+                <Icon name="lucide:check-circle-2" class="w-4 h-4 shrink-0" />
+                <span>Your provider is verified to send as "{{ sendingStatus.address }}".</span>
+              </div>
+              <div
+                v-else
+                class="flex items-start gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground"
+                data-testid="support-settings-sending-unknown"
+              >
+                <Icon name="lucide:help-circle" class="w-4 h-4 mt-0.5 shrink-0" />
+                <span>
+                  Cannot verify whether "{{ sendingStatus.address }}" is authorized to send ({{
+                    sendingStatus.authorization.reason
+                  }}). This is not a failure — most deployments have not set a provider account credential yet.
+                </span>
+              </div>
+            </template>
+
             <div>
               <Label for="general-signature">Signature</Label>
               <Textarea
@@ -454,7 +524,14 @@ export default {
       // general form
       generalName: '',
       generalSignature: '',
+      generalEmailAddress: '',
+      generalFromName: '',
       isSavingGeneral: false,
+
+      // sending authorization (SUP-04-6)
+      sendingStatus: null,
+      isLoadingSendingStatus: true,
+      sendingStatusError: null,
 
       // channel
       channel: null,
@@ -498,7 +575,9 @@ export default {
       if (!this.selectedInbox) return false
       return (
         this.generalName !== (this.selectedInbox.name || '') ||
-        this.generalSignature !== (this.selectedInbox.signature || '')
+        this.generalSignature !== (this.selectedInbox.signature || '') ||
+        this.generalEmailAddress !== (this.selectedInbox.emailAddress || '') ||
+        this.generalFromName !== (this.selectedInbox.fromName || '')
       )
     },
     channelReady() {
@@ -582,6 +661,8 @@ export default {
     syncGeneralForm() {
       this.generalName = this.selectedInbox?.name || ''
       this.generalSignature = this.selectedInbox?.signature || ''
+      this.generalEmailAddress = this.selectedInbox?.emailAddress || ''
+      this.generalFromName = this.selectedInbox?.fromName || ''
     },
 
     async loadInboxContext() {
@@ -599,6 +680,23 @@ export default {
         toast.error('Failed to load inbox details')
       } finally {
         this.isSwitchingInbox = false
+      }
+
+      await this.loadSendingStatus()
+    },
+
+    async loadSendingStatus() {
+      if (!this.selectedInboxId) return
+      this.isLoadingSendingStatus = true
+      this.sendingStatusError = null
+
+      try {
+        const response = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/sending-status`)
+        this.sendingStatus = response?.data || null
+      } catch (err) {
+        this.sendingStatusError = this.extractErrorMessage(err, 'Failed to check sending authorization')
+      } finally {
+        this.isLoadingSendingStatus = false
       }
     },
 
@@ -679,6 +777,8 @@ export default {
           body: {
             name: this.generalName.trim(),
             signature: this.generalSignature,
+            emailAddress: this.generalEmailAddress.trim() || null,
+            fromName: this.generalFromName.trim() || null,
           },
         })
 
@@ -686,6 +786,7 @@ export default {
         this.inboxes = inboxesResponse?.data?.inboxes || []
         this.syncGeneralForm()
         toast.success('Inbox settings saved')
+        await this.loadSendingStatus()
       } catch (err) {
         toast.error(this.extractErrorMessage(err, 'Failed to save inbox settings'))
       } finally {

@@ -5,9 +5,11 @@
  *     tags: [Support]
  *     summary: Update inbox settings
  *     description: >
- *       Covers name, slug, product mapping, default assignee, signature, and
- *       enabled state. Channel/provider configuration (sending address,
- *       forwarding, auto-reply) is Stage 03.
+ *       Covers name, slug, product mapping, default assignee, signature,
+ *       enabled state, and the sending identity (emailAddress, fromName)
+ *       used as the From on outgoing replies (Stage 04). Channel/provider
+ *       configuration (webhook credentials, forwarding) is deployment env
+ *       config, not editable here.
  *     operationId: updateSupportInbox
  *     parameters:
  *       - in: path
@@ -19,7 +21,7 @@
  *       400: { description: projectId or defaultAssigneeUserId does not belong to this team }
  *       403: { description: Not a member of this inbox or a team admin }
  *       404: { description: Inbox not found }
- *       409: { description: Another inbox in the team already uses this slug }
+ *       409: { description: Another inbox already uses this slug or email address }
  */
 import { z } from 'zod'
 import { and, eq } from 'drizzle-orm'
@@ -41,6 +43,11 @@ const bodySchema = z.object({
   defaultAssigneeUserId: z.string().nullable().optional(),
   signature: z.string().max(10_000).nullable().optional(),
   isEnabled: z.boolean().optional(),
+  // Sending identity for outgoing replies (Stage 04). Null clears the
+  // address entirely, which is deliberate: falling back to some default
+  // would send as an address nobody chose.
+  emailAddress: z.string().trim().toLowerCase().email().max(320).nullable().optional(),
+  fromName: z.string().trim().max(200).nullable().optional(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -92,6 +99,8 @@ export default defineEventHandler(async (event) => {
         ...(body.defaultAssigneeUserId !== undefined ? { defaultAssigneeUserId: body.defaultAssigneeUserId } : {}),
         ...(body.signature !== undefined ? { signature: body.signature } : {}),
         ...(body.isEnabled !== undefined ? { isEnabled: body.isEnabled } : {}),
+        ...(body.emailAddress !== undefined ? { emailAddress: body.emailAddress } : {}),
+        ...(body.fromName !== undefined ? { fromName: body.fromName } : {}),
         updatedAt: new Date(),
       })
       .where(eq(supportInbox.id, inboxId))
@@ -99,6 +108,17 @@ export default defineEventHandler(async (event) => {
 
     return createSuccessResponse({ inbox: updated })
   } catch (error) {
+    // `support_inbox_email_address_idx` is checked first: emailAddress is
+    // the field an operator is more likely to be actively editing here, and
+    // the generic slug message would be a misleading answer to "why did my
+    // From address change fail".
+    if (isUniqueViolation(error, 'support_inbox_email_address_idx')) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Conflict',
+        data: createErrorResponse(ErrorCode.CONFLICT, 'Another inbox already uses this email address'),
+      })
+    }
     if (isUniqueViolation(error)) {
       throw createError({
         statusCode: 409,

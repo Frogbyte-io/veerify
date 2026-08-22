@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { appendSignature, buildQuotedHistory, buildReferences, generateMessageId } from '../lib/support-email'
+import {
+  appendSignature,
+  buildOutboundIdentity,
+  buildQuotedHistory,
+  buildReferences,
+  generateMessageId,
+} from '../lib/support-email'
 
 describe('generateMessageId', () => {
   it('joins the seed and domain with an @, no angle brackets', () => {
@@ -101,6 +107,24 @@ describe('buildQuotedHistory', () => {
     })
     expect(result.html).not.toContain('<script>')
     expect(result.html).toContain('&lt;script&gt;')
+  })
+})
+
+describe('buildOutboundIdentity', () => {
+  it('sets from.name when the inbox has a fromName', () => {
+    const result = buildOutboundIdentity({ emailAddress: 'support@acme.com', fromName: 'Acme Support' })
+    expect(result.from).toEqual({ address: 'support@acme.com', name: 'Acme Support' })
+  })
+
+  it('omits from.name rather than setting it empty when fromName is null', () => {
+    const result = buildOutboundIdentity({ emailAddress: 'support@acme.com', fromName: null })
+    expect(result.from).toEqual({ address: 'support@acme.com' })
+    expect('name' in result.from).toBe(false)
+  })
+
+  it('sets replyTo to the same address as from', () => {
+    const result = buildOutboundIdentity({ emailAddress: 'support@acme.com', fromName: 'Acme Support' })
+    expect(result.replyTo).toBe('support@acme.com')
   })
 })
 
