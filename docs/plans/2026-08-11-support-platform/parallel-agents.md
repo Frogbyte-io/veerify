@@ -132,7 +132,7 @@ the stage's headline risk. **Both agents should assert this in a test on their o
 Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Agent 2, so it lands first.
 
 - [x] **SUP-04-1** `lib/email.ts` options bag; confirm all 10 existing call sites are unaffected. Also add the outbound surface to `ChannelDriver` that SUP-04-6 needs (see answered question 3), folding in delta D-34's `isConfigured()` cleanup
-- [ ] **SUP-04-3** `supportOutboundDelivery` table, **migration `0025`**, and the bounded claim/retry worker
+- [x] **SUP-04-3** `supportOutboundDelivery` table, **migration `0025`**, and the bounded claim/retry worker
 - [ ] **SUP-04-4** Wire `messages/index.post.ts` for `kind: 'outgoing'` — in-transaction outbox enqueue, worker delivery-status update
 - [ ] **SUP-04-5** Server-side enforcement that `kind: 'note'` never dispatches
 - [ ] **SUP-04-8** Auto-reply with all four guards
@@ -142,7 +142,7 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 
 - [x] **SUP-04-2** `lib/support-email.ts` with unit tests for chain assembly and trimming
 - [x] **SUP-04-6** Per-inbox From/Reply-To/signature + a settings warning when the address is not provider-authorized
-- [ ] **SUP-04-7** Agent attachment upload via the existing presign flow, with size cap and type allowlist
+- [x] **SUP-04-7** Agent attachment upload via the existing presign flow, with size cap and type allowlist
 - [ ] **SUP-04-10** Delivery status in the thread UI (pending/sent/failed/bounced) with a retry action
 - [ ] **SUP-04-11** E2E: inbound mail → agent reply → customer reply threads back
 
@@ -281,6 +281,46 @@ LOCKED`, lease behaviour, attempt-cap transitions) has not run against real Post
 this session — no Docker on this box. Verified it reaches a real connection attempt (`ECONNREFUSED`, not
 an import/export error) and the full schema typechecks clean, but the atomicity claim itself is unproven
 until someone runs it with `docker compose -f docker-compose-dev.yml up -d db` reachable.
+
+---
+
+## SUP-04-7 has landed — correcting an assumption in the note above
+
+**"SUP-04-4 ... reads any `conversationAttachment` rows created by SUP-04-7" (above) does not hold, and
+SUP-04-4 should not be built expecting it.** `conversationAttachment.messageId` is `.notNull()` — there is
+no message row at upload time for a foreign key to point at, since an agent attaches files while composing,
+before hitting send. Nothing can insert into that table until `messageId` exists, which makes it SUP-04-4's
+job. This mirrors Stage 03's own inbound shape: `ingestInboundAttachments` (`server/utils/inbound-
+attachments.ts`) writes bytes and returns `stored: StoredAttachment[]` for the _caller_ to insert once a
+`messageId` is resolved — SUP-04-7 is the same pattern pointed the other way.
+
+**What SUP-04-7 actually built, and what SUP-04-4 needs to do with it:**
+
+1. `POST /api/support/attachments/presign` (`{ conversationId, filename, contentType, sizeBytes }`) checks
+   `requireConversationAccess`, validates against `server/utils/support-attachments.ts`'s type allowlist and
+   `MAX_ATTACHMENT_BYTES` (10 MB/file — mirrors Stage 03's inbound per-part cap), and returns an upload
+   target plus a `storageKey` that already points at the file's **final** location:
+   `support/attachments/outbound/{conversationId}/{attachmentId}/{filename}`. No temp-then-move step, unlike
+   the project-asset presign flow — the key doesn't depend on anything not already known.
+2. The client (composer) uploads bytes straight to that target — a real presigned S3 PUT, or
+   `PUT /api/support/attachments/upload/{token}` for the local driver — **before** the reply is sent. By the
+   time the message-creation POST fires, the object already exists in storage.
+3. The composer's `POST /api/support/conversations/{id}/messages` body now includes an `attachments` array
+   when non-empty: `{ storageKey, fileName, contentType, sizeBytes }[]`. **`messages/index.post.ts`'s
+   `bodySchema` doesn't have this field yet**, so today it's silently stripped (zod's default is to drop
+   unknown keys, not reject) — nothing breaks, but nothing happens with it either until SUP-04-4 adds it to
+   the schema and, in the same transaction as the `conversationMessage` insert, inserts one
+   `conversationAttachment` row per entry using the now-known `messageId` and the `storageKey` verbatim (no
+   move needed — see point 1). Those same rows are what SUP-04-4 should read back to populate
+   `OutboundDeliveryPayload.attachments` (`OutboundAttachment[]`), not a table SUP-04-7 populated itself.
+4. **The per-file cap is enforced at presign (SUP-04-7); the per-message total cap
+   (`MAX_MESSAGE_ATTACHMENT_BYTES`, 25 MB, also exported from `support-attachments.ts`) is not** — a single
+   presign call can't see the other attachments in the same reply. SUP-04-4 is the first point that sees the
+   full list and must enforce it there, same reasoning as Stage 03's `ingestInboundAttachments`.
+
+**Not independently confirmed:** upload against a real S3-compatible endpoint (MinIO) hasn't been
+exercised this session — no Docker on this box, same gap as SUP-04-3's note above. The local-driver path
+(`putObject`/`getObject` round-trip) is exercised by existing storage tests, not by anything new here.
 
 ---
 
