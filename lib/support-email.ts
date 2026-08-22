@@ -74,6 +74,28 @@ export function buildQuotedHistory(input: {
   return { text: textParts.join('\n\n'), html: htmlParts.join('') }
 }
 
+/**
+ * The From and Reply-To identity for an outgoing reply, built from
+ * `supportInbox`. There is no separate Reply-To column in the schema
+ * (`design.md`'s `supportInbox` field list has none) and no per-conversation
+ * reply-address token to thread on — Stage 03 threads on `Message-ID` /
+ * `References` instead — so Reply-To is deliberately the same address as
+ * From rather than a distinct setting.
+ *
+ * Callers must guard for `supportInbox.emailAddress` being null (it has no
+ * `.notNull()` in the schema) before calling this; it is not this function's
+ * job to decide what happens when an inbox has no sending address.
+ */
+export function buildOutboundIdentity(input: { emailAddress: string; fromName: string | null }): {
+  from: { address: string; name?: string }
+  replyTo: string
+} {
+  return {
+    from: input.fromName ? { address: input.emailAddress, name: input.fromName } : { address: input.emailAddress },
+    replyTo: input.emailAddress,
+  }
+}
+
 export function appendSignature(input: { html: string; text: string; signature: string | null }): {
   html: string
   text: string

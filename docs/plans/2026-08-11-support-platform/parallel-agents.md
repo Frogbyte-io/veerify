@@ -104,6 +104,17 @@ export function appendSignature(input: { html: string; text: string; signature: 
   html: string
   text: string
 }
+
+// Added for SUP-04-6. Reply-To is deliberately the same address as From: the
+// schema has no separate Reply-To column (design.md's supportInbox field
+// list has none) and no per-conversation reply-address token to thread on -
+// Stage 03 threads on Message-ID/References instead. Caller (SUP-04-4) must
+// guard supportInbox.emailAddress being null before calling this; it does
+// not decide what happens when an inbox has no sending address.
+export function buildOutboundIdentity(input: { emailAddress: string; fromName: string | null }): {
+  from: { address: string; name?: string }
+  replyTo: string
+}
 ```
 
 `generateMessageId` returns the value **with angle brackets stripped**, matching how Stage 03 stores
@@ -120,7 +131,7 @@ the stage's headline risk. **Both agents should assert this in a test on their o
 
 Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Agent 2, so it lands first.
 
-- [ ] **SUP-04-1** `lib/email.ts` options bag; confirm all 10 existing call sites are unaffected. Also add the outbound surface to `ChannelDriver` that SUP-04-6 needs (see answered question 3), folding in delta D-34's `isConfigured()` cleanup
+- [x] **SUP-04-1** `lib/email.ts` options bag; confirm all 10 existing call sites are unaffected. Also add the outbound surface to `ChannelDriver` that SUP-04-6 needs (see answered question 3), folding in delta D-34's `isConfigured()` cleanup
 - [ ] **SUP-04-3** `supportOutboundDelivery` table, **migration `0025`**, and the bounded claim/retry worker
 - [ ] **SUP-04-4** Wire `messages/index.post.ts` for `kind: 'outgoing'` — in-transaction outbox enqueue, worker delivery-status update
 - [ ] **SUP-04-5** Server-side enforcement that `kind: 'note'` never dispatches
@@ -129,8 +140,8 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 
 ### Agent 2 — composition, identity, UI, E2E
 
-- [ ] **SUP-04-2** `lib/support-email.ts` with unit tests for chain assembly and trimming
-- [ ] **SUP-04-6** Per-inbox From/Reply-To/signature + a settings warning when the address is not provider-authorized
+- [x] **SUP-04-2** `lib/support-email.ts` with unit tests for chain assembly and trimming
+- [x] **SUP-04-6** Per-inbox From/Reply-To/signature + a settings warning when the address is not provider-authorized
 - [ ] **SUP-04-7** Agent attachment upload via the existing presign flow, with size cap and type allowlist
 - [ ] **SUP-04-10** Delivery status in the thread UI (pending/sent/failed/bounced) with a retry action
 - [ ] **SUP-04-11** E2E: inbound mail → agent reply → customer reply threads back
@@ -218,6 +229,26 @@ again. Never force-push.
 credential pairings are written from documentation, not from a live call. Before
 SUP-04-6 presents an `authorized` / `unauthorized` verdict as fact, one real call
 against each provider is worth making — delta D-24 is the precedent.
+
+---
+
+## SUP-04-6 has landed (`ebe8d1d`) — Agent 1 has something to call for SUP-04-4
+
+`buildOutboundIdentity` is in `lib/support-email.ts` (pinned above); `supportInbox.emailAddress` and
+`fromName` are now editable via `PUT /api/support/inboxes/{id}` (they were columns nobody could ever
+set — no endpoint or UI wrote them before this). Two things Agent 1 should know before wiring SUP-04-4:
+
+1. **Reply-To is the same address as From**, not a distinct setting. There is no Reply-To column in the
+   schema and no per-conversation reply-address token — Stage 03 threads on `Message-ID`/`References`,
+   so there is nothing for a distinct Reply-To to buy. If SUP-04-4 needs something other than
+   `buildOutboundIdentity`'s output verbatim, say so before diverging.
+2. **`buildOutboundIdentity` does not guard against a null `emailAddress`.** `supportInbox.emailAddress`
+   has no `.notNull()` — SUP-04-4 must check for it before calling this and decide what an inbox with no
+   sending address does at send time (this stage's settings warning only covers the case where an
+   address is set but unauthorized; an unset address is a different, prior condition).
+
+The Postmark/Mailgun live-call verification noted above as unconfirmed is still unconfirmed — not
+addressed by this item, which only consumes `checkSendingAuthorization`'s return shape, not its accuracy.
 
 ---
 
