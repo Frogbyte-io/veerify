@@ -7,7 +7,8 @@
 // tables: `supportInbox`, `supportInboxAddress`, `supportInboxMember`,
 // `conversation`, `supportCounter`, `conversationMessage`,
 // `conversationAttachment`, `conversationParticipant`, `supportTag`,
-// `conversationTag`, and `supportEmailEvent`.
+// `conversationTag`, and `supportEmailEvent`. Stage 04 adds
+// `supportOutboundDelivery` and `supportDeliveryEvent`.
 //
 // `contactLink` points outward at entities like `feedback` by
 // (entityType, entityId) — a loose reference, not a foreign key. Feedback
@@ -530,5 +531,86 @@ export const supportEmailEvent = pgTable(
       table.providerEventId
     ),
     inboxIdx: index('support_email_event_inbox_idx').on(table.inboxId),
+  })
+)
+
+// Durable outbound-delivery outbox (Stage 04, delta D-21). Message insertion
+// and outbox enqueue are one transaction; a worker claims and retries
+// delivery, so a request-lifetime background promise is never the only copy
+// of "this needs to be sent". `payload` carries storage/credential
+// *references* only, never resolved bytes - see `EmailAttachment` vs
+// `OutboundAttachment` in `server/utils/outbound-delivery.ts`, which resolves
+// a stored key to bytes only inside the worker.
+//
+// `kind` is 'email' for everything Stage 04 sends; the column exists so
+// later stages (CSAT, social) reuse this table rather than building their
+// own outbox, per design.md.
+export const supportOutboundDelivery = pgTable(
+  'support_outbound_delivery',
+  {
+    id: text('id').primaryKey(),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => conversationMessage.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    payload: jsonb('payload').$type<Record<string, any>>().notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    // 'pending' | 'sent' | 'failed'
+    status: text('status').default('pending').notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at'),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // One queued delivery per (message, kind) - the same insert that fails on
+    // conflict here is what makes re-running the endpoint's transaction safe.
+    uniqueMessageKind: uniqueIndex('support_outbound_delivery_message_kind_idx').on(table.messageId, table.kind),
+    uniqueIdempotencyKey: uniqueIndex('support_outbound_delivery_idempotency_key_idx').on(table.idempotencyKey),
+    statusIdx: index('support_outbound_delivery_status_idx').on(table.status),
+  })
+)
+
+// Delivery/bounce webhook idempotency (Stage 04). Deliberately its own table,
+// not `supportEmailEvent`: that table's unique key collapses to one row per
+// *email*, correct for inbound (a provider retry must never become a second
+// ticket) but wrong here, because one outbound message legitimately produces
+// several delivery events (Delivery, then Open, then possibly Bounce or
+// SpamComplaint). Sharing the key would silently swallow every event after
+// the first - including the hard bounce that acceptance criterion 6 exists
+// to catch. See `parallel-agents.md`, "the delivery webhook gets its own
+// table", and delta D-35 for why `messageId` below is nullable for the same
+// reason `supportEmailEvent.inboxId` is.
+export const supportDeliveryEvent = pgTable(
+  'support_delivery_event',
+  {
+    id: text('id').primaryKey(),
+    messageId: text('message_id').references(() => conversationMessage.id, { onDelete: 'set null' }),
+    provider: text('provider').notNull(),
+    providerEventId: text('provider_event_id').notNull(),
+    // Provider-normalized: 'delivered' | 'bounced' | 'opened' | 'spam_complaint' | …
+    recordType: text('record_type').notNull(),
+    recipient: text('recipient').notNull(),
+    // 'processing' | 'processed' | 'failed'
+    status: text('status').default('processing').notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at'),
+    processedAt: timestamp('processed_at'),
+    error: text('error'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueProviderEventId: uniqueIndex('support_delivery_event_provider_event_id_idx').on(
+      table.provider,
+      table.providerEventId
+    ),
+    messageIdx: index('support_delivery_event_message_idx').on(table.messageId),
   })
 )
