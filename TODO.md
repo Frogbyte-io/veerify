@@ -290,7 +290,7 @@ preserve them, not build them.
 - [ ] **SUP-04-4** (agent 1) Wire `POST /api/support/conversations/[id]/messages` for `kind: 'outgoing'`: transactional optimistic insert plus outbox enqueue, immediate realtime publish, worker delivery-status update, and `firstResponseAt` stamping
 - [ ] **SUP-04-5** (agent 1) Enforce server-side that `kind: 'note'` never dispatches mail
 - [x] **SUP-04-6** (agent 2) Implement per-inbox From/Reply-To/signature with a settings warning when the address is not provider-authorized
-- [ ] **SUP-04-7** (agent 2) Implement agent attachment upload via the existing presign flow with size cap and type allowlist
+- [x] **SUP-04-7** (agent 2) Implement agent attachment upload via the existing presign flow with size cap and type allowlist
 - [ ] **SUP-04-8** (agent 1) Implement auto-reply with once-per-conversation, auto-response, `Auto-Submitted`, and per-contact rate-limit guards. All four ship together or auto-reply does not ship — it is the mail-loop vector
 - [ ] **SUP-04-9** (agent 1) Add `POST /api/support/delivery/[provider]` for delivery and bounce webhooks, keyed per event on the new `supportDeliveryEvent` table rather than `supportEmailEvent`; map to `deliveryStatus` and write an `activity` message on hard bounce
 - [ ] **SUP-04-10** (agent 2) Surface delivery status in the thread UI (pending, sent, failed, bounced) with a retry action on failure
