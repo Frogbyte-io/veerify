@@ -17,6 +17,7 @@ import {
   completeOutboundDelivery,
   enqueueOutboundDelivery,
   failOutboundDelivery,
+  resetOutboundDeliveryForRetry,
 } from '../../server/utils/outbound-delivery'
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -213,5 +214,31 @@ describe('outbound delivery outbox (real Postgres)', () => {
     const reclaimed = await claimNextOutboundDelivery()
     expect(reclaimed?.id).not.toBe(claim!.id)
     if (reclaimed) await completeOutboundDelivery(reclaimed.id)
+  })
+
+  it('resetOutboundDeliveryForRetry brings a terminal failure back to pending, claimable again', async () => {
+    const messageId = newMessage()
+    await insertMessage(messageId)
+    await db.transaction((tx: Tx) =>
+      enqueueOutboundDelivery(tx, { messageId, payload: { to: 'customer@example.com', subject: 'Manual retry' } })
+    )
+    const claim = await claimNextOutboundDelivery()
+    await failOutboundDelivery(claim!.id, new Error('Permanent rejection'), MAX_DELIVERY_ATTEMPTS)
+
+    // Confirm it is actually terminal first - otherwise the next assertion
+    // proves nothing about the reset itself.
+    const [failedRow] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
+    expect(failedRow.status).toBe('failed')
+
+    await resetOutboundDeliveryForRetry(claim!.id)
+
+    const [resetRow] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
+    expect(resetRow.status).toBe('pending')
+    expect(resetRow.attemptCount).toBe(0)
+    expect(resetRow.lastError).toBeNull()
+
+    const reclaimed = await claimNextOutboundDelivery()
+    expect(reclaimed?.id).toBe(claim!.id)
+    await completeOutboundDelivery(reclaimed!.id)
   })
 })

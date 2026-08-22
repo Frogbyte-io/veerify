@@ -158,6 +158,22 @@ export async function failOutboundDelivery(id: string, error: unknown, attemptCo
     .where(eq(supportOutboundDelivery.id, id))
 }
 
+/**
+ * Bring a terminal `failed` delivery back to `pending` with a clean attempt
+ * count, so the next worker pass claims it as if newly enqueued.
+ *
+ * For SUP-04-10's retry action: an agent-initiated retry is a deliberate
+ * decision to try again from scratch, not "one more of the same automatic
+ * attempts" - resetting `attemptCount` rather than just clearing the lease is
+ * what distinguishes it from `failOutboundDelivery`'s own below-the-cap path.
+ */
+export async function resetOutboundDeliveryForRetry(id: string): Promise<void> {
+  await db
+    .update(supportOutboundDelivery)
+    .set({ status: 'pending', attemptCount: 0, leaseExpiresAt: null, lastError: null, updatedAt: new Date() })
+    .where(eq(supportOutboundDelivery.id, id))
+}
+
 /** Maximum stored error length. Enough to diagnose, short of storing a payload. */
 const MAX_ERROR_LENGTH = 500
 
