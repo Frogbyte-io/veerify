@@ -1,8 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import {
+  authorizationForDomains,
   normalizeHeaders,
   normalizeMessageId,
   parseReferences,
+  type ChannelConfiguration,
+  type FetchImpl,
+  type SendingAuthorization,
   type ChannelDriver,
   type InboundAddress,
   type InboundAttachment,
@@ -179,10 +183,67 @@ export class MailgunChannelDriver implements ChannelDriver {
 
   private readonly signingKey: string
   private readonly toleranceSeconds: number
+  private readonly apiKey: string
+  private readonly apiBaseUrl: string
+  private readonly fetchImpl: FetchImpl
 
-  constructor(options?: { signingKey?: string; toleranceSeconds?: number }) {
+  constructor(options?: {
+    signingKey?: string
+    toleranceSeconds?: number
+    apiKey?: string
+    /** EU accounts live on api.eu.mailgun.net, so this has to be settable. */
+    apiBaseUrl?: string
+    fetchImpl?: FetchImpl
+  }) {
     this.signingKey = (options?.signingKey ?? process.env.SUPPORT_MAILGUN_SIGNING_KEY ?? '').trim()
     this.toleranceSeconds = options?.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS
+    this.apiKey = (options?.apiKey ?? process.env.SUPPORT_MAILGUN_API_KEY ?? '').trim()
+    this.apiBaseUrl = (
+      options?.apiBaseUrl ??
+      process.env.SUPPORT_MAILGUN_API_BASE_URL ??
+      'https://api.mailgun.net'
+    ).replace(/\/+$/, '')
+    this.fetchImpl = options?.fetchImpl ?? ((input, init) => fetch(input, init))
+  }
+
+  isConfigured(): ChannelConfiguration {
+    const missing: string[] = []
+    if (!this.signingKey) missing.push('SUPPORT_MAILGUN_SIGNING_KEY')
+
+    return { configured: missing.length === 0, missing }
+  }
+
+  async checkSendingAuthorization(address: string): Promise<SendingAuthorization> {
+    if (!this.apiKey) {
+      return { status: 'unknown', reason: 'Set SUPPORT_MAILGUN_API_KEY to verify sending domains' }
+    }
+
+    let verified: string[]
+    try {
+      const response = await this.fetchImpl(`${this.apiBaseUrl}/v4/domains?limit=1000`, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Basic ${Buffer.from(`api:${this.apiKey}`).toString('base64')}`,
+        },
+      })
+
+      if (!response.ok) {
+        return { status: 'unknown', reason: `Mailgun returned ${response.status}` }
+      }
+
+      const body = (await response.json()) as { items?: { name?: string; state?: string }[] }
+
+      verified = (body.items ?? [])
+        // Mailgun reports 'unverified' for domains whose DNS is incomplete;
+        // sending as one is rejected, so it is not authorization.
+        .filter((domain) => domain.state === 'active')
+        .map((domain) => (domain.name ?? '').trim().toLowerCase())
+        .filter((name) => name.length > 0)
+    } catch (error) {
+      return { status: 'unknown', reason: error instanceof Error ? error.message : 'Mailgun lookup failed' }
+    }
+
+    return authorizationForDomains(address, verified)
   }
 
   verifySignature(input: InboundVerificationInput): boolean {
