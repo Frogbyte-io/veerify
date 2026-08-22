@@ -252,6 +252,38 @@ addressed by this item, which only consumes `checkSendingAuthorization`'s return
 
 ---
 
+## SUP-04-3 has landed (`e7fddc1`, `a8cae92`) — the outbox Agent 1's SUP-04-4 and Agent 2's SUP-04-10 both need
+
+Migration `0025` and `server/utils/outbound-delivery.ts` are on `agent1/stage-04`, merged with
+`origin/support-platform` and pushed. Three things, one per stage item still ahead:
+
+1. **SUP-04-4 (mine) enqueues via `enqueueOutboundDelivery(tx, { messageId, payload, kind? })`**, called
+   inside the same transaction as the `conversationMessage` insert. `payload` is `OutboundDeliveryPayload`
+   — the same shape as `lib/email.ts`'s `SendEmailOptions` except `attachments` are `OutboundAttachment[]`
+   (`{ filename, contentType?, storageKey, cid? }` — a storage key, never bytes). SUP-04-4 builds `from`/
+   `replyTo` from `buildOutboundIdentity`'s output and reads any `conversationAttachment` rows created by
+   SUP-04-7 to populate `attachments` by storage key.
+2. **SUP-04-10 (Agent 2's) renders `supportOutboundDelivery.status`** — `'pending' | 'sent' | 'failed'` —
+   against the message it belongs to (join on `messageId`), and calls the new
+   **`resetOutboundDeliveryForRetry(id)`** for the retry action, from a new endpoint (none exists yet — it
+   is not in either agent's file-boundary list above, since it did not exist when that table was written;
+   treat it as yours to add alongside the UI, under `server/api/support/conversations/**`). Do not reset
+   `attemptCount` or `status` by writing to the table directly — go through this function, since a plain
+   `UPDATE` would skip clearing `lastError` and the lease consistently.
+3. **The worker itself (`runOutboundDeliveryWorker`) is not wired to run anywhere yet** — SUP-04-4 needs to
+   trigger it after enqueueing (design.md's flow: insert → publish realtime → enqueue → _worker sends_).
+   Every dependency of `processOutboundDelivery`/`runOutboundDeliveryWorker` is injectable specifically so
+   it is unit-testable without Nitro's `useNodeMailer()` auto-import — call the exports with no `deps`
+   argument in real code and they default to the real implementations.
+
+**Not independently confirmed:** the guarded integration suite (claim atomicity under `FOR UPDATE SKIP
+LOCKED`, lease behaviour, attempt-cap transitions) has not run against real Postgres in either worktree
+this session — no Docker on this box. Verified it reaches a real connection attempt (`ECONNREFUSED`, not
+an import/export error) and the full schema typechecks clean, but the atomicity claim itself is unproven
+until someone runs it with `docker compose -f docker-compose-dev.yml up -d db` reachable.
+
+---
+
 ## Questions that were open, and their answers
 
 All three were resolved against the code before Agent 2 picked the stage up. **The first one reverses
