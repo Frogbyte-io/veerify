@@ -286,7 +286,7 @@ preserve them, not build them.
 
 - [x] **SUP-04-1** (agent 1) Extend `lib/email.ts` with an optional options bag (from, replyTo, cc, headers, attachments); confirm all existing call sites are unaffected. All 10 are inside `lib/email.ts` itself and pass exactly `{ to, subject, html, text }`, so the blast radius is contained. Also adds the outbound surface to `ChannelDriver`, which has none today — SUP-04-6 has nothing to call without it
 - [x] **SUP-04-2** (agent 2) Add `lib/support-email.ts`: Message-ID generation, References chain assembly with trimming, quoted-history block, signature appending; unit tests for chain assembly
-- [ ] **SUP-04-3** (agent 1) Add `supportOutboundDelivery` (message id, payload/credential references, attempt count, status, lease, idempotency key, timestamps) and a bounded retry/claim worker. Reuse it for agent replies, auto-replies, and later CSAT/social sends (delta D-21)
+- [x] **SUP-04-3** (agent 1) Add `supportOutboundDelivery` (message id, payload/credential references, attempt count, status, lease, idempotency key, timestamps) and a bounded retry/claim worker. Reuse it for agent replies, auto-replies, and later CSAT/social sends (delta D-21)
 - [ ] **SUP-04-4** (agent 1) Wire `POST /api/support/conversations/[id]/messages` for `kind: 'outgoing'`: transactional optimistic insert plus outbox enqueue, immediate realtime publish, worker delivery-status update, and `firstResponseAt` stamping
 - [ ] **SUP-04-5** (agent 1) Enforce server-side that `kind: 'note'` never dispatches mail
 - [x] **SUP-04-6** (agent 2) Implement per-inbox From/Reply-To/signature with a settings warning when the address is not provider-authorized
