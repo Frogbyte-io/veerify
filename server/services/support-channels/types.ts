@@ -159,6 +159,61 @@ export interface ChannelDriver {
    * caught in settings rather than silently at send time.
    */
   checkSendingAuthorization(address: string): Promise<SendingAuthorization>
+
+  /**
+   * The provider's own id for this delivery/bounce *event*, used as the
+   * idempotency key in `supportDeliveryEvent (provider, providerEventId)`.
+   *
+   * Deliberately a different key space from `extractEventId`: that table is
+   * keyed one row per *email* (a provider retry must not become a second
+   * ticket), but one outbound message legitimately produces several delivery
+   * events (Delivery, then Open, then possibly Bounce) - see "the delivery
+   * webhook gets its own table" in `parallel-agents.md`. Falls back to a
+   * composite of record type + message id + recipient when the provider
+   * supplies no event id of its own (Postmark's Delivery payload may not).
+   */
+  extractDeliveryEventId(payload: unknown): string | null
+
+  /**
+   * Provider delivery/bounce webhook payload → normalized event. Throws on a
+   * payload it cannot read.
+   *
+   * SUP-04-9 addition. Uses the same `verifySignature`/`isConfigured` as
+   * inbound mail - both providers protect every webhook URL on an account the
+   * same way (Postmark: Basic Auth in the URL; Mailgun: the HMAC envelope),
+   * so there is nothing provider-specific left to verify differently here.
+   */
+  parseDeliveryEvent(payload: unknown): DeliveryEvent
+}
+
+/**
+ * A normalized delivery, bounce, or engagement event for one previously-sent
+ * message.
+ *
+ * **`messageId` is the single biggest unconfirmed assumption in Stage 04.**
+ * It is read from whatever field the provider's delivery webhook uses to
+ * identify the original message, on the assumption that it equals the RFC
+ * `Message-ID` header this app set when sending (`conversationMessage.
+ * channelMessageId`, stripped). That is true when sending through a
+ * provider's HTTP send API, which returns and tracks against your own
+ * Message-ID. It has NOT been verified for SMTP relay, which is what this
+ * app actually uses (`lib/email.ts` → nodemailer → `SMTP_HOST`) - a provider
+ * receiving mail over SMTP may instead track by an internal id of its own
+ * that never appears in the RFC header at all, in which case this field will
+ * not match anything and delivery-status tracking silently does nothing
+ * (see the `messageId: null` handling in the endpoint, and D-35's precedent
+ * for why "may legitimately never resolve" is handled as data, not an
+ * error). Confirm against a real send before trusting this correlates.
+ */
+export interface DeliveryEvent {
+  /** Provider-normalized: 'delivered' | 'bounced' | 'opened' | 'clicked' | 'spam_complaint'. */
+  recordType: string
+  /** RFC Message-ID this event is about, stripped. Null when the provider payload carries none. */
+  messageId: string | null
+  recipient: string | null
+  /** Only meaningful when `recordType === 'bounced'`. */
+  bounceType: 'hard' | 'soft' | null
+  description: string | null
 }
 
 /** Strip the angle brackets RFC 5322 wraps message identifiers in. */

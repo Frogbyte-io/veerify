@@ -5,6 +5,7 @@ import {
   normalizeMessageId,
   parseReferences,
   type ChannelConfiguration,
+  type DeliveryEvent,
   type FetchImpl,
   type SendingAuthorization,
   type ChannelDriver,
@@ -58,6 +59,45 @@ interface PostmarkInboundPayload {
   Date?: string
   Headers?: PostmarkHeader[]
   Attachments?: PostmarkAttachment[]
+}
+
+/**
+ * Delivery, Bounce, Open, Click, and SpamComplaint webhooks all land on the
+ * same URL when configured together, discriminated by `RecordType`. Only
+ * `Bounce` records carry a dedicated numeric `ID`; the others fall back to a
+ * composite key in `extractDeliveryEventId`.
+ */
+interface PostmarkDeliveryPayload {
+  RecordType?: string
+  MessageID?: string
+  ID?: number
+  Recipient?: string
+  Email?: string
+  Type?: string
+  Description?: string
+}
+
+/** Postmark's own transient/retryable bounce types - Type values not in this set are treated as hard. */
+const SOFT_BOUNCE_TYPES = new Set(['softbounce', 'transient'])
+
+/**
+ * `SoftBounce`/`Transient` are the only Postmark bounce types documented as
+ * retryable; anything else (including types this driver does not
+ * specifically recognize) defaults to hard. design.md's own stated priority
+ * is "silent delivery failure is worse than a visible error", so an
+ * ambiguous bounce record surfaces rather than being swallowed as soft.
+ */
+function classifyPostmarkBounce(type: string | undefined): 'hard' | 'soft' {
+  const normalized = (type ?? '').trim().toLowerCase()
+  return SOFT_BOUNCE_TYPES.has(normalized) ? 'soft' : 'hard'
+}
+
+const RECORD_TYPE_MAP: Record<string, string> = {
+  Delivery: 'delivered',
+  Bounce: 'bounced',
+  Open: 'opened',
+  Click: 'clicked',
+  SpamComplaint: 'spam_complaint',
 }
 
 /** Constant-time string compare that tolerates unequal lengths. */
@@ -244,6 +284,46 @@ export class PostmarkChannelDriver implements ChannelDriver {
       // message row; fall back to arrival time.
       receivedAt: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : new Date(),
       rawHeaders: headers,
+    }
+  }
+
+  extractDeliveryEventId(payload: unknown): string | null {
+    const typed = payload as PostmarkDeliveryPayload | null
+    if (!typed || typeof typed !== 'object') return null
+
+    // Only Bounce records carry a dedicated event id. Delivery/Open/Click/
+    // SpamComplaint do not document one, so a composite of everything that
+    // identifies this specific event stands in - matching the reasoning
+    // question 1 in parallel-agents.md settled for the table's key shape.
+    //
+    // `typed.ID` is already a JS number by the time it reaches here (parsed
+    // upstream by `readBody`/`JSON.parse`), so a bounce id beyond
+    // `Number.MAX_SAFE_INTEGER` would already have lost precision before this
+    // function runs - not fixable at this layer. Not independently confirmed
+    // whether real Postmark bounce ids ever reach that magnitude.
+    if (typeof typed.ID === 'number') return `postmark-bounce-${typed.ID}`
+
+    const messageId = normalizeMessageId(typed.MessageID)
+    const recipient = (typed.Recipient ?? typed.Email ?? '').trim().toLowerCase()
+    if (!messageId || !recipient) return null
+
+    return `${typed.RecordType ?? 'unknown'}:${messageId}:${recipient}`
+  }
+
+  parseDeliveryEvent(payload: unknown): DeliveryEvent {
+    const typed = payload as PostmarkDeliveryPayload | null
+    if (!typed || typeof typed !== 'object') {
+      throw new Error('Postmark delivery payload is not an object')
+    }
+
+    const recordType = RECORD_TYPE_MAP[typed.RecordType ?? ''] ?? (typed.RecordType ?? 'unknown').toLowerCase()
+
+    return {
+      recordType,
+      messageId: normalizeMessageId(typed.MessageID),
+      recipient: (typed.Recipient ?? typed.Email ?? '').trim().toLowerCase() || null,
+      bounceType: recordType === 'bounced' ? classifyPostmarkBounce(typed.Type) : null,
+      description: typed.Description?.trim() || null,
     }
   }
 }
