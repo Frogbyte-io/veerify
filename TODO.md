@@ -293,7 +293,7 @@ preserve them, not build them.
 - [x] **SUP-04-7** (agent 2) Implement agent attachment upload via the existing presign flow with size cap and type allowlist
 - [x] **SUP-04-8** (agent 1) Implement auto-reply with once-per-conversation, auto-response, `Auto-Submitted`, and per-contact rate-limit guards. All four ship together or auto-reply does not ship — it is the mail-loop vector
 - [ ] **SUP-04-9** (agent 1) Add `POST /api/support/delivery/[provider]` for delivery and bounce webhooks, keyed per event on the new `supportDeliveryEvent` table rather than `supportEmailEvent`; map to `deliveryStatus` and write an `activity` message on hard bounce
-- [ ] **SUP-04-10** (agent 2) Surface delivery status in the thread UI (pending, sent, failed, bounced) with a retry action on failure
+- [x] **SUP-04-10** (agent 2) Surface delivery status in the thread UI (pending, sent, failed, bounced) with a retry action on failure
 - [ ] **SUP-04-11** (agent 2) Add E2E coverage for the full round trip: inbound mail → agent reply → customer reply threads back
   - **Acceptance criterion 1 is not reachable from this suite.** "Same thread in Gmail _and_ Outlook" needs real mailboxes at both providers, and the stage doc says outright that Mailpit will not catch client-specific quirks. Verify by hand and record it as manual, or descope it deliberately — do not let a Mailpit assertion quietly stand in for it.
 
