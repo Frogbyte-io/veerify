@@ -109,3 +109,12 @@ export function buildOutgoingReply(input: OutgoingReplyInput): OutgoingReplyResu
     },
   }
 }
+
+/**
+ * Sum of `sizeBytes` across a reply's attachments, for the per-message total
+ * cap `messages/index.post.ts` enforces (SUP-04-7's presign step only sees
+ * one file at a time and cannot check this itself).
+ */
+export function totalAttachmentBytes(attachments: { sizeBytes: number }[] | undefined): number {
+  return (attachments ?? []).reduce((sum, a) => sum + a.sizeBytes, 0)
+}

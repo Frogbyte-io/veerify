@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildOutgoingReply } from '../server/utils/outbound-reply'
+import { buildOutgoingReply, totalAttachmentBytes } from '../server/utils/outbound-reply'
 
 function baseInput() {
   return {
@@ -119,5 +119,16 @@ describe('buildOutgoingReply', () => {
     expect(result.deliveryPayload.attachments).toEqual([
       { filename: 'invoice.pdf', contentType: 'application/pdf', storageKey: 'support/abc.pdf' },
     ])
+  })
+})
+
+describe('totalAttachmentBytes', () => {
+  it('sums sizeBytes across all attachments', () => {
+    expect(totalAttachmentBytes([{ sizeBytes: 1000 }, { sizeBytes: 2500 }])).toBe(3500)
+  })
+
+  it('returns zero for an empty or undefined list', () => {
+    expect(totalAttachmentBytes([])).toBe(0)
+    expect(totalAttachmentBytes(undefined)).toBe(0)
   })
 })

@@ -46,18 +46,20 @@ import {
   supportInbox,
 } from '~/server/database/schema/support'
 import { emailDomain, parseReferences } from '~/server/services/support-channels/types'
-import { buildOutgoingReply } from '~/server/utils/outbound-reply'
+import { buildOutgoingReply, totalAttachmentBytes } from '~/server/utils/outbound-reply'
 import { enqueueOutboundDelivery, runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
+import { MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-attachments'
 
 const logger = createConsola().withTag('veerify').withTag('support-outbound')
 
+// Matches the composer's POST body exactly (`components/support/SupportComposer.vue`)
+// and SUP-04-7's presign response shape (`storageKey`, `fileName`, `contentType`,
+// `sizeBytes`) - no `cid`, since this composer has no inline-image insertion.
 const attachmentSchema = z.object({
-  filename: z.string().min(1).max(255),
-  contentType: z.string().max(255).optional(),
-  // Produced by SUP-04-7's presign flow; this endpoint links the reference,
-  // it does not validate ownership of the key itself.
   storageKey: z.string().min(1),
-  cid: z.string().optional(),
+  fileName: z.string().min(1).max(255),
+  contentType: z.string().min(1).max(255),
+  sizeBytes: z.number().int().positive(),
 })
 
 const bodySchema = z
@@ -66,8 +68,8 @@ const bodySchema = z
     body: z.string().trim().min(1).max(50000),
     bodyHtml: z.string().max(200000).optional(),
     // Count bound only - a defensive limit on this endpoint, independent of
-    // SUP-04-7's size cap and type allowlist on the presign flow that
-    // actually produces these storage keys.
+    // SUP-04-7's per-file size cap (enforced at presign) and this endpoint's
+    // own per-message total cap (enforced below, against MAX_MESSAGE_ATTACHMENT_BYTES).
     attachments: z.array(attachmentSchema).max(10).optional(),
   })
   .superRefine((value, ctx) => {
@@ -79,6 +81,18 @@ const bodySchema = z
         code: z.ZodIssueCode.custom,
         path: ['attachments'],
         message: 'A note cannot have attachments - it is never sent',
+      })
+    }
+
+    // SUP-04-7's presign step caps each file individually and cannot see the
+    // others in the same reply - this is the first point that sees the full
+    // list, so the per-message total is enforced here (parallel-agents.md).
+    const totalBytes = totalAttachmentBytes(value.attachments)
+    if (totalBytes > MAX_MESSAGE_ATTACHMENT_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['attachments'],
+        message: `Attachments total ${Math.floor(totalBytes / (1024 * 1024))} MB, exceeding the ${Math.floor(MAX_MESSAGE_ATTACHMENT_BYTES / (1024 * 1024))} MB per-message limit`,
       })
     }
   })
@@ -175,10 +189,9 @@ export default defineEventHandler(async (event) => {
       newMessageId,
       domain,
       attachments: (body.attachments ?? []).map((a) => ({
-        filename: a.filename,
+        filename: a.fileName,
         contentType: a.contentType,
         storageKey: a.storageKey,
-        cid: a.cid,
       })),
     })
   }
@@ -212,10 +225,13 @@ export default defineEventHandler(async (event) => {
           id: randomUUID(),
           messageId: message.id,
           storageKey: a.storageKey,
-          fileName: a.filename,
-          contentType: a.contentType ?? null,
-          isInline: Boolean(a.cid),
-          contentId: a.cid ?? null,
+          fileName: a.fileName,
+          contentType: a.contentType,
+          sizeBytes: a.sizeBytes,
+          // Never inline: this composer has no inline-image insertion, unlike
+          // Stage 03's inbound path where a customer's HTML email embeds them.
+          isInline: false,
+          contentId: null,
           createdAt: now,
         }))
       )
