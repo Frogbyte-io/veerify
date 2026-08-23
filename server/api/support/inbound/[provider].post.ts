@@ -28,7 +28,7 @@ import { createError, getHeaders, getRouterParam, readRawBody, setResponseStatus
 import { and, eq, inArray } from 'drizzle-orm'
 import { createLogger } from '~/server/utils/logger'
 import { createSuccessResponse } from '~/server/utils/response'
-import { getChannelDriver, type InboundMessage } from '~/server/services/support-channels'
+import { emailDomain, getChannelDriver, type InboundMessage } from '~/server/services/support-channels'
 import { resolveInboxByAddress } from '~/server/utils/support-access'
 import { allocateConversationDisplayId } from '~/server/utils/support-counter'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
@@ -47,7 +47,15 @@ import {
   rejectInboundEvent,
 } from '~/server/utils/inbound-events'
 import { checkRateLimit } from '~/server/utils/rate-limit'
+import { getRateLimitStore } from '~/server/services/rate-limit'
 import { getStorageProvider } from '~/server/utils/storage'
+import {
+  AUTO_REPLY_RATE_LIMIT_MAX,
+  AUTO_REPLY_RATE_LIMIT_WINDOW_SECONDS,
+  buildAutoReply,
+  shouldSendAutoReply,
+} from '~/server/utils/auto-reply'
+import { enqueueOutboundDelivery, runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
 import { db } from '~/server/database/drizzle'
 import {
   conversation,
@@ -316,7 +324,97 @@ export default defineEventHandler(async (event) => {
         ownAddresses,
       })
 
-      return { conversationId, messageId, isNewConversation }
+      // ---- SUP-04-8: auto-reply --------------------------------------------
+      // Guard 1 (never on a detected auto-response) is enforced above this
+      // transaction - a flagged message returns at the `isAutoResponse` check
+      // and never reaches here. Guards 2 and 3 (only a new conversation, never
+      // twice) collapse into `isNewConversation`: see `auto-reply.ts`. Guard 4
+      // (`Auto-Submitted`) is set by `buildAutoReply`. Guard 5, the per-contact
+      // rate limit, is checked here because it needs the store.
+      let autoReplyMessageId: string | null = null
+
+      if (
+        shouldSendAutoReply({
+          isNewConversation,
+          autoReplyEnabled: inbox.autoReplyEnabled,
+          autoReplyTemplate: inbox.autoReplyTemplate,
+        })
+      ) {
+        if (!inbox.emailAddress) {
+          // No agent is present to show a 409 to - this is a webhook. Log and
+          // still ticket the customer's message normally.
+          logger.warn('Auto-reply is enabled but the inbox has no sending address', { inboxId: inbox.id })
+        } else if (message.messageId === null) {
+          // Cannot thread a reply with nothing to set In-Reply-To to, and an
+          // unthreaded acknowledgment risks becoming its own new "ticket" if
+          // the customer replies to it. Rare: providers essentially always
+          // supply a Message-ID.
+          logger.warn('Auto-reply skipped: inbound message has no Message-ID to thread onto', { conversationId })
+        } else {
+          const allowed = await getRateLimitStore().consume(
+            `support-auto-reply:${contactId}`,
+            AUTO_REPLY_RATE_LIMIT_WINDOW_SECONDS * 1000,
+            AUTO_REPLY_RATE_LIMIT_MAX
+          )
+
+          if (!allowed) {
+            logger.warn('Auto-reply rate limit exceeded for contact', { contactId })
+          } else {
+            const domain = emailDomain(inbox.emailAddress) ?? emailDomain(process.env.MAIL_FROM ?? '') ?? 'localhost'
+            autoReplyMessageId = randomUUID()
+
+            const autoReply = buildAutoReply({
+              inbox: { emailAddress: inbox.emailAddress, fromName: inbox.fromName, signature: inbox.signature },
+              // The literal sender of this email, not necessarily the
+              // contact record's current email - correct even after a merge.
+              contact: { email: message.from.address, name: message.from.name ?? null },
+              subject: message.subject ?? '(no subject)',
+              template: inbox.autoReplyTemplate as string,
+              previous: {
+                channelMessageId: message.messageId,
+                references: message.references,
+                fromName: message.from.name ?? message.from.address,
+                sentAt: message.receivedAt,
+                body: stripped.body,
+                bodyHtml: safeHtml,
+              },
+              newMessageId: autoReplyMessageId,
+              domain,
+            })
+
+            const [autoReplyRow] = await tx
+              .insert(conversationMessage)
+              .values({
+                id: autoReplyMessageId,
+                conversationId,
+                kind: 'outgoing',
+                body: inbox.autoReplyTemplate as string,
+                bodyHtml: null,
+                senderKind: 'system',
+                senderContactId: null,
+                senderUserId: null,
+                isPrivate: false,
+                channelMessageId: autoReply.channelMessageId,
+                inReplyTo: autoReply.inReplyTo,
+                channelHeaders: autoReply.referencesForStorage ? { references: autoReply.referencesForStorage } : null,
+                deliveryStatus: 'pending',
+                // Not a substantive agent response - deliberately does not
+                // touch firstResponseAt/lastAgentReplyAt (Stage 06 territory;
+                // flagged in parallel-agents.md for whoever builds SLA to
+                // confirm this reading rather than assume it).
+                metadata: { isAutoReply: true },
+                createdAt: new Date(),
+              })
+              .returning()
+
+            await tx.update(conversation).set({ lastActivityAt: new Date() }).where(eq(conversation.id, conversationId))
+
+            await enqueueOutboundDelivery(tx, { messageId: autoReplyRow.id, payload: autoReply.deliveryPayload })
+          }
+        }
+      }
+
+      return { conversationId, messageId, isNewConversation, autoReplyMessageId }
     })
 
     await publishConversationEvent({
@@ -326,6 +424,27 @@ export default defineEventHandler(async (event) => {
       conversationId: result.conversationId,
       messageId: result.messageId,
     })
+
+    if (result.autoReplyMessageId) {
+      // A second, real message exists now (the auto-reply) - agents watching
+      // the inbox should see it appear without a manual refresh, same as any
+      // other new message.
+      await publishConversationEvent({
+        type: 'message.created',
+        teamId: inbox.teamId,
+        inboxId: inbox.id,
+        conversationId: result.conversationId,
+        messageId: result.autoReplyMessageId,
+      })
+
+      // Fire-and-forget, same reasoning as SUP-04-4: the outbox row is the
+      // durable copy, this is just an optimistic trigger to send it promptly.
+      runOutboundDeliveryWorker().catch((error) => {
+        logger.error('Auto-reply outbound delivery worker pass failed', {
+          error: error instanceof Error ? error.message : error,
+        })
+      })
+    }
 
     // ---- 9. Finish -------------------------------------------------------
     await completeInboundEvent(eventId, result.conversationId)
