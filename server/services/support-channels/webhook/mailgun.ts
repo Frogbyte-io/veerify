@@ -5,6 +5,7 @@ import {
   normalizeMessageId,
   parseReferences,
   type ChannelConfiguration,
+  type DeliveryEvent,
   type FetchImpl,
   type SendingAuthorization,
   type ChannelDriver,
@@ -163,6 +164,33 @@ function toAttachments(value: MailgunInboundPayload['attachments']): InboundAtta
       isInline: Boolean(contentId),
     }
   })
+}
+
+/**
+ * Mailgun's Events API webhook shape - the same top-level `signature`
+ * envelope as inbound, wrapping an `event-data` object the inbound shape has
+ * no equivalent of.
+ */
+interface MailgunEventPayload {
+  signature?: string | (MailgunSignature & { signature?: string })
+  'event-data'?: {
+    id?: string
+    event?: string
+    recipient?: string
+    /** Set on `event: 'failed'` - 'permanent' is a hard bounce, 'temporary' is soft/retryable. */
+    severity?: string
+    reason?: string
+    'delivery-status'?: { description?: string; message?: string }
+    message?: { headers?: { 'message-id'?: string } }
+  }
+}
+
+const MAILGUN_EVENT_MAP: Record<string, string> = {
+  delivered: 'delivered',
+  failed: 'bounced',
+  opened: 'opened',
+  clicked: 'clicked',
+  complained: 'spam_complaint',
 }
 
 /** Pull the signing triple, which Mailgun sends either flat or nested. */
@@ -328,6 +356,36 @@ export class MailgunChannelDriver implements ChannelDriver {
       attachments: toAttachments(typed.attachments),
       receivedAt,
       rawHeaders: headers,
+    }
+  }
+
+  extractDeliveryEventId(payload: unknown): string | null {
+    const typed = payload as MailgunEventPayload | null
+    // Unlike inbound routes, Mailgun's Events API gives every event its own
+    // id - parallel-agents.md's answered question 1 confirmed this is the
+    // right key, no fallback composite needed.
+    const id = typed?.['event-data']?.id
+    return typeof id === 'string' && id.trim().length > 0 ? id.trim() : null
+  }
+
+  parseDeliveryEvent(payload: unknown): DeliveryEvent {
+    const typed = payload as MailgunEventPayload | null
+    const data = typed?.['event-data']
+    if (!data || typeof data !== 'object') {
+      throw new Error('Mailgun delivery payload has no event-data')
+    }
+
+    const recordType = MAILGUN_EVENT_MAP[data.event ?? ''] ?? (data.event ?? 'unknown').toLowerCase()
+    const messageId = normalizeMessageId(data.message?.headers?.['message-id'])
+    const recipient = data.recipient?.trim().toLowerCase() || null
+    const description = data['delivery-status']?.description ?? data['delivery-status']?.message ?? data.reason ?? null
+
+    return {
+      recordType,
+      messageId,
+      recipient,
+      bounceType: recordType === 'bounced' ? (data.severity === 'temporary' ? 'soft' : 'hard') : null,
+      description: description?.trim() || null,
     }
   }
 }

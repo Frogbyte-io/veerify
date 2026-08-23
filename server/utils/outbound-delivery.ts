@@ -166,8 +166,14 @@ async function applyDeliveryOutcome(input: {
  * here is in the critical path of `deliveryStatus` actually being correct -
  * that already committed before this runs. Looks up `teamId`/`inboxId` fresh
  * because this module only ever has a bare `messageId` to work from.
+ *
+ * Exported (SUP-04-9): the delivery/bounce webhook endpoint updates
+ * `conversationMessage.deliveryStatus` too, via its own path (it has no
+ * `supportOutboundDelivery` row to pair the update with - `applyDeliveryOutcome`
+ * above is specific to that pairing), but the agent UI needs the same
+ * notification either way.
  */
-async function publishDeliveryStatusChanged(messageId: string): Promise<void> {
+export async function publishDeliveryStatusChanged(messageId: string): Promise<void> {
   try {
     const [row] = await db
       .select({ teamId: conversation.teamId, inboxId: conversation.inboxId, conversationId: conversation.id })
