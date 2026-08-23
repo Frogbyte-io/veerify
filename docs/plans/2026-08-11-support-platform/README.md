@@ -11,7 +11,7 @@ got wrong once implementation started, and several entries contradict the origin
 
 ---
 
-## Current state — updated August 13, 2026
+## Current state — updated August 23, 2026
 
 **Integration branch: `support-platform`.** Not `main`. See delta D-17. Every stage validates here
 until the program is deliberately integrated into `main`.
@@ -19,8 +19,10 @@ until the program is deliberately integrated into `main`.
 |                    |                                                                   |
 | ------------------ | ----------------------------------------------------------------- |
 | Stage 00           | **Complete** — 10/10 items                                        |
-| Stage 01           | **In progress** — SUP-01-1 … SUP-01-4 done; next is **SUP-01-10** |
-| Gates              | `yarn harness:verify` green — 138 tests, 0 lint errors            |
+| Stage 01           | **Complete** — contact identity, integrity, timeline, and UI      |
+| Stage 02           | **Complete** — inbox and conversation core                        |
+| Stage 03           | **Complete** — inbound email                                      |
+| Stage 04           | **In progress** — 10/11 items; SUP-04-9 delivery/bounce webhook remains |
 | Open cross-cutting | SUP-X-1 (Redis integration suite, delta D-15)                     |
 
 **Related branches.** `sleekplan-export` holds an unrelated changelog + Sleekplan/CSV import feature

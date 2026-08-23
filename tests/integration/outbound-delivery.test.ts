@@ -107,6 +107,10 @@ describe('outbound delivery outbox (real Postgres)', () => {
     expect(row.kind).toBe('email')
     expect(row.idempotencyKey).toBeTruthy()
     expect(row.attemptCount).toBe(0)
+
+    // Clean up so this does not linger as 'pending' and get claimed ahead of
+    // a later test's own row (see the same note on the next test).
+    await completeOutboundDelivery(row.id, messageId)
   })
 
   it('rejects a second enqueue for the same message and kind', async () => {
@@ -117,6 +121,12 @@ describe('outbound delivery outbox (real Postgres)', () => {
     await db.transaction((tx: Tx) => enqueueOutboundDelivery(tx, { messageId, payload }))
 
     await expect(db.transaction((tx: Tx) => enqueueOutboundDelivery(tx, { messageId, payload }))).rejects.toThrow()
+
+    // Clean up so this does not linger as 'pending' and get claimed ahead of
+    // a later test's own row - claimNextOutboundDelivery takes the oldest
+    // pending row across the whole table, unscoped to a test.
+    const [row] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.messageId, messageId))
+    await completeOutboundDelivery(row.id, messageId)
   })
 
   it('claims the oldest pending row and marks it leased', async () => {
