@@ -879,7 +879,7 @@ export default defineEventHandler((event) => {
           tags: ['Support'],
           summary: 'Write an agent reply or an internal note to a conversation',
           description:
-            'Only outgoing and note kinds may be created here. isPrivate is derived from kind server-side and is never read from the request body. Stage 02 stores the message; Stage 04 sends it, so deliveryStatus starts at pending.',
+            'Only outgoing and note kinds may be created here. isPrivate is derived from kind server-side and is never read from the request body. An outgoing message is enqueued to the durable outbox in the same transaction as its insert; a note never dispatches mail.',
           operationId: 'createSupportConversationMessage',
           parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
           responses: {
@@ -887,6 +887,7 @@ export default defineEventHandler((event) => {
             '400': { description: 'Validation failed' },
             '403': { description: 'Not a member of this inbox or a team admin' },
             '404': { description: 'Conversation not found' },
+            '409': { description: 'The inbox has no sending address, or the contact has no email address' },
           },
         },
       },
