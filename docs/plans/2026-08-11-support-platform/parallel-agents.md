@@ -136,7 +136,7 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 - [x] **SUP-04-4** Wire `messages/index.post.ts` for `kind: 'outgoing'` — in-transaction outbox enqueue, worker delivery-status update
 - [x] **SUP-04-5** Server-side enforcement that `kind: 'note'` never dispatches
 - [x] **SUP-04-8** Auto-reply with all four guards
-- [ ] **SUP-04-9** `POST /api/support/delivery/[provider]` delivery and bounce webhooks, keyed on the new `supportDeliveryEvent` table (**not** `supportEmailEvent` — see answered question 1); hard bounce writes an `activity` message
+- [x] **SUP-04-9** `POST /api/support/delivery/[provider]` delivery and bounce webhooks, keyed on the new `supportDeliveryEvent` table (**not** `supportEmailEvent` — see answered question 1); hard bounce writes an `activity` message
 
 ### Agent 2 — composition, identity, UI, E2E
 
@@ -505,6 +505,61 @@ lints clean, and its assumptions about response shapes (`message.channelMessageI
 deliveryStatus`, the 409/400 status codes) are cross-checked against the actual endpoint code as of this
 commit, not run against a live server. Matches SUP-03-14's precedent: written-but-never-executed is an
 accepted state here as long as it is said plainly, which this is.
+
+---
+
+## SUP-04-9 has landed (`2f0503c`) — the last item on the board, and this stage's biggest open risk
+
+`POST /api/support/delivery/[provider]` maps Postmark/Mailgun delivery, bounce, and engagement events onto
+`conversationMessage.deliveryStatus`, keyed on the new `supportDeliveryEvent` table per the answered
+question 1 above (one row per _event_, not per email — a single outbound message legitimately produces
+several). `ChannelDriver` gains `parseDeliveryEvent`/`extractDeliveryEventId` on both drivers;
+`verifySignature`/`isConfigured` are reused unchanged, since both providers protect every webhook URL on
+an account the same way regardless of what it is for.
+
+**This item's correctness rests on an assumption nobody in this program has verified: that a provider's
+delivery webhook identifies the original message by the same RFC `Message-ID` this app set when sending.**
+That is true when sending through a provider's HTTP send API. This app does not do that — it sends over
+SMTP (`lib/email.ts` → nodemailer → `SMTP_HOST`), and a provider receiving mail that way may instead track
+delivery by an internal id of its own that never appears in the RFC header at all. If that is the case
+here, `DeliveryEvent.messageId` never matches anything, `resolvedMessage` is always null, and every
+delivery/bounce event silently becomes `unmatched-message` — recorded, never crashing, but doing nothing
+useful, indefinitely. The code is written defensively for exactly this outcome (nullable `messageId`,
+D-35's precedent, a warning logged on every miss) so it degrades to "does nothing" rather than "breaks",
+but degrading gracefully to a feature that does not work is still a feature that does not work.
+
+**Before anyone trusts delivery-status tracking in production: send one real email through the configured
+SMTP relay, register the delivery webhook, and check what message-identifying field actually arrives.** If
+it is not the RFC Message-ID, the fix is not in this endpoint — it is either switching outbound sending to
+the provider's HTTP API (which does return a usable id) or, if the provider's SMTP-relay webhooks expose
+some other stable correlation id, teaching `parseDeliveryEvent` to read that instead. Neither is a
+same-shape change to what exists now.
+
+**Two smaller judgment calls, both flagged in code:**
+
+- A bounce `Type`/`severity` this driver does not specifically recognize defaults to **hard**, not soft —
+  design.md's own stated priority ("silent delivery failure is worse than a visible error") argues for
+  surfacing an ambiguous bounce rather than swallowing it.
+- Engagement events (opened/clicked/spam_complaint) are recorded in `supportDeliveryEvent` for audit and
+  future stages (Stage 09 reporting is the likely consumer) but do not touch `deliveryStatus` — outside
+  this stage's acceptance criteria, which only asks for delivered/bounced.
+
+**Caught in review before it shipped:** a test fixture used a Postmark bounce ID
+(`4323372036854775807`) large enough to lose precision as a JS float64 — not a real Postmark ID, just an
+unrealistic placeholder I picked without checking magnitude. `JSON.parse` had already lost the precision
+before any of my code ran, so this was not fixable in the driver; fixed the fixture and left a comment on
+the theoretical risk for whatever the real magnitude turns out to be.
+
+**Not independently confirmed, on top of the correlation risk above:** the guarded integration suite
+(claim/lease atomicity on `supportDeliveryEvent`) has not run against real Postgres this session, same gap
+as every other guarded suite this stage.
+
+**With this item, every checkbox in the Work split above is `[x]`.** SUP-04-11's E2E and this note both
+flag the same category of remaining work: things that need a real mailbox, a real SMTP relay, or a real
+provider account to actually verify, which no session this stage has had access to. Whoever picks up
+verification should treat the messageId-correlation risk above as the highest-priority item to check first
+— it is the one thing that, if wrong, means delivery status silently does not work at all rather than
+working imperfectly.
 
 ---
 
