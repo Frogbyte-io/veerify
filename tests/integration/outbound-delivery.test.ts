@@ -138,7 +138,7 @@ describe('outbound delivery outbox (real Postgres)', () => {
 
     // Clean up so it does not linger as 'pending' and get claimed by an
     // unrelated later test.
-    await completeOutboundDelivery(claim!.id)
+    await completeOutboundDelivery(claim!.id, messageId)
   })
 
   it('does not reclaim a row whose lease is still live', async () => {
@@ -157,11 +157,11 @@ describe('outbound delivery outbox (real Postgres)', () => {
     const second = await claimNextOutboundDelivery()
     expect(second?.id).not.toBe(first?.id)
 
-    await completeOutboundDelivery(first!.id)
-    if (second) await completeOutboundDelivery(second.id)
+    await completeOutboundDelivery(first!.id, first!.messageId)
+    if (second) await completeOutboundDelivery(second.id, second.messageId)
   })
 
-  it('completeOutboundDelivery marks the row sent and clears the lease', async () => {
+  it('completeOutboundDelivery marks the row sent, clears the lease, and syncs conversationMessage.deliveryStatus', async () => {
     const messageId = newMessage()
     await insertMessage(messageId)
     await db.transaction((tx: Tx) =>
@@ -169,14 +169,18 @@ describe('outbound delivery outbox (real Postgres)', () => {
     )
     const claim = await claimNextOutboundDelivery()
 
-    await completeOutboundDelivery(claim!.id)
+    await completeOutboundDelivery(claim!.id, messageId)
 
     const [row] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
     expect(row.status).toBe('sent')
     expect(row.leaseExpiresAt).toBeNull()
+
+    const [message] = await db.select().from(conversationMessage).where(eq(conversationMessage.id, messageId))
+    expect(message.deliveryStatus).toBe('sent')
+    expect(message.deliveryError).toBeNull()
   })
 
-  it('failOutboundDelivery below the attempt cap stays pending and reclaimable', async () => {
+  it('failOutboundDelivery below the attempt cap stays pending and reclaimable, and leaves conversationMessage.deliveryStatus at pending', async () => {
     const messageId = newMessage()
     await insertMessage(messageId)
     await db.transaction((tx: Tx) =>
@@ -184,20 +188,24 @@ describe('outbound delivery outbox (real Postgres)', () => {
     )
     const claim = await claimNextOutboundDelivery()
 
-    await failOutboundDelivery(claim!.id, new Error('SMTP timeout'), claim!.attemptCount)
+    await failOutboundDelivery(claim!.id, messageId, new Error('SMTP timeout'), claim!.attemptCount)
 
     const [row] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
     expect(row.status).toBe('pending')
     expect(row.leaseExpiresAt).toBeNull()
     expect(row.lastError).toBe('SMTP timeout')
 
+    // Not yet visible to the agent as "failed" - it will auto-retry.
+    const [message] = await db.select().from(conversationMessage).where(eq(conversationMessage.id, messageId))
+    expect(message.deliveryStatus).toBe('pending')
+
     // Reclaimable immediately since the lease was cleared.
     const reclaimed = await claimNextOutboundDelivery()
     expect(reclaimed?.id).toBe(claim!.id)
-    await completeOutboundDelivery(reclaimed!.id)
+    await completeOutboundDelivery(reclaimed!.id, messageId)
   })
 
-  it('failOutboundDelivery at the attempt cap becomes terminal', async () => {
+  it('failOutboundDelivery at the attempt cap becomes terminal and marks conversationMessage.deliveryStatus failed', async () => {
     const messageId = newMessage()
     await insertMessage(messageId)
     await db.transaction((tx: Tx) =>
@@ -205,40 +213,48 @@ describe('outbound delivery outbox (real Postgres)', () => {
     )
     const claim = await claimNextOutboundDelivery()
 
-    await failOutboundDelivery(claim!.id, new Error('Permanent rejection'), MAX_DELIVERY_ATTEMPTS)
+    await failOutboundDelivery(claim!.id, messageId, new Error('Permanent rejection'), MAX_DELIVERY_ATTEMPTS)
 
     const [row] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
     expect(row.status).toBe('failed')
 
+    const [message] = await db.select().from(conversationMessage).where(eq(conversationMessage.id, messageId))
+    expect(message.deliveryStatus).toBe('failed')
+    expect(message.deliveryError).toBe('Permanent rejection')
+
     // Terminal - never claimed again.
     const reclaimed = await claimNextOutboundDelivery()
     expect(reclaimed?.id).not.toBe(claim!.id)
-    if (reclaimed) await completeOutboundDelivery(reclaimed.id)
+    if (reclaimed) await completeOutboundDelivery(reclaimed.id, reclaimed.messageId)
   })
 
-  it('resetOutboundDeliveryForRetry brings a terminal failure back to pending, claimable again', async () => {
+  it('resetOutboundDeliveryForRetry brings a terminal failure back to pending, claimable again, and resets conversationMessage.deliveryStatus', async () => {
     const messageId = newMessage()
     await insertMessage(messageId)
     await db.transaction((tx: Tx) =>
       enqueueOutboundDelivery(tx, { messageId, payload: { to: 'customer@example.com', subject: 'Manual retry' } })
     )
     const claim = await claimNextOutboundDelivery()
-    await failOutboundDelivery(claim!.id, new Error('Permanent rejection'), MAX_DELIVERY_ATTEMPTS)
+    await failOutboundDelivery(claim!.id, messageId, new Error('Permanent rejection'), MAX_DELIVERY_ATTEMPTS)
 
     // Confirm it is actually terminal first - otherwise the next assertion
     // proves nothing about the reset itself.
     const [failedRow] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
     expect(failedRow.status).toBe('failed')
 
-    await resetOutboundDeliveryForRetry(claim!.id)
+    await resetOutboundDeliveryForRetry(claim!.id, messageId)
 
     const [resetRow] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
     expect(resetRow.status).toBe('pending')
     expect(resetRow.attemptCount).toBe(0)
     expect(resetRow.lastError).toBeNull()
 
+    const [message] = await db.select().from(conversationMessage).where(eq(conversationMessage.id, messageId))
+    expect(message.deliveryStatus).toBe('pending')
+    expect(message.deliveryError).toBeNull()
+
     const reclaimed = await claimNextOutboundDelivery()
     expect(reclaimed?.id).toBe(claim!.id)
-    await completeOutboundDelivery(reclaimed!.id)
+    await completeOutboundDelivery(reclaimed!.id, messageId)
   })
 })

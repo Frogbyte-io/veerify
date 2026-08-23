@@ -50,7 +50,7 @@ describe('processOutboundDelivery', () => {
 
     expect(result).toEqual({ outcome: 'sent' })
     expect(getObject).not.toHaveBeenCalled()
-    expect(onSent).toHaveBeenCalledWith('delivery-1')
+    expect(onSent).toHaveBeenCalledWith('delivery-1', 'msg-1')
     expect(onFailed).not.toHaveBeenCalled()
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: 'customer@example.com', subject: 'Re: Invoice' })
@@ -95,7 +95,7 @@ describe('processOutboundDelivery', () => {
 
     expect(result).toEqual({ outcome: 'failed', error: 'SMTP rejected' })
     expect(onSent).not.toHaveBeenCalled()
-    expect(onFailed).toHaveBeenCalledWith('delivery-1', 'SMTP rejected', 1)
+    expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', 'SMTP rejected', 1)
   })
 
   it('calls onFailed when sendEmail throws rather than returning a failure result', async () => {
@@ -105,7 +105,7 @@ describe('processOutboundDelivery', () => {
     const result = await processOutboundDelivery(claim(), { sendEmail, getObject: vi.fn(), onSent: vi.fn(), onFailed })
 
     expect(result).toEqual({ outcome: 'failed', error: 'socket hang up' })
-    expect(onFailed).toHaveBeenCalledWith('delivery-1', expect.any(Error), 1)
+    expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', expect.any(Error), 1)
   })
 })
 

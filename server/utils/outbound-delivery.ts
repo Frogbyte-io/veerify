@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { supportOutboundDelivery } from '~/server/database/schema/support'
+import { conversation, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
 import { sendEmail as defaultSendEmail, type EmailAttachment, type SendEmailOptions } from '~/lib/email'
 import { getStorageProvider } from '~/server/utils/storage'
+import { publishConversationEvent } from '~/server/utils/support-realtime'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('outbound-delivery')
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -128,12 +132,75 @@ export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null>
   }
 }
 
+/**
+ * Push the outbox status onto its `supportOutboundDelivery` row and the
+ * `conversationMessage` the UI actually reads, in one transaction so the two
+ * never observably disagree.
+ *
+ * SUP-04-10 note: before this, nothing ever updated `conversationMessage.
+ * deliveryStatus` past its initial insert-time value - `completeOutboundDelivery`
+ * and `failOutboundDelivery` only touched the outbox row. A message would sit
+ * at `'pending'` forever regardless of whether it actually sent. See the
+ * landing note in `parallel-agents.md` for the full story.
+ */
+async function applyDeliveryOutcome(input: {
+  deliveryId: string
+  messageId: string
+  deliveryPatch: Partial<typeof supportOutboundDelivery.$inferInsert>
+  messagePatch: Partial<typeof conversationMessage.$inferInsert>
+}): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .update(supportOutboundDelivery)
+      .set(input.deliveryPatch)
+      .where(eq(supportOutboundDelivery.id, input.deliveryId))
+    await tx.update(conversationMessage).set(input.messagePatch).where(eq(conversationMessage.id, input.messageId))
+  })
+}
+
+/**
+ * Notify the thread/list UI that a message's delivery status changed.
+ *
+ * Fire-and-forget and never throws: a realtime publish failure must not turn
+ * a successful (or correctly recorded failed) send into a 500, and nothing
+ * here is in the critical path of `deliveryStatus` actually being correct -
+ * that already committed before this runs. Looks up `teamId`/`inboxId` fresh
+ * because this module only ever has a bare `messageId` to work from.
+ */
+async function publishDeliveryStatusChanged(messageId: string): Promise<void> {
+  try {
+    const [row] = await db
+      .select({ teamId: conversation.teamId, inboxId: conversation.inboxId, conversationId: conversation.id })
+      .from(conversationMessage)
+      .innerJoin(conversation, eq(conversationMessage.conversationId, conversation.id))
+      .where(eq(conversationMessage.id, messageId))
+      .limit(1)
+    if (!row) return
+
+    await publishConversationEvent({
+      type: 'message.delivery-status',
+      teamId: row.teamId,
+      inboxId: row.inboxId,
+      conversationId: row.conversationId,
+      messageId,
+    })
+  } catch (error) {
+    logger.error('Failed to publish delivery status update', {
+      messageId,
+      error: error instanceof Error ? error.message : error,
+    })
+  }
+}
+
 /** Mark a delivery sent. Terminal - never claimed again. */
-export async function completeOutboundDelivery(id: string): Promise<void> {
-  await db
-    .update(supportOutboundDelivery)
-    .set({ status: 'sent', leaseExpiresAt: null, lastError: null, updatedAt: new Date() })
-    .where(eq(supportOutboundDelivery.id, id))
+export async function completeOutboundDelivery(id: string, messageId: string): Promise<void> {
+  await applyDeliveryOutcome({
+    deliveryId: id,
+    messageId,
+    deliveryPatch: { status: 'sent', leaseExpiresAt: null, lastError: null, updatedAt: new Date() },
+    messagePatch: { deliveryStatus: 'sent', deliveryError: null },
+  })
+  await publishDeliveryStatusChanged(messageId)
 }
 
 /**
@@ -143,19 +210,35 @@ export async function completeOutboundDelivery(id: string): Promise<void> {
  * cleared so the next worker pass can reclaim it immediately rather than
  * waiting out the lease. At the cap it becomes terminal `failed` - retrying
  * forever on a permanently-rejecting address is not a retry policy.
+ *
+ * `conversationMessage.deliveryStatus` mirrors the same pending/failed split:
+ * a below-cap failure is not yet visible to the agent as "failed" (it will
+ * auto-retry), so only a terminal failure changes what the UI shows - and
+ * only a terminal failure is worth a realtime publish, since a non-terminal
+ * one leaves `deliveryStatus` unchanged.
  */
-export async function failOutboundDelivery(id: string, error: unknown, attemptCount: number): Promise<void> {
+export async function failOutboundDelivery(
+  id: string,
+  messageId: string,
+  error: unknown,
+  attemptCount: number
+): Promise<void> {
   const terminal = attemptCount >= MAX_DELIVERY_ATTEMPTS
+  const sanitized = sanitizeDeliveryError(error)
 
-  await db
-    .update(supportOutboundDelivery)
-    .set({
+  await applyDeliveryOutcome({
+    deliveryId: id,
+    messageId,
+    deliveryPatch: {
       status: terminal ? 'failed' : 'pending',
       leaseExpiresAt: null,
-      lastError: sanitizeDeliveryError(error),
+      lastError: sanitized,
       updatedAt: new Date(),
-    })
-    .where(eq(supportOutboundDelivery.id, id))
+    },
+    messagePatch: { deliveryStatus: terminal ? 'failed' : 'pending', deliveryError: sanitized },
+  })
+
+  if (terminal) await publishDeliveryStatusChanged(messageId)
 }
 
 /**
@@ -167,11 +250,14 @@ export async function failOutboundDelivery(id: string, error: unknown, attemptCo
  * attempts" - resetting `attemptCount` rather than just clearing the lease is
  * what distinguishes it from `failOutboundDelivery`'s own below-the-cap path.
  */
-export async function resetOutboundDeliveryForRetry(id: string): Promise<void> {
-  await db
-    .update(supportOutboundDelivery)
-    .set({ status: 'pending', attemptCount: 0, leaseExpiresAt: null, lastError: null, updatedAt: new Date() })
-    .where(eq(supportOutboundDelivery.id, id))
+export async function resetOutboundDeliveryForRetry(id: string, messageId: string): Promise<void> {
+  await applyDeliveryOutcome({
+    deliveryId: id,
+    messageId,
+    deliveryPatch: { status: 'pending', attemptCount: 0, leaseExpiresAt: null, lastError: null, updatedAt: new Date() },
+    messagePatch: { deliveryStatus: 'pending', deliveryError: null },
+  })
+  await publishDeliveryStatusChanged(messageId)
 }
 
 /** Maximum stored error length. Enough to diagnose, short of storing a payload. */
@@ -198,9 +284,9 @@ export interface ProcessOutboundDeliveryDeps {
   /** Defaults to the real storage provider - injectable so tests never touch disk/S3. */
   getObject?: GetObjectFn
   /** Defaults to `completeOutboundDelivery` - injectable so unit tests never touch the db. */
-  onSent?: (id: string) => Promise<void>
+  onSent?: (id: string, messageId: string) => Promise<void>
   /** Defaults to `failOutboundDelivery` - injectable so unit tests never touch the db. */
-  onFailed?: (id: string, error: unknown, attemptCount: number) => Promise<void>
+  onFailed?: (id: string, messageId: string, error: unknown, attemptCount: number) => Promise<void>
 }
 
 /**
@@ -252,14 +338,14 @@ export async function processOutboundDelivery(
     })
 
     if (result.success) {
-      await onSent(claim.id)
+      await onSent(claim.id, claim.messageId)
       return { outcome: 'sent' }
     }
 
-    await onFailed(claim.id, result.error ?? result.message, claim.attemptCount)
+    await onFailed(claim.id, claim.messageId, result.error ?? result.message, claim.attemptCount)
     return { outcome: 'failed', error: sanitizeDeliveryError(result.error ?? result.message) }
   } catch (error) {
-    await onFailed(claim.id, error, claim.attemptCount)
+    await onFailed(claim.id, claim.messageId, error, claim.attemptCount)
     return { outcome: 'failed', error: sanitizeDeliveryError(error) }
   }
 }

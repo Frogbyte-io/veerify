@@ -143,7 +143,7 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 - [x] **SUP-04-2** `lib/support-email.ts` with unit tests for chain assembly and trimming
 - [x] **SUP-04-6** Per-inbox From/Reply-To/signature + a settings warning when the address is not provider-authorized
 - [x] **SUP-04-7** Agent attachment upload via the existing presign flow, with size cap and type allowlist
-- [ ] **SUP-04-10** Delivery status in the thread UI (pending/sent/failed/bounced) with a retry action
+- [x] **SUP-04-10** Delivery status in the thread UI (pending/sent/failed/bounced) with a retry action
 - [ ] **SUP-04-11** E2E: inbound mail → agent reply → customer reply threads back
 
 ### File boundaries
@@ -363,6 +363,58 @@ Postgres this session. The endpoint's own DB orchestration (the queries, the tra
 mapping) has no dedicated test — this codebase has no precedent for unit-testing endpoint handlers
 directly, so it rests on the pure logic it delegates to (`outbound-reply.ts`, fully tested) plus manual
 code review, not automated proof. SUP-04-11 is the first thing that actually exercises it.
+
+---
+
+## SUP-04-10 has landed — correcting the note above: the worker never actually updated `conversationMessage.deliveryStatus`
+
+**"The worker updates it after `runOutboundDeliveryWorker` runs" (above) was not true of the code as
+landed, only of the intent.** `completeOutboundDelivery`/`failOutboundDelivery` (`server/utils/outbound-
+delivery.ts`) only ever wrote to `supportOutboundDelivery.status`. Nothing touched `conversationMessage.
+deliveryStatus` past its insert-time value of `'pending'` (outgoing) or `'delivered'` (note) — a message
+would show `'pending'` forever in the UI regardless of whether the send actually succeeded, failed, or
+exhausted its retries. Found while building the delivery-status UI: the two tables' `status` columns are
+easy to conflate (both default `'pending'`), and grepping for any write to `conversationMessage.
+deliveryStatus` after Stage 04 started turned up only the one at insert time.
+
+**Fixed in `server/utils/outbound-delivery.ts`** (flagged crossing, mirroring SUP-04-4's fix of my SUP-04-7
+contract guess above — same "caught before it shipped, not after" shape, just the other direction):
+
+- `completeOutboundDelivery` and `failOutboundDelivery` now take `(id, messageId, ...)` and update both
+  rows in one transaction (`applyDeliveryOutcome`), so the outbox row and the message row can never
+  observably disagree.
+- `failOutboundDelivery` only flips `conversationMessage.deliveryStatus` to `'failed'` when the failure is
+  **terminal** (`attemptCount >= MAX_DELIVERY_ATTEMPTS`) — a below-cap failure leaves it at `'pending'`,
+  matching the outbox row's own pending/failed split, since the agent should not see "failed" for something
+  about to auto-retry.
+- `resetOutboundDeliveryForRetry` also takes `(id, messageId)` now and resets `conversationMessage.
+deliveryStatus` back to `'pending'` with `deliveryError` cleared.
+- A new `publishDeliveryStatusChanged(messageId)` fires on every status change the UI needs to see
+  (sent, terminal-failed, and reset-to-pending) — looks up `teamId`/`inboxId` fresh via a join since this
+  module only ever has a bare `messageId`, publishes on the existing `conversation:{id}`/`inbox:{id}`
+  channels, and swallows its own errors (never lets a realtime hiccup turn a correctly-recorded send into a
+  500). `pages/support/index.vue`'s `subscribeConversation` already reloads messages on _any_ event
+  regardless of `type`, so no client-side event-type handling was needed for this to work.
+- `tests/outbound-delivery.test.ts` and `tests/integration/outbound-delivery.test.ts` updated for the new
+  signatures; the integration suite now also asserts `conversationMessage.deliveryStatus`/`deliveryError`
+  after each of the four functions, not just the outbox row.
+
+**New this item:** `POST /api/support/conversations/{id}/messages/{messageId}/retry`
+(`server/api/support/conversations/[id]/messages/[messageId]/retry.post.ts` — the endpoint SUP-04-3's note
+ceded to Agent 2). 409s unless the message is `kind: 'outgoing'` and `deliveryStatus: 'failed'`; finds the
+`supportOutboundDelivery` row by `(messageId, kind: 'email')`, calls `resetOutboundDeliveryForRetry`, then
+fires `runOutboundDeliveryWorker()` the same fire-and-forget way SUP-04-4 does after the initial send, so a
+retry is attempted immediately rather than waiting on the next unrelated reply to piggyback on.
+
+**UI:** `components/support/SupportMessageItem.vue` now renders all five `deliveryStatus` values on an
+`outgoing` message (clock/pending, check/sent, check/delivered, alert+Retry/failed, alert/bounced — the
+last two of which nothing produces yet without SUP-04-9) and the retry button calls the endpoint above.
+`SupportConversationThread.vue` passes `conversationId` down for it.
+
+**Not independently confirmed:** same gap as everything else this stage — the new transaction, the join in
+`publishDeliveryStatusChanged`, and the realtime round-trip have not run against a live server or real
+Postgres this session (no Docker on this box). The four pure-logic paths are unit-tested; the DB
+orchestration and the retry endpoint's own wiring are not, same as SUP-04-4's note above.
 
 ---
 

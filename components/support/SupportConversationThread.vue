@@ -130,6 +130,7 @@
             :message="message"
             :contact="contact"
             :members="members"
+            :conversation-id="conversationId"
           />
         </template>
       </div>

@@ -58,17 +58,50 @@
       </div>
       <div class="flex items-center gap-1.5 mt-1 px-1">
         <span class="text-xs text-muted-foreground">{{ formattedTime }}</span>
-        <Icon
-          v-if="isOutgoing && message.deliveryStatus === 'failed'"
-          name="lucide:alert-circle"
-          class="w-3 h-3 text-destructive"
-        />
+        <template v-if="isOutgoing">
+          <Icon
+            v-if="message.deliveryStatus === 'pending'"
+            name="lucide:clock"
+            class="w-3 h-3 text-muted-foreground"
+            title="Sending…"
+            data-testid="support-message-delivery-pending"
+          />
+          <Icon
+            v-else-if="message.deliveryStatus === 'sent' || message.deliveryStatus === 'delivered'"
+            name="lucide:check"
+            class="w-3 h-3 text-muted-foreground"
+            :title="message.deliveryStatus === 'delivered' ? 'Delivered' : 'Sent'"
+            data-testid="support-message-delivery-sent"
+          />
+          <span
+            v-else-if="message.deliveryStatus === 'failed' || message.deliveryStatus === 'bounced'"
+            class="flex items-center gap-1"
+            data-testid="support-message-delivery-failed"
+          >
+            <Icon name="lucide:alert-circle" class="w-3 h-3 text-destructive shrink-0" />
+            <span class="text-xs text-destructive">{{
+              message.deliveryStatus === 'bounced' ? 'Bounced' : 'Failed to send'
+            }}</span>
+            <button
+              v-if="message.deliveryStatus === 'failed'"
+              type="button"
+              class="text-xs text-destructive underline hover:no-underline disabled:opacity-50 disabled:no-underline"
+              data-testid="support-message-retry"
+              :disabled="retrying"
+              @click="retryDelivery"
+            >
+              {{ retrying ? 'Retrying…' : 'Retry' }}
+            </button>
+          </span>
+        </template>
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import { toast } from 'vue-sonner'
+
 export default {
   name: 'SupportMessageItem',
 
@@ -87,6 +120,18 @@ export default {
       type: Array,
       default: () => [],
     },
+    // Needed for the retry action's endpoint path - not required, since
+    // `activity`/`note`/`incoming` items never render one.
+    conversationId: {
+      type: String,
+      default: null,
+    },
+  },
+
+  data() {
+    return {
+      retrying: false,
+    }
   },
 
   computed: {
@@ -156,6 +201,26 @@ export default {
       if (!import.meta.client) return html.replace(/<[^>]*>/g, '')
       const doc = new DOMParser().parseFromString(html, 'text/html')
       return doc.body.textContent || ''
+    },
+
+    async retryDelivery() {
+      if (this.retrying || !this.conversationId) return
+      this.retrying = true
+
+      try {
+        await $fetch(`/api/support/conversations/${this.conversationId}/messages/${this.message.id}/retry`, {
+          method: 'POST',
+        })
+        // Not set locally: the worker pass this triggers publishes a realtime
+        // event once it actually resolves (server/utils/outbound-delivery.ts),
+        // which is what refreshes `message.deliveryStatus` for real. Setting
+        // 'pending' here too would just be a second, possibly-wrong copy of
+        // the same fact.
+      } catch (err) {
+        toast.error(err?.data?.error?.message || 'Failed to retry')
+      } finally {
+        this.retrying = false
+      }
     },
   },
 }
