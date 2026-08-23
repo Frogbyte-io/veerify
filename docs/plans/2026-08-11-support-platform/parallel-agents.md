@@ -144,7 +144,7 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 - [x] **SUP-04-6** Per-inbox From/Reply-To/signature + a settings warning when the address is not provider-authorized
 - [x] **SUP-04-7** Agent attachment upload via the existing presign flow, with size cap and type allowlist
 - [x] **SUP-04-10** Delivery status in the thread UI (pending/sent/failed/bounced) with a retry action
-- [ ] **SUP-04-11** E2E: inbound mail → agent reply → customer reply threads back
+- [x] **SUP-04-11** E2E: inbound mail → agent reply → customer reply threads back
 
 ### File boundaries
 
@@ -462,6 +462,49 @@ rather than silently:**
 **Not independently confirmed:** same as everything else this stage — no live server, no real Postgres,
 no E2E this session. The guard logic and composition are unit-tested (`tests/auto-reply.test.ts`); the
 endpoint wiring and the rate-limit store call are not.
+
+---
+
+## SUP-04-11 has landed — written, not executed this session
+
+`tests/e2e/support-outbound-reply.spec.ts`, following `support-inbound-email.spec.ts`'s guarded pattern
+exactly (skips without `SUPPORT_POSTMARK_WEBHOOK_USER`/`PASSWORD`). One `describe.serial` test:
+
+1. Inbound mail creates a ticket, same as Stage 03's own spec.
+2. A reply attempt before the inbox has a sending address returns 409 (SUP-04-4's backstop).
+3. Sets `emailAddress`/`fromName` via `PUT /inboxes/{id}` (SUP-04-6), then asserts a `note` carrying
+   `attachments` is rejected 400 (SUP-04-4's `.superRefine`), then posts a real `outgoing` reply.
+4. Asserts `channelMessageId` is set on the response **synchronously** (it's written in the same
+   transaction as the insert, before any send is attempted).
+5. Polls the message list up to 5s for `deliveryStatus` to leave `'pending'` — **regression coverage for
+   the SUP-04-10 bug**: before that fix, this would have polled forever and the assertion would have
+   caught it immediately. Tolerates either `'sent'` or `'failed'` as the outcome, since whether SMTP is
+   reachable in whatever environment runs this is not what the assertion is checking.
+6. Simulates the customer's reply with `In-Reply-To` set to the agent reply's `channelMessageId`, and
+   asserts the conversation count is still 1 (not 2) — **the stage's headline risk**, exercised for real
+   for the first time this stage rather than only unit-tested on the composition side.
+7. Retrying the just-sent message is rejected 409 if it actually sent; only asserted loosely (`[200, 409]`)
+   otherwise, since which branch is live depends on real SMTP reachability, not on anything this spec
+   controls.
+
+**Deliberately not covered, and why:**
+
+- **Acceptance criterion 1** ("same thread in Gmail and Outlook") — needs real mailboxes at both
+  providers; TODO.md already says to verify this by hand.
+- **"Contact has no email" → 409** — structurally unreachable through the email channel: every inbound
+  delivery carries a `From` address that becomes the contact's email, so there is no way to reach this
+  branch from this suite. Only "inbox has no sending address" is exercised.
+- **Auto-reply (SUP-04-8)'s own assertions** — the per-contact rate limit, the auto-response guard, and the
+  auto-reply's own `channelMessageId` threading are a materially different scenario (an _inbound_ message
+  opening a _new_ conversation) from the agent-initiated round trip this spec covers, and are not exercised
+  here. They would need their own spec; not written this session.
+
+**Not independently confirmed:** this spec has not been run — no Docker, no reachable Postgres, no
+Postmark credentials on this box, same gap as every other guarded suite this stage. It typechecks and
+lints clean, and its assumptions about response shapes (`message.channelMessageId`, `message.
+deliveryStatus`, the 409/400 status codes) are cross-checked against the actual endpoint code as of this
+commit, not run against a live server. Matches SUP-03-14's precedent: written-but-never-executed is an
+accepted state here as long as it is said plainly, which this is.
 
 ---
 
