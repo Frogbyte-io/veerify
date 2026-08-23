@@ -133,9 +133,9 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 
 - [x] **SUP-04-1** `lib/email.ts` options bag; confirm all 10 existing call sites are unaffected. Also add the outbound surface to `ChannelDriver` that SUP-04-6 needs (see answered question 3), folding in delta D-34's `isConfigured()` cleanup
 - [x] **SUP-04-3** `supportOutboundDelivery` table, **migration `0025`**, and the bounded claim/retry worker
-- [ ] **SUP-04-4** Wire `messages/index.post.ts` for `kind: 'outgoing'` — in-transaction outbox enqueue, worker delivery-status update
-- [ ] **SUP-04-5** Server-side enforcement that `kind: 'note'` never dispatches
-- [ ] **SUP-04-8** Auto-reply with all four guards
+- [x] **SUP-04-4** Wire `messages/index.post.ts` for `kind: 'outgoing'` — in-transaction outbox enqueue, worker delivery-status update
+- [x] **SUP-04-5** Server-side enforcement that `kind: 'note'` never dispatches
+- [x] **SUP-04-8** Auto-reply with all four guards
 - [ ] **SUP-04-9** `POST /api/support/delivery/[provider]` delivery and bounce webhooks, keyed on the new `supportDeliveryEvent` table (**not** `supportEmailEvent` — see answered question 1); hard bounce writes an `activity` message
 
 ### Agent 2 — composition, identity, UI, E2E
@@ -321,6 +321,95 @@ attachments.ts`) writes bytes and returns `stored: StoredAttachment[]` for the _
 **Not independently confirmed:** upload against a real S3-compatible endpoint (MinIO) hasn't been
 exercised this session — no Docker on this box, same gap as SUP-04-3's note above. The local-driver path
 (`putObject`/`getObject` round-trip) is exercised by existing storage tests, not by anything new here.
+
+---
+
+## SUP-04-4 and SUP-04-5 have landed — what SUP-04-10 and SUP-04-11 need
+
+`messages/index.post.ts` now composes and enqueues an outgoing reply, in-transaction, using
+`server/utils/outbound-reply.ts` (new, pure — `buildOutgoingReply`, `totalAttachmentBytes`) to assemble
+threading headers, quoted history, signature, and the attachment list before calling
+`enqueueOutboundDelivery`. SUP-04-5 (`kind: 'note'` never dispatches) is satisfied **by construction**,
+not a separate code path — every step that touches the outbox is gated on `isOutgoing`, and a
+`.superRefine` on the request schema now rejects a note carrying attachments outright rather than
+silently dropping them.
+
+**A real near-miss, caught before it shipped, not after:** this was written against a _guessed_
+attachment shape before SUP-04-7 landed. The actual composer POST body
+(`components/support/SupportComposer.vue`) and presign response use `{ storageKey, fileName, contentType,
+sizeBytes }` — my draft used `filename` (no capital N). Since `validateBody`'s zod schema strips unknown
+keys rather than rejecting them, every agent-attached file would have silently vanished on send, with no
+error anywhere — exactly delta D-24's "no dedicated test, only exercised indirectly" failure shape, minus
+even the indirect exercise. Caught by re-reading SUP-04-7's landing note before finalizing, not by a test.
+Fixed, and `MAX_MESSAGE_ATTACHMENT_BYTES` (25 MB total) is now enforced here, per that note's instruction
+— SUP-04-7's presign only ever sees one file and cannot check the combined total.
+
+**For SUP-04-10 (delivery status UI):** `conversationMessage.deliveryStatus` starts `'pending'` for an
+`outgoing` message (the worker updates it after `runOutboundDeliveryWorker` runs) and `'delivered'` for a
+`note` — matching, not inventing, the convention Stage 03's inbound path already uses for "nothing to
+send, already done." Do not treat `'delivered'` on a note as evidence anything was sent.
+
+**For SUP-04-11 (E2E), specifically worth asserting rather than assuming:**
+
+- A note with `attachments` set is rejected (400), not silently stripped.
+- An inbox with no `emailAddress`, or a contact with no `email`, returns 409 rather than creating a
+  half-sendable message.
+- The stored `channelMessageId` on the new message round-trips correctly when the customer replies —
+  this is the stage's headline risk (bracket-stripping), and it is only real once verified against actual
+  inbound processing, not just unit-tested on the composition side.
+
+**Not independently confirmed — same gap as every item this stage:** no live server, no E2E, no real
+Postgres this session. The endpoint's own DB orchestration (the queries, the transaction, the field
+mapping) has no dedicated test — this codebase has no precedent for unit-testing endpoint handlers
+directly, so it rests on the pure logic it delegates to (`outbound-reply.ts`, fully tested) plus manual
+code review, not automated proof. SUP-04-11 is the first thing that actually exercises it.
+
+---
+
+## SUP-04-8 has landed — two judgment calls for Stage 06, and what SUP-04-11 should assert
+
+Auto-reply fires from `server/api/support/inbound/[provider].post.ts`, reusing `buildOutgoingReply`
+(SUP-04-4) via new `server/utils/auto-reply.ts`. All four guards from the stage doc, plus the per-contact
+rate limit it separately requires:
+
+1. Never on a detected auto-response — enforced by control flow (the existing `isAutoResponse` check
+   already returns before this code runs), not re-checked.
+   2/3. Never on an existing conversation, never twice — both collapse into `isNewConversation`:
+   `shouldSendAutoReply` only ever returns true on the "new conversation" branch, which happens at most
+   once per conversation by definition. Not two separate checks.
+2. `Auto-Submitted: auto-replied` — set by `buildAutoReply`.
+3. Rate limit — 1 per contact per hour, via the existing `getRateLimitStore()` keyed by `contactId`, not
+   the H3Event-bound `checkRateLimit`/`requireRateLimit` wrappers (those key by IP, wrong dimension here).
+
+**Two judgment calls neither `design.md` nor `stage-04-outbound-replies.md` address, made explicitly
+rather than silently:**
+
+1. **The auto-reply does not touch `firstResponseAt` or `lastAgentReplyAt`.** A system-generated
+   acknowledgment is not a substantive agent response in the Zendesk/Freshdesk sense those SLA fields
+   exist to measure, but nothing in this stage's docs says so either way. **Whoever builds Stage 06 should
+   confirm this reading deliberately rather than inherit it by default** — if SLA policy should instead
+   treat an auto-reply as satisfying first-response time, that is a one-line change here
+   (`conversationMessage.metadata.isAutoReply` already marks which messages are auto-replies) but changes
+   what every team's FRT metric means.
+2. **No sending address, or the inbound message has no Message-ID:** logged and skipped, the customer's
+   message is still ticketed normally, and the webhook still returns 200. There is no agent present to
+   show an error to — this is a webhook, not a request an agent made — so failing loudly (as SUP-04-4 does
+   for the same missing-address case) is not available here. This means a misconfigured inbox can silently
+   never auto-reply with nothing surfaced anywhere except the log. Worth a settings-page indicator someday;
+   not scoped to this item.
+
+**For SUP-04-11 (E2E), specifically worth asserting:**
+
+- A second inbound email from the same contact, inside the rate-limit window, does **not** produce a
+  second auto-reply — the conversation-scoped guard alone would not catch this (it is contact-scoped).
+- An inbound message flagged by `isAutoResponse` never triggers one, even on what would otherwise be a
+  new conversation.
+- The auto-reply's own `channelMessageId` threads correctly if the customer replies to it — same
+  bracket-stripping risk as every other threading path this stage, and untested by anything so far.
+
+**Not independently confirmed:** same as everything else this stage — no live server, no real Postgres,
+no E2E this session. The guard logic and composition are unit-tested (`tests/auto-reply.test.ts`); the
+endpoint wiring and the rate-limit store call are not.
 
 ---
 
