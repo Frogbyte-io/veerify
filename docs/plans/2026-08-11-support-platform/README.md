@@ -22,7 +22,7 @@ until the program is deliberately integrated into `main`.
 | Stage 01           | **Complete** — contact identity, integrity, timeline, and UI      |
 | Stage 02           | **Complete** — inbox and conversation core                        |
 | Stage 03           | **Complete** — inbound email                                      |
-| Stage 04           | **In progress** — 10/11 items; SUP-04-9 delivery/bounce webhook remains |
+| Stage 04           | **Complete** — 11/11 items                                        |
 | Open cross-cutting | SUP-X-1 (Redis integration suite, delta D-15)                     |
 
 **Related branches.** `sleekplan-export` holds an unrelated changelog + Sleekplan/CSV import feature

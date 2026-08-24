@@ -53,7 +53,11 @@ describe('processOutboundDelivery', () => {
     expect(onSent).toHaveBeenCalledWith('delivery-1', 'msg-1')
     expect(onFailed).not.toHaveBeenCalled()
     expect(sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({ to: 'customer@example.com', subject: 'Re: Invoice' })
+      expect.objectContaining({
+        to: 'customer@example.com',
+        subject: 'Re: Invoice',
+        headers: { 'X-Veerify-Idempotency-Key': 'idem-1' },
+      })
     )
   })
 

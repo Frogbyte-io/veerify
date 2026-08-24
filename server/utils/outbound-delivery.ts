@@ -339,7 +339,11 @@ export async function processOutboundDelivery(
       text: claim.payload.text,
       from: claim.payload.from,
       replyTo: claim.payload.replyTo,
-      headers: claim.payload.headers,
+      // SMTP does not provide a portable idempotency API. Carry the durable
+      // key as a stable, traceable header alongside the already-stable
+      // Message-ID so provider webhooks and support investigations can
+      // correlate every retry to one queued delivery.
+      headers: { ...claim.payload.headers, 'X-Veerify-Idempotency-Key': claim.idempotencyKey },
       attachments,
     })
 
