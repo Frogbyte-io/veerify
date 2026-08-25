@@ -53,4 +53,4 @@ There is still no safe operator workflow for binding a contact to a signed-in Ve
 
 ## Commit
 
-`549d19a` (`fix(support): close auto-link race windows`).
+`4ac6380` (`fix(support): close auto-link race windows`).
