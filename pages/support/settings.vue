@@ -86,6 +86,13 @@
         </CardHeader>
       </Card>
 
+      <Card v-else-if="!selectedInboxId" data-testid="support-no-assignment">
+        <CardHeader>
+          <CardTitle>No support inboxes are assigned to you.</CardTitle>
+          <CardDescription>Ask a support administrator to add you to an inbox.</CardDescription>
+        </CardHeader>
+      </Card>
+
       <template v-else>
         <Card v-if="canManageTeamSupport" data-testid="support-team-policy">
           <CardHeader>
@@ -745,11 +752,14 @@ export default {
           $fetch('/api/auth/session'),
         ])
         const activeTeamData = teamResponse?.data
+        if (token !== this.requestToken) return
         this.currentUserId = sessionResponse?.data?.user?.id || ''
 
         if (!activeTeamData?.id) {
-          this.error = 'No active team found'
-          this.isLoading = false
+          if (token === this.requestToken) {
+            this.error = 'No active team found'
+            this.isLoading = false
+          }
           return
         }
 
@@ -820,15 +830,15 @@ export default {
       await this.$router.replace({ query }).catch(() => {})
     },
 
-    async recoverFromForbiddenInbox() {
+    async recoverFromForbiddenInbox({ teamId = this.activeTeamId } = {}) {
       if (this.isRecoveringInbox) return
       this.isRecoveringInbox = true
       this.inboxAccessError = 'You do not have access to this support inbox'
       this.clearInboxScopedState()
       const token = ++this.requestToken
       try {
-        const response = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
-        if (token !== this.requestToken) return
+        const response = await $fetch('/api/support/inboxes', { params: { teamId } })
+        if (!this.isCurrentRequest(token, teamId, null)) return
         this.inboxes = response?.data?.inboxes || []
         const fallback = this.inboxes[0]?.id || null
         await this.replaceInboxQuery(fallback)
@@ -836,17 +846,21 @@ export default {
           this.selectedInboxId = fallback
           this.syncGeneralForm()
           const loaded = await this.loadInboxContext({ recovering: true })
-          if (loaded === false && token === this.requestToken) {
+          if (loaded === false && this.isCurrentRequest(token, teamId, null)) {
             this.clearInboxScopedState()
             await this.replaceInboxQuery(null)
           }
         }
       } catch {
-        if (token === this.requestToken) this.inboxes = []
+        if (this.isCurrentRequest(token, teamId, null)) this.inboxes = []
       } finally {
         this.isRecoveringInbox = false
-        if (token === this.requestToken) this.isLoading = false
+        if (this.isCurrentRequest(token, teamId, null)) this.isLoading = false
       }
+    },
+
+    isCurrentRequest(token, teamId = this.activeTeamId, inboxId = this.selectedInboxId) {
+      return token === this.requestToken && teamId === this.activeTeamId && (!inboxId || inboxId === this.selectedInboxId)
     },
 
     syncGeneralForm() {
@@ -858,25 +872,35 @@ export default {
 
     async saveTeamPolicy(value) {
       if (!this.canManageTeamSupport) return
+      const token = this.requestToken
+      const teamId = this.activeTeamId
       this.isSavingTeamPolicy = true
       try {
-        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/settings`, {
+        const response = await $fetch(`/api/support/teams/${teamId}/settings`, {
           method: 'PUT',
           body: { autoLinkFeedback: value === true },
         })
+        if (!this.isCurrentRequest(token, teamId)) return
         this.teamSettings = response?.data?.settings || this.teamSettings
         this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ teamId })
+          return
+        }
         this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
         toast.error(this.extractErrorMessage(err, 'Failed to save team support policy'))
       } finally {
-        this.isSavingTeamPolicy = false
+        if (this.isCurrentRequest(token, teamId)) this.isSavingTeamPolicy = false
       }
     },
 
     async loadInboxContext({ recovering = false } = {}) {
       if (!this.selectedInboxId) return false
       const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
       this.isSwitchingInbox = true
       this.members = []
       this.addresses = []
@@ -885,15 +909,15 @@ export default {
 
       try {
         const [membersResponse, addressesResponse] = await Promise.all([
-          $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`),
-          $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`),
+          $fetch(`/api/support/inboxes/${inboxId}/members`),
+          $fetch(`/api/support/inboxes/${inboxId}/addresses`),
         ])
-        if (token !== this.requestToken) return
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         this.members = membersResponse?.data?.members || []
         this.addresses = addressesResponse?.data?.addresses || []
       } catch (err) {
         if (!recovering && this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ teamId })
           return
         }
         if (recovering && this.isForbiddenError(err)) {
@@ -903,34 +927,43 @@ export default {
         }
         if (!recovering) toast.error('Failed to load inbox details')
       } finally {
-        if (token === this.requestToken) this.isSwitchingInbox = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isSwitchingInbox = false
       }
 
-      if (token === this.requestToken) {
-        await Promise.all([this.loadSendingStatus({ recovering }), this.loadChannelStatus({ recovering })])
+      if (this.isCurrentRequest(token, teamId, inboxId)) {
+        const statuses = await Promise.all([
+          this.loadSendingStatus({ recovering, token, teamId, inboxId }),
+          this.loadChannelStatus({ recovering, token, teamId, inboxId }),
+        ])
+        if (statuses.some((loaded) => loaded === false) && this.isCurrentRequest(token, teamId, inboxId)) {
+          this.clearInboxScopedState()
+          await this.replaceInboxQuery(null)
+          return false
+        }
       }
-      return token === this.requestToken
+      return this.isCurrentRequest(token, teamId, inboxId)
     },
 
-    async loadSendingStatus({ recovering = false } = {}) {
-      if (!this.selectedInboxId) return
-      const token = this.requestToken
-      const inboxId = this.selectedInboxId
+    async loadSendingStatus({ recovering = false, token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
       this.isLoadingSendingStatus = true
       this.sendingStatusError = null
 
       try {
         const response = await $fetch(`/api/support/inboxes/${inboxId}/sending-status`)
-        if (token === this.requestToken && inboxId === this.selectedInboxId) this.sendingStatus = response?.data || null
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.sendingStatus = response?.data || null
       } catch (err) {
         if (!recovering && this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
-          return
+          await this.recoverFromForbiddenInbox({ teamId })
+          return false
         }
-        this.sendingStatusError = this.extractErrorMessage(err, 'Failed to check sending authorization')
+        if (recovering && this.isForbiddenError(err)) return false
+        if (this.isCurrentRequest(token, teamId, inboxId))
+          this.sendingStatusError = this.extractErrorMessage(err, 'Failed to check sending authorization')
       } finally {
-        if (token === this.requestToken) this.isLoadingSendingStatus = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isLoadingSendingStatus = false
       }
+      return this.isCurrentRequest(token, teamId, inboxId)
     },
 
     async handleInboxSwitch() {
@@ -974,12 +1007,14 @@ export default {
       }
 
       this.isCreatingInbox = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
 
       try {
         const response = await $fetch('/api/support/inboxes', {
           method: 'POST',
           body: {
-            teamId: this.activeTeamId,
+            teamId,
             name: this.newInboxName.trim(),
             slug: this.newInboxSlug.trim(),
           },
@@ -991,7 +1026,8 @@ export default {
         this.newInboxSlug = ''
         this.slugManuallyEdited = false
 
-        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
+        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId } })
+        if (!this.isCurrentRequest(token, teamId, null)) return
         this.inboxes = inboxesResponse?.data?.inboxes || []
         this.selectedInboxId = created?.id || this.inboxes[0]?.id || ''
 
@@ -1000,22 +1036,26 @@ export default {
           await this.loadInboxContext()
         }
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, null)) return
         if (this.isForbiddenError(err)) {
           await this.recoverFromForbiddenInbox()
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to create inbox'))
       } finally {
-        this.isCreatingInbox = false
+        if (this.isCurrentRequest(token, teamId, null)) this.isCreatingInbox = false
       }
     },
 
     async saveGeneral() {
       if (!this.selectedInbox) return
       this.isSavingGeneral = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}`, {
+        await $fetch(`/api/support/inboxes/${inboxId}`, {
           method: 'PUT',
           body: {
             name: this.generalName.trim(),
@@ -1025,28 +1065,34 @@ export default {
           },
         })
 
-        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
+        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId } })
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         this.inboxes = inboxesResponse?.data?.inboxes || []
         this.syncGeneralForm()
         toast.success('Inbox settings saved')
-        await this.loadSendingStatus()
+        await this.loadSendingStatus({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ teamId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to save inbox settings'))
       } finally {
-        this.isSavingGeneral = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isSavingGeneral = false
       }
     },
 
-    async reloadMembers() {
+    async reloadMembers({ token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
       try {
-        const membersResponse = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`)
+        const membersResponse = await $fetch(`/api/support/inboxes/${inboxId}/members`)
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
         this.members = membersResponse?.data?.members || []
+        return true
       } catch (err) {
-        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox()
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ teamId })
         throw err
       }
     },
@@ -1058,25 +1104,30 @@ export default {
       }
 
       this.isAddingMember = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`, {
+        await $fetch(`/api/support/inboxes/${inboxId}/members`, {
           method: 'POST',
           body: { userId: this.newMemberUserId, role: this.newMemberRole },
         })
 
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         toast.success('Agent added')
         this.newMemberUserId = ''
         this.newMemberRole = 'agent'
-        await this.reloadMembers()
+        await this.reloadMembers({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ teamId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to add agent'))
       } finally {
-        this.isAddingMember = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isAddingMember = false
       }
     },
 
@@ -1089,46 +1140,53 @@ export default {
       if (!this.memberPendingRemoval) return
       const memberId = this.memberPendingRemoval.id
       this.removingMemberId = memberId
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}/members/${memberId}`, { method: 'DELETE' })
+        await $fetch(`/api/support/inboxes/${inboxId}/members/${memberId}`, { method: 'DELETE' })
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         toast.success('Agent removed')
         this.isRemoveMemberDialogOpen = false
         this.memberPendingRemoval = null
-        await this.reloadMembers()
+        await this.reloadMembers({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ teamId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to remove agent'))
       } finally {
-        this.removingMemberId = null
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.removingMemberId = null
       }
     },
 
-    async loadChannelStatus({ recovering = false } = {}) {
-      if (!this.selectedInboxId) {
+    async loadChannelStatus({ recovering = false, token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+      if (!inboxId) {
         this.channel = null
         this.isLoadingChannel = false
-        return
+        return false
       }
-      const token = this.requestToken
-      const inboxId = this.selectedInboxId
+      if (!this.isCurrentRequest(token, teamId, inboxId)) return false
       this.isLoadingChannel = true
       this.channelError = null
       try {
         const response = await $fetch('/api/support/channel-status', { params: { inboxId } })
-        if (token === this.requestToken && inboxId === this.selectedInboxId) this.channel = response?.data || null
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.channel = response?.data || null
       } catch (err) {
         if (!recovering && this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
-          return
+          await this.recoverFromForbiddenInbox({ teamId })
+          return false
         }
-        this.channelError = err?.data?.error?.message || 'Failed to load channel status'
+        if (recovering && this.isForbiddenError(err)) return false
+        if (this.isCurrentRequest(token, teamId, inboxId))
+          this.channelError = err?.data?.error?.message || 'Failed to load channel status'
       } finally {
-        if (token === this.requestToken) this.isLoadingChannel = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isLoadingChannel = false
       }
+      return this.isCurrentRequest(token, teamId, inboxId)
     },
 
     async copy(value) {
@@ -1141,12 +1199,16 @@ export default {
       }
     },
 
-    async reloadAddresses() {
+    async reloadAddresses({ token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
       try {
-        const addressesResponse = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`)
+        const addressesResponse = await $fetch(`/api/support/inboxes/${inboxId}/addresses`)
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
         this.addresses = addressesResponse?.data?.addresses || []
+        return true
       } catch (err) {
-        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox()
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ teamId })
         throw err
       }
     },
@@ -1158,9 +1220,12 @@ export default {
       }
 
       this.isAddingAddress = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`, {
+        await $fetch(`/api/support/inboxes/${inboxId}/addresses`, {
           method: 'POST',
           body: {
             address: this.newAddress.trim(),
@@ -1169,19 +1234,21 @@ export default {
           },
         })
 
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         toast.success('Address added')
         this.newAddress = ''
         this.newAddressProjectId = ''
         this.newAddressIsPrimary = false
-        await this.reloadAddresses()
+        await this.reloadAddresses({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ teamId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to add address'))
       } finally {
-        this.isAddingAddress = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isAddingAddress = false
       }
     },
 
@@ -1194,21 +1261,26 @@ export default {
       if (!this.addressPendingRemoval) return
       const addressId = this.addressPendingRemoval.id
       this.removingAddressId = addressId
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses/${addressId}`, { method: 'DELETE' })
+        await $fetch(`/api/support/inboxes/${inboxId}/addresses/${addressId}`, { method: 'DELETE' })
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         toast.success('Address removed')
         this.isRemoveAddressDialogOpen = false
         this.addressPendingRemoval = null
-        await this.reloadAddresses()
+        await this.reloadAddresses({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ teamId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to remove address'))
       } finally {
-        this.removingAddressId = null
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.removingAddressId = null
       }
     },
 

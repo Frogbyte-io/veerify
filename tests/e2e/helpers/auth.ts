@@ -22,12 +22,15 @@ async function gotoWithRetry(page: Page, path: string) {
   throw lastError
 }
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
+export function getPlaywrightBaseURL() {
+  return process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4913'
+}
 
 export function withOriginHeaders(refererPath = '/') {
+  const baseURL = getPlaywrightBaseURL()
   return {
-    origin: BASE_URL,
-    referer: `${BASE_URL}${refererPath}`,
+    origin: baseURL,
+    referer: `${baseURL}${refererPath}`,
   }
 }
 
@@ -56,8 +59,7 @@ export async function signInAndGetSessionCookie(
 ): Promise<string> {
   const signInResponse = await request.post('/api/auth/sign-in/email', {
     headers: {
-      origin: BASE_URL,
-      referer: `${BASE_URL}/login`,
+      ...withOriginHeaders('/login'),
     },
     data: {
       email: credentials.email,

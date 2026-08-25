@@ -126,6 +126,7 @@ export default {
   data() {
     return {
       activeTeamId: '',
+      contextGeneration: 0,
       isLoadingTeam: true,
       teamError: null,
 
@@ -222,6 +223,7 @@ export default {
     },
 
     resetInboxState() {
+      this.contextGeneration += 1
       if (this.unsubscribeInboxChannel) {
         this.unsubscribeInboxChannel()
         this.unsubscribeInboxChannel = null
@@ -247,6 +249,7 @@ export default {
     },
 
     async initTeamContext() {
+      const generation = this.contextGeneration
       this.isLoadingTeam = true
       this.teamError = null
 
@@ -255,30 +258,44 @@ export default {
         const activeTeamData = teamResponse?.data
 
         if (!activeTeamData?.id) {
-          this.teamError = 'No active team found'
-          this.isLoadingTeam = false
+          if (generation === this.contextGeneration) {
+            this.teamError = 'No active team found'
+            this.isLoadingTeam = false
+          }
           return
         }
 
+        if (generation !== this.contextGeneration) return
         this.activeTeamId = activeTeamData.id
         this.isLoadingTeam = false
-        await this.loadInboxes()
-        if (this.activeInboxId) await this.loadTags()
+        await this.loadInboxes({ generation, teamId: activeTeamData.id })
+        if (generation === this.contextGeneration && this.activeInboxId) await this.loadTags({ generation, teamId: activeTeamData.id })
       } catch {
-        this.teamError = 'Something went wrong. Please try again.'
-        this.isLoadingTeam = false
+        if (generation === this.contextGeneration) {
+          this.teamError = 'Something went wrong. Please try again.'
+          this.isLoadingTeam = false
+        }
       }
     },
 
-    async loadInboxes({ recovering = false } = {}) {
-      if (!this.activeTeamId) return
+    isCurrentContext(generation, teamId, inboxId = null) {
+      return (
+        generation === this.contextGeneration &&
+        this.activeTeamId === teamId &&
+        (!inboxId || this.activeInboxId === inboxId)
+      )
+    },
+
+    async loadInboxes({ recovering = false, generation = this.contextGeneration, teamId = this.activeTeamId } = {}) {
+      if (!teamId || !this.isCurrentContext(generation, teamId)) return
 
       this.isLoadingInboxes = true
       this.inboxesError = null
       if (!recovering) this.inboxAccessError = null
 
       try {
-        const response = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
+        const response = await $fetch('/api/support/inboxes', { params: { teamId } })
+        if (!this.isCurrentContext(generation, teamId)) return
         this.inboxes = response?.data?.inboxes || []
 
         const requestedInboxId = this.$route.query.inboxId
@@ -290,13 +307,14 @@ export default {
           null
 
         if (initialInboxId) {
-          await this.selectInbox(initialInboxId)
+          await this.selectInbox(initialInboxId, { generation, teamId })
           // Deep link from a conversation_assigned notification
           // (`/support?conversationId=…`). Opened after the inbox loads,
           // because selectInbox clears any current selection.
-          await this.openRequestedConversation()
+          if (this.isCurrentContext(generation, teamId)) await this.openRequestedConversation()
         }
       } catch (error) {
+        if (!this.isCurrentContext(generation, teamId)) return
         if (this.isForbiddenError(error)) {
           this.inboxes = []
           this.activeInboxId = null
@@ -308,23 +326,26 @@ export default {
         }
         this.inboxesError = 'Failed to load inboxes. Please try again.'
       } finally {
-        this.isLoadingInboxes = false
+        if (this.isCurrentContext(generation, teamId)) this.isLoadingInboxes = false
       }
     },
 
-    async loadTags() {
+    async loadTags({ generation = this.contextGeneration, teamId = this.activeTeamId } = {}) {
       // Best effort: a team with no tags yet, or a failed lookup, hides the tag
       // filter rather than showing an empty control - no fallback/fake data.
-      if (!this.activeTeamId || !this.activeInboxId) return
+      if (!teamId || !this.activeInboxId || !this.isCurrentContext(generation, teamId)) return
+      const inboxId = this.activeInboxId
       try {
-        const response = await $fetch('/api/support/tags', { params: { teamId: this.activeTeamId } })
+        const response = await $fetch('/api/support/tags', { params: { teamId } })
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         this.tags = response?.data?.tags || []
         this.tagsAvailable = true
       } catch (error) {
         if (this.isForbiddenError(error)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
           return
         }
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         this.tags = []
         this.tagsAvailable = false
       }
@@ -347,8 +368,9 @@ export default {
       }
     },
 
-    async selectInbox(inboxId) {
+    async selectInbox(inboxId, { generation = this.contextGeneration, teamId = this.activeTeamId } = {}) {
       if (!inboxId || inboxId === this.activeInboxId) return
+      if (!this.isCurrentContext(generation, teamId)) return
 
       if (this.unsubscribeInboxChannel) {
         this.unsubscribeInboxChannel()
@@ -364,15 +386,19 @@ export default {
         this.$router.replace({ query: { ...this.$route.query, inboxId } }).catch(() => {})
       }
 
-      await Promise.all([this.loadInboxMembers(), this.loadConversations(true)])
-      this.subscribeInbox()
+      await Promise.all([
+        this.loadInboxMembers({ generation, teamId, inboxId }),
+        this.loadConversations(true, { generation, teamId, inboxId }),
+      ])
+      if (this.isCurrentContext(generation, teamId, inboxId)) this.subscribeInbox()
     },
 
     isForbiddenError(error) {
       return error?.statusCode === 403 || error?.status === 403 || error?.response?.status === 403
     },
 
-    async recoverFromForbiddenInbox() {
+    async recoverFromForbiddenInbox({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = null } = {}) {
+      if (!this.isCurrentContext(generation, teamId, inboxId)) return
       this.unselectConversation()
       this.activeInboxId = null
       this.inboxMembers = []
@@ -385,8 +411,8 @@ export default {
           .replace({ query: { ...this.$route.query, inboxId: undefined, conversationId: undefined } })
           .catch(() => {})
       }
-      await this.loadInboxes({ recovering: true })
-      this.inboxAccessError = 'You do not have access to this support inbox'
+      await this.loadInboxes({ recovering: true, generation, teamId })
+      if (this.isCurrentContext(generation, teamId)) this.inboxAccessError = 'You do not have access to this support inbox'
     },
 
     async openRequestedConversation() {
@@ -401,14 +427,16 @@ export default {
       await this.selectConversation(requested)
     },
 
-    async loadInboxMembers() {
-      if (!this.activeInboxId) return
+    async loadInboxMembers({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}) {
+      if (!inboxId || !this.isCurrentContext(generation, teamId, inboxId)) return
       try {
-        const response = await $fetch(`/api/support/inboxes/${this.activeInboxId}/members`)
+        const response = await $fetch(`/api/support/inboxes/${inboxId}/members`)
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         this.inboxMembers = response?.data?.members || []
       } catch (error) {
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         this.inboxMembers = []
-        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox()
+        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
       }
     },
 
@@ -417,8 +445,8 @@ export default {
       await this.loadConversations(true)
     },
 
-    async loadConversations(reset) {
-      if (!this.activeInboxId) return
+    async loadConversations(reset, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}) {
+      if (!inboxId || !this.isCurrentContext(generation, teamId, inboxId)) return
 
       if (reset) {
         this.isLoadingConversations = true
@@ -431,7 +459,7 @@ export default {
       try {
         const response = await $fetch('/api/support/conversations', {
           params: {
-            inboxId: this.activeInboxId,
+            inboxId,
             status: this.filters.status || undefined,
             assigneeUserId: this.filters.assigneeUserId || undefined,
             tagId: this.filters.tagId || undefined,
@@ -440,25 +468,30 @@ export default {
           },
         })
 
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         const page = response?.data?.conversations || []
         this.conversations = reset ? page : [...this.conversations, ...page]
         this.hasMoreConversations = Boolean(response?.data?.hasMore)
         this.conversationsNextCursor = response?.data?.nextCursor || null
 
-        await this.ensureContactsLoaded(page.map((c) => c.contactId))
+        await this.ensureContactsLoaded(page.map((c) => c.contactId), { generation, teamId, inboxId })
       } catch (error) {
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         if (this.isForbiddenError(error)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
           return
         }
         this.conversationsError = 'Failed to load conversations. Please try again.'
       } finally {
-        this.isLoadingConversations = false
-        this.isLoadingMoreConversations = false
+        if (this.isCurrentContext(generation, teamId, inboxId)) {
+          this.isLoadingConversations = false
+          this.isLoadingMoreConversations = false
+        }
       }
     },
 
-    async ensureContactsLoaded(contactIds) {
+    async ensureContactsLoaded(contactIds, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}) {
+      if (!this.isCurrentContext(generation, teamId, inboxId)) return
       // Retry ids never fetched, or whose last fetch failed. A resolved-but-null
       // contact stays cached as null so it is not re-requested on every render.
       const uniqueIds = [...new Set(contactIds)].filter((id) => {
@@ -469,6 +502,7 @@ export default {
       if (uniqueIds.length === 0) return
 
       for (const id of uniqueIds) {
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         this.contactCache[id] = 'loading'
       }
 
@@ -476,10 +510,12 @@ export default {
         uniqueIds.map(async (id) => {
           try {
             const response = await $fetch(`/api/support/contacts/${id}`)
+            if (!this.isCurrentContext(generation, teamId, inboxId)) return
             this.contactCache[id] = response?.data?.contact || null
           } catch (error) {
+            if (!this.isCurrentContext(generation, teamId, inboxId)) return
             if (this.isForbiddenError(error)) {
-              await this.recoverFromForbiddenInbox()
+              await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
               return
             }
             // Sentinel rather than `delete` - a dynamic delete is a lint error,
@@ -507,6 +543,10 @@ export default {
 
     async selectConversation(conversationId) {
       if (!conversationId || conversationId === this.selectedConversationId) return
+      const generation = this.contextGeneration
+      const teamId = this.activeTeamId
+      const inboxId = this.activeInboxId
+      if (!this.isCurrentContext(generation, teamId, inboxId)) return
 
       if (this.unsubscribeConversationChannel) {
         this.unsubscribeConversationChannel()
@@ -522,55 +562,59 @@ export default {
 
       this.subscribeConversation(conversationId)
 
-      await this.loadConversationDetail()
-      await this.loadMessages()
+      await this.loadConversationDetail({ generation, teamId, inboxId, conversationId })
+      await this.loadMessages({ generation, teamId, inboxId, conversationId })
     },
 
-    async loadConversationDetail() {
-      if (!this.selectedConversationId) return
+    async loadConversationDetail({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
+      if (!conversationId || !this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
 
       this.isLoadingDetail = true
       this.detailError = null
 
       try {
-        const response = await $fetch(`/api/support/conversations/${this.selectedConversationId}`)
+        const response = await $fetch(`/api/support/conversations/${conversationId}`)
+        if (!this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
         this.conversationDetail = response?.data?.conversation || null
         this.conversationContact = response?.data?.contact || null
 
         if (this.conversationContact?.id) {
-          await this.loadContactPanel()
+          await this.loadContactPanel({ generation, teamId, inboxId, conversationId })
         }
       } catch (error) {
         if (this.isForbiddenError(error)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
           return
         }
+        if (!this.isCurrentContext(generation, teamId, inboxId,)) return
         this.detailError = 'Failed to load this conversation. Please try again.'
       } finally {
-        this.isLoadingDetail = false
+        if (this.isCurrentContext(generation, teamId, inboxId)) this.isLoadingDetail = false
       }
     },
 
-    async loadMessages() {
-      if (!this.selectedConversationId) return
+    async loadMessages({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
+      if (!conversationId || !this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
 
       this.isLoadingMessages = true
       this.messagesError = null
 
       try {
-        const response = await $fetch(`/api/support/conversations/${this.selectedConversationId}/messages`)
+        const response = await $fetch(`/api/support/conversations/${conversationId}/messages`)
+        if (!this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
         const items = response?.data?.messages || []
         this.messages = [...items].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
         this.scrollMessagesToBottom()
       } catch (error) {
         if (this.isForbiddenError(error)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
           return
         }
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         this.messagesError = 'Could not load messages. Please try again.'
         this.messages = []
       } finally {
-        this.isLoadingMessages = false
+        if (this.isCurrentContext(generation, teamId, inboxId)) this.isLoadingMessages = false
       }
     },
 
@@ -618,61 +662,72 @@ export default {
       this.previousConversations = []
     },
 
-    async loadContactPanel() {
+    async loadContactPanel({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
       const contactId = this.conversationContact?.id
-      if (!contactId) return
+      if (!contactId || !this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
 
       this.contactPanelLoading = true
       this.contactPanelError = null
 
       try {
         const response = await $fetch(`/api/support/contacts/${contactId}`)
+        if (!this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
         this.contactPanelContact = response?.data?.contact || null
         this.contactPanelCompany = response?.data?.company || null
       } catch (error) {
         if (this.isForbiddenError(error)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
           return
         }
-        this.contactPanelError = 'Failed to load contact details. Please try again.'
-        this.contactPanelLoading = false
+        if (this.isCurrentContext(generation, teamId, inboxId)) {
+          this.contactPanelError = 'Failed to load contact details. Please try again.'
+          this.contactPanelLoading = false
+        }
         return
       }
-      this.contactPanelLoading = false
+      if (this.isCurrentContext(generation, teamId, inboxId)) this.contactPanelLoading = false
 
-      await Promise.all([this.loadTimeline(contactId), this.loadPreviousConversations(contactId)])
+      await Promise.all([
+        this.loadTimeline(contactId, { generation, teamId, inboxId, conversationId }),
+        this.loadPreviousConversations(contactId, { generation, teamId, inboxId, conversationId }),
+      ])
     },
 
-    async loadTimeline(contactId) {
+    async loadTimeline(contactId, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}) {
+      if (!this.isCurrentContext(generation, teamId, inboxId)) return
       this.timelineLoading = true
       try {
         const response = await $fetch(`/api/support/contacts/${contactId}/timeline`)
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         this.timelineLinked = response?.data?.linked || []
         this.timelineProbableFeedback = response?.data?.probableFeedback || []
       } catch (error) {
-        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox()
-        this.timelineLinked = []
-        this.timelineProbableFeedback = []
+        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+        if (this.isCurrentContext(generation, teamId, inboxId)) {
+          this.timelineLinked = []
+          this.timelineProbableFeedback = []
+        }
       } finally {
-        this.timelineLoading = false
+        if (this.isCurrentContext(generation, teamId, inboxId)) this.timelineLoading = false
       }
     },
 
-    async loadPreviousConversations(contactId) {
-      if (!this.activeInboxId) return
+    async loadPreviousConversations(contactId, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}) {
+      if (!inboxId || !this.isCurrentContext(generation, teamId, inboxId)) return
       this.previousConversationsLoading = true
       try {
         const response = await $fetch('/api/support/conversations', {
-          params: { inboxId: this.activeInboxId, contactId, limit: 5 },
+          params: { inboxId, contactId, limit: 5 },
         })
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
         this.previousConversations = (response?.data?.conversations || []).filter(
           (c) => c.id !== this.selectedConversationId
         )
       } catch (error) {
-        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox()
-        this.previousConversations = []
+        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+        if (this.isCurrentContext(generation, teamId, inboxId)) this.previousConversations = []
       } finally {
-        this.previousConversationsLoading = false
+        if (this.isCurrentContext(generation, teamId, inboxId)) this.previousConversationsLoading = false
       }
     },
 

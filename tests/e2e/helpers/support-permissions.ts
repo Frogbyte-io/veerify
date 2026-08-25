@@ -36,12 +36,11 @@ export type SupportPermissionFixture = {
 
 type CreatedUser = LoginCredentials & { userId: string }
 
-async function signUpUniqueUser(request: APIRequestContext, role: SupportPermissionRole, suffix: string) {
-  const credentials: LoginCredentials = {
-    email: `support-permissions-${role}-${suffix}@example.com`,
-    password: PASSWORD,
-  }
-
+async function signUpUniqueUser(
+  request: APIRequestContext,
+  role: SupportPermissionRole,
+  credentials: LoginCredentials
+): Promise<CreatedUser> {
   let response = await request.post('/api/auth/sign-up/email', {
     headers: withOriginHeaders('/signup'),
     data: { name: `Permissions ${role}`, ...credentials },
@@ -91,9 +90,21 @@ export async function createSupportPermissionFixture(request: APIRequestContext)
 
   try {
     for (const role of roles) {
-      createdUsers[role] = await signUpUniqueUser(request, role, suffix)
+      const credentials: LoginCredentials = {
+        email: `support-permissions-${role}-${suffix}@example.com`,
+        password: PASSWORD,
+      }
+      // Claim ownership before the request: an ambiguous response can still
+      // have committed the user and its verification row.
+      fixture.userEmails.push(credentials.email)
+      try {
+        createdUsers[role] = await signUpUniqueUser(request, role, credentials)
+      } catch (error) {
+        const [persisted] = await db.select({ id: user.id }).from(user).where(eq(user.email, credentials.email))
+        if (persisted && !fixture.userIds.includes(persisted.id)) fixture.userIds.push(persisted.id)
+        throw error
+      }
       fixture.userIds.push(createdUsers[role].userId)
-      fixture.userEmails.push(createdUsers[role].email)
     }
 
     const now = new Date()
@@ -239,6 +250,37 @@ export async function cleanupSupportPermissionFixture(fixture: SupportPermission
     await db.delete(account).where(inArray(account.userId, fixture.userIds))
     await db.delete(user).where(inArray(user.id, fixture.userIds))
   }
+
+  const assertNoOwned = async (label: string, rowsPromise: PromiseLike<Array<{ id: string }>>) => {
+    const rows = await rowsPromise
+    if (rows.length) throw new Error(`Fixture cleanup left owned ${label}: ${rows.map((row) => row.id).join(',')}`)
+  }
+  if (fixture.userEmails.length)
+    await assertNoOwned(
+      'verification rows',
+      db.select({ id: verification.id }).from(verification).where(inArray(verification.identifier, fixture.userEmails))
+    )
+  if (fixture.userIds.length) {
+    await assertNoOwned('accounts', db.select({ id: account.id }).from(account).where(inArray(account.userId, fixture.userIds)))
+    await assertNoOwned('sessions', db.select({ id: session.id }).from(session).where(inArray(session.userId, fixture.userIds)))
+  }
+  if (fixture.teamMemberIds.length)
+    await assertNoOwned(
+      'team members',
+      db.select({ id: teamMember.id }).from(teamMember).where(inArray(teamMember.id, fixture.teamMemberIds))
+    )
+  if (fixture.inboxMemberIds.length)
+    await assertNoOwned(
+      'inbox members',
+      db.select({ id: supportInboxMember.id }).from(supportInboxMember).where(inArray(supportInboxMember.id, fixture.inboxMemberIds))
+    )
+  if (fixture.contactIds.length)
+    await assertNoOwned('contacts', db.select({ id: contact.id }).from(contact).where(inArray(contact.id, fixture.contactIds)))
+  if (fixture.conversationIds.length)
+    await assertNoOwned(
+      'conversations',
+      db.select({ id: conversation.id }).from(conversation).where(inArray(conversation.id, fixture.conversationIds))
+    )
 
   if (fixture.userIds.length) {
     const remainingUsers = await db.select({ id: user.id }).from(user).where(inArray(user.id, fixture.userIds))
