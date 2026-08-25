@@ -346,7 +346,7 @@ export default {
         this.tagsAvailable = true
       } catch (error) {
         if (this.isForbiddenError(error)) {
-          if (this.isCurrentConversation(generation, teamId, inboxId, conversationId))
+          if (this.isCurrentContext(generation, teamId, inboxId))
             await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
           return
         }
@@ -699,7 +699,8 @@ export default {
         this.contactPanelCompany = response?.data?.company || null
       } catch (error) {
         if (this.isForbiddenError(error)) {
-          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+          if (this.isCurrentConversation(generation, teamId, inboxId, conversationId))
+            await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
           return
         }
         if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {

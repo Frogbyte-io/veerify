@@ -600,6 +600,7 @@ export default {
       inboxAccessError: null,
       requestToken: 0,
       isRecoveringInbox: false,
+      recoveryOwnerToken: null,
 
       isLoading: true,
       error: null,
@@ -741,6 +742,8 @@ export default {
 
     async initPage() {
       const token = ++this.requestToken
+      this.isRecoveringInbox = false
+      this.recoveryOwnerToken = null
       this.isLoading = true
       this.error = null
       this.inboxAccessError = null
@@ -841,41 +844,56 @@ export default {
       this.inboxAccessError = 'You do not have access to this support inbox'
       this.clearInboxScopedState()
       const token = ++this.requestToken
+      this.recoveryOwnerToken = token
       try {
+        if (!this.isCurrentRecovery(token, teamId)) return
         const response = await $fetch('/api/support/inboxes', { params: { teamId } })
-        if (!this.isCurrentRequest(token, teamId, null)) return
+        if (!this.isCurrentRecovery(token, teamId)) return
         this.inboxes = response?.data?.inboxes || []
         try {
+          if (!this.isCurrentRecovery(token, teamId)) return
           const settingsResponse = await $fetch(`/api/support/teams/${teamId}/settings`)
-          if (this.isCurrentRequest(token, teamId, null)) {
+          if (this.isCurrentRecovery(token, teamId)) {
             this.teamSettings = settingsResponse?.data?.settings || null
             this.teamSettingsCapabilities = settingsResponse?.data?.capabilities || {}
             this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
           }
         } catch {
-          if (this.isCurrentRequest(token, teamId, null)) {
+          if (this.isCurrentRecovery(token, teamId)) {
             this.teamSettings = null
             this.teamSettingsCapabilities = {}
             this.autoLinkFeedback = false
           }
         }
+        if (!this.isCurrentRecovery(token, teamId)) return
         const fallback = this.inboxes[0]?.id || null
+        if (!this.isCurrentRecovery(token, teamId)) return
         await this.replaceInboxQuery(fallback)
+        if (!this.isCurrentRecovery(token, teamId)) return
         if (fallback) {
           this.selectedInboxId = fallback
+          if (!this.isCurrentRecovery(token, teamId)) return
           this.syncGeneralForm()
           const loaded = await this.loadInboxContext({ recovering: true })
-          if (loaded === false && this.isCurrentRequest(token, teamId, null)) {
+          if (loaded === false && this.isCurrentRecovery(token, teamId)) {
             this.clearInboxScopedState()
+            if (!this.isCurrentRecovery(token, teamId)) return
             await this.replaceInboxQuery(null)
           }
         }
       } catch {
-        if (this.isCurrentRequest(token, teamId, null)) this.inboxes = []
+        if (this.isCurrentRecovery(token, teamId)) this.inboxes = []
       } finally {
-        if (token === this.requestToken) this.isRecoveringInbox = false
-        if (this.isCurrentRequest(token, teamId, null)) this.isLoading = false
+        if (this.recoveryOwnerToken === token && this.isCurrentRequest(token, teamId, null)) {
+          this.isRecoveringInbox = false
+          this.recoveryOwnerToken = null
+          this.isLoading = false
+        }
       }
+    },
+
+    isCurrentRecovery(token, teamId) {
+      return this.recoveryOwnerToken === token && this.isCurrentRequest(token, teamId, null)
     },
 
     isCurrentRequest(token, teamId = this.activeTeamId, inboxId = this.selectedInboxId) {
@@ -992,6 +1010,8 @@ export default {
 
     async handleInboxSwitch() {
       this.requestToken += 1
+      this.isRecoveringInbox = false
+      this.recoveryOwnerToken = null
       await this.replaceInboxQuery(this.selectedInboxId)
       this.syncGeneralForm()
       await this.loadInboxContext()

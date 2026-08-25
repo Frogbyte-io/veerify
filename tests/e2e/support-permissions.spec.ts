@@ -127,6 +127,176 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.locator('#general-name')).toHaveAttribute('readonly', '')
   })
 
+  test('tag 403 recovers the inbox without throwing from an unrelated conversation snapshot', async ({ browser }) => {
+    const page = await openAs(browser, 'supervisor', '/support')
+    let tagCalls = 0
+    await page.route('**/api/support/tags?*', async (route) => {
+      tagCalls += 1
+      if (tagCalls === 1) {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: false, error: { message: 'forbidden' } }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { tags: [] } }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
+      'You do not have access to this support inbox'
+    )
+    await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
+  })
+
+  test('delayed contact-panel 403 cannot recover a newly selected conversation', async ({ browser }) => {
+    const page = await openAs(browser, 'agent', '/support')
+    const oldConversationId = 'delayed-contact-old-conversation'
+    const newConversationId = 'delayed-contact-new-conversation'
+    const oldContactId = 'delayed-contact-old-contact'
+    const newContactId = 'delayed-contact-new-contact'
+    let oldContactCalls = 0
+    let releaseOldContact!: () => void
+    let oldContactStarted!: () => void
+    const oldContactReady = new Promise<void>((resolve) => {
+      oldContactStarted = resolve
+    })
+    const oldContactRelease = new Promise<void>((resolve) => {
+      releaseOldContact = resolve
+    })
+
+    await page.route('**/api/support/conversations?*', async (route) => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.has('contactId')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, data: { conversations: [], hasMore: false, nextCursor: null } }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            conversations: [
+              {
+                id: oldConversationId,
+                contactId: oldContactId,
+                subject: 'Old delayed contact',
+                displayId: 101,
+                status: 'open',
+                priority: null,
+                assigneeUserId: null,
+                createdAt: new Date().toISOString(),
+              },
+              {
+                id: newConversationId,
+                contactId: newContactId,
+                subject: 'New selected contact',
+                displayId: 102,
+                status: 'open',
+                priority: null,
+                assigneeUserId: null,
+                createdAt: new Date(Date.now() - 1000).toISOString(),
+              },
+            ],
+            hasMore: false,
+            nextCursor: null,
+          },
+        }),
+      })
+    })
+    await page.route('**/api/support/conversations/*', async (route) => {
+      const path = new URL(route.request().url()).pathname
+      const conversationId = path.includes(oldConversationId) ? oldConversationId : newConversationId
+      if (path.endsWith('/messages')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, data: { messages: [] } }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            conversation: {
+              id: conversationId,
+              contactId: conversationId === oldConversationId ? oldContactId : newContactId,
+              subject: conversationId === oldConversationId ? 'Old delayed contact' : 'New selected contact',
+              displayId: conversationId === oldConversationId ? 101 : 102,
+              status: 'open',
+              priority: null,
+              assigneeUserId: null,
+            },
+            contact: {
+              id: conversationId === oldConversationId ? oldContactId : newContactId,
+              name: conversationId === oldConversationId ? 'Old contact' : 'New contact',
+              email: `${conversationId}@example.com`,
+            },
+          },
+        }),
+      })
+    })
+    await page.route('**/api/support/contacts/*', async (route) => {
+      const path = new URL(route.request().url()).pathname
+      if (path.endsWith('/timeline')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, data: { linked: [], probableFeedback: [] } }),
+        })
+        return
+      }
+      const contactId = path.includes(oldContactId) ? oldContactId : newContactId
+      if (contactId === oldContactId) {
+        oldContactCalls += 1
+        if (oldContactCalls > 1) {
+          oldContactStarted()
+          await oldContactRelease
+          await route.fulfill({
+            status: 403,
+            contentType: 'application/json',
+            body: JSON.stringify({ success: false, error: { message: 'forbidden' } }),
+          })
+          return
+        }
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            contact: { id: contactId, name: contactId === oldContactId ? 'Old contact' : 'New contact' },
+            company: null,
+          },
+        }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(page.getByTestId(`support-conversation-${oldConversationId}`)).toBeVisible()
+    await page.getByTestId(`support-conversation-${oldConversationId}`).click()
+    await oldContactReady
+    await page.getByTestId(`support-conversation-${newConversationId}`).click()
+    await expect(page.getByTestId(`support-conversation-${newConversationId}`)).toHaveClass(/bg-accent/)
+    releaseOldContact()
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveCount(0)
+    await expect(page.getByText('New selected contact')).toBeVisible()
+  })
+
   test('unassigned member gets an intentional empty state without inbox names', async ({ browser }) => {
     const page = await openAs(browser, 'unassigned', '/support')
 
@@ -341,6 +511,89 @@ test.describe.serial('support permission-aware navigation', () => {
       'You do not have access to this support inbox'
     )
     await expect(page.getByTestId('support-no-assignment')).toBeVisible()
+  })
+
+  test('settings recovery ownership resets when the active team changes mid-recovery', async ({ browser }) => {
+    const page = await openAs(browser, 'teamAdmin')
+    const switchedTeamId = 'permissions-recovery-switched-team'
+    const switchedInboxId = 'permissions-recovery-switched-inbox'
+    let releaseRecoveryList!: () => void
+    let recoveryListStarted!: () => void
+    const recoveryListReady = new Promise<void>((resolve) => {
+      recoveryListStarted = resolve
+    })
+    const recoveryListRelease = new Promise<void>((resolve) => {
+      releaseRecoveryList = resolve
+    })
+    await page.route('**/api/teams/active', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { id: switchedTeamId } }),
+      })
+    })
+    await page.route('**/api/support/teams/*/settings', async (route) => {
+      if (route.request().method() === 'PUT') {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: false, error: { message: 'forbidden' } }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { settings: { autoLinkFeedback: false }, capabilities: { canManageTeamSupport: true } } }),
+      })
+    })
+    await page.route('**/api/support/inboxes?*', async (route) => {
+      const teamId = new URL(route.request().url()).searchParams.get('teamId')
+      if (teamId === fixture.teamId) {
+        recoveryListStarted()
+        await recoveryListRelease
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { inboxes: [] } }) })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { inboxes: [{ id: switchedInboxId, name: 'Switched team inbox', capabilities: { canManageInbox: true } }] },
+        }),
+      })
+    })
+    await page.route('**/api/teams/members?*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
+    )
+    await page.route(`**/api/teams/${switchedTeamId}/projects`, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
+    )
+    await page.route('**/api/support/inboxes/*/members', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { members: [] } }) })
+    )
+    await page.route('**/api/support/inboxes/*/addresses', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { addresses: [] } }) })
+    )
+    await page.route('**/api/support/inboxes/*/sending-status', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) })
+    )
+    await page.route('**/api/support/channel-status?*', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) })
+    )
+
+    await page.getByTestId('support-team-policy-toggle').click()
+    await recoveryListReady
+    await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
+    await expect(page.getByText('Switched team inbox')).toBeVisible()
+    releaseRecoveryList()
+    await expect(page.getByTestId('support-team-policy')).toBeVisible()
+
+    await page.getByTestId('support-team-policy-toggle').click()
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
+      'You do not have access to this support inbox'
+    )
   })
 
   test('forbidden deep-link shows generic access and recovers to first accessible inbox', async ({ browser }) => {
