@@ -23,6 +23,8 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const inboxId = getRouterParam(event, 'id') as string
 
+  // The centralized helper both authorizes the request and attaches the
+  // effective role/capability payload used by the client.
   const inbox = await requireInboxAccess(inboxId, session.user.id)
 
   return createSuccessResponse({ inbox })

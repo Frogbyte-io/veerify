@@ -17,6 +17,7 @@ vi.mock('~/server/database/drizzle', () => {
     const result = queued.shift() ?? []
     const thenable = {
       from: () => thenable,
+      innerJoin: () => thenable,
       where: () => thenable,
       limit: () => Promise.resolve(result),
     }
@@ -30,6 +31,10 @@ const {
   requireCompanyAccess,
   requireTeamMembership,
   requireInboxAccess,
+  requireInboxRole,
+  requireTeamAdmin,
+  requireSupportTeamRole,
+  capabilitiesForRole,
   requireConversationAccess,
   resolveInboxByAddress,
 } = await import('~/server/utils/support-access')
@@ -140,7 +145,43 @@ describe('requireInboxAccess', () => {
     queueResult([])
     queueResult([])
 
-    await expectStatus(requireInboxAccess('i1', 'outsider'), 403)
+    await expect(requireInboxAccess('i1', 'outsider')).rejects.toMatchObject({
+      statusCode: 403,
+      data: {
+        error: {
+          message: 'You do not have access to this support inbox',
+        },
+      },
+    })
+  })
+
+  it('does not disclose the inbox name in the forbidden response', async () => {
+    queueResult([{ id: 'i1', teamId: 't1', name: 'Private VIP Inbox' }])
+    queueResult([])
+    queueResult([])
+
+    const result = requireInboxAccess('i1', 'outsider')
+    await expect(result).rejects.toMatchObject({
+      statusCode: 403,
+      data: {
+        error: {
+          message: 'You do not have access to this support inbox',
+        },
+      },
+    })
+    await expect(result).rejects.not.toMatchObject({ data: { error: { message: expect.stringContaining('Private VIP Inbox') } } })
+  })
+
+  it('returns effective admin access for a team admin', async () => {
+    queueResult([{ id: 'i1', teamId: 't1', name: 'Private VIP Inbox' }])
+    queueResult([])
+    queueResult([{ id: 'm1', role: 'admin' }])
+
+    await expect(requireInboxAccess('i1', 'admin1')).resolves.toMatchObject({
+      id: 'i1',
+      effectiveRole: 'admin',
+      isTeamAdmin: true,
+    })
   })
 
   it('does not check team admin when already a supportInboxMember', async () => {
@@ -149,6 +190,50 @@ describe('requireInboxAccess', () => {
 
     await requireInboxAccess('i1', 'u1')
     expect(queued.length).toBe(0)
+  })
+})
+
+describe('support capabilities', () => {
+  it('returns the literal capability matrix for ranked inbox roles', () => {
+    expect(capabilitiesForRole('agent', false)).toEqual({
+      canWorkConversations: true,
+      canManageTagVocabulary: false,
+      canManageMembers: false,
+      canManageInbox: false,
+      canManageTeamSupport: false,
+    })
+    expect(capabilitiesForRole('supervisor', false).canManageTagVocabulary).toBe(true)
+    expect(capabilitiesForRole('admin', false).canManageInbox).toBe(true)
+    expect(capabilitiesForRole('admin', true).canManageTeamSupport).toBe(true)
+  })
+
+  it('enforces the minimum ranked inbox role', async () => {
+    queueResult([{ id: 'i1', teamId: 't1' }])
+    queueResult([{ id: 'sim1', role: 'agent' }])
+
+    await expect(requireInboxRole('i1', 'u1', 'supervisor')).rejects.toMatchObject({
+      statusCode: 403,
+      data: { error: { message: 'You do not have access to this support inbox' } },
+    })
+  })
+
+  it('requires a team administrator for team-level support administration', async () => {
+    queueResult([{ id: 'm1', role: 'member' }])
+
+    await expect(requireTeamAdmin('t1', 'u1')).rejects.toMatchObject({
+      statusCode: 403,
+      data: { error: { message: 'You do not have access to this support inbox' } },
+    })
+  })
+
+  it('resolves the highest support role available in a team', async () => {
+    queueResult([{ id: 'm1', role: 'member' }])
+    queueResult([{ role: 'supervisor' }])
+
+    await expect(requireSupportTeamRole('t1', 'u1', 'supervisor')).resolves.toEqual({
+      effectiveRole: 'supervisor',
+      isTeamAdmin: false,
+    })
   })
 })
 

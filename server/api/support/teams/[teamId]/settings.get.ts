@@ -17,17 +17,26 @@
 import { eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamMembership } from '~/server/utils/support-access'
+import {
+  capabilitiesForRole,
+  requireTeamMembership,
+  type SupportInboxRole,
+} from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { supportTeamSettings } from '~/server/database/schema/support'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const teamId = getRouterParam(event, 'teamId') as string
-  await requireTeamMembership(teamId, session.user.id)
+  const membership = await requireTeamMembership(teamId, session.user.id)
+  const isTeamAdmin = membership.role === 'admin'
+  const effectiveRole: SupportInboxRole = isTeamAdmin ? 'admin' : 'agent'
 
   const [settings] = await db.select().from(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId)).limit(1)
   return createSuccessResponse({
     settings: settings ?? { teamId, autoLinkFeedback: false, createdAt: null, updatedAt: null },
+    effectiveRole,
+    isTeamAdmin,
+    capabilities: capabilitiesForRole(effectiveRole, isTeamAdmin),
   })
 })
