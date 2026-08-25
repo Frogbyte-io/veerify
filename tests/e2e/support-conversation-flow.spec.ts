@@ -48,6 +48,16 @@ test.describe.serial('support conversation flow', () => {
       const inboxId = (await inboxResponse.json()).data.inbox.id as string
       createdInboxIds.push(inboxId)
 
+      const visibleInboxesResponse = await request.get('/api/support/inboxes', {
+        headers,
+        params: { teamId },
+      })
+      expect(visibleInboxesResponse.ok()).toBeTruthy()
+      const visibleInbox = (await visibleInboxesResponse.json()).data.inboxes.find(
+        (inbox: { id: string }) => inbox.id === inboxId
+      )
+      expect(visibleInbox?.capabilities?.canWorkConversations).toBe(true)
+
       const contactResponse = await request.post('/api/support/contacts', {
         headers,
         data: { teamId, name: 'E2E Customer', email: `e2e-conv-${suffix}@example.com` },

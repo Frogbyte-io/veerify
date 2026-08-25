@@ -18,7 +18,13 @@
         </Button>
       </div>
 
-      <p v-else-if="inboxes.length === 0" class="text-xs text-muted-foreground px-1 py-2">No inboxes yet.</p>
+      <p
+        v-else-if="inboxes.length === 0"
+        data-testid="support-no-assignment"
+        class="px-1 py-3 text-xs leading-relaxed text-muted-foreground"
+      >
+        No support inboxes are assigned to you.
+      </p>
 
       <button
         v-for="inbox in inboxes"
@@ -93,6 +99,28 @@
         </select>
       </div>
 
+      <div v-if="canManageTagVocabulary" class="space-y-2 border-t pt-3" data-testid="support-tag-management">
+        <Label for="support-new-tag" class="text-xs text-muted-foreground">Shared tag list</Label>
+        <div class="flex gap-1.5">
+          <Input
+            id="support-new-tag"
+            v-model="newTagName"
+            class="h-8 min-w-0 text-xs"
+            placeholder="New tag"
+            @keydown.enter.prevent="createTag"
+          />
+          <Button
+            size="sm"
+            class="shrink-0"
+            data-testid="support-create-tag"
+            :disabled="!newTagName.trim()"
+            @click="createTag"
+          >
+            Create tag
+          </Button>
+        </div>
+      </div>
+
       <Button
         v-if="hasActiveFilters"
         variant="ghost"
@@ -119,17 +147,26 @@ export default {
     members: { type: Array, default: () => [] },
     tags: { type: Array, default: () => [] },
     tagsAvailable: { type: Boolean, default: false },
+    capabilities: { type: Object, default: () => ({}) },
     filters: {
       type: Object,
       default: () => ({ status: '', assigneeUserId: '', tagId: '' }),
     },
   },
 
-  emits: ['select-inbox', 'update:filters', 'retry'],
+  emits: ['select-inbox', 'update:filters', 'retry', 'create-tag'],
+
+  data() {
+    return { newTagName: '' }
+  },
 
   computed: {
     hasActiveFilters() {
       return Boolean(this.filters.status || this.filters.assigneeUserId || this.filters.tagId)
+    },
+
+    canManageTagVocabulary() {
+      return this.capabilities?.canManageTagVocabulary === true
     },
   },
 
@@ -140,6 +177,13 @@ export default {
 
     clearFilters() {
       this.$emit('update:filters', { status: '', assigneeUserId: '', tagId: '' })
+    },
+
+    createTag() {
+      const name = this.newTagName.trim()
+      if (!name) return
+      this.$emit('create-tag', name)
+      this.newTagName = ''
     },
   },
 }

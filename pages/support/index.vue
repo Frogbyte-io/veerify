@@ -24,6 +24,14 @@
 
       <!-- Three-pane layout -->
       <div v-else class="h-full flex rounded-lg border overflow-hidden bg-card">
+        <div
+          v-if="inboxAccessError"
+          data-testid="support-inbox-access-error"
+          class="absolute z-10 left-4 top-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm"
+          role="alert"
+        >
+          {{ inboxAccessError }}
+        </div>
         <!-- Left: inbox switcher + filters -->
         <div class="w-[220px] shrink-0 border-r bg-muted/20">
           <SupportInboxSidebar
@@ -34,10 +42,12 @@
             :members="inboxMembers"
             :tags="tags"
             :tags-available="tagsAvailable"
+            :capabilities="activeInbox?.capabilities"
             :filters="filters"
             @select-inbox="selectInbox"
             @update:filters="onFiltersChange"
             @retry="loadInboxes"
+            @create-tag="createTag"
           />
         </div>
 
@@ -123,6 +133,7 @@ export default {
       activeInboxId: null,
       isLoadingInboxes: true,
       inboxesError: null,
+      inboxAccessError: null,
 
       inboxMembers: [],
 
@@ -169,6 +180,10 @@ export default {
   },
 
   computed: {
+    activeInbox() {
+      return this.inboxes.find((inbox) => inbox.id === this.activeInboxId) || null
+    },
+
     conversationsEnriched() {
       return this.conversations.map((item) => {
         const cached = this.contactCache[item.contactId]
@@ -260,6 +275,7 @@ export default {
 
       this.isLoadingInboxes = true
       this.inboxesError = null
+      this.inboxAccessError = null
 
       try {
         const response = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
@@ -301,6 +317,19 @@ export default {
       }
     },
 
+    async createTag(name) {
+      if (!this.activeTeamId) return
+      try {
+        await $fetch('/api/support/tags', {
+          method: 'POST',
+          body: { teamId: this.activeTeamId, name },
+        })
+        await this.loadTags()
+      } catch (error) {
+        alert(error?.data?.error?.message || 'Failed to create tag')
+      }
+    },
+
     async selectInbox(inboxId) {
       if (!inboxId || inboxId === this.activeInboxId) return
 
@@ -319,6 +348,21 @@ export default {
 
       await Promise.all([this.loadInboxMembers(), this.loadConversations(true)])
       this.subscribeInbox()
+    },
+
+    isForbiddenError(error) {
+      return error?.statusCode === 403 || error?.status === 403 || error?.response?.status === 403
+    },
+
+    async recoverFromForbiddenInbox() {
+      this.unselectConversation()
+      if (import.meta.client) {
+        await this.$router
+          .replace({ query: { ...this.$route.query, inboxId: undefined, conversationId: undefined } })
+          .catch(() => {})
+      }
+      await this.loadInboxes()
+      this.inboxAccessError = 'You do not have access to this support inbox'
     },
 
     async openRequestedConversation() {
@@ -463,7 +507,11 @@ export default {
         if (this.conversationContact?.id) {
           await this.loadContactPanel()
         }
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.detailError = 'Failed to load this conversation. Please try again.'
       } finally {
         this.isLoadingDetail = false
@@ -481,7 +529,11 @@ export default {
         const items = response?.data?.messages || []
         this.messages = [...items].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
         this.scrollMessagesToBottom()
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.messagesError = 'Could not load messages. Please try again.'
         this.messages = []
       } finally {
