@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
@@ -25,6 +27,15 @@ const providerState = vi.hoisted(() => ({
       messageId: null,
     })),
   },
+}))
+
+const storageState = vi.hoisted(() => ({
+  putObject: vi.fn(async () => undefined),
+  getObject: vi.fn(async () => Buffer.from('attachment')),
+}))
+
+const uploadState = vi.hoisted(() => ({
+  verifyAttachmentUploadToken: vi.fn(),
 }))
 
 const access = vi.hoisted(() => ({
@@ -56,6 +67,8 @@ vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
 vi.stubGlobal('getRouterParam', (_event: unknown, name: string) => state.params[name as keyof typeof state.params])
 vi.stubGlobal('getQuery', () => state.query)
 vi.stubGlobal('readBody', async () => state.body)
+vi.stubGlobal('getHeader', (_event: unknown, name: string) => state.headers[name.toLowerCase()])
+vi.stubGlobal('readRawBody', async () => state.rawBody)
 vi.stubGlobal('createError', (input: Record<string, unknown>) =>
   Object.assign(new Error(String(input.statusMessage)), input)
 )
@@ -100,33 +113,42 @@ vi.mock('~/server/services/rate-limit', () => ({
 
 const inboundEvents = vi.hoisted(() => ({
   claimInboundEvent: vi.fn(async () => ({ outcome: 'duplicate' as const })),
-}))
-const deliveryEvents = vi.hoisted(() => ({
-  claimDeliveryEvent: vi.fn(async () => ({ outcome: 'duplicate' as const })),
-}))
-
-vi.mock('~/server/utils/inbound-events', () => ({
-  ...inboundEvents,
   attachInboundEventInbox: vi.fn(),
   completeInboundEvent: vi.fn(),
   failInboundEvent: vi.fn(),
   recordInboundRawKey: vi.fn(),
   rejectInboundEvent: vi.fn(),
 }))
-
-vi.mock('~/server/utils/delivery-events', () => ({
-  ...deliveryEvents,
+const deliveryEvents = vi.hoisted(() => ({
+  claimDeliveryEvent: vi.fn(async () => ({ outcome: 'duplicate' as const })),
   completeDeliveryEvent: vi.fn(),
   failDeliveryEvent: vi.fn(),
 }))
 
-vi.mock('~/server/utils/storage', () => ({
-  getStorageProvider: vi.fn(() => ({
-    driver: 'local',
-    putObject: vi.fn(async () => undefined),
-    getObject: vi.fn(async () => Buffer.from('attachment')),
-  })),
+vi.mock('~/server/utils/inbound-events', () => ({
+  ...inboundEvents,
 }))
+
+vi.mock('~/server/utils/delivery-events', () => ({
+  ...deliveryEvents,
+}))
+
+vi.mock('~/server/utils/storage', () => ({
+  getStorageProvider: vi.fn(() => ({ driver: 'local', ...storageState })),
+}))
+
+vi.mock('~/server/utils/support-attachments', async () => {
+  const actual = await vi.importActual<typeof import('~/server/utils/support-attachments')>(
+    '~/server/utils/support-attachments'
+  )
+  return {
+    ...actual,
+    verifyAttachmentUploadToken: (token: string) => {
+      uploadState.verifyAttachmentUploadToken(token)
+      return actual.verifyAttachmentUploadToken(token)
+    },
+  }
+})
 
 vi.mock('~/server/database/drizzle', () => {
   type MockDb = {
@@ -218,6 +240,7 @@ const attachmentGet = (await import('~/server/api/support/attachments/[id].get')
 const attachmentUpload = (await import('~/server/api/support/attachments/upload/[token].put')).default
 const inboundWebhook = (await import('~/server/api/support/inbound/[provider].post')).default
 const deliveryWebhook = (await import('~/server/api/support/delivery/[provider].post')).default
+const { createAttachmentUploadToken } = await import('~/server/utils/support-attachments')
 
 // This import is intentionally optional in the RED phase: the route is the
 // production change being driven by this test.
@@ -229,6 +252,7 @@ const event = {} as never
 
 beforeEach(() => {
   state.body = {}
+  state.params = { id: 'inbox-1', memberId: 'member-1', addressId: 'address-1', teamId: 'team-1' }
   state.query = { inboxId: 'inbox-1' }
   state.rawBody = ''
   state.headers = {}
@@ -661,6 +685,14 @@ const executableBoundaryCases: BoundaryCase[] = [
   },
 ]
 
+function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const relativeName = join(prefix, entry.name)
+    if (entry.isDirectory()) return collectSupportRouteFiles(join(directory, entry.name), relativeName)
+    return entry.name.endsWith('.ts') ? [relativeName.replace(/\\/g, '/').replace(/\.ts$/, '')] : []
+  })
+}
+
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
     expect(executableBoundaryCases).toHaveLength(46)
@@ -672,23 +704,63 @@ describe('executable support route authorization inventory', () => {
       state.queuedRows = route.queuedRows ?? []
 
       const helper = access[route.helper] as unknown as {
+        mockClear: () => void
         mockImplementationOnce: (implementation: () => Promise<never>) => unknown
-        mockImplementation: (implementation: () => Promise<never>) => unknown
       }
+      helper.mockClear()
       helper.mockImplementationOnce(() => forbidden())
 
       await expect(route.handler(event), route.name).rejects.toMatchObject({ statusCode: 403 })
-      expect(helper, route.name).toHaveBeenCalledWith(...route.args)
+      expect(helper).toHaveBeenCalledTimes(1)
+      expect(helper, route.name).toHaveBeenLastCalledWith(...route.args)
     }
   })
 
+  it('matches every support route file to one executable or explicit boundary case', () => {
+    const routeFiles = collectSupportRouteFiles(resolve(process.cwd(), 'server/api/support')).sort()
+    const inventoryEntries = [
+      ...executableBoundaryCases.map((route) => route.name),
+      'channel-status.get',
+      'inbound/[provider].post',
+      'delivery/[provider].post',
+      'attachments/upload/[token].put',
+    ]
+    const inventoryNames = [...new Set(inventoryEntries)].sort()
+
+    expect(inventoryEntries).toHaveLength(inventoryNames.length)
+    expect(inventoryNames).toEqual(routeFiles)
+  })
+
   it('rejects provider webhooks at signature verification before claim or processing', async () => {
-    state.params = { ...state.params, provider: 'postmark' } as typeof state.params
+    state.params = { ...state.params, provider: 'postmark' }
     state.rawBody = '{}'
     state.headers = {}
 
     await expect(inboundWebhook(event)).rejects.toMatchObject({ statusCode: 401 })
+    expect(providerState.driver.verifySignature).toHaveBeenCalledTimes(1)
+    expect(providerState.driver.verifySignature).toHaveBeenLastCalledWith({
+      rawBody: '{}',
+      headers: {},
+      authorization: undefined,
+    })
+    expect(inboundEvents.claimInboundEvent).not.toHaveBeenCalled()
+    expect(inboundEvents.attachInboundEventInbox).not.toHaveBeenCalled()
+    expect(inboundEvents.completeInboundEvent).not.toHaveBeenCalled()
+    expect(inboundEvents.failInboundEvent).not.toHaveBeenCalled()
+    expect(inboundEvents.recordInboundRawKey).not.toHaveBeenCalled()
+    expect(inboundEvents.rejectInboundEvent).not.toHaveBeenCalled()
+
+    providerState.driver.verifySignature.mockClear()
     await expect(deliveryWebhook(event)).rejects.toMatchObject({ statusCode: 401 })
+    expect(providerState.driver.verifySignature).toHaveBeenCalledTimes(1)
+    expect(providerState.driver.verifySignature).toHaveBeenLastCalledWith({
+      rawBody: '{}',
+      headers: {},
+      authorization: undefined,
+    })
+    expect(deliveryEvents.claimDeliveryEvent).not.toHaveBeenCalled()
+    expect(deliveryEvents.completeDeliveryEvent).not.toHaveBeenCalled()
+    expect(deliveryEvents.failDeliveryEvent).not.toHaveBeenCalled()
   })
 
   it('claims provider events before accepting duplicate webhook deliveries', async () => {
@@ -697,21 +769,87 @@ describe('executable support route authorization inventory', () => {
     providerState.driver.verifySignature.mockReturnValue(true)
 
     await expect(inboundWebhook(event)).resolves.toMatchObject({ data: { reason: 'duplicate-delivery' } })
-    await expect(deliveryWebhook(event)).resolves.toMatchObject({ data: { reason: 'duplicate-event' } })
-    expect(inboundEvents.claimInboundEvent).toHaveBeenCalledWith({
+    expect(providerState.driver.verifySignature).toHaveBeenCalledTimes(1)
+    expect(providerState.driver.verifySignature).toHaveBeenLastCalledWith({
+      rawBody: '{}',
+      headers: {},
+      authorization: undefined,
+    })
+    expect(inboundEvents.claimInboundEvent).toHaveBeenCalledTimes(1)
+    expect(inboundEvents.claimInboundEvent).toHaveBeenLastCalledWith({
       provider: 'postmark',
       providerEventId: 'inbound-event-1',
     })
-    expect(deliveryEvents.claimDeliveryEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'postmark', providerEventId: 'delivery-event-1' })
-    )
+
+    providerState.driver.verifySignature.mockClear()
+    deliveryEvents.claimDeliveryEvent.mockClear()
+    await expect(deliveryWebhook(event)).resolves.toMatchObject({ data: { reason: 'duplicate-event' } })
+    expect(providerState.driver.verifySignature).toHaveBeenCalledTimes(1)
+    expect(providerState.driver.verifySignature).toHaveBeenLastCalledWith({
+      rawBody: '{}',
+      headers: {},
+      authorization: undefined,
+    })
+    expect(deliveryEvents.claimDeliveryEvent).toHaveBeenCalledTimes(1)
+    expect(deliveryEvents.claimDeliveryEvent).toHaveBeenLastCalledWith({
+      provider: 'postmark',
+      providerEventId: 'delivery-event-1',
+      recordType: 'delivered',
+      recipient: 'customer@example.com',
+      messageId: null,
+    })
   })
 
-  it('requires a signed token for the local attachment upload boundary', async () => {
-    state.params = { ...state.params, token: '' } as typeof state.params
+  it('keeps upload token, content-type, and body validation at separate boundaries', async () => {
+    state.params = { ...state.params, token: '' }
     await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 400 })
+    expect(uploadState.verifyAttachmentUploadToken).not.toHaveBeenCalled()
+    expect(storageState.putObject).not.toHaveBeenCalled()
 
-    state.params = { ...state.params, token: 'invalid.signature' } as typeof state.params
+    state.params = { ...state.params, token: 'invalid.signature' }
+    state.headers = { 'content-type': 'text/plain' }
+    state.rawBody = 'bytes'
     await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 400 })
+    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenCalledTimes(1)
+    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenLastCalledWith('invalid.signature')
+    expect(storageState.putObject).not.toHaveBeenCalled()
+
+    const payload = {
+      conversationId: 'conversation-1',
+      userId: 'user-1',
+      storageKey: 'support/attachments/outbound/conversation-1/a/file.txt',
+      contentType: 'text/plain',
+      sizeBytes: 5,
+    }
+    const { token } = createAttachmentUploadToken(payload)
+
+    uploadState.verifyAttachmentUploadToken.mockClear()
+    state.params = { ...state.params, token }
+    state.headers = { 'content-type': 'application/pdf' }
+    state.rawBody = 'bytes'
+    await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 400 })
+    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenCalledWith(token)
+    expect(storageState.putObject).not.toHaveBeenCalled()
+
+    uploadState.verifyAttachmentUploadToken.mockClear()
+    state.headers = { 'content-type': 'text/plain' }
+    state.rawBody = ''
+    await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 400 })
+    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenCalledWith(token)
+    expect(storageState.putObject).not.toHaveBeenCalled()
+
+    uploadState.verifyAttachmentUploadToken.mockClear()
+    state.rawBody = 'bytes'
+    await expect(attachmentUpload(event)).resolves.toMatchObject({
+      data: { uploaded: true, storageKey: payload.storageKey },
+    })
+    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenCalledTimes(1)
+    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenLastCalledWith(token)
+    expect(storageState.putObject).toHaveBeenCalledTimes(1)
+    expect(storageState.putObject).toHaveBeenLastCalledWith({
+      key: payload.storageKey,
+      buffer: Buffer.from('bytes'),
+      contentType: 'text/plain',
+    })
   })
 })
