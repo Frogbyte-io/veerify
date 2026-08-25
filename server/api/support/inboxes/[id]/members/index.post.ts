@@ -27,7 +27,7 @@ import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireInboxAccess } from '~/server/utils/support-access'
+import { requireInboxRole } from '~/server/utils/support-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
   const inboxId = getRouterParam(event, 'id') as string
   const body = await validateBody(event, bodySchema)
 
-  const inbox = await requireInboxAccess(inboxId, session.user.id)
+  const inbox = await requireInboxRole(inboxId, session.user.id, 'admin')
 
   const [matchedMember] = await db
     .select({ id: teamMember.id })

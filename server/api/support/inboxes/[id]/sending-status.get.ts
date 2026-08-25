@@ -25,14 +25,14 @@
  */
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireInboxAccess } from '~/server/utils/support-access'
+import { requireInboxRole } from '~/server/utils/support-access'
 import { getConfiguredChannelDriver } from '~/server/services/support-channels'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const inboxId = getRouterParam(event, 'id') as string
 
-  const inbox = await requireInboxAccess(inboxId, session.user.id)
+  const inbox = await requireInboxRole(inboxId, session.user.id, 'agent')
 
   if (!inbox.emailAddress) {
     return createSuccessResponse({ address: null, authorization: null })

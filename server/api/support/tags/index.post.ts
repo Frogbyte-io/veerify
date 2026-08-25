@@ -15,7 +15,7 @@ import { z } from 'zod'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamMembership } from '~/server/utils/support-access'
+import { requireSupportTeamRole } from '~/server/utils/support-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const body = await validateBody(event, bodySchema)
 
-  await requireTeamMembership(body.teamId, session.user.id)
+  await requireSupportTeamRole(body.teamId, session.user.id, 'supervisor')
 
   try {
     const [created] = await db

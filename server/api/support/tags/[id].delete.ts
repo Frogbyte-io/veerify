@@ -22,7 +22,7 @@ import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamMembership } from '~/server/utils/support-access'
+import { requireSupportTeamRole } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { supportTag } from '~/server/database/schema/support'
 
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
 
   // Resolve-then-check (rather than a helper like `requireCompanyAccess`, since
   // there is no `requireTagAccess`) so a caller cannot delete another team's tag.
-  await requireTeamMembership(tag.teamId, session.user.id)
+  await requireSupportTeamRole(tag.teamId, session.user.id, 'supervisor')
 
   // Cascades to `conversationTag` - see @openapi description above.
   await db.delete(supportTag).where(eq(supportTag.id, tagId))

@@ -15,6 +15,9 @@
  */
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
+import { requireInboxRole } from '~/server/utils/support-access'
+import { validateQuery } from '~/server/utils/validation'
+import { z } from 'zod'
 import {
   SUPPORT_CHANNEL_PROVIDERS,
   getConfiguredChannelDriver,
@@ -40,7 +43,9 @@ const REQUIRED_ENV: Record<string, string[]> = {
 }
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event)
+  const session = await requireAuth(event)
+  const { inboxId } = validateQuery(event, z.object({ inboxId: z.string().min(1) }))
+  await requireInboxRole(inboxId, session.user.id, 'agent')
 
   const provider = getConfiguredChannelProviderName()
   const driverAvailable = getConfiguredChannelDriver() !== null

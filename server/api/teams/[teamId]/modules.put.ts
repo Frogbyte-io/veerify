@@ -19,11 +19,10 @@
  *       403: { description: Not a member of this team }
  */
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { teamMember } from '~/server/database/schema/auth'
 import { teamModuleSettings } from '~/server/database/schema/teams'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireTeamAdmin } from '~/server/utils/support-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
 import { DEFAULT_TEAM_MODULES } from './modules.get'
@@ -47,22 +46,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  await requireTeamAdmin(teamId, session.user.id)
   const body = await validateBody(event, bodySchema)
-
-  // Team membership only — see delta D-28 before adding a role check.
-  const [membership] = await db
-    .select({ id: teamMember.id })
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, session.user.id)))
-    .limit(1)
-
-  if (!membership) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You are not a member of this team'),
-    })
-  }
 
   const now = new Date()
 

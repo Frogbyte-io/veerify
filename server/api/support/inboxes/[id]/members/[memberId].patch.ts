@@ -1,45 +1,37 @@
 /**
  * @openapi
  * /api/support/inboxes/{id}/members/{memberId}:
- *   delete:
+ *   patch:
  *     tags: [Support]
- *     summary: Remove an agent from an inbox
- *     operationId: removeSupportInboxMember
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: string }
- *       - in: path
- *         name: memberId
- *         required: true
- *         schema: { type: string }
- *     responses:
- *       200: { description: Member removed }
- *       403: { description: Not a member of this inbox or a team admin }
- *       404: { description: Inbox or member not found }
+ *     summary: Change an inbox member role
  */
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
+import { z } from 'zod'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxRole } from '~/server/utils/support-access'
+import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportInboxMember } from '~/server/database/schema/support'
+
+const bodySchema = z.object({ role: z.enum(['agent', 'supervisor', 'admin']) })
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const inboxId = getRouterParam(event, 'id') as string
   const memberId = getRouterParam(event, 'memberId') as string
+  const body = await validateBody(event, bodySchema)
 
   await requireInboxRole(inboxId, session.user.id, 'admin')
 
-  const [deleted] = await db
-    .delete(supportInboxMember)
+  const [updated] = await db
+    .update(supportInboxMember)
+    .set({ role: body.role })
     .where(and(eq(supportInboxMember.id, memberId), eq(supportInboxMember.inboxId, inboxId)))
-    .returning({ id: supportInboxMember.id })
+    .returning()
 
-  if (!deleted) {
+  if (!updated) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Not Found',
@@ -47,5 +39,5 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  return createSuccessResponse({ deleted: true })
+  return createSuccessResponse({ member: updated })
 })

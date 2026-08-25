@@ -23,7 +23,7 @@ import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireInboxAccess } from '~/server/utils/support-access'
+import { requireInboxRole } from '~/server/utils/support-access'
 import { isForeignKeyViolation } from '~/server/utils/support-errors'
 import { db } from '~/server/database/drizzle'
 import { supportInbox } from '~/server/database/schema/support'
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const inboxId = getRouterParam(event, 'id') as string
 
-  await requireInboxAccess(inboxId, session.user.id)
+  await requireInboxRole(inboxId, session.user.id, 'admin')
 
   try {
     await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
