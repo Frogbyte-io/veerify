@@ -394,7 +394,7 @@ export const conversationMessage = pgTable(
       table.conversationId,
       table.createdAt
     ),
-    channelMessageIdIdx: index('conversation_message_channel_message_id_idx').on(table.channelMessageId),
+    uniqueChannelMessageId: uniqueIndex('conversation_message_channel_message_id_idx').on(table.channelMessageId),
     deliveryStatusIdx: index('conversation_message_delivery_status_idx').on(table.deliveryStatus),
   })
 )
@@ -670,7 +670,6 @@ export const supportDeliveryEvent = pgTable(
   (table) => ({
     uniqueProviderEventId: uniqueIndex('support_delivery_event_provider_event_id_idx').on(
       table.provider,
-      table.providerAccountKey,
       table.providerEventId
     ),
     messageIdx: index('support_delivery_event_message_idx').on(table.messageId),

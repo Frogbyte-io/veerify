@@ -44,9 +44,9 @@
 
 - Produces: `supportAttachmentUpload` with statuses `pending | uploaded | finalizing | cleanup_required | consumed | expired`.
 - Produces: `supportOutboundDelivery.provider`, `.providerAccountKey`, `.providerMessageId`, and `.nextAttemptAt`.
-- Produces: `supportDeliveryEvent.providerAccountKey` and `.correlationKey`, unique by `(provider,providerAccountKey,providerEventId)`.
+- Produces: `supportDeliveryEvent.providerAccountKey` and `.correlationKey`; Task 1 keeps the legacy `(provider,providerEventId)` unique index until Task 12's consumer cutover.
 - Produces: nullable `supportDeliveryEvent.occurredAt` for provider event time; new webhook rows always set it, while legacy rows remain distinguishable from locally recorded `createdAt`.
-- Produces: a non-unique `conversation_message_channel_message_id_idx` and a database check restricting inbox member roles.
+- Produces: the existing unique `conversation_message_channel_message_id_idx` and a database check restricting inbox member roles; Task 11/12 owns the RFC uniqueness cutover after scoped consumers are deployed.
 - Consumes: the exact columns, foreign keys, indexes, and cleanup fields from the approved spec.
 
 - [ ] **Step 1: Write the failing real-Postgres schema test**
@@ -80,7 +80,7 @@ expect(uploadColumns).toEqual(
     'updated_at',
   ])
 )
-expect(channelMessageIndex?.indexdef).not.toContain('UNIQUE')
+expect(channelMessageIndex?.indexdef).toContain('UNIQUE')
 expect(uploadForeignKeys).toEqual(
   expect.arrayContaining([
     'conversation_id -> conversation.id',
@@ -101,7 +101,7 @@ expect(await acceptsInboxRole('admin')).toBe(true)
 expect(await acceptsInboxRole('member')).toBe(false)
 expect(providerAccountColumn).toMatchObject({ isNullable: 'NO', columnDefault: "'legacy'::text" })
 expect(deliveryEventColumns).toEqual(expect.arrayContaining(['provider_account_key', 'correlation_key', 'occurred_at']))
-expect(deliveryEventUniqueColumns).toEqual(['provider', 'provider_account_key', 'provider_event_id'])
+expect(deliveryEventUniqueColumns).toEqual(['provider', 'provider_event_id'])
 ```
 
 Prefer semantic catalog queries and transaction-rolled-back insert probes over exact `pg_get_constraintdef` formatting.
@@ -192,7 +192,7 @@ if ($generatedMigrations.Count -lt 1) { throw 'No newly generated migration foun
 $generatedMigrations | Set-Content -LiteralPath $migrationManifest
 ```
 
-Inspect only the paths captured in `$migrationManifest`, in this order: (1) upload table and additive delivery columns/defaults including `support_delivery_event.occurred_at`, (2) role constraint and provider-event uniqueness replacement, (3) global RFC unique-index removal and non-unique replacement. If one generated file does not preserve that order, generate two or more schema states in sequence and append only each newly captured path to the manifest; do not edit SQL manually.
+Inspect only the paths captured in `$migrationManifest`, in this order: (1) upload table and additive delivery columns/defaults including `support_delivery_event.occurred_at`, (2) the inbox role constraint. Keep the legacy provider-event and RFC unique indexes in Task 1; Task 11/12 must generate and apply their replacement migrations only at the exact consumer cutovers. If one generated file does not preserve the approved additive/role order, generate two or more schema states in sequence and append only each newly captured path to the manifest; do not edit SQL manually.
 
 - [ ] **Step 6: Apply only to the verified development target and verify GREEN**
 
@@ -842,6 +842,7 @@ git commit -m "feat(support): show persisted attachments"
 - Extends the existing `ThreadResolution.matchedBy` union to `'message-id' | 'thread-key' | 'subject' | 'ambiguous-message-id' | null`; all existing consumers keep the `matchedBy` property name.
 - `ambiguous-message-id` always returns `conversationId: null` and prevents both thread-key and subject fallback for that inbound message.
 - Header lookup joins `conversationMessage` to `conversation`, filters by receiving `inboxId`, and reads at most two matches to detect ambiguity.
+- Owns the consumer cutover for `conversation_message_channel_message_id_idx`: keep the Task 1 unique index until the scoped lookup and ambiguity handling below are deployed, then generate the Drizzle migration that replaces it with a non-unique index in the same rollout.
 
 - [ ] **Step 1: Write failing inbox-scope and ambiguity tests**
 
@@ -912,6 +913,7 @@ git commit -m "fix(support): scope email threading to inboxes"
 - Produces: `ChannelDriver.buildDeliveryCorrelationHeaders(correlationKey)`.
 - Outbound transport returns `{ accepted:boolean; providerMessageId?:string; response:string }`.
 - Primary resolution is globally unique outbox `idempotencyKey === correlationKey`; fallback is an exact single match on `(provider,providerAccountKey,providerMessageId,recipient)`.
+- Owns the consumer cutover for `support_delivery_event_provider_event_id_idx`: keep Task 1's legacy `(provider,providerEventId)` index until provider-account-aware claim/route code is deployed, then generate and apply the Drizzle migration replacing it with `(provider,providerAccountKey,providerEventId)`.
 
 - [ ] **Step 1: Write failing provider metadata tests**
 

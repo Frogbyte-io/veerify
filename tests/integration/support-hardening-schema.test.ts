@@ -82,6 +82,15 @@ async function tableColumns(tableName: string) {
 
 describe('support hardening schema contracts (real Postgres)', () => {
   it('owns upload, delivery, index, foreign-key, and role contracts', async () => {
+    const uploadStatusConstraint = await db.execute<{ constraint_name: string }>(
+      sql`select constraint_name
+        from information_schema.table_constraints
+        where table_schema = 'public' and table_name = 'support_attachment_upload'
+        and constraint_type = 'CHECK'`
+    )
+    expect(uploadStatusConstraint.rows.map((row) => row.constraint_name)).toContain(
+      'support_attachment_upload_status_check'
+    )
     const uploadColumns = await tableColumns('support_attachment_upload')
     const uploadForeignKeys = await db.execute<{ column_name: string; referenced_table: string }>(
       sql`select source.attname as column_name, target.relname as referenced_table
@@ -154,7 +163,7 @@ describe('support hardening schema contracts (real Postgres)', () => {
         'updated_at',
       ])
     )
-    expect(channelMessageIndex.rows[0]?.indexdef).not.toContain('UNIQUE')
+    expect(channelMessageIndex.rows[0]?.indexdef).toContain('UNIQUE')
     expect(uploadForeignKeys.rows.map((row) => `${row.column_name} -> ${row.referenced_table}`)).toEqual(
       expect.arrayContaining([
         'conversation_id -> conversation',
@@ -180,10 +189,6 @@ describe('support hardening schema contracts (real Postgres)', () => {
     expect(deliveryEventColumns).toEqual(
       expect.arrayContaining(['provider_account_key', 'correlation_key', 'occurred_at'])
     )
-    expect(deliveryEventUnique.rows[0]?.columns.split(',')).toEqual([
-      'provider',
-      'provider_account_key',
-      'provider_event_id',
-    ])
+    expect(deliveryEventUnique.rows[0]?.columns.split(',')).toEqual(['provider', 'provider_event_id'])
   })
 })

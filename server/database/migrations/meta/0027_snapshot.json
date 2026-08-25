@@ -1,5 +1,5 @@
 {
-  "id": "bcbd0b81-4428-4059-ba44-c1893449f580",
+  "id": "1de3ba1c-2630-45dc-8a47-53203874905b",
   "prevId": "4f949425-e523-4512-a3db-2c172d25b378",
   "version": "7",
   "dialect": "postgresql",
@@ -4949,12 +4949,6 @@
           "columns": [
             {
               "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "provider_account_key",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
