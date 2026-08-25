@@ -33,7 +33,7 @@
 - Redis integration: 6/6 passed.
 - Postgres integration: 7 files / 57 passed.
 - `yarn typecheck`: passed.
-- `yarn lint`: 0 errors / 189 warnings (pre-existing repository lint debt; no changed-file errors).
+- `yarn lint`: 0 errors / 188 warnings (pre-existing repository lint debt; no changed-file errors).
 - `yarn harness:verify`: all validation gates passed. Guarded E2E explicitly skipped because `PLAYWRIGHT_FORCE=1`
   was not set; the focused serial browser run above supplied the affected-flow browser evidence.
 
