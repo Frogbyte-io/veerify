@@ -161,13 +161,38 @@ test.describe.serial('support permission-aware navigation', () => {
     const oldContactId = 'delayed-contact-old-contact'
     const newContactId = 'delayed-contact-new-contact'
     let oldContactCalls = 0
+    let delayNewContact = false
+    let inboxListCalls = 0
+    let inboxRecoveryCalls = 0
     let releaseOldContact!: () => void
     let oldContactStarted!: () => void
+    let releaseNewContact!: () => void
+    let newContactStarted!: () => void
+    let oldContactFinished!: () => void
+    let newContactFinished!: () => void
     const oldContactReady = new Promise<void>((resolve) => {
       oldContactStarted = resolve
     })
     const oldContactRelease = new Promise<void>((resolve) => {
       releaseOldContact = resolve
+    })
+    const newContactReady = new Promise<void>((resolve) => {
+      newContactStarted = resolve
+    })
+    const newContactRelease = new Promise<void>((resolve) => {
+      releaseNewContact = resolve
+    })
+    const oldContactFinishedPromise = new Promise<void>((resolve) => {
+      oldContactFinished = resolve
+    })
+    const newContactFinishedPromise = new Promise<void>((resolve) => {
+      newContactFinished = resolve
+    })
+
+    await page.route('**/api/support/inboxes?*', async (route) => {
+      inboxListCalls += 1
+      if (inboxListCalls > 1) inboxRecoveryCalls += 1
+      await route.continue()
     })
 
     await page.route('**/api/support/conversations?*', async (route) => {
@@ -270,8 +295,13 @@ test.describe.serial('support permission-aware navigation', () => {
             contentType: 'application/json',
             body: JSON.stringify({ success: false, error: { message: 'forbidden' } }),
           })
+          oldContactFinished()
           return
         }
+      }
+      if (contactId === newContactId && delayNewContact) {
+        newContactStarted()
+        await newContactRelease
       }
       await route.fulfill({
         status: 200,
@@ -284,17 +314,25 @@ test.describe.serial('support permission-aware navigation', () => {
           },
         }),
       })
+      if (contactId === newContactId && delayNewContact) newContactFinished()
     })
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(page.getByTestId(`support-conversation-${oldConversationId}`)).toBeVisible()
     await page.getByTestId(`support-conversation-${oldConversationId}`).click()
     await oldContactReady
+    delayNewContact = true
     await page.getByTestId(`support-conversation-${newConversationId}`).click()
     await expect(page.getByTestId(`support-conversation-${newConversationId}`)).toHaveClass(/bg-accent/)
+    await newContactReady
     releaseOldContact()
+    await oldContactFinishedPromise
+    releaseNewContact()
+    await newContactFinishedPromise
+    await expect(page.getByTestId(`support-conversation-${newConversationId}`)).toHaveClass(/bg-accent/)
+    expect(inboxRecoveryCalls).toBe(0)
     await expect(page.getByTestId('support-inbox-access-error')).toHaveCount(0)
-    await expect(page.getByText('New selected contact')).toBeVisible()
+    await expect(page.getByTestId('support-no-assignment')).toHaveCount(0)
   })
 
   test('unassigned member gets an intentional empty state without inbox names', async ({ browser }) => {
