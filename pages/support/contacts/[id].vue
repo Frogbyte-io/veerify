@@ -80,7 +80,7 @@
               <div class="flex items-center gap-2 mb-3">
                 <Icon name="lucide:link" class="w-4 h-4 text-foreground" />
                 <h2 class="font-semibold">Linked</h2>
-                <span class="text-xs text-muted-foreground">Confirmed by an agent</span>
+                <span class="text-xs text-muted-foreground">Linked feedback, whether automatic or confirmed by an agent.</span>
               </div>
 
               <div v-if="isTimelineLoading" class="space-y-2">
@@ -286,7 +286,7 @@ export default {
     async unlink(linkId) {
       try {
         await $fetch(`/api/support/contacts/${this.contactId()}/links/${linkId}`, { method: 'DELETE' })
-        this.linked = this.linked.filter((l) => l.id !== linkId)
+        await this.loadTimeline()
       } catch {
         // no-op: the row remains, the user can retry
       }

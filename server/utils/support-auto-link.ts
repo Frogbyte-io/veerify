@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { contact, contactLink, supportTeamSettings } from '~/server/database/schema/support'
 import { feedback, project } from '~/server/database/schema/feedback'
 
@@ -15,6 +15,12 @@ export async function createAutomaticFeedbackLink(
   tx: Transaction,
   params: { teamId: string; feedbackId: string; authorUserId: string | null; createdAt: Date }
 ): Promise<AutomaticFeedbackLinkResult> {
+  // Anonymous writes do not participate in automatic linking. Keep this
+  // short-circuit before the policy read for direct callers as well as routes.
+  if (!params.authorUserId) {
+    return { linked: false, contactId: null, reason: 'anonymous' }
+  }
+
   const [settings] = await tx
     .select({ autoLinkFeedback: supportTeamSettings.autoLinkFeedback })
     .from(supportTeamSettings)
@@ -23,10 +29,6 @@ export async function createAutomaticFeedbackLink(
 
   if (!settings?.autoLinkFeedback) {
     return { linked: false, contactId: null, reason: 'disabled' }
-  }
-
-  if (!params.authorUserId) {
-    return { linked: false, contactId: null, reason: 'anonymous' }
   }
 
   const [feedbackInTeam] = await tx
@@ -39,6 +41,13 @@ export async function createAutomaticFeedbackLink(
   if (!feedbackInTeam) {
     return { linked: false, contactId: null, reason: 'none' }
   }
+
+  // Contact writes take ROW EXCLUSIVE table locks. A SHARE table lock makes
+  // the candidate query and the link insert one serialized lifecycle: a
+  // block, merge, delete, or new matching contact that already started waits
+  // for this transaction, rather than changing the decision after the query.
+  // Concurrent auto-link reads remain compatible because SHARE locks coexist.
+  await tx.execute(sql`LOCK TABLE "contact" IN SHARE MODE`)
 
   const matches = await tx
     .select({ id: contact.id })
@@ -76,7 +85,23 @@ export async function createAutomaticFeedbackLink(
     .onConflictDoNothing({ target: [contactLink.contactId, contactLink.entityType, contactLink.entityId] })
     .returning({ id: contactLink.id })
 
-  return inserted.length
-    ? { linked: true, contactId, reason: 'linked' }
+  if (inserted.length) return { linked: true, contactId, reason: 'linked' }
+
+  // Another transaction may have won the unique insert. Report the resulting
+  // state honestly: this attempt still resolves to the same linked contact.
+  const [existing] = await tx
+    .select({ contactId: contactLink.contactId })
+    .from(contactLink)
+    .where(
+      and(
+        eq(contactLink.contactId, contactId),
+        eq(contactLink.entityType, 'feedback'),
+        eq(contactLink.entityId, params.feedbackId)
+      )
+    )
+    .limit(1)
+
+  return existing
+    ? { linked: true, contactId: existing.contactId, reason: 'linked' }
     : { linked: false, contactId: null, reason: 'none' }
 }

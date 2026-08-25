@@ -20,13 +20,19 @@ test.describe.serial('support contact timeline', () => {
   test('keeps probable feedback tenant-scoped and separate until an agent links it', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await activeTeamId(request, sessionCookie)
+    const [operator] = await db.select({ id: user.id }).from(user).where(eq(user.email, TEST_EMAIL)).limit(1)
+    const [operatorMembership] = await db
+      .select()
+      .from(teamMember)
+      .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, operator?.id || '')))
+      .limit(1)
     const [ownProject] = await db.select().from(project).where(eq(project.teamId, teamId)).limit(1)
     const [otherTeam] = await db
       .select({ id: team.id, organizationId: team.organizationId })
       .from(team)
       .where(ne(team.id, teamId))
       .limit(1)
-    if (!ownProject || !otherTeam) {
+    if (!ownProject || !otherTeam || !operator || !operatorMembership) {
       test.skip()
       return
     }
@@ -43,6 +49,10 @@ test.describe.serial('support contact timeline', () => {
     const email = `timeline-${contactId}@example.com`
     const now = new Date()
     let settingsFixtureCreated = false
+    let roleChanged = false
+    let otherProjectOwned = false
+    let contactOwned = false
+    let feedbackOwned = false
 
     try {
       await db.insert(project).values({
@@ -55,9 +65,11 @@ test.describe.serial('support contact timeline', () => {
         createdAt: now,
         updatedAt: now,
       })
+      otherProjectOwned = true
       await db
         .insert(contact)
         .values({ id: contactId, teamId, name: 'Timeline contact', email, createdAt: now, updatedAt: now })
+      contactOwned = true
       await db.insert(feedback).values([
         {
           id: ownFeedbackId,
@@ -76,6 +88,10 @@ test.describe.serial('support contact timeline', () => {
           updatedAt: now,
         },
       ])
+      feedbackOwned = true
+
+      await db.update(teamMember).set({ role: 'admin' }).where(eq(teamMember.id, operatorMembership.id))
+      roleChanged = true
 
       const timeline = await request.get(`/api/support/contacts/${contactId}/timeline`, {
         headers: withAuthHeaders(sessionCookie),
@@ -143,16 +159,18 @@ test.describe.serial('support contact timeline', () => {
         .where(and(eq(feedback.id, ownFeedbackId), eq(feedback.projectId, ownProject.id)))
       expect(feedbackAfterContactDelete).toEqual([{ id: ownFeedbackId }])
     } finally {
-      if (originalSupportSettings) {
-        await db
-          .insert(supportTeamSettings)
-          .values({
-            teamId: originalSupportSettings.teamId,
-            autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
-            createdAt: originalSupportSettings.createdAt,
-            updatedAt: originalSupportSettings.updatedAt,
-          })
-          .onConflictDoUpdate({
+      const cleanupErrors: string[] = []
+      const cleanup = async (label: string, action: () => Promise<unknown>) => {
+        try {
+          await action()
+        } catch (error) {
+          cleanupErrors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+
+      await cleanup('settings', async () => {
+        if (originalSupportSettings) {
+          await db.insert(supportTeamSettings).values(originalSupportSettings).onConflictDoUpdate({
             target: supportTeamSettings.teamId,
             set: {
               autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
@@ -160,14 +178,53 @@ test.describe.serial('support contact timeline', () => {
               updatedAt: originalSupportSettings.updatedAt,
             },
           })
-      } else if (settingsFixtureCreated) {
-        await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
-      }
-      await db.delete(contact).where(eq(contact.id, contactId))
-      await db.delete(feedback).where(and(eq(feedback.id, ownFeedbackId), eq(feedback.projectId, ownProject.id)))
-      await db.delete(feedback).where(and(eq(feedback.id, foreignFeedbackId), eq(feedback.projectId, otherProjectId)))
-      await db.delete(contactLink).where(eq(contactLink.contactId, contactId))
-      await db.delete(project).where(eq(project.id, otherProjectId))
+        } else if (settingsFixtureCreated) {
+          await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
+        }
+      })
+      await cleanup('role', async () => {
+        if (roleChanged) {
+          await db.update(teamMember).set({ role: operatorMembership.role }).where(eq(teamMember.id, operatorMembership.id))
+        }
+      })
+      await cleanup('links', async () => {
+        if (contactOwned) await db.delete(contactLink).where(eq(contactLink.contactId, contactId))
+      })
+      await cleanup('feedback', async () => {
+        if (feedbackOwned) {
+          await db.delete(feedback).where(eq(feedback.id, ownFeedbackId))
+          await db.delete(feedback).where(eq(feedback.id, foreignFeedbackId))
+        }
+      })
+      await cleanup('contact', async () => {
+        if (contactOwned) await db.delete(contact).where(eq(contact.id, contactId))
+      })
+      await cleanup('project', async () => {
+        if (otherProjectOwned) await db.delete(project).where(eq(project.id, otherProjectId))
+      })
+
+      expect(cleanupErrors, cleanupErrors.join('\n')).toEqual([])
+      const [remainingContact] = await db.select({ id: contact.id }).from(contact).where(eq(contact.id, contactId)).limit(1)
+      expect(remainingContact).toBeUndefined()
+      const remainingFeedback = await db
+        .select({ id: feedback.id })
+        .from(feedback)
+        .where(inArray(feedback.id, [ownFeedbackId, foreignFeedbackId]))
+      expect(remainingFeedback).toEqual([])
+      const [remainingProject] = await db.select({ id: project.id }).from(project).where(eq(project.id, otherProjectId)).limit(1)
+      expect(remainingProject).toBeUndefined()
+      const [restoredSettings] = await db
+        .select({ autoLinkFeedback: supportTeamSettings.autoLinkFeedback })
+        .from(supportTeamSettings)
+        .where(eq(supportTeamSettings.teamId, teamId))
+        .limit(1)
+      expect(restoredSettings?.autoLinkFeedback ?? null).toBe(originalSupportSettings?.autoLinkFeedback ?? null)
+      const [restoredMembership] = await db
+        .select({ role: teamMember.role })
+        .from(teamMember)
+        .where(eq(teamMember.id, operatorMembership.id))
+        .limit(1)
+      expect(restoredMembership?.role).toBe(operatorMembership.role)
     }
   })
 
@@ -199,6 +256,10 @@ test.describe.serial('support contact timeline', () => {
     const contactId = randomUUID()
     const feedbackIds: string[] = []
     const now = new Date()
+    let contactOwned = false
+    let settingsCreated = false
+    let roleChanged = false
+    let projectChanged = false
     const anonymousRequest = await createRequest.newContext({
       baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:4913',
     })
@@ -213,14 +274,17 @@ test.describe.serial('support contact timeline', () => {
         createdAt: now,
         updatedAt: now,
       })
+      contactOwned = true
 
       await db.update(teamMember).set({ role: 'admin' }).where(eq(teamMember.id, operatorMembership.id))
+      roleChanged = true
 
       const settingResponse = await request.put(`/api/support/teams/${teamId}/settings`, {
         headers: withAuthHeaders(sessionCookie),
         data: { autoLinkFeedback: true },
       })
       expect(settingResponse.ok()).toBeTruthy()
+      settingsCreated = !originalSupportSettings
 
       const authenticated = await request.post('/api/feedback', {
         headers: withAuthHeaders(sessionCookie),
@@ -232,6 +296,7 @@ test.describe.serial('support contact timeline', () => {
 
       if (!originalIsPublic) {
         await db.update(project).set({ isPublic: true }).where(eq(project.id, ownProject.id))
+        projectChanged = true
       }
 
       const emailOnly = await anonymousRequest.post(`/api/public/t/${teamRow.slug}/${ownProject.slug}/feedback`, {
@@ -273,37 +338,85 @@ test.describe.serial('support contact timeline', () => {
       await expect(page.getByText('Automatically linked')).toBeVisible()
       await page.getByRole('button', { name: 'Remove automatic link' }).click()
       await expect(page.getByText('Automatically linked')).toHaveCount(0)
+      await expect(page.getByText('Authenticated automatic link')).toBeVisible()
 
       const afterUnlink = await request.get(`/api/support/contacts/${contactId}/timeline`, {
         headers: withAuthHeaders(sessionCookie),
       })
       expect((await afterUnlink.json()).data.linked).toEqual([])
     } finally {
-      if (originalSupportSettings) {
-        await db
-          .insert(supportTeamSettings)
-          .values(originalSupportSettings)
-          .onConflictDoUpdate({
-            target: supportTeamSettings.teamId,
-            set: {
-              autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
-              createdAt: originalSupportSettings.createdAt,
-              updatedAt: originalSupportSettings.updatedAt,
-            },
-          })
-      } else {
-        await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
+      const cleanupErrors: string[] = []
+      const cleanup = async (label: string, action: () => Promise<unknown>) => {
+        try {
+          await action()
+        } catch (error) {
+          cleanupErrors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`)
+        }
       }
-      await db.update(teamMember).set({ role: operatorMembership.role }).where(eq(teamMember.id, operatorMembership.id))
-      await db.delete(contactLink).where(eq(contactLink.contactId, contactId))
-      await db.delete(contact).where(eq(contact.id, contactId))
-      if (feedbackIds.length > 0) {
-        await db.delete(feedback).where(and(eq(feedback.projectId, ownProject.id), inArray(feedback.id, feedbackIds)))
-      }
-      if (!originalIsPublic) {
-        await db.update(project).set({ isPublic: false }).where(eq(project.id, ownProject.id))
-      }
-      await anonymousRequest.dispose()
+
+      await cleanup('settings', async () => {
+        if (originalSupportSettings) {
+          await db
+            .insert(supportTeamSettings)
+            .values(originalSupportSettings)
+            .onConflictDoUpdate({
+              target: supportTeamSettings.teamId,
+              set: {
+                autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
+                createdAt: originalSupportSettings.createdAt,
+                updatedAt: originalSupportSettings.updatedAt,
+              },
+            })
+        } else if (settingsCreated) {
+          await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
+        }
+      })
+      await cleanup('role', async () => {
+        if (roleChanged) {
+          await db.update(teamMember).set({ role: operatorMembership.role }).where(eq(teamMember.id, operatorMembership.id))
+        }
+      })
+      await cleanup('links', async () => {
+        if (contactOwned) await db.delete(contactLink).where(eq(contactLink.contactId, contactId))
+      })
+      await cleanup('feedback', async () => {
+        if (feedbackIds.length > 0) {
+          await db.delete(feedback).where(and(eq(feedback.projectId, ownProject.id), inArray(feedback.id, feedbackIds)))
+        }
+      })
+      await cleanup('contact', async () => {
+        if (contactOwned) await db.delete(contact).where(eq(contact.id, contactId))
+      })
+      await cleanup('project', async () => {
+        if (projectChanged) await db.update(project).set({ isPublic: originalIsPublic }).where(eq(project.id, ownProject.id))
+      })
+      await cleanup('request context', () => anonymousRequest.dispose())
+
+      expect(cleanupErrors, cleanupErrors.join('\n')).toEqual([])
+      const [remainingContact] = await db.select({ id: contact.id }).from(contact).where(eq(contact.id, contactId)).limit(1)
+      expect(remainingContact).toBeUndefined()
+      const remainingFeedback = feedbackIds.length
+        ? await db.select({ id: feedback.id }).from(feedback).where(inArray(feedback.id, feedbackIds))
+        : []
+      expect(remainingFeedback).toEqual([])
+      const [restoredSettings] = await db
+        .select()
+        .from(supportTeamSettings)
+        .where(eq(supportTeamSettings.teamId, teamId))
+        .limit(1)
+      expect(restoredSettings?.autoLinkFeedback ?? null).toBe(originalSupportSettings?.autoLinkFeedback ?? null)
+      const [restoredMembership] = await db
+        .select({ role: teamMember.role })
+        .from(teamMember)
+        .where(eq(teamMember.id, operatorMembership.id))
+        .limit(1)
+      expect(restoredMembership?.role).toBe(operatorMembership.role)
+      const [restoredProject] = await db
+        .select({ isPublic: project.isPublic })
+        .from(project)
+        .where(eq(project.id, ownProject.id))
+        .limit(1)
+      expect(restoredProject?.isPublic).toBe(originalIsPublic)
     }
   })
 })

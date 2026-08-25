@@ -111,6 +111,42 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     )
   }
 
+  async function expectLinkToWaitForMutation(
+    feedbackId: string,
+    mutate: (_tx: Tx) => Promise<unknown>,
+    expected: Pick<Awaited<ReturnType<typeof run>>, 'linked' | 'reason'>
+  ) {
+    let releaseMutation!: () => void
+    let mutationReady!: () => void
+    const mutationReleased = new Promise<void>((resolve) => {
+      releaseMutation = resolve
+    })
+    const mutationStarted = new Promise<void>((resolve) => {
+      mutationReady = resolve
+    })
+    const mutation = db.transaction(async (tx: Tx) => {
+      await mutate(tx)
+      mutationReady()
+      await mutationReleased
+    })
+    await mutationStarted
+
+    const linkAttempt = run(feedbackId)
+    try {
+      await expect(
+        Promise.race([
+          linkAttempt.then(() => 'completed'),
+          new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), 100)),
+        ])
+      ).resolves.toBe('waiting')
+    } finally {
+      releaseMutation()
+      await mutation
+    }
+    await expect(linkAttempt).resolves.toMatchObject(expected)
+    return linkAttempt
+  }
+
   it('links only the exact one active same-team user contact', async () => {
     await setEnabled(true)
     const active = await createContact({ userId: ids.user })
@@ -141,6 +177,12 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
 
+  it('returns anonymous without consulting a disabled policy', async () => {
+    const id = await addFeedback(null)
+    await expect(run(id, null)).resolves.toMatchObject({ linked: false, reason: 'anonymous' })
+    await expect(linkFor(id)).resolves.toBeUndefined()
+  })
+
   it.each([
     ['blocked contact', { blockedAt: new Date() }],
     ['merged contact', { mergedIntoContactId: 'survivor' }],
@@ -159,13 +201,27 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
 
-  it('does not link ambiguous active matches or a contact from another team', async () => {
+  it('does not link ambiguous active matches', async () => {
     await setEnabled(true)
     await createContact({ userId: ids.user })
     await createContact({ userId: ids.user })
-    await db.insert(contact).values({ id: `auto_link_contact_${randomUUID()}`, teamId: ids.otherTeam, userId: ids.user, name: 'Cross-team', createdAt: now, updatedAt: now })
     const id = await addFeedback()
     await expect(run(id)).resolves.toMatchObject({ linked: false, reason: 'ambiguous' })
+    await expect(linkFor(id)).resolves.toBeUndefined()
+  })
+
+  it('does not link a contact that exists only in another team', async () => {
+    await setEnabled(true)
+    await db.insert(contact).values({
+      id: `auto_link_contact_${randomUUID()}`,
+      teamId: ids.otherTeam,
+      userId: ids.otherTeamUser,
+      name: 'Cross-team only',
+      createdAt: now,
+      updatedAt: now,
+    })
+    const id = await addFeedback(ids.otherTeamUser)
+    await expect(run(id, ids.otherTeamUser)).resolves.toMatchObject({ linked: false, reason: 'none' })
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
 
@@ -189,7 +245,68 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     const active = await createContact({ userId: ids.user })
     const id = await addFeedback()
     const results = await Promise.all(Array.from({ length: 2 }, () => run(id)))
-    expect(results.filter((result) => result.linked)).toHaveLength(1)
+    expect(results).toHaveLength(2)
+    expect(results).toEqual([
+      { linked: true, contactId: active.id, reason: 'linked' },
+      { linked: true, contactId: active.id, reason: 'linked' },
+    ])
     expect(await db.select().from(contactLink).where(and(eq(contactLink.contactId, active.id), eq(contactLink.entityId, id)))).toHaveLength(1)
+  })
+
+  it('waits for a concurrent block before linking a contact', async () => {
+    await setEnabled(true)
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+    await expectLinkToWaitForMutation(
+      id,
+      (tx) => tx.update(contact).set({ blockedAt: new Date() }).where(eq(contact.id, active.id)),
+      { linked: false, reason: 'none' }
+    )
+    await expect(linkFor(id)).resolves.toBeUndefined()
+  })
+
+  it('waits for a concurrent merge before linking a contact', async () => {
+    await setEnabled(true)
+    const survivor = await createContact({ userId: null })
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+    await expectLinkToWaitForMutation(
+      id,
+      (tx) => tx.update(contact).set({ mergedIntoContactId: survivor.id }).where(eq(contact.id, active.id)),
+      { linked: false, reason: 'none' }
+    )
+    await expect(linkFor(id)).resolves.toBeUndefined()
+  })
+
+  it('waits for a concurrent delete before linking a contact', async () => {
+    await setEnabled(true)
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+    await expectLinkToWaitForMutation(
+      id,
+      (tx) => tx.delete(contact).where(eq(contact.id, active.id)),
+      { linked: false, reason: 'none' }
+    )
+    await expect(linkFor(id)).resolves.toBeUndefined()
+  })
+
+  it('waits for a concurrent second contact before linking an ambiguous candidate set', async () => {
+    await setEnabled(true)
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+    await expectLinkToWaitForMutation(
+      id,
+      (tx) => tx.insert(contact).values({
+        id: `auto_link_contact_${randomUUID()}`,
+        teamId: ids.team,
+        userId: ids.user,
+        name: 'Concurrent second match',
+        createdAt: now,
+        updatedAt: now,
+      }),
+      { linked: false, reason: 'ambiguous' }
+    )
+    await expect(linkFor(id)).resolves.toBeUndefined()
+    expect(active.id).toBeTruthy()
   })
 })

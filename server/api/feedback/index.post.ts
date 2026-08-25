@@ -239,12 +239,14 @@ export default defineEventHandler(async (event) => {
           createdAt: now,
         })
 
-        await createAutomaticFeedbackLink(tx, {
-          teamId: proj.teamId,
-          feedbackId: created.id,
-          authorUserId: session?.user?.id || null,
-          createdAt: now,
-        })
+        if (session?.user) {
+          await createAutomaticFeedbackLink(tx, {
+            teamId: proj.teamId,
+            feedbackId: created.id,
+            authorUserId: session.user.id,
+            createdAt: now,
+          })
+        }
 
         if (createdIssue && integration) {
           await tx.insert(githubIssueLink).values({
