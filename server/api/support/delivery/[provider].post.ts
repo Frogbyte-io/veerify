@@ -9,7 +9,8 @@
  *       act on - a duplicate event, one that cannot be correlated to a
  *       message this app sent, or an engagement event (open/click/complaint)
  *       Stage 04 only records - because a 4xx makes a provider retry
- *       indefinitely. Only a failed signature is a 401.
+ *       indefinitely. Processing failures return a retryable 500. Only a
+ *       failed signature is a 401.
  *     operationId: receiveSupportDeliveryEvent
  *     security: []
  *     parameters:
@@ -22,6 +23,7 @@
  *       401: { description: Signature verification failed }
  *       404: { description: Unknown provider }
  *       429: { description: Rate limited }
+ *       500: { description: Processing failed; provider should retry }
  */
 import { randomUUID } from 'node:crypto'
 import { getHeaders, getRouterParam, readRawBody } from 'h3'
@@ -31,6 +33,7 @@ import { createSuccessResponse } from '~/server/utils/response'
 import { getChannelDriver } from '~/server/services/support-channels'
 import { claimDeliveryEvent, completeDeliveryEvent, failDeliveryEvent } from '~/server/utils/delivery-events'
 import { publishDeliveryStatusChanged } from '~/server/utils/outbound-delivery'
+import { markDeliveryMessageBounced, markDeliveryMessageDelivered } from '~/server/utils/delivery-status'
 import { checkRateLimit } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import { conversationMessage } from '~/server/database/schema/support'
@@ -126,7 +129,7 @@ export default defineEventHandler(async (event) => {
   if (claim.outcome === 'duplicate') return accepted('duplicate-event')
   if (claim.outcome === 'in-progress') return accepted('already-processing')
 
-  const { eventId } = claim
+  const { eventId, attemptCount } = claim
 
   try {
     if (!resolvedMessage) {
@@ -137,17 +140,17 @@ export default defineEventHandler(async (event) => {
         recordType: deliveryEvent.recordType,
         messageId: deliveryEvent.messageId,
       })
-      await completeDeliveryEvent(eventId)
+      await db.transaction((tx) => completeDeliveryEvent(eventId, attemptCount, tx))
       return accepted('unmatched-message')
     }
 
     // ---- 4. Map onto conversationMessage.deliveryStatus --------------------
+    let statusChanged = false
     if (deliveryEvent.recordType === 'delivered') {
-      await db
-        .update(conversationMessage)
-        .set({ deliveryStatus: 'delivered', deliveryError: null })
-        .where(eq(conversationMessage.id, resolvedMessage.id))
-      await publishDeliveryStatusChanged(resolvedMessage.id)
+      await db.transaction(async (tx) => {
+        statusChanged = await markDeliveryMessageDelivered(tx, resolvedMessage.id)
+        await completeDeliveryEvent(eventId, attemptCount, tx)
+      })
     } else if (deliveryEvent.recordType === 'bounced') {
       // Only a HARD bounce is a delivery failure worth showing as one. A soft
       // bounce is the provider's own SMTP retry still in flight - the message
@@ -157,28 +160,26 @@ export default defineEventHandler(async (event) => {
         // One transaction: the status flip and the activity line that
         // explains it must never observably disagree.
         await db.transaction(async (tx) => {
-          await tx
-            .update(conversationMessage)
-            .set({ deliveryStatus: 'bounced', deliveryError: deliveryEvent.description })
-            .where(eq(conversationMessage.id, resolvedMessage.id))
+          statusChanged = await markDeliveryMessageBounced(tx, resolvedMessage.id, deliveryEvent.description)
 
           // A hard bounce is a visible, not silent, failure (design.md) - the
           // agent must see it without opening delivery-status details.
-          await tx.insert(conversationMessage).values({
-            id: randomUUID(),
-            conversationId: resolvedMessage.conversationId,
-            kind: 'activity',
-            body: deliveryEvent.description
-              ? `Delivery failed: ${deliveryEvent.description}`
-              : 'Delivery failed: the message was not delivered.',
-            senderKind: 'system',
-            senderUserId: null,
-            isPrivate: true,
-            createdAt: new Date(),
-          })
+          if (statusChanged) {
+            await tx.insert(conversationMessage).values({
+              id: randomUUID(),
+              conversationId: resolvedMessage.conversationId,
+              kind: 'activity',
+              body: deliveryEvent.description
+                ? `Delivery failed: ${deliveryEvent.description}`
+                : 'Delivery failed: the message was not delivered.',
+              senderKind: 'system',
+              senderUserId: null,
+              isPrivate: true,
+              createdAt: new Date(),
+            })
+          }
+          await completeDeliveryEvent(eventId, attemptCount, tx)
         })
-
-        await publishDeliveryStatusChanged(resolvedMessage.id)
       }
       // A soft bounce is still recorded via completeDeliveryEvent below, just
       // with no status change and no activity line.
@@ -187,15 +188,22 @@ export default defineEventHandler(async (event) => {
     // stages, no deliveryStatus change - out of this stage's acceptance
     // criteria.
 
-    await completeDeliveryEvent(eventId)
+    if (
+      deliveryEvent.recordType !== 'delivered' &&
+      !(deliveryEvent.recordType === 'bounced' && deliveryEvent.bounceType === 'hard')
+    ) {
+      await db.transaction((tx) => completeDeliveryEvent(eventId, attemptCount, tx))
+    }
+    if (statusChanged) await publishDeliveryStatusChanged(resolvedMessage.id)
     return accepted('processed')
   } catch (error) {
-    await failDeliveryEvent(eventId, error)
+    const recorded = await failDeliveryEvent(eventId, attemptCount, error)
+    if (!recorded) logger.warn('Delivery event ownership was lost before failure recording', { eventId })
     logger.error('Delivery event processing failed', {
       eventId,
       provider: driver.name,
       error: error instanceof Error ? error.message : error,
     })
-    return accepted('processing-failed')
+    throw createError({ statusCode: 500, statusMessage: 'Delivery event processing failed' })
   }
 })

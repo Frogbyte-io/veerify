@@ -48,7 +48,7 @@ import {
 import { emailDomain, parseReferences } from '~/server/services/support-channels/types'
 import { buildOutgoingReply, totalAttachmentBytes } from '~/server/utils/outbound-reply'
 import { enqueueOutboundDelivery, runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
-import { MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-attachments'
+import { SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-attachments'
 
 const logger = createConsola().withTag('veerify').withTag('support-outbound')
 
@@ -69,7 +69,7 @@ const bodySchema = z
     bodyHtml: z.string().max(200000).optional(),
     // Count bound only - a defensive limit on this endpoint, independent of
     // SUP-04-7's per-file size cap (enforced at presign) and this endpoint's
-    // own per-message total cap (enforced below, against MAX_MESSAGE_ATTACHMENT_BYTES).
+    // own per-message total cap (enforced below, against SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES).
     attachments: z.array(attachmentSchema).max(10).optional(),
   })
   .superRefine((value, ctx) => {
@@ -88,11 +88,11 @@ const bodySchema = z
     // others in the same reply - this is the first point that sees the full
     // list, so the per-message total is enforced here (parallel-agents.md).
     const totalBytes = totalAttachmentBytes(value.attachments)
-    if (totalBytes > MAX_MESSAGE_ATTACHMENT_BYTES) {
+    if (totalBytes > SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['attachments'],
-        message: `Attachments total ${Math.floor(totalBytes / (1024 * 1024))} MB, exceeding the ${Math.floor(MAX_MESSAGE_ATTACHMENT_BYTES / (1024 * 1024))} MB per-message limit`,
+        message: `Attachments total ${Math.floor(totalBytes / (1024 * 1024))} MB, exceeding the ${Math.floor(SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES / (1024 * 1024))} MB per-message limit`,
       })
     }
   })
@@ -278,9 +278,8 @@ export default defineEventHandler(async (event) => {
 
   // Fire-and-forget: the response must not wait on SMTP either. The outbox
   // row is the durable copy - if this invocation dies before the worker
-  // finishes, the row is still there, `pending`, for the next trigger to
-  // claim (a scheduled sweep is Stage 06+ infrastructure; until then, every
-  // send attempt piggybacks on the next reply that happens to trigger this).
+  // finishes, the row is still there, `pending`, for the scheduler's next
+  // recurring pass to claim.
   if (isOutgoing) {
     runOutboundDeliveryWorker().catch((error) => {
       logger.error('Outbound delivery worker pass failed', {

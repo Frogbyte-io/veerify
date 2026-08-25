@@ -45,6 +45,14 @@ const bodySchema = z
   .refine((data) => Boolean(data.contactId) !== Boolean(data.userId), {
     message: 'Exactly one of contactId or userId must be set',
   })
+  .refine((data) => !data.contactId || data.role === 'cc', {
+    message: 'Contact participants must use the cc role',
+    path: ['role'],
+  })
+  .refine((data) => !data.userId || data.role === 'follower', {
+    message: 'User participants must use the follower role',
+    path: ['role'],
+  })
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)

@@ -9,8 +9,8 @@ const {
   ingestInboundAttachments,
   rewriteInlineCidReferences,
   inlineAttachmentPath,
-  MAX_ATTACHMENT_BYTES,
-  MAX_MESSAGE_ATTACHMENT_BYTES,
+  INBOUND_MAX_ATTACHMENT_BYTES,
+  INBOUND_MAX_MESSAGE_ATTACHMENT_BYTES,
 } = await import('../server/utils/inbound-attachments')
 
 const { sanitizeInboundHtml } = await import('../server/utils/inbound-sanitize')
@@ -47,7 +47,7 @@ describe('ingestInboundAttachments', () => {
   })
 
   it('rejects a single part over the per-attachment cap', async () => {
-    const big = attachment({ content: Buffer.alloc(MAX_ATTACHMENT_BYTES + 1) })
+    const big = attachment({ content: Buffer.alloc(INBOUND_MAX_ATTACHMENT_BYTES + 1) })
     const result = await ingestInboundAttachments({ attachments: [big], eventId: 'e', provider: 'postmark' })
 
     expect(result.stored).toHaveLength(0)
@@ -59,9 +59,9 @@ describe('ingestInboundAttachments', () => {
     // Each part must sit under the per-attachment cap, or it is rejected by
     // that rule instead and the message cap is never exercised. Three of these
     // fit individually; the third pushes the running total past the message cap.
-    const part = MAX_ATTACHMENT_BYTES - 1
-    expect(part * 2).toBeLessThan(MAX_MESSAGE_ATTACHMENT_BYTES)
-    expect(part * 3).toBeGreaterThan(MAX_MESSAGE_ATTACHMENT_BYTES)
+    const part = INBOUND_MAX_ATTACHMENT_BYTES - 1
+    expect(part * 2).toBeLessThan(INBOUND_MAX_MESSAGE_ATTACHMENT_BYTES)
+    expect(part * 3).toBeGreaterThan(INBOUND_MAX_MESSAGE_ATTACHMENT_BYTES)
 
     const parts = [
       attachment({ fileName: 'a', content: Buffer.alloc(part) }),

@@ -23,10 +23,10 @@ import { createErrorResponse, ErrorCode } from './response'
  */
 
 /** Per-part ceiling. Matches Stage 03's inbound cap - the same "one email" budget applies in both directions. */
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+export const SUPPORT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 /** Per-message ceiling across all parts. Enforced by SUP-04-4 once the full attachment list for a message is known - a single presign call cannot see the others. */
-export const MAX_MESSAGE_ATTACHMENT_BYTES = 25 * 1024 * 1024
+export const SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 /**
  * Content types an agent may attach. Unlike inbound (which only caps size -
@@ -82,13 +82,13 @@ export function validateAttachmentUploadInput(contentType: string, sizeBytes: nu
     })
   }
 
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_ATTACHMENT_BYTES) {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > SUPPORT_MAX_ATTACHMENT_BYTES) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Validation failed',
       data: createErrorResponse(
         ErrorCode.VALIDATION_ERROR,
-        `Attachment is too large. Maximum size is ${Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))} MB`
+        `Attachment is too large. Maximum size is ${Math.floor(SUPPORT_MAX_ATTACHMENT_BYTES / (1024 * 1024))} MB`
       ),
     })
   }

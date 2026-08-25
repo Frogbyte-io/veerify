@@ -27,6 +27,12 @@ export interface RateLimitConfig {
    * Optional identifier for different rate limit buckets
    */
   identifier?: string
+
+  /**
+   * Optional stable subject for traffic that shares a client IP, such as a
+   * webhook provider delivering for many inboxes.
+   */
+  subject?: string
 }
 
 /**
@@ -38,8 +44,8 @@ export interface RateLimitConfig {
  * @returns True if the request is within limits; false if the limit has been exceeded
  */
 export async function checkRateLimit(event: H3Event, config: RateLimitConfig): Promise<boolean> {
-  const clientId = getClientId(event)
-  const key = `${config.identifier ?? 'default'}:${clientId}`
+  const subject = config.subject ?? getClientId(event)
+  const key = `${config.identifier ?? 'default'}:${subject}`
   const windowMs = config.windowSeconds * 1000
 
   return getRateLimitStore().consume(key, windowMs, config.maxRequests)

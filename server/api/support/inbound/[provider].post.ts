@@ -8,8 +8,8 @@
  *       Provider-agnostic intake. Returns 200 for everything it has
  *       deliberately decided not to act on - duplicate deliveries, unknown
  *       recipients, teams with support disabled - because a 4xx makes a mail
- *       provider retry the same message indefinitely. Only a failed signature
- *       is a 401.
+ *       provider retry the same message indefinitely. Processing failures
+ *       return 500 so the provider retries a recorded, reclaimable event.
  *     operationId: receiveSupportInboundEmail
  *     security: []
  *     parameters:
@@ -22,10 +22,11 @@
  *       401: { description: Signature or credential verification failed }
  *       404: { description: Unknown provider }
  *       429: { description: Rate limited }
+ *       500: { description: Recorded processing failure; retry requested }
  */
 import { randomUUID } from 'node:crypto'
 import { createError, getHeaders, getRouterParam, readRawBody, setResponseStatus } from 'h3'
-import { and, eq, inArray } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { createLogger } from '~/server/utils/logger'
 import { createSuccessResponse } from '~/server/utils/response'
 import { emailDomain, getChannelDriver, type InboundMessage } from '~/server/services/support-channels'
@@ -47,6 +48,7 @@ import {
   rejectInboundEvent,
 } from '~/server/utils/inbound-events'
 import { checkRateLimit } from '~/server/utils/rate-limit'
+import { resolveInboundProjectId } from '~/server/utils/inbound-routing'
 import { getRateLimitStore } from '~/server/services/rate-limit'
 import { getStorageProvider } from '~/server/utils/storage'
 import {
@@ -71,6 +73,9 @@ const logger = createLogger('support-inbound')
 /** Inbound is webhook traffic, not user traffic - a busy inbox is legitimate. */
 const INBOUND_RATE_LIMIT = { maxRequests: 120, windowSeconds: 60, identifier: 'support-inbound' }
 
+/** Cheap edge guard against unbounded invalid or cross-tenant provider traffic. */
+const INBOUND_EDGE_RATE_LIMIT = { maxRequests: 5_000, windowSeconds: 60, identifier: 'support-inbound-edge' }
+
 /** Accepted, deliberately did nothing. The provider must not retry. */
 function accepted(reason: string) {
   return createSuccessResponse({ accepted: true, reason })
@@ -86,9 +91,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Unknown inbound provider' })
   }
 
-  if (!(await checkRateLimit(event, INBOUND_RATE_LIMIT))) {
-    // 429 is one of the few non-200s that is safe: providers back off on it
-    // rather than treating the message as permanently undeliverable.
+  if (!(await checkRateLimit(event, INBOUND_EDGE_RATE_LIMIT))) {
     throw createError({ statusCode: 429, statusMessage: 'Too Many Requests' })
   }
 
@@ -131,7 +134,8 @@ export default defineEventHandler(async (event) => {
     return accepted('already-processing')
   }
 
-  const { eventId } = claim
+  const { eventId, attemptCount } = claim
+  const claimToken = { eventId, attemptCount }
 
   try {
     // ---- 3. Archive raw, before parsing ----------------------------------
@@ -143,7 +147,7 @@ export default defineEventHandler(async (event) => {
         buffer: Buffer.from(rawBody, 'utf8'),
         contentType: 'application/json',
       })
-      await recordInboundRawKey(eventId, rawStorageKey)
+      await recordInboundRawKey(claimToken, rawStorageKey)
     } catch (storageError) {
       // Archiving is for debuggability; losing it must not lose the email.
       logger.error('Failed to archive raw inbound payload', {
@@ -168,12 +172,23 @@ export default defineEventHandler(async (event) => {
     if (!matched) {
       // Recorded, not 404'd: a 404 makes the provider retry forever, and the
       // record is how a misconfigured address becomes visible.
-      await rejectInboundEvent(eventId, `No inbox matches any recipient of ${providerEventId}`)
+      if (!(await rejectInboundEvent(claimToken, `No inbox matches any recipient of ${providerEventId}`))) {
+        throw new Error('Inbound claim lost before rejection')
+      }
       return accepted('no-matching-inbox')
     }
 
     const { inbox, address } = matched
-    await attachInboundEventInbox(eventId, inbox.id)
+    if (!(await attachInboundEventInbox(claimToken, inbox.id))) {
+      throw new Error('Inbound claim lost before inbox attachment')
+    }
+
+    if (!(await checkRateLimit(event, { ...INBOUND_RATE_LIMIT, subject: inbox.id }))) {
+      // A provider IP carries traffic for many tenants, so only this inbox's
+      // bucket is exhausted. The catch below records the failed attempt and
+      // preserves the 429 so the provider backs off.
+      throw createError({ statusCode: 429, statusMessage: 'Too Many Requests' })
+    }
 
     // ---- SUP-03-10: honour the team's Support module toggle ---------------
     const [modules] = await db
@@ -186,19 +201,25 @@ export default defineEventHandler(async (event) => {
     // (delta D-31). Treating "no row" as enabled would let inbound mail create
     // tickets for a team that never switched Support on.
     if (!modules?.supportEnabled) {
-      await rejectInboundEvent(eventId, 'Support is disabled for this team')
+      if (!(await rejectInboundEvent(claimToken, 'Support is disabled for this team'))) {
+        throw new Error('Inbound claim lost before rejection')
+      }
       return accepted('support-disabled')
     }
 
     if (!inbox.isEnabled) {
-      await rejectInboundEvent(eventId, 'Inbox is disabled')
+      if (!(await rejectInboundEvent(claimToken, 'Inbox is disabled'))) {
+        throw new Error('Inbound claim lost before rejection')
+      }
       return accepted('inbox-disabled')
     }
 
     // Auto-responses are recorded and dropped: replying to a vacation
     // responder is how mail loops start.
     if (isAutoResponse(message.rawHeaders)) {
-      await rejectInboundEvent(eventId, 'Auto-response detected')
+      if (!(await rejectInboundEvent(claimToken, 'Auto-response detected'))) {
+        throw new Error('Inbound claim lost before rejection')
+      }
       return accepted('auto-response')
     }
 
@@ -251,7 +272,10 @@ export default defineEventHandler(async (event) => {
           contactId,
           // ---- SUP-03-12: product attribution from the matched address ----
           // Null when the address is unmapped, per delta D-27.
-          projectId: address.projectId ?? inbox.projectId ?? null,
+          projectId: resolveInboundProjectId({
+            addressProjectId: address.projectId,
+            inboxProjectId: inbox.projectId,
+          }),
           displayId,
           subject: message.subject,
           status: 'open',
@@ -414,6 +438,11 @@ export default defineEventHandler(async (event) => {
         }
       }
 
+      const completed = await completeInboundEvent(claimToken, conversationId, tx)
+      if (!completed) {
+        throw new Error('Inbound claim lost before terminal completion')
+      }
+
       return { conversationId, messageId, isNewConversation, autoReplyMessageId }
     })
 
@@ -446,9 +475,6 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // ---- 9. Finish -------------------------------------------------------
-    await completeInboundEvent(eventId, result.conversationId)
-
     setResponseStatus(event, 200)
     return createSuccessResponse({
       accepted: true,
@@ -457,14 +483,17 @@ export default defineEventHandler(async (event) => {
     })
   } catch (error) {
     // Failed and replayable: the lease is cleared so the provider's next retry
-    // reclaims it immediately. Still 200 - a 5xx would have the provider retry
-    // on its own schedule anyway, and this way the failure is recorded.
-    await failInboundEvent(eventId, error)
+    // reclaims it immediately. A non-2xx is essential here; acknowledging a
+    // failed event would leave no scheduler or provider retry to replay it.
+    await failInboundEvent(claimToken, error)
     logger.error('Inbound processing failed', {
       eventId,
       provider: driver.name,
       error: error instanceof Error ? error.message : error,
     })
-    return accepted('processing-failed')
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 429) {
+      throw error
+    }
+    throw createError({ statusCode: 500, statusMessage: 'Inbound processing failed' })
   }
 })

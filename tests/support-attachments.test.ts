@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ALLOWED_ATTACHMENT_CONTENT_TYPES,
-  MAX_ATTACHMENT_BYTES,
+  SUPPORT_MAX_ATTACHMENT_BYTES,
   buildOutboundAttachmentStorageKey,
   createAttachmentUploadToken,
   validateAttachmentUploadInput,
@@ -38,7 +38,7 @@ describe('validateAttachmentUploadInput', () => {
 
   it('accepts every type in the allowlist at the size cap', () => {
     for (const contentType of ALLOWED_ATTACHMENT_CONTENT_TYPES) {
-      expect(() => validateAttachmentUploadInput(contentType, MAX_ATTACHMENT_BYTES)).not.toThrow()
+      expect(() => validateAttachmentUploadInput(contentType, SUPPORT_MAX_ATTACHMENT_BYTES)).not.toThrow()
     }
   })
 
@@ -47,7 +47,9 @@ describe('validateAttachmentUploadInput', () => {
   })
 
   it('rejects a file over the per-part cap', () => {
-    expect(() => validateAttachmentUploadInput('application/pdf', MAX_ATTACHMENT_BYTES + 1)).toThrow(/too large/i)
+    expect(() => validateAttachmentUploadInput('application/pdf', SUPPORT_MAX_ATTACHMENT_BYTES + 1)).toThrow(
+      /too large/i
+    )
   })
 
   it('rejects a non-positive size', () => {

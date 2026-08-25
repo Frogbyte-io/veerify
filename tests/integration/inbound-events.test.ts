@@ -5,9 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { db } from '../../server/database/drizzle'
 import { supportEmailEvent } from '../../server/database/schema/support'
 import {
+  attachInboundEventInbox,
   claimInboundEvent,
   completeInboundEvent,
   failInboundEvent,
+  recordInboundRawKey,
   rejectInboundEvent,
   sanitizeEventError,
 } from '../../server/utils/inbound-events'
@@ -71,7 +73,8 @@ describe('claimInboundEvent', () => {
   it('reports a finished delivery as duplicate, forever', async () => {
     const providerEventId = eventId()
     const claim = await claimInboundEvent({ provider: PROVIDER, providerEventId })
-    await completeInboundEvent(claim.eventId!, null)
+    if (claim.outcome !== 'claimed') throw new Error('expected claim')
+    await completeInboundEvent({ eventId: claim.eventId, attemptCount: claim.attemptCount }, null)
 
     expect((await claimInboundEvent({ provider: PROVIDER, providerEventId })).outcome).toBe('duplicate')
     expect((await claimInboundEvent({ provider: PROVIDER, providerEventId })).outcome).toBe('duplicate')
@@ -80,7 +83,8 @@ describe('claimInboundEvent', () => {
   it('lets a failed delivery be reclaimed immediately', async () => {
     const providerEventId = eventId()
     const first = await claimInboundEvent({ provider: PROVIDER, providerEventId })
-    await failInboundEvent(first.eventId!, new Error('boom'))
+    if (first.outcome !== 'claimed') throw new Error('expected claim')
+    await failInboundEvent({ eventId: first.eventId, attemptCount: first.attemptCount }, new Error('boom'))
 
     const retry = await claimInboundEvent({ provider: PROVIDER, providerEventId })
     expect(retry.outcome).toBe('claimed')
@@ -117,7 +121,11 @@ describe('claimInboundEvent', () => {
   it('keeps a rejected delivery terminal so it is not replayed', async () => {
     const providerEventId = eventId()
     const claim = await claimInboundEvent({ provider: PROVIDER, providerEventId })
-    await rejectInboundEvent(claim.eventId!, 'No inbox matches any recipient')
+    if (claim.outcome !== 'claimed') throw new Error('expected claim')
+    await rejectInboundEvent(
+      { eventId: claim.eventId, attemptCount: claim.attemptCount },
+      'No inbox matches any recipient'
+    )
 
     const row = await readEvent(providerEventId)
     expect(row.status).toBe('processed')
@@ -125,6 +133,82 @@ describe('claimInboundEvent', () => {
     expect(row.leaseExpiresAt).toBeNull()
     // Retrying an unknown recipient will never succeed, so it must not replay.
     expect((await claimInboundEvent({ provider: PROVIDER, providerEventId })).outcome).toBe('duplicate')
+  })
+
+  it('cannot let a stale attempt complete or fail a reclaimed attempt', async () => {
+    const providerEventId = eventId()
+    const first = await claimInboundEvent({ provider: PROVIDER, providerEventId })
+    expect(first.outcome).toBe('claimed')
+    if (first.outcome !== 'claimed') throw new Error('expected first claim')
+
+    await db
+      .update(supportEmailEvent)
+      .set({ leaseExpiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(supportEmailEvent.id, first.eventId))
+
+    const second = await claimInboundEvent({ provider: PROVIDER, providerEventId })
+    expect(second.outcome).toBe('claimed')
+    if (second.outcome !== 'claimed') throw new Error('expected reclaimed claim')
+    expect(second.attemptCount).toBe(2)
+
+    await expect(
+      completeInboundEvent({ eventId: first.eventId, attemptCount: first.attemptCount }, null)
+    ).resolves.toBe(false)
+    await expect(
+      attachInboundEventInbox({ eventId: first.eventId, attemptCount: first.attemptCount }, 'stale-inbox')
+    ).resolves.toBe(false)
+    await expect(
+      recordInboundRawKey({ eventId: first.eventId, attemptCount: first.attemptCount }, 'stale-raw-key')
+    ).resolves.toBe(false)
+    await expect(
+      failInboundEvent({ eventId: first.eventId, attemptCount: first.attemptCount }, new Error('stale'))
+    ).resolves.toBe(false)
+
+    const stillCurrent = await readEvent(providerEventId)
+    expect(stillCurrent.status).toBe('processing')
+    expect(stillCurrent.attemptCount).toBe(2)
+    expect(stillCurrent.inboxId).toBeNull()
+    expect(stillCurrent.rawStorageKey).toBeNull()
+
+    await expect(
+      completeInboundEvent({ eventId: second.eventId, attemptCount: second.attemptCount }, null)
+    ).resolves.toBe(true)
+    expect((await readEvent(providerEventId)).status).toBe('processed')
+  })
+
+  it('rolls back transaction side effects when terminal completion loses the claim', async () => {
+    const providerEventId = eventId()
+    const first = await claimInboundEvent({ provider: PROVIDER, providerEventId })
+    expect(first.outcome).toBe('claimed')
+    if (first.outcome !== 'claimed') throw new Error('expected first claim')
+
+    await db
+      .update(supportEmailEvent)
+      .set({ leaseExpiresAt: new Date(Date.now() - 60_000) })
+      .where(eq(supportEmailEvent.id, first.eventId))
+    const second = await claimInboundEvent({ provider: PROVIDER, providerEventId })
+    expect(second.outcome).toBe('claimed')
+    if (second.outcome !== 'claimed') throw new Error('expected reclaimed claim')
+
+    await expect(
+      db.transaction(async (tx) => {
+        await tx
+          .update(supportEmailEvent)
+          .set({ rawStorageKey: 'must-roll-back' })
+          .where(eq(supportEmailEvent.id, first.eventId))
+        const completed = await completeInboundEvent(
+          { eventId: first.eventId, attemptCount: first.attemptCount },
+          null,
+          tx
+        )
+        if (!completed) throw new Error('Inbound claim lost before terminal completion')
+      })
+    ).rejects.toThrow(/claim/i)
+
+    const row = await readEvent(providerEventId)
+    expect(row.rawStorageKey).toBeNull()
+    expect(row.status).toBe('processing')
+    expect(row.attemptCount).toBe(2)
   })
 })
 

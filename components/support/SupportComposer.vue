@@ -217,10 +217,9 @@ export default {
       this.submitting = true
       const kind = this.isNote ? 'note' : 'outgoing'
       const body = this.draft.trim()
-      // `messages/index.post.ts` does not read this field yet (Stage 04's
-      // send wiring is still landing) - sending it now means nothing breaks
-      // once it does. Unknown keys are stripped by the endpoint's zod schema
-      // today, not rejected.
+      // The endpoint validates and persists these storage-key references with
+      // the message; the durable delivery worker resolves them to bytes when
+      // it sends the queued reply.
       const attachments = this.attachments.map((a) => ({
         storageKey: a.storageKey,
         fileName: a.fileName,

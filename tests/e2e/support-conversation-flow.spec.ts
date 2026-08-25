@@ -71,6 +71,15 @@ test.describe.serial('support conversation flow', () => {
       expect(typeof created.displayId).toBe('number')
       expect(created.displayId).toBeGreaterThan(0)
 
+      // Outgoing replies require an explicit From identity. Configure the
+      // inbox through the same operator-facing API used by Stage 04 before
+      // exercising the Stage 02 reply flow.
+      const identityResponse = await request.put(`/api/support/inboxes/${inboxId}`, {
+        headers,
+        data: { emailAddress: `e2e-sender-${suffix}@example.com`, fromName: 'E2E Support' },
+      })
+      expect(identityResponse.ok()).toBeTruthy()
+
       // 2. Reply — customer-visible.
       const replyResponse = await request.post(`/api/support/conversations/${conversationId}/messages`, {
         headers,

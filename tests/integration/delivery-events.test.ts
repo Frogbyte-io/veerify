@@ -11,7 +11,13 @@ import {
   supportDeliveryEvent,
   supportInbox,
 } from '../../server/database/schema/support'
-import { claimDeliveryEvent, completeDeliveryEvent, failDeliveryEvent } from '../../server/utils/delivery-events'
+import {
+  claimDeliveryEvent,
+  completeDeliveryEvent,
+  failDeliveryEvent,
+  type DeliveryEventClaimOutcome,
+} from '../../server/utils/delivery-events'
+import { markDeliveryMessageBounced, markDeliveryMessageDelivered } from '../../server/utils/delivery-status'
 
 /**
  * The claim is an atomic conditional upsert, mirroring `claimInboundEvent` -
@@ -27,6 +33,11 @@ function eventId() {
   const id = `dev_${randomUUID()}`
   created.push(id)
   return id
+}
+
+function claimed(claim: DeliveryEventClaimOutcome) {
+  if (claim.outcome !== 'claimed') throw new Error(`Expected claimed event, got ${claim.outcome}`)
+  return claim
 }
 
 // `supportDeliveryEvent.messageId` is a real FK to `conversationMessage.id` -
@@ -131,14 +142,16 @@ describe('claimDeliveryEvent', () => {
 
   it('reports a retry as duplicate once the event has been completed', async () => {
     const providerEventId = eventId()
-    const first = await claimDeliveryEvent({
-      provider: PROVIDER,
-      providerEventId,
-      recordType: 'delivered',
-      recipient: 'customer@example.com',
-      messageId: null,
-    })
-    await completeDeliveryEvent(first.eventId)
+    const first = claimed(
+      await claimDeliveryEvent({
+        provider: PROVIDER,
+        providerEventId,
+        recordType: 'delivered',
+        recipient: 'customer@example.com',
+        messageId: null,
+      })
+    )
+    await completeDeliveryEvent(first.eventId, first.attemptCount)
 
     const retry = await claimDeliveryEvent({
       provider: PROVIDER,
@@ -174,14 +187,16 @@ describe('claimDeliveryEvent', () => {
 
   it('reclaims a failed event whose lease has cleared', async () => {
     const providerEventId = eventId()
-    const first = await claimDeliveryEvent({
-      provider: PROVIDER,
-      providerEventId,
-      recordType: 'bounced',
-      recipient: 'customer@example.com',
-      messageId: null,
-    })
-    await failDeliveryEvent(first.eventId, new Error('db unreachable'))
+    const first = claimed(
+      await claimDeliveryEvent({
+        provider: PROVIDER,
+        providerEventId,
+        recordType: 'bounced',
+        recipient: 'customer@example.com',
+        messageId: null,
+      })
+    )
+    await failDeliveryEvent(first.eventId, first.attemptCount, new Error('db unreachable'))
 
     const retry = await claimDeliveryEvent({
       provider: PROVIDER,
@@ -197,19 +212,104 @@ describe('claimDeliveryEvent', () => {
 
   it('completeDeliveryEvent marks the row processed with the resolved messageId', async () => {
     const providerEventId = eventId()
-    const claim = await claimDeliveryEvent({
-      provider: PROVIDER,
-      providerEventId,
-      recordType: 'delivered',
-      recipient: 'customer@example.com',
-      messageId: fixtureMessageId,
-    })
+    const claim = claimed(
+      await claimDeliveryEvent({
+        provider: PROVIDER,
+        providerEventId,
+        recordType: 'delivered',
+        recipient: 'customer@example.com',
+        messageId: fixtureMessageId,
+      })
+    )
 
-    await completeDeliveryEvent(claim.eventId)
+    await completeDeliveryEvent(claim.eventId, claim.attemptCount)
 
     const row = await readEvent(providerEventId)
     expect(row.status).toBe('processed')
     expect(row.processedAt).not.toBeNull()
     expect(row.messageId).toBe(fixtureMessageId)
+  })
+
+  it('does not let a stale claim finalize a reclaimed attempt', async () => {
+    const providerEventId = eventId()
+    const first = claimed(
+      await claimDeliveryEvent({
+        provider: PROVIDER,
+        providerEventId,
+        recordType: 'delivered',
+        recipient: 'customer@example.com',
+        messageId: fixtureMessageId,
+      })
+    )
+
+    await db
+      .update(supportDeliveryEvent)
+      .set({ leaseExpiresAt: new Date(Date.now() - 1) })
+      .where(eq(supportDeliveryEvent.id, first.eventId))
+
+    const second = claimed(
+      await claimDeliveryEvent({
+        provider: PROVIDER,
+        providerEventId,
+        recordType: 'delivered',
+        recipient: 'customer@example.com',
+        messageId: fixtureMessageId,
+      })
+    )
+    expect(second.outcome).toBe('claimed')
+
+    await expect(completeDeliveryEvent(first.eventId, first.attemptCount)).rejects.toThrow(/ownership/i)
+    expect(await failDeliveryEvent(first.eventId, first.attemptCount, new Error('stale'))).toBe(false)
+
+    const row = await readEvent(providerEventId)
+    expect(row.status).toBe('processing')
+    expect(row.attemptCount).toBe(2)
+
+    await completeDeliveryEvent(second.eventId, second.attemptCount)
+  })
+})
+
+describe('delivery message status transitions', () => {
+  async function setMessageStatus(status: string) {
+    await db
+      .update(conversationMessage)
+      .set({ deliveryStatus: status })
+      .where(eq(conversationMessage.id, fixtureMessageId))
+  }
+
+  it.each(['sent', 'failed'])('promotes %s to delivered atomically', async (status) => {
+    await setMessageStatus(status)
+
+    const updated = await markDeliveryMessageDelivered(db, fixtureMessageId)
+
+    expect(updated).toBe(true)
+    const [row] = await db
+      .select({ deliveryStatus: conversationMessage.deliveryStatus })
+      .from(conversationMessage)
+      .where(eq(conversationMessage.id, fixtureMessageId))
+    expect(row.deliveryStatus).toBe('delivered')
+  })
+
+  it('does not promote a bounced message when a delivered event arrives', async () => {
+    await setMessageStatus('bounced')
+
+    expect(await markDeliveryMessageDelivered(db, fixtureMessageId)).toBe(false)
+    const [row] = await db
+      .select({ deliveryStatus: conversationMessage.deliveryStatus })
+      .from(conversationMessage)
+      .where(eq(conversationMessage.id, fixtureMessageId))
+    expect(row.deliveryStatus).toBe('bounced')
+  })
+
+  it('keeps bounce terminal regardless of event ordering', async () => {
+    await setMessageStatus('delivered')
+    expect(await markDeliveryMessageBounced(db, fixtureMessageId, 'hard bounce')).toBe(true)
+    expect(await markDeliveryMessageDelivered(db, fixtureMessageId)).toBe(false)
+
+    const [row] = await db
+      .select({ deliveryStatus: conversationMessage.deliveryStatus })
+      .from(conversationMessage)
+      .where(eq(conversationMessage.id, fixtureMessageId))
+    expect(row.deliveryStatus).toBe('bounced')
   })
 })

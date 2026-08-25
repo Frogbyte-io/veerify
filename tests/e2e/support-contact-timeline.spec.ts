@@ -21,45 +21,62 @@ test.describe.serial('support contact timeline', () => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const teamId = await activeTeamId(request, sessionCookie)
     const [ownProject] = await db.select().from(project).where(eq(project.teamId, teamId)).limit(1)
-    const [otherTeam] = await db.select({ id: team.id }).from(team).where(ne(team.id, teamId)).limit(1)
+    const [otherTeam] = await db
+      .select({ id: team.id, organizationId: team.organizationId })
+      .from(team)
+      .where(ne(team.id, teamId))
+      .limit(1)
     if (!ownProject || !otherTeam) {
       test.skip()
       return
     }
-    const [otherProject] = await db.select().from(project).where(eq(project.teamId, otherTeam.id)).limit(1)
-    if (!otherProject) {
-      test.skip()
-      return
-    }
+    const [originalSupportSettings] = await db
+      .select()
+      .from(supportTeamSettings)
+      .where(eq(supportTeamSettings.teamId, teamId))
+      .limit(1)
 
     const contactId = randomUUID()
     const ownFeedbackId = randomUUID()
     const foreignFeedbackId = randomUUID()
+    const otherProjectId = randomUUID()
     const email = `timeline-${contactId}@example.com`
     const now = new Date()
-    await db
-      .insert(contact)
-      .values({ id: contactId, teamId, name: 'Timeline contact', email, createdAt: now, updatedAt: now })
-    await db.insert(feedback).values([
-      {
-        id: ownFeedbackId,
-        projectId: ownProject.id,
-        title: 'Own probable feedback',
-        authorEmail: email,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: foreignFeedbackId,
-        projectId: otherProject.id,
-        title: 'Foreign feedback',
-        authorEmail: email,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ])
+    let settingsFixtureCreated = false
 
     try {
+      await db.insert(project).values({
+        id: otherProjectId,
+        organizationId: otherTeam.organizationId,
+        teamId: otherTeam.id,
+        slug: `e2e-support-timeline-${otherProjectId}`,
+        name: `E2E Support Timeline ${otherProjectId}`,
+        description: 'Created for support contact timeline isolation coverage',
+        createdAt: now,
+        updatedAt: now,
+      })
+      await db
+        .insert(contact)
+        .values({ id: contactId, teamId, name: 'Timeline contact', email, createdAt: now, updatedAt: now })
+      await db.insert(feedback).values([
+        {
+          id: ownFeedbackId,
+          projectId: ownProject.id,
+          title: 'Own probable feedback',
+          authorEmail: email,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: foreignFeedbackId,
+          projectId: otherProjectId,
+          title: 'Foreign feedback',
+          authorEmail: email,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ])
+
       const timeline = await request.get(`/api/support/contacts/${contactId}/timeline`, {
         headers: withAuthHeaders(sessionCookie),
       })
@@ -100,6 +117,7 @@ test.describe.serial('support contact timeline', () => {
         headers: withAuthHeaders(sessionCookie),
       })
       expect((await defaultSettings.json()).data.settings.autoLinkFeedback).toBe(false)
+      settingsFixtureCreated = !originalSupportSettings
       const settingResponse = await request.put(`/api/support/teams/${teamId}/settings`, {
         headers: withAuthHeaders(sessionCookie),
         data: { autoLinkFeedback: true },
@@ -125,11 +143,31 @@ test.describe.serial('support contact timeline', () => {
         .where(and(eq(feedback.id, ownFeedbackId), eq(feedback.projectId, ownProject.id)))
       expect(feedbackAfterContactDelete).toEqual([{ id: ownFeedbackId }])
     } finally {
-      await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
+      if (originalSupportSettings) {
+        await db
+          .insert(supportTeamSettings)
+          .values({
+            teamId: originalSupportSettings.teamId,
+            autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
+            createdAt: originalSupportSettings.createdAt,
+            updatedAt: originalSupportSettings.updatedAt,
+          })
+          .onConflictDoUpdate({
+            target: supportTeamSettings.teamId,
+            set: {
+              autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
+              createdAt: originalSupportSettings.createdAt,
+              updatedAt: originalSupportSettings.updatedAt,
+            },
+          })
+      } else if (settingsFixtureCreated) {
+        await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
+      }
       await db.delete(contact).where(eq(contact.id, contactId))
       await db.delete(feedback).where(and(eq(feedback.id, ownFeedbackId), eq(feedback.projectId, ownProject.id)))
-      await db.delete(feedback).where(and(eq(feedback.id, foreignFeedbackId), eq(feedback.projectId, otherProject.id)))
+      await db.delete(feedback).where(and(eq(feedback.id, foreignFeedbackId), eq(feedback.projectId, otherProjectId)))
       await db.delete(contactLink).where(eq(contactLink.contactId, contactId))
+      await db.delete(project).where(eq(project.id, otherProjectId))
     }
   })
 })

@@ -21,7 +21,7 @@ import { supportDeliveryEvent } from '~/server/database/schema/support'
  */
 
 /** How long a claim is held before another delivery may take it over. */
-export const CLAIM_LEASE_SECONDS = 5 * 60
+export const DELIVERY_EVENT_CLAIM_LEASE_SECONDS = 5 * 60
 
 export type DeliveryEventClaimOutcome =
   | { outcome: 'claimed'; eventId: string; attemptCount: number }
@@ -44,7 +44,7 @@ export async function claimDeliveryEvent(input: {
   messageId: string | null
 }): Promise<DeliveryEventClaimOutcome> {
   const now = new Date()
-  const leaseExpiresAt = new Date(now.getTime() + CLAIM_LEASE_SECONDS * 1000)
+  const leaseExpiresAt = new Date(now.getTime() + DELIVERY_EVENT_CLAIM_LEASE_SECONDS * 1000)
   const id = randomUUID()
 
   const [claimed] = await db
@@ -104,9 +104,15 @@ export async function claimDeliveryEvent(input: {
     : { outcome: 'in-progress', eventId: existing.id }
 }
 
-/** Finish an event successfully. */
-export async function completeDeliveryEvent(eventId: string): Promise<void> {
-  await db
+type DeliveryEventExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** Finish only the still-owned attempt. */
+export async function completeDeliveryEvent(
+  eventId: string,
+  attemptCount: number,
+  executor: DeliveryEventExecutor = db
+): Promise<void> {
+  const [completed] = await executor
     .update(supportDeliveryEvent)
     .set({
       status: 'processed',
@@ -115,7 +121,16 @@ export async function completeDeliveryEvent(eventId: string): Promise<void> {
       leaseExpiresAt: null,
       error: null,
     })
-    .where(eq(supportDeliveryEvent.id, eventId))
+    .where(
+      and(
+        eq(supportDeliveryEvent.id, eventId),
+        eq(supportDeliveryEvent.attemptCount, attemptCount),
+        eq(supportDeliveryEvent.status, 'processing')
+      )
+    )
+    .returning({ id: supportDeliveryEvent.id })
+
+  if (!completed) throw new Error('Delivery event ownership lost')
 }
 
 /** Maximum stored error length. Enough to diagnose, short of storing a payload. */
@@ -137,13 +152,27 @@ export function sanitizeDeliveryEventError(error: unknown): string {
  * Mark an event failed and replayable. The lease is cleared so the
  * provider's next retry can reclaim it immediately rather than waiting it out.
  */
-export async function failDeliveryEvent(eventId: string, error: unknown): Promise<void> {
-  await db
+export async function failDeliveryEvent(
+  eventId: string,
+  attemptCount: number,
+  error: unknown,
+  executor: DeliveryEventExecutor = db
+): Promise<boolean> {
+  const [failed] = await executor
     .update(supportDeliveryEvent)
     .set({
       status: 'failed',
       leaseExpiresAt: null,
       error: sanitizeDeliveryEventError(error),
     })
-    .where(eq(supportDeliveryEvent.id, eventId))
+    .where(
+      and(
+        eq(supportDeliveryEvent.id, eventId),
+        eq(supportDeliveryEvent.attemptCount, attemptCount),
+        eq(supportDeliveryEvent.status, 'processing')
+      )
+    )
+    .returning({ id: supportDeliveryEvent.id })
+
+  return Boolean(failed)
 }

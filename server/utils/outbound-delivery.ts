@@ -46,7 +46,7 @@ export interface OutboundDeliveryPayload {
 }
 
 /** How long a claim is held before another worker pass may take it over. */
-export const CLAIM_LEASE_SECONDS = 5 * 60
+export const OUTBOUND_DELIVERY_CLAIM_LEASE_SECONDS = 5 * 60
 
 /** Attempts before a delivery stops retrying and becomes terminal. */
 export const MAX_DELIVERY_ATTEMPTS = 5
@@ -95,7 +95,7 @@ export interface OutboundClaim {
  */
 export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null> {
   const now = new Date()
-  const leaseExpiresAt = new Date(now.getTime() + CLAIM_LEASE_SECONDS * 1000)
+  const leaseExpiresAt = new Date(now.getTime() + OUTBOUND_DELIVERY_CLAIM_LEASE_SECONDS * 1000)
 
   const result = await db.execute<{
     id: string

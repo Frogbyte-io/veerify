@@ -31,6 +31,7 @@ import { requireTeamMembership } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { supportCompany } from '~/server/database/schema/support'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
+import { validateQuery } from '~/server/utils/validation'
 
 const querySchema = z.object({
   teamId: z.string().min(1),
@@ -41,7 +42,7 @@ const querySchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const query = querySchema.parse(getQuery(event))
+  const query = validateQuery(event, querySchema)
 
   await requireTeamMembership(query.teamId, session.user.id)
 

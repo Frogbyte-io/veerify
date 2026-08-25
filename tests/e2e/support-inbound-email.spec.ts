@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
+import { team } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { contact, conversation, supportEmailEvent, supportInbox } from '../../server/database/schema/support'
 import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
@@ -56,6 +58,36 @@ function postmarkPayload(options: MailOptions) {
 test.describe.serial('inbound email', () => {
   test.skip(!credentialsConfigured, 'SUPPORT_POSTMARK_WEBHOOK_USER/PASSWORD not configured')
 
+  test('returns a retryable error after a claimed delivery fails processing', async ({ request }) => {
+    const providerEventId = `malformed-${randomUUID()}@mail.example.com`
+
+    try {
+      const response = await request.post('/api/support/inbound/postmark', {
+        headers: { Authorization: basicAuth() },
+        // MessageID is sufficient to claim the event, but the missing sender
+        // makes the Postmark driver fail during processing.
+        data: { MessageID: providerEventId },
+      })
+
+      expect(response.status()).toBe(500)
+
+      const retry = await request.post('/api/support/inbound/postmark', {
+        headers: { Authorization: basicAuth() },
+        data: { MessageID: providerEventId },
+      })
+      expect(retry.status()).toBe(500)
+
+      const [recorded] = await db
+        .select({ status: supportEmailEvent.status, attemptCount: supportEmailEvent.attemptCount })
+        .from(supportEmailEvent)
+        .where(eq(supportEmailEvent.providerEventId, providerEventId))
+        .limit(1)
+      expect(recorded).toEqual({ status: 'failed', attemptCount: 2 })
+    } finally {
+      await db.delete(supportEmailEvent).where(eq(supportEmailEvent.providerEventId, providerEventId))
+    }
+  })
+
   test('creates a ticket, threads a reply onto it, and ignores a duplicate delivery', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie)
@@ -67,6 +99,7 @@ test.describe.serial('inbound email', () => {
     const inboxAddress = `inbound-${suffix}@example.com`
     const createdInboxIds: string[] = []
     const providerEventIds: string[] = []
+    const legacyProjectId = randomUUID()
 
     // `supportEnabled` defaults to FALSE for every team (delta D-31), and the
     // inbound endpoint honours it by design (SUP-03-10): it records the event,
@@ -82,9 +115,31 @@ test.describe.serial('inbound email', () => {
     expect(enableSupport.ok()).toBeTruthy()
 
     try {
+      const [activeTeam] = await db
+        .select({ organizationId: team.organizationId })
+        .from(team)
+        .where(eq(team.id, teamId))
+        .limit(1)
+      expect(activeTeam).toBeTruthy()
+      if (!activeTeam) throw new Error('Active team fixture disappeared')
+      await db.insert(project).values({
+        id: legacyProjectId,
+        organizationId: activeTeam.organizationId,
+        teamId,
+        slug: `e2e-inbound-legacy-${suffix}`,
+        name: `E2E Inbound Legacy ${suffix}`,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+
       const inboxResponse = await request.post('/api/support/inboxes', {
         headers,
-        data: { teamId, name: `E2E Inbound ${suffix}`, slug: `e2e-inbound-${suffix}` },
+        data: {
+          teamId,
+          name: `E2E Inbound ${suffix}`,
+          slug: `e2e-inbound-${suffix}`,
+          projectId: legacyProjectId,
+        },
       })
       expect(inboxResponse.ok()).toBeTruthy()
       const inboxId = (await inboxResponse.json()).data.inbox.id as string
@@ -116,6 +171,7 @@ test.describe.serial('inbound email', () => {
       expect(afterFirst).toHaveLength(1)
       const conversationId = afterFirst[0].id
       expect(afterFirst[0].subject).toBe('Cannot sign in')
+      expect(afterFirst[0].projectId).toBeNull()
 
       // --- 2. A reply threads onto the SAME conversation --------------------
       const replyId = `reply-${suffix}@mail.example.com`
@@ -195,6 +251,7 @@ test.describe.serial('inbound email', () => {
         await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
       }
       await db.delete(contact).where(eq(contact.email, 'customer@example.com'))
+      await db.delete(project).where(eq(project.id, legacyProjectId))
 
       // The seed team is shared with every other spec, so put the module back
       // the way it was rather than leaving Support switched on behind us.
