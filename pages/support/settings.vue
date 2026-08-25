@@ -6,6 +6,15 @@
         <p class="text-muted-foreground mt-1">Configure your team's shared inbox</p>
       </div>
 
+      <div
+        v-if="inboxAccessError"
+        data-testid="support-inbox-access-error"
+        class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ inboxAccessError }}
+      </div>
+
       <!-- Loading -->
       <div v-if="isLoading" class="space-y-6">
         <Skeleton class="h-10 w-full" />
@@ -333,6 +342,7 @@
                   <div
                     v-for="member in members"
                     :key="member.id"
+                    data-testid="support-inbox-member-row"
                     class="flex items-center justify-between rounded-lg border p-3"
                   >
                     <div class="flex items-center gap-3 min-w-0">
@@ -349,6 +359,11 @@
                       <Button
                         v-if="canManageMembers"
                         data-testid="support-remove-inbox-member"
+                        :aria-label="
+                          'Remove inbox member ' +
+                          (member.userName || member.userEmail) +
+                          (member.userName && member.userEmail ? ' (' + member.userEmail + ')' : '')
+                        "
                         variant="ghost"
                         size="icon"
                         :disabled="removingMemberId === member.id"
@@ -438,6 +453,7 @@
                       variant="ghost"
                       size="icon"
                       class="shrink-0 ml-4"
+                      :aria-label="`Remove receiving address ${address.address}`"
                       :disabled="removingAddressId === address.id"
                       @click="openRemoveAddressDialog(address)"
                     >
@@ -492,10 +508,14 @@
 
       <!-- Remove member confirmation -->
       <Dialog :open="isRemoveMemberDialogOpen" @update:open="isRemoveMemberDialogOpen = $event">
-        <DialogContent class="sm:max-w-[420px]">
+        <DialogContent class="sm:max-w-[420px]" data-testid="support-remove-member-dialog">
           <DialogHeader>
             <DialogTitle>Remove agent</DialogTitle>
-            <DialogDescription>
+            <DialogDescription v-if="isSelfRemoval">
+              You are removing your own access. You will lose access to this inbox immediately; a team admin can add you
+              back later.
+            </DialogDescription>
+            <DialogDescription v-else>
               Are you sure you want to remove "{{ memberPendingRemoval?.userName || memberPendingRemoval?.userEmail }}"
               from this inbox? They will lose access to its conversations.
             </DialogDescription>
@@ -512,7 +532,7 @@
                 name="lucide:loader-2"
                 class="w-4 h-4 mr-2 animate-spin"
               />
-              Remove
+              Remove member
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -520,7 +540,7 @@
 
       <!-- Remove address confirmation -->
       <Dialog :open="isRemoveAddressDialogOpen" @update:open="isRemoveAddressDialogOpen = $event">
-        <DialogContent class="sm:max-w-[420px]">
+        <DialogContent class="sm:max-w-[420px]" data-testid="support-remove-address-dialog">
           <DialogHeader>
             <DialogTitle>Remove address</DialogTitle>
             <DialogDescription>
@@ -540,7 +560,7 @@
                 name="lucide:loader-2"
                 class="w-4 h-4 mr-2 animate-spin"
               />
-              Remove
+              Remove address
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -569,6 +589,10 @@ export default {
       teamSettings: null,
       teamSettingsCapabilities: {},
       autoLinkFeedback: false,
+      currentUserId: '',
+      inboxAccessError: null,
+      requestToken: 0,
+      isRecoveringInbox: false,
 
       isLoading: true,
       error: null,
@@ -653,6 +677,10 @@ export default {
       return this.teamSettingsCapabilities.canManageTeamSupport === true
     },
 
+    isSelfRemoval() {
+      return this.memberPendingRemoval?.userId === this.currentUserId
+    },
+
     availableTeamMembers() {
       const memberUserIds = new Set(this.members.map((m) => m.userId))
       return this.teamMembers.filter((tm) => !memberUserIds.has(tm.userId))
@@ -688,7 +716,6 @@ export default {
 
   async mounted() {
     await this.initPage()
-    await this.loadChannelStatus()
     if (import.meta.client) {
       window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
     }
@@ -706,12 +733,19 @@ export default {
     },
 
     async initPage() {
+      const token = ++this.requestToken
       this.isLoading = true
       this.error = null
+      this.inboxAccessError = null
+      this.clearInboxScopedState()
 
       try {
-        const teamResponse = await $fetch('/api/teams/active')
+        const [teamResponse, sessionResponse] = await Promise.all([
+          $fetch('/api/teams/active'),
+          $fetch('/api/auth/session'),
+        ])
         const activeTeamData = teamResponse?.data
+        this.currentUserId = sessionResponse?.data?.user?.id || ''
 
         if (!activeTeamData?.id) {
           this.error = 'No active team found'
@@ -727,6 +761,7 @@ export default {
           $fetch(`/api/teams/${this.activeTeamId}/projects`),
           $fetch(`/api/support/teams/${this.activeTeamId}/settings`),
         ])
+        if (token !== this.requestToken) return
 
         this.inboxes = inboxesResponse?.data?.inboxes || []
         // These two endpoints return the array directly as `data`, not wrapped
@@ -738,14 +773,79 @@ export default {
         this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
 
         if (this.inboxes.length > 0) {
-          this.selectedInboxId = this.inboxes[0].id
+          const requestedInboxId = this.$route.query.inboxId
+          const requestedIsAccessible =
+            typeof requestedInboxId === 'string' && this.inboxes.some((inbox) => inbox.id === requestedInboxId)
+          this.selectedInboxId = requestedIsAccessible ? requestedInboxId : this.inboxes[0].id
+          if (requestedInboxId && !requestedIsAccessible) {
+            this.inboxAccessError = 'You do not have access to this support inbox'
+            await this.replaceInboxQuery(this.selectedInboxId)
+          }
           this.syncGeneralForm()
-          await this.loadInboxContext()
+          await this.loadInboxContext({ recovering: Boolean(requestedInboxId && !requestedIsAccessible) })
+        } else if (this.$route.query.inboxId) {
+          this.inboxAccessError = 'You do not have access to this support inbox'
+          await this.replaceInboxQuery(null)
         }
-      } catch {
+      } catch (error) {
+        if (token !== this.requestToken) return
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.error = 'Something went wrong. Please try again.'
       } finally {
-        this.isLoading = false
+        if (token === this.requestToken) this.isLoading = false
+      }
+    },
+
+    clearInboxScopedState() {
+      this.selectedInboxId = ''
+      this.members = []
+      this.addresses = []
+      this.sendingStatus = null
+      this.sendingStatusError = null
+      this.channel = null
+      this.channelError = null
+      this.isSwitchingInbox = false
+      this.isLoadingSendingStatus = false
+      this.isLoadingChannel = false
+    },
+
+    async replaceInboxQuery(inboxId) {
+      if (!import.meta.client) return
+      const query = { ...this.$route.query }
+      if (inboxId) query.inboxId = inboxId
+      else delete query.inboxId
+      await this.$router.replace({ query }).catch(() => {})
+    },
+
+    async recoverFromForbiddenInbox() {
+      if (this.isRecoveringInbox) return
+      this.isRecoveringInbox = true
+      this.inboxAccessError = 'You do not have access to this support inbox'
+      this.clearInboxScopedState()
+      const token = ++this.requestToken
+      try {
+        const response = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
+        if (token !== this.requestToken) return
+        this.inboxes = response?.data?.inboxes || []
+        const fallback = this.inboxes[0]?.id || null
+        await this.replaceInboxQuery(fallback)
+        if (fallback) {
+          this.selectedInboxId = fallback
+          this.syncGeneralForm()
+          const loaded = await this.loadInboxContext({ recovering: true })
+          if (loaded === false && token === this.requestToken) {
+            this.clearInboxScopedState()
+            await this.replaceInboxQuery(null)
+          }
+        }
+      } catch {
+        if (token === this.requestToken) this.inboxes = []
+      } finally {
+        this.isRecoveringInbox = false
+        if (token === this.requestToken) this.isLoading = false
       }
     },
 
@@ -774,44 +874,74 @@ export default {
       }
     },
 
-    async loadInboxContext() {
-      if (!this.selectedInboxId) return
+    async loadInboxContext({ recovering = false } = {}) {
+      if (!this.selectedInboxId) return false
+      const token = this.requestToken
       this.isSwitchingInbox = true
+      this.members = []
+      this.addresses = []
+      this.sendingStatus = null
+      this.channel = null
 
       try {
         const [membersResponse, addressesResponse] = await Promise.all([
           $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`),
           $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`),
         ])
+        if (token !== this.requestToken) return
         this.members = membersResponse?.data?.members || []
         this.addresses = addressesResponse?.data?.addresses || []
-      } catch {
-        toast.error('Failed to load inbox details')
+      } catch (err) {
+        if (!recovering && this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
+        if (recovering && this.isForbiddenError(err)) {
+          this.clearInboxScopedState()
+          await this.replaceInboxQuery(null)
+          return false
+        }
+        if (!recovering) toast.error('Failed to load inbox details')
       } finally {
-        this.isSwitchingInbox = false
+        if (token === this.requestToken) this.isSwitchingInbox = false
       }
 
-      await this.loadSendingStatus()
+      if (token === this.requestToken) {
+        await Promise.all([this.loadSendingStatus({ recovering }), this.loadChannelStatus({ recovering })])
+      }
+      return token === this.requestToken
     },
 
-    async loadSendingStatus() {
+    async loadSendingStatus({ recovering = false } = {}) {
       if (!this.selectedInboxId) return
+      const token = this.requestToken
+      const inboxId = this.selectedInboxId
       this.isLoadingSendingStatus = true
       this.sendingStatusError = null
 
       try {
-        const response = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/sending-status`)
-        this.sendingStatus = response?.data || null
+        const response = await $fetch(`/api/support/inboxes/${inboxId}/sending-status`)
+        if (token === this.requestToken && inboxId === this.selectedInboxId) this.sendingStatus = response?.data || null
       } catch (err) {
+        if (!recovering && this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.sendingStatusError = this.extractErrorMessage(err, 'Failed to check sending authorization')
       } finally {
-        this.isLoadingSendingStatus = false
+        if (token === this.requestToken) this.isLoadingSendingStatus = false
       }
     },
 
     async handleInboxSwitch() {
+      this.requestToken += 1
+      await this.replaceInboxQuery(this.selectedInboxId)
       this.syncGeneralForm()
       await this.loadInboxContext()
+    },
+
+    isForbiddenError(err) {
+      return err?.statusCode === 403 || err?.status === 403 || err?.response?.status === 403
     },
 
     extractErrorMessage(err, fallback) {
@@ -870,6 +1000,10 @@ export default {
           await this.loadInboxContext()
         }
       } catch (err) {
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to create inbox'))
       } finally {
         this.isCreatingInbox = false
@@ -897,6 +1031,10 @@ export default {
         toast.success('Inbox settings saved')
         await this.loadSendingStatus()
       } catch (err) {
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to save inbox settings'))
       } finally {
         this.isSavingGeneral = false
@@ -904,8 +1042,13 @@ export default {
     },
 
     async reloadMembers() {
-      const membersResponse = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`)
-      this.members = membersResponse?.data?.members || []
+      try {
+        const membersResponse = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`)
+        this.members = membersResponse?.data?.members || []
+      } catch (err) {
+        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox()
+        throw err
+      }
     },
 
     async addMember() {
@@ -927,6 +1070,10 @@ export default {
         this.newMemberRole = 'agent'
         await this.reloadMembers()
       } catch (err) {
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to add agent'))
       } finally {
         this.isAddingMember = false
@@ -950,22 +1097,37 @@ export default {
         this.memberPendingRemoval = null
         await this.reloadMembers()
       } catch (err) {
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to remove agent'))
       } finally {
         this.removingMemberId = null
       }
     },
 
-    async loadChannelStatus() {
+    async loadChannelStatus({ recovering = false } = {}) {
+      if (!this.selectedInboxId) {
+        this.channel = null
+        this.isLoadingChannel = false
+        return
+      }
+      const token = this.requestToken
+      const inboxId = this.selectedInboxId
       this.isLoadingChannel = true
       this.channelError = null
       try {
-        const response = await $fetch('/api/support/channel-status')
-        this.channel = response?.data || null
+        const response = await $fetch('/api/support/channel-status', { params: { inboxId } })
+        if (token === this.requestToken && inboxId === this.selectedInboxId) this.channel = response?.data || null
       } catch (err) {
+        if (!recovering && this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.channelError = err?.data?.error?.message || 'Failed to load channel status'
       } finally {
-        this.isLoadingChannel = false
+        if (token === this.requestToken) this.isLoadingChannel = false
       }
     },
 
@@ -980,8 +1142,13 @@ export default {
     },
 
     async reloadAddresses() {
-      const addressesResponse = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`)
-      this.addresses = addressesResponse?.data?.addresses || []
+      try {
+        const addressesResponse = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`)
+        this.addresses = addressesResponse?.data?.addresses || []
+      } catch (err) {
+        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox()
+        throw err
+      }
     },
 
     async addAddress() {
@@ -1008,6 +1175,10 @@ export default {
         this.newAddressIsPrimary = false
         await this.reloadAddresses()
       } catch (err) {
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to add address'))
       } finally {
         this.isAddingAddress = false
@@ -1031,6 +1202,10 @@ export default {
         this.addressPendingRemoval = null
         await this.reloadAddresses()
       } catch (err) {
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to remove address'))
       } finally {
         this.removingAddressId = null

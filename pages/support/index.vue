@@ -263,19 +263,19 @@ export default {
         this.activeTeamId = activeTeamData.id
         this.isLoadingTeam = false
         await this.loadInboxes()
-        await this.loadTags()
+        if (this.activeInboxId) await this.loadTags()
       } catch {
         this.teamError = 'Something went wrong. Please try again.'
         this.isLoadingTeam = false
       }
     },
 
-    async loadInboxes() {
+    async loadInboxes({ recovering = false } = {}) {
       if (!this.activeTeamId) return
 
       this.isLoadingInboxes = true
       this.inboxesError = null
-      this.inboxAccessError = null
+      if (!recovering) this.inboxAccessError = null
 
       try {
         const response = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
@@ -296,7 +296,16 @@ export default {
           // because selectInbox clears any current selection.
           await this.openRequestedConversation()
         }
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) {
+          this.inboxes = []
+          this.activeInboxId = null
+          this.inboxMembers = []
+          this.tags = []
+          this.tagsAvailable = false
+          if (!recovering) this.inboxAccessError = 'You do not have access to this support inbox'
+          return
+        }
         this.inboxesError = 'Failed to load inboxes. Please try again.'
       } finally {
         this.isLoadingInboxes = false
@@ -306,12 +315,16 @@ export default {
     async loadTags() {
       // Best effort: a team with no tags yet, or a failed lookup, hides the tag
       // filter rather than showing an empty control - no fallback/fake data.
-      if (!this.activeTeamId) return
+      if (!this.activeTeamId || !this.activeInboxId) return
       try {
         const response = await $fetch('/api/support/tags', { params: { teamId: this.activeTeamId } })
         this.tags = response?.data?.tags || []
         this.tagsAvailable = true
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.tags = []
         this.tagsAvailable = false
       }
@@ -326,6 +339,10 @@ export default {
         })
         await this.loadTags()
       } catch (error) {
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         alert(error?.data?.error?.message || 'Failed to create tag')
       }
     },
@@ -340,6 +357,7 @@ export default {
       this.unselectConversation()
 
       this.activeInboxId = inboxId
+      this.inboxAccessError = null
       this.filters = { status: '', assigneeUserId: '', tagId: '' }
 
       if (import.meta.client) {
@@ -356,12 +374,18 @@ export default {
 
     async recoverFromForbiddenInbox() {
       this.unselectConversation()
+      this.activeInboxId = null
+      this.inboxMembers = []
+      this.tags = []
+      this.tagsAvailable = false
+      this.conversations = []
+      this.contactCache = {}
       if (import.meta.client) {
         await this.$router
           .replace({ query: { ...this.$route.query, inboxId: undefined, conversationId: undefined } })
           .catch(() => {})
       }
-      await this.loadInboxes()
+      await this.loadInboxes({ recovering: true })
       this.inboxAccessError = 'You do not have access to this support inbox'
     },
 
@@ -382,8 +406,9 @@ export default {
       try {
         const response = await $fetch(`/api/support/inboxes/${this.activeInboxId}/members`)
         this.inboxMembers = response?.data?.members || []
-      } catch {
+      } catch (error) {
         this.inboxMembers = []
+        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox()
       }
     },
 
@@ -421,7 +446,11 @@ export default {
         this.conversationsNextCursor = response?.data?.nextCursor || null
 
         await this.ensureContactsLoaded(page.map((c) => c.contactId))
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.conversationsError = 'Failed to load conversations. Please try again.'
       } finally {
         this.isLoadingConversations = false
@@ -448,7 +477,11 @@ export default {
           try {
             const response = await $fetch(`/api/support/contacts/${id}`)
             this.contactCache[id] = response?.data?.contact || null
-          } catch {
+          } catch (error) {
+            if (this.isForbiddenError(error)) {
+              await this.recoverFromForbiddenInbox()
+              return
+            }
             // Sentinel rather than `delete` - a dynamic delete is a lint error,
             // and this keeps the id retryable on the next enrich pass.
             this.contactCache[id] = 'error'
@@ -566,6 +599,10 @@ export default {
         // on the realtime round-trip for the agent's own action.
         await Promise.all([this.loadMessages(), this.loadConversations(true)])
       } catch (err) {
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         alert(err?.data?.error?.message || 'Failed to update this conversation')
       } finally {
         this.isUpdatingConversation = false
@@ -592,7 +629,11 @@ export default {
         const response = await $fetch(`/api/support/contacts/${contactId}`)
         this.contactPanelContact = response?.data?.contact || null
         this.contactPanelCompany = response?.data?.company || null
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.contactPanelError = 'Failed to load contact details. Please try again.'
         this.contactPanelLoading = false
         return
@@ -608,7 +649,8 @@ export default {
         const response = await $fetch(`/api/support/contacts/${contactId}/timeline`)
         this.timelineLinked = response?.data?.linked || []
         this.timelineProbableFeedback = response?.data?.probableFeedback || []
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox()
         this.timelineLinked = []
         this.timelineProbableFeedback = []
       } finally {
@@ -626,7 +668,8 @@ export default {
         this.previousConversations = (response?.data?.conversations || []).filter(
           (c) => c.id !== this.selectedConversationId
         )
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) await this.recoverFromForbiddenInbox()
         this.previousConversations = []
       } finally {
         this.previousConversationsLoading = false
@@ -644,7 +687,11 @@ export default {
           body: { entityType: 'feedback', entityId: feedbackId },
         })
         await this.loadTimeline(contactId)
-      } catch {
+      } catch (error) {
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         // Leave the possible-match row visible so the agent can retry.
       } finally {
         this.linkingFeedbackId = null

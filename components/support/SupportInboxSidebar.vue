@@ -48,7 +48,7 @@
     </div>
 
     <!-- Filters -->
-    <div class="border-t px-3 py-3 space-y-3">
+    <div v-if="inboxes.length > 0" class="border-t px-3 py-3 space-y-3">
       <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Filters</h3>
 
       <div class="space-y-1.5">

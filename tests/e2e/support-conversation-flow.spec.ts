@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { contact, conversation, supportInbox } from '../../server/database/schema/support'
-import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
+import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
+import { signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -28,10 +29,13 @@ async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie
 test.describe.serial('support conversation flow', () => {
   test('create, reply, note, status change, and activity message', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const headers = withAuthHeaders(sessionCookie)
+    const headers = withAuthHeaders(sessionCookie, '/support')
     const teamId = await activeTeamId(request, sessionCookie)
 
     const suffix = randomUUID().slice(0, 8)
+    const adminCredentials = { email: `support-flow-admin-${suffix}@example.com`, password: TEST_PASSWORD }
+    let adminUserId: string | undefined
+    let teamMemberId: string | undefined
     const createdInboxIds: string[] = []
     const createdContactIds: string[] = []
     const createdConversationIds: string[] = []
@@ -40,13 +44,46 @@ test.describe.serial('support conversation flow', () => {
       // The creator is added as a supportInboxMember with role 'admin', which
       // is what grants access below — the seed user's teamMember role is only
       // 'member', so inbox access cannot be coming from the team-admin bypass.
-      const inboxResponse = await request.post('/api/support/inboxes', {
+      const deniedResponse = await request.post('/api/support/inboxes', {
         headers,
+        data: { teamId, name: `Denied E2E Inbox ${suffix}`, slug: `denied-e2e-inbox-${suffix}` },
+      })
+      expect(deniedResponse.status()).toBe(403)
+      expect(await deniedResponse.text()).toContain('FORBIDDEN')
+
+      const signupResponse = await request.post('/api/auth/sign-up/email', {
+        headers: withOriginHeaders('/signup'),
+        data: { name: 'Support flow setup admin', ...adminCredentials },
+      })
+      expect(signupResponse.ok()).toBeTruthy()
+      adminUserId = ((await signupResponse.json()).user?.id || '') as string
+      expect(adminUserId).toBeTruthy()
+      teamMemberId = randomUUID()
+      await db
+        .insert(teamMember)
+        .values({ id: teamMemberId, teamId, userId: adminUserId, role: 'admin', createdAt: new Date() })
+
+      const adminCookie = await signInAndGetSessionCookie(request, adminCredentials)
+      const adminHeaders = withAuthHeaders(adminCookie, '/support')
+      const inboxResponse = await request.post('/api/support/inboxes', {
+        headers: adminHeaders,
         data: { teamId, name: `E2E Inbox ${suffix}`, slug: `e2e-inbox-${suffix}` },
       })
-      expect(inboxResponse.ok()).toBeTruthy()
+      if (!inboxResponse.ok())
+        throw new Error(`Inbox setup failed: ${inboxResponse.status()} ${await inboxResponse.text()}`)
       const inboxId = (await inboxResponse.json()).data.inbox.id as string
       createdInboxIds.push(inboxId)
+
+      const agentSessionResponse = await request.get('/api/auth/session', { headers })
+      expect(agentSessionResponse.ok()).toBeTruthy()
+      const agentUserId = (await agentSessionResponse.json()).data.user.id as string
+      const addAgentResponse = await request.post(`/api/support/inboxes/${inboxId}/members`, {
+        headers: adminHeaders,
+        data: { userId: agentUserId, role: 'agent' },
+      })
+      if (!addAgentResponse.ok()) {
+        throw new Error(`Agent membership setup failed: ${addAgentResponse.status()} ${await addAgentResponse.text()}`)
+      }
 
       const visibleInboxesResponse = await request.get('/api/support/inboxes', {
         headers,
@@ -85,7 +122,7 @@ test.describe.serial('support conversation flow', () => {
       // inbox through the same operator-facing API used by Stage 04 before
       // exercising the Stage 02 reply flow.
       const identityResponse = await request.put(`/api/support/inboxes/${inboxId}`, {
-        headers,
+        headers: adminHeaders,
         data: { emailAddress: `e2e-sender-${suffix}@example.com`, fromName: 'E2E Support' },
       })
       expect(identityResponse.ok()).toBeTruthy()
@@ -157,6 +194,13 @@ test.describe.serial('support conversation flow', () => {
       }
       for (const inboxId of createdInboxIds) {
         await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
+      }
+      if (teamMemberId) await db.delete(teamMember).where(eq(teamMember.id, teamMemberId))
+      if (adminUserId) {
+        await db.delete(verification).where(eq(verification.identifier, adminCredentials.email))
+        await db.delete(session).where(eq(session.userId, adminUserId))
+        await db.delete(account).where(eq(account.userId, adminUserId))
+        await db.delete(user).where(eq(user.id, adminUserId))
       }
     }
   })

@@ -5,6 +5,7 @@ import {
   type SupportPermissionFixture,
   type SupportPermissionRole,
 } from './helpers/support-permissions'
+import { loginViaProgrammaticPage, withOriginHeaders } from './helpers/auth'
 
 test.describe.serial('support permission-aware navigation', () => {
   let fixture: SupportPermissionFixture
@@ -19,25 +20,25 @@ test.describe.serial('support permission-aware navigation', () => {
     if (fixture) await cleanupSupportPermissionFixture(fixture)
   })
 
-  async function openAs(browser: Browser, role: SupportPermissionRole, path = '/support/settings') {
+  async function openAs(browser: Browser, role: SupportPermissionRole, path?: string) {
+    path ||= `/support/settings?inboxId=${fixture.primaryInboxId}`
     const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4913'
     const context = await browser.newContext({
       baseURL,
     })
     contexts.push(context)
     const page = await context.newPage()
-    const loginResponse = await page.request.post('/api/auth/sign-in/email', {
-      data: fixture.users[role],
-    })
-    if (!loginResponse.ok()) {
-      throw new Error(`Programmatic login failed (${loginResponse.status()}): ${await loginResponse.text()}`)
+    await loginViaProgrammaticPage(page, fixture.users[role])
+    const preAuthSession = await page.request.get('/api/auth/session')
+    const preAuthPayload = await preAuthSession.json().catch(() => null)
+    if (!preAuthPayload?.data?.session?.id) {
+      throw new Error(`Programmatic page login did not persist session (status=${preAuthSession.status()})`)
     }
-    const setCookie = loginResponse.headers()['set-cookie']
-    const cookieMatch = setCookie?.match(/(?:^|,\s*)([^=;,]+)=([^;]+)/)
-    if (!cookieMatch) throw new Error('Programmatic login response did not include a session cookie')
-    await context.addCookies([{ name: cookieMatch[1], value: cookieMatch[2], url: baseURL }])
     const cookies = await context.cookies()
-    const activeTeamResponse = await page.request.post('/api/teams/active', { data: { teamId: fixture.teamId } })
+    const activeTeamResponse = await page.request.post('/api/teams/active', {
+      headers: withOriginHeaders('/support'),
+      data: { teamId: fixture.teamId },
+    })
     if (!activeTeamResponse.ok()) {
       throw new Error(`Could not activate the fixed team for ${role}: ${await activeTeamResponse.text()}`)
     }
@@ -71,6 +72,12 @@ test.describe.serial('support permission-aware navigation', () => {
   test('team admin sees team policy and inbox administration', async ({ browser }) => {
     const page = await openAs(browser, 'teamAdmin')
 
+    const channelRequest = page.waitForRequest(
+      (request) => request.url().includes('/api/support/channel-status') && request.method() === 'GET'
+    )
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    expect(new URL((await channelRequest).url()).searchParams.get('inboxId')).toBe(fixture.primaryInboxId)
+
     await expect(page.getByTestId('support-team-policy')).toBeVisible()
     await expect(page.getByText('Automatically link signed-in customer feedback')).toBeVisible()
     await expect(page.getByTestId('support-add-inbox-member')).toBeVisible()
@@ -80,6 +87,20 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.getByText('Also manages the shared tag list.')).toBeVisible()
     await page.locator('#new-member-role').selectOption('admin')
     await expect(page.getByText('Also manages inbox settings and members.')).toBeVisible()
+  })
+
+  test('team admin gets explicit confirmation before removing their own inbox access', async ({ browser }) => {
+    const page = await openAs(browser, 'teamAdmin')
+    const memberRow = page.locator('[data-testid="support-inbox-member-row"]').filter({
+      hasText: fixture.users.teamAdmin.email,
+    })
+
+    await memberRow
+      .getByRole('button', { name: `Remove inbox member Permissions teamAdmin (${fixture.users.teamAdmin.email})` })
+      .click()
+    const removalDialog = page.getByRole('dialog')
+    await expect(removalDialog).toContainText('You will lose access to this inbox')
+    await expect(removalDialog.getByRole('button', { name: 'Remove member' })).toBeVisible()
   })
 
   test('inbox admin can manage inbox members but not team policy', async ({ browser }) => {
@@ -110,8 +131,49 @@ test.describe.serial('support permission-aware navigation', () => {
     const page = await openAs(browser, 'unassigned', '/support')
 
     await expect(page.getByTestId('support-no-assignment')).toBeVisible()
+    await expect(page.getByTestId('support-filter-status')).toHaveCount(0)
+    await expect(page.getByTestId('support-filter-assignee')).toHaveCount(0)
+    await expect(page.getByTestId('support-filter-tag')).toHaveCount(0)
     await expect(page.getByText(fixture.primaryInboxName)).toHaveCount(0)
     await expect(page.getByText(fixture.forbiddenInboxName)).toHaveCount(0)
+  })
+
+  test('settings deep link recovers from an inaccessible inbox without revealing its name', async ({ browser }) => {
+    const page = await openAs(browser, 'agent', `/support/settings?inboxId=${fixture.forbiddenInboxId}`)
+
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
+      'You do not have access to this support inbox'
+    )
+    await expect(page.getByText(fixture.forbiddenInboxName)).toHaveCount(0)
+    await expect(page).toHaveURL(new RegExp(`inboxId=${fixture.primaryInboxId}`))
+  })
+
+  test('settings recovers when inbox access is revoked between list and detail requests', async ({ browser }) => {
+    const page = await openAs(browser, 'agent')
+    let listCalls = 0
+    await page.route('**/api/support/inboxes?*', async (route) => {
+      listCalls += 1
+      if (listCalls === 1) return route.continue()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { inboxes: [] } }),
+      })
+    })
+    await page.route(`**/api/support/inboxes/${fixture.primaryInboxId}/members**`, async (route) => {
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, error: { message: 'You do not have access to this support inbox' } }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
+      'You do not have access to this support inbox'
+    )
+    await expect(page.getByTestId('support-no-assignment')).toBeVisible()
+    await expect(page.getByText(fixture.primaryInboxName)).toHaveCount(0)
   })
 
   test('forbidden deep-link shows generic access and recovers to first accessible inbox', async ({ browser }) => {
