@@ -93,8 +93,16 @@
                   :key="link.id"
                   class="flex items-center justify-between rounded-lg border bg-card p-3"
                 >
-                  <span class="text-sm truncate">{{ link.entityType }}: {{ link.entityId }}</span>
-                  <Button variant="ghost" size="sm" @click="unlink(link.id)">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span class="text-sm truncate">{{ link.entityType }}: {{ link.entityId }}</span>
+                    <Badge v-if="link.source === 'auto'" variant="secondary" class="shrink-0">Automatically linked</Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    :aria-label="link.source === 'auto' ? 'Remove automatic link' : 'Unlink feedback'"
+                    @click="unlink(link.id)"
+                  >
                     <Icon name="lucide:x" class="w-4 h-4" />
                   </Button>
                 </div>

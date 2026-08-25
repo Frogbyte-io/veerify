@@ -9,6 +9,7 @@ import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
+import { createAutomaticFeedbackLink } from '~/server/utils/support-auto-link'
 
 const submitFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
@@ -29,21 +30,6 @@ export default defineEventHandler(async (event) => {
 
   const { project: proj } = await resolvePublicProjectByTeam(teamSlug!, projectSlug!)
 
-  if (body.categoryId) {
-    const [cat] = await db
-      .select()
-      .from(feedbackCategory)
-      .where(and(eq(feedbackCategory.id, body.categoryId), eq(feedbackCategory.projectId, proj.id)))
-      .limit(1)
-    if (!cat) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid category'),
-      })
-    }
-  }
-
   if (!session?.user && !body.authorName) {
     throw createError({
       statusCode: 400,
@@ -59,35 +45,61 @@ export default defineEventHandler(async (event) => {
   }
 
   const now = new Date()
-  const [created] = await db
-    .insert(feedback)
-    .values({
-      id: crypto.randomUUID(),
-      projectId: proj.id,
-      categoryId: body.categoryId || null,
-      title: body.title,
-      body: body.body,
-      status: 'open',
-      authorUserId: session?.user?.id || null,
-      authorSessionId: anonSessionId,
-      authorName: session?.user ? session.user.name : body.authorName || null,
-      authorEmail: session?.user ? session.user.email : body.authorEmail || null,
-      voteCount: 1,
-      commentCount: 0,
-      isPinned: false,
-      isLocked: false,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning()
+  const created = await db.transaction(async (tx) => {
+    if (body.categoryId) {
+      const [cat] = await tx
+        .select()
+        .from(feedbackCategory)
+        .where(and(eq(feedbackCategory.id, body.categoryId), eq(feedbackCategory.projectId, proj.id)))
+        .limit(1)
+      if (!cat) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Bad Request',
+          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid category'),
+        })
+      }
+    }
 
-  // Auto-upvote by the submitter so the item appears ranked without a second click
-  await db.insert(vote).values({
-    id: crypto.randomUUID(),
-    feedbackId: created.id,
-    voterUserId: session?.user?.id || null,
-    voterSessionId: anonSessionId,
-    createdAt: now,
+    const [createdFeedback] = await tx
+      .insert(feedback)
+      .values({
+        id: crypto.randomUUID(),
+        projectId: proj.id,
+        categoryId: body.categoryId || null,
+        title: body.title,
+        body: body.body,
+        status: 'open',
+        authorUserId: session?.user?.id || null,
+        authorSessionId: anonSessionId,
+        authorName: session?.user ? session.user.name : body.authorName || null,
+        authorEmail: session?.user ? session.user.email : body.authorEmail || null,
+        voteCount: 1,
+        commentCount: 0,
+        isPinned: false,
+        isLocked: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+
+    // Auto-upvote by the submitter so the item appears ranked without a second click.
+    await tx.insert(vote).values({
+      id: crypto.randomUUID(),
+      feedbackId: createdFeedback.id,
+      voterUserId: session?.user?.id || null,
+      voterSessionId: anonSessionId,
+      createdAt: now,
+    })
+
+    await createAutomaticFeedbackLink(tx, {
+      teamId: proj.teamId,
+      feedbackId: createdFeedback.id,
+      authorUserId: session?.user?.id || null,
+      createdAt: now,
+    })
+
+    return createdFeedback
   })
 
   setResponseStatus(event, 201)

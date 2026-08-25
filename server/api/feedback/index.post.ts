@@ -19,6 +19,7 @@ import { sendFeedbackConfirmationEmail } from '~/lib/email'
 import { buildIssueLabels, ensureGitHubLabels } from '~/server/utils/github'
 import { createLogger } from '~/server/utils/logger'
 import { notifyProjectTeam } from '~/server/utils/notifications'
+import { createAutomaticFeedbackLink } from '~/server/utils/support-auto-link'
 
 const logger = createLogger('feedback')
 
@@ -235,6 +236,13 @@ export default defineEventHandler(async (event) => {
           feedbackId: created.id,
           voterUserId: session?.user?.id || null,
           voterSessionId: anonSessionId,
+          createdAt: now,
+        })
+
+        await createAutomaticFeedbackLink(tx, {
+          teamId: proj.teamId,
+          feedbackId: created.id,
+          authorUserId: session?.user?.id || null,
           createdAt: now,
         })
 
