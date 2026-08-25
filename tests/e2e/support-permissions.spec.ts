@@ -515,6 +515,7 @@ test.describe.serial('support permission-aware navigation', () => {
 
   test('settings recovery ownership resets when the active team changes mid-recovery', async ({ browser }) => {
     const page = await openAs(browser, 'teamAdmin')
+    await expect(page.getByTestId('support-team-policy-toggle')).toBeVisible()
     const switchedTeamId = 'permissions-recovery-switched-team'
     const switchedInboxId = 'permissions-recovery-switched-inbox'
     let releaseRecoveryList!: () => void
@@ -525,6 +526,7 @@ test.describe.serial('support permission-aware navigation', () => {
     const recoveryListRelease = new Promise<void>((resolve) => {
       releaseRecoveryList = resolve
     })
+    let switchedInboxListCalls = 0
     await page.route('**/api/teams/active', async (route) => {
       await route.fulfill({
         status: 200,
@@ -555,6 +557,7 @@ test.describe.serial('support permission-aware navigation', () => {
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { inboxes: [] } }) })
         return
       }
+      switchedInboxListCalls += 1
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -563,6 +566,17 @@ test.describe.serial('support permission-aware navigation', () => {
           data: { inboxes: [{ id: switchedInboxId, name: 'Switched team inbox', capabilities: { canManageInbox: true } }] },
         }),
       })
+    })
+    await page.route(`**/api/support/inboxes/${switchedInboxId}`, async (route) => {
+      if (route.request().method() === 'PUT') {
+        await route.fulfill({
+          status: 403,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: false, error: { message: 'forbidden' } }),
+        })
+        return
+      }
+      await route.continue()
     })
     await page.route('**/api/teams/members?*', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
@@ -586,14 +600,13 @@ test.describe.serial('support permission-aware navigation', () => {
     await page.getByTestId('support-team-policy-toggle').click()
     await recoveryListReady
     await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
-    await expect(page.getByText('Switched team inbox')).toBeVisible()
+    await expect(page.locator('#general-name')).toHaveValue('Switched team inbox')
     releaseRecoveryList()
     await expect(page.getByTestId('support-team-policy')).toBeVisible()
 
-    await page.getByTestId('support-team-policy-toggle').click()
-    await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
-      'You do not have access to this support inbox'
-    )
+    await page.locator('#general-name').fill('Switched team inbox updated')
+    await page.getByTestId('support-inbox-settings-save').click()
+    await expect.poll(() => switchedInboxListCalls).toBeGreaterThan(1)
   })
 
   test('forbidden deep-link shows generic access and recovers to first accessible inbox', async ({ browser }) => {
