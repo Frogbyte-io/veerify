@@ -1,0 +1,2 @@
+DROP INDEX "conversation_message_channel_message_id_idx";--> statement-breakpoint
+CREATE INDEX "conversation_message_channel_message_id_idx" ON "conversation_message" USING btree ("channel_message_id");

@@ -34,8 +34,10 @@ import {
   index,
   boolean,
   integer,
+  check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { user, team } from './auth'
 import { project, feedback } from './feedback'
 
@@ -284,6 +286,7 @@ export const supportInboxMember = pgTable(
   (table) => ({
     uniqueInboxUser: uniqueIndex('support_inbox_member_inbox_user_idx').on(table.inboxId, table.userId),
     userIdx: index('support_inbox_member_user_idx').on(table.userId),
+    validRole: check('support_inbox_member_role_check', sql`${table.role} in ('agent','supervisor','admin')`),
   })
 )
 
@@ -391,7 +394,7 @@ export const conversationMessage = pgTable(
       table.conversationId,
       table.createdAt
     ),
-    uniqueChannelMessageId: uniqueIndex('conversation_message_channel_message_id_idx').on(table.channelMessageId),
+    channelMessageIdIdx: index('conversation_message_channel_message_id_idx').on(table.channelMessageId),
     deliveryStatusIdx: index('conversation_message_delivery_status_idx').on(table.deliveryStatus),
   })
 )
@@ -417,6 +420,57 @@ export const conversationAttachment = pgTable(
   },
   (table) => ({
     messageIdx: index('conversation_attachment_message_idx').on(table.messageId),
+  })
+)
+
+// Server-owned outbound upload session. The temporary object is completed and
+// finalized before a canonical conversation attachment is created; cleanup
+// fields make every orphan state durable and retryable.
+export const supportAttachmentUpload = pgTable(
+  'support_attachment_upload',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    tempStorageKey: text('temp_storage_key').notNull(),
+    finalStorageKey: text('final_storage_key'),
+    fileName: text('file_name').notNull(),
+    requestedContentType: text('requested_content_type').notNull(),
+    requestedSizeBytes: integer('requested_size_bytes').notNull(),
+    storedContentType: text('stored_content_type'),
+    actualSizeBytes: integer('actual_size_bytes'),
+    objectVersion: text('object_version'),
+    status: text('status').default('pending').notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    uploadedAt: timestamp('uploaded_at'),
+    consumedAt: timestamp('consumed_at'),
+    tempDeletedAt: timestamp('temp_deleted_at'),
+    finalizeLeaseExpiresAt: timestamp('finalize_lease_expires_at'),
+    cleanupAttemptCount: integer('cleanup_attempt_count').default(0).notNull(),
+    cleanupLastError: text('cleanup_last_error'),
+    messageId: text('message_id').references(() => conversationMessage.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    conversationStatusIdx: index('support_attachment_upload_conversation_status_idx').on(
+      table.conversationId,
+      table.status
+    ),
+    userStatusIdx: index('support_attachment_upload_user_status_idx').on(table.userId, table.status),
+    statusExpiryIdx: index('support_attachment_upload_status_expiry_idx').on(table.status, table.expiresAt),
+    validStatus: check(
+      'support_attachment_upload_status_check',
+      sql`${table.status} in ('pending','uploaded','finalizing','cleanup_required','consumed','expired')`
+    ),
   })
 )
 
@@ -553,12 +607,16 @@ export const supportOutboundDelivery = pgTable(
       .notNull()
       .references(() => conversationMessage.id, { onDelete: 'cascade' }),
     kind: text('kind').notNull(),
+    provider: text('provider'),
+    providerAccountKey: text('provider_account_key'),
+    providerMessageId: text('provider_message_id'),
     payload: jsonb('payload').$type<Record<string, any>>().notNull(),
     idempotencyKey: text('idempotency_key').notNull(),
     // 'pending' | 'sent' | 'failed'
     status: text('status').default('pending').notNull(),
     attemptCount: integer('attempt_count').default(0).notNull(),
     leaseExpiresAt: timestamp('lease_expires_at'),
+    nextAttemptAt: timestamp('next_attempt_at'),
     lastError: text('last_error'),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
@@ -592,7 +650,9 @@ export const supportDeliveryEvent = pgTable(
     id: text('id').primaryKey(),
     messageId: text('message_id').references(() => conversationMessage.id, { onDelete: 'set null' }),
     provider: text('provider').notNull(),
+    providerAccountKey: text('provider_account_key').default('legacy').notNull(),
     providerEventId: text('provider_event_id').notNull(),
+    correlationKey: text('correlation_key'),
     // Provider-normalized: 'delivered' | 'bounced' | 'opened' | 'spam_complaint' | …
     recordType: text('record_type').notNull(),
     recipient: text('recipient').notNull(),
@@ -601,6 +661,7 @@ export const supportDeliveryEvent = pgTable(
     attemptCount: integer('attempt_count').default(0).notNull(),
     leaseExpiresAt: timestamp('lease_expires_at'),
     processedAt: timestamp('processed_at'),
+    occurredAt: timestamp('occurred_at'),
     error: text('error'),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
@@ -609,6 +670,7 @@ export const supportDeliveryEvent = pgTable(
   (table) => ({
     uniqueProviderEventId: uniqueIndex('support_delivery_event_provider_event_id_idx').on(
       table.provider,
+      table.providerAccountKey,
       table.providerEventId
     ),
     messageIdx: index('support_delivery_event_message_idx').on(table.messageId),
