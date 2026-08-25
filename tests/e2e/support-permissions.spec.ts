@@ -259,7 +259,19 @@ test.describe.serial('support permission-aware navigation', () => {
 
   test('team policy 403 uses safe recovery instead of leaving stale controls', async ({ browser }) => {
     const page = await openAs(browser, 'teamAdmin')
+    await expect(page.getByTestId('support-team-policy')).toBeVisible()
     await page.route('**/api/support/teams/*/settings', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: { settings: { autoLinkFeedback: false }, capabilities: { canManageTeamSupport: false } },
+          }),
+        })
+        return
+      }
       if (route.request().method() !== 'PUT') return route.continue()
       await route.fulfill({
         status: 403,
@@ -271,6 +283,7 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
       'You do not have access to this support inbox'
     )
+    await expect(page.getByTestId('support-team-policy')).toHaveCount(0)
   })
 
   test('settings ignores a stale mutation reload after an inbox switch', async ({ browser }) => {
@@ -289,7 +302,19 @@ test.describe.serial('support permission-aware navigation', () => {
       if (listCalls === 1) return route.continue()
       reloadStarted()
       await reloadRelease
-      await route.continue()
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            inboxes: [
+              { id: fixture.primaryInboxId, name: 'STALE OLD RESPONSE', capabilities: {} },
+              { id: fixture.forbiddenInboxId, name: fixture.forbiddenInboxName, capabilities: {} },
+            ],
+          },
+        }),
+      })
     })
 
     await page.locator('#general-name').fill(`${fixture.primaryInboxName} updated`)
@@ -299,6 +324,7 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.locator('#inbox-switcher')).toHaveValue(fixture.forbiddenInboxId)
     releaseReload()
     await expect(page.locator('#general-name')).toHaveValue(fixture.forbiddenInboxName)
+    await expect(page.getByText('STALE OLD RESPONSE')).toHaveCount(0)
   })
 
   test('recovery discards a fallback inbox when status access is revoked', async ({ browser }) => {

@@ -830,8 +830,13 @@ export default {
       await this.$router.replace({ query }).catch(() => {})
     },
 
-    async recoverFromForbiddenInbox({ teamId = this.activeTeamId } = {}) {
+    async recoverFromForbiddenInbox({
+      teamId = this.activeTeamId,
+      sourceToken = this.requestToken,
+      sourceInboxId = this.selectedInboxId,
+    } = {}) {
       if (this.isRecoveringInbox) return
+      if (!this.isCurrentRequest(sourceToken, teamId, sourceInboxId)) return
       this.isRecoveringInbox = true
       this.inboxAccessError = 'You do not have access to this support inbox'
       this.clearInboxScopedState()
@@ -840,6 +845,20 @@ export default {
         const response = await $fetch('/api/support/inboxes', { params: { teamId } })
         if (!this.isCurrentRequest(token, teamId, null)) return
         this.inboxes = response?.data?.inboxes || []
+        try {
+          const settingsResponse = await $fetch(`/api/support/teams/${teamId}/settings`)
+          if (this.isCurrentRequest(token, teamId, null)) {
+            this.teamSettings = settingsResponse?.data?.settings || null
+            this.teamSettingsCapabilities = settingsResponse?.data?.capabilities || {}
+            this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
+          }
+        } catch {
+          if (this.isCurrentRequest(token, teamId, null)) {
+            this.teamSettings = null
+            this.teamSettingsCapabilities = {}
+            this.autoLinkFeedback = false
+          }
+        }
         const fallback = this.inboxes[0]?.id || null
         await this.replaceInboxQuery(fallback)
         if (fallback) {
@@ -854,7 +873,7 @@ export default {
       } catch {
         if (this.isCurrentRequest(token, teamId, null)) this.inboxes = []
       } finally {
-        this.isRecoveringInbox = false
+        if (token === this.requestToken) this.isRecoveringInbox = false
         if (this.isCurrentRequest(token, teamId, null)) this.isLoading = false
       }
     },
@@ -886,7 +905,7 @@ export default {
       } catch (err) {
         if (!this.isCurrentRequest(token, teamId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
+          await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: this.selectedInboxId })
           return
         }
         this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
@@ -916,13 +935,16 @@ export default {
         this.members = membersResponse?.data?.members || []
         this.addresses = addressesResponse?.data?.addresses || []
       } catch (err) {
-        if (!recovering && this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
-          return
-        }
-        if (recovering && this.isForbiddenError(err)) {
-          this.clearInboxScopedState()
-          await this.replaceInboxQuery(null)
+        if (this.isForbiddenError(err)) {
+          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!recovering) {
+            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+            return false
+          }
+          if (this.isCurrentRequest(token, teamId, inboxId)) {
+            this.clearInboxScopedState()
+            await this.replaceInboxQuery(null)
+          }
           return false
         }
         if (!recovering) toast.error('Failed to load inbox details')
@@ -953,11 +975,13 @@ export default {
         const response = await $fetch(`/api/support/inboxes/${inboxId}/sending-status`)
         if (this.isCurrentRequest(token, teamId, inboxId)) this.sendingStatus = response?.data || null
       } catch (err) {
-        if (!recovering && this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
+        if (this.isForbiddenError(err)) {
+          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!recovering) {
+            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+          }
           return false
         }
-        if (recovering && this.isForbiddenError(err)) return false
         if (this.isCurrentRequest(token, teamId, inboxId))
           this.sendingStatusError = this.extractErrorMessage(err, 'Failed to check sending authorization')
       } finally {
@@ -1020,6 +1044,7 @@ export default {
           },
         })
         const created = response?.data?.inbox
+        if (!this.isCurrentRequest(token, teamId, null)) return
 
         toast.success('Inbox created')
         this.newInboxName = ''
@@ -1038,7 +1063,7 @@ export default {
       } catch (err) {
         if (!this.isCurrentRequest(token, teamId, null)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox()
+          await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: null })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to create inbox'))
@@ -1176,11 +1201,13 @@ export default {
         const response = await $fetch('/api/support/channel-status', { params: { inboxId } })
         if (this.isCurrentRequest(token, teamId, inboxId)) this.channel = response?.data || null
       } catch (err) {
-        if (!recovering && this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
+        if (this.isForbiddenError(err)) {
+          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!recovering) {
+            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+          }
           return false
         }
-        if (recovering && this.isForbiddenError(err)) return false
         if (this.isCurrentRequest(token, teamId, inboxId))
           this.channelError = err?.data?.error?.message || 'Failed to load channel status'
       } finally {
