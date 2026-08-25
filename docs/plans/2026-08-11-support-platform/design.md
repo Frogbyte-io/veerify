@@ -227,9 +227,9 @@ one inbox per team but want several addresses: one per product, plus general tea
 unattributed), `isPrimary`, `createdAt`.
 Indexes: unique `(address)`; `(inboxId)`; `(projectId)`.
 
-**`supportInboxMember`** — support permissions live here. **`teamMember.role` semantics are not
-changed.** Module enablement in the Tools tab requires team membership only; restricting it to team
-admins was considered and deferred (delta D-28).
+**`supportInboxMember`** — inbox-specific support permissions live here. Team module enablement is a
+workspace-administration concern and requires `teamMember.role = 'admin'`; this deliberately revises the
+earlier deferral in D-28. Day-to-day support permissions remain independent of `teamMember.role`.
 `id`, `inboxId` (FK, cascade), `userId` (FK user, cascade), `role` (`agent` | `supervisor` | `admin`),
 `createdAt`. Indexes: unique `(inboxId, userId)`; `(userId)`.
 
@@ -256,7 +256,9 @@ Indexes: unique `(teamId, displayId)`; `(teamId, status, lastActivityAt)`; `(inb
 `senderUserId` (FK user, set null), `isPrivate`, `channelMessageId`, `inReplyTo`, `channelHeaders`
 (jsonb), `deliveryStatus` (`pending` | `sent` | `delivered` | `failed` | `bounced`), `deliveryError`,
 `metadata` (jsonb), `createdAt`.
-Indexes: `(conversationId, createdAt)`; unique `(channelMessageId)`; `(deliveryStatus)`.
+Indexes: `(conversationId, createdAt)`; non-unique `(channelMessageId)`; `(deliveryStatus)`. RFC-ID
+resolution always joins through `conversation.inboxId`; an ambiguous same-inbox match never selects a
+thread. See `stage-01-04-hardening-design.md`.
 
 `kind = 'activity'` stores system events ("assigned to Bob", "status → resolved") as messages rather
 than in a side table. This is what lets the Chatwoot-style thread render actions inline with replies
@@ -264,7 +266,10 @@ from a single ordered query.
 
 **`conversationAttachment`**
 `id`, `messageId` (FK, cascade), `storageKey`, `fileName`, `contentType`, `sizeBytes`, `isInline`,
-`contentId`, `createdAt`. Reuses `server/utils/storage` and the existing presign flow.
+`contentId`, `createdAt`. New outbound attachments reach this table only through the server-owned
+`supportAttachmentUpload` session/finalization flow; clients never submit trusted storage keys or file
+metadata. Existing inbound and legacy attachment rows remain readable. See
+`stage-01-04-hardening-design.md`.
 
 **`conversationParticipant`** — CCs and watchers.
 `id`, `conversationId` (FK, cascade), `contactId` (FK, cascade, nullable), `userId` (FK user, cascade,

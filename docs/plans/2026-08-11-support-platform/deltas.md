@@ -392,27 +392,19 @@ Resolution order: the receiving address's mapping, then an agent override on the
 `supportInbox.emailAddress` is retained as the primary sending identity; `supportInboxAddress` governs
 what the inbox _receives_.
 
-### D-28 — Module toggles want a team-admin role that does not yet exist
+### D-28 — Module toggles require the existing team-admin role
 
-**Found:** UI design discussion before Stage 02. **Status:** DEFERRED — future reference, not scheduled.
+**Found:** UI design discussion before Stage 02. **Status:** RESOLVED by the Stage 01-04 hardening design
+(2026-08-25).
 
 Enabling or disabling a whole module has a much larger blast radius than editing a signature: switching
 Support off stops inbound mail for the entire team. That argues for restricting module toggles to admins
 while leaving day-to-day inbox configuration open to team members.
 
-**It is not being built now.** `teamMember.role` has `admin` and `member` with **currently equivalent
-permissions**, and `design.md` explicitly states "`teamMember.role` semantics are not changed". Acting on
-this would be the first real differentiation of that column, and it is not worth pulling that change into
-an already-oversized Stage 02.
-
-**For now:** module toggles require team membership only, consistent with every other settings surface in
-the app today.
-
-**If revisited:** restrict module enable/disable to `teamMember.role === 'admin'`, keep `/support/settings`
-open to members, and note that the design's freeze on `teamMember.role` was about keeping _support_
-permissions off it (those live on `supportInboxMember.role`) — workspace administration is arguably a
-different question. Whoever picks this up should decide deliberately rather than treating the freeze as
-either binding or irrelevant.
+**Decision:** module reads require team membership, while module enable/disable requires
+`teamMember.role === 'admin'`. Changing a module affects every teammate and can stop inbound support
+processing, so it is a workspace-administration action. Inbox-specific conversation and workflow access
+continues to live on `supportInboxMember.role`; this does not collapse the two role systems.
 
 ### D-29 — IMAP driver dropped from Stage 03
 
@@ -626,6 +618,7 @@ receiving mail" and names what to set.
 That belongs on `ChannelDriver` as an `isConfigured()`, but `server/services/support-channels/**` is the
 other agent's territory this stage, so it was flagged rather than edited. Adding a provider currently
 means updating that map too.
+
 ---
 
 ### D-35 — `supportEmailEvent.inboxId` cannot be `NOT NULL`

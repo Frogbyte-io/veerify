@@ -142,7 +142,7 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 
 - [x] **SUP-04-2** `lib/support-email.ts` with unit tests for chain assembly and trimming
 - [x] **SUP-04-6** Per-inbox From/Reply-To/signature + a settings warning when the address is not provider-authorized
-- [x] **SUP-04-7** Agent attachment upload via the existing presign flow, with size cap and type allowlist
+- [x] **SUP-04-7** Original agent attachment presign flow, superseded by the server-owned upload-session contract in `stage-01-04-hardening-design.md`
 - [x] **SUP-04-10** Delivery status in the thread UI (pending/sent/failed/bounced) with a retry action
 - [x] **SUP-04-11** E2E: inbound mail → agent reply → customer reply threads back
 
@@ -161,10 +161,11 @@ Order matters: **1 → 3 → 4** is the critical path, and SUP-04-1 unblocks Age
 **Shared, read-only unless flagged:** `server/utils/storage/**`, `server/utils/upload-token.ts`,
 `server/utils/support-realtime.ts`, `server/utils/support-access.ts`.
 
-**One migration is expected this stage — `0025`, and it belongs to SUP-04-3 (Agent 1).** It creates
-**two** tables: `supportOutboundDelivery` (specified in `design.md` but never created — the schema is at
-`0024`) and `supportDeliveryEvent` (answered question 1). It does **not** alter `supportEmailEvent`.
-If you believe you need a second migration, stop and say so first.
+**Historical Stage 04 constraint:** migration `0025` belonged to SUP-04-3 and created exactly
+`supportOutboundDelivery` and `supportDeliveryEvent`; it did not alter `supportEmailEvent`. That ownership
+limit applied while Stage 04 agents were running. It is superseded by the approved Stage 01-04 hardening
+work, which explicitly authorizes new generated migrations for upload sessions, role constraints,
+provider correlation, retry scheduling, and RFC lookup indexes. See `stage-01-04-hardening-design.md`.
 
 ---
 
@@ -257,12 +258,12 @@ addressed by this item, which only consumes `checkSendingAuthorization`'s return
 Migration `0025` and `server/utils/outbound-delivery.ts` are on `agent1/stage-04`, merged with
 `origin/support-platform` and pushed. Three things, one per stage item still ahead:
 
-1. **SUP-04-4 (mine) enqueues via `enqueueOutboundDelivery(tx, { messageId, payload, kind? })`**, called
-   inside the same transaction as the `conversationMessage` insert. `payload` is `OutboundDeliveryPayload`
-   — the same shape as `lib/email.ts`'s `SendEmailOptions` except `attachments` are `OutboundAttachment[]`
-   (`{ filename, contentType?, storageKey, cid? }` — a storage key, never bytes). SUP-04-4 builds `from`/
-   `replyTo` from `buildOutboundIdentity`'s output and reads any `conversationAttachment` rows created by
-   SUP-04-7 to populate `attachments` by storage key.
+1. **SUP-04-4 enqueues via `enqueueOutboundDelivery(tx, { messageId, payload, kind? })`**, called inside the
+   same transaction as the `conversationMessage` insert. The worker's internal payload may still contain
+   canonical storage references, never bytes, but those references now come only from server-finalized
+   `supportAttachmentUpload` sessions and persisted `conversationAttachment` rows. The client-facing
+   message request accepts only `uploadId`, never `storageKey` or trusted file metadata. The current
+   contract is in `stage-01-04-hardening-design.md`.
 2. **SUP-04-10 (Agent 2's) renders `supportOutboundDelivery.status`** — `'pending' | 'sent' | 'failed'` —
    against the message it belongs to (join on `messageId`), and calls the new
    **`resetOutboundDeliveryForRetry(id)`** for the retry action, from a new endpoint (none exists yet — it
@@ -285,6 +286,12 @@ until someone runs it with `docker compose -f docker-compose-dev.yml up -d db` r
 ---
 
 ## SUP-04-7 has landed — correcting an assumption in the note above
+
+> **Historical implementation record, superseded on 2026-08-25.** The raw `storageKey` contract and
+> direct-to-final upload described in this section are not the current security contract. New outbound
+> attachments use the server-owned upload-session, temporary-object, completion, conditional-copy, and
+> cleanup flow in `stage-01-04-hardening-design.md`; message creation accepts only `uploadId`. Keep the
+> details below only as provenance for the Stage 04 code being replaced.
 
 **"SUP-04-4 ... reads any `conversationAttachment` rows created by SUP-04-7" (above) does not hold, and
 SUP-04-4 should not be built expecting it.** `conversationAttachment.messageId` is `.notNull()` — there is
@@ -517,23 +524,12 @@ several). `ChannelDriver` gains `parseDeliveryEvent`/`extractDeliveryEventId` on
 `verifySignature`/`isConfigured` are reused unchanged, since both providers protect every webhook URL on
 an account the same way regardless of what it is for.
 
-**This item's correctness rests on an assumption nobody in this program has verified: that a provider's
-delivery webhook identifies the original message by the same RFC `Message-ID` this app set when sending.**
-That is true when sending through a provider's HTTP send API. This app does not do that — it sends over
-SMTP (`lib/email.ts` → nodemailer → `SMTP_HOST`), and a provider receiving mail that way may instead track
-delivery by an internal id of its own that never appears in the RFC header at all. If that is the case
-here, `DeliveryEvent.messageId` never matches anything, `resolvedMessage` is always null, and every
-delivery/bounce event silently becomes `unmatched-message` — recorded, never crashing, but doing nothing
-useful, indefinitely. The code is written defensively for exactly this outcome (nullable `messageId`,
-D-35's precedent, a warning logged on every miss) so it degrades to "does nothing" rather than "breaks",
-but degrading gracefully to a feature that does not work is still a feature that does not work.
-
-**Before anyone trusts delivery-status tracking in production: send one real email through the configured
-SMTP relay, register the delivery webhook, and check what message-identifying field actually arrives.** If
-it is not the RFC Message-ID, the fix is not in this endpoint — it is either switching outbound sending to
-the provider's HTTP API (which does return a usable id) or, if the provider's SMTP-relay webhooks expose
-some other stable correlation id, teaching `parseDeliveryEvent` to read that instead. Neither is a
-same-shape change to what exists now.
+**Superseded by the Stage 01-04 hardening design:** provider delivery correlation no longer assumes that
+the webhook's provider-generated ID equals the app's RFC `Message-ID`. The worker adds the outbox's stable
+correlation key as Postmark/Mailgun provider metadata; delivery parsers return that key plus provider
+account/stream identity, and the endpoint resolves the exact outbox row. RFC IDs remain solely for
+customer threading. Real provider smoke tests are still mandatory before production status tracking is
+called verified. See `stage-01-04-hardening-design.md`.
 
 **Two smaller judgment calls, both flagged in code:**
 
@@ -593,11 +589,11 @@ The delivery event also wants columns `supportEmailEvent` has not got — a `mes
 `conversationMessage`, the record type, the recipient — while `rawStorageKey`, `resultConversationId` and
 `inboxId` are dead weight for it.
 
-**Decision:** migration `0025` creates **two** tables — `supportOutboundDelivery` (the outbox) and
-`supportDeliveryEvent` (webhook idempotency), the latter keyed per event, not per message. This also
-means Stage 03's `claimInboundEvent` and its `onConflict` target are **not touched**, which matters: that
-path was just live-verified across 34 checks and altering its unique index for an unrelated event stream
-is pure regression risk for no gain.
+**Historical Stage 04 decision:** migration `0025` created **two** tables — `supportOutboundDelivery` (the
+outbox) and `supportDeliveryEvent` (webhook idempotency), the latter keyed per event, not per message. It
+did not touch Stage 03's `claimInboundEvent` or its `onConflict` target. The later Stage 01-04 hardening
+work adds separate generated migrations and deliberately preserves this inbound-event boundary; see
+`stage-01-04-hardening-design.md`.
 
 `design.md` supports the reading — it scopes `supportEmailEvent` to "inbound idempotency and audit", and
 the stage doc asks to reuse the _pattern_, which is what a second table does.
@@ -670,9 +666,9 @@ finding 3 above.
   (`messages/index.post.ts:96`). Acceptance criterion 8 is structurally satisfied; the outbox enqueue must
   go inside the existing transaction without moving that publish.
 
-Open cross-cutting items: **SUP-X-3** (build-time OpenAPI scanner), **SUP-X-4** (admin-only module
-toggles, deferred — read D-28 first), **SUP-X-6** (format gate + CRLF, and the skipping-gate problem in
-finding 3).
+Open cross-cutting items: **SUP-X-3** (build-time OpenAPI scanner) and **SUP-X-6** (format gate + CRLF,
+and the skipping-gate problem in finding 3). **SUP-X-4** (admin-only module toggles) is resolved by the
+Stage 01-04 hardening design and revised D-28.
 
 **One Stage 03 loose end lands in Agent 1's lap this stage:** delta D-34 flagged that `REQUIRED_ENV` in
 `channel-status.get.ts` hard-codes each provider's env vars, and that it belongs on `ChannelDriver` as

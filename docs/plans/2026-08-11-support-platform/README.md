@@ -11,19 +11,20 @@ got wrong once implementation started, and several entries contradict the origin
 
 ---
 
-## Current state — updated August 23, 2026
+## Current state — updated August 25, 2026
 
 **Integration branch: `support-platform`.** Not `main`. See delta D-17. Every stage validates here
 until the program is deliberately integrated into `main`.
 
-|                    |                                                                   |
-| ------------------ | ----------------------------------------------------------------- |
-| Stage 00           | **Complete** — 10/10 items                                        |
-| Stage 01           | **Complete** — contact identity, integrity, timeline, and UI      |
-| Stage 02           | **Complete** — inbox and conversation core                        |
-| Stage 03           | **Complete** — inbound email                                      |
-| Stage 04           | **Complete** — 11/11 items                                        |
-| Open cross-cutting | SUP-X-1 (Redis integration suite, delta D-15)                     |
+|                       |                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| Stage 00              | **Complete** — 10/10 items                                                                     |
+| Stage 01              | **Complete** — contact identity, integrity, timeline, and UI                                   |
+| Stage 02              | **Complete** — inbox and conversation core                                                     |
+| Stage 03              | **Complete** — inbound email                                                                   |
+| Stage 04              | **Complete** — 11/11 items                                                                     |
+| Stage 01-04 hardening | **Design review** — [security, roles, identity, and delivery](stage-01-04-hardening-design.md) |
+| Open cross-cutting    | SUP-X-1 (Redis integration suite, delta D-15)                                                  |
 
 **Related branches.** `sleekplan-export` holds an unrelated changelog + Sleekplan/CSV import feature
 that was recovered from the working tree. Both branches define a migration `0019`, so merging them
