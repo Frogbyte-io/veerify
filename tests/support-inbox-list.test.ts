@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EventHandler } from 'h3'
 
 const authState = vi.hoisted(() => ({ userId: 'agent-1' }))
-const queryTrace = vi.hoisted(() => ({ joinedQueries: 0, whereQueries: 0 }))
+const queryTrace = vi.hoisted(() => ({ joinedQueries: 0, whereQueries: 0, projectedQueries: 0 }))
 const queued: unknown[][] = []
 
 function queueResult(rows: unknown[]) {
@@ -42,10 +42,12 @@ vi.mock('~/server/database/drizzle', () => {
         return Promise.resolve(
           rows.filter((row) => {
             const candidate = row as {
+              inbox?: { teamId?: string }
               supportInbox?: { teamId?: string }
               supportInboxMember?: { userId?: string }
             }
-            const inbox = candidate.supportInbox ?? (candidate as { teamId?: string })
+            const inbox = candidate.inbox ?? candidate.supportInbox ?? (candidate as { teamId?: string })
+            if (candidate.inbox) return inbox.teamId === 'team-1'
             const member = candidate.supportInboxMember ?? (candidate as { userId?: string })
             return inbox.teamId === 'team-1' && member.userId === authState.userId
           })
@@ -59,7 +61,16 @@ vi.mock('~/server/database/drizzle', () => {
     return chain
   }
 
-  return { db: { select: () => makeChain() } }
+  return {
+    db: {
+      select: (fields?: Record<string, unknown>) => {
+        if (fields && 'inbox' in fields && 'role' in fields) {
+          queryTrace.projectedQueries += 1
+        }
+        return makeChain()
+      },
+    },
+  }
 })
 
 const listHandler = (await import('~/server/api/support/inboxes/index.get')).default as EventHandler
@@ -74,6 +85,7 @@ beforeEach(() => {
   queued.length = 0
   queryTrace.joinedQueries = 0
   queryTrace.whereQueries = 0
+  queryTrace.projectedQueries = 0
   vi.stubGlobal('createError', (input: Record<string, unknown>) =>
     Object.assign(new Error(String(input.statusMessage)), input)
   )
@@ -85,20 +97,15 @@ describe('support inbox list authorization', () => {
     queueResult([{ id: 'team-member-1', role: 'member' }])
     queueResult([
       {
-        supportInbox: { id: 'inbox-1', teamId: 'team-1', name: 'Assigned inbox' },
-        supportInboxMember: { userId: 'agent-1', role: 'agent' },
+        inbox: { id: 'inbox-1', teamId: 'team-1', name: 'Assigned inbox' },
+        role: 'agent',
       },
       {
-        supportInbox: { id: 'inbox-hidden', teamId: 'team-1', name: 'Hidden inbox' },
-        supportInboxMember: { userId: 'other-user', role: 'agent' },
+        inbox: { id: 'inbox-invalid', teamId: 'team-1', name: 'Invalid inbox' },
+        role: 'owner',
       },
       {
-        supportInbox: { id: 'inbox-invalid', teamId: 'team-1', name: 'Invalid inbox' },
-        supportInboxMember: { userId: 'agent-1', role: 'owner' },
-      },
-      {
-        supportInbox: { id: 'inbox-missing-role', teamId: 'team-1', name: 'Missing role inbox' },
-        supportInboxMember: { userId: 'agent-1' },
+        inbox: { id: 'inbox-missing-role', teamId: 'team-1', name: 'Missing role inbox' },
       },
     ])
 
@@ -132,6 +139,7 @@ describe('support inbox list authorization', () => {
     )
     expect(queryTrace.joinedQueries).toBe(1)
     expect(queryTrace.whereQueries).toBe(2)
+    expect(queryTrace.projectedQueries).toBe(1)
   })
 
   it('returns every team inbox with effective admin capabilities for team admins', async () => {

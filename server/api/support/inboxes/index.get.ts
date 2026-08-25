@@ -41,33 +41,35 @@ export default defineEventHandler(async (event) => {
   // A team's inboxes are a short, fully-loaded settings list, not an
   // open-ended feed - unlike contacts/companies, this does not paginate.
   const isTeamAdmin = teamMembership.role === 'admin'
-  const inboxes = isTeamAdmin
-    ? await db
-        .select()
-        .from(supportInbox)
-        .where(eq(supportInbox.teamId, query.teamId))
-        .orderBy(asc(supportInbox.createdAt))
-    : await db
-        .select()
-        .from(supportInbox)
-        .innerJoin(supportInboxMember, eq(supportInboxMember.inboxId, supportInbox.id))
-        .where(and(eq(supportInbox.teamId, query.teamId), eq(supportInboxMember.userId, session.user.id)))
-        .orderBy(asc(supportInbox.createdAt))
+  if (isTeamAdmin) {
+    const inboxes = await db
+      .select()
+      .from(supportInbox)
+      .where(eq(supportInbox.teamId, query.teamId))
+      .orderBy(asc(supportInbox.createdAt))
+
+    return createSuccessResponse({
+      inboxes: inboxes.map((inbox) => ({
+        ...inbox,
+        effectiveRole: 'admin' as SupportInboxRole,
+        isTeamAdmin: true,
+        capabilities: capabilitiesForRole('admin', true),
+      })),
+    })
+  }
+
+  // Project the joined fields explicitly. Drizzle's default join result keys
+  // are an implementation detail and must not be used to recover the role.
+  const inboxes = await db
+    .select({ inbox: supportInbox, role: supportInboxMember.role })
+    .from(supportInbox)
+    .innerJoin(supportInboxMember, eq(supportInboxMember.inboxId, supportInbox.id))
+    .where(and(eq(supportInbox.teamId, query.teamId), eq(supportInboxMember.userId, session.user.id)))
+    .orderBy(asc(supportInbox.createdAt))
 
   const data = inboxes
-    .map((row) => {
-      if (isTeamAdmin) {
-        return {
-          ...row,
-          effectiveRole: 'admin' as SupportInboxRole,
-          isTeamAdmin: true,
-          capabilities: capabilitiesForRole('admin', true),
-        }
-      }
-
-      const inbox = ('supportInbox' in row ? row.supportInbox : row) as typeof supportInbox.$inferSelect
-      const member = 'supportInboxMember' in row ? row.supportInboxMember : row
-      const effectiveRole = parseSupportInboxRole((member as { role?: unknown }).role)
+    .map(({ inbox, role }) => {
+      const effectiveRole = parseSupportInboxRole(role)
       if (!effectiveRole) {
         return null
       }
