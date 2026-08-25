@@ -57,9 +57,9 @@ function throwInboxForbidden(): never {
   })
 }
 
-function asSupportInboxRole(role: unknown): SupportInboxRole {
-  if (role === 'supervisor' || role === 'admin') return role
-  return 'agent'
+export function parseSupportInboxRole(role: unknown): SupportInboxRole | null {
+  if (role === 'agent' || role === 'supervisor' || role === 'admin') return role
+  return null
 }
 
 function withInboxAccess(
@@ -188,21 +188,21 @@ export async function requireInboxAccess(inboxId: string, userId: string) {
     .where(and(eq(supportInboxMember.inboxId, inboxId), eq(supportInboxMember.userId, userId)))
     .limit(1)
 
-  if (membership) {
-    return withInboxAccess(inbox, asSupportInboxRole(membership.role), false)
-  }
-
   const [teamAdmin] = await db
     .select({ id: teamMember.id, role: teamMember.role })
     .from(teamMember)
     .where(and(eq(teamMember.teamId, inbox.teamId), eq(teamMember.userId, userId), eq(teamMember.role, 'admin')))
     .limit(1)
 
-  if (!teamAdmin) {
-    throwInboxForbidden()
+  if (teamAdmin) {
+    return withInboxAccess(inbox, 'admin', true)
   }
 
-  return withInboxAccess(inbox, 'admin', true)
+  const memberRole = parseSupportInboxRole(membership?.role)
+  if (!memberRole) {
+    throwInboxForbidden()
+  }
+  return withInboxAccess(inbox, memberRole, false)
 }
 
 export async function requireInboxRole(
@@ -217,37 +217,52 @@ export async function requireInboxRole(
   return access
 }
 
-export async function requireSupportTeamRole(
+export async function resolveSupportTeamRole(
   teamId: string,
-  userId: string,
-  minimumRole: 'agent' | 'supervisor'
-): Promise<{ effectiveRole: SupportInboxRole; isTeamAdmin: boolean }> {
+  userId: string
+): Promise<{ effectiveRole: SupportInboxRole; isTeamAdmin: boolean } | null> {
   const membership = await requireTeamMembership(teamId, userId)
   if (membership.role === 'admin') {
     return { effectiveRole: 'admin', isTeamAdmin: true }
   }
 
-  const [supportMembership] = await db
+  const supportMemberships = await db
     .select({ role: supportInboxMember.role })
     .from(supportInboxMember)
     .innerJoin(supportInbox, eq(supportInbox.id, supportInboxMember.inboxId))
-    .where(
-      and(
-        eq(supportInbox.teamId, teamId),
-        eq(supportInboxMember.userId, userId)
-      )
-    )
-    .limit(1)
+    .where(and(eq(supportInbox.teamId, teamId), eq(supportInboxMember.userId, userId)))
 
-  if (!supportMembership) {
-    throwInboxForbidden()
+  if (supportMemberships.length === 0) {
+    return null
   }
 
-  const effectiveRole = asSupportInboxRole(supportMembership.role)
-  if (SUPPORT_ROLE_RANK[effectiveRole] < SUPPORT_ROLE_RANK[minimumRole]) {
-    throwInboxForbidden()
+  let effectiveRole: SupportInboxRole | null = null
+  for (const supportMembership of supportMemberships) {
+    const role = parseSupportInboxRole(supportMembership.role)
+    if (!role) {
+      throwInboxForbidden()
+    }
+    if (!effectiveRole || SUPPORT_ROLE_RANK[role] > SUPPORT_ROLE_RANK[effectiveRole]) {
+      effectiveRole = role
+    }
+  }
+
+  if (!effectiveRole) {
+    return null
   }
   return { effectiveRole, isTeamAdmin: false }
+}
+
+export async function requireSupportTeamRole(
+  teamId: string,
+  userId: string,
+  minimumRole: 'agent' | 'supervisor'
+): Promise<{ effectiveRole: SupportInboxRole; isTeamAdmin: boolean }> {
+  const access = await resolveSupportTeamRole(teamId, userId)
+  if (!access || SUPPORT_ROLE_RANK[access.effectiveRole] < SUPPORT_ROLE_RANK[minimumRole]) {
+    throwInboxForbidden()
+  }
+  return access
 }
 
 /**

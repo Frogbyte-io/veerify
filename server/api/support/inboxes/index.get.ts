@@ -20,6 +20,7 @@ import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import {
   capabilitiesForRole,
+  parseSupportInboxRole,
   requireTeamMembership,
   type SupportInboxRole,
 } from '~/server/utils/support-access'
@@ -53,26 +54,31 @@ export default defineEventHandler(async (event) => {
         .where(and(eq(supportInbox.teamId, query.teamId), eq(supportInboxMember.userId, session.user.id)))
         .orderBy(asc(supportInbox.createdAt))
 
-  const data = inboxes.map((row) => {
-    if (isTeamAdmin) {
-      return {
-        ...row,
-        effectiveRole: 'admin' as SupportInboxRole,
-        isTeamAdmin: true,
-        capabilities: capabilitiesForRole('admin', true),
+  const data = inboxes
+    .map((row) => {
+      if (isTeamAdmin) {
+        return {
+          ...row,
+          effectiveRole: 'admin' as SupportInboxRole,
+          isTeamAdmin: true,
+          capabilities: capabilitiesForRole('admin', true),
+        }
       }
-    }
 
-    const inbox = ('supportInbox' in row ? row.supportInbox : row) as typeof supportInbox.$inferSelect
-    const member = 'supportInboxMember' in row ? row.supportInboxMember : row
-    const effectiveRole = (member as { role?: unknown }).role as SupportInboxRole
-    return {
-      ...inbox,
-      effectiveRole,
-      isTeamAdmin: false,
-      capabilities: capabilitiesForRole(effectiveRole, false),
-    }
-  })
+      const inbox = ('supportInbox' in row ? row.supportInbox : row) as typeof supportInbox.$inferSelect
+      const member = 'supportInboxMember' in row ? row.supportInboxMember : row
+      const effectiveRole = parseSupportInboxRole((member as { role?: unknown }).role)
+      if (!effectiveRole) {
+        return null
+      }
+      return {
+        ...inbox,
+        effectiveRole,
+        isTeamAdmin: false,
+        capabilities: capabilitiesForRole(effectiveRole, false),
+      }
+    })
+    .filter((inbox): inbox is NonNullable<typeof inbox> => inbox !== null)
 
   return createSuccessResponse({ inboxes: data })
 })
