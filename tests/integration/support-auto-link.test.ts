@@ -9,6 +9,7 @@ import { contact, contactLink, supportTeamSettings } from '../../server/database
 import { createAutomaticFeedbackLink } from '../../server/utils/support-auto-link'
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+type ContactMutation = Parameters<typeof db.transaction>[0]
 
 const ids = {
   org: `auto_link_org_${randomUUID()}`,
@@ -113,7 +114,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
 
   async function expectLinkToWaitForMutation(
     feedbackId: string,
-    mutate: (_tx: Tx) => Promise<unknown>,
+    mutate: ContactMutation,
     expected: Pick<Awaited<ReturnType<typeof run>>, 'linked' | 'reason'>
   ) {
     let releaseMutation!: () => void
