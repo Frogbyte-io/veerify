@@ -4,10 +4,11 @@ import { and, eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, team, teamMember, user } from '../../server/database/schema/auth'
 import { project, feedback } from '../../server/database/schema/feedback'
 import { contact, contactLink, supportTeamSettings } from '../../server/database/schema/support'
 import { lockContactTeam } from '../../server/utils/contact-lock'
+import { deleteContactLinkInTransaction } from '../../server/utils/contact-link-transaction'
 import { mergeContactsInTransaction } from '../../server/utils/contact-merge-transaction'
 import { createAutomaticFeedbackLink } from '../../server/utils/support-auto-link'
 
@@ -40,15 +41,16 @@ const ids = {
   user: `auto_link_user_${randomUUID()}`,
   otherTeamUser: `auto_link_other_user_${randomUUID()}`,
   project: `auto_link_project_${randomUUID()}`,
+  otherProject: `auto_link_other_project_${randomUUID()}`,
 }
 
 const now = new Date()
 
-async function addFeedback(authorUserId: string | null = ids.user) {
+async function addFeedback(authorUserId: string | null = ids.user, projectId = ids.project) {
   const id = `auto_link_feedback_${randomUUID()}`
   await db.insert(feedback).values({
     id,
-    projectId: ids.project,
+    projectId,
     title: 'Auto-link integration fixture',
     body: 'Fixture',
     authorUserId,
@@ -139,12 +141,48 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       updatedAt: now,
     })
     await db.insert(team).values([
-      { id: ids.team, name: 'Auto-link team', slug: `auto-link-team-${randomUUID()}`, organizationId: ids.org, createdAt: now, updatedAt: now },
-      { id: ids.otherTeam, name: 'Other team', slug: `auto-link-other-${randomUUID()}`, organizationId: ids.org, createdAt: now, updatedAt: now },
+      {
+        id: ids.team,
+        name: 'Auto-link team',
+        slug: `auto-link-team-${randomUUID()}`,
+        organizationId: ids.org,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: ids.otherTeam,
+        name: 'Other team',
+        slug: `auto-link-other-${randomUUID()}`,
+        organizationId: ids.org,
+        createdAt: now,
+        updatedAt: now,
+      },
     ])
     await db.insert(user).values([
-      { id: ids.user, name: 'Signed-in customer', email: `auto-link-${randomUUID()}@example.com`, createdAt: now, updatedAt: now },
-      { id: ids.otherTeamUser, name: 'Other team customer', email: `auto-link-other-${randomUUID()}@example.com`, createdAt: now, updatedAt: now },
+      {
+        id: ids.user,
+        name: 'Signed-in customer',
+        email: `auto-link-${randomUUID()}@example.com`,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: ids.otherTeamUser,
+        name: 'Other team customer',
+        email: `auto-link-other-${randomUUID()}@example.com`,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
+    await db.insert(teamMember).values([
+      { id: `auto_link_member_${randomUUID()}`, teamId: ids.team, userId: ids.user, role: 'member', createdAt: now },
+      {
+        id: `auto_link_member_${randomUUID()}`,
+        teamId: ids.otherTeam,
+        userId: ids.otherTeamUser,
+        role: 'member',
+        createdAt: now,
+      },
     ])
     await db.insert(project).values({
       id: ids.project,
@@ -156,23 +194,37 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       createdAt: now,
       updatedAt: now,
     })
+    await db.insert(project).values({
+      id: ids.otherProject,
+      organizationId: ids.org,
+      teamId: ids.otherTeam,
+      slug: `auto-link-other-project-${randomUUID()}`,
+      name: 'Other auto-link project',
+      description: 'Fixture',
+      createdAt: now,
+      updatedAt: now,
+    })
   })
 
   afterAll(async () => {
     await db.delete(contactLink).where(sql`${contactLink.entityId} like ${'auto_link_feedback_%'}`)
-    await db.delete(feedback).where(eq(feedback.projectId, ids.project))
+    await db.delete(feedback).where(sql`${feedback.projectId} in (${ids.project}, ${ids.otherProject})`)
     await db.delete(contact).where(sql`${contact.id} like ${'auto_link_contact_%'}`)
     await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, ids.team))
+    await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, ids.otherTeam))
     await db.delete(project).where(eq(project.id, ids.project))
+    await db.delete(project).where(eq(project.id, ids.otherProject))
+    await db.delete(teamMember).where(sql`${teamMember.userId} in (${ids.user}, ${ids.otherTeamUser})`)
     await db.delete(user).where(sql`${user.id} in (${ids.user}, ${ids.otherTeamUser})`)
     await db.delete(organization).where(eq(organization.id, ids.org))
   })
 
   beforeEach(async () => {
     await db.delete(contactLink).where(sql`${contactLink.entityId} like ${'auto_link_feedback_%'}`)
-    await db.delete(feedback).where(eq(feedback.projectId, ids.project))
+    await db.delete(feedback).where(sql`${feedback.projectId} in (${ids.project}, ${ids.otherProject})`)
     await db.delete(contact).where(sql`${contact.id} like ${'auto_link_contact_%'}`)
     await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, ids.team))
+    await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, ids.otherTeam))
   })
 
   async function createContact(values: Partial<typeof contact.$inferInsert> = {}) {
@@ -188,7 +240,10 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await db
       .insert(supportTeamSettings)
       .values({ teamId: ids.team, autoLinkFeedback: enabled, createdAt: now, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: supportTeamSettings.teamId, set: { autoLinkFeedback: enabled, updatedAt: new Date() } })
+      .onConflictDoUpdate({
+        target: supportTeamSettings.teamId,
+        set: { autoLinkFeedback: enabled, updatedAt: new Date() },
+      })
   }
 
   async function run(
@@ -202,6 +257,24 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
         await observeBackendPid(Number(result.rows[0]?.pid))
       }
       return createAutomaticFeedbackLink(tx, { teamId: ids.team, feedbackId, authorUserId, createdAt: new Date() })
+    })
+  }
+
+  async function runForTeam(
+    teamId: string,
+    feedbackId: string,
+    authorUserId: string | null,
+    observeBackendPid?: BackendPidObserver,
+    holdAfterLink?: Promise<void>
+  ) {
+    return db.transaction(async (tx: Tx) => {
+      if (observeBackendPid) {
+        const result = await tx.execute(sql`select pg_backend_pid() as pid`)
+        await observeBackendPid(Number(result.rows[0]?.pid))
+      }
+      const result = await createAutomaticFeedbackLink(tx, { teamId, feedbackId, authorUserId, createdAt: new Date() })
+      if (holdAfterLink) await holdAfterLink
+      return result
     })
   }
 
@@ -349,7 +422,12 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       { linked: true, contactId: active.id, reason: 'linked' },
       { linked: true, contactId: active.id, reason: 'linked' },
     ])
-    expect(await db.select().from(contactLink).where(and(eq(contactLink.contactId, active.id), eq(contactLink.entityId, id)))).toHaveLength(1)
+    expect(
+      await db
+        .select()
+        .from(contactLink)
+        .where(and(eq(contactLink.contactId, active.id), eq(contactLink.entityId, id)))
+    ).toHaveLength(1)
   })
 
   it('waits for a concurrent block before linking a contact', async () => {
@@ -389,7 +467,10 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       { linked: false, reason: 'none' }
     )
 
-    const [mergedLoser] = await db.select({ mergedIntoContactId: contact.mergedIntoContactId }).from(contact).where(eq(contact.id, active.id))
+    const [mergedLoser] = await db
+      .select({ mergedIntoContactId: contact.mergedIntoContactId })
+      .from(contact)
+      .where(eq(contact.id, active.id))
     expect(mergedLoser?.mergedIntoContactId).toBe(survivor.id)
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
@@ -463,15 +544,167 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await expect(linkFor(id)).resolves.toMatchObject({ contactId: survivor.id })
   })
 
+  it('serializes unlink behind an auto-link transaction', async () => {
+    await setEnabled(true)
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+    const [existingLink] = await db
+      .insert(contactLink)
+      .values({
+        id: randomUUID(),
+        contactId: active.id,
+        entityType: 'feedback',
+        entityId: id,
+        source: 'agent',
+        createdByUserId: ids.user,
+        createdAt: new Date(),
+      })
+      .returning({ id: contactLink.id })
+
+    let releaseAutoLink!: () => void
+    let autoLinkReady!: () => void
+    const autoLinkReleased = new Promise<void>((resolve) => {
+      releaseAutoLink = resolve
+    })
+    const autoLinkStarted = new Promise<void>((resolve) => {
+      autoLinkReady = resolve
+    })
+    const autoLinkAttempt = db.transaction(async (tx: Tx) => {
+      const result = await createAutomaticFeedbackLink(tx, {
+        teamId: ids.team,
+        feedbackId: id,
+        authorUserId: ids.user,
+        createdAt: new Date(),
+      })
+      autoLinkReady()
+      await autoLinkReleased
+      return result
+    })
+    await autoLinkStarted
+
+    expect(existingLink).toBeTruthy()
+
+    let unlinkAttempt!: Promise<unknown>
+    const unlinkPidReady = new Promise<number>((resolve) => {
+      unlinkAttempt = db.transaction(async (tx: Tx) => {
+        const result = await tx.execute(sql`select pg_backend_pid() as pid`)
+        resolve(Number(result.rows[0]?.pid))
+        return deleteContactLinkInTransaction(tx, active.id, existingLink.id, ids.user)
+      })
+    })
+    const unlinkPid = await unlinkPidReady
+    const observer = makePgClient()
+    await observer.connect()
+    try {
+      await expect(waitForBackendLock(observer, unlinkPid)).resolves.toMatchObject({
+        wait_event_type: 'Lock',
+        blocker_team_lock: true,
+      })
+    } finally {
+      releaseAutoLink()
+      await Promise.allSettled([autoLinkAttempt, unlinkAttempt])
+      await observer.end()
+    }
+
+    await expect(unlinkAttempt).resolves.toMatchObject({ deleted: true })
+    await expect(autoLinkAttempt).resolves.toMatchObject({ linked: true, contactId: active.id })
+    await expect(linkFor(id)).resolves.toBeUndefined()
+  })
+
+  it('does not delete a link repointed by a concurrent merge', async () => {
+    await setEnabled(true)
+    const survivor = await createContact({ userId: null })
+    const loser = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+    const [existingLink] = await db
+      .insert(contactLink)
+      .values({
+        id: randomUUID(),
+        contactId: loser.id,
+        entityType: 'feedback',
+        entityId: id,
+        source: 'agent',
+        createdByUserId: ids.user,
+        createdAt: new Date(),
+      })
+      .returning({ id: contactLink.id })
+
+    let releaseMerge!: () => void
+    let mergeReady!: () => void
+    const mergeReleased = new Promise<void>((resolve) => {
+      releaseMerge = resolve
+    })
+    const mergeStarted = new Promise<void>((resolve) => {
+      mergeReady = resolve
+    })
+    const mergeAttempt = db.transaction(async (tx: Tx) => {
+      const result = await mergeContactsInTransaction(tx, survivor.id, loser.id)
+      mergeReady()
+      await mergeReleased
+      return result
+    })
+    await mergeStarted
+
+    let unlinkAttempt!: Promise<unknown>
+    const unlinkPidReady = new Promise<number>((resolve) => {
+      unlinkAttempt = db.transaction(async (tx: Tx) => {
+        const result = await tx.execute(sql`select pg_backend_pid() as pid`)
+        resolve(Number(result.rows[0]?.pid))
+        return deleteContactLinkInTransaction(tx, loser.id, existingLink.id, ids.user)
+      })
+    })
+    const unlinkPid = await unlinkPidReady
+    const observer = makePgClient()
+    await observer.connect()
+    try {
+      await expect(waitForBackendLock(observer, unlinkPid)).resolves.toMatchObject({
+        wait_event_type: 'Lock',
+        blocker_team_lock: true,
+      })
+    } finally {
+      releaseMerge()
+      await Promise.allSettled([mergeAttempt, unlinkAttempt])
+      await observer.end()
+    }
+
+    await expect(unlinkAttempt).rejects.toMatchObject({ statusCode: 404 })
+    await expect(mergeAttempt).resolves.toMatchObject({ loser: { id: loser.id } })
+    await expect(linkFor(id)).resolves.toMatchObject({ contactId: survivor.id })
+  })
+
+  it('preserves contact and link 404/403 semantics during unlink authorization', async () => {
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+    const [link] = await db
+      .insert(contactLink)
+      .values({
+        id: randomUUID(),
+        contactId: active.id,
+        entityType: 'feedback',
+        entityId: id,
+        source: 'agent',
+        createdByUserId: ids.user,
+        createdAt: new Date(),
+      })
+      .returning({ id: contactLink.id })
+
+    await expect(
+      db.transaction((tx) => deleteContactLinkInTransaction(tx, active.id, link.id, ids.otherTeamUser))
+    ).rejects.toMatchObject({ statusCode: 403 })
+    await expect(
+      db.transaction((tx) => deleteContactLinkInTransaction(tx, 'missing-contact', link.id, ids.user))
+    ).rejects.toMatchObject({ statusCode: 404 })
+    await expect(linkFor(id)).resolves.toMatchObject({ id: link.id })
+  })
+
   it('waits for a concurrent delete before linking a contact', async () => {
     await setEnabled(true)
     const active = await createContact({ userId: ids.user })
     const id = await addFeedback()
-    await expectLinkToWaitForMutation(
-      id,
-      (tx) => tx.delete(contact).where(eq(contact.id, active.id)),
-      { linked: false, reason: 'none' }
-    )
+    await expectLinkToWaitForMutation(id, (tx) => tx.delete(contact).where(eq(contact.id, active.id)), {
+      linked: false,
+      reason: 'none',
+    })
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
 
@@ -481,14 +714,15 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     const id = await addFeedback()
     await expectLinkToWaitForMutation(
       id,
-      (tx) => tx.insert(contact).values({
-        id: `auto_link_contact_${randomUUID()}`,
-        teamId: ids.team,
-        userId: ids.user,
-        name: 'Concurrent second match',
-        createdAt: now,
-        updatedAt: now,
-      }),
+      (tx) =>
+        tx.insert(contact).values({
+          id: `auto_link_contact_${randomUUID()}`,
+          teamId: ids.team,
+          userId: ids.user,
+          name: 'Concurrent second match',
+          createdAt: now,
+          updatedAt: now,
+        }),
       { linked: false, reason: 'ambiguous' }
     )
     await expect(linkFor(id)).resolves.toBeUndefined()
@@ -512,5 +746,62 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
 
     await expect(linkFor(id)).resolves.toBeUndefined()
     expect(active.id).toBeTruthy()
+  })
+
+  it('does not block auto-link work in an unrelated team while this team is locked', async () => {
+    await setEnabled(true)
+    await db
+      .insert(supportTeamSettings)
+      .values({ teamId: ids.otherTeam, autoLinkFeedback: true, createdAt: now, updatedAt: now })
+    const active = await db
+      .insert(contact)
+      .values({
+        id: `auto_link_contact_${randomUUID()}`,
+        teamId: ids.otherTeam,
+        userId: ids.otherTeamUser,
+        name: 'Other team contact',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()
+    const id = await addFeedback(ids.otherTeamUser, ids.otherProject)
+
+    let releaseTeam!: () => void
+    let teamLockReady!: () => void
+    const teamReleased = new Promise<void>((resolve) => {
+      releaseTeam = resolve
+    })
+    const teamStarted = new Promise<void>((resolve) => {
+      teamLockReady = resolve
+    })
+    const teamLock = db.transaction(async (tx: Tx) => {
+      await lockContactTeam(tx, ids.team)
+      teamLockReady()
+      await teamReleased
+    })
+    await teamStarted
+
+    let releaseOther!: () => void
+    const otherReleased = new Promise<void>((resolve) => {
+      releaseOther = resolve
+    })
+    let otherAttempt!: ReturnType<typeof runForTeam>
+    const otherPidReady = new Promise<number>((resolve) => {
+      otherAttempt = runForTeam(ids.otherTeam, id, ids.otherTeamUser, async (pid) => resolve(pid), otherReleased)
+    })
+    const otherPid = await otherPidReady
+    const observer = makePgClient()
+    await observer.connect()
+    try {
+      await waitForHeldTeamLock(observer, otherPid)
+      releaseOther()
+      await expect(otherAttempt).resolves.toMatchObject({ linked: true, contactId: active[0].id })
+    } finally {
+      releaseOther()
+      releaseTeam()
+      await Promise.allSettled([teamLock, otherAttempt])
+      await observer.end()
+    }
+    await expect(linkFor(id)).resolves.toMatchObject({ contactId: active[0].id })
   })
 })

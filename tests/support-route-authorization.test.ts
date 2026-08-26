@@ -63,6 +63,10 @@ const access = vi.hoisted(() => ({
   })),
 }))
 
+const contactLinkTransaction = vi.hoisted(() => ({
+  deleteContactLinkInTransaction: vi.fn(async () => ({ deleted: true })),
+}))
+
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
 vi.stubGlobal('getRouterParam', (_event: unknown, name: string) => state.params[name as keyof typeof state.params])
 vi.stubGlobal('getQuery', () => state.query)
@@ -94,6 +98,8 @@ vi.mock('~/server/utils/team-context', () => ({
 }))
 
 vi.mock('~/server/utils/support-access', () => access)
+
+vi.mock('~/server/utils/contact-link-transaction', () => contactLinkTransaction)
 
 vi.mock('~/server/services/support-channels', () => ({
   SUPPORT_CHANNEL_PROVIDERS: ['postmark', 'mailgun'],
@@ -555,12 +561,6 @@ const executableBoundaryCases: BoundaryCase[] = [
     }),
   },
   {
-    name: 'contacts/[id]/links/[linkId].delete',
-    ...boundary(contactLinkDelete, 'requireContactAccess', ['contact-1', 'user-1'], {
-      params: { id: 'contact-1', linkId: 'link-1' },
-    }),
-  },
-  {
     name: 'companies/index.get',
     ...boundary(companyList, 'requireTeamMembership', ['team-1', 'user-1'], { query: { teamId: 'team-1' } }),
   },
@@ -695,7 +695,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(46)
+    expect(executableBoundaryCases).toHaveLength(45)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}
@@ -716,10 +716,24 @@ describe('executable support route authorization inventory', () => {
     }
   })
 
+  it('authorizes link deletion inside its transaction boundary', async () => {
+    state.params = { ...state.params, id: 'contact-1', linkId: 'link-1' }
+    contactLinkTransaction.deleteContactLinkInTransaction.mockImplementationOnce(() => forbidden())
+
+    await expect(contactLinkDelete(event)).rejects.toMatchObject({ statusCode: 403 })
+    expect(contactLinkTransaction.deleteContactLinkInTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      'contact-1',
+      'link-1',
+      'user-1'
+    )
+  })
+
   it('matches every support route file to one executable or explicit boundary case', () => {
     const routeFiles = collectSupportRouteFiles(resolve(process.cwd(), 'server/api/support')).sort()
     const inventoryEntries = [
       ...executableBoundaryCases.map((route) => route.name),
+      'contacts/[id]/links/[linkId].delete',
       'channel-status.get',
       'inbound/[provider].post',
       'delivery/[provider].post',
