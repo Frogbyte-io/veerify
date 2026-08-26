@@ -24,6 +24,7 @@ import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactLink } from '~/server/database/schema/support'
 import { feedback, project } from '~/server/database/schema/feedback'
+import { lockContactTeam } from '~/server/utils/contact-lock'
 
 const bodySchema = z.object({
   entityType: z.literal('feedback'),
@@ -38,6 +39,8 @@ export default defineEventHandler(async (event) => {
 
   try {
     return await db.transaction(async (tx) => {
+      await lockContactTeam(tx, accessibleContact.teamId)
+
       const [lockedContact] = await tx
         .select({ id: contact.id, teamId: contact.teamId })
         .from(contact)

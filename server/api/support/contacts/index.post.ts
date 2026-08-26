@@ -21,6 +21,7 @@ import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, supportCompany } from '~/server/database/schema/support'
+import { lockContactTeam } from '~/server/utils/contact-lock'
 
 const bodySchema = z.object({
   teamId: z.string().min(1),
@@ -45,6 +46,8 @@ export default defineEventHandler(async (event) => {
     // contact cannot be resolved from an inbound message, which is the only way
     // contacts get matched. Doing it in one transaction avoids that orphan state.
     return await db.transaction(async (tx) => {
+      await lockContactTeam(tx, body.teamId)
+
       if (body.companyId) {
         const [company] = await tx
           .select({ id: supportCompany.id })

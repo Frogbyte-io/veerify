@@ -21,6 +21,7 @@ import { requireTeamAdmin } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportTeamSettings } from '~/server/database/schema/support'
+import { lockContactTeam } from '~/server/utils/contact-lock'
 
 const bodySchema = z.object({ autoLinkFeedback: z.boolean() })
 
@@ -31,14 +32,20 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, bodySchema)
   const now = new Date()
 
-  const [settings] = await db
-    .insert(supportTeamSettings)
-    .values({ teamId, autoLinkFeedback: body.autoLinkFeedback, createdAt: now, updatedAt: now })
-    .onConflictDoUpdate({
-      target: supportTeamSettings.teamId,
-      set: { autoLinkFeedback: body.autoLinkFeedback, updatedAt: now },
-    })
-    .returning()
+  const settings = await db.transaction(async (tx) => {
+    await lockContactTeam(tx, teamId)
+
+    const [updated] = await tx
+      .insert(supportTeamSettings)
+      .values({ teamId, autoLinkFeedback: body.autoLinkFeedback, createdAt: now, updatedAt: now })
+      .onConflictDoUpdate({
+        target: supportTeamSettings.teamId,
+        set: { autoLinkFeedback: body.autoLinkFeedback, updatedAt: now },
+      })
+      .returning()
+
+    return updated
+  })
 
   return createSuccessResponse({ settings })
 })

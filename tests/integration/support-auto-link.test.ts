@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { Client } from 'pg'
 import { and, eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
@@ -6,10 +7,31 @@ import { db } from '../../server/database/drizzle'
 import { organization, team, user } from '../../server/database/schema/auth'
 import { project, feedback } from '../../server/database/schema/feedback'
 import { contact, contactLink, supportTeamSettings } from '../../server/database/schema/support'
+import { lockContactTeam } from '../../server/utils/contact-lock'
+import { mergeContactsInTransaction } from '../../server/utils/contact-merge-transaction'
 import { createAutomaticFeedbackLink } from '../../server/utils/support-auto-link'
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type ContactMutation = Parameters<typeof db.transaction>[0]
+
+/* eslint-disable no-unused-vars */
+type BackendPidObserver = (pid: number) => Promise<void>
+/* eslint-enable no-unused-vars */
+
+function makePgClient() {
+  if (process.env.DATABASE_URL) {
+    return new Client({ connectionString: process.env.DATABASE_URL })
+  }
+
+  return new Client({
+    host: process.env.PGHOST || 'localhost',
+    port: Number(process.env.PGPORT) || 5432,
+    user: process.env.PGUSER || 'veerify',
+    password: process.env.PGPASSWORD || 'veerifypassword',
+    database: process.env.PGDATABASE || 'veerifydb',
+    ssl: false,
+  })
+}
 
 const ids = {
   org: `auto_link_org_${randomUUID()}`,
@@ -42,6 +64,69 @@ async function linkFor(feedbackId: string) {
     .from(contactLink)
     .where(and(eq(contactLink.entityType, 'feedback'), eq(contactLink.entityId, feedbackId)))
   return link
+}
+
+async function waitForBackendLock(client: Client, pid: number, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const result = await client.query<{
+      wait_event_type: string | null
+      wait_event: string | null
+      waiting_on_lock: boolean
+      blocking_pids: number[]
+      blocker_team_lock: boolean
+    }>(
+      `
+        SELECT a.wait_event_type, a.wait_event,
+               EXISTS (
+                 SELECT 1 FROM pg_locks waiting
+                 WHERE waiting.pid = a.pid AND NOT waiting.granted
+               ) AS waiting_on_lock,
+               pg_blocking_pids(a.pid) AS blocking_pids,
+               EXISTS (
+                 SELECT 1
+                 FROM pg_locks held
+                 JOIN pg_class relation ON relation.oid = held.relation
+                 WHERE held.pid = ANY(pg_blocking_pids(a.pid))
+                   AND relation.relname = 'team'
+                   AND held.mode = 'RowShareLock'
+                   AND held.granted
+               ) AS blocker_team_lock
+        FROM pg_stat_activity a
+        WHERE a.pid = $1
+      `,
+      [pid]
+    )
+    const state = result.rows[0]
+    if (state?.wait_event_type === 'Lock' && state.waiting_on_lock && state.blocking_pids.length > 0) return state
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+
+  throw new Error(`backend ${pid} did not reach a PostgreSQL lock wait within ${timeoutMs}ms`)
+}
+
+async function waitForHeldTeamLock(client: Client, pid: number, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const result = await client.query<{ held: boolean }>(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_locks held
+          JOIN pg_class relation ON relation.oid = held.relation
+          WHERE held.pid = $1
+            AND relation.relname = 'team'
+            AND held.mode = 'RowShareLock'
+            AND held.granted
+        ) AS held
+      `,
+      [pid]
+    )
+    if (result.rows[0]?.held) return
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+
+  throw new Error(`backend ${pid} did not hold the team row lock within ${timeoutMs}ms`)
 }
 
 describe('createAutomaticFeedbackLink (real Postgres)', () => {
@@ -106,10 +191,18 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       .onConflictDoUpdate({ target: supportTeamSettings.teamId, set: { autoLinkFeedback: enabled, updatedAt: new Date() } })
   }
 
-  async function run(feedbackId: string, authorUserId: string | null = ids.user) {
-    return db.transaction((tx: Tx) =>
-      createAutomaticFeedbackLink(tx, { teamId: ids.team, feedbackId, authorUserId, createdAt: new Date() })
-    )
+  async function run(
+    feedbackId: string,
+    authorUserId: string | null = ids.user,
+    observeBackendPid?: BackendPidObserver
+  ) {
+    return db.transaction(async (tx: Tx) => {
+      if (observeBackendPid) {
+        const result = await tx.execute(sql`select pg_backend_pid() as pid`)
+        await observeBackendPid(Number(result.rows[0]?.pid))
+      }
+      return createAutomaticFeedbackLink(tx, { teamId: ids.team, feedbackId, authorUserId, createdAt: new Date() })
+    })
   }
 
   async function expectLinkToWaitForMutation(
@@ -126,26 +219,31 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       mutationReady = resolve
     })
     const mutation = db.transaction(async (tx: Tx) => {
+      await lockContactTeam(tx, ids.team)
       await mutate(tx)
       mutationReady()
       await mutationReleased
     })
     await mutationStarted
 
-    const linkAttempt = run(feedbackId)
+    let linkAttempt!: ReturnType<typeof run>
+    const helperStarted = new Promise<number>((resolve) => {
+      linkAttempt = run(feedbackId, ids.user, async (pid) => resolve(pid))
+    })
+    const helperPid = await helperStarted
+    const observer = makePgClient()
+    await observer.connect()
     try {
-      await expect(
-        Promise.race([
-          linkAttempt.then(() => 'completed'),
-          new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), 100)),
-        ])
-      ).resolves.toBe('waiting')
+      await expect(waitForBackendLock(observer, helperPid)).resolves.toMatchObject({
+        wait_event_type: 'Lock',
+        blocker_team_lock: true,
+      })
     } finally {
       releaseMutation()
       await mutation
+      await observer.end()
     }
     await expect(linkAttempt).resolves.toMatchObject(expected)
-    return linkAttempt
   }
 
   it('links only the exact one active same-team user contact', async () => {
@@ -279,6 +377,92 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
 
+  it('serializes auto-link against the actual merge transaction without deadlock', async () => {
+    await setEnabled(true)
+    const survivor = await createContact({ userId: null })
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+
+    await expectLinkToWaitForMutation(
+      id,
+      (tx) => mergeContactsInTransaction(tx, survivor.id, active.id).then(() => undefined),
+      { linked: false, reason: 'none' }
+    )
+
+    const [mergedLoser] = await db.select({ mergedIntoContactId: contact.mergedIntoContactId }).from(contact).where(eq(contact.id, active.id))
+    expect(mergedLoser?.mergedIntoContactId).toBe(survivor.id)
+    await expect(linkFor(id)).resolves.toBeUndefined()
+  })
+
+  it('lets an auto-link holding the team lock yield cleanly to a concurrent merge', async () => {
+    await setEnabled(true)
+    const survivor = await createContact({ userId: null })
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+
+    let releaseConflict!: () => void
+    let conflictReady!: () => void
+    const conflictReleased = new Promise<void>((resolve) => {
+      releaseConflict = resolve
+    })
+    const blockerReady = new Promise<void>((resolve) => {
+      conflictReady = resolve
+    })
+    const blocker = db.transaction(async (tx: Tx) => {
+      await tx.insert(contactLink).values({
+        id: randomUUID(),
+        contactId: active.id,
+        entityType: 'feedback',
+        entityId: id,
+        source: 'agent',
+        createdByUserId: null,
+        createdAt: new Date(),
+      })
+      conflictReady()
+      await conflictReleased
+    })
+    await blockerReady
+
+    let linkAttempt!: ReturnType<typeof run>
+    let mergeAttempt!: Promise<unknown>
+    const observer = makePgClient()
+    await observer.connect()
+    try {
+      const linkPidReady = new Promise<number>((resolve) => {
+        linkAttempt = run(id, ids.user, async (pid) => resolve(pid))
+      })
+      const linkPid = await linkPidReady
+      await waitForHeldTeamLock(observer, linkPid)
+
+      /* eslint-disable no-unused-vars */
+      let mergePidReady!: (value: number) => void
+      /* eslint-enable no-unused-vars */
+      const mergePidPromise = new Promise<number>((resolve) => {
+        mergePidReady = resolve
+      })
+      mergeAttempt = db.transaction(async (tx: Tx) => {
+        const result = await tx.execute(sql`select pg_backend_pid() as pid`)
+        mergePidReady(Number(result.rows[0]?.pid))
+        return mergeContactsInTransaction(tx, survivor.id, active.id)
+      })
+      const mergePid = await mergePidPromise
+      await expect(waitForBackendLock(observer, mergePid)).resolves.toMatchObject({
+        wait_event_type: 'Lock',
+        blocker_team_lock: true,
+      })
+
+      releaseConflict()
+    } finally {
+      releaseConflict()
+      await Promise.allSettled([blocker, linkAttempt, mergeAttempt])
+      await observer.end()
+    }
+
+    await expect(linkAttempt).resolves.toMatchObject({ linked: true, contactId: active.id, reason: 'linked' })
+    await expect(mergeAttempt).resolves.toMatchObject({ loser: { id: active.id } })
+    await expect(linkFor(id)).resolves.toMatchObject({ contactId: survivor.id })
+  })
+
   it('waits for a concurrent delete before linking a contact', async () => {
     await setEnabled(true)
     const active = await createContact({ userId: ids.user })
@@ -307,6 +491,25 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       }),
       { linked: false, reason: 'ambiguous' }
     )
+    await expect(linkFor(id)).resolves.toBeUndefined()
+    expect(active.id).toBeTruthy()
+  })
+
+  it('observes a committed settings disable before a waiting auto-link can link', async () => {
+    await setEnabled(true)
+    const active = await createContact({ userId: ids.user })
+    const id = await addFeedback()
+
+    await expectLinkToWaitForMutation(
+      id,
+      (tx) =>
+        tx
+          .update(supportTeamSettings)
+          .set({ autoLinkFeedback: false, updatedAt: new Date() })
+          .where(eq(supportTeamSettings.teamId, ids.team)),
+      { linked: false, reason: 'disabled' }
+    )
+
     await expect(linkFor(id)).resolves.toBeUndefined()
     expect(active.id).toBeTruthy()
   })

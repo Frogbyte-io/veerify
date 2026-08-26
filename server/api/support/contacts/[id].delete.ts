@@ -24,18 +24,22 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireContactAccess } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { contact } from '~/server/database/schema/support'
+import { lockContactTeam } from '~/server/utils/contact-lock'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const contactId = getRouterParam(event, 'id') as string
 
-  await requireContactAccess(contactId, session.user.id)
+  const accessibleContact = await requireContactAccess(contactId, session.user.id)
 
   // contactIdentity and contactLink cascade. Feedback rows are untouched by
   // construction: contactLink references them loosely by (entityType, entityId)
   // with no foreign key, so an erasure request against a contact removes the
   // contact and its links, and leaves public feedback exactly as submitted.
-  await db.delete(contact).where(eq(contact.id, contactId))
+  await db.transaction(async (tx) => {
+    await lockContactTeam(tx, accessibleContact.teamId)
+    await tx.delete(contact).where(eq(contact.id, contactId))
+  })
 
   return createSuccessResponse({ deleted: true })
 })

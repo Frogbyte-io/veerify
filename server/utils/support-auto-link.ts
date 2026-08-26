@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { contact, contactLink, supportTeamSettings } from '~/server/database/schema/support'
 import { feedback, project } from '~/server/database/schema/feedback'
+import { lockContactTeam } from '~/server/utils/contact-lock'
 
 type Transaction = Parameters<Parameters<typeof import('~/server/database/drizzle').db.transaction>[0]>[0]
 
@@ -20,6 +21,11 @@ export async function createAutomaticFeedbackLink(
   if (!params.authorUserId) {
     return { linked: false, contactId: null, reason: 'anonymous' }
   }
+
+  // The team lock is the linearization point for the feedback policy and the
+  // contact candidate lifecycle. Settings updates take this same lock before
+  // committing, so a disable that commits first is observed as disabled here.
+  await lockContactTeam(tx, params.teamId)
 
   const [settings] = await tx
     .select({ autoLinkFeedback: supportTeamSettings.autoLinkFeedback })
@@ -41,13 +47,6 @@ export async function createAutomaticFeedbackLink(
   if (!feedbackInTeam) {
     return { linked: false, contactId: null, reason: 'none' }
   }
-
-  // Contact writes take ROW EXCLUSIVE table locks. A SHARE table lock makes
-  // the candidate query and the link insert one serialized lifecycle: a
-  // block, merge, delete, or new matching contact that already started waits
-  // for this transaction, rather than changing the decision after the query.
-  // Concurrent auto-link reads remain compatible because SHARE locks coexist.
-  await tx.execute(sql`LOCK TABLE "contact" IN SHARE MODE`)
 
   const matches = await tx
     .select({ id: contact.id })
