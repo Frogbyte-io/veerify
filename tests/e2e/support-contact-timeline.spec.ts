@@ -100,6 +100,23 @@ test.describe.serial('support contact timeline', () => {
       const initial = (await timeline.json()).data
       expect(initial.linked).toEqual([])
       expect(initial.probableFeedback.map((item: { id: string }) => item.id)).toEqual([ownFeedbackId])
+      expect(initial).toMatchObject({
+        linkedHasMore: false,
+        linkedNextCursor: null,
+        probableHasMore: false,
+        probableNextCursor: null,
+      })
+
+      const independentlyPaged = await request.get(`/api/support/contacts/${contactId}/timeline?limit=1`, {
+        headers: withAuthHeaders(sessionCookie),
+      })
+      expect(independentlyPaged.ok()).toBeTruthy()
+      expect((await independentlyPaged.json()).data).toMatchObject({
+        linked: [],
+        probableFeedback: [expect.objectContaining({ id: ownFeedbackId })],
+        linkedHasMore: false,
+        probableHasMore: false,
+      })
 
       const crossTenant = await request.post(`/api/support/contacts/${contactId}/links`, {
         headers: withAuthHeaders(sessionCookie),
@@ -128,6 +145,12 @@ test.describe.serial('support contact timeline', () => {
       const linkedPayload = (await linkedTimeline.json()).data
       expect(linkedPayload.linked).toHaveLength(1)
       expect(linkedPayload.probableFeedback).toEqual([])
+      expect(linkedPayload).toMatchObject({
+        linkedHasMore: false,
+        linkedNextCursor: null,
+        probableHasMore: false,
+        probableNextCursor: null,
+      })
 
       const defaultSettings = await request.get(`/api/support/teams/${teamId}/settings`, {
         headers: withAuthHeaders(sessionCookie),

@@ -83,8 +83,12 @@
                 <span class="text-xs text-muted-foreground">Linked feedback, whether automatic or confirmed by an agent.</span>
               </div>
 
-              <div v-if="isTimelineLoading" class="space-y-2">
+              <div v-if="linkedLoading" class="space-y-2">
                 <Skeleton class="h-12 w-full" />
+              </div>
+              <div v-else-if="linkedError" class="space-y-2">
+                <p class="text-sm text-destructive">{{ linkedError }}</p>
+                <Button variant="outline" size="sm" @click="loadLinked(true)">Try again</Button>
               </div>
               <p v-else-if="linked.length === 0" class="text-sm text-muted-foreground">No linked feedback yet.</p>
               <div v-else class="space-y-2">
@@ -107,13 +111,21 @@
                   </Button>
                 </div>
               </div>
+              <div v-if="linkedHasMore" class="pt-2">
+                <Button variant="outline" size="sm" :disabled="linkedMoreLoading" @click="loadLinked(false)">
+                  <Icon v-if="linkedMoreLoading" name="lucide:loader-2" class="w-4 h-4 mr-1.5 animate-spin" />
+                  {{ linkedMoreLoading ? 'Loading linked feedback…' : 'Load more linked feedback' }}
+                </Button>
+                <p v-if="linkedMoreError" class="mt-2 text-sm text-destructive">{{ linkedMoreError }}</p>
+                <Button v-if="linkedMoreError" variant="ghost" size="sm" @click="loadLinked(false)">Try again</Button>
+              </div>
             </div>
 
             <!-- Deliberately distinct styling: possible matches are a heuristic
                  suggestion, never a confirmed identity. Mixing this with the
                  Linked section visually would misrepresent a guess as fact. -->
             <div
-              v-if="probableFeedback.length > 0"
+              v-if="probableFeedback.length > 0 || probableLoading || probableError"
               class="rounded-lg border border-dashed border-amber-400/60 bg-amber-500/5 p-4"
             >
               <div class="flex items-center gap-2 mb-1">
@@ -124,7 +136,12 @@
                 Feedback submitted with a matching email or account — not confirmed. Link the ones that belong to this
                 contact.
               </p>
-              <div class="space-y-2">
+              <div v-if="probableLoading" class="space-y-2"><Skeleton class="h-12 w-full" /></div>
+              <div v-else-if="probableError" class="space-y-2">
+                <p class="text-sm text-destructive">{{ probableError }}</p>
+                <Button variant="outline" size="sm" @click="loadProbable(true)">Try again</Button>
+              </div>
+              <div v-else class="space-y-2">
                 <div
                   v-for="feedback in probableFeedback"
                   :key="feedback.id"
@@ -144,6 +161,14 @@
                     Link
                   </Button>
                 </div>
+              </div>
+              <div v-if="probableHasMore" class="pt-2">
+                <Button variant="outline" size="sm" :disabled="probableMoreLoading" @click="loadProbable(false)">
+                  <Icon v-if="probableMoreLoading" name="lucide:loader-2" class="w-4 h-4 mr-1.5 animate-spin" />
+                  {{ probableMoreLoading ? 'Loading possible matches…' : 'Load more possible matches' }}
+                </Button>
+                <p v-if="probableMoreError" class="mt-2 text-sm text-destructive">{{ probableMoreError }}</p>
+                <Button v-if="probableMoreError" variant="ghost" size="sm" @click="loadProbable(false)">Try again</Button>
               </div>
             </div>
           </CardContent>
@@ -209,7 +234,18 @@ export default {
       linked: [],
       probableFeedback: [],
       isLoading: true,
-      isTimelineLoading: true,
+      linkedLoading: true,
+      probableLoading: true,
+      linkedMoreLoading: false,
+      probableMoreLoading: false,
+      linkedHasMore: false,
+      probableHasMore: false,
+      linkedNextCursor: null,
+      probableNextCursor: null,
+      linkedError: null,
+      probableError: null,
+      linkedMoreError: null,
+      probableMoreError: null,
       error: null,
       linkingId: null,
 
@@ -252,18 +288,62 @@ export default {
     },
 
     async loadTimeline() {
-      this.isTimelineLoading = true
+      await Promise.all([this.loadLinked(true), this.loadProbable(true)])
+    },
+
+    async loadLinked(reset) {
+      if (reset) {
+        this.linkedLoading = true
+        this.linkedError = null
+        this.linkedMoreError = null
+        this.linkedNextCursor = null
+        this.linkedHasMore = false
+      } else {
+        this.linkedMoreLoading = true
+        this.linkedMoreError = null
+      }
       try {
-        const response = await $fetch(`/api/support/contacts/${this.contactId()}/timeline`)
-        this.linked = response?.data?.linked || []
-        this.probableFeedback = response?.data?.probableFeedback || []
+        const response = await $fetch(`/api/support/contacts/${this.contactId()}/timeline`, {
+          params: { limit: 25, linkedCursor: reset ? undefined : this.linkedNextCursor || undefined },
+        })
+        const page = response?.data || {}
+        this.linked = reset ? page.linked || [] : [...this.linked, ...(page.linked || [])]
+        this.linkedHasMore = Boolean(page.linkedHasMore)
+        this.linkedNextCursor = page.linkedNextCursor || null
       } catch {
-        // The header still loaded successfully; leave the timeline empty
-        // rather than blocking the whole page on a secondary failure.
-        this.linked = []
-        this.probableFeedback = []
+        if (reset) this.linkedError = 'Could not load linked feedback. Please try again.'
+        else this.linkedMoreError = 'Could not load more linked feedback.'
       } finally {
-        this.isTimelineLoading = false
+        if (reset) this.linkedLoading = false
+        else this.linkedMoreLoading = false
+      }
+    },
+
+    async loadProbable(reset) {
+      if (reset) {
+        this.probableLoading = true
+        this.probableError = null
+        this.probableMoreError = null
+        this.probableNextCursor = null
+        this.probableHasMore = false
+      } else {
+        this.probableMoreLoading = true
+        this.probableMoreError = null
+      }
+      try {
+        const response = await $fetch(`/api/support/contacts/${this.contactId()}/timeline`, {
+          params: { limit: 25, probableCursor: reset ? undefined : this.probableNextCursor || undefined },
+        })
+        const page = response?.data || {}
+        this.probableFeedback = reset ? page.probableFeedback || [] : [...this.probableFeedback, ...(page.probableFeedback || [])]
+        this.probableHasMore = Boolean(page.probableHasMore)
+        this.probableNextCursor = page.probableNextCursor || null
+      } catch {
+        if (reset) this.probableError = 'Could not load possible matches. Please try again.'
+        else this.probableMoreError = 'Could not load more possible matches.'
+      } finally {
+        if (reset) this.probableLoading = false
+        else this.probableMoreLoading = false
       }
     },
 

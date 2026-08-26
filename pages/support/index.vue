@@ -105,13 +105,25 @@
       :error="contactPanelError"
       :linked="timelineLinked"
       :probable-feedback="timelineProbableFeedback"
-      :timeline-loading="timelineLoading"
+      :linked-loading="timelineLinkedLoading"
+      :probable-loading="timelineProbableLoading"
+      :linked-more-loading="timelineLinkedMoreLoading"
+      :probable-more-loading="timelineProbableMoreLoading"
+      :linked-has-more="timelineLinkedHasMore"
+      :probable-has-more="timelineProbableHasMore"
+      :linked-error="timelineLinkedError"
+      :probable-error="timelineProbableError"
+      :linked-more-error="timelineLinkedMoreError"
+      :probable-more-error="timelineProbableMoreError"
       :previous-conversations="previousConversations"
       :previous-conversations-loading="previousConversationsLoading"
       :linking-id="linkingFeedbackId"
       @update:open="showContactPanel = $event"
       @retry="loadContactPanel"
       @link-feedback="linkFeedback"
+      @unlink-feedback="unlinkFeedback"
+      @load-linked="(reset) => loadTimelineSection('linked', reset)"
+      @load-probable="(reset) => loadTimelineSection('probable', reset)"
       @select-conversation="selectConversation"
     />
   </NuxtLayout>
@@ -169,7 +181,18 @@ export default {
       contactPanelError: null,
       timelineLinked: [],
       timelineProbableFeedback: [],
-      timelineLoading: false,
+      timelineLinkedLoading: false,
+      timelineProbableLoading: false,
+      timelineLinkedMoreLoading: false,
+      timelineProbableMoreLoading: false,
+      timelineLinkedHasMore: false,
+      timelineProbableHasMore: false,
+      timelineLinkedCursor: null,
+      timelineProbableCursor: null,
+      timelineLinkedError: null,
+      timelineProbableError: null,
+      timelineLinkedMoreError: null,
+      timelineProbableMoreError: null,
       previousConversations: [],
       previousConversationsLoading: false,
       linkingFeedbackId: null,
@@ -682,6 +705,18 @@ export default {
       this.contactPanelError = null
       this.timelineLinked = []
       this.timelineProbableFeedback = []
+      this.timelineLinkedLoading = false
+      this.timelineProbableLoading = false
+      this.timelineLinkedMoreLoading = false
+      this.timelineProbableMoreLoading = false
+      this.timelineLinkedHasMore = false
+      this.timelineProbableHasMore = false
+      this.timelineLinkedCursor = null
+      this.timelineProbableCursor = null
+      this.timelineLinkedError = null
+      this.timelineProbableError = null
+      this.timelineLinkedMoreError = null
+      this.timelineProbableMoreError = null
       this.previousConversations = []
     },
 
@@ -719,21 +754,61 @@ export default {
 
     async loadTimeline(contactId, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
       if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
-      this.timelineLoading = true
+      this.timelineLinkedCursor = null
+      this.timelineProbableCursor = null
+      await Promise.all([
+        this.loadTimelineSection('linked', true, { contactId, generation, teamId, inboxId, conversationId }),
+        this.loadTimelineSection('probable', true, { contactId, generation, teamId, inboxId, conversationId }),
+      ])
+    },
+
+    async loadTimelineSection(section, reset, { contactId = this.contactPanelContact?.id, generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
+      if (!contactId || !this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+      const linked = section === 'linked'
+      const loadingKey = linked ? 'timelineLinkedLoading' : 'timelineProbableLoading'
+      const moreLoadingKey = linked ? 'timelineLinkedMoreLoading' : 'timelineProbableMoreLoading'
+      const errorKey = linked ? 'timelineLinkedError' : 'timelineProbableError'
+      const moreErrorKey = linked ? 'timelineLinkedMoreError' : 'timelineProbableMoreError'
+      const cursorKey = linked ? 'timelineLinkedCursor' : 'timelineProbableCursor'
+      const hasMoreKey = linked ? 'timelineLinkedHasMore' : 'timelineProbableHasMore'
+      if (reset) {
+        this[loadingKey] = true
+        this[errorKey] = null
+        this[moreErrorKey] = null
+        this[cursorKey] = null
+        this[hasMoreKey] = false
+      } else {
+        this[moreLoadingKey] = true
+        this[moreErrorKey] = null
+      }
       try {
-        const response = await $fetch(`/api/support/contacts/${contactId}/timeline`)
+        const response = await $fetch(`/api/support/contacts/${contactId}/timeline`, {
+          params: { limit: 25, [linked ? 'linkedCursor' : 'probableCursor']: reset ? undefined : this[cursorKey] || undefined },
+        })
         if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
-        this.timelineLinked = response?.data?.linked || []
-        this.timelineProbableFeedback = response?.data?.probableFeedback || []
+        const page = response?.data || {}
+        if (linked) {
+          this.timelineLinked = reset ? page.linked || [] : [...this.timelineLinked, ...(page.linked || [])]
+          this.timelineLinkedHasMore = Boolean(page.linkedHasMore)
+          this.timelineLinkedCursor = page.linkedNextCursor || null
+        } else {
+          this.timelineProbableFeedback = reset ? page.probableFeedback || [] : [...this.timelineProbableFeedback, ...(page.probableFeedback || [])]
+          this.timelineProbableHasMore = Boolean(page.probableHasMore)
+          this.timelineProbableCursor = page.probableNextCursor || null
+        }
       } catch (error) {
-        if (this.isForbiddenError(error) && this.isCurrentConversation(generation, teamId, inboxId, conversationId))
+        if (this.isForbiddenError(error) && this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {
           await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+        }
         if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {
-          this.timelineLinked = []
-          this.timelineProbableFeedback = []
+          this[reset ? errorKey : moreErrorKey] = linked
+            ? reset ? 'Could not load linked feedback. Please try again.' : 'Could not load more linked feedback.'
+            : reset ? 'Could not load possible matches. Please try again.' : 'Could not load more possible matches.'
         }
       } finally {
-        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.timelineLoading = false
+        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {
+          this[reset ? loadingKey : moreLoadingKey] = false
+        }
       }
     },
 
@@ -783,6 +858,27 @@ export default {
         // Leave the possible-match row visible so the agent can retry.
       } finally {
         if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.linkingFeedbackId = null
+      }
+    },
+
+    async unlinkFeedback(linkId) {
+      const contactId = this.contactPanelContact?.id
+      if (!contactId) return
+      const generation = this.contextGeneration
+      const teamId = this.activeTeamId
+      const inboxId = this.activeInboxId
+      const conversationId = this.selectedConversationId
+      if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+
+      try {
+        await $fetch(`/api/support/contacts/${contactId}/links/${linkId}`, { method: 'DELETE' })
+        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {
+          await this.loadTimeline(contactId, { generation, teamId, inboxId, conversationId })
+        }
+      } catch (error) {
+        if (this.isForbiddenError(error) && this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+        }
       }
     },
 

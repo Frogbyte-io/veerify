@@ -109,14 +109,39 @@
               <Icon name="lucide:link" class="w-3.5 h-3.5 text-foreground" />
               <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Linked feedback</h3>
             </div>
-            <div v-if="timelineLoading" class="space-y-2">
+            <div v-if="linkedLoading" class="space-y-2">
               <Skeleton class="h-10 w-full" />
+            </div>
+            <div v-else-if="linkedError" class="space-y-2">
+              <p class="text-sm text-destructive">{{ linkedError }}</p>
+              <Button variant="outline" size="sm" @click="$emit('load-linked', true)">Try again</Button>
             </div>
             <p v-else-if="linked.length === 0" class="text-sm text-muted-foreground">No linked feedback yet.</p>
             <div v-else class="space-y-1.5">
-              <div v-for="link in linked" :key="link.id" class="rounded-md border bg-card px-2.5 py-2 text-sm truncate">
-                {{ link.entityType }}: {{ link.entityId }}
+              <div v-for="link in linked" :key="link.id" class="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-2 text-sm">
+                <div class="flex min-w-0 items-center gap-1.5">
+                  <span class="truncate">{{ link.entityType }}: {{ link.entityId }}</span>
+                  <Badge v-if="link.source === 'auto'" variant="secondary" class="shrink-0 text-[10px]">
+                    Automatically linked
+                  </Badge>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="shrink-0"
+                  :aria-label="link.source === 'auto' ? 'Remove automatic link' : 'Unlink feedback'"
+                  @click="$emit('unlink-feedback', link.id)"
+                >
+                  <Icon name="lucide:x" class="w-3.5 h-3.5" />
+                </Button>
               </div>
+            </div>
+            <div v-if="linkedHasMore" class="pt-2">
+              <Button variant="outline" size="sm" :disabled="linkedMoreLoading" @click="$emit('load-linked', false)">
+                {{ linkedMoreLoading ? 'Loading…' : 'Load more linked feedback' }}
+              </Button>
+              <p v-if="linkedMoreError" class="mt-1 text-xs text-destructive">{{ linkedMoreError }}</p>
+              <Button v-if="linkedMoreError" variant="ghost" size="sm" @click="$emit('load-linked', false)">Try again</Button>
             </div>
 
             <!-- Deliberately distinct styling from the "Linked" section above -
@@ -124,7 +149,7 @@
                  identity (see pages/support/contacts/[id].vue for the same
                  convention). -->
             <div
-              v-if="!timelineLoading && probableFeedback.length > 0"
+              v-if="probableFeedback.length > 0 || probableLoading || probableError"
               class="mt-3 rounded-lg border border-dashed border-amber-400/60 bg-amber-500/5 p-3"
             >
               <div class="flex items-center gap-1.5 mb-1">
@@ -132,7 +157,12 @@
                 <h4 class="text-xs font-semibold">Possible matches</h4>
               </div>
               <p class="text-[11px] text-muted-foreground mb-2">Matching email or account — not confirmed.</p>
-              <div class="space-y-1.5">
+              <div v-if="probableLoading" class="space-y-2"><Skeleton class="h-10 w-full" /></div>
+              <div v-else-if="probableError" class="space-y-2">
+                <p class="text-sm text-destructive">{{ probableError }}</p>
+                <Button variant="outline" size="sm" @click="$emit('load-probable', true)">Try again</Button>
+              </div>
+              <div v-else class="space-y-1.5">
                 <div
                   v-for="fb in probableFeedback"
                   :key="fb.id"
@@ -150,6 +180,13 @@
                     <span v-else>Link</span>
                   </Button>
                 </div>
+              </div>
+              <div v-if="probableHasMore" class="pt-2">
+                <Button variant="outline" size="sm" :disabled="probableMoreLoading" @click="$emit('load-probable', false)">
+                  {{ probableMoreLoading ? 'Loading…' : 'Load more possible matches' }}
+                </Button>
+                <p v-if="probableMoreError" class="mt-1 text-xs text-destructive">{{ probableMoreError }}</p>
+                <Button v-if="probableMoreError" variant="ghost" size="sm" @click="$emit('load-probable', false)">Try again</Button>
               </div>
             </div>
           </div>
@@ -171,13 +208,22 @@ export default {
     error: { type: String, default: null },
     linked: { type: Array, default: () => [] },
     probableFeedback: { type: Array, default: () => [] },
-    timelineLoading: { type: Boolean, default: false },
+    linkedLoading: { type: Boolean, default: false },
+    probableLoading: { type: Boolean, default: false },
+    linkedMoreLoading: { type: Boolean, default: false },
+    probableMoreLoading: { type: Boolean, default: false },
+    linkedHasMore: { type: Boolean, default: false },
+    probableHasMore: { type: Boolean, default: false },
+    linkedError: { type: String, default: null },
+    probableError: { type: String, default: null },
+    linkedMoreError: { type: String, default: null },
+    probableMoreError: { type: String, default: null },
     previousConversations: { type: Array, default: () => [] },
     previousConversationsLoading: { type: Boolean, default: false },
     linkingId: { type: String, default: null },
   },
 
-  emits: ['update:open', 'retry', 'link-feedback', 'select-conversation'],
+  emits: ['update:open', 'retry', 'link-feedback', 'unlink-feedback', 'select-conversation', 'load-linked', 'load-probable'],
 
   computed: {
     attributeEntries() {

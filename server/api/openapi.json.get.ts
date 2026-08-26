@@ -3,7 +3,7 @@
  * Serves the OpenAPI 3.0 specification for all API endpoints
  */
 
-export default defineEventHandler((event) => {
+export default defineEventHandler(() => {
   const spec = {
     openapi: '3.0.0',
     info: {
@@ -389,12 +389,27 @@ export default defineEventHandler((event) => {
       '/api/support/contacts/{id}/timeline': {
         get: {
           tags: ['Support'],
-          summary: "Get a contact's linked and probable feedback timeline",
+          summary: "Get a contact's independently paginated feedback timeline",
           operationId: 'getSupportContactTimeline',
-          parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+          parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
+            { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 } },
+            {
+              in: 'query',
+              name: 'linkedCursor',
+              description: 'Opaque v1 cursor for the linked feedback section',
+              schema: { type: 'string' },
+            },
+            {
+              in: 'query',
+              name: 'probableCursor',
+              description: 'Opaque v1 cursor for the possible-match feedback section',
+              schema: { type: 'string' },
+            },
+          ],
           responses: {
             '200': {
-              description: 'Linked entities and probable feedback suggestions, kept in separate sections',
+              description: 'Feedback-only timeline with independently paginated linked and possible-match sections',
               content: {
                 'application/json': {
                   schema: {
@@ -415,6 +430,10 @@ export default defineEventHandler((event) => {
                               'Heuristic matches by email or account — suggestions only, never a confirmed identity',
                             items: { $ref: '#/components/schemas/Feedback' },
                           },
+                          linkedHasMore: { type: 'boolean' },
+                          linkedNextCursor: { type: 'string', nullable: true },
+                          probableHasMore: { type: 'boolean' },
+                          probableNextCursor: { type: 'string', nullable: true },
                         },
                       },
                     },
