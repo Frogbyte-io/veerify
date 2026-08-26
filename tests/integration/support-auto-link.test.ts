@@ -131,6 +131,63 @@ async function waitForHeldTeamLock(client: Client, pid: number, timeoutMs = 5_00
   throw new Error(`backend ${pid} did not hold the team row lock within ${timeoutMs}ms`)
 }
 
+async function waitForHeldContactWriteLock(client: Client, pid: number, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const result = await client.query<{ held: boolean }>(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_locks held
+          JOIN pg_class relation ON relation.oid = held.relation
+          WHERE held.pid = $1
+            AND relation.relname = 'contact'
+            AND held.mode = 'RowExclusiveLock'
+            AND held.granted
+        ) AS held
+      `,
+      [pid]
+    )
+    if (result.rows[0]?.held) return
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+
+  throw new Error(`backend ${pid} did not hold the contact write lock within ${timeoutMs}ms`)
+}
+
+async function waitForCompletionOrLock(client: Client, pid: number, isComplete: () => boolean, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (isComplete()) return
+
+    const result = await client.query<{
+      wait_event_type: string | null
+      wait_event: string | null
+      waiting_on_lock: boolean
+      blocking_pids: number[]
+    }>(
+      `
+        SELECT a.wait_event_type, a.wait_event,
+               EXISTS (
+                 SELECT 1 FROM pg_locks waiting
+                 WHERE waiting.pid = a.pid AND NOT waiting.granted
+               ) AS waiting_on_lock,
+               pg_blocking_pids(a.pid) AS blocking_pids
+        FROM pg_stat_activity a
+        WHERE a.pid = $1
+      `,
+      [pid]
+    )
+    const state = result.rows[0]
+    if (state?.wait_event_type === 'Lock' && state.waiting_on_lock && state.blocking_pids.length > 0) {
+      throw new Error(`backend ${pid} is blocked by PostgreSQL lock ${state.wait_event ?? 'unknown'}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+
+  throw new Error(`backend ${pid} neither completed nor reached a PostgreSQL lock wait within ${timeoutMs}ms`)
+}
+
 describe('createAutomaticFeedbackLink (real Postgres)', () => {
   beforeAll(async () => {
     await db.insert(organization).values({
@@ -265,7 +322,8 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     feedbackId: string,
     authorUserId: string | null,
     observeBackendPid?: BackendPidObserver,
-    holdAfterLink?: Promise<void>
+    holdAfterLink?: Promise<void>,
+    onCompleted?: () => void
   ) {
     return db.transaction(async (tx: Tx) => {
       if (observeBackendPid) {
@@ -273,6 +331,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
         await observeBackendPid(Number(result.rows[0]?.pid))
       }
       const result = await createAutomaticFeedbackLink(tx, { teamId, feedbackId, authorUserId, createdAt: new Date() })
+      onCompleted?.()
       if (holdAfterLink) await holdAfterLink
       return result
     })
@@ -750,6 +809,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
 
   it('does not block auto-link work in an unrelated team while this team is locked', async () => {
     await setEnabled(true)
+    const teamContact = await createContact({ userId: null })
     await db
       .insert(supportTeamSettings)
       .values({ teamId: ids.otherTeam, autoLinkFeedback: true, createdAt: now, updatedAt: now })
@@ -768,32 +828,55 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
 
     let releaseTeam!: () => void
     let teamLockReady!: () => void
+    /* eslint-disable no-unused-vars */
+    let teamLockPidReady!: (value: number) => void
+    /* eslint-enable no-unused-vars */
     const teamReleased = new Promise<void>((resolve) => {
       releaseTeam = resolve
     })
     const teamStarted = new Promise<void>((resolve) => {
       teamLockReady = resolve
     })
+    const teamPid = new Promise<number>((resolve) => {
+      teamLockPidReady = resolve
+    })
     const teamLock = db.transaction(async (tx: Tx) => {
+      const result = await tx.execute(sql`select pg_backend_pid() as pid`)
+      teamLockPidReady(Number(result.rows[0]?.pid))
       await lockContactTeam(tx, ids.team)
+      await tx.update(contact).set({ updatedAt: new Date() }).where(eq(contact.id, teamContact.id))
       teamLockReady()
       await teamReleased
     })
     await teamStarted
+    const teamLockPid = await teamPid
 
     let releaseOther!: () => void
     const otherReleased = new Promise<void>((resolve) => {
       releaseOther = resolve
     })
     let otherAttempt!: ReturnType<typeof runForTeam>
+    let otherCompleted = false
     const otherPidReady = new Promise<number>((resolve) => {
-      otherAttempt = runForTeam(ids.otherTeam, id, ids.otherTeamUser, async (pid) => resolve(pid), otherReleased)
+      otherAttempt = runForTeam(
+        ids.otherTeam,
+        id,
+        ids.otherTeamUser,
+        async (pid) => resolve(pid),
+        otherReleased,
+        () => {
+          otherCompleted = true
+        }
+      )
     })
     const otherPid = await otherPidReady
     const observer = makePgClient()
     await observer.connect()
     try {
+      await waitForHeldTeamLock(observer, teamLockPid)
+      await waitForHeldContactWriteLock(observer, teamLockPid)
       await waitForHeldTeamLock(observer, otherPid)
+      await waitForCompletionOrLock(observer, otherPid, () => otherCompleted)
       releaseOther()
       await expect(otherAttempt).resolves.toMatchObject({ linked: true, contactId: active[0].id })
     } finally {
