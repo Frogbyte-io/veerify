@@ -1,6 +1,7 @@
-import { expect, request as createRequest, test } from '@playwright/test'
+import { expect, request as createRequest, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray, ne } from 'drizzle-orm'
+import type { Router } from 'vue-router'
 import { db } from './helpers/db'
 import { feedback, project } from '../../server/database/schema/feedback'
 import { contact, contactLink, supportTeamSettings } from '../../server/database/schema/support'
@@ -10,10 +11,37 @@ import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, w
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
+type VueMountedForm = HTMLFormElement & {
+  __vueParentComponent?: {
+    appContext?: {
+      config?: {
+        globalProperties?: {
+          $router?: Router
+        }
+      }
+    }
+  }
+}
+
 async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
   const response = await request.get('/api/teams/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
   return (await response.json()).data.id as string
+}
+
+async function navigateViaClientRouter(page: Page, path: string) {
+  await page.goto('/login?addAccount=true', { waitUntil: 'domcontentloaded', timeout: 30_000 })
+  await page.waitForFunction(() => {
+    const form = document.querySelector('form') as VueMountedForm | null
+    return Boolean(form?.__vueParentComponent?.appContext?.config?.globalProperties?.$router)
+  })
+  await page.evaluate((target) => {
+    const form = document.querySelector('form') as VueMountedForm | null
+    const router = form?.__vueParentComponent?.appContext?.config?.globalProperties?.$router
+    if (!router) throw new Error('Nuxt router was not available from the mounted login form')
+    return router.push(target)
+  }, path)
+  await page.waitForURL(`**${path}`)
 }
 
 test.describe.serial('support contact timeline', () => {
@@ -193,21 +221,27 @@ test.describe.serial('support contact timeline', () => {
 
       await cleanup('settings', async () => {
         if (originalSupportSettings) {
-          await db.insert(supportTeamSettings).values(originalSupportSettings).onConflictDoUpdate({
-            target: supportTeamSettings.teamId,
-            set: {
-              autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
-              createdAt: originalSupportSettings.createdAt,
-              updatedAt: originalSupportSettings.updatedAt,
-            },
-          })
+          await db
+            .insert(supportTeamSettings)
+            .values(originalSupportSettings)
+            .onConflictDoUpdate({
+              target: supportTeamSettings.teamId,
+              set: {
+                autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
+                createdAt: originalSupportSettings.createdAt,
+                updatedAt: originalSupportSettings.updatedAt,
+              },
+            })
         } else if (settingsFixtureCreated) {
           await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
         }
       })
       await cleanup('role', async () => {
         if (roleChanged) {
-          await db.update(teamMember).set({ role: operatorMembership.role }).where(eq(teamMember.id, operatorMembership.id))
+          await db
+            .update(teamMember)
+            .set({ role: operatorMembership.role })
+            .where(eq(teamMember.id, operatorMembership.id))
         }
       })
       await cleanup('links', async () => {
@@ -227,14 +261,22 @@ test.describe.serial('support contact timeline', () => {
       })
 
       expect(cleanupErrors, cleanupErrors.join('\n')).toEqual([])
-      const [remainingContact] = await db.select({ id: contact.id }).from(contact).where(eq(contact.id, contactId)).limit(1)
+      const [remainingContact] = await db
+        .select({ id: contact.id })
+        .from(contact)
+        .where(eq(contact.id, contactId))
+        .limit(1)
       expect(remainingContact).toBeUndefined()
       const remainingFeedback = await db
         .select({ id: feedback.id })
         .from(feedback)
         .where(inArray(feedback.id, [ownFeedbackId, foreignFeedbackId]))
       expect(remainingFeedback).toEqual([])
-      const [remainingProject] = await db.select({ id: project.id }).from(project).where(eq(project.id, otherProjectId)).limit(1)
+      const [remainingProject] = await db
+        .select({ id: project.id })
+        .from(project)
+        .where(eq(project.id, otherProjectId))
+        .limit(1)
       expect(remainingProject).toBeUndefined()
       const [restoredSettings] = await db
         .select({ autoLinkFeedback: supportTeamSettings.autoLinkFeedback })
@@ -346,18 +388,22 @@ test.describe.serial('support contact timeline', () => {
       })
       expect(timelineResponse.ok()).toBeTruthy()
       const timeline = (await timelineResponse.json()).data
-      expect(timeline.linked).toEqual(expect.arrayContaining([expect.objectContaining({
-        entityId: authenticatedId,
-        source: 'auto',
-        createdByUserId: null,
-      })]))
+      expect(timeline.linked).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            entityId: authenticatedId,
+            source: 'auto',
+            createdByUserId: null,
+          }),
+        ])
+      )
       expect(timeline.linked).toHaveLength(1)
       const probableIds = timeline.probableFeedback.map((item: { id: string }) => item.id)
       expect(probableIds).toContain(feedbackIds[1])
       expect(probableIds).not.toContain(feedbackIds[2])
 
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      await page.goto(`/support/contacts/${contactId}`, { waitUntil: 'domcontentloaded', timeout: 30_000 })
+      await navigateViaClientRouter(page, `/support/contacts/${contactId}`)
       await expect(page.getByText('Automatically linked')).toBeVisible()
       await page.getByRole('button', { name: 'Remove automatic link' }).click()
       await expect(page.getByText('Automatically linked')).toHaveCount(0)
@@ -396,7 +442,10 @@ test.describe.serial('support contact timeline', () => {
       })
       await cleanup('role', async () => {
         if (roleChanged) {
-          await db.update(teamMember).set({ role: operatorMembership.role }).where(eq(teamMember.id, operatorMembership.id))
+          await db
+            .update(teamMember)
+            .set({ role: operatorMembership.role })
+            .where(eq(teamMember.id, operatorMembership.id))
         }
       })
       await cleanup('links', async () => {
@@ -411,12 +460,17 @@ test.describe.serial('support contact timeline', () => {
         if (contactOwned) await db.delete(contact).where(eq(contact.id, contactId))
       })
       await cleanup('project', async () => {
-        if (projectChanged) await db.update(project).set({ isPublic: originalIsPublic }).where(eq(project.id, ownProject.id))
+        if (projectChanged)
+          await db.update(project).set({ isPublic: originalIsPublic }).where(eq(project.id, ownProject.id))
       })
       await cleanup('request context', () => anonymousRequest.dispose())
 
       expect(cleanupErrors, cleanupErrors.join('\n')).toEqual([])
-      const [remainingContact] = await db.select({ id: contact.id }).from(contact).where(eq(contact.id, contactId)).limit(1)
+      const [remainingContact] = await db
+        .select({ id: contact.id })
+        .from(contact)
+        .where(eq(contact.id, contactId))
+        .limit(1)
       expect(remainingContact).toBeUndefined()
       const remainingFeedback = feedbackIds.length
         ? await db.select({ id: feedback.id }).from(feedback).where(inArray(feedback.id, feedbackIds))
@@ -440,6 +494,155 @@ test.describe.serial('support contact timeline', () => {
         .where(eq(project.id, ownProject.id))
         .limit(1)
       expect(restoredProject?.isPublic).toBe(originalIsPublic)
+    }
+  })
+
+  test('keeps linked and probable pagination independent, preserves rows on retry, and ignores stale loads after unlink', async ({
+    request,
+    page,
+  }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const teamId = await activeTeamId(request, sessionCookie)
+    const [ownProject] = await db.select().from(project).where(eq(project.teamId, teamId)).limit(1)
+    const [customer] = await db.select().from(user).where(eq(user.email, TEST_EMAIL)).limit(1)
+    if (!ownProject || !customer) {
+      test.skip()
+      return
+    }
+
+    const contactId = randomUUID()
+    const email = `timeline-pagination-${contactId}@example.com`
+    const linkedIds = Array.from({ length: 51 }, () => randomUUID())
+    const probableIds = Array.from({ length: 51 }, () => randomUUID())
+    const allFeedbackIds = [...linkedIds, ...probableIds]
+    const linkedLinkIds = linkedIds.map(() => randomUUID())
+    const now = Date.now()
+    let contactOwned = false
+
+    try {
+      await db.insert(contact).values({
+        id: contactId,
+        teamId,
+        userId: customer.id,
+        email,
+        name: 'Pagination timeline contact',
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      })
+      contactOwned = true
+      await db.insert(feedback).values(
+        allFeedbackIds.map((id, index) => ({
+          id,
+          projectId: ownProject.id,
+          title: `${index < linkedIds.length ? 'Linked' : 'Probable'} pagination ${index}`,
+          authorEmail: email,
+          createdAt: new Date(now - index * 1000),
+          updatedAt: new Date(now - index * 1000),
+        }))
+      )
+      await db.insert(contactLink).values(
+        linkedIds.map((entityId, index) => ({
+          id: linkedLinkIds[index],
+          contactId,
+          entityType: 'feedback',
+          entityId,
+          source: 'agent',
+          createdByUserId: customer.id,
+          createdAt: new Date(now - index * 1000),
+        }))
+      )
+
+      // ofetch retries a failed GET once, so fail both attempts to exercise
+      // the user-visible error and manual retry path.
+      let remainingLinkedFailures = 2
+      let delayNextLinkedPage = false
+      let delayedRequestResolve: (() => void) | undefined
+      let releaseDelayedResponse: (() => void) | undefined
+      let delayedResponseHandledResolve: (() => void) | undefined
+      const delayedRequest = new Promise<void>((resolve) => {
+        delayedRequestResolve = resolve
+      })
+      const delayedResponse = new Promise<void>((resolve) => {
+        releaseDelayedResponse = resolve
+      })
+      const delayedResponseHandled = new Promise<void>((resolve) => {
+        delayedResponseHandledResolve = resolve
+      })
+      await page.route('**/*', async (route) => {
+        const url = new URL(route.request().url())
+        if (!/^\/api\/support\/contacts\/[^/]+\/timeline$/.test(url.pathname)) {
+          await route.continue()
+          return
+        }
+        if (url.searchParams.get('section') === 'linked' && url.searchParams.has('linkedCursor')) {
+          if (remainingLinkedFailures > 0) {
+            remainingLinkedFailures -= 1
+            await route.fulfill({
+              status: 503,
+              contentType: 'application/json',
+              body: JSON.stringify({ error: 'temporary' }),
+            })
+            return
+          }
+          if (delayNextLinkedPage) {
+            delayedRequestResolve?.()
+            await delayedResponse
+            await route.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify({
+                success: true,
+                data: {
+                  linked: [
+                    { id: 'stale-linked-row', entityType: 'feedback', entityId: 'stale-linked-row', source: 'agent' },
+                  ],
+                  probableFeedback: [],
+                  linkedHasMore: false,
+                  linkedNextCursor: null,
+                  probableHasMore: false,
+                  probableNextCursor: null,
+                },
+              }),
+            })
+            delayedResponseHandledResolve?.()
+            return
+          }
+        }
+        await route.continue()
+      })
+
+      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+      await navigateViaClientRouter(page, `/support/contacts/${contactId}`)
+      await expect(page.getByTestId('linked-timeline-row')).toHaveCount(25)
+      await expect(page.getByTestId('probable-timeline-row')).toHaveCount(25)
+
+      await page.getByTestId('load-more-linked').click()
+      await expect(page.getByText('Could not load more linked feedback.')).toBeVisible()
+      await expect(page.getByTestId('linked-timeline-row')).toHaveCount(25)
+      await page.getByTestId('linked-timeline-section').getByRole('button', { name: 'Try again' }).click()
+      await expect(page.getByTestId('linked-timeline-row')).toHaveCount(50)
+      await expect(page.getByTestId('probable-timeline-row')).toHaveCount(25)
+
+      await page.getByTestId('load-more-probable').click()
+      await expect(page.getByTestId('probable-timeline-row')).toHaveCount(50)
+      await expect(page.getByTestId('linked-timeline-row')).toHaveCount(50)
+
+      delayNextLinkedPage = true
+      await page.getByTestId('load-more-linked').click()
+      await delayedRequest
+      await page.getByTestId('linked-timeline-row').first().getByRole('button').click()
+      await expect(page.getByTestId('linked-timeline-row')).toHaveCount(25)
+      releaseDelayedResponse?.()
+      await delayedResponseHandled
+      await page.evaluate(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      )
+      await expect(page.getByText('stale-linked-row')).toHaveCount(0)
+      await expect(page.getByTestId('probable-timeline-row')).toHaveCount(25)
+    } finally {
+      await db.delete(contactLink).where(eq(contactLink.contactId, contactId))
+      await db.delete(feedback).where(inArray(feedback.id, allFeedbackIds))
+      if (contactOwned) await db.delete(contact).where(eq(contact.id, contactId))
     }
   })
 })

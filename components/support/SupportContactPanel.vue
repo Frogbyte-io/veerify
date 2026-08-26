@@ -77,7 +77,7 @@
           </div>
 
           <!-- Previous conversations (this inbox) -->
-          <div>
+          <div data-testid="panel-linked-timeline-section">
             <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
               Previous conversations
             </h3>
@@ -118,7 +118,12 @@
             </div>
             <p v-else-if="linked.length === 0" class="text-sm text-muted-foreground">No linked feedback yet.</p>
             <div v-else class="space-y-1.5">
-              <div v-for="link in linked" :key="link.id" class="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-2 text-sm">
+              <div
+                v-for="link in linked"
+                :key="link.id"
+                data-testid="panel-linked-timeline-row"
+                class="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-2 text-sm"
+              >
                 <div class="flex min-w-0 items-center gap-1.5">
                   <span class="truncate">{{ link.entityType }}: {{ link.entityId }}</span>
                   <Badge v-if="link.source === 'auto'" variant="secondary" class="shrink-0 text-[10px]">
@@ -137,11 +142,19 @@
               </div>
             </div>
             <div v-if="linkedHasMore" class="pt-2">
-              <Button variant="outline" size="sm" :disabled="linkedMoreLoading" @click="$emit('load-linked', false)">
+              <Button
+                data-testid="panel-load-more-linked"
+                variant="outline"
+                size="sm"
+                :disabled="linkedMoreLoading"
+                @click="$emit('load-linked', false)"
+              >
                 {{ linkedMoreLoading ? 'Loading…' : 'Load more linked feedback' }}
               </Button>
               <p v-if="linkedMoreError" class="mt-1 text-xs text-destructive">{{ linkedMoreError }}</p>
-              <Button v-if="linkedMoreError" variant="ghost" size="sm" @click="$emit('load-linked', false)">Try again</Button>
+              <Button v-if="linkedMoreError" variant="ghost" size="sm" @click="$emit('load-linked', false)"
+                >Try again</Button
+              >
             </div>
 
             <!-- Deliberately distinct styling from the "Linked" section above -
@@ -150,6 +163,7 @@
                  convention). -->
             <div
               v-if="probableFeedback.length > 0 || probableLoading || probableError"
+              data-testid="panel-probable-timeline-section"
               class="mt-3 rounded-lg border border-dashed border-amber-400/60 bg-amber-500/5 p-3"
             >
               <div class="flex items-center gap-1.5 mb-1">
@@ -166,6 +180,7 @@
                 <div
                   v-for="fb in probableFeedback"
                   :key="fb.id"
+                  data-testid="panel-probable-timeline-row"
                   class="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-2 text-sm"
                 >
                   <span class="truncate">{{ fb.title }}</span>
@@ -182,11 +197,19 @@
                 </div>
               </div>
               <div v-if="probableHasMore" class="pt-2">
-                <Button variant="outline" size="sm" :disabled="probableMoreLoading" @click="$emit('load-probable', false)">
+                <Button
+                  data-testid="panel-load-more-probable"
+                  variant="outline"
+                  size="sm"
+                  :disabled="probableMoreLoading"
+                  @click="$emit('load-probable', false)"
+                >
                   {{ probableMoreLoading ? 'Loading…' : 'Load more possible matches' }}
                 </Button>
                 <p v-if="probableMoreError" class="mt-1 text-xs text-destructive">{{ probableMoreError }}</p>
-                <Button v-if="probableMoreError" variant="ghost" size="sm" @click="$emit('load-probable', false)">Try again</Button>
+                <Button v-if="probableMoreError" variant="ghost" size="sm" @click="$emit('load-probable', false)"
+                  >Try again</Button
+                >
               </div>
             </div>
           </div>
@@ -223,7 +246,15 @@ export default {
     linkingId: { type: String, default: null },
   },
 
-  emits: ['update:open', 'retry', 'link-feedback', 'unlink-feedback', 'select-conversation', 'load-linked', 'load-probable'],
+  emits: [
+    'update:open',
+    'retry',
+    'link-feedback',
+    'unlink-feedback',
+    'select-conversation',
+    'load-linked',
+    'load-probable',
+  ],
 
   computed: {
     attributeEntries() {

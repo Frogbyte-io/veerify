@@ -31,6 +31,7 @@ export interface ContactTimelineQueryOptions {
   limit?: number
   linkedCursor?: string
   probableCursor?: string
+  section?: 'linked' | 'probable'
 }
 
 type TimelineContact = Pick<typeof contact.$inferSelect, 'id' | 'teamId' | 'email' | 'userId'>
@@ -77,10 +78,7 @@ function cursorCondition(
   idColumn: typeof contactLink.id | typeof feedback.id,
   cursor: ListCursor
 ) {
-  return or(
-    lt(createdAtColumn, cursor.createdAt),
-    and(eq(createdAtColumn, cursor.createdAt), lt(idColumn, cursor.id))
-  )
+  return or(lt(createdAtColumn, cursor.createdAt), and(eq(createdAtColumn, cursor.createdAt), lt(idColumn, cursor.id)))
 }
 
 function pageMetadata<T extends { createdAt: Date; id: string }>(rows: T[], limit: number) {
@@ -100,23 +98,25 @@ function pageMetadata<T extends { createdAt: Date; id: string }>(rows: T[], limi
  * intentionally have separate cursors and page metadata so either section can
  * advance without changing the other section's position.
  */
-export async function getContactTimeline(
-  contact: TimelineContact,
-  options: ContactTimelineQueryOptions = {}
-) {
+export async function getContactTimeline(contact: TimelineContact, options: ContactTimelineQueryOptions = {}) {
   const limit = options.limit ?? DEFAULT_TIMELINE_LIMIT
+  const includeLinked = options.section !== 'probable'
+  const includeProbable = options.section !== 'linked'
   const linkedCursor = options.linkedCursor ? decodeListCursor(options.linkedCursor, 'linked feedback') : null
   const probableCursor = options.probableCursor ? decodeListCursor(options.probableCursor, 'probable feedback') : null
 
-  const linkedConditions = [eq(contactLink.contactId, contact.id), eq(contactLink.entityType, 'feedback')]
-  if (linkedCursor) linkedConditions.push(cursorCondition(contactLink.createdAt, contactLink.id, linkedCursor)!)
-
-  const linkedRows = await db
-    .select()
-    .from(contactLink)
-    .where(and(...linkedConditions))
-    .orderBy(desc(contactLink.createdAt), desc(contactLink.id))
-    .limit(limit + 1)
+  const linkedRows = includeLinked
+    ? await (async () => {
+        const linkedConditions = [eq(contactLink.contactId, contact.id), eq(contactLink.entityType, 'feedback')]
+        if (linkedCursor) linkedConditions.push(cursorCondition(contactLink.createdAt, contactLink.id, linkedCursor)!)
+        return db
+          .select()
+          .from(contactLink)
+          .where(and(...linkedConditions))
+          .orderBy(desc(contactLink.createdAt), desc(contactLink.id))
+          .limit(limit + 1)
+      })()
+    : []
 
   const matchConditions = []
   if (contact.email) matchConditions.push(eq(feedback.authorEmail, contact.email))
@@ -129,25 +129,21 @@ export async function getContactTimeline(
       db
         .select({ id: contactLink.id })
         .from(contactLink)
-        .where(
-          and(
-            eq(contactLink.entityType, 'feedback'),
-            eq(contactLink.entityId, feedback.id)
-          )
-        )
+        .where(and(eq(contactLink.entityType, 'feedback'), eq(contactLink.entityId, feedback.id)))
     ),
   ]
   if (probableCursor) probableConditions.push(cursorCondition(feedback.createdAt, feedback.id, probableCursor)!)
 
-  const probableRows = matchConditions.length
-    ? await db
-        .select({ feedback, project: { id: project.id, name: project.name, slug: project.slug } })
-        .from(feedback)
-        .innerJoin(project, eq(project.id, feedback.projectId))
-        .where(and(...probableConditions))
-        .orderBy(desc(feedback.createdAt), desc(feedback.id))
-        .limit(limit + 1)
-    : []
+  const probableRows =
+    includeProbable && matchConditions.length
+      ? await db
+          .select({ feedback, project: { id: project.id, name: project.name, slug: project.slug } })
+          .from(feedback)
+          .innerJoin(project, eq(project.id, feedback.projectId))
+          .where(and(...probableConditions))
+          .orderBy(desc(feedback.createdAt), desc(feedback.id))
+          .limit(limit + 1)
+      : []
 
   const linkedPage = pageMetadata(linkedRows, limit)
   const probablePage = pageMetadata(

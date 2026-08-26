@@ -193,6 +193,9 @@ export default {
       timelineProbableError: null,
       timelineLinkedMoreError: null,
       timelineProbableMoreError: null,
+      timelineGeneration: 0,
+      timelineLinkedGeneration: 0,
+      timelineProbableGeneration: 0,
       previousConversations: [],
       previousConversationsLoading: false,
       linkingFeedbackId: null,
@@ -292,7 +295,8 @@ export default {
         this.activeTeamId = activeTeamData.id
         this.isLoadingTeam = false
         await this.loadInboxes({ generation, teamId: activeTeamData.id })
-        if (generation === this.contextGeneration && this.activeInboxId) await this.loadTags({ generation, teamId: activeTeamData.id })
+        if (generation === this.contextGeneration && this.activeInboxId)
+          await this.loadTags({ generation, teamId: activeTeamData.id })
       } catch {
         if (generation === this.contextGeneration) {
           this.teamError = 'Something went wrong. Please try again.'
@@ -431,7 +435,11 @@ export default {
       return error?.statusCode === 403 || error?.status === 403 || error?.response?.status === 403
     },
 
-    async recoverFromForbiddenInbox({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = null } = {}) {
+    async recoverFromForbiddenInbox({
+      generation = this.contextGeneration,
+      teamId = this.activeTeamId,
+      inboxId = null,
+    } = {}) {
       if (!this.isCurrentContext(generation, teamId, inboxId)) return
       this.unselectConversation()
       this.activeInboxId = null
@@ -446,7 +454,8 @@ export default {
           .catch(() => {})
       }
       await this.loadInboxes({ recovering: true, generation, teamId })
-      if (this.isCurrentContext(generation, teamId)) this.inboxAccessError = 'You do not have access to this support inbox'
+      if (this.isCurrentContext(generation, teamId))
+        this.inboxAccessError = 'You do not have access to this support inbox'
     },
 
     async openRequestedConversation() {
@@ -461,7 +470,11 @@ export default {
       await this.selectConversation(requested)
     },
 
-    async loadInboxMembers({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}) {
+    async loadInboxMembers({
+      generation = this.contextGeneration,
+      teamId = this.activeTeamId,
+      inboxId = this.activeInboxId,
+    } = {}) {
       if (!inboxId || !this.isCurrentContext(generation, teamId, inboxId)) return
       try {
         const response = await $fetch(`/api/support/inboxes/${inboxId}/members`)
@@ -479,7 +492,10 @@ export default {
       await this.loadConversations(true)
     },
 
-    async loadConversations(reset, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}) {
+    async loadConversations(
+      reset,
+      { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}
+    ) {
       if (!inboxId || !this.isCurrentContext(generation, teamId, inboxId)) return
 
       if (reset) {
@@ -508,7 +524,10 @@ export default {
         this.hasMoreConversations = Boolean(response?.data?.hasMore)
         this.conversationsNextCursor = response?.data?.nextCursor || null
 
-        await this.ensureContactsLoaded(page.map((c) => c.contactId), { generation, teamId, inboxId })
+        await this.ensureContactsLoaded(
+          page.map((c) => c.contactId),
+          { generation, teamId, inboxId }
+        )
       } catch (error) {
         if (!this.isCurrentContext(generation, teamId, inboxId)) return
         if (this.isForbiddenError(error)) {
@@ -524,7 +543,10 @@ export default {
       }
     },
 
-    async ensureContactsLoaded(contactIds, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}) {
+    async ensureContactsLoaded(
+      contactIds,
+      { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId } = {}
+    ) {
       if (!this.isCurrentContext(generation, teamId, inboxId)) return
       // Retry ids never fetched, or whose last fetch failed. A resolved-but-null
       // contact stays cached as null so it is not re-requested on every render.
@@ -600,8 +622,18 @@ export default {
       await this.loadMessages({ generation, teamId, inboxId, conversationId })
     },
 
-    async loadConversationDetail({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
-      if (!conversationId || !this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
+    async loadConversationDetail({
+      generation = this.contextGeneration,
+      teamId = this.activeTeamId,
+      inboxId = this.activeInboxId,
+      conversationId = this.selectedConversationId,
+    } = {}) {
+      if (
+        !conversationId ||
+        !this.isCurrentContext(generation, teamId, inboxId) ||
+        conversationId !== this.selectedConversationId
+      )
+        return
 
       this.isLoadingDetail = true
       this.detailError = null
@@ -628,8 +660,18 @@ export default {
       }
     },
 
-    async loadMessages({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
-      if (!conversationId || !this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
+    async loadMessages({
+      generation = this.contextGeneration,
+      teamId = this.activeTeamId,
+      inboxId = this.activeInboxId,
+      conversationId = this.selectedConversationId,
+    } = {}) {
+      if (
+        !conversationId ||
+        !this.isCurrentContext(generation, teamId, inboxId) ||
+        conversationId !== this.selectedConversationId
+      )
+        return
 
       this.isLoadingMessages = true
       this.messagesError = null
@@ -700,6 +742,7 @@ export default {
     },
 
     resetContactPanel() {
+      this.invalidateTimelineRequests()
       this.contactPanelContact = null
       this.contactPanelCompany = null
       this.contactPanelError = null
@@ -720,16 +763,41 @@ export default {
       this.previousConversations = []
     },
 
-    async loadContactPanel({ generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
+    invalidateTimelineRequests() {
+      this.timelineGeneration += 1
+      this.timelineLinkedGeneration += 1
+      this.timelineProbableGeneration += 1
+    },
+
+    isCurrentTimeline(generation, sectionGeneration, linked, context) {
+      return (
+        this.isCurrentConversation(context.generation, context.teamId, context.inboxId, context.conversationId) &&
+        generation === this.timelineGeneration &&
+        sectionGeneration === (linked ? this.timelineLinkedGeneration : this.timelineProbableGeneration)
+      )
+    },
+
+    async loadContactPanel({
+      generation = this.contextGeneration,
+      teamId = this.activeTeamId,
+      inboxId = this.activeInboxId,
+      conversationId = this.selectedConversationId,
+    } = {}) {
       const contactId = this.conversationContact?.id
-      if (!contactId || !this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
+      if (
+        !contactId ||
+        !this.isCurrentContext(generation, teamId, inboxId) ||
+        conversationId !== this.selectedConversationId
+      )
+        return
 
       this.contactPanelLoading = true
       this.contactPanelError = null
 
       try {
         const response = await $fetch(`/api/support/contacts/${contactId}`)
-        if (!this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId) return
+        if (!this.isCurrentContext(generation, teamId, inboxId) || conversationId !== this.selectedConversationId)
+          return
         this.contactPanelContact = response?.data?.contact || null
         this.contactPanelCompany = response?.data?.company || null
       } catch (error) {
@@ -752,19 +820,56 @@ export default {
       ])
     },
 
-    async loadTimeline(contactId, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
+    async loadTimeline(
+      contactId,
+      {
+        generation = this.contextGeneration,
+        teamId = this.activeTeamId,
+        inboxId = this.activeInboxId,
+        conversationId = this.selectedConversationId,
+      } = {}
+    ) {
       if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+      const timelineGeneration = ++this.timelineGeneration
       this.timelineLinkedCursor = null
       this.timelineProbableCursor = null
       await Promise.all([
-        this.loadTimelineSection('linked', true, { contactId, generation, teamId, inboxId, conversationId }),
-        this.loadTimelineSection('probable', true, { contactId, generation, teamId, inboxId, conversationId }),
+        this.loadTimelineSection('linked', true, {
+          contactId,
+          generation,
+          teamId,
+          inboxId,
+          conversationId,
+          timelineGeneration,
+        }),
+        this.loadTimelineSection('probable', true, {
+          contactId,
+          generation,
+          teamId,
+          inboxId,
+          conversationId,
+          timelineGeneration,
+        }),
       ])
     },
 
-    async loadTimelineSection(section, reset, { contactId = this.contactPanelContact?.id, generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
+    async loadTimelineSection(
+      section,
+      reset,
+      {
+        contactId = this.contactPanelContact?.id,
+        generation = this.contextGeneration,
+        teamId = this.activeTeamId,
+        inboxId = this.activeInboxId,
+        conversationId = this.selectedConversationId,
+        timelineGeneration,
+      } = {}
+    ) {
       if (!contactId || !this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
       const linked = section === 'linked'
+      const requestGeneration = timelineGeneration ?? this.timelineGeneration
+      const requestSectionGeneration = linked ? ++this.timelineLinkedGeneration : ++this.timelineProbableGeneration
+      const context = { generation, teamId, inboxId, conversationId }
       const loadingKey = linked ? 'timelineLinkedLoading' : 'timelineProbableLoading'
       const moreLoadingKey = linked ? 'timelineLinkedMoreLoading' : 'timelineProbableMoreLoading'
       const errorKey = linked ? 'timelineLinkedError' : 'timelineProbableError'
@@ -783,36 +888,57 @@ export default {
       }
       try {
         const response = await $fetch(`/api/support/contacts/${contactId}/timeline`, {
-          params: { limit: 25, [linked ? 'linkedCursor' : 'probableCursor']: reset ? undefined : this[cursorKey] || undefined },
+          params: {
+            limit: 25,
+            section: linked ? 'linked' : 'probable',
+            [linked ? 'linkedCursor' : 'probableCursor']: reset ? undefined : this[cursorKey] || undefined,
+          },
         })
-        if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+        if (!this.isCurrentTimeline(requestGeneration, requestSectionGeneration, linked, context)) return
         const page = response?.data || {}
         if (linked) {
           this.timelineLinked = reset ? page.linked || [] : [...this.timelineLinked, ...(page.linked || [])]
           this.timelineLinkedHasMore = Boolean(page.linkedHasMore)
           this.timelineLinkedCursor = page.linkedNextCursor || null
         } else {
-          this.timelineProbableFeedback = reset ? page.probableFeedback || [] : [...this.timelineProbableFeedback, ...(page.probableFeedback || [])]
+          this.timelineProbableFeedback = reset
+            ? page.probableFeedback || []
+            : [...this.timelineProbableFeedback, ...(page.probableFeedback || [])]
           this.timelineProbableHasMore = Boolean(page.probableHasMore)
           this.timelineProbableCursor = page.probableNextCursor || null
         }
       } catch (error) {
-        if (this.isForbiddenError(error) && this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {
+        if (
+          this.isForbiddenError(error) &&
+          this.isCurrentTimeline(requestGeneration, requestSectionGeneration, linked, context)
+        ) {
           await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
         }
-        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {
+        if (this.isCurrentTimeline(requestGeneration, requestSectionGeneration, linked, context)) {
           this[reset ? errorKey : moreErrorKey] = linked
-            ? reset ? 'Could not load linked feedback. Please try again.' : 'Could not load more linked feedback.'
-            : reset ? 'Could not load possible matches. Please try again.' : 'Could not load more possible matches.'
+            ? reset
+              ? 'Could not load linked feedback. Please try again.'
+              : 'Could not load more linked feedback.'
+            : reset
+              ? 'Could not load possible matches. Please try again.'
+              : 'Could not load more possible matches.'
         }
       } finally {
-        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) {
+        if (this.isCurrentTimeline(requestGeneration, requestSectionGeneration, linked, context)) {
           this[reset ? loadingKey : moreLoadingKey] = false
         }
       }
     },
 
-    async loadPreviousConversations(contactId, { generation = this.contextGeneration, teamId = this.activeTeamId, inboxId = this.activeInboxId, conversationId = this.selectedConversationId } = {}) {
+    async loadPreviousConversations(
+      contactId,
+      {
+        generation = this.contextGeneration,
+        teamId = this.activeTeamId,
+        inboxId = this.activeInboxId,
+        conversationId = this.selectedConversationId,
+      } = {}
+    ) {
       if (!inboxId || !this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
       this.previousConversationsLoading = true
       try {
@@ -820,15 +946,14 @@ export default {
           params: { inboxId, contactId, limit: 5 },
         })
         if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
-        this.previousConversations = (response?.data?.conversations || []).filter(
-          (c) => c.id !== conversationId
-        )
+        this.previousConversations = (response?.data?.conversations || []).filter((c) => c.id !== conversationId)
       } catch (error) {
         if (this.isForbiddenError(error) && this.isCurrentConversation(generation, teamId, inboxId, conversationId))
           await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
         if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.previousConversations = []
       } finally {
-        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.previousConversationsLoading = false
+        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId))
+          this.previousConversationsLoading = false
       }
     },
 

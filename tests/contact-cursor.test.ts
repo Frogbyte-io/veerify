@@ -35,10 +35,18 @@ describe('contact cursors', () => {
   })
 
   it('rejects unsupported cursor versions', () => {
-    const cursor = Buffer.from(
-      JSON.stringify({ v: 2, createdAt: '2026-08-13T12:00:00.000Z', id: 'row-b' })
-    ).toString('base64url')
+    const cursor = Buffer.from(JSON.stringify({ v: 2, createdAt: '2026-08-13T12:00:00.000Z', id: 'row-b' })).toString(
+      'base64url'
+    )
 
     expect(() => decodeListCursor(cursor, 'row')).toThrowError(expect.objectContaining({ statusCode: 400 }))
+  })
+
+  it('rejects cursors that are not canonical base64url', () => {
+    const cursor = encodeListCursor({ createdAt: new Date('2026-08-13T12:00:00.000Z'), id: 'row-b' })
+
+    expect(() => decodeListCursor(`${cursor}junk`, 'row')).toThrowError(expect.objectContaining({ statusCode: 400 }))
+    expect(() => decodeListCursor(`${cursor}=`, 'row')).toThrowError(expect.objectContaining({ statusCode: 400 }))
+    expect(() => decodeListCursor(`${cursor}!!!!`, 'row')).toThrowError(expect.objectContaining({ statusCode: 400 }))
   })
 })

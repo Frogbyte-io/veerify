@@ -38,7 +38,9 @@ export function encodeListCursor(cursor: ListCursor): string {
 /** `label` names the entity in the 400 response, e.g. "contact" or "company". */
 export function decodeListCursor(value: string, label: string): ListCursor {
   try {
+    if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('non-canonical base64url')
     const decoded = Buffer.from(value, 'base64url').toString('utf8')
+    if (Buffer.from(decoded, 'utf8').toString('base64url') !== value) throw new Error('non-canonical base64url')
     const parsed = cursorPayloadSchema.parse(JSON.parse(decoded))
     return { createdAt: new Date(parsed.createdAt), id: parsed.id }
   } catch {

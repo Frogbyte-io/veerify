@@ -155,6 +155,18 @@ export default defineEventHandler(() => {
             updatedAt: { type: 'string', format: 'date-time' },
           },
         },
+        ContactLink: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            contactId: { type: 'string' },
+            entityType: { type: 'string', enum: ['feedback', 'conversation'] },
+            entityId: { type: 'string' },
+            source: { type: 'string', enum: ['auto', 'agent'] },
+            createdByUserId: { type: 'string', nullable: true },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
         SupportCompany: {
           type: 'object',
           properties: {
@@ -393,17 +405,32 @@ export default defineEventHandler(() => {
           operationId: 'getSupportContactTimeline',
           parameters: [
             { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
-            { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 } },
+            {
+              in: 'query',
+              name: 'section',
+              required: false,
+              description: 'Limit database work to one independently paginated section.',
+              schema: { type: 'string', enum: ['linked', 'probable'] },
+            },
+            {
+              in: 'query',
+              name: 'limit',
+              required: false,
+              description: 'Rows per section; defaults to 25 and is capped at 100.',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+            },
             {
               in: 'query',
               name: 'linkedCursor',
-              description: 'Opaque v1 cursor for the linked feedback section',
+              required: false,
+              description: 'Opaque v1 cursor for the linked feedback section.',
               schema: { type: 'string' },
             },
             {
               in: 'query',
               name: 'probableCursor',
-              description: 'Opaque v1 cursor for the possible-match feedback section',
+              required: false,
+              description: 'Opaque v1 cursor for the probable feedback section.',
               schema: { type: 'string' },
             },
           ],
@@ -422,7 +449,7 @@ export default defineEventHandler(() => {
                           linked: {
                             type: 'array',
                             description: 'Explicit, agent-confirmed links',
-                            items: { type: 'object' },
+                            items: { $ref: '#/components/schemas/ContactLink' },
                           },
                           probableFeedback: {
                             type: 'array',
@@ -441,6 +468,7 @@ export default defineEventHandler(() => {
                 },
               },
             },
+            '400': { description: 'Invalid limit, section, or opaque cursor' },
             '403': { description: "Not a member of the contact's team" },
             '404': { description: 'Contact not found' },
           },
