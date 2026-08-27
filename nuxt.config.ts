@@ -30,6 +30,7 @@ export default defineNuxtConfig({
       // Stage 06 (SLA sweeper), Stage 08 (CSAT dispatch), and Stage 09 rollups.
       '*/15 * * * *': ['example:ping'],
       '* * * * *': ['support:outbound-delivery'],
+      '*/5 * * * *': ['support:attachment-cleanup'],
     },
   },
   devServer: {

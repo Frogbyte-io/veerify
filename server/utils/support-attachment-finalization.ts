@@ -90,10 +90,11 @@ export async function markAttachmentCleanupRequired(
   error?: unknown
 ): Promise<void> {
   if (reservation.length === 0) return
-  const message = (error instanceof Error ? error.message : String(error || 'Attachment finalization failed'))
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 500)
+  // Provider errors can contain storage keys, local paths, or request details.
+  // Persist a closed reason code rather than treating an arbitrary provider
+  // message as safe operational data.
+  void error
+  const message = 'ATTACHMENT_FINALIZATION_FAILED'
   await db.transaction(async (tx) => {
     for (const item of [...reservation].sort((a, b) => a.uploadId.localeCompare(b.uploadId))) {
       await tx
@@ -172,6 +173,9 @@ export async function reserveAttachmentFinalization(input: {
     for (const row of selected) {
       // A foreign row is deliberately indistinguishable from a missing row.
       if (row.userId !== input.userId || row.conversationId !== input.conversationId) missingUpload()
+      if (row.status === 'cleanup_required') {
+        finalizationError(409, 'Attachment cleanup is still in progress. Please retry shortly.')
+      }
       if (row.status !== 'uploaded' || row.expiresAt.getTime() <= now.getTime()) unavailableUpload()
       if (
         !row.storedContentType ||

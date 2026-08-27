@@ -74,7 +74,13 @@ describe('processOutboundDelivery', () => {
       },
     })
 
-    await processOutboundDelivery(withAttachment, { sendEmail, getObject, onSent, onFailed: vi.fn() })
+    await processOutboundDelivery(withAttachment, {
+      sendEmail,
+      getObject,
+      getAttachmentSizes: async () => [{ storageKey: 'support/abc.pdf', sizeBytes: 10 }],
+      onSent,
+      onFailed: vi.fn(),
+    })
 
     expect(getObject).toHaveBeenCalledWith('support/abc.pdf')
     expect(sendEmail).toHaveBeenCalledWith(
@@ -88,6 +94,52 @@ describe('processOutboundDelivery', () => {
         ],
       })
     )
+  })
+
+  it('rejects an oversized canonical payload before reading the first object', async () => {
+    const getObject = vi.fn().mockResolvedValue(Buffer.from('should not be read'))
+    const onFailed = vi.fn().mockResolvedValue(undefined)
+    const result = await processOutboundDelivery(
+      claim({
+        payload: {
+          to: 'customer@example.com',
+          subject: 'Too large',
+          attachments: [{ filename: 'large.bin', storageKey: 'support/large.bin' }],
+        },
+      }),
+      {
+        getObject,
+        getAttachmentSizes: async () => [{ storageKey: 'support/large.bin', sizeBytes: 25 * 1024 * 1024 + 1 }],
+        onFailed,
+      }
+    )
+    expect(result).toEqual({ outcome: 'failed', error: 'Outbound attachments exceed the 25 MB per-message limit' })
+    expect(getObject).not.toHaveBeenCalled()
+    expect(onFailed).toHaveBeenCalled()
+  })
+
+  it('rejects duplicate or non-canonical references before reading storage', async () => {
+    const getObject = vi.fn().mockResolvedValue(Buffer.from('should not be read'))
+    const onFailed = vi.fn().mockResolvedValue(undefined)
+    const result = await processOutboundDelivery(
+      claim({
+        payload: {
+          to: 'customer@example.com',
+          subject: 'Invalid',
+          attachments: [
+            { filename: 'a.txt', storageKey: 'support/a.txt' },
+            { filename: 'a-again.txt', storageKey: 'support/a.txt' },
+          ],
+        },
+      }),
+      {
+        getObject,
+        getAttachmentSizes: async () => [{ storageKey: 'support/a.txt', sizeBytes: 1 }],
+        onFailed,
+      }
+    )
+    expect(result).toEqual({ outcome: 'failed', error: 'Outbound attachment references are invalid' })
+    expect(getObject).not.toHaveBeenCalled()
   })
 
   it('calls onFailed and never onSent when the send reports failure', async () => {

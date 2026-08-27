@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { conversation, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
+import { conversation, conversationAttachment, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
 import { sendEmail as defaultSendEmail, type EmailAttachment, type SendEmailOptions } from '~/lib/email'
 import { getStorageProvider } from '~/server/utils/storage'
+import { SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-attachments'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { createLogger } from '~/server/utils/logger'
 
@@ -289,6 +290,8 @@ export interface ProcessOutboundDeliveryDeps {
   sendEmail?: SendEmailFn
   /** Defaults to the real storage provider - injectable so tests never touch disk/S3. */
   getObject?: GetObjectFn
+  /** Defaults to canonical attachment rows for the claimed message. */
+  getAttachmentSizes?: (messageId: string) => Promise<Array<{ storageKey: string; sizeBytes: number | null }>>
   /** Defaults to `completeOutboundDelivery` - injectable so unit tests never touch the db. */
   onSent?: (id: string, messageId: string) => Promise<void>
   /** Defaults to `failOutboundDelivery` - injectable so unit tests never touch the db. */
@@ -316,20 +319,50 @@ export async function processOutboundDelivery(
   // a real mismatch.
   const send = deps.sendEmail ?? (defaultSendEmail as SendEmailFn)
   const getObject = deps.getObject ?? ((key: string) => getStorageProvider().getObject(key))
+  const getAttachmentSizes = deps.getAttachmentSizes ?? (async (messageId: string) =>
+    db
+      .select({ storageKey: conversationAttachment.storageKey, sizeBytes: conversationAttachment.sizeBytes })
+      .from(conversationAttachment)
+      .where(eq(conversationAttachment.messageId, messageId)))
   const onSent = deps.onSent ?? completeOutboundDelivery
   const onFailed = deps.onFailed ?? failOutboundDelivery
 
   try {
-    const attachments: EmailAttachment[] | undefined = claim.payload.attachments
-      ? await Promise.all(
-          claim.payload.attachments.map(async (attachment) => ({
-            filename: attachment.filename,
-            contentType: attachment.contentType,
-            cid: attachment.cid,
-            content: await getObject(attachment.storageKey),
-          }))
-        )
-      : undefined
+    let attachments: EmailAttachment[] | undefined
+    if (claim.payload.attachments) {
+      const canonical = await getAttachmentSizes(claim.messageId)
+      const canonicalByKey = new Map(canonical.map((attachment) => [attachment.storageKey, attachment]))
+      const payloadKeys = claim.payload.attachments.map((attachment) => attachment.storageKey)
+      const canonicalKeys = canonical.map((attachment) => attachment.storageKey)
+      const hasDuplicate = (keys: string[]) => new Set(keys).size !== keys.length
+      if (hasDuplicate(payloadKeys) || hasDuplicate(canonicalKeys)) {
+        throw new Error('Outbound attachment references are invalid')
+      }
+      let totalBytes = 0
+      for (const attachment of claim.payload.attachments) {
+        const row = canonicalByKey.get(attachment.storageKey)
+        if (!row || typeof row.sizeBytes !== 'number' || !Number.isSafeInteger(row.sizeBytes) || row.sizeBytes <= 0) {
+          throw new Error('Outbound attachment metadata is invalid')
+        }
+        const sizeBytes = row.sizeBytes
+        totalBytes += sizeBytes
+      }
+      if (canonical.length !== claim.payload.attachments.length) {
+        throw new Error('Outbound attachment references are invalid')
+      }
+      if (totalBytes > SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES) {
+        throw new Error('Outbound attachments exceed the 25 MB per-message limit')
+      }
+      // The canonical size check completes before the first storage read.
+      attachments = await Promise.all(
+        claim.payload.attachments.map(async (attachment) => ({
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          cid: attachment.cid,
+          content: await getObject(attachment.storageKey),
+        }))
+      )
+    }
 
     const result = await send({
       to: claim.payload.to,
