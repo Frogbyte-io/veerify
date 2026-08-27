@@ -926,9 +926,35 @@ export default defineEventHandler(() => {
           tags: ['Support'],
           summary: 'Write an agent reply or an internal note to a conversation',
           description:
-            'Only outgoing and note kinds may be created here. isPrivate is derived from kind server-side and is never read from the request body. An outgoing message is enqueued to the durable outbox in the same transaction as its insert; a note never dispatches mail.',
+            'Only outgoing and note kinds may be created here. isPrivate is derived from kind server-side and is never read from the request body. Attachments are strict server-owned uploadId references; client storage keys and metadata are rejected. An outgoing message, its finalized attachments, and its durable outbox entry are committed atomically; a note never dispatches mail.',
           operationId: 'createSupportConversationMessage',
           parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['kind', 'body'],
+                  properties: {
+                    kind: { type: 'string', enum: ['outgoing', 'note'] },
+                    body: { type: 'string', minLength: 1, maxLength: 50000 },
+                    bodyHtml: { type: 'string', maxLength: 200000 },
+                    attachments: {
+                      type: 'array',
+                      maxItems: 10,
+                      items: {
+                        type: 'object',
+                        required: ['uploadId'],
+                        additionalProperties: false,
+                        properties: { uploadId: { type: 'string', minLength: 1 } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           responses: {
             '200': { description: 'Message created' },
             '400': { description: 'Validation failed' },

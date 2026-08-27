@@ -17,6 +17,11 @@ export default defineConfig({
   test: {
     globals: true,
     include: ['tests/integration/**/*.test.ts'],
+    // These suites exercise global claim queues and shared database tables.
+    // Running files concurrently lets one suite claim another suite's
+    // intentionally pending row, which is not application behavior under
+    // test. Keep files serial; concurrency inside each suite remains explicit.
+    fileParallelism: false,
     // Integration tests exercise real network round trips and, for the
     // reconnect case, a deliberate multi-second wait for ioredis's retry
     // strategy — the default 5s test timeout is too tight.

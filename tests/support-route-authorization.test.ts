@@ -393,6 +393,18 @@ describe('support route authorization inventory', () => {
     await expect(inboxUpdate(event)).resolves.toMatchObject({ success: true })
     expect(access.requireInboxRole).toHaveBeenCalledWith('inbox-1', 'user-1', 'admin')
   })
+
+  it('rejects legacy attachment metadata instead of silently stripping it', async () => {
+    state.params = { ...state.params, id: 'conversation-1' }
+    state.body = {
+      kind: 'outgoing',
+      body: 'Reply',
+      attachments: [{ uploadId: 'upload-1', storageKey: 'client-controlled-key' }],
+    }
+
+    await expect(messageCreate(event)).rejects.toMatchObject({ statusCode: 400 })
+    expect(access.requireConversationAccess).not.toHaveBeenCalled()
+  })
 })
 
 type BoundaryHandler = (event: never) => Promise<unknown>

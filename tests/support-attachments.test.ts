@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ALLOWED_ATTACHMENT_CONTENT_TYPES,
   SUPPORT_MAX_ATTACHMENT_BYTES,
-  buildOutboundAttachmentStorageKey,
   signSupportUploadToken,
   createSupportUploadTempKey,
   createSupportAttachmentFinalKey,
@@ -21,18 +20,6 @@ function installNuxtServerStubs() {
     return err
   })
 }
-
-describe('buildOutboundAttachmentStorageKey', () => {
-  it('keys by conversation, attachment id, and a sanitized filename', () => {
-    const key = buildOutboundAttachmentStorageKey('conv_1', 'att_1', 'Invoice (final).pdf')
-    expect(key).toBe('support/attachments/outbound/conv_1/att_1/Invoice-final-.pdf')
-  })
-
-  it('strips a path from the filename rather than nesting it', () => {
-    const key = buildOutboundAttachmentStorageKey('conv_1', 'att_1', '../../etc/passwd')
-    expect(key).toBe('support/attachments/outbound/conv_1/att_1/passwd')
-  })
-})
 
 describe('validateAttachmentUploadInput', () => {
   beforeEach(installNuxtServerStubs)

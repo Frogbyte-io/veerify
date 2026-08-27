@@ -12,14 +12,13 @@ import { createErrorResponse, ErrorCode } from './response'
  *   email; there is nothing to presign because the bytes already exist
  *   server-side by the time it runs.
  * - `upload-token.ts`'s payload is typed for project branding assets
- *   (`projectId`, `kind: 'logo' | 'banner'`, with a transform-and-finalize
- *   step); support attachments have no project, no transform, and no
- *   temp-to-final move, since the final key is known up front (conversation
- *   is known before compose starts, unlike the inbound case where the
- *   conversation is resolved later in the same request).
+ *   (`projectId`, `kind: 'logo' | 'banner'`). Support attachments instead use
+ *   an opaque upload-session ID and a durable temporary-to-final copy before
+ *   the message transaction consumes the session.
  *
  * `getStorageProvider()` and `StorageProvider` (`server/utils/storage`) are
- * the actually-shared, driver-agnostic layer and are reused unmodified.
+ * the shared, driver-agnostic layer used for both upload verification and
+ * conditional finalization.
  */
 
 /** Per-part ceiling. Matches Stage 03's inbound cap - the same "one email" budget applies in both directions. */
@@ -61,16 +60,6 @@ function sanitizeFilename(filename: string): string {
     .replace(/-+/g, '-')
     .replace(/^[-.]+|[-.]+$/g, '')
   return cleaned || 'attachment'
-}
-
-/**
- * Keyed by conversation, not by an upload session: the conversation is known
- * before compose starts (unlike inbound, keyed by delivery because the
- * conversation isn't resolved yet at that point), so the object can be
- * written straight to its final location - no temp-then-move step needed.
- */
-export function buildOutboundAttachmentStorageKey(conversationId: string, attachmentId: string, filename: string) {
-  return `support/attachments/outbound/${conversationId}/${attachmentId}/${sanitizeFilename(filename)}`
 }
 
 export function createSupportUploadTempKey(uploadId: string, fileName: string) {
