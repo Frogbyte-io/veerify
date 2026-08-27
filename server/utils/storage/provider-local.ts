@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import type { StorageProvider, PutObjectInput, PresignedUploadTarget } from './types'
+import type { StorageProvider, PutObjectInput, PresignedUploadTarget, StorageObjectMetadata, CopyObjectOptions } from './types'
 
 export interface LocalStorageProviderOptions {
   rootDir: string
@@ -40,6 +41,7 @@ function toPublicObjectUrl(baseUrl: string | undefined, key: string) {
 
 export class LocalStorageProvider implements StorageProvider {
   readonly driver = 'local' as const
+  readonly directUploadConstraints = 'proxy-required' as const
   private readonly rootDir: string
   private readonly publicBaseUrl?: string
 
@@ -68,6 +70,45 @@ export class LocalStorageProvider implements StorageProvider {
       headers: {
         'content-type': contentType,
       },
+    }
+  }
+
+  async headObject(key: string): Promise<StorageObjectMetadata> {
+    const pathInfo = this.resolvePathForKey(key)
+    let bytes: Buffer
+    try {
+      bytes = await readFile(pathInfo.absolute)
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        const missing = new Error('Object not found') as Error & { code?: string }
+        missing.code = 'OBJECT_NOT_FOUND'
+        throw missing
+      }
+      throw error
+    }
+    return {
+      sizeBytes: bytes.byteLength,
+      contentType: null,
+      objectVersion: createHash('sha256').update(bytes).digest('hex'),
+    }
+  }
+
+  async copyObject(sourceKey: string, destinationKey: string, options: CopyObjectOptions): Promise<StorageObjectMetadata> {
+    const sourcePath = this.resolvePathForKey(sourceKey)
+    const bytes = await readFile(sourcePath.absolute)
+    const objectVersion = createHash('sha256').update(bytes).digest('hex')
+    if (objectVersion !== options.ifMatch) {
+      const mismatch = new Error('Object version does not match') as Error & { code?: string }
+      mismatch.code = 'OBJECT_VERSION_MISMATCH'
+      throw mismatch
+    }
+    const destination = this.resolvePathForKey(destinationKey)
+    await mkdir(dirname(destination.absolute), { recursive: true })
+    await writeFile(destination.absolute, bytes)
+    return {
+      sizeBytes: bytes.byteLength,
+      contentType: options.contentType,
+      objectVersion,
     }
   }
 

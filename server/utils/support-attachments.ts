@@ -25,7 +25,7 @@ import { createErrorResponse, ErrorCode } from './response'
 /** Per-part ceiling. Matches Stage 03's inbound cap - the same "one email" budget applies in both directions. */
 export const SUPPORT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
-/** Per-message ceiling across all parts. Enforced by SUP-04-4 once the full attachment list for a message is known - a single presign call cannot see the others. */
+/** Per-message ceiling across all parts. Enforced by Task 8 once the full attachment list is known. */
 export const SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 /**
@@ -73,6 +73,14 @@ export function buildOutboundAttachmentStorageKey(conversationId: string, attach
   return `support/attachments/outbound/${conversationId}/${attachmentId}/${sanitizeFilename(filename)}`
 }
 
+export function createSupportUploadTempKey(uploadId: string, fileName: string) {
+  return `support/attachments/uploads/${uploadId}/${sanitizeFilename(fileName)}`
+}
+
+export function createSupportAttachmentFinalKey(attachmentId: string, fileName: string) {
+  return `support/attachments/outbound/${attachmentId}/${sanitizeFilename(fileName)}`
+}
+
 export function validateAttachmentUploadInput(contentType: string, sizeBytes: number) {
   if (!ALLOWED_ATTACHMENT_CONTENT_TYPES.has(contentType)) {
     throw createError({
@@ -94,12 +102,8 @@ export function validateAttachmentUploadInput(contentType: string, sizeBytes: nu
   }
 }
 
-export interface AttachmentUploadTokenPayload {
-  conversationId: string
-  userId: string
-  storageKey: string
-  contentType: string
-  sizeBytes: number
+export interface SupportUploadTokenPayload {
+  uploadId: string
   exp: number
 }
 
@@ -136,25 +140,23 @@ function invalidTokenError(message: string): never {
   })
 }
 
-export function createAttachmentUploadToken(
-  payload: Omit<AttachmentUploadTokenPayload, 'exp'>,
-  expiresInSeconds: number = ATTACHMENT_UPLOAD_EXPIRES_SECONDS
-): { token: string; expiresAt: string } {
+export function signSupportUploadToken(input: { uploadId: string; expiresAt: Date }): string {
   const secret = getUploadTokenSecret()
-  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds
-  const completePayload: AttachmentUploadTokenPayload = { ...payload, exp }
+  const exp = Math.floor(input.expiresAt.getTime() / 1000)
+  if (!input.uploadId || !Number.isFinite(exp) || exp <= Math.floor(Date.now() / 1000)) {
+    invalidTokenError('Upload token input is invalid')
+  }
+  const completePayload: SupportUploadTokenPayload = { uploadId: input.uploadId, exp }
   const payloadBase64 = toBase64Url(JSON.stringify(completePayload))
   const signature = signPayload(payloadBase64, secret)
-  return {
-    token: `${payloadBase64}.${signature}`,
-    expiresAt: new Date(exp * 1000).toISOString(),
-  }
+  return `${payloadBase64}.${signature}`
 }
 
-export function verifyAttachmentUploadToken(token: string): AttachmentUploadTokenPayload {
+export function verifySupportUploadToken(token: string): { uploadId: string; expiresAt: Date } {
   const secret = getUploadTokenSecret()
-  const [payloadBase64, signature] = token.split('.')
-  if (!payloadBase64 || !signature) {
+  const pieces = token.split('.')
+  const [payloadBase64, signature] = pieces
+  if (pieces.length !== 2 || !payloadBase64 || !signature || !/^[A-Za-z0-9_-]+$/.test(payloadBase64) || !/^[A-Za-z0-9_-]+$/.test(signature)) {
     invalidTokenError('Malformed upload token')
   }
 
@@ -165,20 +167,18 @@ export function verifyAttachmentUploadToken(token: string): AttachmentUploadToke
     invalidTokenError('Upload token signature is invalid')
   }
 
-  let payload: AttachmentUploadTokenPayload | null = null
+  let payload: SupportUploadTokenPayload | null = null
   try {
-    payload = JSON.parse(fromBase64Url(payloadBase64)) as AttachmentUploadTokenPayload
+    payload = JSON.parse(fromBase64Url(payloadBase64)) as SupportUploadTokenPayload
   } catch {
     invalidTokenError('Failed to parse upload token')
   }
 
   if (
     !payload ||
-    !payload.conversationId ||
-    !payload.userId ||
-    !payload.storageKey ||
-    !payload.contentType ||
-    !Number.isFinite(payload.sizeBytes)
+    !payload.uploadId ||
+    typeof payload.uploadId !== 'string' ||
+    Object.keys(payload).some((key) => !['uploadId', 'exp'].includes(key))
   ) {
     invalidTokenError('Upload token payload is incomplete')
   }
@@ -188,7 +188,7 @@ export function verifyAttachmentUploadToken(token: string): AttachmentUploadToke
     invalidTokenError('Upload token has expired')
   }
 
-  return payload
+  return { uploadId: payload.uploadId, expiresAt: new Date(payload.exp * 1000) }
 }
 
 export function newAttachmentId(): string {

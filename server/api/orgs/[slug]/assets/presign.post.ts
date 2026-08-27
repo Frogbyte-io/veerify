@@ -55,7 +55,9 @@ export default defineEventHandler(async (event) => {
   const presignedTarget =
     storage.driver === 'local'
       ? await storage.getPresignedUploadTarget(uploadId, normalizedContentType, TEMP_UPLOAD_EXPIRES_SECONDS)
-      : await storage.getPresignedUploadTarget(tempKey, normalizedContentType, TEMP_UPLOAD_EXPIRES_SECONDS)
+      : await storage.getPresignedUploadTarget(tempKey, normalizedContentType, TEMP_UPLOAD_EXPIRES_SECONDS, {
+          expectedSizeBytes: body.sizeBytes,
+        })
 
   return createSuccessResponse({
     uploadId,

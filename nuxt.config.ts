@@ -73,6 +73,10 @@ export default defineNuxtConfig({
     storageSecretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY || '',
     storageForcePathStyle: process.env.STORAGE_FORCE_PATH_STYLE === 'true',
     storagePublicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL || '',
+    // Direct S3 uploads are opt-in and only safe when the target demonstrably
+    // enforces the signed Content-Length. All other targets use the bounded
+    // application proxy.
+    storageDirectUploadConstraints: process.env.STORAGE_DIRECT_UPLOAD_CONSTRAINTS || 'proxy-required',
     storageLocalDir: process.env.STORAGE_LOCAL_DIR || '.data/storage',
     uploadTokenSecret: process.env.UPLOAD_TOKEN_SECRET || '',
     nodemailer: {

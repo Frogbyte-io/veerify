@@ -35,7 +35,7 @@ const storageState = vi.hoisted(() => ({
 }))
 
 const uploadState = vi.hoisted(() => ({
-  verifyAttachmentUploadToken: vi.fn(),
+  verifySupportUploadToken: vi.fn(),
 }))
 
 const access = vi.hoisted(() => ({
@@ -149,9 +149,9 @@ vi.mock('~/server/utils/support-attachments', async () => {
   )
   return {
     ...actual,
-    verifyAttachmentUploadToken: (token: string) => {
-      uploadState.verifyAttachmentUploadToken(token)
-      return actual.verifyAttachmentUploadToken(token)
+    verifySupportUploadToken: (token: string) => {
+      uploadState.verifySupportUploadToken(token)
+      return actual.verifySupportUploadToken(token)
     },
   }
 })
@@ -176,6 +176,7 @@ vi.mock('~/server/database/drizzle', () => {
       set: () => fluent,
       values: () => fluent,
       onConflictDoUpdate: () => fluent,
+      for: () => fluent,
       orderBy: () => fluent,
       limit: () => result,
       returning: () => result,
@@ -243,10 +244,11 @@ const conversationTagCreate = (await import('~/server/api/support/conversations/
 const conversationTagDelete = (await import('~/server/api/support/conversations/[id]/tags/[tagId].delete')).default
 const attachmentPresign = (await import('~/server/api/support/attachments/presign.post')).default
 const attachmentGet = (await import('~/server/api/support/attachments/[id].get')).default
+const attachmentComplete = (await import('~/server/api/support/attachments/[uploadId]/complete.post')).default
 const attachmentUpload = (await import('~/server/api/support/attachments/upload/[token].put')).default
 const inboundWebhook = (await import('~/server/api/support/inbound/[provider].post')).default
 const deliveryWebhook = (await import('~/server/api/support/delivery/[provider].post')).default
-const { createAttachmentUploadToken } = await import('~/server/utils/support-attachments')
+const { signSupportUploadToken } = await import('~/server/utils/support-attachments')
 
 // This import is intentionally optional in the RED phase: the route is the
 // production change being driven by this test.
@@ -683,6 +685,19 @@ const executableBoundaryCases: BoundaryCase[] = [
       ],
     }),
   },
+  {
+    name: 'attachments/[uploadId]/complete.post',
+    ...boundary(attachmentComplete, 'requireConversationAccess', ['conversation-1', 'user-1'], {
+      params: { uploadId: 'upload-1' },
+      queuedRows: [[{
+        id: 'upload-1',
+        conversationId: 'conversation-1',
+        userId: 'user-1',
+        expiresAt: new Date(Date.now() + 60_000),
+        status: 'pending',
+      }]],
+    }),
+  },
 ]
 
 function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
@@ -695,7 +710,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(45)
+    expect(executableBoundaryCases).toHaveLength(46)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}
@@ -817,53 +832,39 @@ describe('executable support route authorization inventory', () => {
   it('keeps upload token, content-type, and body validation at separate boundaries', async () => {
     state.params = { ...state.params, token: '' }
     await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 400 })
-    expect(uploadState.verifyAttachmentUploadToken).not.toHaveBeenCalled()
+    expect(uploadState.verifySupportUploadToken).not.toHaveBeenCalled()
     expect(storageState.putObject).not.toHaveBeenCalled()
 
     state.params = { ...state.params, token: 'invalid.signature' }
     state.headers = { 'content-type': 'text/plain' }
     state.rawBody = 'bytes'
     await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 400 })
-    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenCalledTimes(1)
-    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenLastCalledWith('invalid.signature')
+    expect(uploadState.verifySupportUploadToken).toHaveBeenCalledTimes(1)
+    expect(uploadState.verifySupportUploadToken).toHaveBeenLastCalledWith('invalid.signature')
     expect(storageState.putObject).not.toHaveBeenCalled()
 
-    const payload = {
-      conversationId: 'conversation-1',
-      userId: 'user-1',
-      storageKey: 'support/attachments/outbound/conversation-1/a/file.txt',
-      contentType: 'text/plain',
-      sizeBytes: 5,
-    }
-    const { token } = createAttachmentUploadToken(payload)
+    const token = signSupportUploadToken({ uploadId: 'upload-1', expiresAt: new Date(Date.now() + 60_000) })
 
-    uploadState.verifyAttachmentUploadToken.mockClear()
+    uploadState.verifySupportUploadToken.mockClear()
     state.params = { ...state.params, token }
     state.headers = { 'content-type': 'application/pdf' }
     state.rawBody = 'bytes'
-    await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 400 })
-    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenCalledWith(token)
+    await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 404 })
+    expect(uploadState.verifySupportUploadToken).toHaveBeenCalledWith(token)
     expect(storageState.putObject).not.toHaveBeenCalled()
 
-    uploadState.verifyAttachmentUploadToken.mockClear()
+    uploadState.verifySupportUploadToken.mockClear()
     state.headers = { 'content-type': 'text/plain' }
     state.rawBody = ''
-    await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 400 })
-    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenCalledWith(token)
+    await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 404 })
+    expect(uploadState.verifySupportUploadToken).toHaveBeenCalledWith(token)
     expect(storageState.putObject).not.toHaveBeenCalled()
 
-    uploadState.verifyAttachmentUploadToken.mockClear()
+    uploadState.verifySupportUploadToken.mockClear()
     state.rawBody = 'bytes'
-    await expect(attachmentUpload(event)).resolves.toMatchObject({
-      data: { uploaded: true, storageKey: payload.storageKey },
-    })
-    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenCalledTimes(1)
-    expect(uploadState.verifyAttachmentUploadToken).toHaveBeenLastCalledWith(token)
-    expect(storageState.putObject).toHaveBeenCalledTimes(1)
-    expect(storageState.putObject).toHaveBeenLastCalledWith({
-      key: payload.storageKey,
-      buffer: Buffer.from('bytes'),
-      contentType: 'text/plain',
-    })
+    await expect(attachmentUpload(event)).rejects.toMatchObject({ statusCode: 404 })
+    expect(uploadState.verifySupportUploadToken).toHaveBeenCalledTimes(1)
+    expect(uploadState.verifySupportUploadToken).toHaveBeenLastCalledWith(token)
+    expect(storageState.putObject).not.toHaveBeenCalled()
   })
 })

@@ -1014,6 +1014,95 @@ export default defineEventHandler(() => {
           },
         },
       },
+      '/api/support/attachments/presign': {
+        post: {
+          tags: ['Support'],
+          summary: 'Create a server-owned attachment upload session',
+          operationId: 'presignSupportAttachmentUpload',
+          security: [{ cookieAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['conversationId', 'filename', 'contentType', 'sizeBytes'],
+                  properties: {
+                    conversationId: { type: 'string' },
+                    filename: { type: 'string', maxLength: 255 },
+                    contentType: { type: 'string', maxLength: 100 },
+                    sizeBytes: { type: 'integer', minimum: 1, maximum: 10485760 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Upload session and target. Storage keys are never returned.',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean', example: true },
+                      data: {
+                        type: 'object',
+                        required: ['uploadId', 'uploadUrl', 'method', 'headers', 'expiresAt', 'fileName', 'contentType'],
+                        properties: {
+                          uploadId: { type: 'string', format: 'uuid' },
+                          uploadUrl: { type: 'string', format: 'uri-reference' },
+                          method: { type: 'string', enum: ['PUT'] },
+                          headers: { type: 'object', additionalProperties: { type: 'string' } },
+                          expiresAt: { type: 'string', format: 'date-time' },
+                          fileName: { type: 'string' },
+                          contentType: { type: 'string' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '400': { description: 'Unsupported type or file too large' },
+            '401': { description: 'Authentication required' },
+            '403': { description: 'No conversation access' },
+          },
+        },
+      },
+      '/api/support/attachments/upload/{token}': {
+        put: {
+          tags: ['Support'],
+          summary: 'Stream bytes to an upload session',
+          operationId: 'uploadSupportAttachment',
+          parameters: [{ in: 'path', name: 'token', required: true, schema: { type: 'string' } }],
+          requestBody: { required: true, content: { '*/*': { schema: { type: 'string', format: 'binary' } } } },
+          responses: {
+            '200': { description: 'Upload stored' },
+            '400': { description: 'Invalid token or metadata' },
+            '404': { description: 'Upload session not found' },
+            '409': { description: 'Upload session already used' },
+            '413': { description: 'Upload exceeds 10 MB' },
+          },
+        },
+      },
+      '/api/support/attachments/{uploadId}/complete': {
+        post: {
+          tags: ['Support'],
+          summary: 'Complete and verify a direct attachment upload',
+          operationId: 'completeSupportAttachmentUpload',
+          security: [{ cookieAuth: [] }],
+          parameters: [{ in: 'path', name: 'uploadId', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            '200': { description: 'Upload completed and verified' },
+            '400': { description: 'Object metadata does not match the session' },
+            '401': { description: 'Authentication required' },
+            '403': { description: 'No conversation access' },
+            '404': { description: 'Upload session or object not found' },
+            '409': { description: 'Object changed or upload state unavailable' },
+          },
+        },
+      },
       '/api/support/tags': {
         get: {
           tags: ['Support'],
