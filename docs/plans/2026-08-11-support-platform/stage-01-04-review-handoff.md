@@ -8,8 +8,10 @@ Updated: 2026-08-30
 - Worktree used for the review: `C:\Users\ananords\.t3\worktrees\veerify\stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
 - Last completed task commit: `035e237` (`feat(support): clean attachment upload sessions`)
+- Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
+- Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
-- The integration target has two later documentation commits (`c3c19b1`, `5b82348`) that are not yet in this review branch. Merge or rebase only after the remaining hardening tasks and final verification are green.
+- The integration target has two later documentation commits (`c3c19b1`, `5b82348`) that are not yet in this review branch and are pushed to `origin/support-platform`. Merge or rebase only after the remaining hardening tasks and final verification are green.
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
@@ -121,4 +123,11 @@ Do not claim `yarn build` green. The existing Nuxt/Nitro 2.11.12 production pack
 
 ## Other worktrees and branches at handoff
 
-At the time of this note, the three `t3code/*` worktrees and `D:\veerify-agent1` were clean and matched their configured upstreams. The main `support-platform` worktree was two documentation commits ahead of `origin/support-platform`. A disposable detached diagnostic worktree named `stage-01-04-baseline` was created only to compare Nuxt cold-route behavior; it contains no product work and should not be migrated.
+At the time of this note, the main worktree, the three `t3code/*` worktrees, the review worktree, and `D:\veerify-agent1` were clean. The following preservation pushes were completed:
+
+- `review/stage-01-04-audit` to `origin/review/stage-01-04-audit`;
+- `support-platform` through `5b82348` to `origin/support-platform`;
+- `sleekplan-export` through `bb30ea5` to `origin/sleekplan-export`;
+- `agent1/stage-02` through `06d7be2` to `origin/agent1/stage-02`.
+
+Every commit reachable from a local branch is also reachable from at least one remote ref. Local `main` was not pushed because its 25 commits are already preserved on `origin/support-platform`; updating protected/integration `origin/main` would be a separate release decision. Platform-owned `refs/t3/checkpoints/*` were not pushed as product branches. The disposable detached `stage-01-04-baseline` worktree was verified to contain no unique work and removed.
