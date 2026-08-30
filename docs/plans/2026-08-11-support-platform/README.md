@@ -9,6 +9,10 @@ conversation UI, so that support and product feedback live on one platform.
 that individual stage docs assume without re-arguing. Then read `deltas.md` — it records what the plan
 got wrong once implementation started, and several entries contradict the original stage docs.
 
+**Before starting Stage 05a, also read `stage-05-decisions.md`.** Stage 05 was re-cut for a 1-3 agent
+MVP on August 30, 2026 and most of its original scope was deliberately removed. That file records what
+was cut and why, so the cuts are not "completed" back in by a later agent.
+
 ---
 
 ## Current state — updated August 23, 2026
@@ -23,6 +27,7 @@ until the program is deliberately integrated into `main`.
 | Stage 02           | **Complete** — inbox and conversation core                        |
 | Stage 03           | **Complete** — inbound email                                      |
 | Stage 04           | **Complete** — 11/11 items                                        |
+| Stage 05          | **Re-cut for MVP** Aug 30, 2026 — split into 05a/05b, delta D-36   |
 | Open cross-cutting | SUP-X-1 (Redis integration suite, delta D-15)                     |
 
 **Related branches.** `sleekplan-export` holds an unrelated changelog + Sleekplan/CSV import feature
@@ -49,7 +54,8 @@ ls server/api/support/contacts/
 | [02](stage-02-conversation-core.md)  | Inbox + conversation core | 00, 01     | Next    |
 | [03](stage-03-inbound-email.md)      | Inbound email             | 02         | Blocked |
 | [04](stage-04-outbound-replies.md)   | Outbound replies          | 03         | Blocked |
-| [05](stage-05-agent-productivity.md) | Agent productivity        | 02, 04     | Blocked |
+| [05a](stage-05a-agent-speed.md)      | Agent speed (MVP)         | 02, 04     | Next    |
+| [05b](stage-05b-feedback-bridge.md)  | Feedback bridge           | 05a        | Blocked |
 | [06](stage-06-sla.md)                | Business hours + SLA      | 02, 04     | Blocked |
 | [07](stage-07-automation.md)         | Automation rules          | 02, 04     | Blocked |
 | [08](stage-08-csat.md)               | CSAT                      | 04         | Blocked |
@@ -74,7 +80,7 @@ the post-login landing route; schedule it when that churn is acceptable.
 ```
 00 Foundations
  └─→ 01 Contacts
-      └─→ 02 Conversation core ──┬─→ 03 Inbound email ─→ 04 Outbound replies ─┬─→ 05 Agent productivity
+      └─→ 02 Conversation core ──┬─→ 03 Inbound email ─→ 04 Outbound replies ─┬─→ 05a Agent speed ─→ 05b Bridge
                                  │                                            ├─→ 06 SLA ─→ 09 Reporting
                                  │                                            ├─→ 07 Automation
                                  │                                            └─→ 08 CSAT
@@ -93,15 +99,21 @@ Nothing else starts until it is merged and verified on `main`.
 
 - 00 → 01 → 02 is a strict chain. There is no parallelism available until Stage 02 lands.
 - After 02: stages 10, 13, and 11 are all independent of the 03→04 email chain and of each other.
-- After 04: stages 05, 06, 07, and 08 are mutually independent. This is the widest fan-out in the program
-  — up to four agents.
+- After 04: stages 05a, 06, 07, and 08 are mutually independent. This is the widest fan-out in the
+  program — up to four agents. **But the deliberate order is 05a, then 05b, then 06/07/08** (August 30,
+  2026). 05a is the MVP inbox; 05b is the feedback bridge, which is the only capability here that a
+  Chatwoot install cannot match. Stages 06 (SLA), 07 (automation), and 08 (CSAT) are scale/parity
+  features that the 1-3 agent target team needs less than the macros already cut from 05a — scheduling
+  them ahead of the bridge would defer the differentiator indefinitely.
 - Stage 09 needs 06. Stage 12 needs both 03 and 11.
 - Stage 09b (Home) needs only 02, despite its number — it is a personal cross-team view, not an
   org-stats page, so it needs no rollups. It sits at 09b at the requester's direction and can be pulled
   forward into the post-02 parallel group whenever wanted.
 
 **First usable product is Stage 04.** At that point a team can run real email support end to end.
-Stages 05–07 make it competitive with Freshdesk. 08–10 close the gap. 11–13 are expansion.
+**The MVP is Stage 05a** — the point at which a 1-3 agent team can comfortably live in the inbox all day,
+validated by dogfooding Veerify's own support on it for two weeks. **05b is the differentiator.**
+Stages 06–07 make it competitive with Freshdesk. 08–10 close the gap. 11–13 are expansion.
 
 ## Dispatch protocol
 

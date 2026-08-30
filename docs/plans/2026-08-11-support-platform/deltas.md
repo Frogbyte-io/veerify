@@ -669,3 +669,48 @@ generated quietly, per the agent contract.
 **Numbering note:** recorded as D-34 in commit `fc24223`, before a collision with the
 channel-config delta above. Renumbered to D-35 on merge; the code comments were updated to match,
 but that commit message still says D-34.
+
+### D-36 — Stage 05 was scoped for a team size that does not exist yet
+
+**Found:** design review, 2026-08-30, before any Stage 05 work started. **Status:** resolved in the plan.
+
+`stage-05-agent-productivity.md` carried 13 TODO items — round-robin with availability toggles, macros,
+`tsvector` full-text search, saved views, bulk actions, merge/split, the feedback bridge, and keyboard
+shortcuts — under the heading "agent productivity," without ever stating who the agent is. Reviewed
+against the actual target (**1-3 agents**), most of it turned out to be _coordination-at-scale_ tooling:
+round-robin, availability, saved views, and bulk actions all solve "many agents, one queue, who owns
+what," which is not a problem a three-person team has.
+
+The stated core loop — "assign or self-assign so the first to take it owns it" — is also **not triage**,
+though it was described that way. Triage is a sorting step that pays off when the router and the worker
+are different people. At three agents they are the same person. What that loop actually solves is
+**collision**: two agents opening the same ticket and both replying. That reframing is what drove the
+re-cut, because it promotes primitives the original document never mentioned at all — read/unread,
+draft persistence, and ownership clarity — over the tagging and bulk-sorting features it spent most of
+its length on.
+
+**Resolution.** The document was replaced by three:
+
+- `stage-05a-agent-speed.md` — the MVP: claim/assign, per-user read state, four fixed views, local
+  drafts, canned responses, scoped search, keyboard shortcuts.
+- `stage-05b-feedback-bridge.md` — convert, link-to-existing, notify-on-ship, both-way display.
+- `stage-05-decisions.md` — 22 numbered decisions and the deferral backlog.
+
+The third file is the load-bearing one. When most of a stage is deliberate omission, a doc listing only
+what to build invites the next agent to "finish" it by adding the cuts back.
+
+**Two consequences worth flagging rather than burying.**
+
+1. **The MVP now has no differentiator.** The bridge is what this program called "the reason this
+   platform exists rather than a Zendesk subscription," and it is deferred. Mitigation: 05b is scheduled
+   **immediately after 05a, ahead of Stages 06, 07, and 08** — those are parity features a three-person
+   team needs even less than the macros that were cut.
+2. **The dogfood gate cannot detect the risk the plan accepted.** Presence was cut, so agent collision is
+   an accepted risk; but current support volume is ~1 ticket/week, so a two-week dogfood window is about
+   two tickets and will never produce a collision. `stage-05a-agent-speed.md` records this explicitly and
+   asks for a deliberate compensating check rather than treating two clean tickets as evidence.
+
+**Also settled here:** `cannedResponse` loses the nullable `inboxId` column from the original schema —
+`design.md` gives each team one shared inbox, so it had exactly one possible value. And
+`conversation.status = 'snoozed'` / `conversation.snoozedUntil` now have **no writer anywhere in the
+program**; they are intentionally dormant, not dead columns awaiting cleanup.
