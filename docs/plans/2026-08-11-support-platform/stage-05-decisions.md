@@ -113,15 +113,19 @@ These became GitHub issues on August 30, 2026. Note the tension with `README.md`
 ("No GitHub Issues, no new tooling") — that protocol governs _in-program stage dispatch_; this is
 post-MVP backlog outside it.
 
-| Item                                             | Why deferred                                              |
-| ------------------------------------------------ | --------------------------------------------------------- |
-| Agent presence + typing indicators               | Solves collision properly; overkill at 3 agents            |
-| Undo-send (15–30s outbox hold)                   | Cheap because Stage 04's outbox exists, but not day-one    |
-| Snooze workflow + scheduler wake-up              | Schema columns already exist, dormant (decision 11)        |
-| Message-body full-text search (`tsvector` + GIN) | Volume-triggered                                           |
-| Macros                                           | Runbook feature for large teams                            |
-| Round-robin + agent availability toggle          | Coordination-at-scale; no problem to solve at 1–3 agents   |
-| Saved views                                      | Four fixed views suffice at this size                      |
-| Bulk actions                                     | Triage-at-volume feature                                   |
-| Merge and split                                  | Real need, but not before there is volume to merge         |
-| Server-side draft sync                           | Cross-device sync matters at 20 agents, not 3              |
+| Item                                             | Issue                                                  | Why deferred                                            |
+| ------------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------- |
+| Agent presence + typing indicators               | [#37](https://github.com/Frogbyte-io/veerify/issues/37) | Solves collision properly; overkill at 3 agents         |
+| Undo-send (15-30s outbox hold)                   | [#38](https://github.com/Frogbyte-io/veerify/issues/38) | Cheap because Stage 04's outbox exists, but not day-one |
+| Snooze workflow + scheduler wake-up              | [#39](https://github.com/Frogbyte-io/veerify/issues/39) | Schema columns already exist, dormant (decision 11)     |
+| Message-body full-text search (`tsvector` + GIN) | [#40](https://github.com/Frogbyte-io/veerify/issues/40) | Volume-triggered                                        |
+| Macros                                           | [#41](https://github.com/Frogbyte-io/veerify/issues/41) | Runbook feature for large teams                         |
+| Round-robin + agent availability toggle          | [#42](https://github.com/Frogbyte-io/veerify/issues/42) | Coordination-at-scale; no problem to solve at 1-3 agents |
+| Saved views                                      | [#43](https://github.com/Frogbyte-io/veerify/issues/43) | Four fixed views suffice at this size                   |
+| Bulk actions                                     | [#44](https://github.com/Frogbyte-io/veerify/issues/44) | Triage-at-volume feature                                |
+| Merge and split                                  | [#45](https://github.com/Frogbyte-io/veerify/issues/45) | Real need, but not before there is volume to merge      |
+| Server-side draft sync                           | [#46](https://github.com/Frogbyte-io/veerify/issues/46) | Cross-device sync matters at 20 agents, not 3           |
+
+**The feedback bridge is deliberately not on this list.** It is not backlog — it is
+[`stage-05b-feedback-bridge.md`](stage-05b-feedback-bridge.md), scheduled immediately after 05a and
+ahead of Stages 06, 07, and 08. Filing it as an issue would be how it quietly becomes "someday."
