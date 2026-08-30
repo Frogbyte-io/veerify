@@ -55,6 +55,25 @@
       >
         <SupportMessageHtml v-if="renderableHtml" :html="renderableHtml" />
         <p v-else class="text-sm whitespace-pre-wrap break-words">{{ messageBody }}</p>
+        <div
+          v-if="message.attachments && message.attachments.length > 0"
+          class="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-current/15"
+          data-testid="support-message-attachments"
+        >
+          <a
+            v-for="attachment in message.attachments"
+            :key="attachment.id"
+            :href="attachment.downloadUrl"
+            :download="attachment.fileName"
+            class="inline-flex items-center gap-1.5 rounded-md border border-current/20 bg-black/5 px-2 py-1 text-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            :aria-label="`Download ${attachment.fileName}${attachment.sizeBytes ? ` (${formatBytes(attachment.sizeBytes)})` : ''}`"
+            :data-testid="`support-message-attachment-${attachment.id}`"
+          >
+            <Icon name="lucide:paperclip" class="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span class="max-w-[14rem] truncate">{{ attachment.fileName }}</span>
+            <span v-if="attachment.sizeBytes" class="opacity-75">{{ formatBytes(attachment.sizeBytes) }}</span>
+          </a>
+        </div>
       </div>
       <div class="flex items-center gap-1.5 mt-1 px-1">
         <span class="text-xs text-muted-foreground">{{ formattedTime }}</span>
@@ -201,6 +220,13 @@ export default {
       if (!import.meta.client) return html.replace(/<[^>]*>/g, '')
       const doc = new DOMParser().parseFromString(html, 'text/html')
       return doc.body.textContent || ''
+    },
+
+    formatBytes(value) {
+      if (!Number.isFinite(value) || value < 0) return ''
+      if (value < 1024) return `${value} B`
+      if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
+      return `${(value / (1024 * 1024)).toFixed(1).replace(/\.0$/, '')} MB`
     },
 
     async retryDelivery() {
