@@ -7,7 +7,7 @@ Updated: 2026-09-01
 - Working branch: `review/stage-01-04-audit`
 - Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `610b578` (`fix(support): scope email threading to inboxes`)
+- Last completed task commit: `47ae7f4` (`fix(support): correlate delivery events through outbox`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -15,11 +15,11 @@ Updated: 2026-09-01
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-Tasks 1-11 are complete. Tasks 12-16 and the final whole-branch review remain.
+Tasks 1-12 are complete. Tasks 13-16 and the final whole-branch review remain.
 
 ## Completed work
 
-Tasks 1-11 are committed on this branch, covering:
+Tasks 1-12 are committed on this branch, covering:
 
 1. staged hardening schema and migration contracts;
 2. ranked inbox access, capability payloads, and route authorization;
@@ -31,6 +31,7 @@ Tasks 1-11 are committed on this branch, covering:
 8. leased cleanup, safe attachment downloads, outbound size enforcement, and scheduling;
 9. reactive attachment upload progress, expiry/retry handling, opaque upload submission, and persisted download chips;
 10. inbox-scoped RFC threading, explicit collision handling, diagnosed replacement tickets, and the non-unique RFC-ID index cutover.
+11. provider-account-aware delivery events, durable outbox correlation, legacy queued-row delivery, and bounce-dominant terminal status handling.
 
 The latest completed verification, after Task 10, was:
 
@@ -104,6 +105,27 @@ Validation:
 - focused inbound-email Playwright: 3/3;
 - `yarn harness:verify`: passed with 510/510 unit, 6/6 Redis integration, and 89/89 PostgreSQL integration tests; guarded E2E skipped because that command did not set `PLAYWRIGHT_FORCE=1`.
 
+## Task 12 completed
+
+- Postmark and Mailgun drivers now expose exact provider correlation headers and normalize provider event/account/message identity, durable correlation metadata, recipient, provider occurrence time, and bounce details.
+- Required non-secret provider account keys are reported by the driver-owned channel configuration contract and the inbox-scoped channel-status endpoint.
+- Outbound transport results use `{ accepted, providerMessageId?, response }`; claimed legacy rows derive provider/account metadata from their existing idempotency key without rewriting queued JSON.
+- Successful sends persist provider diagnostics. Nodemailer's RFC `messageId` is deliberately not stored as a provider ID.
+- Delivery correlation resolves the globally unique outbox idempotency key first, then permits only one exact `(provider, providerAccountKey, providerMessageId, recipient)` fallback.
+- The delivery route no longer queries `conversationMessage.channelMessageId`, so a provider ID equal to another conversation's RFC Message-ID remains uncorrelated.
+- Generated migration `0029_lyrical_ultimo.sql` cuts delivery-event uniqueness over to `(provider, providerAccountKey, providerEventId)` after the consumer change.
+- Provider occurrence time is stored separately from local receipt time, and valid unmatched events are recorded and acknowledged.
+- Concurrent duplicate claims have one owner; delivered/hard-bounce events are bounce-terminal in either arrival order and under a race, with exactly one visible bounce activity.
+
+Validation:
+
+- focused provider/email/outbox/route unit: 96/96; final full unit: 522/522 across 47 files;
+- focused delivery/outbox/schema PostgreSQL integration: 25/25; final full PostgreSQL integration: 95/95 across 10 files;
+- Redis integration: 6/6;
+- typecheck: passed;
+- lint: 0 errors and 204 warnings, all non-blocking;
+- `yarn harness:verify`: passed; guarded E2E skipped because `PLAYWRIGHT_FORCE=1` was not set, and Task 12 changed no user-facing UI behavior.
+
 ## Local runtime findings
 
 The default Windows Nuxt dev process can exhaust its roughly 2 GB V8 heap while compiling `/support`. Symptoms are a zero-byte `/support` response, about 1.7-1.9 GB resident memory, high handle growth, and eventual OOM/restart while transforming the support/Lucide dependency graph. Direct Vue SFC compilation of both changed components is fast and error-free; a clean baseline also needs roughly 55 seconds for its first `/support` response.
@@ -137,11 +159,9 @@ Do not claim `yarn build` green. The existing Nuxt/Nitro 2.11.12 production pack
 1. Confirm this branch/worktree and run `yarn harness:context`.
 2. Start Postgres and Valkey, migrate an isolated database, and seed `test@preview.local` / `password123`.
 3. Start the worktree runtime with a 4 GB Node heap and both required local secrets.
-4. Start Task 12 with provider metadata, account-key, and correlation-header tests.
-5. Cut delivery-event uniqueness over only after provider-account-aware claiming and route correlation are implemented.
-6. Prove legacy queued rows remain deliverable and concurrent terminal-state behavior remains bounce-dominant.
-7. Continue Tasks 13-16 in implementation-plan order.
-8. After Task 16, run the implementation plan's complete verification matrix and whole-branch review before integrating into `support-platform`.
+4. Start Task 13 with retry scheduling, ownership, and duplicate-risk tests.
+5. Continue Tasks 14-16 in implementation-plan order.
+6. After Task 16, run the implementation plan's complete verification matrix and whole-branch review before integrating into `support-platform`.
 
 ## Other worktrees and branches at handoff
 
