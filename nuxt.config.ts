@@ -15,8 +15,15 @@ const deploymentMode =
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
+  buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
   devtools: { enabled: true },
   nitro: {
+    output: { dir: process.env.NITRO_OUTPUT_DIR || '.output' },
+    // The self-hosted runtime image already carries the installed dependency
+    // tree. Nitro tracing can recreate nested Yarn dependency symlinks with
+    // invalid relative targets and recurse until ELOOP during packaging. Cloud
+    // builds retain Nitro's normal tracing behavior for platform deployment.
+    ...(deploymentMode === 'self-hosted' ? { externals: { trace: false } } : {}),
     experimental: {
       websocket: true,
       // Self-hosted scheduler backend — see server/services/scheduler/.

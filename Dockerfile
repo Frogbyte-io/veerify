@@ -3,9 +3,8 @@
 # ---- deps ----------------------------------------------------------------
 # Installs the full dependency tree (incl. devDependencies) once, shared by
 # the build stage and copied into the runtime stage. devDependencies are kept
-# at runtime because `drizzle-kit migrate` (a devDependency) runs on
-# container start — see the entrypoint below and the project's own
-# `postbuild` script, which follows the same "migrate before serve" pattern.
+# at runtime because `drizzle-kit migrate` (a devDependency) runs explicitly
+# on container start — see the entrypoint below.
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json yarn.lock ./
@@ -16,11 +15,9 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Build via the Nuxt CLI directly, not `yarn build`. `yarn build` triggers the
-# package.json `postbuild` script (drizzle-kit migrate && seed), which needs
-# a live database that does not exist at image-build time. Nitro has no
-# preset set in nuxt.config.ts, so it defaults to `node-server` off Vercel.
-RUN yarn nuxt build
+# Compile only. Database migration remains an explicit runtime operation in
+# docker-entrypoint.sh; no image-build or install hook mutates a database.
+RUN yarn build
 
 # ---- runtime -----------------------------------------------------------------
 FROM node:22-alpine AS runtime

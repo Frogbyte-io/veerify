@@ -74,10 +74,7 @@ jobs:
 
       - run: yarn install --frozen-lockfile
 
-        # Run nuxt build directly (not `yarn build`) to skip the
-        # postbuild lifecycle hook, which runs db migrations and
-        # requires a live PostgreSQL connection.
-      - run: npx nuxt build
+      - run: yarn build
 
   e2e:
     name: E2E (Playwright)
@@ -123,7 +120,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run migrations
-        run: yarn db:migrate
+        run: yarn db:migrate:deploy
 
       - name: Seed test data
         run: yarn db:seed:e2e
