@@ -7,7 +7,7 @@ Updated: 2026-09-01
 - Working branch: `review/stage-01-04-audit`
 - Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `47ae7f4` (`fix(support): correlate delivery events through outbox`)
+- Last completed task commit: `3ced66d` (`fix(support): schedule bounded outbound retries`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -15,11 +15,11 @@ Updated: 2026-09-01
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-Tasks 1-12 are complete. Tasks 13-16 and the final whole-branch review remain.
+Tasks 1-13 are complete. Tasks 14-16 and the final whole-branch review remain.
 
 ## Completed work
 
-Tasks 1-12 are committed on this branch, covering:
+Tasks 1-13 are committed on this branch, covering:
 
 1. staged hardening schema and migration contracts;
 2. ranked inbox access, capability payloads, and route authorization;
@@ -32,6 +32,7 @@ Tasks 1-12 are committed on this branch, covering:
 9. reactive attachment upload progress, expiry/retry handling, opaque upload submission, and persisted download chips;
 10. inbox-scoped RFC threading, explicit collision handling, diagnosed replacement tickets, and the non-unique RFC-ID index cutover.
 11. provider-account-aware delivery events, durable outbox correlation, legacy queued-row delivery, and bounce-dominant terminal status handling.
+12. due-time retry scheduling, attempt-owned completion/failure, concurrency-safe manual retry, and explicit duplicate-send confirmation.
 
 The latest completed verification, after Task 10, was:
 
@@ -126,6 +127,29 @@ Validation:
 - lint: 0 errors and 204 warnings, all non-blocking;
 - `yarn harness:verify`: passed; guarded E2E skipped because `PLAYWRIGHT_FORCE=1` was not set, and Task 12 changed no user-facing UI behavior.
 
+## Task 13 completed
+
+- Retry due times use exponential delays from 60 seconds through a 15-minute cap with deterministic 0.8-1.2 multiplier jitter.
+- Claims now require `nextAttemptAt <= now`; retryable failure persists its due time instead of becoming immediately reclaimable in the same worker pass.
+- Completion and failure mutate only the still-owned `(deliveryId, messageId, attemptCount)` claim, and return `false` after a newer worker reclaims the lease.
+- Concurrent workers have one owner, stale outcomes cannot alter the newer attempt, and one scheduler pass processes a retryable row only once.
+- The fifth owned failure is terminal. Manual retry is allowed only from terminal `failed`, is concurrency guarded, becomes due immediately, and preserves RFC/correlation identities.
+- The retry endpoint reports `previousSubmissionAttempted`; the failed-message UI requires confirmation with the exact duplicate-risk warning before making the request.
+- The outbound browser contract now distinguishes a durably scheduled pending attempt from an untouched row and uses a phase-scoped attachment retry locator.
+
+Validation:
+
+- focused retry/scheduler/authorization unit: 43/43;
+- focused outbound PostgreSQL integration: 12/12;
+- forced Playwright prerequisite confirmed a 102-test run; the broad suite was stopped after unrelated existing public-board/settings UI failures;
+- focused serial outbound-reply Playwright: 3/3;
+- final full unit: 524/524 across 47 files;
+- final full PostgreSQL integration: 98/98 across 10 files;
+- Redis integration: 6/6;
+- typecheck: passed;
+- lint: 0 errors and 205 warnings, all non-blocking;
+- `yarn harness:verify`: passed; its guarded E2E subcommand skipped because that command did not set `PLAYWRIGHT_FORCE=1`.
+
 ## Local runtime findings
 
 The default Windows Nuxt dev process can exhaust its roughly 2 GB V8 heap while compiling `/support`. Symptoms are a zero-byte `/support` response, about 1.7-1.9 GB resident memory, high handle growth, and eventual OOM/restart while transforming the support/Lucide dependency graph. Direct Vue SFC compilation of both changed components is fast and error-free; a clean baseline also needs roughly 55 seconds for its first `/support` response.
@@ -159,8 +183,8 @@ Do not claim `yarn build` green. The existing Nuxt/Nitro 2.11.12 production pack
 1. Confirm this branch/worktree and run `yarn harness:context`.
 2. Start Postgres and Valkey, migrate an isolated database, and seed `test@preview.local` / `password123`.
 3. Start the worktree runtime with a 4 GB Node heap and both required local secrets.
-4. Start Task 13 with retry scheduling, ownership, and duplicate-risk tests.
-5. Continue Tasks 14-16 in implementation-plan order.
+4. Start Task 14 with build-lifecycle tests and explicit deployment commands.
+5. Continue Tasks 15-16 in implementation-plan order.
 6. After Task 16, run the implementation plan's complete verification matrix and whole-branch review before integrating into `support-platform`.
 
 ## Other worktrees and branches at handoff
