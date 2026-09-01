@@ -7,7 +7,7 @@ Updated: 2026-09-01
 - Working branch: `review/stage-01-04-audit`
 - Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `3ced66d` (`fix(support): schedule bounded outbound retries`)
+- Last completed task commit: `f75cc74` (`chore(build): make database operations explicit`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -15,11 +15,11 @@ Updated: 2026-09-01
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-Tasks 1-13 are complete. Tasks 14-16 and the final whole-branch review remain.
+Tasks 1-14 are complete. Tasks 15-16 and the final whole-branch review remain.
 
 ## Completed work
 
-Tasks 1-13 are committed on this branch, covering:
+Tasks 1-14 are committed on this branch, covering:
 
 1. staged hardening schema and migration contracts;
 2. ranked inbox access, capability payloads, and route authorization;
@@ -33,6 +33,7 @@ Tasks 1-13 are committed on this branch, covering:
 10. inbox-scoped RFC threading, explicit collision handling, diagnosed replacement tickets, and the non-unique RFC-ID index cutover.
 11. provider-account-aware delivery events, durable outbox correlation, legacy queued-row delivery, and bounce-dominant terminal status handling.
 12. due-time retry scheduling, attempt-owned completion/failure, concurrency-safe manual retry, and explicit duplicate-send confirmation.
+13. compile-only builds, explicit deployment migrations, lifecycle regression coverage, and isolated cold/warm build profiling.
 
 The latest completed verification, after Task 10, was:
 
@@ -150,6 +151,31 @@ Validation:
 - lint: 0 errors and 205 warnings, all non-blocking;
 - `yarn harness:verify`: passed; its guarded E2E subcommand skipped because that command did not set `PLAYWRIGHT_FORCE=1`.
 
+## Task 14 completed
+
+- `yarn build` is compile-only: the implicit `postbuild` migration/seed hook was removed and a controlled lifecycle test proves only Nuxt runs.
+- `yarn db:migrate:deploy` is the explicit release migration command. Vercel runs it before compilation, Docker still migrates explicitly at container startup, and CI uses the same named command.
+- Seed operations remain explicit development/test commands and are absent from build and install hooks.
+- CI and Docker now use the ordinary `yarn build` path instead of bypassing package lifecycle behavior.
+- The build profiler owns a validated OS-temp directory, isolates both Nuxt and Nitro output, measures the complete process tree, reports phase timing/exit/peak RSS, reuses one directory for warm passes, and cleans it in `finally`.
+- Self-hosted Nitro builds disable external dependency tracing because Nitro 2.11.12 recreated recursive Yarn symlink chains and failed with `ELOOP`. The runtime image already includes `node_modules`; cloud/Vercel builds retain normal tracing.
+
+Validation:
+
+- focused build lifecycle: 2/2;
+- explicit deployment migration: passed against the isolated audit database;
+- normal production build: passed in 39.25 seconds with a 4 GiB heap;
+- cold profile: 40.155 seconds, 3600.1 MiB peak RSS;
+- warm profiles: 39.920 seconds / 3585.5 MiB and 40.406 seconds / 3616.5 MiB;
+- profiler-owned temporary directories: cleaned; tracked worktree output: untouched by profiling;
+- built server artifact: started and reached its database boundary with external dependencies resolved; local request completion remains incompatible with the repository's existing production-only PostgreSQL SSL requirement;
+- typecheck: passed;
+- full unit: 526/526 across 48 files;
+- lint: 0 errors and 205 warnings, all non-blocking;
+- Redis integration: 6/6;
+- PostgreSQL integration: 98/98 across 10 files;
+- `yarn harness:verify`: passed; its guarded E2E subcommand skipped because `PLAYWRIGHT_FORCE=1` was not set.
+
 ## Local runtime findings
 
 The default Windows Nuxt dev process can exhaust its roughly 2 GB V8 heap while compiling `/support`. Symptoms are a zero-byte `/support` response, about 1.7-1.9 GB resident memory, high handle growth, and eventual OOM/restart while transforming the support/Lucide dependency graph. Direct Vue SFC compilation of both changed components is fast and error-free; a clean baseline also needs roughly 55 seconds for its first `/support` response.
@@ -176,15 +202,15 @@ $env:PLAYWRIGHT_FORCE='1'
 yarn test:e2e:worktree -- tests/e2e/support-outbound-reply.spec.ts --workers=1
 ```
 
-Do not claim `yarn build` green. The existing Nuxt/Nitro 2.11.12 production packaging issue can corrupt transformed third-party Scalar/VueUse code (`Expected ',', got '$1'`), and the default-heap diagnostic build also reproduced V8 OOM while transforming the Lucide dependency graph. Task 14 owns build/deployment hardening.
+`yarn build` is green with `NODE_OPTIONS=--max-old-space-size=4096`. The earlier transformed third-party-code failure did not reproduce on this machine. A separate Nitro 2.11.12/Yarn dependency-tracing `ELOOP` was reproduced in normal and profiler builds, then corrected for self-hosted output while leaving cloud tracing enabled.
 
 ## Resume order
 
 1. Confirm this branch/worktree and run `yarn harness:context`.
 2. Start Postgres and Valkey, migrate an isolated database, and seed `test@preview.local` / `password123`.
 3. Start the worktree runtime with a 4 GB Node heap and both required local secrets.
-4. Start Task 14 with build-lifecycle tests and explicit deployment commands.
-5. Continue Tasks 15-16 in implementation-plan order.
+4. Start Task 15 with the two-process Redis realtime integration test.
+5. Continue Task 16 in implementation-plan order.
 6. After Task 16, run the implementation plan's complete verification matrix and whole-branch review before integrating into `support-platform`.
 
 ## Other worktrees and branches at handoff
