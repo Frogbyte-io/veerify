@@ -1,13 +1,13 @@
 # Stage 01-04 hardening review handoff
 
-Updated: 2026-08-30
+Updated: 2026-09-01
 
 ## Repository state
 
 - Working branch: `review/stage-01-04-audit`
-- Worktree used for the review: `C:\Users\ananords\.t3\worktrees\veerify\stage-01-04-review`
+- Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `035e237` (`feat(support): clean attachment upload sessions`)
+- Last completed task commit: `9212e5a` (`fix(support): keep attachment upload phases reactive`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -15,11 +15,11 @@ Updated: 2026-08-30
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-Tasks 1-9 are complete. Task 10 is in progress. Tasks 11-16 and the final whole-branch review remain.
+Tasks 1-10 are complete. Tasks 11-16 and the final whole-branch review remain.
 
 ## Completed work
 
-Tasks 1-9 are committed on this branch. The branch contains 31 commits beyond the original merge base, covering:
+Tasks 1-10 are committed on this branch, covering:
 
 1. staged hardening schema and migration contracts;
 2. ranked inbox access, capability payloads, and route authorization;
@@ -28,19 +28,21 @@ Tasks 1-9 are committed on this branch. The branch contains 31 commits beyond th
 5. bounded, independently paginated contact timelines;
 6. server-owned attachment upload sessions and bounded proxy/direct upload contracts;
 7. durable upload reservation/finalization and canonical attachment payloads;
-8. leased cleanup, safe attachment downloads, outbound size enforcement, and scheduling.
+8. leased cleanup, safe attachment downloads, outbound size enforcement, and scheduling;
+9. reactive attachment upload progress, expiry/retry handling, opaque upload submission, and persisted download chips.
 
-The latest completed verification, after Task 9, was:
+The latest completed verification, after Task 10, was:
 
 - typecheck: passed;
 - unit: 510/510 across 46 files;
-- changed-file lint: clean; full lint had 0 errors and 203 warnings, mostly pre-existing;
+- full lint: 0 errors and 202 warnings, all non-blocking;
 - attachment cleanup PostgreSQL focus: 12/12;
 - PostgreSQL integration: 87/87 across 10 files;
-- guarded E2E: skipped because `PLAYWRIGHT_FORCE=1` was not set;
-- Redis integration: skipped because Valkey was unreachable at that time.
+- Redis integration: 6/6;
+- focused outbound-reply Playwright: 2 passed, 1 provider-credential-gated skip;
+- guarded E2E in `yarn harness:verify`: skipped because `PLAYWRIGHT_FORCE=1` was not set for that command.
 
-## Task 10 work in progress
+## Task 10 completed
 
 Modified files:
 
@@ -72,15 +74,17 @@ Review fixes already applied to the draft:
 - the browser test explicitly installs and verifies the seed session cookie before navigation;
 - direct uploads assert PUT-before-complete ordering.
 
+The focused UI failure was caused by mutating the plain attachment object after pushing it into Vue's reactive array. Internal state reached `ready`, but the rendered phase remained `preparing`. Commit `9212e5a` now mutates the array's reactive proxy, preserving the real presign/proxy path and the original browser assertions.
+
 Current validation state:
 
-- `yarn typecheck`: passed after the Task 10 TypeScript correction;
-- changed-file ESLint: passed before the latest browser-fixture-only edits and should be rerun;
-- focused serial API browser case: passed (real proxy upload, opaque ID, persisted download payload);
-- Postmark round-trip case: correctly skipped without provider credentials;
-- focused UI browser case: not green yet.
-
-The current UI failure is deterministic after authentication is fixed: selecting the first file leaves the composer in `Preparing attachment...`; the expected presign request does not complete within the assertion timeout. The test was changed to use the real presign and proxy endpoints for the first upload, with mocks retained only for external-storage failure/retry/expiry. Continue by tracing the browser presign request/response and server handler rather than weakening the state assertion.
+- `yarn harness:verify`: passed;
+- typecheck: passed;
+- unit: 510/510 across 46 files;
+- lint: 0 errors and 202 warnings;
+- Redis integration: 6/6;
+- PostgreSQL integration: 87/87 across 10 files;
+- focused serial outbound-reply Playwright: 2 passed and 1 Postmark-credential-gated skip.
 
 ## Local runtime findings
 
@@ -115,10 +119,10 @@ Do not claim `yarn build` green. The existing Nuxt/Nitro 2.11.12 production pack
 1. Confirm this branch/worktree and run `yarn harness:context`.
 2. Start Postgres and Valkey, migrate an isolated database, and seed `test@preview.local` / `password123`.
 3. Start the worktree runtime with a 4 GB Node heap and both required local secrets.
-4. Finish the Task 10 presign/browser diagnosis; keep the first upload on the real proxy path.
-5. Run Task 10 focused serial Playwright until the non-provider attachment cases pass.
-6. Run changed-file lint, typecheck, affected unit/integration suites, then `yarn harness:verify` and record every guarded skip.
-7. Request an independent Luna acceptance review, fix all Important/Critical findings, commit Task 10, then continue Tasks 11-16.
+4. Start Task 11 by writing the inbox-scope and same-inbox ambiguity tests for RFC threading identity.
+5. Keep the current global RFC-ID unique index until Task 11's scoped lookup and ambiguity handling are deployed, then generate its replacement migration.
+6. Run Task 11's focused unit, PostgreSQL integration, and serial inbound-email browser cases.
+7. Continue Tasks 12-16 in implementation-plan order.
 8. After Task 16, run the implementation plan's complete verification matrix and whole-branch review before integrating into `support-platform`.
 
 ## Other worktrees and branches at handoff
