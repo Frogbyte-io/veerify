@@ -10,10 +10,9 @@ import { MailgunChannelDriver } from '../server/services/support-channels/webhoo
  * for inbound - so a provider changing its field names fails here rather
  * than silently producing an event nothing acts on.
  *
- * SUP-04-9's biggest unconfirmed assumption (see `DeliveryEvent.messageId`'s
- * doc comment) is that a provider's delivery webhook identifies the message
- * by the same RFC Message-ID this app set when sending over SMTP. These
- * fixtures assume that is true - they cannot prove it against a real send.
+ * Correlation metadata is provider identity, not RFC Message-ID. These
+ * fixtures pin the provider/account/event fields and durable outbox key so a
+ * provider payload change cannot silently reintroduce RFC-ID matching.
  */
 
 const POSTMARK_DELIVERY = {
@@ -22,6 +21,8 @@ const POSTMARK_DELIVERY = {
   Recipient: 'Customer@Example.com',
   DeliveredAt: '2026-08-20T10:00:00Z',
   Details: 'smtp;250 2.0.0 OK',
+  ServerID: 42,
+  Metadata: { 'veerify-delivery-id': 'delivery-1' },
 }
 
 const POSTMARK_HARD_BOUNCE = {
@@ -43,14 +44,19 @@ const POSTMARK_OPEN = {
 }
 
 describe('PostmarkChannelDriver delivery events', () => {
-  const driver = new PostmarkChannelDriver({ user: 'u', password: 'p' })
+  const driver = new PostmarkChannelDriver({ user: 'u', password: 'p', accountKey: 'postmark-account' })
 
   it('parses a Delivery record as delivered, with no bounceType', () => {
     const event = driver.parseDeliveryEvent(POSTMARK_DELIVERY)
     expect(event).toEqual({
+      providerEventId: 'Delivery:reply-abc@acme.com:customer@example.com:2026-08-20T10:00:00Z',
+      providerAccountKey: '42',
+      correlationKey: 'delivery-1',
+      providerMessageId: 'reply-abc@acme.com',
       recordType: 'delivered',
-      messageId: 'reply-abc@acme.com',
       recipient: 'customer@example.com',
+      occurredAt: new Date('2026-08-20T10:00:00Z'),
+      error: null,
       bounceType: null,
       description: null,
     })
@@ -86,7 +92,9 @@ describe('PostmarkChannelDriver delivery events', () => {
   })
 
   it('keys a non-Bounce event by a composite of record type, message id, and recipient', () => {
-    expect(driver.extractDeliveryEventId(POSTMARK_DELIVERY)).toBe('Delivery:reply-abc@acme.com:customer@example.com')
+    expect(driver.extractDeliveryEventId(POSTMARK_DELIVERY)).toBe(
+      'Delivery:reply-abc@acme.com:customer@example.com:2026-08-20T10:00:00Z'
+    )
   })
 
   it('returns null for a payload with neither a Bounce ID nor enough to compose a key', () => {
@@ -111,6 +119,9 @@ function mailgunEventFixture(eventData: Record<string, unknown>) {
 
 const MAILGUN_DELIVERED = mailgunEventFixture({
   event: 'delivered',
+  timestamp: 1788256800,
+  domain: { name: 'MG.Acme.com' },
+  'user-variables': { 'veerify-delivery-id': 'delivery-1' },
   recipient: 'Customer@Example.com',
   message: { headers: { 'message-id': '<reply-abc@acme.com>' } },
 })
@@ -130,14 +141,19 @@ const MAILGUN_SOFT_FAILED = {
 }
 
 describe('MailgunChannelDriver delivery events', () => {
-  const driver = new MailgunChannelDriver({ signingKey: MAILGUN_SIGNING_KEY })
+  const driver = new MailgunChannelDriver({ signingKey: MAILGUN_SIGNING_KEY, accountKey: 'mailgun-account' })
 
   it('parses a delivered event', () => {
     const event = driver.parseDeliveryEvent(MAILGUN_DELIVERED)
     expect(event).toEqual({
+      providerEventId: 'mg-event-1',
+      providerAccountKey: 'mg.acme.com',
+      correlationKey: 'delivery-1',
+      providerMessageId: 'reply-abc@acme.com',
       recordType: 'delivered',
-      messageId: 'reply-abc@acme.com',
       recipient: 'customer@example.com',
+      occurredAt: new Date(1788256800 * 1000),
+      error: null,
       bounceType: null,
       description: null,
     })
@@ -158,6 +174,15 @@ describe('MailgunChannelDriver delivery events', () => {
   it('keys every event by event-data.id', () => {
     expect(driver.extractDeliveryEventId(MAILGUN_DELIVERED)).toBe('mg-event-1')
     expect(driver.extractDeliveryEventId(MAILGUN_HARD_FAILED)).toBe('mg-event-1')
+  })
+
+  it('returns null when Mailgun supplies no event trace id', () => {
+    expect(
+      driver.extractDeliveryEventId({
+        ...MAILGUN_DELIVERED,
+        'event-data': { ...MAILGUN_DELIVERED['event-data'], id: undefined },
+      })
+    ).toBeNull()
   })
 
   it('verifies the same signature envelope as inbound mail', () => {

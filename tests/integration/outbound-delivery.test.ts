@@ -7,6 +7,7 @@ import { organization, team } from '../../server/database/schema/auth'
 import {
   contact,
   conversation,
+  conversationAttachment,
   conversationMessage,
   supportInbox,
   supportOutboundDelivery,
@@ -17,6 +18,7 @@ import {
   completeOutboundDelivery,
   enqueueOutboundDelivery,
   failOutboundDelivery,
+  processOutboundDelivery,
   resetOutboundDeliveryForRetry,
 } from '../../server/utils/outbound-delivery'
 
@@ -266,5 +268,76 @@ describe('outbound delivery outbox (real Postgres)', () => {
     const reclaimed = await claimNextOutboundDelivery()
     expect(reclaimed?.id).toBe(claim!.id)
     await completeOutboundDelivery(reclaimed!.id, messageId)
+  })
+
+  it('delivers a legacy queued payload and derives provider diagnostics without rewriting it', async () => {
+    const messageId = newMessage()
+    const deliveryId = `delivery_legacy_${randomUUID()}`
+    const storageKey = `support/${randomUUID()}/legacy.txt`
+    const idempotencyKey = `legacy-key-${randomUUID()}`
+    const legacyPayload = {
+      to: 'customer@example.com',
+      subject: 'Legacy queued reply',
+      text: 'Still deliver me',
+      attachments: [{ filename: 'legacy.txt', storageKey }],
+    }
+    await insertMessage(messageId)
+    await db.insert(conversationAttachment).values({
+      id: `attachment_${randomUUID()}`,
+      messageId,
+      storageKey,
+      fileName: 'legacy.txt',
+      sizeBytes: 12,
+      createdAt: now,
+    })
+    await db.insert(supportOutboundDelivery).values({
+      id: deliveryId,
+      messageId,
+      kind: 'email',
+      payload: legacyPayload,
+      idempotencyKey,
+      provider: null,
+      providerAccountKey: null,
+      providerMessageId: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    const previousProvider = process.env.SUPPORT_CHANNEL_PROVIDER
+    const previousAccount = process.env.SUPPORT_POSTMARK_ACCOUNT_KEY
+    process.env.SUPPORT_CHANNEL_PROVIDER = 'postmark'
+    process.env.SUPPORT_POSTMARK_ACCOUNT_KEY = 'legacy-server'
+    try {
+      const claim = await claimNextOutboundDelivery()
+      expect(claim?.id).toBe(deliveryId)
+      expect(claim?.idempotencyKey).toBe(idempotencyKey)
+      expect(claim?.provider).toBe('postmark')
+      expect(claim?.providerAccountKey).toBe('legacy-server')
+
+      const sendEmail = async () => ({ accepted: true, response: 'accepted', providerMessageId: 'provider-legacy-1' })
+      const result = await processOutboundDelivery(claim!, {
+        sendEmail,
+        getObject: async (key) => {
+          expect(key).toBe(storageKey)
+          return Buffer.from('legacy bytes')
+        },
+      })
+      expect(result).toEqual({ outcome: 'sent' })
+
+      const [stored] = await db
+        .select()
+        .from(supportOutboundDelivery)
+        .where(eq(supportOutboundDelivery.id, deliveryId))
+      expect(stored.payload).toEqual(legacyPayload)
+      expect(stored.provider).toBe('postmark')
+      expect(stored.providerAccountKey).toBe('legacy-server')
+      expect(stored.providerMessageId).toBe('provider-legacy-1')
+      expect(stored.status).toBe('sent')
+    } finally {
+      if (previousProvider === undefined) delete process.env.SUPPORT_CHANNEL_PROVIDER
+      else process.env.SUPPORT_CHANNEL_PROVIDER = previousProvider
+      if (previousAccount === undefined) delete process.env.SUPPORT_POSTMARK_ACCOUNT_KEY
+      else process.env.SUPPORT_POSTMARK_ACCOUNT_KEY = previousAccount
+    }
   })
 })

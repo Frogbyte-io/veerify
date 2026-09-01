@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { conversation, conversationAttachment, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
-import { sendEmail as defaultSendEmail, type EmailAttachment, type SendEmailOptions } from '~/lib/email'
+import { sendEmail as defaultSendEmail, type EmailAttachment, type SendEmailOptions, type SendEmailResult } from '~/lib/email'
+import { getConfiguredChannelDriver, getConfiguredChannelProviderName } from '~/server/services/support-channels'
 import { getStorageProvider } from '~/server/utils/storage'
 import { SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-attachments'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
@@ -83,6 +84,104 @@ export interface OutboundClaim {
   payload: OutboundDeliveryPayload
   idempotencyKey: string
   attemptCount: number
+  provider?: string
+  providerAccountKey?: string
+}
+
+export interface DeliveryCorrelationInput {
+  correlationKey: string | null
+  provider: string
+  providerAccountKey: string
+  providerMessageId: string | null
+  recipient: string | null
+}
+
+export interface DeliveryCorrelationCandidate {
+  messageId: string
+  conversationId: string
+  idempotencyKey: string
+  provider: string | null
+  providerAccountKey: string | null
+  providerMessageId: string | null
+  payload: OutboundDeliveryPayload
+}
+
+function payloadRecipients(payload: OutboundDeliveryPayload): string[] {
+  const to = Array.isArray(payload.to) ? payload.to : [payload.to]
+  return [...to, ...(payload.cc ?? [])].map((value) => value.trim().toLowerCase())
+}
+
+/** Select only an identity-exact outbox row; ambiguous provider fallbacks fail closed. */
+export function selectDeliveryCorrelationCandidate(
+  input: DeliveryCorrelationInput,
+  candidates: DeliveryCorrelationCandidate[]
+): DeliveryCorrelationCandidate | null {
+  if (input.correlationKey) {
+    const primary = candidates.filter((candidate) => candidate.idempotencyKey === input.correlationKey)
+    if (primary.length === 1) return primary[0]
+  }
+
+  if (!input.providerMessageId || !input.recipient) return null
+  const recipient = input.recipient.trim().toLowerCase()
+  const fallback = candidates.filter(
+    (candidate) =>
+      candidate.provider === input.provider &&
+      candidate.providerAccountKey === input.providerAccountKey &&
+      candidate.providerMessageId === input.providerMessageId &&
+      payloadRecipients(candidate.payload).includes(recipient)
+  )
+  return fallback.length === 1 ? fallback[0] : null
+}
+
+/** Resolve delivery metadata exclusively through the durable outbound outbox. */
+export async function resolveDeliveryCorrelation(
+  input: DeliveryCorrelationInput
+): Promise<{ id: string; conversationId: string } | null> {
+  const rows: DeliveryCorrelationCandidate[] = []
+
+  if (input.correlationKey) {
+    const primary = await db
+      .select({
+        messageId: supportOutboundDelivery.messageId,
+        conversationId: conversationMessage.conversationId,
+        idempotencyKey: supportOutboundDelivery.idempotencyKey,
+        provider: supportOutboundDelivery.provider,
+        providerAccountKey: supportOutboundDelivery.providerAccountKey,
+        providerMessageId: supportOutboundDelivery.providerMessageId,
+        payload: supportOutboundDelivery.payload,
+      })
+      .from(supportOutboundDelivery)
+      .innerJoin(conversationMessage, eq(conversationMessage.id, supportOutboundDelivery.messageId))
+      .where(eq(supportOutboundDelivery.idempotencyKey, input.correlationKey))
+      .limit(1)
+    rows.push(...(primary as DeliveryCorrelationCandidate[]))
+  }
+
+  if (rows.length === 0 && input.providerMessageId && input.recipient) {
+    const fallback = await db
+      .select({
+        messageId: supportOutboundDelivery.messageId,
+        conversationId: conversationMessage.conversationId,
+        idempotencyKey: supportOutboundDelivery.idempotencyKey,
+        provider: supportOutboundDelivery.provider,
+        providerAccountKey: supportOutboundDelivery.providerAccountKey,
+        providerMessageId: supportOutboundDelivery.providerMessageId,
+        payload: supportOutboundDelivery.payload,
+      })
+      .from(supportOutboundDelivery)
+      .innerJoin(conversationMessage, eq(conversationMessage.id, supportOutboundDelivery.messageId))
+      .where(
+        and(
+          eq(supportOutboundDelivery.provider, input.provider),
+          eq(supportOutboundDelivery.providerAccountKey, input.providerAccountKey),
+          eq(supportOutboundDelivery.providerMessageId, input.providerMessageId)
+        )
+      )
+    rows.push(...(fallback as DeliveryCorrelationCandidate[]))
+  }
+
+  const match = selectDeliveryCorrelationCandidate(input, rows)
+  return match ? { id: match.messageId, conversationId: match.conversationId } : null
 }
 
 /**
@@ -97,6 +196,9 @@ export interface OutboundClaim {
 export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null> {
   const now = new Date()
   const leaseExpiresAt = new Date(now.getTime() + OUTBOUND_DELIVERY_CLAIM_LEASE_SECONDS * 1000)
+  const driver = getConfiguredChannelDriver()
+  const provider = driver?.name ?? getConfiguredChannelProviderName()
+  const providerAccountKey = driver?.accountKey ?? ''
 
   const result = await db.execute<{
     id: string
@@ -105,9 +207,15 @@ export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null>
     payload: OutboundDeliveryPayload
     idempotency_key: string
     attempt_count: number
+    provider: string
+    provider_account_key: string
   }>(sql`
     UPDATE support_outbound_delivery
-    SET attempt_count = attempt_count + 1, lease_expires_at = ${leaseExpiresAt}, updated_at = ${now}
+    SET attempt_count = attempt_count + 1,
+        lease_expires_at = ${leaseExpiresAt},
+        provider = COALESCE(provider, ${provider}),
+        provider_account_key = COALESCE(provider_account_key, ${providerAccountKey}),
+        updated_at = ${now}
     WHERE id = (
       SELECT id FROM support_outbound_delivery
       WHERE status = 'pending'
@@ -117,7 +225,7 @@ export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null>
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
-    RETURNING id, message_id, kind, payload, idempotency_key, attempt_count
+    RETURNING id, message_id, kind, payload, idempotency_key, attempt_count, provider, provider_account_key
   `)
 
   const row = result.rows[0]
@@ -130,6 +238,8 @@ export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null>
     payload: row.payload,
     idempotencyKey: row.idempotency_key,
     attemptCount: row.attempt_count,
+    provider: row.provider,
+    providerAccountKey: row.provider_account_key,
   }
 }
 
@@ -200,11 +310,27 @@ export async function publishDeliveryStatusChanged(messageId: string): Promise<v
 }
 
 /** Mark a delivery sent. Terminal - never claimed again. */
-export async function completeOutboundDelivery(id: string, messageId: string): Promise<void> {
+export async function completeOutboundDelivery(
+  id: string,
+  messageId: string,
+  diagnostics?: { provider: string; providerAccountKey: string; providerMessageId?: string }
+): Promise<void> {
   await applyDeliveryOutcome({
     deliveryId: id,
     messageId,
-    deliveryPatch: { status: 'sent', leaseExpiresAt: null, lastError: null, updatedAt: new Date() },
+    deliveryPatch: {
+      status: 'sent',
+      leaseExpiresAt: null,
+      lastError: null,
+      ...(diagnostics
+        ? {
+            provider: diagnostics.provider,
+            providerAccountKey: diagnostics.providerAccountKey,
+            providerMessageId: diagnostics.providerMessageId ?? null,
+          }
+        : {}),
+      updatedAt: new Date(),
+    },
     messagePatch: { deliveryStatus: 'sent', deliveryError: null },
   })
   await publishDeliveryStatusChanged(messageId)
@@ -282,7 +408,7 @@ export function sanitizeDeliveryError(error: unknown): string {
   return raw.replace(/\s+/g, ' ').trim().slice(0, MAX_ERROR_LENGTH)
 }
 
-export type SendEmailFn = (options: SendEmailOptions) => Promise<{ success: boolean; message: string; error?: unknown }>
+export type SendEmailFn = (options: SendEmailOptions) => Promise<SendEmailResult>
 export type GetObjectFn = (storageKey: string) => Promise<Buffer>
 
 export interface ProcessOutboundDeliveryDeps {
@@ -293,7 +419,11 @@ export interface ProcessOutboundDeliveryDeps {
   /** Defaults to canonical attachment rows for the claimed message. */
   getAttachmentSizes?: (messageId: string) => Promise<Array<{ storageKey: string; sizeBytes: number | null }>>
   /** Defaults to `completeOutboundDelivery` - injectable so unit tests never touch the db. */
-  onSent?: (id: string, messageId: string) => Promise<void>
+  onSent?: (
+    id: string,
+    messageId: string,
+    diagnostics: { provider: string; providerAccountKey: string; providerMessageId?: string }
+  ) => Promise<void>
   /** Defaults to `failOutboundDelivery` - injectable so unit tests never touch the db. */
   onFailed?: (id: string, messageId: string, error: unknown, attemptCount: number) => Promise<void>
 }
@@ -326,6 +456,7 @@ export async function processOutboundDelivery(
       .where(eq(conversationAttachment.messageId, messageId)))
   const onSent = deps.onSent ?? completeOutboundDelivery
   const onFailed = deps.onFailed ?? failOutboundDelivery
+  const driver = getConfiguredChannelDriver()
 
   try {
     let attachments: EmailAttachment[] | undefined
@@ -376,17 +507,25 @@ export async function processOutboundDelivery(
       // key as a stable, traceable header alongside the already-stable
       // Message-ID so provider webhooks and support investigations can
       // correlate every retry to one queued delivery.
-      headers: { ...claim.payload.headers, 'X-Veerify-Idempotency-Key': claim.idempotencyKey },
+      headers: {
+        ...claim.payload.headers,
+        'X-Veerify-Idempotency-Key': claim.idempotencyKey,
+        ...(driver?.buildDeliveryCorrelationHeaders(claim.idempotencyKey) ?? {}),
+      },
       attachments,
     })
 
-    if (result.success) {
-      await onSent(claim.id, claim.messageId)
+    if (result.accepted) {
+      await onSent(claim.id, claim.messageId, {
+        provider: claim.provider ?? driver?.name ?? getConfiguredChannelProviderName(),
+        providerAccountKey: claim.providerAccountKey ?? driver?.accountKey ?? '',
+        providerMessageId: result.providerMessageId,
+      })
       return { outcome: 'sent' }
     }
 
-    await onFailed(claim.id, claim.messageId, result.error ?? result.message, claim.attemptCount)
-    return { outcome: 'failed', error: sanitizeDeliveryError(result.error ?? result.message) }
+    await onFailed(claim.id, claim.messageId, result.response, claim.attemptCount)
+    return { outcome: 'failed', error: sanitizeDeliveryError(result.response) }
   } catch (error) {
     await onFailed(claim.id, claim.messageId, error, claim.attemptCount)
     return { outcome: 'failed', error: sanitizeDeliveryError(error) }

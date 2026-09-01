@@ -670,6 +670,7 @@ export const supportDeliveryEvent = pgTable(
   (table) => ({
     uniqueProviderEventId: uniqueIndex('support_delivery_event_provider_event_id_idx').on(
       table.provider,
+      table.providerAccountKey,
       table.providerEventId
     ),
     messageIdx: index('support_delivery_event_message_idx').on(table.messageId),

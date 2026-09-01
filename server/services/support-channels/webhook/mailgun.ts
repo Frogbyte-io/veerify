@@ -180,6 +180,9 @@ interface MailgunEventPayload {
     /** Set on `event: 'failed'` - 'permanent' is a hard bounce, 'temporary' is soft/retryable. */
     severity?: string
     reason?: string
+    timestamp?: number | string
+    domain?: { name?: string } | string
+    'user-variables'?: Record<string, string>
     'delivery-status'?: { description?: string; message?: string }
     message?: { headers?: { 'message-id'?: string } }
   }
@@ -208,6 +211,7 @@ function readSignature(payload: MailgunInboundPayload | null): Required<MailgunS
 
 export class MailgunChannelDriver implements ChannelDriver {
   readonly name = 'mailgun'
+  readonly accountKey: string
 
   private readonly signingKey: string
   private readonly toleranceSeconds: number
@@ -219,6 +223,7 @@ export class MailgunChannelDriver implements ChannelDriver {
     signingKey?: string
     toleranceSeconds?: number
     apiKey?: string
+    accountKey?: string
     /** EU accounts live on api.eu.mailgun.net, so this has to be settable. */
     apiBaseUrl?: string
     fetchImpl?: FetchImpl
@@ -226,6 +231,7 @@ export class MailgunChannelDriver implements ChannelDriver {
     this.signingKey = (options?.signingKey ?? process.env.SUPPORT_MAILGUN_SIGNING_KEY ?? '').trim()
     this.toleranceSeconds = options?.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS
     this.apiKey = (options?.apiKey ?? process.env.SUPPORT_MAILGUN_API_KEY ?? '').trim()
+    this.accountKey = (options?.accountKey ?? process.env.SUPPORT_MAILGUN_ACCOUNT_KEY ?? '').trim()
     this.apiBaseUrl = (
       options?.apiBaseUrl ??
       process.env.SUPPORT_MAILGUN_API_BASE_URL ??
@@ -237,8 +243,13 @@ export class MailgunChannelDriver implements ChannelDriver {
   isConfigured(): ChannelConfiguration {
     const missing: string[] = []
     if (!this.signingKey) missing.push('SUPPORT_MAILGUN_SIGNING_KEY')
+    if (!this.accountKey) missing.push('SUPPORT_MAILGUN_ACCOUNT_KEY')
 
     return { configured: missing.length === 0, missing }
+  }
+
+  buildDeliveryCorrelationHeaders(correlationKey: string): Record<string, string> {
+    return { 'X-Mailgun-Variables': JSON.stringify({ 'veerify-delivery-id': correlationKey }) }
   }
 
   async checkSendingAuthorization(address: string): Promise<SendingAuthorization> {
@@ -379,11 +390,19 @@ export class MailgunChannelDriver implements ChannelDriver {
     const messageId = normalizeMessageId(data.message?.headers?.['message-id'])
     const recipient = data.recipient?.trim().toLowerCase() || null
     const description = data['delivery-status']?.description ?? data['delivery-status']?.message ?? data.reason ?? null
+    const timestamp = Number(data.timestamp)
+    const occurredAt = Number.isFinite(timestamp) ? new Date(timestamp * 1000) : new Date()
+    const domain = typeof data.domain === 'string' ? data.domain : data.domain?.name
 
     return {
+      providerEventId: this.extractDeliveryEventId(typed),
+      providerAccountKey: domain?.trim().toLowerCase() || this.accountKey,
+      correlationKey: data['user-variables']?.['veerify-delivery-id']?.trim() || null,
+      providerMessageId: messageId,
       recordType,
-      messageId,
       recipient,
+      occurredAt,
+      error: recordType === 'bounced' ? description?.trim() || null : null,
       bounceType: recordType === 'bounced' ? (data.severity === 'temporary' ? 'soft' : 'hard') : null,
       description: description?.trim() || null,
     }

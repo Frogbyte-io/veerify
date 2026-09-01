@@ -75,6 +75,14 @@ interface PostmarkDeliveryPayload {
   Email?: string
   Type?: string
   Description?: string
+  Details?: string
+  Metadata?: Record<string, string>
+  ServerID?: number | string
+  DeliveredAt?: string
+  BouncedAt?: string
+  ReceivedAt?: string
+  FirstOpen?: string
+  ClickedAt?: string
 }
 
 /** Postmark's own transient/retryable bounce types - Type values not in this set are treated as hard. */
@@ -155,6 +163,7 @@ function toAttachments(values: PostmarkAttachment[] | undefined): InboundAttachm
 
 export class PostmarkChannelDriver implements ChannelDriver {
   readonly name = 'postmark'
+  readonly accountKey: string
 
   private readonly user: string
   private readonly password: string
@@ -171,11 +180,13 @@ export class PostmarkChannelDriver implements ChannelDriver {
      * resulting `unknown` as "the check is broken".
      */
     apiToken?: string
+    accountKey?: string
     fetchImpl?: FetchImpl
   }) {
     this.user = (credentials?.user ?? process.env.SUPPORT_POSTMARK_WEBHOOK_USER ?? '').trim()
     this.password = (credentials?.password ?? process.env.SUPPORT_POSTMARK_WEBHOOK_PASSWORD ?? '').trim()
     this.apiToken = (credentials?.apiToken ?? process.env.SUPPORT_POSTMARK_ACCOUNT_TOKEN ?? '').trim()
+    this.accountKey = (credentials?.accountKey ?? process.env.SUPPORT_POSTMARK_ACCOUNT_KEY ?? '').trim()
     this.fetchImpl = credentials?.fetchImpl ?? ((input, init) => fetch(input, init))
   }
 
@@ -183,8 +194,16 @@ export class PostmarkChannelDriver implements ChannelDriver {
     const missing: string[] = []
     if (!this.user) missing.push('SUPPORT_POSTMARK_WEBHOOK_USER')
     if (!this.password) missing.push('SUPPORT_POSTMARK_WEBHOOK_PASSWORD')
+    if (!this.accountKey) missing.push('SUPPORT_POSTMARK_ACCOUNT_KEY')
 
     return { configured: missing.length === 0, missing }
+  }
+
+  buildDeliveryCorrelationHeaders(correlationKey: string): Record<string, string> {
+    return {
+      'X-PM-KeepID': 'true',
+      'X-PM-Metadata-veerify-delivery-id': correlationKey,
+    }
   }
 
   async checkSendingAuthorization(address: string): Promise<SendingAuthorization> {
@@ -307,7 +326,9 @@ export class PostmarkChannelDriver implements ChannelDriver {
     const recipient = (typed.Recipient ?? typed.Email ?? '').trim().toLowerCase()
     if (!messageId || !recipient) return null
 
-    return `${typed.RecordType ?? 'unknown'}:${messageId}:${recipient}`
+    const occurredAt = typed.DeliveredAt ?? typed.BouncedAt ?? typed.ReceivedAt ?? typed.FirstOpen ?? typed.ClickedAt
+    if (!occurredAt) return null
+    return `${typed.RecordType ?? 'unknown'}:${messageId}:${recipient}:${occurredAt}`
   }
 
   parseDeliveryEvent(payload: unknown): DeliveryEvent {
@@ -317,11 +338,21 @@ export class PostmarkChannelDriver implements ChannelDriver {
     }
 
     const recordType = RECORD_TYPE_MAP[typed.RecordType ?? ''] ?? (typed.RecordType ?? 'unknown').toLowerCase()
+    const providerMessageId = normalizeMessageId(typed.MessageID)
+    const recipient = (typed.Recipient ?? typed.Email ?? '').trim().toLowerCase() || null
+    const occurredRaw = typed.DeliveredAt ?? typed.BouncedAt ?? typed.ReceivedAt ?? typed.FirstOpen ?? typed.ClickedAt
+    const occurredAt = occurredRaw ? new Date(occurredRaw) : new Date()
+    const providerEventId = this.extractDeliveryEventId(typed)
 
     return {
+      providerEventId,
+      providerAccountKey: typed.ServerID === undefined ? this.accountKey : String(typed.ServerID),
+      correlationKey: typed.Metadata?.['veerify-delivery-id']?.trim() || null,
+      providerMessageId,
       recordType,
-      messageId: normalizeMessageId(typed.MessageID),
-      recipient: (typed.Recipient ?? typed.Email ?? '').trim().toLowerCase() || null,
+      recipient,
+      occurredAt: Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt,
+      error: recordType === 'bounced' ? typed.Description?.trim() || typed.Details?.trim() || null : null,
       bounceType: recordType === 'bounced' ? classifyPostmarkBounce(typed.Type) : null,
       description: typed.Description?.trim() || null,
     }

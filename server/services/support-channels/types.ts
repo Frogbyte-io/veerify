@@ -128,6 +128,9 @@ export interface ChannelDriver {
   /** Stable identifier, also the `[provider]` route segment and `supportEmailEvent.provider`. */
   readonly name: string
 
+  /** Non-secret deployment identity used to isolate delivery webhook keys. */
+  readonly accountKey: string
+
   /**
    * Verify the request really came from the provider. Returns false rather
    * than throwing so the endpoint controls the response shape.
@@ -160,6 +163,9 @@ export interface ChannelDriver {
    */
   checkSendingAuthorization(address: string): Promise<SendingAuthorization>
 
+  /** Provider-specific metadata headers that carry the durable outbox key. */
+  buildDeliveryCorrelationHeaders(correlationKey: string): Record<string, string>
+
   /**
    * The provider's own id for this delivery/bounce *event*, used as the
    * idempotency key in `supportDeliveryEvent (provider, providerEventId)`.
@@ -190,27 +196,21 @@ export interface ChannelDriver {
  * A normalized delivery, bounce, or engagement event for one previously-sent
  * message.
  *
- * **`messageId` is the single biggest unconfirmed assumption in Stage 04.**
- * It is read from whatever field the provider's delivery webhook uses to
- * identify the original message, on the assumption that it equals the RFC
- * `Message-ID` header this app set when sending (`conversationMessage.
- * channelMessageId`, stripped). That is true when sending through a
- * provider's HTTP send API, which returns and tracks against your own
- * Message-ID. It has NOT been verified for SMTP relay, which is what this
- * app actually uses (`lib/email.ts` → nodemailer → `SMTP_HOST`) - a provider
- * receiving mail over SMTP may instead track by an internal id of its own
- * that never appears in the RFC header at all, in which case this field will
- * not match anything and delivery-status tracking silently does nothing
- * (see the `messageId: null` handling in the endpoint, and D-35's precedent
- * for why "may legitimately never resolve" is handled as data, not an
- * error). Confirm against a real send before trusting this correlates.
+ * Correlation identity is deliberately split into the durable application
+ * key, provider account, and provider message id. None of these fields is an
+ * RFC Message-ID, and the delivery route never compares them with
+ * `conversationMessage.channelMessageId`.
  */
 export interface DeliveryEvent {
+  providerEventId: string | null
+  providerAccountKey: string
+  correlationKey: string | null
+  providerMessageId: string | null
   /** Provider-normalized: 'delivered' | 'bounced' | 'opened' | 'clicked' | 'spam_complaint'. */
   recordType: string
-  /** RFC Message-ID this event is about, stripped. Null when the provider payload carries none. */
-  messageId: string | null
   recipient: string | null
+  occurredAt: Date
+  error: string | null
   /** Only meaningful when `recordType === 'bounced'`. */
   bounceType: 'hard' | 'soft' | null
   description: string | null

@@ -36,12 +36,14 @@ describe('processOutboundDelivery', () => {
       payload: { to: 'customer@example.com', subject: 'Re: Invoice' },
       idempotencyKey: 'idem-1',
       attemptCount: 1,
+      provider: 'postmark',
+      providerAccountKey: 'server-main',
       ...overrides,
     }
   }
 
   it('sends and reports success without touching storage when there are no attachments', async () => {
-    const sendEmail = vi.fn().mockResolvedValue({ success: true, message: 'sent', messageId: 'abc@domain' })
+    const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'sent', providerMessageId: 'provider-1' })
     const getObject = vi.fn()
     const onSent = vi.fn().mockResolvedValue(undefined)
     const onFailed = vi.fn().mockResolvedValue(undefined)
@@ -50,19 +52,27 @@ describe('processOutboundDelivery', () => {
 
     expect(result).toEqual({ outcome: 'sent' })
     expect(getObject).not.toHaveBeenCalled()
-    expect(onSent).toHaveBeenCalledWith('delivery-1', 'msg-1')
+    expect(onSent).toHaveBeenCalledWith('delivery-1', 'msg-1', {
+      provider: 'postmark',
+      providerAccountKey: 'server-main',
+      providerMessageId: 'provider-1',
+    })
     expect(onFailed).not.toHaveBeenCalled()
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'customer@example.com',
         subject: 'Re: Invoice',
-        headers: { 'X-Veerify-Idempotency-Key': 'idem-1' },
+        headers: {
+          'X-Veerify-Idempotency-Key': 'idem-1',
+          'X-PM-KeepID': 'true',
+          'X-PM-Metadata-veerify-delivery-id': 'idem-1',
+        },
       })
     )
   })
 
   it('resolves each attachment storage key to bytes before sending', async () => {
-    const sendEmail = vi.fn().mockResolvedValue({ success: true, message: 'sent' })
+    const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'sent' })
     const getObject = vi.fn().mockResolvedValue(Buffer.from('file-bytes'))
     const onSent = vi.fn().mockResolvedValue(undefined)
 
@@ -143,7 +153,7 @@ describe('processOutboundDelivery', () => {
   })
 
   it('calls onFailed and never onSent when the send reports failure', async () => {
-    const sendEmail = vi.fn().mockResolvedValue({ success: false, message: 'rejected', error: 'SMTP rejected' })
+    const sendEmail = vi.fn().mockResolvedValue({ accepted: false, response: 'SMTP rejected' })
     const onSent = vi.fn().mockResolvedValue(undefined)
     const onFailed = vi.fn().mockResolvedValue(undefined)
 

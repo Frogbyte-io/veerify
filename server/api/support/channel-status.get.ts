@@ -24,34 +24,15 @@ import {
   getConfiguredChannelProviderName,
 } from '~/server/services/support-channels'
 
-/**
- * Which environment variables each provider needs before it will accept mail.
- *
- * **This duplicates knowledge that belongs in the drivers.** `ChannelDriver` has
- * no `isConfigured()`, and `server/services/support-channels/**` is the other
- * agent's territory this stage, so the mapping lives here rather than being
- * added there unilaterally. It should move onto the driver interface — see the
- * note in TODO.md. Until it does, adding a provider means updating this too.
- *
- * Only presence is ever read. No value is returned to the client.
- */
-const REQUIRED_ENV: Record<string, string[]> = {
-  // Postmark does not sign inbound webhooks; its documented protection is HTTP
-  // Basic Auth on the webhook URL, so both halves must be set.
-  postmark: ['SUPPORT_POSTMARK_WEBHOOK_USER', 'SUPPORT_POSTMARK_WEBHOOK_PASSWORD'],
-  mailgun: ['SUPPORT_MAILGUN_SIGNING_KEY'],
-}
-
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const { inboxId } = validateQuery(event, z.object({ inboxId: z.string().min(1) }))
   await requireInboxRole(inboxId, session.user.id, 'agent')
 
   const provider = getConfiguredChannelProviderName()
-  const driverAvailable = getConfiguredChannelDriver() !== null
-
-  const required = REQUIRED_ENV[provider] ?? []
-  const missing = required.filter((name) => !process.env[name]?.trim())
+  const driver = getConfiguredChannelDriver()
+  const driverAvailable = driver !== null
+  const missing = driver?.isConfigured().missing ?? []
 
   return createSuccessResponse({
     provider,

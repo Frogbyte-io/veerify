@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { supportDeliveryEvent } from '~/server/database/schema/support'
+import { conversationMessage, supportDeliveryEvent } from '~/server/database/schema/support'
+import { markDeliveryMessageBounced, markDeliveryMessageDelivered } from '~/server/utils/delivery-status'
 
 /**
  * Claim/replay state for delivery, bounce, and engagement webhook events
@@ -15,9 +16,8 @@ import { supportDeliveryEvent } from '~/server/database/schema/support'
  * `recordType` and `recipient` - real `NOT NULL` columns - are already known
  * at claim time, unlike inbound's `inboxId` (delta D-35), which is
  * discovered mid-pipeline and therefore nullable. `messageId` is still
- * nullable: the lookup that resolves it may legitimately find nothing (see
- * `DeliveryEvent.messageId`'s doc comment on the SMTP-relay correlation
- * assumption this whole item rests on).
+ * nullable because a signature-valid event may not correlate to this
+ * deployment's outbox and is recorded rather than discarded.
  */
 
 /** How long a claim is held before another delivery may take it over. */
@@ -38,10 +38,13 @@ export type DeliveryEventClaimOutcome =
  */
 export async function claimDeliveryEvent(input: {
   provider: string
+  providerAccountKey?: string
   providerEventId: string
+  correlationKey?: string | null
   recordType: string
   recipient: string
   messageId: string | null
+  occurredAt?: Date
 }): Promise<DeliveryEventClaimOutcome> {
   const now = new Date()
   const leaseExpiresAt = new Date(now.getTime() + DELIVERY_EVENT_CLAIM_LEASE_SECONDS * 1000)
@@ -52,22 +55,27 @@ export async function claimDeliveryEvent(input: {
     .values({
       id,
       provider: input.provider,
+      providerAccountKey: input.providerAccountKey ?? 'legacy',
       providerEventId: input.providerEventId,
+      correlationKey: input.correlationKey,
       recordType: input.recordType,
       recipient: input.recipient,
       messageId: input.messageId,
+      occurredAt: input.occurredAt ?? now,
       status: 'processing',
       attemptCount: 1,
       leaseExpiresAt,
       createdAt: now,
     })
     .onConflictDoUpdate({
-      target: [supportDeliveryEvent.provider, supportDeliveryEvent.providerEventId],
+      target: [supportDeliveryEvent.provider, supportDeliveryEvent.providerAccountKey, supportDeliveryEvent.providerEventId],
       set: {
         status: 'processing',
         recordType: input.recordType,
         recipient: input.recipient,
         messageId: input.messageId,
+        correlationKey: input.correlationKey,
+        occurredAt: input.occurredAt ?? now,
         attemptCount: sql`${supportDeliveryEvent.attemptCount} + 1`,
         leaseExpiresAt,
       },
@@ -88,6 +96,7 @@ export async function claimDeliveryEvent(input: {
     .where(
       and(
         eq(supportDeliveryEvent.provider, input.provider),
+        eq(supportDeliveryEvent.providerAccountKey, input.providerAccountKey ?? 'legacy'),
         eq(supportDeliveryEvent.providerEventId, input.providerEventId)
       )
     )
@@ -105,6 +114,38 @@ export async function claimDeliveryEvent(input: {
 }
 
 type DeliveryEventExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/** Apply one correlated event; the guarded status update makes hard bounce terminal and activity idempotent. */
+export async function applyDeliveryEventStatus(
+  executor: DeliveryEventExecutor,
+  input: {
+    messageId: string
+    conversationId: string
+    recordType: string
+    bounceType: 'hard' | 'soft' | null
+    description: string | null
+  }
+): Promise<boolean> {
+  if (input.recordType === 'delivered') return markDeliveryMessageDelivered(executor, input.messageId)
+  if (input.recordType !== 'bounced' || input.bounceType !== 'hard') return false
+
+  const changed = await markDeliveryMessageBounced(executor, input.messageId, input.description)
+  if (changed) {
+    await executor.insert(conversationMessage).values({
+      id: randomUUID(),
+      conversationId: input.conversationId,
+      kind: 'activity',
+      body: input.description
+        ? `Delivery failed: ${input.description}`
+        : 'Delivery failed: the message was not delivered.',
+      senderKind: 'system',
+      senderUserId: null,
+      isPrivate: true,
+      createdAt: new Date(),
+    })
+  }
+  return changed
+}
 
 /** Finish only the still-owned attempt. */
 export async function completeDeliveryEvent(

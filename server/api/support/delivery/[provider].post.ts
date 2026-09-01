@@ -25,18 +25,19 @@
  *       429: { description: Rate limited }
  *       500: { description: Processing failed; provider should retry }
  */
-import { randomUUID } from 'node:crypto'
 import { getHeaders, getRouterParam, readRawBody } from 'h3'
-import { eq } from 'drizzle-orm'
 import { createLogger } from '~/server/utils/logger'
 import { createSuccessResponse } from '~/server/utils/response'
 import { getChannelDriver } from '~/server/services/support-channels'
-import { claimDeliveryEvent, completeDeliveryEvent, failDeliveryEvent } from '~/server/utils/delivery-events'
-import { publishDeliveryStatusChanged } from '~/server/utils/outbound-delivery'
-import { markDeliveryMessageBounced, markDeliveryMessageDelivered } from '~/server/utils/delivery-status'
+import {
+  applyDeliveryEventStatus,
+  claimDeliveryEvent,
+  completeDeliveryEvent,
+  failDeliveryEvent,
+} from '~/server/utils/delivery-events'
+import { publishDeliveryStatusChanged, resolveDeliveryCorrelation } from '~/server/utils/outbound-delivery'
 import { checkRateLimit } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
-import { conversationMessage } from '~/server/database/schema/support'
 
 const logger = createLogger('support-delivery')
 
@@ -80,12 +81,6 @@ export default defineEventHandler(async (event) => {
     return accepted('unparseable-payload')
   }
 
-  const providerEventId = driver.extractDeliveryEventId(payload)
-  if (!providerEventId) {
-    logger.error('Delivery payload carried no usable event id', { provider: driver.name })
-    return accepted('missing-event-id')
-  }
-
   // ---- 2. Parse -------------------------------------------------------------
   // Ahead of the claim, unlike inbound: parsing here is pure and in-memory
   // (no raw-body archival, no side effects), so there is no crash window to
@@ -103,27 +98,31 @@ export default defineEventHandler(async (event) => {
     return accepted('unparseable-event')
   }
 
-  // Resolve which of our own messages this event is about, if any. May
-  // legitimately resolve to nothing - see `DeliveryEvent.messageId`'s doc
-  // comment on the SMTP-relay correlation assumption this whole item rests
-  // on, not independently confirmed against a real send.
-  let resolvedMessage: { id: string; conversationId: string } | null = null
-  if (deliveryEvent.messageId) {
-    const [row] = await db
-      .select({ id: conversationMessage.id, conversationId: conversationMessage.conversationId })
-      .from(conversationMessage)
-      .where(eq(conversationMessage.channelMessageId, deliveryEvent.messageId))
-      .limit(1)
-    resolvedMessage = row ?? null
+  if (!deliveryEvent.providerEventId) {
+    logger.error('Delivery payload carried no usable event id', { provider: driver.name })
+    return accepted('missing-event-id')
   }
+
+  // Resolve only through durable outbox metadata. A signature-valid event may
+  // legitimately resolve to nothing and is still recorded and acknowledged.
+  const resolvedMessage = await resolveDeliveryCorrelation({
+    provider: driver.name,
+    providerAccountKey: deliveryEvent.providerAccountKey,
+    correlationKey: deliveryEvent.correlationKey,
+    providerMessageId: deliveryEvent.providerMessageId,
+    recipient: deliveryEvent.recipient,
+  })
 
   // ---- 3. Atomic claim ------------------------------------------------------
   const claim = await claimDeliveryEvent({
     provider: driver.name,
-    providerEventId,
+    providerAccountKey: deliveryEvent.providerAccountKey,
+    providerEventId: deliveryEvent.providerEventId,
+    correlationKey: deliveryEvent.correlationKey,
     recordType: deliveryEvent.recordType,
     recipient: deliveryEvent.recipient ?? 'unknown',
     messageId: resolvedMessage?.id ?? null,
+    occurredAt: deliveryEvent.occurredAt,
   })
 
   if (claim.outcome === 'duplicate') return accepted('duplicate-event')
@@ -138,7 +137,9 @@ export default defineEventHandler(async (event) => {
       logger.warn('Delivery event could not be correlated to a sent message', {
         provider: driver.name,
         recordType: deliveryEvent.recordType,
-        messageId: deliveryEvent.messageId,
+        providerAccountKey: deliveryEvent.providerAccountKey,
+        providerMessageId: deliveryEvent.providerMessageId,
+        correlationKey: deliveryEvent.correlationKey,
       })
       await db.transaction((tx) => completeDeliveryEvent(eventId, attemptCount, tx))
       return accepted('unmatched-message')
@@ -148,7 +149,11 @@ export default defineEventHandler(async (event) => {
     let statusChanged = false
     if (deliveryEvent.recordType === 'delivered') {
       await db.transaction(async (tx) => {
-        statusChanged = await markDeliveryMessageDelivered(tx, resolvedMessage.id)
+        statusChanged = await applyDeliveryEventStatus(tx, {
+          ...deliveryEvent,
+          messageId: resolvedMessage.id,
+          conversationId: resolvedMessage.conversationId,
+        })
         await completeDeliveryEvent(eventId, attemptCount, tx)
       })
     } else if (deliveryEvent.recordType === 'bounced') {
@@ -160,24 +165,11 @@ export default defineEventHandler(async (event) => {
         // One transaction: the status flip and the activity line that
         // explains it must never observably disagree.
         await db.transaction(async (tx) => {
-          statusChanged = await markDeliveryMessageBounced(tx, resolvedMessage.id, deliveryEvent.description)
-
-          // A hard bounce is a visible, not silent, failure (design.md) - the
-          // agent must see it without opening delivery-status details.
-          if (statusChanged) {
-            await tx.insert(conversationMessage).values({
-              id: randomUUID(),
-              conversationId: resolvedMessage.conversationId,
-              kind: 'activity',
-              body: deliveryEvent.description
-                ? `Delivery failed: ${deliveryEvent.description}`
-                : 'Delivery failed: the message was not delivered.',
-              senderKind: 'system',
-              senderUserId: null,
-              isPrivate: true,
-              createdAt: new Date(),
-            })
-          }
+          statusChanged = await applyDeliveryEventStatus(tx, {
+            ...deliveryEvent,
+            messageId: resolvedMessage.id,
+            conversationId: resolvedMessage.conversationId,
+          })
           await completeDeliveryEvent(eventId, attemptCount, tx)
         })
       }

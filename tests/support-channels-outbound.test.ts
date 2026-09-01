@@ -14,13 +14,13 @@ import { MailgunChannelDriver } from '../server/services/support-channels/webhoo
  */
 describe('isConfigured - which credentials a provider is missing', () => {
   it('reports Postmark configured when both webhook credentials are present', () => {
-    const driver = new PostmarkChannelDriver({ user: 'hook', password: 'secret' })
+    const driver = new PostmarkChannelDriver({ user: 'hook', password: 'secret', accountKey: 'server-main' })
 
     expect(driver.isConfigured()).toEqual({ configured: true, missing: [] })
   })
 
   it('names the missing Postmark variable without leaking the one that is set', () => {
-    const driver = new PostmarkChannelDriver({ user: 'hook', password: '' })
+    const driver = new PostmarkChannelDriver({ user: 'hook', password: '', accountKey: 'server-main' })
     const status = driver.isConfigured()
 
     expect(status.configured).toBe(false)
@@ -31,7 +31,7 @@ describe('isConfigured - which credentials a provider is missing', () => {
   })
 
   it('names both Postmark variables when neither is set', () => {
-    const driver = new PostmarkChannelDriver({ user: '', password: '' })
+    const driver = new PostmarkChannelDriver({ user: '', password: '', accountKey: 'server-main' })
 
     expect(driver.isConfigured().missing).toEqual([
       'SUPPORT_POSTMARK_WEBHOOK_USER',
@@ -40,17 +40,42 @@ describe('isConfigured - which credentials a provider is missing', () => {
   })
 
   it('names the missing Mailgun signing key', () => {
-    expect(new MailgunChannelDriver({ signingKey: '' }).isConfigured()).toEqual({
+    expect(new MailgunChannelDriver({ signingKey: '', accountKey: 'domain-main' }).isConfigured()).toEqual({
       configured: false,
       missing: ['SUPPORT_MAILGUN_SIGNING_KEY'],
     })
   })
 
   it('reports Mailgun configured when the signing key is present', () => {
-    expect(new MailgunChannelDriver({ signingKey: 'key-123' }).isConfigured()).toEqual({
+    expect(new MailgunChannelDriver({ signingKey: 'key-123', accountKey: 'domain-main' }).isConfigured()).toEqual({
       configured: true,
       missing: [],
     })
+  })
+})
+
+describe('delivery correlation headers', () => {
+  it('builds exact Postmark metadata headers', () => {
+    const driver = new PostmarkChannelDriver({ accountKey: 'server-main' })
+    expect(driver.buildDeliveryCorrelationHeaders('delivery-1')).toEqual({
+      'X-PM-KeepID': 'true',
+      'X-PM-Metadata-veerify-delivery-id': 'delivery-1',
+    })
+  })
+
+  it('builds exact Mailgun variables', () => {
+    const driver = new MailgunChannelDriver({ accountKey: 'domain-main' })
+    const headers = driver.buildDeliveryCorrelationHeaders('delivery-1')
+    expect(JSON.parse(headers['X-Mailgun-Variables']!)).toEqual({ 'veerify-delivery-id': 'delivery-1' })
+  })
+
+  it('reports account identity as required configuration', () => {
+    expect(new PostmarkChannelDriver({ user: 'u', password: 'p', accountKey: '' }).isConfigured().missing).toContain(
+      'SUPPORT_POSTMARK_ACCOUNT_KEY'
+    )
+    expect(new MailgunChannelDriver({ signingKey: 'key', accountKey: '' }).isConfigured().missing).toContain(
+      'SUPPORT_MAILGUN_ACCOUNT_KEY'
+    )
   })
 })
 

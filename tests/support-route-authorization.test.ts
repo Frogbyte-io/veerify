@@ -22,9 +22,15 @@ const providerState = vi.hoisted(() => ({
     extractDeliveryEventId: vi.fn(() => 'delivery-event-1'),
     parseDeliveryEvent: vi.fn(() => ({
       providerEventId: 'delivery-event-1',
+      providerAccountKey: 'server-1',
+      correlationKey: null,
+      providerMessageId: null,
       recordType: 'delivered',
       recipient: 'customer@example.com',
-      messageId: null,
+      occurredAt: new Date('2026-08-20T10:00:00Z'),
+      error: null,
+      bounceType: null,
+      description: null,
     })),
   },
 }))
@@ -834,10 +840,13 @@ describe('executable support route authorization inventory', () => {
     expect(deliveryEvents.claimDeliveryEvent).toHaveBeenCalledTimes(1)
     expect(deliveryEvents.claimDeliveryEvent).toHaveBeenLastCalledWith({
       provider: 'postmark',
+      providerAccountKey: 'server-1',
       providerEventId: 'delivery-event-1',
+      correlationKey: null,
       recordType: 'delivered',
       recipient: 'customer@example.com',
       messageId: null,
+      occurredAt: new Date('2026-08-20T10:00:00Z'),
     })
   })
 

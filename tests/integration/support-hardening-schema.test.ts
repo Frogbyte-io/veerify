@@ -190,6 +190,10 @@ describe('support hardening schema contracts (real Postgres)', () => {
     expect(deliveryEventColumns).toEqual(
       expect.arrayContaining(['provider_account_key', 'correlation_key', 'occurred_at'])
     )
-    expect(deliveryEventUnique.rows[0]?.columns.split(',')).toEqual(['provider', 'provider_event_id'])
+    expect(deliveryEventUnique.rows[0]?.columns.split(',')).toEqual([
+      'provider',
+      'provider_account_key',
+      'provider_event_id',
+    ])
   })
 })

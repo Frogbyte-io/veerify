@@ -12,6 +12,7 @@ import {
   supportInbox,
 } from '../../server/database/schema/support'
 import {
+  applyDeliveryEventStatus,
   claimDeliveryEvent,
   completeDeliveryEvent,
   failDeliveryEvent,
@@ -124,12 +125,16 @@ async function readEvent(providerEventId: string) {
 describe('claimDeliveryEvent', () => {
   it('claims an unseen event, with all fields already known at claim time', async () => {
     const providerEventId = eventId()
+    const occurredAt = new Date('2026-08-20T10:00:00Z')
     const claim = await claimDeliveryEvent({
       provider: PROVIDER,
+      providerAccountKey: 'account-a',
       providerEventId,
+      correlationKey: 'delivery-1',
       recordType: 'delivered',
       recipient: 'customer@example.com',
       messageId: null,
+      occurredAt,
     })
 
     expect(claim.outcome).toBe('claimed')
@@ -138,6 +143,41 @@ describe('claimDeliveryEvent', () => {
     expect(row.recordType).toBe('delivered')
     expect(row.recipient).toBe('customer@example.com')
     expect(row.messageId).toBeNull()
+    expect(row.providerAccountKey).toBe('account-a')
+    expect(row.correlationKey).toBe('delivery-1')
+    expect(row.occurredAt).toEqual(occurredAt)
+    expect(row.createdAt).not.toEqual(occurredAt)
+  })
+
+  it('atomically gives one of two concurrent duplicate claims ownership', async () => {
+    const providerEventId = eventId()
+    const input = {
+      provider: PROVIDER,
+      providerAccountKey: 'account-a',
+      providerEventId,
+      recordType: 'delivered',
+      recipient: 'customer@example.com',
+      messageId: null,
+    }
+    const outcomes = await Promise.all([claimDeliveryEvent(input), claimDeliveryEvent(input)])
+    expect(outcomes.map((result) => result.outcome).sort()).toEqual(['claimed', 'in-progress'])
+    const owner = outcomes.find((result) => result.outcome === 'claimed')
+    if (owner?.outcome === 'claimed') await completeDeliveryEvent(owner.eventId, owner.attemptCount)
+  })
+
+  it('allows the same provider event id in two provider accounts', async () => {
+    const providerEventId = eventId()
+    const base = {
+      provider: PROVIDER,
+      providerEventId,
+      recordType: 'delivered',
+      recipient: 'customer@example.com',
+      messageId: null,
+    }
+    const first = claimed(await claimDeliveryEvent({ ...base, providerAccountKey: 'account-a' }))
+    const second = claimed(await claimDeliveryEvent({ ...base, providerAccountKey: 'account-b' }))
+    await completeDeliveryEvent(first.eventId, first.attemptCount)
+    await completeDeliveryEvent(second.eventId, second.attemptCount)
   })
 
   it('reports a retry as duplicate once the event has been completed', async () => {
@@ -311,5 +351,71 @@ describe('delivery message status transitions', () => {
       .from(conversationMessage)
       .where(eq(conversationMessage.id, fixtureMessageId))
     expect(row.deliveryStatus).toBe('bounced')
+  })
+
+  it.each([
+    ['delivered then bounced', ['delivered', 'bounced']],
+    ['bounced then delivered', ['bounced', 'delivered']],
+  ] as const)('applies %s with bounce terminal and one activity', async (_label, order) => {
+    await setMessageStatus('sent')
+    const description = `hard bounce ${randomUUID()}`
+    for (const recordType of order) {
+      await db.transaction((tx) =>
+        applyDeliveryEventStatus(tx, {
+          messageId: fixtureMessageId,
+          conversationId,
+          recordType,
+          bounceType: recordType === 'bounced' ? 'hard' : null,
+          description,
+        })
+      )
+    }
+
+    const [message] = await db.select().from(conversationMessage).where(eq(conversationMessage.id, fixtureMessageId))
+    const activities = await db
+      .select({ id: conversationMessage.id })
+      .from(conversationMessage)
+      .where(
+        and(
+          eq(conversationMessage.conversationId, conversationId),
+          eq(conversationMessage.kind, 'activity'),
+          eq(conversationMessage.body, `Delivery failed: ${description}`)
+        )
+      )
+    expect(message.deliveryStatus).toBe('bounced')
+    expect(activities).toHaveLength(1)
+  })
+
+  it('keeps a concurrent delivered/hard-bounce race terminal with one activity', async () => {
+    await setMessageStatus('sent')
+    const description = `concurrent bounce ${randomUUID()}`
+    await Promise.all([
+      db.transaction((tx) =>
+        applyDeliveryEventStatus(tx, {
+          messageId: fixtureMessageId,
+          conversationId,
+          recordType: 'delivered',
+          bounceType: null,
+          description: null,
+        })
+      ),
+      db.transaction((tx) =>
+        applyDeliveryEventStatus(tx, {
+          messageId: fixtureMessageId,
+          conversationId,
+          recordType: 'bounced',
+          bounceType: 'hard',
+          description,
+        })
+      ),
+    ])
+
+    const [message] = await db.select().from(conversationMessage).where(eq(conversationMessage.id, fixtureMessageId))
+    const activities = await db
+      .select({ id: conversationMessage.id })
+      .from(conversationMessage)
+      .where(eq(conversationMessage.body, `Delivery failed: ${description}`))
+    expect(message.deliveryStatus).toBe('bounced')
+    expect(activities).toHaveLength(1)
   })
 })
