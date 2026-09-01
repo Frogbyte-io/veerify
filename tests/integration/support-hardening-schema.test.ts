@@ -163,7 +163,8 @@ describe('support hardening schema contracts (real Postgres)', () => {
         'updated_at',
       ])
     )
-    expect(channelMessageIndex.rows[0]?.indexdef).toContain('UNIQUE')
+    expect(channelMessageIndex.rows[0]?.indexdef).toContain('CREATE INDEX')
+    expect(channelMessageIndex.rows[0]?.indexdef).not.toContain('UNIQUE')
     expect(uploadForeignKeys.rows.map((row) => `${row.column_name} -> ${row.referenced_table}`)).toEqual(
       expect.arrayContaining([
         'conversation_id -> conversation',

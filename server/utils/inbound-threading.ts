@@ -34,7 +34,7 @@ export interface ThreadableMessage {
   subject: string | null
 }
 
-export type ThreadMatch = 'message-id' | 'thread-key' | 'subject' | null
+export type ThreadMatch = 'message-id' | 'thread-key' | 'subject' | 'ambiguous-message-id' | null
 
 export interface ThreadResolution {
   /** `null` means "no match — create a new conversation". Never creates one. */
@@ -84,15 +84,22 @@ export async function resolveThread(
   const referenced = [message.inReplyTo, ...message.references].filter((id): id is string => Boolean(id))
 
   if (referenced.length > 0) {
-    const [byMessageId] = await tx
+    const messageIdMatches = await tx
       .select({ conversationId: conversationMessage.conversationId })
       .from(conversationMessage)
       .innerJoin(conversation, eq(conversationMessage.conversationId, conversation.id))
       .where(and(inArray(conversationMessage.channelMessageId, referenced), eq(conversation.inboxId, inbox.id)))
       .orderBy(desc(conversationMessage.createdAt))
-      .limit(1)
+      .limit(2)
 
-    if (byMessageId) return { conversationId: byMessageId.conversationId, matchedBy: 'message-id' }
+    // Never guess when an RFC ID identifies more than one stored message in
+    // the receiving inbox. This remains ambiguous even when both rows happen
+    // to belong to the same conversation: the identity itself is no longer
+    // trustworthy, so weaker thread-key and subject fallbacks must not run.
+    if (messageIdMatches.length > 1) return { conversationId: null, matchedBy: 'ambiguous-message-id' }
+    if (messageIdMatches[0]) {
+      return { conversationId: messageIdMatches[0].conversationId, matchedBy: 'message-id' }
+    }
 
     // 2. The root of the References chain against a stored thread key. Catches
     //    a reply whose immediate parent we never stored — a customer replying

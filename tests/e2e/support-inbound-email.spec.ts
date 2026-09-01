@@ -1,10 +1,19 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
-import { team } from '../../server/database/schema/auth'
+import { team, teamMember } from '../../server/database/schema/auth'
 import { project } from '../../server/database/schema/feedback'
-import { contact, conversation, supportEmailEvent, supportInbox } from '../../server/database/schema/support'
+import {
+  contact,
+  contactIdentity,
+  conversation,
+  conversationMessage,
+  supportEmailEvent,
+  supportInbox,
+  supportInboxAddress,
+} from '../../server/database/schema/support'
+import { teamModuleSettings } from '../../server/database/schema/teams'
 import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
@@ -88,12 +97,218 @@ test.describe.serial('inbound email', () => {
     }
   })
 
+  test('scopes duplicate RFC IDs by inbox and creates a diagnosed ticket for same-inbox ambiguity', async ({
+    request,
+  }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const headers = withAuthHeaders(sessionCookie)
+    const activeTeamId = (await (await request.get('/api/teams/active', { headers })).json()).data.id as string
+    const [activeTeam] = await db
+      .select({ organizationId: team.organizationId })
+      .from(team)
+      .where(eq(team.id, activeTeamId))
+      .limit(1)
+    expect(activeTeam).toBeTruthy()
+    if (!activeTeam) throw new Error('Active team fixture disappeared')
+
+    const suffix = randomUUID().slice(0, 8)
+    const teamIds = [`thread-team-a-${suffix}`, `thread-team-b-${suffix}`]
+    const inboxIds = [`thread-inbox-a-${suffix}`, `thread-inbox-b-${suffix}`]
+    const addresses = [`thread-a-${suffix}@example.com`, `thread-b-${suffix}@example.com`]
+    const contactIds = [`thread-contact-a-${suffix}`, `thread-contact-b-${suffix}`]
+    const conversationIds = [`thread-conversation-a-${suffix}`, `thread-conversation-b-${suffix}`]
+    const sharedRfcId = `shared-${suffix}@mail.example.com`
+    const providerEventIds: string[] = []
+    const now = new Date()
+
+    try {
+      await db.insert(team).values(
+        teamIds.map((id, index) => ({
+          id,
+          name: `Thread Team ${index + 1} ${suffix}`,
+          slug: `thread-team-${index + 1}-${suffix}`,
+          organizationId: activeTeam.organizationId,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      )
+      await db.insert(teamModuleSettings).values(
+        teamIds.map((teamId) => ({ teamId, supportEnabled: true, createdAt: now, updatedAt: now }))
+      )
+      await db.insert(supportInbox).values(
+        inboxIds.map((id, index) => ({
+          id,
+          teamId: teamIds[index],
+          name: `Thread Inbox ${index + 1}`,
+          slug: `thread-inbox-${index + 1}-${suffix}`,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      )
+      await db.insert(supportInboxAddress).values(
+        inboxIds.map((inboxId, index) => ({
+          id: `thread-address-${index + 1}-${suffix}`,
+          inboxId,
+          address: addresses[index],
+          isPrimary: true,
+          createdAt: now,
+        }))
+      )
+      await db.insert(contact).values(
+        contactIds.map((id, index) => ({
+          id,
+          teamId: teamIds[index],
+          name: `Thread Customer ${index + 1}`,
+          email: `thread-customer-${index + 1}-${suffix}@example.com`,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      )
+      await db.insert(contactIdentity).values(
+        contactIds.map((contactId, index) => ({
+          id: `thread-contact-identity-${index + 1}-${suffix}`,
+          contactId,
+          teamId: teamIds[index],
+          kind: 'email',
+          value: `thread-customer-${index + 1}-${suffix}@example.com`,
+          createdAt: now,
+        }))
+      )
+      await db.insert(conversation).values(
+        conversationIds.map((id, index) => ({
+          id,
+          inboxId: inboxIds[index],
+          teamId: teamIds[index],
+          contactId: contactIds[index],
+          displayId: 100,
+          subject: 'Shared provider identity',
+          status: 'open',
+          lastActivityAt: now,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      )
+      await db.insert(conversationMessage).values(
+        conversationIds.map((conversationId, index) => ({
+          id: `thread-message-${index + 1}-${suffix}`,
+          conversationId,
+          kind: 'incoming',
+          body: 'Original message',
+          senderKind: 'contact',
+          senderContactId: contactIds[index],
+          isPrivate: false,
+          channelMessageId: sharedRfcId,
+          deliveryStatus: 'delivered',
+          createdAt: now,
+        }))
+      )
+
+      for (const index of [0, 1]) {
+        const eventId = `scoped-reply-${index + 1}-${suffix}@mail.example.com`
+        providerEventIds.push(eventId)
+        const response = await request.post('/api/support/inbound/postmark', {
+          headers: { Authorization: basicAuth() },
+          data: postmarkPayload({
+            messageId: eventId,
+            to: addresses[index],
+            from: `thread-customer-${index + 1}-${suffix}@example.com`,
+            subject: 'Re: Shared provider identity',
+            text: `Reply for inbox ${index + 1}`,
+            inReplyTo: sharedRfcId,
+          }),
+        })
+        expect(response.status()).toBe(200)
+
+        const rows = await db
+          .select({ conversationId: conversationMessage.conversationId })
+          .from(conversationMessage)
+          .where(eq(conversationMessage.channelMessageId, eventId))
+        expect(rows).toEqual([{ conversationId: conversationIds[index] }])
+      }
+
+      const collisionConversationId = `thread-collision-${suffix}`
+      await db.insert(conversation).values({
+        id: collisionConversationId,
+        inboxId: inboxIds[0],
+        teamId: teamIds[0],
+        contactId: contactIds[0],
+        displayId: 101,
+        subject: 'Shared provider identity',
+        status: 'open',
+        lastActivityAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await db.insert(conversationMessage).values({
+        id: `thread-collision-message-${suffix}`,
+        conversationId: collisionConversationId,
+        kind: 'incoming',
+        body: 'Conflicting identity',
+        senderKind: 'contact',
+        senderContactId: contactIds[0],
+        isPrivate: false,
+        channelMessageId: sharedRfcId,
+        deliveryStatus: 'delivered',
+        createdAt: now,
+      })
+
+      const ambiguousEventId = `ambiguous-${suffix}@mail.example.com`
+      providerEventIds.push(ambiguousEventId)
+      const ambiguous = await request.post('/api/support/inbound/postmark', {
+        headers: { Authorization: basicAuth() },
+        data: postmarkPayload({
+          messageId: ambiguousEventId,
+          to: addresses[0],
+          from: `thread-customer-1-${suffix}@example.com`,
+          subject: 'Re: Shared provider identity',
+          text: 'This must start a diagnosed ticket.',
+          inReplyTo: sharedRfcId,
+        }),
+      })
+      expect(ambiguous.status()).toBe(200)
+
+      const created = await db.select().from(conversation).where(eq(conversation.inboxId, inboxIds[0]))
+      const collisionTicket = created.find(
+        (row) => (row.metadata as Record<string, unknown> | null)?.threadingCollision !== undefined
+      )
+      expect(collisionTicket?.id).not.toBe(conversationIds[0])
+      expect(collisionTicket?.id).not.toBe(collisionConversationId)
+      expect(collisionTicket?.metadata).toMatchObject({
+        threadingCollision: {
+          type: 'ambiguous-message-id',
+          headerMessageId: sharedRfcId,
+          occurredAt: expect.any(String),
+        },
+      })
+    } finally {
+      if (providerEventIds.length > 0) {
+        await db.delete(supportEmailEvent).where(inArray(supportEmailEvent.providerEventId, providerEventIds))
+      }
+      await db.delete(conversation).where(inArray(conversation.teamId, teamIds))
+      await db.delete(supportInbox).where(inArray(supportInbox.id, inboxIds))
+      await db.delete(contact).where(inArray(contact.teamId, teamIds))
+      await db.delete(team).where(inArray(team.id, teamIds))
+    }
+  })
+
   test('creates a ticket, threads a reply onto it, and ignores a duplicate delivery', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie)
 
     const teamResponse = await request.get('/api/teams/active', { headers })
     const teamId = (await teamResponse.json()).data.id as string
+    const sessionResponse = await request.get('/api/auth/session', { headers })
+    const seedUserId = (await sessionResponse.json()).data.user.id as string
+    const [membershipBefore] = await db
+      .select({ id: teamMember.id, role: teamMember.role })
+      .from(teamMember)
+      .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, seedUserId)))
+      .limit(1)
+    expect(membershipBefore).toBeTruthy()
+    if (!membershipBefore) throw new Error('Seed team membership fixture disappeared')
+    if (membershipBefore.role !== 'admin') {
+      await db.update(teamMember).set({ role: 'admin' }).where(eq(teamMember.id, membershipBefore.id))
+    }
 
     const suffix = randomUUID().slice(0, 8)
     const inboxAddress = `inbound-${suffix}@example.com`
@@ -105,16 +320,21 @@ test.describe.serial('inbound email', () => {
     // inbound endpoint honours it by design (SUP-03-10): it records the event,
     // returns 200, and creates nothing. Without switching the module on first,
     // every assertion below fails against a correctly working pipeline.
-    const modulesBefore = await request.get(`/api/teams/${teamId}/modules`, { headers })
-    const supportWasEnabled = Boolean((await modulesBefore.json())?.data?.modules?.supportEnabled)
-
-    const enableSupport = await request.put(`/api/teams/${teamId}/modules`, {
-      headers,
-      data: { supportEnabled: true },
-    })
-    expect(enableSupport.ok()).toBeTruthy()
+    let supportWasEnabled = false
 
     try {
+      const modulesBefore = await request.get(`/api/teams/${teamId}/modules`, { headers })
+      supportWasEnabled = Boolean((await modulesBefore.json())?.data?.modules?.supportEnabled)
+
+      const enableSupport = await request.put(`/api/teams/${teamId}/modules`, {
+        headers,
+        data: { supportEnabled: true },
+      })
+      expect(
+        enableSupport.ok(),
+        `enable Support failed: ${enableSupport.status()} ${await enableSupport.text()}`
+      ).toBeTruthy()
+
       const [activeTeam] = await db
         .select({ organizationId: team.organizationId })
         .from(team)
@@ -257,6 +477,9 @@ test.describe.serial('inbound email', () => {
       // the way it was rather than leaving Support switched on behind us.
       if (!supportWasEnabled) {
         await request.put(`/api/teams/${teamId}/modules`, { headers, data: { supportEnabled: false } })
+      }
+      if (membershipBefore.role !== 'admin') {
+        await db.update(teamMember).set({ role: membershipBefore.role }).where(eq(teamMember.id, membershipBefore.id))
       }
     }
   })

@@ -394,7 +394,7 @@ export const conversationMessage = pgTable(
       table.conversationId,
       table.createdAt
     ),
-    uniqueChannelMessageId: uniqueIndex('conversation_message_channel_message_id_idx').on(table.channelMessageId),
+    channelMessageIdIdx: index('conversation_message_channel_message_id_idx').on(table.channelMessageId),
     deliveryStatusIdx: index('conversation_message_delivery_status_idx').on(table.deliveryStatus),
   })
 )

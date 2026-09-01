@@ -259,6 +259,14 @@ export default defineEventHandler(async (event) => {
 
       let conversationId = thread.conversationId
       let isNewConversation = false
+      const threadingCollision =
+        thread.matchedBy === 'ambiguous-message-id'
+          ? {
+              type: 'ambiguous-message-id' as const,
+              headerMessageId: message.inReplyTo ?? message.references[0] ?? '',
+              occurredAt: new Date().toISOString(),
+            }
+          : null
 
       if (!conversationId) {
         conversationId = randomUUID()
@@ -282,11 +290,21 @@ export default defineEventHandler(async (event) => {
           // Agent 2's threading matches replies against this. Writing it is
           // what makes their `thread-key` branch reachable at all.
           channelThreadKey: message.references[0] ?? message.messageId,
+          metadata: threadingCollision ? { threadingCollision } : null,
           lastActivityAt: message.receivedAt,
           lastCustomerReplyAt: message.receivedAt,
           createdAt: message.receivedAt,
           updatedAt: new Date(),
         })
+
+        if (threadingCollision) {
+          logger.warn('Ambiguous inbound Message-ID created a new conversation', {
+            provider: driver.name,
+            inboxId: inbox.id,
+            headerMessageId: threadingCollision.headerMessageId,
+            conversationId,
+          })
+        }
       } else {
         // Never overwrite `projectId` on an existing conversation - an agent
         // may have corrected it (stage doc step 7).
