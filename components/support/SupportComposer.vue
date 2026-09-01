@@ -329,7 +329,7 @@ export default {
     addAttachment(file) {
       const clientId = nextClientId()
       const contentType = (file.type || 'application/octet-stream').toLowerCase()
-      const entry = {
+      this.attachments.push({
         clientId,
         file,
         fileName: file.name,
@@ -343,8 +343,8 @@ export default {
         xhr: null,
         expiryTimer: null,
         cancelled: false,
-      }
-      this.attachments.push(entry)
+      })
+      const entry = this.attachments[this.attachments.length - 1]
       if (file.size === 0) {
         entry.phase = 'failed'
         entry.error = 'empty files are not allowed'
