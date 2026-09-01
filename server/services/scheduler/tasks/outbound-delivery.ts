@@ -1,7 +1,7 @@
 import { runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
 import { defineScheduledTask } from '../registry'
 
-/** A bounded recurring pass recovers outbox rows after request/process loss. */
+/** A bounded recurring pass claims only rows whose persisted retry time is due. */
 export const OUTBOUND_DELIVERY_TASK_NAME = 'support:outbound-delivery'
 
 export async function runScheduledOutboundDelivery(deps: {

@@ -231,6 +231,9 @@ export default {
 
     async retryDelivery() {
       if (this.retrying || !this.conversationId) return
+      if (!window.confirm('The previous attempt may already have been accepted. Retrying could send a duplicate.')) {
+        return
+      }
       this.retrying = true
 
       try {

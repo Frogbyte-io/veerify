@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { conversation, conversationAttachment, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
 import { sendEmail as defaultSendEmail, type EmailAttachment, type SendEmailOptions, type SendEmailResult } from '~/lib/email'
@@ -52,6 +52,15 @@ export const OUTBOUND_DELIVERY_CLAIM_LEASE_SECONDS = 5 * 60
 
 /** Attempts before a delivery stops retrying and becomes terminal. */
 export const MAX_DELIVERY_ATTEMPTS = 5
+
+const MAX_RETRY_DELAY_MS = 15 * 60 * 1000
+
+/** Exponential retry delay with bounded ±20% jitter. */
+export function computeNextAttemptAt(attemptCount: number, now: Date, random: () => number = Math.random): Date {
+  const baseDelay = Math.min(60_000 * 2 ** Math.max(0, attemptCount - 1), MAX_RETRY_DELAY_MS)
+  const jitter = 0.8 + Math.min(1, Math.max(0, random())) * 0.4
+  return new Date(now.getTime() + Math.round(baseDelay * jitter))
+}
 
 /**
  * Insert a pending delivery inside the caller's transaction.
@@ -193,8 +202,8 @@ export async function resolveDeliveryCorrelation(
  * locked row is invisible to a concurrent claim rather than making it wait
  * and then reclaim nothing, which a plain `WHERE` would do.
  */
-export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null> {
-  const now = new Date()
+export async function claimNextOutboundDelivery(options: { now?: Date } = {}): Promise<OutboundClaim | null> {
+  const now = options.now ?? new Date()
   const leaseExpiresAt = new Date(now.getTime() + OUTBOUND_DELIVERY_CLAIM_LEASE_SECONDS * 1000)
   const driver = getConfiguredChannelDriver()
   const provider = driver?.name ?? getConfiguredChannelProviderName()
@@ -221,6 +230,7 @@ export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null>
       WHERE status = 'pending'
         AND attempt_count < ${MAX_DELIVERY_ATTEMPTS}
         AND (lease_expires_at IS NULL OR lease_expires_at < ${now})
+        AND (next_attempt_at IS NULL OR next_attempt_at <= ${now})
       ORDER BY created_at ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
@@ -259,13 +269,33 @@ async function applyDeliveryOutcome(input: {
   messageId: string
   deliveryPatch: Partial<typeof supportOutboundDelivery.$inferInsert>
   messagePatch: Partial<typeof conversationMessage.$inferInsert>
-}): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx
+  attemptCount?: number
+  requiredStatus?: string
+}): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const where = input.attemptCount !== undefined
+      ? and(
+          eq(supportOutboundDelivery.id, input.deliveryId),
+          eq(supportOutboundDelivery.messageId, input.messageId),
+          eq(supportOutboundDelivery.status, 'pending'),
+          eq(supportOutboundDelivery.attemptCount, input.attemptCount),
+          isNotNull(supportOutboundDelivery.leaseExpiresAt)
+        )
+      : input.requiredStatus
+        ? and(
+            eq(supportOutboundDelivery.id, input.deliveryId),
+            eq(supportOutboundDelivery.messageId, input.messageId),
+            eq(supportOutboundDelivery.status, input.requiredStatus)
+          )
+        : eq(supportOutboundDelivery.id, input.deliveryId)
+    const [updated] = await tx
       .update(supportOutboundDelivery)
       .set(input.deliveryPatch)
-      .where(eq(supportOutboundDelivery.id, input.deliveryId))
+      .where(where)
+      .returning({ id: supportOutboundDelivery.id })
+    if (!updated) return false
     await tx.update(conversationMessage).set(input.messagePatch).where(eq(conversationMessage.id, input.messageId))
+    return true
   })
 }
 
@@ -313,14 +343,17 @@ export async function publishDeliveryStatusChanged(messageId: string): Promise<v
 export async function completeOutboundDelivery(
   id: string,
   messageId: string,
+  attemptCount: number,
   diagnostics?: { provider: string; providerAccountKey: string; providerMessageId?: string }
-): Promise<void> {
-  await applyDeliveryOutcome({
+): Promise<boolean> {
+  const completed = await applyDeliveryOutcome({
     deliveryId: id,
     messageId,
+    attemptCount,
     deliveryPatch: {
       status: 'sent',
       leaseExpiresAt: null,
+      nextAttemptAt: null,
       lastError: null,
       ...(diagnostics
         ? {
@@ -333,7 +366,8 @@ export async function completeOutboundDelivery(
     },
     messagePatch: { deliveryStatus: 'sent', deliveryError: null },
   })
-  await publishDeliveryStatusChanged(messageId)
+  if (completed) await publishDeliveryStatusChanged(messageId)
+  return completed
 }
 
 /**
@@ -354,24 +388,29 @@ export async function failOutboundDelivery(
   id: string,
   messageId: string,
   error: unknown,
-  attemptCount: number
-): Promise<void> {
+  attemptCount: number,
+  deps: { now?: Date; random?: () => number } = {}
+): Promise<boolean> {
   const terminal = attemptCount >= MAX_DELIVERY_ATTEMPTS
   const sanitized = sanitizeDeliveryError(error)
+  const now = deps.now ?? new Date()
 
-  await applyDeliveryOutcome({
+  const failed = await applyDeliveryOutcome({
     deliveryId: id,
     messageId,
+    attemptCount,
     deliveryPatch: {
       status: terminal ? 'failed' : 'pending',
       leaseExpiresAt: null,
+      nextAttemptAt: terminal ? null : computeNextAttemptAt(attemptCount, now, deps.random),
       lastError: sanitized,
-      updatedAt: new Date(),
+      updatedAt: now,
     },
     messagePatch: { deliveryStatus: terminal ? 'failed' : 'pending', deliveryError: sanitized },
   })
 
-  if (terminal) await publishDeliveryStatusChanged(messageId)
+  if (failed && terminal) await publishDeliveryStatusChanged(messageId)
+  return failed
 }
 
 /**
@@ -383,14 +422,23 @@ export async function failOutboundDelivery(
  * attempts" - resetting `attemptCount` rather than just clearing the lease is
  * what distinguishes it from `failOutboundDelivery`'s own below-the-cap path.
  */
-export async function resetOutboundDeliveryForRetry(id: string, messageId: string): Promise<void> {
-  await applyDeliveryOutcome({
+export async function resetOutboundDeliveryForRetry(id: string, messageId: string): Promise<boolean> {
+  const reset = await applyDeliveryOutcome({
     deliveryId: id,
     messageId,
-    deliveryPatch: { status: 'pending', attemptCount: 0, leaseExpiresAt: null, lastError: null, updatedAt: new Date() },
+    requiredStatus: 'failed',
+    deliveryPatch: {
+      status: 'pending',
+      attemptCount: 0,
+      leaseExpiresAt: null,
+      nextAttemptAt: new Date(),
+      lastError: null,
+      updatedAt: new Date(),
+    },
     messagePatch: { deliveryStatus: 'pending', deliveryError: null },
   })
-  await publishDeliveryStatusChanged(messageId)
+  if (reset) await publishDeliveryStatusChanged(messageId)
+  return reset
 }
 
 /** Maximum stored error length. Enough to diagnose, short of storing a payload. */
@@ -422,6 +470,7 @@ export interface ProcessOutboundDeliveryDeps {
   onSent?: (
     id: string,
     messageId: string,
+    attemptCount: number,
     diagnostics: { provider: string; providerAccountKey: string; providerMessageId?: string }
   ) => Promise<void>
   /** Defaults to `failOutboundDelivery` - injectable so unit tests never touch the db. */
@@ -516,7 +565,7 @@ export async function processOutboundDelivery(
     })
 
     if (result.accepted) {
-      await onSent(claim.id, claim.messageId, {
+      await onSent(claim.id, claim.messageId, claim.attemptCount, {
         provider: claim.provider ?? driver?.name ?? getConfiguredChannelProviderName(),
         providerAccountKey: claim.providerAccountKey ?? driver?.accountKey ?? '',
         providerMessageId: result.providerMessageId,

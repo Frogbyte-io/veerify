@@ -8,6 +8,7 @@ import {
   supportAttachmentUpload,
   supportEmailEvent,
   supportInbox,
+  supportOutboundDelivery,
 } from '../../server/database/schema/support'
 import { getPlaywrightBaseURL, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
 import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
@@ -234,13 +235,10 @@ test.describe.serial('outbound reply round trip', () => {
       ])
       expect(JSON.stringify(persistedReply)).not.toContain('storageKey')
 
-      // --- 2. deliveryStatus must leave 'pending' ----------------------------
-      // Regression coverage for the bug this item found: before SUP-04-10,
-      // nothing ever updated conversationMessage.deliveryStatus past its
-      // insert-time value, so this would have stayed 'pending' forever no
-      // matter what happened. Tolerates either outcome of the actual SMTP
-      // attempt (this box's SMTP config is not this assertion's concern) -
-      // only that *something* updated it.
+      // --- 2. The first durable delivery attempt completes ------------------
+      // A retryable SMTP failure intentionally remains pending now, but it
+      // must carry an attempt count and a persisted future due time rather
+      // than being immediately reclaimed in this worker pass.
       let finalStatus: string | undefined
       for (let attempt = 0; attempt < 10; attempt++) {
         const messagesResponse = await request.get(`/api/support/conversations/${conversationId}/messages`, {
@@ -252,8 +250,16 @@ test.describe.serial('outbound reply round trip', () => {
         if (finalStatus && finalStatus !== 'pending') break
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
-      expect(finalStatus).not.toBe('pending')
-      expect(['sent', 'failed']).toContain(finalStatus)
+      expect(['pending', 'sent', 'failed']).toContain(finalStatus)
+      if (finalStatus === 'pending') {
+        const [delivery] = await db
+          .select()
+          .from(supportOutboundDelivery)
+          .where(eq(supportOutboundDelivery.messageId, replyMessage.id as string))
+        expect(delivery.attemptCount).toBeGreaterThan(0)
+        expect(delivery.nextAttemptAt).not.toBeNull()
+        expect(delivery.lastError).toBeTruthy()
+      }
 
       // --- 3. The customer's reply to it lands on the SAME conversation -----
       // This is the headline risk: a bracketed channelMessageId stored on
@@ -291,9 +297,9 @@ test.describe.serial('outbound reply round trip', () => {
         { headers }
       )
       expect([200, 409]).toContain(retryOnSent.status())
-      // 200 only if the send genuinely failed (finalStatus === 'failed'); a
-      // successful send must reject the retry.
-      if (finalStatus === 'sent') {
+      // 200 only if all automatic attempts genuinely failed. Sent and
+      // scheduled-pending deliveries must reject a manual retry.
+      if (finalStatus !== 'failed') {
         expect(retryOnSent.status()).toBe(409)
       }
     } finally {
@@ -516,6 +522,7 @@ test.describe.serial('outbound attachment contract', () => {
       let directUploadCount = 0
       const directCompletionOrder: string[] = []
       let messageBody: Record<string, unknown> | undefined
+      let deliveryRetryCount = 0
       const canonicalMessage = {
         id: 'ui-message-1',
         conversationId,
@@ -526,7 +533,7 @@ test.describe.serial('outbound attachment contract', () => {
         senderUserId: seedUserId,
         senderContactId: null,
         isPrivate: false,
-        deliveryStatus: 'sent',
+        deliveryStatus: 'failed',
         createdAt: new Date().toISOString(),
         attachments: [
           {
@@ -600,6 +607,14 @@ test.describe.serial('outbound attachment contract', () => {
           })
         }
       })
+      await page.route(`**/api/support/conversations/${conversationId}/messages/ui-message-1/retry`, async (route) => {
+        deliveryRetryCount += 1
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: { retried: true, previousSubmissionAttempted: true } }),
+        })
+      })
 
       const [sessionCookieName, ...sessionCookieValueParts] = sessionCookie.split('=')
       await page.context().addCookies([
@@ -639,6 +654,24 @@ test.describe.serial('outbound attachment contract', () => {
         'download',
         'contract.txt'
       )
+      page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toBe(
+          'The previous attempt may already have been accepted. Retrying could send a duplicate.'
+        )
+        await dialog.dismiss()
+      })
+      await page.getByTestId('support-message-retry').click()
+      expect(deliveryRetryCount).toBe(0)
+      await expect(page.getByTestId('support-message-delivery-failed')).toBeVisible()
+
+      page.once('dialog', async (dialog) => {
+        expect(dialog.message()).toBe(
+          'The previous attempt may already have been accepted. Retrying could send a duplicate.'
+        )
+        await dialog.accept()
+      })
+      await page.getByTestId('support-message-retry').click()
+      await expect.poll(() => deliveryRetryCount).toBe(1)
       await page.getByTestId('support-composer-mode-note').click()
       await expect(page.locator('[data-testid="support-composer-note"]')).toBeVisible()
       await expect(page.getByTestId('support-composer-attach')).toBeHidden()
@@ -647,7 +680,7 @@ test.describe.serial('outbound attachment contract', () => {
 
       await input.setInputFiles({ name: 'failed.txt', mimeType: 'text/plain', buffer: Buffer.from('failed') })
       await expect(page.locator('[data-phase="failed"]').first()).toBeVisible({ timeout: 10_000 })
-      await page.locator('[data-testid$="-retry"]').first().click()
+      await page.locator('[data-phase="failed"] [data-testid$="-retry"]').click()
       await expect(page.locator('[data-phase="ready"]').last()).toBeVisible({ timeout: 10_000 })
       expect(directCompletionOrder).toEqual(['put', 'complete'])
 

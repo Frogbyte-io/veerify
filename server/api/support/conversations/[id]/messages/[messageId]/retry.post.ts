@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [delivery] = await db
-    .select({ id: supportOutboundDelivery.id })
+    .select({ id: supportOutboundDelivery.id, attemptCount: supportOutboundDelivery.attemptCount })
     .from(supportOutboundDelivery)
     .where(and(eq(supportOutboundDelivery.messageId, messageId), eq(supportOutboundDelivery.kind, 'email')))
     .limit(1)
@@ -82,7 +82,15 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  await resetOutboundDeliveryForRetry(delivery.id, messageId)
+  const previousSubmissionAttempted = delivery.attemptCount > 0
+  const reset = await resetOutboundDeliveryForRetry(delivery.id, messageId)
+  if (!reset) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: createErrorResponse(ErrorCode.CONFLICT, 'This delivery was already retried'),
+    })
+  }
 
   // Fire-and-forget, same pattern as the initial send (SUP-04-4): the
   // response must not wait on SMTP, and the outbox row is the durable copy
@@ -93,5 +101,5 @@ export default defineEventHandler(async (event) => {
     })
   })
 
-  return createSuccessResponse({ retried: true })
+  return createSuccessResponse({ retried: true, previousSubmissionAttempted })
 })

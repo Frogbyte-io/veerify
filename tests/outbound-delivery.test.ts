@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  computeNextAttemptAt,
   processOutboundDelivery,
   runOutboundDeliveryWorker,
   sanitizeDeliveryError,
@@ -24,6 +25,21 @@ describe('sanitizeDeliveryError', () => {
     const long = 'x'.repeat(1000)
     const result = sanitizeDeliveryError(long)
     expect(result.length).toBeLessThanOrEqual(500)
+  })
+})
+
+describe('computeNextAttemptAt', () => {
+  const now = new Date('2026-08-20T10:00:00Z')
+
+  it('uses exponential delays with deterministic midpoint jitter', () => {
+    expect(computeNextAttemptAt(1, now, () => 0.5)).toEqual(new Date('2026-08-20T10:01:00Z'))
+    expect(computeNextAttemptAt(2, now, () => 0.5)).toEqual(new Date('2026-08-20T10:02:00Z'))
+    expect(computeNextAttemptAt(5, now, () => 0.5)).toEqual(new Date('2026-08-20T10:15:00Z'))
+  })
+
+  it('keeps jitter inside 80 to 120 percent', () => {
+    expect(computeNextAttemptAt(1, now, () => 0)).toEqual(new Date('2026-08-20T10:00:48Z'))
+    expect(computeNextAttemptAt(1, now, () => 1)).toEqual(new Date('2026-08-20T10:01:12Z'))
   })
 })
 
@@ -52,7 +68,7 @@ describe('processOutboundDelivery', () => {
 
     expect(result).toEqual({ outcome: 'sent' })
     expect(getObject).not.toHaveBeenCalled()
-    expect(onSent).toHaveBeenCalledWith('delivery-1', 'msg-1', {
+    expect(onSent).toHaveBeenCalledWith('delivery-1', 'msg-1', 1, {
       provider: 'postmark',
       providerAccountKey: 'server-main',
       providerMessageId: 'provider-1',
