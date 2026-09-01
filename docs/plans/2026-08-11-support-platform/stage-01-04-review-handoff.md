@@ -7,7 +7,7 @@ Updated: 2026-09-01
 - Working branch: `review/stage-01-04-audit`
 - Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `9212e5a` (`fix(support): keep attachment upload phases reactive`)
+- Last completed task commit: `610b578` (`fix(support): scope email threading to inboxes`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -15,11 +15,11 @@ Updated: 2026-09-01
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-Tasks 1-10 are complete. Tasks 11-16 and the final whole-branch review remain.
+Tasks 1-11 are complete. Tasks 12-16 and the final whole-branch review remain.
 
 ## Completed work
 
-Tasks 1-10 are committed on this branch, covering:
+Tasks 1-11 are committed on this branch, covering:
 
 1. staged hardening schema and migration contracts;
 2. ranked inbox access, capability payloads, and route authorization;
@@ -29,7 +29,8 @@ Tasks 1-10 are committed on this branch, covering:
 6. server-owned attachment upload sessions and bounded proxy/direct upload contracts;
 7. durable upload reservation/finalization and canonical attachment payloads;
 8. leased cleanup, safe attachment downloads, outbound size enforcement, and scheduling;
-9. reactive attachment upload progress, expiry/retry handling, opaque upload submission, and persisted download chips.
+9. reactive attachment upload progress, expiry/retry handling, opaque upload submission, and persisted download chips;
+10. inbox-scoped RFC threading, explicit collision handling, diagnosed replacement tickets, and the non-unique RFC-ID index cutover.
 
 The latest completed verification, after Task 10, was:
 
@@ -37,9 +38,10 @@ The latest completed verification, after Task 10, was:
 - unit: 510/510 across 46 files;
 - full lint: 0 errors and 202 warnings, all non-blocking;
 - attachment cleanup PostgreSQL focus: 12/12;
-- PostgreSQL integration: 87/87 across 10 files;
+- PostgreSQL integration: 89/89 across 10 files;
 - Redis integration: 6/6;
 - focused outbound-reply Playwright: 2 passed, 1 provider-credential-gated skip;
+- focused inbound-email Playwright with isolated local credentials: 3/3;
 - guarded E2E in `yarn harness:verify`: skipped because `PLAYWRIGHT_FORCE=1` was not set for that command.
 
 ## Task 10 completed
@@ -86,6 +88,22 @@ Current validation state:
 - PostgreSQL integration: 87/87 across 10 files;
 - focused serial outbound-reply Playwright: 2 passed and 1 Postmark-credential-gated skip.
 
+## Task 11 completed
+
+- RFC Message-ID lookup remains joined to `conversation` and filtered by the receiving inbox.
+- The resolver reads at most two matches; two matches return `ambiguous-message-id` even when they belong to one conversation, and no weaker fallback runs.
+- Ambiguity creates a new conversation with sanitized `threadingCollision` metadata and identity-only warning logs.
+- Generated migration `0028_spotty_captain_universe.sql` replaces the global unique RFC-ID index with a non-unique lookup index after the consumer cutover.
+- Cross-team duplicate RFC IDs and same-inbox ambiguity are covered through the real Postmark intake route.
+- The older inbound E2E fixture now temporarily promotes and restores the seed membership because the hardened module-toggle route correctly requires a team admin.
+
+Validation:
+
+- focused threading unit: 13/13;
+- focused threading/schema PostgreSQL integration: 13/13;
+- focused inbound-email Playwright: 3/3;
+- `yarn harness:verify`: passed with 510/510 unit, 6/6 Redis integration, and 89/89 PostgreSQL integration tests; guarded E2E skipped because that command did not set `PLAYWRIGHT_FORCE=1`.
+
 ## Local runtime findings
 
 The default Windows Nuxt dev process can exhaust its roughly 2 GB V8 heap while compiling `/support`. Symptoms are a zero-byte `/support` response, about 1.7-1.9 GB resident memory, high handle growth, and eventual OOM/restart while transforming the support/Lucide dependency graph. Direct Vue SFC compilation of both changed components is fast and error-free; a clean baseline also needs roughly 55 seconds for its first `/support` response.
@@ -119,10 +137,10 @@ Do not claim `yarn build` green. The existing Nuxt/Nitro 2.11.12 production pack
 1. Confirm this branch/worktree and run `yarn harness:context`.
 2. Start Postgres and Valkey, migrate an isolated database, and seed `test@preview.local` / `password123`.
 3. Start the worktree runtime with a 4 GB Node heap and both required local secrets.
-4. Start Task 11 by writing the inbox-scope and same-inbox ambiguity tests for RFC threading identity.
-5. Keep the current global RFC-ID unique index until Task 11's scoped lookup and ambiguity handling are deployed, then generate its replacement migration.
-6. Run Task 11's focused unit, PostgreSQL integration, and serial inbound-email browser cases.
-7. Continue Tasks 12-16 in implementation-plan order.
+4. Start Task 12 with provider metadata, account-key, and correlation-header tests.
+5. Cut delivery-event uniqueness over only after provider-account-aware claiming and route correlation are implemented.
+6. Prove legacy queued rows remain deliverable and concurrent terminal-state behavior remains bounce-dominant.
+7. Continue Tasks 13-16 in implementation-plan order.
 8. After Task 16, run the implementation plan's complete verification matrix and whole-branch review before integrating into `support-platform`.
 
 ## Other worktrees and branches at handoff
