@@ -5,6 +5,10 @@ const appDomain = (process.env.APP_DOMAIN || 'localhost').trim()
 const dashboardDomain = (
   process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
 ).trim()
+const devAllowedHosts = (process.env.NUXT_DEV_ALLOWED_HOSTS || '')
+  .split(',')
+  .map((host) => host.trim())
+  .filter(Boolean)
 const deploymentModeEnv = (process.env.APP_DEPLOYMENT_MODE || '').toLowerCase()
 const deploymentMode =
   deploymentModeEnv === 'cloud' || deploymentModeEnv === 'self-hosted'
@@ -46,6 +50,13 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   vite: {
     plugins: [tailwindcss()],
+    server: {
+      // Vite rejects dev requests whose Host header it does not recognise, which
+      // blocks reaching the dev server through an HTTPS reverse proxy (for example
+      // Tailscale Serve). Kept env-driven so the hostname stays per-machine rather
+      // than checked in; empty in CI and production, where this block is unused.
+      allowedHosts: devAllowedHosts,
+    },
   },
   vue: {
     compilerOptions: {
