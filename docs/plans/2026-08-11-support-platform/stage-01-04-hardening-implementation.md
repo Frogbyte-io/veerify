@@ -1114,7 +1114,7 @@ git commit -m "chore(build): make database operations explicit"
 - Consumes: the existing identifier-only realtime envelope and authorized WebSocket subscription contract.
 - Produces: cross-process proof for `message.created`, `message.delivery-status`, and reconnect restoration.
 
-- [ ] **Step 1: Write the failing two-process realtime test**
+- [x] **Step 1: Write the failing two-process realtime test**
 
 Launch two independent worktree app processes on distinct ports with one shared Redis URL and configured Postgres. Connect one WebSocket client to each, subscribe to the same authorized conversation, mutate through instance A, and assert instance B receives both `message.created` and `message.delivery-status`. Drop and restore the Redis subscriber connection and prove the subscription resumes.
 
@@ -1122,11 +1122,11 @@ Run: `yarn vitest run -c vitest.integration.config.ts tests/integration/realtime
 
 Expected: FAIL if process-local assumptions or missing test hooks prevent real cross-process delivery.
 
-- [ ] **Step 2: Verify or correct reconnect behavior at the Redis driver boundary**
+- [x] **Step 2: Verify or correct reconnect behavior at the Redis driver boundary**
 
 Keep envelopes identifier-only and authorization server-side. The existing `server/services/realtime/drivers/redis.ts` `ready` handler must re-subscribe every channel in its handler map after reconnect. If the two-process test passes unchanged, retain it as evidence and record that memory mode remains single-instance; if it fails at reconnect, correct that handler and re-run the same failing test before proceeding.
 
-- [ ] **Step 3: Run integration gates and commit exact files**
+- [x] **Step 3: Run integration gates and commit exact files**
 
 Run: `yarn test:integration:if-available`
 
@@ -1140,6 +1140,26 @@ if (Test-Path server/services/realtime/drivers/redis.ts) { git add -- server/ser
 git diff --cached --name-status
 git commit -m "test(support): prove multi-instance realtime"
 ```
+
+**Outcome (2026-09-03).** Committed as `ac95c41`. Two deviations from the file list above,
+both recorded rather than silently absorbed:
+
+- The failing test exposed a production defect in **`lib/auth.ts`, not the Redis driver**. The
+  driver's `ready` handler already re-subscribes its whole handler map and the reconnect leg
+  passes against it unchanged, so it is retained as evidence per Step 2's first branch.
+  `server/routes/_ws.ts` authenticates with `Authorization: Bearer <session-token>`, but no
+  bearer plugin was registered, so Better Auth read only cookies and closed every socket with 4001. Reverting the plugin and re-running the test reproduces the failure at
+  `WebSocket did not authenticate`. **Realtime had therefore never worked in any deployment**;
+  `NotificationBell`'s 30s polling fallback masked it, and no prior test drove a real socket
+  against a real server.
+- The suite needs Postgres **and** Redis but is collected by the Postgres guard, which probes
+  only Postgres. It self-probes and skips with a stated reason, so `harness:verify` stays green
+  on a machine with one dependency and not the other. Both the skip and run paths were exercised.
+
+Validation: `yarn harness:verify` passed -- 529/529 unit across 49 files, 0 lint errors with 205
+non-blocking warnings, 6/6 Redis integration, 99/99 Postgres integration across 11 files, guarded
+E2E skipped because `PLAYWRIGHT_FORCE=1` was not set. Typecheck passed. `prettier --check` clean
+on every changed file.
 
 ---
 

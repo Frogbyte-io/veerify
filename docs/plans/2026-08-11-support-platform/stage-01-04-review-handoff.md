@@ -1,13 +1,13 @@
 # Stage 01-04 hardening review handoff
 
-Updated: 2026-09-01
+Updated: 2026-09-03
 
 ## Repository state
 
 - Working branch: `review/stage-01-04-audit`
 - Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `f75cc74` (`chore(build): make database operations explicit`)
+- Last completed task commit: `0ac0472` (`chore(dev): make Vite dev allowed hosts env-driven`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -15,7 +15,7 @@ Updated: 2026-09-01
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-Tasks 1-14 are complete. Tasks 15-16 and the final whole-branch review remain.
+Tasks 1-15 are complete. Task 16 and the final whole-branch review remain.
 
 ## Completed work
 
@@ -176,6 +176,63 @@ Validation:
 - PostgreSQL integration: 98/98 across 10 files;
 - `yarn harness:verify`: passed; its guarded E2E subcommand skipped because `PLAYWRIGHT_FORCE=1` was not set.
 
+## Task 15 completed
+
+Commits: `ac95c41` (task), `ec8937f` and `0ac0472` (two adjacent fixes found in the same working tree).
+
+- `tests/integration/realtime-two-process.test.ts` launches two independent Nuxt processes on
+  distinct ports against one shared Redis and Postgres, subscribes an authorized WebSocket client
+  to the same conversation on each, and asserts `message.created` and `message.delivery-status`
+  cross the process boundary. It then kills every Redis pubsub client and proves the subscription
+  resumes and still delivers.
+
+**The test found a real production defect, and not where Step 2 expected it.** The Redis driver's
+`ready` handler already re-subscribes its whole handler map, and the reconnect leg passes against it
+unchanged -- retained as evidence, no correction needed there. The defect was in auth:
+`server/routes/_ws.ts` authenticates by passing `Authorization: Bearer <session-token>` to
+`auth.api.getSession()`, but no bearer plugin was registered, so Better Auth only ever read cookies
+and closed every WebSocket with 4001. Confirmed by reverting the plugin and re-running the test,
+which fails at `WebSocket did not authenticate`.
+
+**Realtime has therefore never worked in any deployment.** `NotificationBell`'s 30s polling fallback
+masked it -- which is exactly why SUP-00-9 warned that fallback was load-bearing. No prior test
+caught it because every one of them drove the driver or the channel authorizer directly; this is the
+first that drives a real socket against a real running server. Worth assuming, until re-checked, that
+anything else validated only at unit level across that seam is equally unproven.
+
+Two adjacent fixes were in the same uncommitted working tree and are committed separately:
+
+- `ec8937f` pins `advanced.useSecureCookies`. Better Auth otherwise picks the `__Secure-` cookie
+  prefix from the request protocol, so route-issued cookies and programmatic
+  `auth.api.getSession()` calls disagree on the cookie name behind a TLS-terminating proxy. **As
+  found in the working tree this regressed production**: it read `baseURL.startsWith('https://')`
+  alone, dropping the default chain's `NODE_ENV === 'production'` fallback, so a deploy that left
+  BETTER_AUTH_URL unset or HTTP would silently downgrade to plain cookies -- and unlike
+  BETTER_AUTH_SECRET, that variable has no production guard. The committed version keeps the
+  production fallback explicitly. Covered by `tests/auth-secure-cookie.test.ts` (3 tests: HTTPS
+  base URL, plain-HTTP dev, and the production fail-safe).
+- `0ac0472` replaces a hardcoded personal Tailscale hostname in `nuxt.config.ts` with
+  `NUXT_DEV_ALLOWED_HOSTS`, documented in `.env.example`.
+
+**Gate fragility fixed while here.** The new suite needs Postgres _and_ Redis, but it is collected by
+the Postgres guard, which probes only Postgres -- so `harness:verify` would have hard-failed on a
+machine with one dependency and not the other, the all-or-nothing outcome the two separate guard
+scripts exist to avoid. The suite now self-probes and skips with a stated reason. Both the skip path
+(unreachable Redis) and the run path were exercised deliberately.
+
+Validation:
+
+- `yarn harness:verify`: passed;
+- typecheck: passed;
+- unit: 529/529 across 49 files (up from 526/526 -- the three secure-cookie tests);
+- lint: 0 errors and 205 warnings, all non-blocking;
+- Redis integration: 6/6;
+- PostgreSQL integration: 99/99 across 11 files (up from 98/98 across 10);
+- focused two-process realtime: 1/1, and 1 skipped on the deliberate unreachable-Redis path;
+- `prettier --check --end-of-line=auto`: clean on every changed file;
+- guarded E2E: skipped, because `harness:verify` does not set `PLAYWRIGHT_FORCE=1`. Task 15 changed
+  no user-facing UI, but it did change auth plugin registration -- see the resume order.
+
 ## Local runtime findings
 
 The default Windows Nuxt dev process can exhaust its roughly 2 GB V8 heap while compiling `/support`. Symptoms are a zero-byte `/support` response, about 1.7-1.9 GB resident memory, high handle growth, and eventual OOM/restart while transforming the support/Lucide dependency graph. Direct Vue SFC compilation of both changed components is fast and error-free; a clean baseline also needs roughly 55 seconds for its first `/support` response.
@@ -208,10 +265,16 @@ yarn test:e2e:worktree -- tests/e2e/support-outbound-reply.spec.ts --workers=1
 
 1. Confirm this branch/worktree and run `yarn harness:context`.
 2. Start Postgres and Valkey, migrate an isolated database, and seed `test@preview.local` / `password123`.
+   The isolated audit database on this machine is `veerify_stage0104_audit`; it is migrated through `0029`.
 3. Start the worktree runtime with a 4 GB Node heap and both required local secrets.
-4. Start Task 15 with the two-process Redis realtime integration test.
+4. **Run the forced E2E suite once against Task 15's auth change before Task 16.** Registering the
+   bearer plugin turns WebSocket auth on for the first time, so realtime code paths that have always
+   been dead now execute. Nothing in the guarded gates covers a browser against a live socket, and
+   `harness:verify` skips E2E by default, so this is the one uncovered risk Task 15 introduces.
 5. Continue Task 16 in implementation-plan order.
 6. After Task 16, run the implementation plan's complete verification matrix and whole-branch review before integrating into `support-platform`.
+7. Integration into `support-platform` still needs the merge or rebase noted above -- the target has
+   two later documentation commits (`c3c19b1`, `5b82348`) not yet in this branch.
 
 ## Other worktrees and branches at handoff
 
