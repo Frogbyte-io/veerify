@@ -17,6 +17,13 @@ const logger = createConsola().withTag('veerify').withTag('auth')
 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
 const defaultAppBaseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+// Pinned rather than left to Better Auth's per-request protocol sniffing. Route-issued
+// cookies see the proxied request protocol while programmatic `auth.api.getSession()`
+// calls have no request to sniff, so the two disagree on the `__Secure-` prefix whenever
+// local development is fronted by an HTTPS reverse proxy (for example, Tailscale Serve).
+// Production stays fail-safe: secure cookies are forced regardless of how the base URL
+// is configured, matching the default this replaces.
+const useSecureCookies = defaultAppBaseUrl.startsWith('https://') || process.env.NODE_ENV === 'production'
 const betterAuthSecret =
   process.env.BETTER_AUTH_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'veerify-dev-auth-secret-v1')
 
@@ -61,6 +68,7 @@ export const auth = betterAuth({
         return []
       },
   advanced: {
+    useSecureCookies,
     crossSubDomainCookies: {
       enabled: true,
       domain: '.' + appDomain,
