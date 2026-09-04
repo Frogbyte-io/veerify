@@ -28,6 +28,13 @@ export default defineEventHandler(async (event) => {
     return
   }
 
+  const publicProject = await findPublicProjectByDomain(hostWithoutPort)
+  if (publicProject) {
+    event.context.teamSubdomain = publicProject.team.slug
+    event.context.publicProjectSlug = publicProject.project.slug
+    return
+  }
+
   if (hostWithoutPort.endsWith('.' + appDomain)) {
     const subdomain = hostWithoutPort.slice(0, -(appDomain.length + 1))
     if (subdomain && !subdomain.includes('.')) {
@@ -43,12 +50,4 @@ export default defineEventHandler(async (event) => {
       return
     }
   }
-
-  const publicProject = await findPublicProjectByDomain(hostWithoutPort)
-  if (!publicProject) {
-    return
-  }
-
-  event.context.teamSubdomain = publicProject.team.slug
-  event.context.publicProjectSlug = publicProject.project.slug
 })

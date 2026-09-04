@@ -42,6 +42,12 @@ describe('auth redirect helpers', () => {
         redirectHost: 'customer.example.com',
       })
     ).toBe(false)
+    expect(
+      isAppHostedRedirectHost({
+        ...common,
+        redirectHost: 'feedback.customer.veerify.io',
+      })
+    ).toBe(false)
   })
 
   it('parses only http/https absolute redirect targets', () => {

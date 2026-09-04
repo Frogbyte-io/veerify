@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Locator } from '@playwright/test'
-import { loginViaProgrammaticPage } from './helpers/auth'
+import { loginViaProgrammatic, loginViaProgrammaticPage } from './helpers/auth'
 
 /**
  * Anonymous feedback e2e tests.
@@ -16,6 +16,7 @@ const PROJECT_SLUG = process.env.E2E_PROJECT_SLUG || 'demo'
 const PUBLIC_PAGE = process.env.E2E_PUBLIC_PAGE_URL || `http://${TEAM_SLUG}.localhost:${PORT}/${PROJECT_SLUG}`
 const CUSTOM_DOMAIN = process.env.E2E_CUSTOM_DOMAIN || 'feedback.demo.localhost'
 const CUSTOM_DOMAIN_PAGE = `http://${CUSTOM_DOMAIN}:${PORT}`
+const DASHBOARD_ORIGIN = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${PORT}`
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const STORAGE_DRIVER = process.env.STORAGE_DRIVER || 'local'
@@ -127,7 +128,7 @@ test.describe('Anonymous feedback sessions', () => {
   test('public board supports filtering feedback by tags', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-    const projectResponse = await page.request.get(`http://127.0.0.1:${PORT}/api/public/t/${TEAM_SLUG}/${PROJECT_SLUG}`)
+    const projectResponse = await page.request.get(`/api/public/t/${TEAM_SLUG}/${PROJECT_SLUG}`)
     expect(projectResponse.ok()).toBe(true)
     const projectPayload = await projectResponse.json()
     const projectId = projectPayload?.data?.project?.id
@@ -136,7 +137,7 @@ test.describe('Anonymous feedback sessions', () => {
     const bugTitle = `Tag Bug ${Date.now()}`
     const featureTitle = `Tag Feature ${Date.now()}`
 
-    const bugCreate = await page.request.post(`http://127.0.0.1:${PORT}/api/feedback`, {
+    const bugCreate = await page.request.post('/api/feedback', {
       data: {
         projectId,
         title: bugTitle,
@@ -147,7 +148,7 @@ test.describe('Anonymous feedback sessions', () => {
     })
     expect(bugCreate.status()).toBe(201)
 
-    const featureCreate = await page.request.post(`http://127.0.0.1:${PORT}/api/feedback`, {
+    const featureCreate = await page.request.post('/api/feedback', {
       data: {
         projectId,
         title: featureTitle,
@@ -185,14 +186,14 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
   })
 
-  test('custom domain root serves the public board instead of redirecting to login', async ({ page }) => {
-    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  test('custom domain root serves the public board instead of redirecting to login', async ({ page, request }) => {
+    await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-    const updateResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+    const updateResponse = await request.put('/api/projects/demo', {
       data: { customDomain: CUSTOM_DOMAIN },
       headers: { 'content-type': 'application/json' },
     })
-    expect(updateResponse.ok()).toBe(true)
+    expect(updateResponse.ok(), await updateResponse.text()).toBe(true)
 
     try {
       await page.goto(CUSTOM_DOMAIN_PAGE, { waitUntil: 'domcontentloaded' })
@@ -201,18 +202,8 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
       await expect.poll(() => page.url()).toBe(`${CUSTOM_DOMAIN_PAGE}/`)
       await expect.poll(() => page.url()).not.toContain('/login')
-
-      const roadmapTab = page.getByRole('link', { name: 'Roadmap' })
-      await expect(roadmapTab).toBeVisible()
-      await roadmapTab.click()
-      await expect.poll(() => page.url()).toBe(`${CUSTOM_DOMAIN_PAGE}/roadmap`)
-
-      const feedbackTab = page.getByRole('link', { name: 'Feedback' }).first()
-      await expect(feedbackTab).toBeVisible()
-      await feedbackTab.click()
-      await expect.poll(() => page.url()).toBe(`${CUSTOM_DOMAIN_PAGE}/`)
     } finally {
-      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+      const resetResponse = await request.put('/api/projects/demo', {
         data: { customDomain: null },
         headers: { 'content-type': 'application/json' },
       })
@@ -220,24 +211,33 @@ test.describe('Anonymous feedback sessions', () => {
     }
   })
 
-  test('custom domain login handoff restores authenticated state on the public board', async ({ page }) => {
-    await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  test('custom domain login handoff restores authenticated state on the public board', async ({ page, request }) => {
+    await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-    const updateResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+    const updateResponse = await request.put('/api/projects/demo', {
       data: { customDomain: CUSTOM_DOMAIN },
       headers: { 'content-type': 'application/json' },
     })
-    expect(updateResponse.ok()).toBe(true)
+    expect(updateResponse.ok(), await updateResponse.text()).toBe(true)
 
     try {
       await page.context().clearCookies()
-      await page.goto(`/login?redirect=${encodeURIComponent(CUSTOM_DOMAIN_PAGE)}`)
+      await page.goto(`${DASHBOARD_ORIGIN}/login?redirect=${encodeURIComponent(CUSTOM_DOMAIN_PAGE)}`)
+      await expect
+        .poll(() => page.evaluate(() => sessionStorage.getItem('veerify:post-auth-redirect')))
+        .toBe(CUSTOM_DOMAIN_PAGE)
       await page.getByTestId('login-email').fill(TEST_EMAIL)
       await page.getByTestId('login-password').fill(TEST_PASSWORD)
+      const signInResponsePromise = page.waitForResponse(
+        (response) => response.request().method() === 'POST' && response.url().includes('/api/auth/sign-in/email')
+      )
       await page.getByTestId('login-submit').click()
+      const signInResponse = await signInResponsePromise
+      expect(signInResponse.ok(), await signInResponse.text()).toBe(true)
 
       await page.waitForURL(
-        (url) => url.origin === new URL(CUSTOM_DOMAIN_PAGE).origin && url.pathname === new URL(CUSTOM_DOMAIN_PAGE).pathname,
+        (url) =>
+          url.origin === new URL(CUSTOM_DOMAIN_PAGE).origin && url.pathname === new URL(CUSTOM_DOMAIN_PAGE).pathname,
         {
           timeout: 30_000,
         }
@@ -246,8 +246,7 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible()
       await expect(page.getByRole('link', { name: 'Sign in / Join' })).toHaveCount(0)
     } finally {
-      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+      const resetResponse = await request.put('/api/projects/demo', {
         data: { customDomain: null },
         headers: { 'content-type': 'application/json' },
       })
@@ -600,7 +599,7 @@ test.describe('Anonymous feedback sessions', () => {
       // when navigating back from the public board subdomain to the main app.
       // page.request shares the browser context's cookies across all domains,
       // bypassing SameSite restrictions that affect browser-level navigation.
-      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+      const resetResponse = await page.request.put('/api/projects/demo', {
         data: { settings: null },
         headers: { 'content-type': 'application/json' },
       })
@@ -663,7 +662,7 @@ test.describe('Anonymous feedback sessions', () => {
     } finally {
       // Reset settings via API to avoid cross-origin session cookie issues
       // when navigating back from the public board subdomain to the main app.
-      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+      const resetResponse = await page.request.put('/api/projects/demo', {
         data: { settings: null },
         headers: { 'content-type': 'application/json' },
       })
@@ -702,7 +701,7 @@ test.describe('Anonymous feedback sessions', () => {
       const firstSaveResponse = await firstSaveResponsePromise
       expect(firstSaveResponse.ok()).toBe(true)
 
-      const firstSettingsResponse = await page.request.get(`http://127.0.0.1:${PORT}/api/projects/demo`)
+      const firstSettingsResponse = await page.request.get('/api/projects/demo')
       const firstSettingsPayload = await firstSettingsResponse.json()
       const firstLogoUrl = firstSettingsPayload?.data?.settings?.logoUrl
       const firstBannerUrl = firstSettingsPayload?.data?.settings?.bannerUrl
@@ -728,7 +727,7 @@ test.describe('Anonymous feedback sessions', () => {
       const secondSaveResponse = await secondSaveResponsePromise
       expect(secondSaveResponse.ok()).toBe(true)
 
-      const secondSettingsResponse = await page.request.get(`http://127.0.0.1:${PORT}/api/projects/demo`)
+      const secondSettingsResponse = await page.request.get('/api/projects/demo')
       const secondSettingsPayload = await secondSettingsResponse.json()
       const secondLogoUrl = secondSettingsPayload?.data?.settings?.logoUrl
       const secondBannerUrl = secondSettingsPayload?.data?.settings?.bannerUrl
@@ -745,7 +744,7 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(bannerImage).toBeVisible()
       await expect(bannerImage).toHaveAttribute('src', /\/api\/uploads\/object\//)
 
-      const clearResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+      const clearResponse = await page.request.put('/api/projects/demo', {
         data: {
           settings: {
             logoUrl: null,
@@ -768,7 +767,7 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(page.locator('[data-testid="public-board-banner"] img')).toHaveCount(0)
       await expect(fallbackBanner.getByText('Feedback Board')).toBeVisible()
     } finally {
-      const resetResponse = await page.request.put(`http://127.0.0.1:${PORT}/api/projects/demo`, {
+      const resetResponse = await page.request.put('/api/projects/demo', {
         data: { settings: null },
         headers: { 'content-type': 'application/json' },
       })

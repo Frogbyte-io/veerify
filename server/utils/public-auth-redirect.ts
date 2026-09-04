@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { getRequestURL } from 'h3'
 import {
   isAllowedRedirectProtocol,
@@ -7,9 +7,12 @@ import {
   parseRedirectUrl,
 } from '~/lib/auth-redirect'
 import { db } from '~/server/database/drizzle'
-import { project } from '~/server/database/schema/feedback'
+import { project, projectDomain } from '~/server/database/schema/feedback'
 
-export async function resolveAllowedPublicRedirectTarget(event: Parameters<typeof getRequestURL>[0], rawTarget: string) {
+export async function resolveAllowedPublicRedirectTarget(
+  event: Parameters<typeof getRequestURL>[0],
+  rawTarget: string
+) {
   const parsed = parseRedirectUrl(rawTarget)
 
   if (!parsed || parsed.username || parsed.password) {
@@ -41,8 +44,11 @@ export async function resolveAllowedPublicRedirectTarget(event: Parameters<typeo
 
   const [matchingProject] = await db
     .select({ id: project.id })
-    .from(project)
-    .where(and(eq(project.customDomain, redirectHost), eq(project.isPublic, true)))
+    .from(projectDomain)
+    .innerJoin(project, eq(projectDomain.projectId, project.id))
+    .where(
+      and(eq(projectDomain.hostname, redirectHost), ne(projectDomain.status, 'detached'), eq(project.isPublic, true))
+    )
     .limit(1)
 
   if (!matchingProject) {

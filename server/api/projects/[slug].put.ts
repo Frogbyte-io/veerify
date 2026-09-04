@@ -9,11 +9,16 @@ import { sendCustomDomainConnectedEmail } from '~/lib/email'
 import { getStorageProvider } from '~/server/utils/storage'
 import {
   buildDomainSettingsPatch,
-  normalizeCustomDomainInput,
   normalizeDomainSettings,
   registerProjectCustomDomain,
   removeProjectCustomDomain,
+  validateProjectCustomDomain,
 } from '~/server/services/domains/domain-service'
+import {
+  assertProjectDomainAvailable,
+  detachProjectDomain,
+  persistProjectDomainResult,
+} from '~/server/services/domains/domain-repository'
 import {
   buildFinalObjectKey,
   transformImageForKind,
@@ -22,6 +27,7 @@ import {
 } from '~/server/utils/storage/media'
 import { verifyUploadToken } from '~/server/utils/upload-token'
 import { createLogger } from '~/server/utils/logger'
+import type { DomainProviderResult } from '~/server/services/domains/provider'
 
 const logger = createLogger('projects')
 
@@ -58,12 +64,7 @@ const updateProjectSchema = z.object({
   slug: commonSchemas.slug.optional(),
   description: z.string().max(1000, 'Description too long').nullable().optional(),
   isPublic: z.boolean().optional(),
-  customDomain: z
-    .string()
-    .max(253, 'Domain too long')
-    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/, 'Invalid domain format')
-    .nullable()
-    .optional(),
+  customDomain: z.string().max(253, 'Domain too long').nullable().optional(),
   settings: projectSettingsSchema,
 })
 
@@ -131,7 +132,11 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, updateProjectSchema)
   const currentSettings = normalizeDomainSettings(currentProject.settings)
   const requestedDomain =
-    body.customDomain !== undefined ? normalizeCustomDomainInput(body.customDomain || null) : undefined
+    body.customDomain === undefined
+      ? undefined
+      : body.customDomain?.trim()
+        ? validateProjectCustomDomain(body.customDomain)
+        : null
   const domainChanged = requestedDomain !== undefined && requestedDomain !== (currentProject.customDomain || null)
   const shouldNotifyConnected = Boolean(
     domainChanged &&
@@ -160,6 +165,7 @@ export default defineEventHandler(async (event) => {
       : body.settings === null
         ? null
         : normalizeDomainSettings(body.settings)
+  let domainRegistration: DomainProviderResult | null = null
 
   if (nextSettings === null) {
     if (previousManagedLogoKey) pendingDeletes.add(previousManagedLogoKey)
@@ -219,13 +225,11 @@ export default defineEventHandler(async (event) => {
 
   if (domainChanged) {
     if (requestedDomain) {
-      const domainRegistration = await registerProjectCustomDomain(requestedDomain)
+      await assertProjectDomainAvailable(requestedDomain, currentProject.id)
+      domainRegistration = await registerProjectCustomDomain(requestedDomain)
       const domainSettingsBase = nextSettings === null ? {} : nextSettings
       nextSettings = buildDomainSettingsPatch(domainSettingsBase, domainRegistration)
     } else {
-      if (currentProject.customDomain) {
-        await removeProjectCustomDomain(currentProject.customDomain)
-      }
       const domainSettingsBase = nextSettings === null ? {} : nextSettings
       nextSettings = buildDomainSettingsPatch(domainSettingsBase, null)
     }
@@ -256,19 +260,44 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const [updated] = await db
-    .update(project)
-    .set({
-      ...(body.name !== undefined && { name: body.name }),
-      ...(body.slug !== undefined && { slug: body.slug }),
-      ...(body.description !== undefined && { description: body.description }),
-      ...(body.isPublic !== undefined && { isPublic: body.isPublic }),
-      ...(body.customDomain !== undefined && { customDomain: requestedDomain }),
-      ...((body.settings !== undefined || shouldNotifyConnected || domainChanged) && { settings: settingsForUpdate }),
-      updatedAt: new Date(),
-    })
-    .where(eq(project.id, currentProject.id))
-    .returning()
+  const updated = await db.transaction(async (tx) => {
+    const [updatedProject] = await tx
+      .update(project)
+      .set({
+        ...(body.name !== undefined && { name: body.name }),
+        ...(body.slug !== undefined && { slug: body.slug }),
+        ...(body.description !== undefined && { description: body.description }),
+        ...(body.isPublic !== undefined && { isPublic: body.isPublic }),
+        ...(body.customDomain !== undefined && { customDomain: requestedDomain }),
+        ...((body.settings !== undefined || shouldNotifyConnected || domainChanged) && { settings: settingsForUpdate }),
+        updatedAt: new Date(),
+      })
+      .where(eq(project.id, currentProject.id))
+      .returning()
+
+    if (domainChanged) {
+      if (currentProject.customDomain && currentProject.customDomain !== requestedDomain) {
+        await detachProjectDomain(currentProject.id, currentProject.customDomain, tx)
+      }
+      if (domainRegistration) {
+        await persistProjectDomainResult(currentProject.id, domainRegistration, tx)
+      }
+    }
+
+    return updatedProject
+  })
+
+  if (domainChanged && currentProject.customDomain && currentProject.customDomain !== requestedDomain) {
+    try {
+      await removeProjectCustomDomain(currentProject.customDomain)
+    } catch (err) {
+      logger.error('Failed to detach previous custom domain from provider', {
+        domain: currentProject.customDomain,
+        projectId: currentProject.id,
+        error: err instanceof Error ? err.message : err,
+      })
+    }
+  }
 
   if (shouldNotifyConnected) {
     sendCustomDomainConnectedEmail({
@@ -277,7 +306,10 @@ export default defineEventHandler(async (event) => {
       projectName: updated.name,
       domain: requestedDomain!,
     }).catch((err) => {
-      logger.error('Failed to send custom domain connected email', { projectName: updated.name, error: err instanceof Error ? err.message : err })
+      logger.error('Failed to send custom domain connected email', {
+        projectName: updated.name,
+        error: err instanceof Error ? err.message : err,
+      })
     })
   }
 

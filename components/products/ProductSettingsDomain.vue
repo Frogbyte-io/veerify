@@ -24,6 +24,10 @@
               <Icon v-if="isSaving" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
               Save
             </Button>
+            <Button v-if="project.customDomain" variant="outline" :disabled="isSaving" @click="removeDomain">
+              <Icon name="lucide:unlink" class="mr-2 h-4 w-4" />
+              Remove
+            </Button>
           </div>
           <p class="text-xs text-muted-foreground">
             Enter a subdomain you control, for example
@@ -46,6 +50,9 @@
                 <p v-if="statusHint" data-testid="product-domain-status-hint" class="text-xs text-muted-foreground">
                   {{ statusHint }}
                 </p>
+                <p v-if="formattedLastCheckedAt" class="text-xs text-muted-foreground">
+                  Last checked {{ formattedLastCheckedAt }}
+                </p>
               </div>
             </div>
             <Button variant="outline" size="sm" :disabled="verifyStatus === 'checking'" @click="verify">
@@ -56,6 +63,7 @@
           </div>
 
           <div v-if="verifyResult && !verifyResult.verified" class="space-y-1 text-xs text-muted-foreground">
+            <p v-if="verifyResult.message" class="text-destructive">{{ verifyResult.message }}</p>
             <p v-if="verifyResult.expected">
               <span class="font-medium">Expected:</span>
               <code class="ml-1 rounded bg-muted px-1 py-0.5 font-mono">{{ verifyResult.expected }}</code>
@@ -106,7 +114,9 @@
               <div class="space-y-1">
                 <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Name / Host</p>
                 <div class="flex items-center gap-1">
-                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{ record.name }}</code>
+                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{
+                    record.name
+                  }}</code>
                   <Button variant="ghost" size="icon" class="h-7 w-7 shrink-0" @click="copyToClipboard(record.name)">
                     <Icon :name="copiedField === record.name ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
                   </Button>
@@ -115,7 +125,9 @@
               <div class="space-y-1">
                 <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Value / Target</p>
                 <div class="flex items-center gap-1">
-                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{ record.value }}</code>
+                  <code class="block min-w-0 flex-1 truncate rounded border bg-background px-2 py-1 font-mono">{{
+                    record.value
+                  }}</code>
                   <Button variant="ghost" size="icon" class="h-7 w-7 shrink-0" @click="copyToClipboard(record.value)">
                     <Icon :name="copiedField === record.value ? 'lucide:check' : 'lucide:copy'" class="h-3.5 w-3.5" />
                   </Button>
@@ -166,6 +178,7 @@ export default {
       isSaving: false,
       verifyStatus: 'idle',
       verifyResult: null,
+      lastCheckedAt: this.project?.settings?.domainLastCheckedAt || null,
       copiedField: null,
       copiedTimer: null,
     }
@@ -215,11 +228,21 @@ export default {
     hasStoredVerifiedDomain() {
       return this.project?.settings?.domainStatus === 'active'
     },
+    formattedLastCheckedAt() {
+      if (!this.lastCheckedAt) return ''
+      const value = new Date(this.lastCheckedAt)
+      if (Number.isNaN(value.getTime())) return ''
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(value)
+    },
     statusPresentation() {
       if (this.verifyStatus === 'checking') return 'checking'
 
       if (this.verifyResult) {
         if (this.verifyResult.verified) return 'active'
+        if (this.verifyResult.status === 'error') return 'error'
         if (this.verifyResult.status === 'ownership_verification_required') {
           return 'ownership_verification_required'
         }
@@ -234,6 +257,7 @@ export default {
         return 'ownership_verification_required'
       }
       if (this.effectiveDomainStatus === 'dns_required') return 'dns_required'
+      if (this.effectiveDomainStatus === 'error') return 'error'
       return 'idle'
     },
     statusTitle() {
@@ -242,6 +266,7 @@ export default {
       if (this.statusPresentation === 'ownership_verification_required') return 'Ownership verification required'
       if (this.statusPresentation === 'dns_incomplete') return 'DNS configuration incomplete'
       if (this.statusPresentation === 'dns_required') return 'DNS not configured yet'
+      if (this.statusPresentation === 'error') return 'Domain connection error'
       return 'Pending verification'
     },
     statusHint() {
@@ -257,6 +282,9 @@ export default {
       if (this.statusPresentation === 'dns_required') {
         return 'Add the required DNS records below, then check again.'
       }
+      if (this.statusPresentation === 'error') {
+        return 'The domain provider could not determine the required configuration. Try again or remove the domain.'
+      }
       if (this.statusPresentation === 'idle') {
         return 'Add the DNS records below, then click Check DNS to verify.'
       }
@@ -265,6 +293,7 @@ export default {
     statusDotClass() {
       if (this.statusPresentation === 'checking') return 'bg-blue-500 animate-pulse'
       if (this.statusPresentation === 'active') return 'bg-green-500'
+      if (this.statusPresentation === 'error') return 'bg-destructive'
       if (
         this.statusPresentation === 'ownership_verification_required' ||
         this.statusPresentation === 'dns_incomplete' ||
@@ -278,6 +307,7 @@ export default {
     statusTextClass() {
       if (this.statusPresentation === 'active') return 'text-green-600 dark:text-green-400'
       if (this.statusPresentation === 'checking') return 'text-blue-600 dark:text-blue-400'
+      if (this.statusPresentation === 'error') return 'text-destructive'
       if (
         this.statusPresentation === 'ownership_verification_required' ||
         this.statusPresentation === 'dns_incomplete' ||
@@ -291,6 +321,7 @@ export default {
     statusPanelClass() {
       if (this.statusPresentation === 'active') return 'border-green-500/30 bg-green-500/5'
       if (this.statusPresentation === 'checking') return 'border-blue-500/30 bg-blue-500/5'
+      if (this.statusPresentation === 'error') return 'border-destructive/30 bg-destructive/5'
       if (
         this.statusPresentation === 'ownership_verification_required' ||
         this.statusPresentation === 'dns_incomplete' ||
@@ -306,6 +337,7 @@ export default {
     project: {
       handler(newProject) {
         this.form.customDomain = newProject.customDomain || ''
+        this.lastCheckedAt = newProject?.settings?.domainLastCheckedAt || null
         this.verifyStatus = 'idle'
         this.verifyResult = null
       },
@@ -368,6 +400,8 @@ export default {
             customDomain: this.form.customDomain?.trim() || null,
           },
         })
+        this.form.customDomain = response.data.customDomain || ''
+        this.lastCheckedAt = response.data?.settings?.domainLastCheckedAt || null
         this.$emit('updated', response.data)
         toast.success('Custom domain saved')
       } catch (err) {
@@ -376,6 +410,11 @@ export default {
       } finally {
         this.isSaving = false
       }
+    },
+
+    async removeDomain() {
+      this.form.customDomain = ''
+      await this.save()
     },
 
     async verify() {
@@ -390,6 +429,7 @@ export default {
           query: { domain },
         })
         this.verifyResult = result
+        this.lastCheckedAt = new Date().toISOString()
         this.verifyStatus = result.verified ? 'verified' : 'unverified'
 
         if (result.verified) {

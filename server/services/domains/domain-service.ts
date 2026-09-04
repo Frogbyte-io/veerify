@@ -1,7 +1,8 @@
+import { parse } from 'tldts'
 import { normalizeDomainHostname, type DomainProviderResult } from './provider'
 import { StaticCnameDomainProvider } from './providers/static-cname'
 import { VercelDomainProvider } from './providers/vercel'
-import { createLogger } from '~/server/utils/logger'
+import { createLogger } from '../../utils/logger'
 
 type ProjectSettings = Record<string, unknown>
 
@@ -11,6 +12,61 @@ export function normalizeCustomDomainInput(value: string | null | undefined): st
   if (!value) return null
   const normalized = normalizeDomainHostname(value)
   return normalized || null
+}
+
+export function getCustomDomainValidationError(
+  hostname: string,
+  options: { appDomain: string; dashboardDomain: string }
+): string | null {
+  const normalized = normalizeDomainHostname(hostname)
+  if (!normalized || normalized.length > 253) {
+    return 'Enter a valid domain name'
+  }
+
+  const labels = normalized.split('.')
+  if (labels.some((label) => !label || label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) {
+    return 'Enter a valid domain name'
+  }
+
+  const appDomain = normalizeDomainHostname(options.appDomain)
+  const dashboardDomain = normalizeDomainHostname(options.dashboardDomain)
+  const isLocalDevelopmentDomain = appDomain === 'localhost' && normalized.endsWith('.localhost') && labels.length >= 3
+
+  if (!isLocalDevelopmentDomain) {
+    if (
+      normalized === appDomain ||
+      normalized === dashboardDomain ||
+      (appDomain && normalized.endsWith(`.${appDomain}`))
+    ) {
+      return 'Use the Veerify URL for platform domains instead of adding one as a custom domain'
+    }
+
+    const parsed = parse(normalized, { allowPrivateDomains: false })
+    if (parsed.hostname !== normalized || parsed.isIp || !parsed.isIcann || !parsed.domain) {
+      return 'Enter a domain with a valid public suffix'
+    }
+    if (!parsed.subdomain) {
+      return 'A custom subdomain is required; apex domains are not supported yet'
+    }
+  }
+
+  return null
+}
+
+export function validateProjectCustomDomain(hostname: string): string {
+  const normalized = normalizeDomainHostname(hostname)
+  const config = useRuntimeConfig()
+  const appDomain = String(config.public.appDomain || 'localhost')
+  const dashboardDomain = String(
+    config.public.dashboardDomain || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
+  )
+  const error = getCustomDomainValidationError(normalized, { appDomain, dashboardDomain })
+
+  if (error) {
+    throw createError({ statusCode: 400, statusMessage: error })
+  }
+
+  return normalized
 }
 
 export function normalizeDomainSettings(value: unknown): ProjectSettings {
@@ -108,8 +164,7 @@ export async function registerTeamPublicDomain(teamSlug: string) {
 export async function registerTeamPublicDomainBestEffort(teamSlug: string, context: Record<string, unknown> = {}) {
   try {
     await registerTeamPublicDomain(teamSlug)
-  }
-  catch (error) {
+  } catch (error) {
     logger.error('Failed to register generated team public domain', {
       teamSlug,
       ...context,

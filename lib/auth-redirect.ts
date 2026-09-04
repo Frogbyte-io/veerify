@@ -23,11 +23,14 @@ export function isAppHostedRedirectHost(input: AppRedirectHostInput): boolean {
   const appDomain = normalizeHostname(input.appDomain)
   const dashboardDomain = normalizeHostname(input.dashboardDomain)
 
+  const platformSuffix = `.${appDomain}`
+  const platformSubdomain = redirectHost.endsWith(platformSuffix) ? redirectHost.slice(0, -platformSuffix.length) : ''
+
   return (
     redirectHost === currentHost ||
     redirectHost === appDomain ||
     redirectHost === dashboardDomain ||
-    redirectHost.endsWith(`.${appDomain}`)
+    Boolean(platformSubdomain && !platformSubdomain.includes('.'))
   )
 }
 
