@@ -1181,17 +1181,17 @@ on every changed file.
 - Produces: structured log-based counters with a closed metric-name and safe-field contract.
 - Produces: a provider-only validation record kept separate from automated results.
 
-- [ ] **Step 1: Add stable structured support metrics**
+- [x] **Step 1: Add stable structured support metrics**
 
 Define a typed `recordSupportMetric(name, fields)` boundary that emits structured log records suitable for log-based counters. Cover these literal names: `support.delivery.queued`, `.sent`, `.delivered`, `.failed`, `.bounced`, `support.delivery.uncorrelated`, `support.attachment.expired`, and `support.attachment.cleanup_failed`. Unit tests assert invalid names and content-bearing fields are rejected; integration points pass IDs/status/counts only, never message content, filenames, storage keys, or credentials.
 
 Run: `yarn vitest run tests/support-observability.test.ts`
 
-- [ ] **Step 2: Write the separate manual provider checklist**
+- [x] **Step 2: Write the separate manual provider checklist**
 
 Include Gmail/Outlook reply threading; Postmark preserved RFC ID, metadata, trace IDs, delivery and bounce; Mailgun metadata, delivery and permanent failure; multiple recipients; S3 size enforcement and temporary-prefix lifecycle. Each row records prerequisite, action, expected evidence, actual result, and status `pending | passed | failed | unavailable`.
 
-- [ ] **Step 3: Run the complete verification matrix**
+- [x] **Step 3: Run the complete verification matrix**
 
 Run:
 
@@ -1210,7 +1210,7 @@ git diff --check
 
 Report exact pass counts, every guarded skip reason, build profile evidence, and the separate manual-provider status.
 
-- [ ] **Step 4: Commit exact files**
+- [x] **Step 4: Commit exact files**
 
 ```powershell
 git add -- server/utils/support-observability.ts tests/support-observability.test.ts docs/plans/2026-08-11-support-platform/stage-01-04-provider-checklist.md docs/plans/2026-08-11-support-platform/README.md
@@ -1218,6 +1218,42 @@ git add -- server/utils/outbound-delivery.ts server/utils/delivery-status.ts 'se
 git diff --cached --name-status
 git commit -m "chore(support): record hardening observability"
 ```
+
+**Outcome (2026-09-03).** Committed as `6a89fe2`, with the E2E harness fixes it
+uncovered in `1069580`. Deviations from the file list, recorded rather than absorbed:
+
+- Added `tests/delivery-route-observability.test.ts`. `support.delivery.uncorrelated` is the only
+  metric here that is an alert rather than a statistic, and the existing suite covered just the pure
+  correlation selector -- nothing proved the route counts its own result, or that the recipient
+  address in scope at that call site stays out of the record.
+- `queued` is emitted inside the caller's transaction, so it over-counts under rollback. Treat it as
+  an upper bound against `sent` + `failed`; the outbox table is the authority on pending depth.
+- `server/utils/outbound-delivery.ts` and `server/utils/support-attachment-cleanup.ts` still fail
+  `prettier --check`. They failed before this task too (verified by stashing); reformatting them
+  would bury a small change in whole-file churn. This is SUP-X-6, not Task 16.
+
+**Step 3 verification matrix.** `yarn harness:docs` valid · typecheck passed · unit **577/577 across
+51 files** · lint **0 errors, 206 warnings** (one new, `no-unused-vars` on a type-position parameter,
+a false positive the repo already carries four of) · Redis integration **6/6** · PostgreSQL
+integration **99/99 across 11 files** · `yarn build` green in 39.4s · `git diff --check` clean ·
+`yarn harness:verify` all gates passed.
+
+**E2E, forced.** Support suite **28 passed, 2 skipped, 0 failed** via the full documented path
+(`dev:worktree` + `test:e2e:worktree`), repeatable across runs. This required fixing that path first
+-- see `1069580`. The 2 remaining skips are fixture-gated (a second team; a timeline fixture), not
+credential-gated. Two specs executed for the first time ever: `support-conversation-flow.spec.ts`
+(SUP-02-17, blocked by delta D-33) and the `support-outbound-reply.spec.ts` round trip (SUP-04-11,
+always credential-skipped). Both pass.
+
+**Every E2E failure seen during this task was environmental, and none were code defects.** They are
+worth naming because each cost real time and each will recur: a bare-IP base URL that silently voids
+session cookies, an orphaned dev worker holding the port so tests ran against another worktree's
+code, and fixture residue in a long-lived audit database. The decisive signal came only from a
+freshly created and seeded database.
+
+**Provider validation remains entirely unexecuted** -- see
+[`stage-01-04-provider-checklist.md`](stage-01-04-provider-checklist.md). Do not read the numbers
+above as evidence that email delivery works against a real provider.
 
 ---
 

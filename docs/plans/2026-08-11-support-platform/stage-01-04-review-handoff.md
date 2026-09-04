@@ -7,7 +7,7 @@ Updated: 2026-09-03
 - Working branch: `review/stage-01-04-audit`
 - Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `0ac0472` (`chore(dev): make Vite dev allowed hosts env-driven`)
+- Last completed task commit: `1069580` (`fix(test): make the worktree E2E path run against its own server`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -15,7 +15,7 @@ Updated: 2026-09-03
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-Tasks 1-15 are complete. Task 16 and the final whole-branch review remain.
+**All sixteen tasks are complete.** Only the Final Review Gate remains.
 
 ## Completed work
 
@@ -233,6 +233,58 @@ Validation:
 - guarded E2E: skipped, because `harness:verify` does not set `PLAYWRIGHT_FORCE=1`. Task 15 changed
   no user-facing UI, but it did change auth plugin registration -- see the resume order.
 
+## Task 16 completed
+
+Commits: `6a89fe2` (observability), `1069580` (the E2E harness defects it uncovered).
+
+- `server/utils/support-observability.ts` is now the only sanctioned way to emit a support metric.
+  All eight names are wired: delivery queued/sent/delivered/failed/bounced/uncorrelated and
+  attachment expired/cleanup_failed.
+- Counters come from logs (no metrics backend here; both target platforms build log-based counters),
+  so the log line is a contract: closed metric-name set, allowlisted fields, validated at the
+  boundary, never throwing. `recipient` is deliberately excluded -- it looks harmless, it is contact
+  PII, and no counter needs it.
+- Counting sits where state actually changed. Delivered/bounced are behind the guarded update, so a
+  redelivered provider event cannot double-count; sent/failed are guarded on claim ownership, so a
+  worker that lost its lease cannot count another attempt's outcome. `queued` fires inside the
+  caller's transaction and is an upper bound under rollback -- stated in the code, not hidden.
+- `tests/delivery-route-observability.test.ts` is beyond the planned file list, added because
+  `support.delivery.uncorrelated` is an alert rather than a statistic and nothing proved the route
+  counted its own result.
+
+Validation: harness:docs valid; typecheck passed; unit **577/577 across 51 files**; lint **0 errors,
+206 warnings**; Redis integration **6/6**; PostgreSQL integration **99/99 across 11 files**;
+`yarn build` green in 39.4s; `git diff --check` clean; `yarn harness:verify` all gates passed.
+
+### The E2E gate now actually runs
+
+Support suite: **28 passed, 2 skipped, 0 failed**, via the full documented path, repeatable. Getting
+there required fixing that path, and the defects are worth knowing about:
+
+1. **The worktree base URL was `127.0.0.1`.** Better Auth scopes session cookies to
+   `Domain=.localhost`, and a client correctly discards that cookie for a bare IP. Sign-in returned
+   200 and everything after it was unauthenticated. Reproduced with curl: `localhost` 200,
+   `127.0.0.1` 401.
+2. **`dev:worktree` never bound the worktree port.** Nuxt ignores PORT/NUXT_PORT here and yarn was
+   not forwarding `--port`, so an orphaned worker from an earlier run held the port while each new
+   server landed on 3001, 3002, 3003 — meaning **tests can run against another worktree's code and
+   another database while appearing to pass**. Fixed via a `%PORT%` substitution in `worktree-run`.
+3. **`helpers/auth.ts` defaulted to port 4913**, which matches no configured port anywhere.
+
+**Two specs executed for the first time ever and pass:** `support-conversation-flow.spec.ts`
+(SUP-02-17, blocked by delta D-33) and the `support-outbound-reply.spec.ts` round trip (SUP-04-11,
+always credential-skipped). The latter needed the same team-admin promote/restore the inbound spec
+got in Task 11 — it failed the moment it first ran.
+
+**Every E2E failure encountered was environmental; none were code defects.** The decisive signal came
+only from a freshly created and seeded database — a long-lived audit database accumulates fixture
+residue that produces failures which look like regressions. Recreate the database before trusting an
+E2E result.
+
+**Provider validation is entirely unexecuted.** See
+[`stage-01-04-provider-checklist.md`](stage-01-04-provider-checklist.md): every row is `pending` or
+`unavailable`. None of the numbers above are evidence that email works against a real provider.
+
 ## Local runtime findings
 
 The default Windows Nuxt dev process can exhaust its roughly 2 GB V8 heap while compiling `/support`. Symptoms are a zero-byte `/support` response, about 1.7-1.9 GB resident memory, high handle growth, and eventual OOM/restart while transforming the support/Lucide dependency graph. Direct Vue SFC compilation of both changed components is fast and error-free; a clean baseline also needs roughly 55 seconds for its first `/support` response.
@@ -263,18 +315,22 @@ yarn test:e2e:worktree -- tests/e2e/support-outbound-reply.spec.ts --workers=1
 
 ## Resume order
 
+Tasks 1-16 are done. What remains is the Final Review Gate in the implementation plan.
+
 1. Confirm this branch/worktree and run `yarn harness:context`.
-2. Start Postgres and Valkey, migrate an isolated database, and seed `test@preview.local` / `password123`.
-   The isolated audit database on this machine is `veerify_stage0104_audit`; it is migrated through `0029`.
-3. Start the worktree runtime with a 4 GB Node heap and both required local secrets.
-4. **Run the forced E2E suite once against Task 15's auth change before Task 16.** Registering the
-   bearer plugin turns WebSocket auth on for the first time, so realtime code paths that have always
-   been dead now execute. Nothing in the guarded gates covers a browser against a live socket, and
-   `harness:verify` skips E2E by default, so this is the one uncovered risk Task 15 introduces.
-5. Continue Task 16 in implementation-plan order.
-6. After Task 16, run the implementation plan's complete verification matrix and whole-branch review before integrating into `support-platform`.
-7. Integration into `support-platform` still needs the merge or rebase noted above -- the target has
-   two later documentation commits (`c3c19b1`, `5b82348`) not yet in this branch.
+2. Start Postgres and Valkey. **Create a fresh database rather than reusing one** — residue in a
+   long-lived audit database causes failures that look like regressions. `veerify_stage0104_e2e` was
+   created and seeded for this purpose; recreate it rather than trusting its current state.
+3. Before any E2E run, check nothing is already listening on the worktree port
+   (`ss -ltnp | grep <port>`) and kill orphaned workers — killing the `nuxi.mjs` parent leaves the
+   `_dev` child holding the socket.
+4. Run the Final Review Gate: resolve `MERGE_BASE=$(git merge-base support-platform HEAD)`, produce
+   the review package, and run the read-only whole-branch review.
+5. Fix every Critical or Important finding in one reviewed fix wave.
+6. Integrate into `support-platform`. That still needs the merge or rebase noted above — the target
+   has two later documentation commits (`c3c19b1`, `5b82348`) not yet in this branch.
+7. Carry `stage-01-04-provider-checklist.md` forward to whoever has provider credentials. It is the
+   only remaining validation, and it is entirely unexecuted.
 
 ## Other worktrees and branches at handoff
 
