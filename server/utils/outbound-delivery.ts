@@ -8,6 +8,7 @@ import { getStorageProvider } from '~/server/utils/storage'
 import { SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-attachments'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { createLogger } from '~/server/utils/logger'
+import { MAX_SUPPORT_METRIC_STRING_LENGTH, recordSupportMetric } from '~/server/utils/support-observability'
 
 const logger = createLogger('outbound-delivery')
 
@@ -75,14 +76,27 @@ export async function enqueueOutboundDelivery(
   input: { messageId: string; kind?: string; payload: OutboundDeliveryPayload; idempotencyKey?: string }
 ): Promise<void> {
   const now = new Date()
+  const deliveryId = randomUUID()
   await tx.insert(supportOutboundDelivery).values({
-    id: randomUUID(),
+    id: deliveryId,
     messageId: input.messageId,
     kind: input.kind ?? 'email',
     payload: input.payload,
     idempotencyKey: input.idempotencyKey ?? randomUUID(),
     createdAt: now,
     updatedAt: now,
+  })
+
+  // Emitted inside the caller's transaction, so a rollback leaves a queued
+  // count with no row behind it. Accepted rather than papered over: this
+  // function only ever receives a `tx`, and the alternative is threading a
+  // post-commit hook through every enqueuing endpoint. Treat `queued` as an
+  // upper bound and compare it against `sent` + `failed`, not as an exact
+  // depth - the outbox table itself is the authority on what is pending.
+  recordSupportMetric('support.delivery.queued', {
+    deliveryId,
+    messageId: input.messageId,
+    kind: input.kind ?? 'email',
   })
 }
 
@@ -366,7 +380,19 @@ export async function completeOutboundDelivery(
     },
     messagePatch: { deliveryStatus: 'sent', deliveryError: null },
   })
-  if (completed) await publishDeliveryStatusChanged(messageId)
+  if (completed) {
+    // Guarded on `completed`: a worker that lost its lease to a newer attempt
+    // must not count a send the newer attempt owns.
+    recordSupportMetric('support.delivery.sent', {
+      deliveryId: id,
+      messageId,
+      attemptCount,
+      provider: diagnostics?.provider,
+      providerAccountKey: diagnostics?.providerAccountKey,
+      providerMessageId: diagnostics?.providerMessageId,
+    })
+    await publishDeliveryStatusChanged(messageId)
+  }
   return completed
 }
 
@@ -409,6 +435,19 @@ export async function failOutboundDelivery(
     messagePatch: { deliveryStatus: terminal ? 'failed' : 'pending', deliveryError: sanitized },
   })
 
+  if (failed) {
+    // Counted on every owned failure, not only terminal ones, so the retry
+    // curve is visible. `terminal` separates "will retry" from "gave up";
+    // `reason` is the same sanitized short string stored on the row, never
+    // the raw provider error.
+    recordSupportMetric('support.delivery.failed', {
+      deliveryId: id,
+      messageId,
+      attemptCount,
+      terminal,
+      reason: sanitized.slice(0, MAX_SUPPORT_METRIC_STRING_LENGTH),
+    })
+  }
   if (failed && terminal) await publishDeliveryStatusChanged(messageId)
   return failed
 }

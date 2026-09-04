@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { supportAttachmentUpload } from '~/server/database/schema/support'
 import { getStorageProvider } from '~/server/utils/storage'
+import { recordSupportMetric } from '~/server/utils/support-observability'
 import type { StorageProvider } from '~/server/utils/storage/types'
 
 type CleanupStatus = 'pending' | 'uploaded' | 'finalizing' | 'cleanup_required' | 'consumed'
@@ -184,6 +185,10 @@ export async function runAttachmentCleanup(input: {
       if (row.status === 'pending' || row.status === 'uploaded') {
         try { await storage.deleteObject(row.tempStorageKey) } catch (error) { if (!isMissingObject(error)) throw error }
         if (await completeExpired(row, currentTime(), true)) {
+          // Guarded on the state/lease-checked update, so a stale worker that
+          // lost the row does not count an expiry another worker owns. Storage
+          // keys are never a metric field - `uploadId` is the safe handle.
+          recordSupportMetric('support.attachment.expired', { uploadId: row.id, status: row.status })
           result.expired++
           result.deleted++
         }
@@ -204,11 +209,23 @@ export async function runAttachmentCleanup(input: {
       }
       const outcome = await completeFinalCleanup(row, completionTime, tempDeleted)
       if (outcome.updated) {
-        if (outcome.outcome === 'expired') result.expired++
-        else result.restored++
+        if (outcome.outcome === 'expired') {
+          recordSupportMetric('support.attachment.expired', { uploadId: row.id, status: row.status })
+          result.expired++
+        } else result.restored++
       }
     } catch (error) {
-      if (await markRetry(row, error, currentTime())) result.retried++
+      if (await markRetry(row, error, currentTime())) {
+        // `reason` is `safeCleanupError`'s closed code, the same value stored on
+        // the row - deliberately not the provider error, which can carry the
+        // storage path or credentials this cleanup exists to delete.
+        recordSupportMetric('support.attachment.cleanup_failed', {
+          uploadId: row.id,
+          status: row.status,
+          reason: safeCleanupError(error),
+        })
+        result.retried++
+      }
     }
   }
   return result

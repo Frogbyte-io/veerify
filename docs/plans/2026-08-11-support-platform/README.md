@@ -11,20 +11,41 @@ got wrong once implementation started, and several entries contradict the origin
 
 ---
 
-## Current state — updated August 25, 2026
+## Current state — updated September 3, 2026
 
 **Integration branch: `support-platform`.** Not `main`. See delta D-17. Every stage validates here
 until the program is deliberately integrated into `main`.
 
-|                       |                                                                                                                                        |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Stage 00              | **Complete** — 10/10 items                                                                                                             |
-| Stage 01              | **Complete** — contact identity, integrity, timeline, and UI                                                                           |
-| Stage 02              | **Complete** — inbox and conversation core                                                                                             |
-| Stage 03              | **Complete** — inbound email                                                                                                           |
-| Stage 04              | **Complete** — 11/11 items                                                                                                             |
-| Stage 01-04 hardening | **Implementation in progress** — [design](stage-01-04-hardening-design.md) · [execution plan](stage-01-04-hardening-implementation.md) |
-| Open cross-cutting    | SUP-X-1 (Redis integration suite, delta D-15)                                                                                          |
+|                       |                                                                                                                                                                                                    |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stage 00              | **Complete** — 10/10 items                                                                                                                                                                         |
+| Stage 01              | **Complete** — contact identity, integrity, timeline, and UI                                                                                                                                       |
+| Stage 02              | **Complete** — inbox and conversation core                                                                                                                                                         |
+| Stage 03              | **Complete** — inbound email                                                                                                                                                                       |
+| Stage 04              | **Complete** — 11/11 items                                                                                                                                                                         |
+| Stage 01-04 hardening | **Tasks 1-16 complete, final review gate open** — [design](stage-01-04-hardening-design.md) · [execution plan](stage-01-04-hardening-implementation.md) · [handoff](stage-01-04-review-handoff.md) |
+| Open cross-cutting    | SUP-X-1 (Redis integration suite, delta D-15)                                                                                                                                                      |
+
+**Verification is recorded in two separate places, on purpose.** Automated results live in
+[`stage-01-04-review-handoff.md`](stage-01-04-review-handoff.md). Anything that can only be checked
+against a real provider lives in
+[`stage-01-04-provider-checklist.md`](stage-01-04-provider-checklist.md), and **every row there is
+still `pending` or `unavailable`** — no Postmark/Mailgun credentials, no Gmail/Outlook mailboxes, and
+no real S3 on the machine that built these stages. Read the two together before treating email
+delivery as validated; the automated counts prove the code matches our assumptions, not that the
+providers do.
+
+**Support observability.** `server/utils/support-observability.ts` is the only sanctioned way to emit
+a support metric. The metric names are a closed set and the fields are an allowlist of identifiers,
+statuses, and counts — support payloads carry customer message bodies, filenames, storage keys, and
+provider credentials, and logs are retained longer and read more widely than the database. Add a name
+or a field there and nowhere else; `support.delivery.uncorrelated` is an alert, not a statistic.
+
+**Realtime had never worked before September 3, 2026.** `server/routes/_ws.ts` authenticates with a
+bearer token but no bearer plugin was registered, so every WebSocket closed with 4001 and
+`NotificationBell`'s polling fallback masked it. Fixed in `ac95c41`, proven by
+`tests/integration/realtime-two-process.test.ts`. Any behaviour that was only ever validated at unit
+level across that seam should be treated as unproven until re-checked against a real socket.
 
 **Related branches.** `sleekplan-export` holds an unrelated changelog + Sleekplan/CSV import feature
 that was recovered from the working tree. Both branches define a migration `0019`, so merging them

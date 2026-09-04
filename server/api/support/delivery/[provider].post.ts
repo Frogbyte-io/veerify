@@ -37,6 +37,7 @@ import {
 } from '~/server/utils/delivery-events'
 import { publishDeliveryStatusChanged, resolveDeliveryCorrelation } from '~/server/utils/outbound-delivery'
 import { checkRateLimit } from '~/server/utils/rate-limit'
+import { recordSupportMetric } from '~/server/utils/support-observability'
 import { db } from '~/server/database/drizzle'
 
 const logger = createLogger('support-delivery')
@@ -140,6 +141,19 @@ export default defineEventHandler(async (event) => {
         providerAccountKey: deliveryEvent.providerAccountKey,
         providerMessageId: deliveryEvent.providerMessageId,
         correlationKey: deliveryEvent.correlationKey,
+      })
+      // The one metric here that is an alert rather than a statistic. A steady
+      // nonzero rate means the correlation contract has drifted from what a
+      // provider actually sends, and delivery status silently stops updating -
+      // the failure Task 12 rebuilt this path to make visible. `correlationKey`
+      // is left out: it is our own opaque key, already in the log line above,
+      // and adding it to a counter only fragments the count.
+      recordSupportMetric('support.delivery.uncorrelated', {
+        provider: driver.name,
+        providerAccountKey: deliveryEvent.providerAccountKey,
+        providerMessageId: deliveryEvent.providerMessageId,
+        recordType: deliveryEvent.recordType,
+        eventId,
       })
       await db.transaction((tx) => completeDeliveryEvent(eventId, attemptCount, tx))
       return accepted('unmatched-message')
