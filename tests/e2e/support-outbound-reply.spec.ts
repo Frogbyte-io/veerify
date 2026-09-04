@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
 import {
   contact,
@@ -93,6 +93,25 @@ test.describe.serial('outbound reply round trip', () => {
 
     // Same dance as support-inbound-email.spec.ts: supportEnabled defaults
     // to false per team (delta D-31).
+    //
+    // The module-toggle route requires a team admin as of the Stage 01-04
+    // hardening (Task 11), and the seed user is only a `member`. The inbound
+    // spec was updated for that; this one was not, because it has always been
+    // skipped for want of webhook credentials and so never ran to discover it.
+    // Promote for the duration and restore in `finally`, exactly as inbound does.
+    const sessionUserResponse = await request.get('/api/auth/session', { headers })
+    const seedUserId = (await sessionUserResponse.json()).data.user.id as string
+    const [membershipBefore] = await db
+      .select({ id: teamMember.id, role: teamMember.role })
+      .from(teamMember)
+      .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, seedUserId)))
+      .limit(1)
+    expect(membershipBefore).toBeTruthy()
+    if (!membershipBefore) throw new Error('Seed team membership fixture disappeared')
+    if (membershipBefore.role !== 'admin') {
+      await db.update(teamMember).set({ role: 'admin' }).where(eq(teamMember.id, membershipBefore.id))
+    }
+
     const modulesBefore = await request.get(`/api/teams/${teamId}/modules`, { headers })
     const supportWasEnabled = Boolean((await modulesBefore.json())?.data?.modules?.supportEnabled)
     const enableSupport = await request.put(`/api/teams/${teamId}/modules`, {
@@ -328,6 +347,11 @@ test.describe.serial('outbound reply round trip', () => {
 
       if (!supportWasEnabled) {
         await request.put(`/api/teams/${teamId}/modules`, { headers, data: { supportEnabled: false } })
+      }
+
+      // Restore last: the module toggle above still needs the elevated role.
+      if (membershipBefore.role !== 'admin') {
+        await db.update(teamMember).set({ role: membershipBefore.role }).where(eq(teamMember.id, membershipBefore.id))
       }
     }
   })

@@ -23,7 +23,7 @@ async function gotoWithRetry(page: Page, path: string) {
 }
 
 export function getPlaywrightBaseURL() {
-  return process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4913'
+  return process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${process.env.PLAYWRIGHT_PORT || 4173}`
 }
 
 export function withOriginHeaders(refererPath = '/') {
