@@ -7,7 +7,7 @@ Updated: 2026-09-03
 - Working branch: `review/stage-01-04-audit`
 - Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `1069580` (`fix(test): make the worktree E2E path run against its own server`)
+- Last completed task commit: `ddb1716` (`fix(support): close the review gate's important findings`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -15,7 +15,7 @@ Updated: 2026-09-03
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-**All sixteen tasks are complete.** Only the Final Review Gate remains.
+**All sixteen tasks are complete, and the Final Review Gate has run.** Its three Important findings are fixed. What remains is integration into `support-platform`.
 
 ## Completed work
 
@@ -285,6 +285,32 @@ E2E result.
 [`stage-01-04-provider-checklist.md`](stage-01-04-provider-checklist.md): every row is `pending` or
 `unavailable`. None of the numbers above are evidence that email works against a real provider.
 
+## Final Review Gate completed
+
+Full detail is in the implementation plan's "Final Review Gate — outcome" section. In short:
+
+**0 Critical, 3 Important, 6 Minor.** All three Important fixed in `ddb1716`, plus one Minor that
+contradicted a contract this branch introduced. The three Important were: the attachment upload proxy
+holding a pooled connection across a 10 MB body and two storage calls (ten slow uploads exhaust the
+default 10-connection pool); a delivery killed on its final attempt stranded beyond the reach of both
+the claim predicate and manual retry; and — my own regression from `ac95c41` — the global `bearer()`
+plugin turning the realtime session token, which the client puts in a WebSocket URL query string, into
+a credential for the entire API.
+
+**Two caveats on the gate itself, both worth carrying forward.** The reviewer ran on an available model
+because the plan's `gpt-5.6-luna` does not exist here, so independence is lower than specified. And the
+reviewer explicitly did not examine the Vue UI changes (~2,500 lines), the E2E suites, Task 14's Docker
+and CI changes, or the OpenAPI surface. Those are unreviewed, not cleared.
+
+**Five Minor findings were deliberately left unfixed**, each recorded with a reason in the plan. The one
+to note: the delivery-correlation fallback is dead by construction — the account key and provider
+message id never match what the provider sends — and it must not be fixed without live provider
+credentials, because the correct value on each side is precisely what the unexecuted provider checklist
+is for.
+
+Post-fix: `yarn harness:verify` green (unit 580/580 across 51 files, Redis 6/6, PostgreSQL 101/101
+across 11 files), support E2E 28 passed / 2 skipped / 0 failed on a fresh database.
+
 ## Local runtime findings
 
 The default Windows Nuxt dev process can exhaust its roughly 2 GB V8 heap while compiling `/support`. Symptoms are a zero-byte `/support` response, about 1.7-1.9 GB resident memory, high handle growth, and eventual OOM/restart while transforming the support/Lucide dependency graph. Direct Vue SFC compilation of both changed components is fast and error-free; a clean baseline also needs roughly 55 seconds for its first `/support` response.
@@ -315,22 +341,18 @@ yarn test:e2e:worktree -- tests/e2e/support-outbound-reply.spec.ts --workers=1
 
 ## Resume order
 
-Tasks 1-16 are done. What remains is the Final Review Gate in the implementation plan.
+Tasks 1-16 and the Final Review Gate are done. What remains is integration.
 
 1. Confirm this branch/worktree and run `yarn harness:context`.
 2. Start Postgres and Valkey. **Create a fresh database rather than reusing one** — residue in a
-   long-lived audit database causes failures that look like regressions. `veerify_stage0104_e2e` was
-   created and seeded for this purpose; recreate it rather than trusting its current state.
-3. Before any E2E run, check nothing is already listening on the worktree port
-   (`ss -ltnp | grep <port>`) and kill orphaned workers — killing the `nuxi.mjs` parent leaves the
-   `_dev` child holding the socket.
-4. Run the Final Review Gate: resolve `MERGE_BASE=$(git merge-base support-platform HEAD)`, produce
-   the review package, and run the read-only whole-branch review.
-5. Fix every Critical or Important finding in one reviewed fix wave.
-6. Integrate into `support-platform`. That still needs the merge or rebase noted above — the target
-   has two later documentation commits (`c3c19b1`, `5b82348`) not yet in this branch.
-7. Carry `stage-01-04-provider-checklist.md` forward to whoever has provider credentials. It is the
-   only remaining validation, and it is entirely unexecuted.
+   long-lived database causes failures that look like regressions.
+3. Before any E2E run, check nothing is listening on the worktree port (`ss -ltnp | grep <port>`) and
+   kill orphaned workers — killing the `nuxi.mjs` parent leaves the `_dev` child holding the socket.
+4. Merge or rebase onto `support-platform`. The target has two later documentation commits
+   (`c3c19b1`, `5b82348`) not yet in this branch. Run `yarn harness:verify` after.
+5. Decide on the five deferred Minor findings recorded in the implementation plan.
+6. Carry `stage-01-04-provider-checklist.md` to whoever has provider credentials. It is the only
+   remaining validation, it is entirely unexecuted, and one deferred finding is blocked on it.
 
 ## Other worktrees and branches at handoff
 
