@@ -199,7 +199,12 @@ describe('support inbox list authorization', () => {
     })
   })
 
-  it('keeps settings readable with agent fallback for an unassigned member', async () => {
+  // Settings stay readable for a team member who belongs to no inbox - the page
+  // still renders - but they carry no support capability. The approved matrix's
+  // "Unassigned team member" column is `No` for every conversation capability,
+  // and the previous `agent` fallback made the UI advertise controls that every
+  // server-side check then refused.
+  it('grants no support capability in settings for an unassigned member', async () => {
     authState.userId = 'unassigned-settings-1'
     queueResult([{ id: 'team-member-4', role: 'member' }])
     queueResult([])
@@ -210,11 +215,14 @@ describe('support inbox list authorization', () => {
     expect(result).toMatchObject({
       success: true,
       data: {
-        effectiveRole: 'agent',
+        effectiveRole: null,
         isTeamAdmin: false,
         capabilities: {
-          canWorkConversations: true,
+          canWorkConversations: false,
           canManageTagVocabulary: false,
+          canManageMembers: false,
+          canManageInbox: false,
+          canManageTeamSupport: false,
         },
       },
     })

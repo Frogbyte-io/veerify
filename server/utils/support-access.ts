@@ -38,7 +38,24 @@ const SUPPORT_ROLE_RANK: Record<SupportInboxRole, number> = {
 
 export const SUPPORT_INBOX_FORBIDDEN_MESSAGE = 'You do not have access to this support inbox'
 
-export function capabilitiesForRole(role: SupportInboxRole, isTeamAdmin: boolean): SupportCapabilities {
+/**
+ * `role: null` means a team member who belongs to no support inbox and is not a
+ * team admin. They get no support capability at all -- the approved matrix's
+ * "Unassigned team member" column is `No` for every conversation capability.
+ * Defaulting such a caller to `agent` made the UI advertise controls whose every
+ * action `requireInboxAccess` then refused.
+ */
+export function capabilitiesForRole(role: SupportInboxRole | null, isTeamAdmin: boolean): SupportCapabilities {
+  if (!role) {
+    return {
+      canWorkConversations: false,
+      canManageTagVocabulary: false,
+      canManageMembers: false,
+      canManageInbox: false,
+      canManageTeamSupport: isTeamAdmin,
+    }
+  }
+
   const rank = SUPPORT_ROLE_RANK[role]
   return {
     canWorkConversations: rank >= SUPPORT_ROLE_RANK.agent,

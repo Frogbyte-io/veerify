@@ -18,7 +18,7 @@ import { asc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamMembership } from '~/server/utils/support-access'
+import { requireSupportTeamRole } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportTag } from '~/server/database/schema/support'
@@ -31,7 +31,10 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const query = validateQuery(event, querySchema)
 
-  await requireTeamMembership(query.teamId, session.user.id)
+  // The design requires support-team access to read the shared tag vocabulary,
+  // not bare team membership -- creation and deletion already gate on
+  // `supervisor` through the same helper.
+  await requireSupportTeamRole(query.teamId, session.user.id, 'agent')
 
   // A team's tag vocabulary is a short controlled list, not a feed - no
   // pagination, same reasoning as the inbox address/member list endpoints.

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   computeNextAttemptAt,
@@ -192,6 +192,12 @@ describe('processOutboundDelivery', () => {
 })
 
 describe('runOutboundDeliveryWorker', () => {
+  // The worker settles abandoned final attempts before claiming, which is a real
+  // database write. These are unit tests that stub every db-touching dependency.
+  const reap = vi.fn(async () => 0)
+
+  beforeEach(() => reap.mockClear())
+
   function claim(id: string): OutboundClaim {
     return {
       id,
@@ -208,17 +214,20 @@ describe('runOutboundDeliveryWorker', () => {
     const claimNext = vi.fn().mockImplementation(async () => queue.shift() ?? null)
     const process = vi.fn().mockResolvedValue({ outcome: 'sent' })
 
-    const result = await runOutboundDeliveryWorker({ claimNext, process })
+    const result = await runOutboundDeliveryWorker({ claimNext, process, reap })
 
     expect(result).toEqual({ processed: 2 })
     expect(process).toHaveBeenCalledTimes(2)
+    // Abandoned final attempts are invisible to the claim predicate, so the
+    // sweep must run even on a pass that finds work.
+    expect(reap).toHaveBeenCalledTimes(1)
   })
 
   it('stops at maxBatch even when more deliveries are claimable', async () => {
     const claimNext = vi.fn().mockResolvedValue(claim('a'))
     const process = vi.fn().mockResolvedValue({ outcome: 'sent' })
 
-    const result = await runOutboundDeliveryWorker({ claimNext, process, maxBatch: 3 })
+    const result = await runOutboundDeliveryWorker({ claimNext, process, reap, maxBatch: 3 })
 
     expect(result).toEqual({ processed: 3 })
     expect(claimNext).toHaveBeenCalledTimes(3)
@@ -229,7 +238,7 @@ describe('runOutboundDeliveryWorker', () => {
     const claimNext = vi.fn().mockImplementation(async () => queue.shift() ?? null)
     const process = vi.fn().mockResolvedValue({ outcome: 'failed', error: 'boom' })
 
-    const result = await runOutboundDeliveryWorker({ claimNext, process })
+    const result = await runOutboundDeliveryWorker({ claimNext, process, reap })
 
     expect(result).toEqual({ processed: 2 })
   })
@@ -238,7 +247,7 @@ describe('runOutboundDeliveryWorker', () => {
     const claimNext = vi.fn().mockResolvedValue(null)
     const process = vi.fn()
 
-    const result = await runOutboundDeliveryWorker({ claimNext, process })
+    const result = await runOutboundDeliveryWorker({ claimNext, process, reap })
 
     expect(result).toEqual({ processed: 0 })
     expect(process).not.toHaveBeenCalled()

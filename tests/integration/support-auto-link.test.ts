@@ -88,10 +88,8 @@ async function waitForBackendLock(client: Client, pid: number, timeoutMs = 5_000
                EXISTS (
                  SELECT 1
                  FROM pg_locks held
-                 JOIN pg_class relation ON relation.oid = held.relation
                  WHERE held.pid = ANY(pg_blocking_pids(a.pid))
-                   AND relation.relname = 'team'
-                   AND held.mode = 'RowShareLock'
+                   AND held.locktype = 'advisory'
                    AND held.granted
                ) AS blocker_team_lock
         FROM pg_stat_activity a
@@ -115,10 +113,8 @@ async function waitForHeldTeamLock(client: Client, pid: number, timeoutMs = 5_00
         SELECT EXISTS (
           SELECT 1
           FROM pg_locks held
-          JOIN pg_class relation ON relation.oid = held.relation
           WHERE held.pid = $1
-            AND relation.relname = 'team'
-            AND held.mode = 'RowShareLock'
+            AND held.locktype = 'advisory'
             AND held.granted
         ) AS held
       `,
@@ -128,7 +124,7 @@ async function waitForHeldTeamLock(client: Client, pid: number, timeoutMs = 5_00
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
 
-  throw new Error(`backend ${pid} did not hold the team row lock within ${timeoutMs}ms`)
+  throw new Error(`backend ${pid} did not hold the contact advisory lock within ${timeoutMs}ms`)
 }
 
 async function waitForHeldContactWriteLock(client: Client, pid: number, timeoutMs = 5_000) {
@@ -368,6 +364,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     try {
       await expect(waitForBackendLock(observer, helperPid)).resolves.toMatchObject({
         wait_event_type: 'Lock',
+        wait_event: 'advisory',
         blocker_team_lock: true,
       })
     } finally {
@@ -588,6 +585,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       const mergePid = await mergePidPromise
       await expect(waitForBackendLock(observer, mergePid)).resolves.toMatchObject({
         wait_event_type: 'Lock',
+        wait_event: 'advisory',
         blocker_team_lock: true,
       })
 
@@ -657,6 +655,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     try {
       await expect(waitForBackendLock(observer, unlinkPid)).resolves.toMatchObject({
         wait_event_type: 'Lock',
+        wait_event: 'advisory',
         blocker_team_lock: true,
       })
     } finally {
@@ -718,6 +717,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     try {
       await expect(waitForBackendLock(observer, unlinkPid)).resolves.toMatchObject({
         wait_event_type: 'Lock',
+        wait_event: 'advisory',
         blocker_team_lock: true,
       })
     } finally {

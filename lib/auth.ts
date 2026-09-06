@@ -26,6 +26,21 @@ const useSecureCookies = defaultAppBaseUrl.startsWith('https://') || process.env
 const betterAuthSecret =
   process.env.BETTER_AUTH_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'veerify-dev-auth-secret-v1')
 
+// Pinning `useSecureCookies` removed Better Auth's per-request protocol sniff,
+// which would previously have noticed HTTPS on its own. A deployment served over
+// TLS but started without `NODE_ENV=production` and without an HTTPS
+// BETTER_AUTH_URL now issues cookies with no `Secure` attribute, so a single
+// downgraded request would expose the session. That combination is always a
+// misconfiguration; say so loudly at startup rather than failing silently.
+// (The shipped Dockerfile sets NODE_ENV=production, so this targets the
+// hand-rolled `node .output/server/index.mjs` shape.)
+if (!useSecureCookies && process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
+  logger.warn(
+    'Session cookies will be issued without the Secure attribute. Set BETTER_AUTH_URL to your public https:// origin (or NODE_ENV=production) before serving over TLS.',
+    { betterAuthUrl: defaultAppBaseUrl, nodeEnv: process.env.NODE_ENV ?? 'unset' }
+  )
+}
+
 if (!betterAuthSecret) {
   throw new Error('BETTER_AUTH_SECRET is required in production')
 }

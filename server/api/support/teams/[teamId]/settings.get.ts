@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const teamId = getRouterParam(event, 'teamId') as string
   const resolvedSupportRole = await resolveSupportTeamRole(teamId, session.user.id)
-  const effectiveRole: SupportInboxRole = resolvedSupportRole?.effectiveRole ?? 'agent'
+  const effectiveRole: SupportInboxRole | null = resolvedSupportRole?.effectiveRole ?? null
   const isTeamAdmin = resolvedSupportRole?.isTeamAdmin ?? false
 
   const [settings] = await db.select().from(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId)).limit(1)

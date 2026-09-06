@@ -510,8 +510,11 @@ const executableBoundaryCases: BoundaryCase[] = [
     ...boundary(sendingStatus, 'requireInboxRole', ['inbox-1', 'user-1', 'agent'], { params: { id: 'inbox-1' } }),
   },
   {
+    // Support-team access, not bare team membership: the design gates reading the
+    // shared tag vocabulary behind support access, and creation/deletion already
+    // use the same helper at `supervisor`.
     name: 'tags/index.get',
-    ...boundary(tagList, 'requireTeamMembership', ['team-1', 'user-1'], { query: { teamId: 'team-1' } }),
+    ...boundary(tagList, 'requireSupportTeamRole', ['team-1', 'user-1', 'agent'], { query: { teamId: 'team-1' } }),
   },
   {
     name: 'tags/index.post',
@@ -707,13 +710,17 @@ const executableBoundaryCases: BoundaryCase[] = [
     name: 'attachments/[uploadId]/complete.post',
     ...boundary(attachmentComplete, 'requireConversationAccess', ['conversation-1', 'user-1'], {
       params: { uploadId: 'upload-1' },
-      queuedRows: [[{
-        id: 'upload-1',
-        conversationId: 'conversation-1',
-        userId: 'user-1',
-        expiresAt: new Date(Date.now() + 60_000),
-        status: 'pending',
-      }]],
+      queuedRows: [
+        [
+          {
+            id: 'upload-1',
+            conversationId: 'conversation-1',
+            userId: 'user-1',
+            expiresAt: new Date(Date.now() + 60_000),
+            status: 'pending',
+          },
+        ],
+      ],
     }),
   },
 ]

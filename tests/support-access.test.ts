@@ -239,6 +239,24 @@ describe('support capabilities', () => {
     expect(capabilitiesForRole('admin', true).canManageTeamSupport).toBe(true)
   })
 
+  it('grants no support capability to a team member who belongs to no inbox', () => {
+    // `resolveSupportTeamRole` returns null for this caller. Defaulting them to
+    // `agent` made the UI advertise conversation controls that every server
+    // check then refused.
+    expect(capabilitiesForRole(null, false)).toEqual({
+      canWorkConversations: false,
+      canManageTagVocabulary: false,
+      canManageMembers: false,
+      canManageInbox: false,
+      canManageTeamSupport: false,
+    })
+  })
+
+  it('still reports team-support administration for a team admin with no inbox role', () => {
+    expect(capabilitiesForRole(null, true).canManageTeamSupport).toBe(true)
+    expect(capabilitiesForRole(null, true).canWorkConversations).toBe(false)
+  })
+
   it('enforces the minimum ranked inbox role', async () => {
     queueResult([{ id: 'i1', teamId: 't1' }])
     queueResult([{ id: 'sim1', role: 'agent' }])
