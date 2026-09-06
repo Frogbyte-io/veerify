@@ -19,7 +19,7 @@ import { supportEmailEvent } from '~/server/database/schema/support'
  */
 
 /** How long a claim is held before another delivery may take it over. */
-export const CLAIM_LEASE_SECONDS = 5 * 60
+export const INBOUND_EVENT_CLAIM_LEASE_SECONDS = 5 * 60
 
 export type InboundClaimOutcome =
   /** This request owns the event and must process it. */
@@ -28,6 +28,15 @@ export type InboundClaimOutcome =
   | { outcome: 'duplicate'; eventId: string }
   /** Another delivery holds a live lease. Return 200; it is being handled. */
   | { outcome: 'in-progress'; eventId: string }
+
+export type InboundClaimToken = {
+  eventId: string
+  attemptCount: number
+}
+
+type InboundExecutor = Pick<Parameters<Parameters<typeof db.transaction>[0]>[0], 'update'>
+
+const defaultExecutor: InboundExecutor = db
 
 /**
  * Atomically take ownership of an inbound delivery.
@@ -44,7 +53,7 @@ export async function claimInboundEvent(input: {
   inboxId?: string | null
 }): Promise<InboundClaimOutcome> {
   const now = new Date()
-  const leaseExpiresAt = new Date(now.getTime() + CLAIM_LEASE_SECONDS * 1000)
+  const leaseExpiresAt = new Date(now.getTime() + INBOUND_EVENT_CLAIM_LEASE_SECONDS * 1000)
   const id = randomUUID()
 
   const [claimed] = await db
@@ -102,18 +111,54 @@ export async function claimInboundEvent(input: {
 }
 
 /** Attach the resolved inbox once parsing has revealed it. */
-export async function attachInboundEventInbox(eventId: string, inboxId: string): Promise<void> {
-  await db.update(supportEmailEvent).set({ inboxId }).where(eq(supportEmailEvent.id, eventId))
+export async function attachInboundEventInbox(
+  claim: InboundClaimToken,
+  inboxId: string,
+  executor: InboundExecutor = defaultExecutor
+): Promise<boolean> {
+  const [updated] = await executor
+    .update(supportEmailEvent)
+    .set({ inboxId })
+    .where(
+      and(
+        eq(supportEmailEvent.id, claim.eventId),
+        eq(supportEmailEvent.attemptCount, claim.attemptCount),
+        eq(supportEmailEvent.status, 'processing')
+      )
+    )
+    .returning({ id: supportEmailEvent.id })
+
+  return Boolean(updated)
 }
 
 /** Record where the raw payload was archived, before parsing is attempted. */
-export async function recordInboundRawKey(eventId: string, rawStorageKey: string): Promise<void> {
-  await db.update(supportEmailEvent).set({ rawStorageKey }).where(eq(supportEmailEvent.id, eventId))
+export async function recordInboundRawKey(
+  claim: InboundClaimToken,
+  rawStorageKey: string,
+  executor: InboundExecutor = defaultExecutor
+): Promise<boolean> {
+  const [updated] = await executor
+    .update(supportEmailEvent)
+    .set({ rawStorageKey })
+    .where(
+      and(
+        eq(supportEmailEvent.id, claim.eventId),
+        eq(supportEmailEvent.attemptCount, claim.attemptCount),
+        eq(supportEmailEvent.status, 'processing')
+      )
+    )
+    .returning({ id: supportEmailEvent.id })
+
+  return Boolean(updated)
 }
 
 /** Finish an event successfully. `conversationId` is null when nothing was created by design. */
-export async function completeInboundEvent(eventId: string, conversationId: string | null): Promise<void> {
-  await db
+export async function completeInboundEvent(
+  claim: InboundClaimToken,
+  conversationId: string | null,
+  executor: InboundExecutor = defaultExecutor
+): Promise<boolean> {
+  const [updated] = await executor
     .update(supportEmailEvent)
     .set({
       status: 'processed',
@@ -124,7 +169,16 @@ export async function completeInboundEvent(eventId: string, conversationId: stri
       leaseExpiresAt: null,
       error: null,
     })
-    .where(eq(supportEmailEvent.id, eventId))
+    .where(
+      and(
+        eq(supportEmailEvent.id, claim.eventId),
+        eq(supportEmailEvent.attemptCount, claim.attemptCount),
+        eq(supportEmailEvent.status, 'processing')
+      )
+    )
+    .returning({ id: supportEmailEvent.id })
+
+  return Boolean(updated)
 }
 
 /**
@@ -132,8 +186,12 @@ export async function completeInboundEvent(eventId: string, conversationId: stri
  * created nothing for (unknown recipient, support disabled). Terminal on
  * purpose — retrying will not change the outcome, so it must not be replayed.
  */
-export async function rejectInboundEvent(eventId: string, reason: string): Promise<void> {
-  await db
+export async function rejectInboundEvent(
+  claim: InboundClaimToken,
+  reason: string,
+  executor: InboundExecutor = defaultExecutor
+): Promise<boolean> {
+  const [updated] = await executor
     .update(supportEmailEvent)
     .set({
       status: 'processed',
@@ -141,22 +199,44 @@ export async function rejectInboundEvent(eventId: string, reason: string): Promi
       leaseExpiresAt: null,
       error: sanitizeEventError(reason),
     })
-    .where(eq(supportEmailEvent.id, eventId))
+    .where(
+      and(
+        eq(supportEmailEvent.id, claim.eventId),
+        eq(supportEmailEvent.attemptCount, claim.attemptCount),
+        eq(supportEmailEvent.status, 'processing')
+      )
+    )
+    .returning({ id: supportEmailEvent.id })
+
+  return Boolean(updated)
 }
 
 /**
  * Mark an event failed and replayable. The lease is cleared so the provider's
  * next retry can reclaim it immediately rather than waiting it out.
  */
-export async function failInboundEvent(eventId: string, error: unknown): Promise<void> {
-  await db
+export async function failInboundEvent(
+  claim: InboundClaimToken,
+  error: unknown,
+  executor: InboundExecutor = defaultExecutor
+): Promise<boolean> {
+  const [updated] = await executor
     .update(supportEmailEvent)
     .set({
       status: 'failed',
       leaseExpiresAt: null,
       error: sanitizeEventError(error),
     })
-    .where(eq(supportEmailEvent.id, eventId))
+    .where(
+      and(
+        eq(supportEmailEvent.id, claim.eventId),
+        eq(supportEmailEvent.attemptCount, claim.attemptCount),
+        eq(supportEmailEvent.status, 'processing')
+      )
+    )
+    .returning({ id: supportEmailEvent.id })
+
+  return Boolean(updated)
 }
 
 /** Maximum stored error length. Enough to diagnose, short of storing a payload. */

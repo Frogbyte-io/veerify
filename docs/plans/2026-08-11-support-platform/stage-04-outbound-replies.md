@@ -80,9 +80,10 @@ when it is not, rather than failing silently at send time.
 
 ### 5. Attachments
 
-Agent-side upload reuses the existing presign flow in `server/utils/storage` and
-`server/utils/upload-token.ts`. Attach by reference to storage keys; enforce a per-message total size
-cap and reject types by allowlist.
+Agent-side upload uses the server-owned `supportAttachmentUpload` session flow. The composer submits
+opaque upload IDs; only the server resolves storage keys, canonical metadata, and actual sizes. Enforce
+per-file and per-message caps, type allowlisting, expiry, ownership, one-time consumption, conditional
+finalization, and orphan cleanup. See `stage-01-04-hardening-design.md`.
 
 ### 6. Auto-reply
 
@@ -96,10 +97,13 @@ configured template. Guards, all required:
 
 ### 7. Delivery status and bounces
 
-Register the provider's delivery/bounce webhook at `POST /api/support/delivery/[provider]`, reusing the
-`supportEmailEvent` idempotency pattern. Map events onto `conversationMessage.deliveryStatus`. A hard
-bounce writes an `activity` message into the thread so the agent sees that the customer never received
-the reply — silent delivery failure is worse than a visible error.
+Register the provider's delivery/bounce webhook at `POST /api/support/delivery/[provider]`, using the
+separate `supportDeliveryEvent` claim/lease table because one outbound email produces multiple events.
+Provider metadata carries the outbox correlation key; RFC Message-ID is reserved for customer threading
+and is never the primary delivery lookup. Map correlated events onto
+`conversationMessage.deliveryStatus`. A hard bounce writes an `activity` message into the thread so the
+agent sees that the customer never received the reply — silent delivery failure is worse than a visible
+error. See `stage-01-04-hardening-design.md`.
 
 ## Acceptance criteria
 
@@ -113,8 +117,10 @@ the reply — silent delivery failure is worse than a visible error.
 6. A hard bounce marks the message `bounced` and writes a visible `activity` line into the thread.
 7. `firstResponseAt` is stamped on the first agent reply and not overwritten by later ones.
 8. The agent UI shows the message immediately, before the send resolves.
-9. Restarting the sender after the message transaction commits still sends the queued reply once; a
-   retry never creates a second provider delivery for the same idempotency key.
+9. Restarting the sender after the message transaction commits still sends a queued reply. The worker
+   reuses the same RFC and provider-correlation identities and paces retries with backoff. External
+   delivery is at-least-once: an ambiguous failure after provider acceptance can cause a duplicate, and
+   manual retry warns the agent about that possibility. See `stage-01-04-hardening-design.md`.
 10. `yarn harness:verify` green on `support-platform`.
 
 ## TODO items
@@ -125,10 +131,10 @@ the reply — silent delivery failure is worse than a visible error.
 - [ ] Wire `POST /api/support/conversations/[id]/messages` for `kind: 'outgoing'`: transactional optimistic insert plus outbox enqueue, immediate realtime publish, worker delivery-status update, and `firstResponseAt` stamping
 - [ ] Enforce server-side that `kind: 'note'` never dispatches mail
 - [ ] Implement per-inbox From/Reply-To/signature with a settings warning when the address is not provider-authorized
-- [ ] Implement agent attachment upload via the existing presign flow with size cap and type allowlist
+- [ ] Replace raw attachment storage metadata with server-owned upload sessions, conditional finalization, and cleanup as specified in `stage-01-04-hardening-design.md`
 - [ ] Implement auto-reply with once-per-conversation, auto-response, `Auto-Submitted`, and per-contact rate-limit guards
-- [ ] Add `POST /api/support/delivery/[provider]` for delivery and bounce webhooks with `supportEmailEvent` idempotency; map to `deliveryStatus` and write an `activity` message on hard bounce
-- [ ] Surface delivery status in the thread UI (pending, sent, failed, bounced) with a retry action on failure
+- [ ] Add `POST /api/support/delivery/[provider]` using `supportDeliveryEvent` idempotency and provider-metadata correlation; map to `deliveryStatus` and write an `activity` message on hard bounce
+- [ ] Surface delivery status in the thread UI (queued, sent, delivered, failed, bounced) with a duplicate-risk confirmation on manual retry
 - [ ] Add E2E coverage for the full round trip: inbound mail → agent reply → customer reply threads back
 
 ## Risks

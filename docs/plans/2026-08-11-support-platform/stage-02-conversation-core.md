@@ -51,8 +51,9 @@ Extend `server/utils/support-access.ts`:
 - `requireConversationAccess(conversationId, userId)` — resolves through the inbox.
 - `resolveInboxByAddress(emailAddress)` — used by Stage 03; returns the inbox or null.
 
-**`teamMember.role` semantics are not changed.** Support permissions live on `supportInboxMember.role`
-(`agent` | `supervisor` | `admin`).
+Inbox-specific support permissions live on `supportInboxMember.role` (`agent` | `supervisor` | `admin`)
+and remain independent of `teamMember.role`. The later hardening decision uses the existing team-admin
+role only for workspace-wide module mutations; it does not grant ordinary team roles inbox access.
 
 ### 3. API
 
@@ -131,9 +132,10 @@ board). Stage 02 builds only the first.
 - **Disabling Support hides the nav group and stops inbound processing, but preserves conversations and
   contacts.** Re-enabling restores them intact. Follow the wording contract already set by the
   `ProductSettingsFeatures.vue` disable dialog: "Your data will not be deleted."
-- **Permissions: team membership only**, matching every other settings surface today. Restricting module
-  toggles to admins was considered and deliberately deferred — see delta D-28. Do not introduce a
-  `teamMember.role` check here.
+- **Permissions (revised by the Stage 01-04 hardening design):** reads remain available to team members,
+  but changing a team module toggle requires `teamMember.role = 'admin'`. A module switch changes the
+  experience for every teammate and can stop inbound support processing, so it is an administrative
+  operation. See `stage-01-04-hardening-design.md`.
 
 **Inbox configuration** — in-context at `/support/settings`, **not** a global settings tab. Stages 05–07
 add macros, SLA, and automation to this surface, which would make a `/settings` tab unreasonably deep.
@@ -185,7 +187,7 @@ Items 1 and 2 block everything else. Items 5, 6, and 7 can run in parallel once 
 - [ ] Build the `/support` three-pane UI: inbox switcher, filtered conversation list, thread pane rendering all four message kinds, contact drawer
 - [ ] Build the composer with an unmistakable reply/note toggle; messages are stored only, not sent, in this stage
 - [ ] Rename the existing `Support` sidebar group to `System`; add a real `Support` group with Inbox and Contacts; add `/support` to `protectedRoutes`
-- [ ] Add the per-team Tools tab to `/settings` with Feedback/Roadmap/Changelog/Support module toggles driving sidebar visibility, replacing the hardcoded `disabled: true` placeholders; team membership only, no role check (delta D-28)
+- [ ] Add the per-team Tools tab to `/settings` with Feedback/Roadmap/Changelog/Support module toggles driving sidebar visibility, replacing the hardcoded `disabled: true` placeholders; reads require team membership and mutations require team admin (revised D-28)
 - [ ] Implement disable semantics: hide nav and stop inbound processing while preserving conversations and contacts
 - [ ] Build `/support/settings` with inbox name, signature, agent membership, and the receiving-address list with product mapping
 - [ ] Add `conversation_assigned` and `conversation_mention` notification types and preference toggles

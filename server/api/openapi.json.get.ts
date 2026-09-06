@@ -3,7 +3,7 @@
  * Serves the OpenAPI 3.0 specification for all API endpoints
  */
 
-export default defineEventHandler((event) => {
+export default defineEventHandler(() => {
   const spec = {
     openapi: '3.0.0',
     info: {
@@ -155,6 +155,18 @@ export default defineEventHandler((event) => {
             updatedAt: { type: 'string', format: 'date-time' },
           },
         },
+        ContactLink: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            contactId: { type: 'string' },
+            entityType: { type: 'string', enum: ['feedback', 'conversation'] },
+            entityId: { type: 'string' },
+            source: { type: 'string', enum: ['auto', 'agent'] },
+            createdByUserId: { type: 'string', nullable: true },
+            createdAt: { type: 'string', format: 'date-time' },
+          },
+        },
         SupportCompany: {
           type: 'object',
           properties: {
@@ -254,12 +266,25 @@ export default defineEventHandler((event) => {
             isPrivate: { type: 'boolean', description: 'Derived from kind; notes and activity are private' },
             channelMessageId: { type: 'string', nullable: true },
             inReplyTo: { type: 'string', nullable: true },
-            channelHeaders: { type: 'object', nullable: true },
             deliveryStatus: { type: 'string', enum: ['pending', 'sent', 'delivered', 'failed', 'bounced'] },
-            deliveryError: { type: 'string', nullable: true },
-            metadata: { type: 'object', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
+            attachments: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/ConversationAttachmentMetadata' },
+              description: 'Finalized attachments only; storage keys are never returned.',
+            },
           },
+        },
+        ConversationAttachmentMetadata: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            fileName: { type: 'string' },
+            contentType: { type: 'string', nullable: true },
+            sizeBytes: { type: 'integer', minimum: 1, nullable: true },
+            downloadUrl: { type: 'string' },
+          },
+          required: ['id', 'fileName', 'contentType', 'sizeBytes', 'downloadUrl'],
         },
         ConversationParticipant: {
           type: 'object',
@@ -389,12 +414,42 @@ export default defineEventHandler((event) => {
       '/api/support/contacts/{id}/timeline': {
         get: {
           tags: ['Support'],
-          summary: "Get a contact's linked and probable feedback timeline",
+          summary: "Get a contact's independently paginated feedback timeline",
           operationId: 'getSupportContactTimeline',
-          parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+          parameters: [
+            { in: 'path', name: 'id', required: true, schema: { type: 'string' } },
+            {
+              in: 'query',
+              name: 'section',
+              required: false,
+              description: 'Limit database work to one independently paginated section.',
+              schema: { type: 'string', enum: ['linked', 'probable'] },
+            },
+            {
+              in: 'query',
+              name: 'limit',
+              required: false,
+              description: 'Rows per section; defaults to 25 and is capped at 100.',
+              schema: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
+            },
+            {
+              in: 'query',
+              name: 'linkedCursor',
+              required: false,
+              description: 'Opaque v1 cursor for the linked feedback section.',
+              schema: { type: 'string' },
+            },
+            {
+              in: 'query',
+              name: 'probableCursor',
+              required: false,
+              description: 'Opaque v1 cursor for the probable feedback section.',
+              schema: { type: 'string' },
+            },
+          ],
           responses: {
             '200': {
-              description: 'Linked entities and probable feedback suggestions, kept in separate sections',
+              description: 'Feedback-only timeline with independently paginated linked and possible-match sections',
               content: {
                 'application/json': {
                   schema: {
@@ -407,7 +462,7 @@ export default defineEventHandler((event) => {
                           linked: {
                             type: 'array',
                             description: 'Explicit, agent-confirmed links',
-                            items: { type: 'object' },
+                            items: { $ref: '#/components/schemas/ContactLink' },
                           },
                           probableFeedback: {
                             type: 'array',
@@ -415,6 +470,10 @@ export default defineEventHandler((event) => {
                               'Heuristic matches by email or account — suggestions only, never a confirmed identity',
                             items: { $ref: '#/components/schemas/Feedback' },
                           },
+                          linkedHasMore: { type: 'boolean' },
+                          linkedNextCursor: { type: 'string', nullable: true },
+                          probableHasMore: { type: 'boolean' },
+                          probableNextCursor: { type: 'string', nullable: true },
                         },
                       },
                     },
@@ -422,6 +481,7 @@ export default defineEventHandler((event) => {
                 },
               },
             },
+            '400': { description: 'Invalid limit, section, or opaque cursor' },
             '403': { description: "Not a member of the contact's team" },
             '404': { description: 'Contact not found' },
           },
@@ -879,9 +939,35 @@ export default defineEventHandler((event) => {
           tags: ['Support'],
           summary: 'Write an agent reply or an internal note to a conversation',
           description:
-            'Only outgoing and note kinds may be created here. isPrivate is derived from kind server-side and is never read from the request body. An outgoing message is enqueued to the durable outbox in the same transaction as its insert; a note never dispatches mail.',
+            'Only outgoing and note kinds may be created here. isPrivate is derived from kind server-side and is never read from the request body. Attachments are strict server-owned uploadId references; client storage keys and metadata are rejected. An outgoing message, its finalized attachments, and its durable outbox entry are committed atomically; a note never dispatches mail.',
           operationId: 'createSupportConversationMessage',
           parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['kind', 'body'],
+                  properties: {
+                    kind: { type: 'string', enum: ['outgoing', 'note'] },
+                    body: { type: 'string', minLength: 1, maxLength: 50000 },
+                    bodyHtml: { type: 'string', maxLength: 200000 },
+                    attachments: {
+                      type: 'array',
+                      maxItems: 10,
+                      items: {
+                        type: 'object',
+                        required: ['uploadId'],
+                        additionalProperties: false,
+                        properties: { uploadId: { type: 'string', minLength: 1 } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           responses: {
             '200': { description: 'Message created' },
             '400': { description: 'Validation failed' },
@@ -964,6 +1050,114 @@ export default defineEventHandler((event) => {
             '200': { description: 'Tag removed' },
             '403': { description: 'Not a member of this inbox or a team admin' },
             '404': { description: 'Conversation not found, or tag is not on the conversation' },
+          },
+        },
+      },
+      '/api/support/attachments/{id}': {
+        get: {
+          tags: ['Support'],
+          summary: 'Download a finalized conversation attachment',
+          operationId: 'getSupportConversationAttachment',
+          security: [{ cookieAuth: [] }],
+          parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+          responses: {
+            '200': {
+              description: 'Attachment bytes served as a forced download',
+              content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } },
+            },
+            '401': { description: 'Authentication required' },
+            '403': { description: 'No conversation access' },
+            '404': { description: 'Attachment or stored object not found' },
+            '503': { description: 'Attachment storage is temporarily unavailable' },
+          },
+        },
+      },
+      '/api/support/attachments/presign': {
+        post: {
+          tags: ['Support'],
+          summary: 'Create a server-owned attachment upload session',
+          operationId: 'presignSupportAttachmentUpload',
+          security: [{ cookieAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['conversationId', 'filename', 'contentType', 'sizeBytes'],
+                  properties: {
+                    conversationId: { type: 'string' },
+                    filename: { type: 'string', maxLength: 255 },
+                    contentType: { type: 'string', maxLength: 100 },
+                    sizeBytes: { type: 'integer', minimum: 1, maximum: 10485760 },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Upload session and target. Storage keys are never returned.',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      success: { type: 'boolean', example: true },
+                      data: {
+                        type: 'object',
+                        required: ['uploadId', 'uploadUrl', 'method', 'headers', 'expiresAt', 'fileName', 'contentType'],
+                        properties: {
+                          uploadId: { type: 'string', format: 'uuid' },
+                          uploadUrl: { type: 'string', format: 'uri-reference' },
+                          method: { type: 'string', enum: ['PUT'] },
+                          headers: { type: 'object', additionalProperties: { type: 'string' } },
+                          expiresAt: { type: 'string', format: 'date-time' },
+                          fileName: { type: 'string' },
+                          contentType: { type: 'string' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '400': { description: 'Unsupported type or file too large' },
+            '401': { description: 'Authentication required' },
+            '403': { description: 'No conversation access' },
+          },
+        },
+      },
+      '/api/support/attachments/upload/{token}': {
+        put: {
+          tags: ['Support'],
+          summary: 'Stream bytes to an upload session',
+          operationId: 'uploadSupportAttachment',
+          parameters: [{ in: 'path', name: 'token', required: true, schema: { type: 'string' } }],
+          requestBody: { required: true, content: { '*/*': { schema: { type: 'string', format: 'binary' } } } },
+          responses: {
+            '200': { description: 'Upload stored' },
+            '400': { description: 'Invalid token or metadata' },
+            '404': { description: 'Upload session not found' },
+            '409': { description: 'Upload session already used' },
+            '413': { description: 'Upload exceeds 10 MB' },
+          },
+        },
+      },
+      '/api/support/attachments/{uploadId}/complete': {
+        post: {
+          tags: ['Support'],
+          summary: 'Complete and verify a direct attachment upload',
+          operationId: 'completeSupportAttachmentUpload',
+          security: [{ cookieAuth: [] }],
+          parameters: [{ in: 'path', name: 'uploadId', required: true, schema: { type: 'string', format: 'uuid' } }],
+          responses: {
+            '200': { description: 'Upload completed and verified' },
+            '400': { description: 'Object metadata does not match the session' },
+            '401': { description: 'Authentication required' },
+            '403': { description: 'No conversation access' },
+            '404': { description: 'Upload session or object not found' },
+            '409': { description: 'Object changed or upload state unavailable' },
           },
         },
       },

@@ -23,7 +23,7 @@ import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireInboxAccess } from '~/server/utils/support-access'
+import { requireInboxRole } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { supportInboxAddress } from '~/server/database/schema/support'
 
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   const inboxId = getRouterParam(event, 'id') as string
   const addressId = getRouterParam(event, 'addressId') as string
 
-  await requireInboxAccess(inboxId, session.user.id)
+  await requireInboxRole(inboxId, session.user.id, 'admin')
 
   const [deleted] = await db
     .delete(supportInboxAddress)

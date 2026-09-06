@@ -5,6 +5,10 @@ const appDomain = (process.env.APP_DOMAIN || 'localhost').trim()
 const dashboardDomain = (
   process.env.APP_DASHBOARD_DOMAIN || (appDomain === 'localhost' ? 'localhost' : `app.${appDomain}`)
 ).trim()
+const devAllowedHosts = (process.env.NUXT_DEV_ALLOWED_HOSTS || '')
+  .split(',')
+  .map((host) => host.trim())
+  .filter(Boolean)
 const deploymentModeEnv = (process.env.APP_DEPLOYMENT_MODE || '').toLowerCase()
 const deploymentMode =
   deploymentModeEnv === 'cloud' || deploymentModeEnv === 'self-hosted'
@@ -15,8 +19,15 @@ const deploymentMode =
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
+  buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
   devtools: { enabled: true },
   nitro: {
+    output: { dir: process.env.NITRO_OUTPUT_DIR || '.output' },
+    // The self-hosted runtime image already carries the installed dependency
+    // tree. Nitro tracing can recreate nested Yarn dependency symlinks with
+    // invalid relative targets and recurse until ELOOP during packaging. Cloud
+    // builds retain Nitro's normal tracing behavior for platform deployment.
+    ...(deploymentMode === 'self-hosted' ? { externals: { trace: false } } : {}),
     experimental: {
       websocket: true,
       // Self-hosted scheduler backend — see server/services/scheduler/.
@@ -30,6 +41,7 @@ export default defineNuxtConfig({
       // Stage 06 (SLA sweeper), Stage 08 (CSAT dispatch), and Stage 09 rollups.
       '*/15 * * * *': ['example:ping'],
       '* * * * *': ['support:outbound-delivery'],
+      '*/5 * * * *': ['support:attachment-cleanup'],
     },
   },
   devServer: {
@@ -38,6 +50,13 @@ export default defineNuxtConfig({
   css: ['~/assets/css/main.css'],
   vite: {
     plugins: [tailwindcss()],
+    server: {
+      // Vite rejects dev requests whose Host header it does not recognise, which
+      // blocks reaching the dev server through an HTTPS reverse proxy (for example
+      // Tailscale Serve). Kept env-driven so the hostname stays per-machine rather
+      // than checked in; empty in CI and production, where this block is unused.
+      allowedHosts: devAllowedHosts,
+    },
   },
   vue: {
     compilerOptions: {
@@ -73,6 +92,10 @@ export default defineNuxtConfig({
     storageSecretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY || '',
     storageForcePathStyle: process.env.STORAGE_FORCE_PATH_STYLE === 'true',
     storagePublicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL || '',
+    // Direct S3 uploads are opt-in and only safe when the target demonstrably
+    // enforces the signed Content-Length. All other targets use the bounded
+    // application proxy.
+    storageDirectUploadConstraints: process.env.STORAGE_DIRECT_UPLOAD_CONSTRAINTS || 'proxy-required',
     storageLocalDir: process.env.STORAGE_LOCAL_DIR || '.data/storage',
     uploadTokenSecret: process.env.UPLOAD_TOKEN_SECRET || '',
     nodemailer: {

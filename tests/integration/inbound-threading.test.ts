@@ -21,6 +21,7 @@ describe('resolveThread (real Postgres)', () => {
   const orgId = `org_thread_${randomUUID()}`
   const teamId = `team_thread_${randomUUID()}`
   const inboxId = `inbox_thread_${randomUUID()}`
+  const otherInboxId = `inbox_thread_other_${randomUUID()}`
   const contactId = `contact_thread_${randomUUID()}`
   const otherContactId = `contact_thread_other_${randomUUID()}`
 
@@ -43,6 +44,7 @@ describe('resolveThread (real Postgres)', () => {
 
   // Conversation the header strategies should find.
   const threadedConversationId = `conv_thread_${randomUUID()}`
+  const otherInboxConversationId = `conv_thread_other_${randomUUID()}`
   const storedMessageId = `stored-${randomUUID()}@acme.com`
   const threadRootId = `root-${randomUUID()}@acme.com`
 
@@ -58,14 +60,24 @@ describe('resolveThread (real Postgres)', () => {
       slug: `threading-team-${randomUUID()}`,
       organizationId: orgId,
     })
-    await db.insert(supportInbox).values({
-      id: inboxId,
-      teamId,
-      name: 'Threading Inbox',
-      slug: `threading-inbox-${randomUUID()}`,
-      createdAt: now,
-      updatedAt: now,
-    })
+    await db.insert(supportInbox).values([
+      {
+        id: inboxId,
+        teamId,
+        name: 'Threading Inbox',
+        slug: `threading-inbox-${randomUUID()}`,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: otherInboxId,
+        teamId,
+        name: 'Other Threading Inbox',
+        slug: `threading-inbox-other-${randomUUID()}`,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
     await db.insert(contact).values([
       {
         id: contactId,
@@ -85,29 +97,54 @@ describe('resolveThread (real Postgres)', () => {
       },
     ])
 
-    await db.insert(conversation).values({
-      id: threadedConversationId,
-      inboxId,
-      teamId,
-      contactId,
-      displayId: 9001,
-      subject: 'Invoice question',
-      status: 'open',
-      channelThreadKey: threadRootId,
-      lastActivityAt: now,
-      createdAt: now,
-      updatedAt: now,
-    })
+    await db.insert(conversation).values([
+      {
+        id: threadedConversationId,
+        inboxId,
+        teamId,
+        contactId,
+        displayId: 9001,
+        subject: 'Invoice question',
+        status: 'open',
+        channelThreadKey: threadRootId,
+        lastActivityAt: now,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: otherInboxConversationId,
+        inboxId: otherInboxId,
+        teamId,
+        contactId,
+        displayId: 9002,
+        subject: 'Other inbox invoice question',
+        status: 'open',
+        lastActivityAt: now,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
 
-    await db.insert(conversationMessage).values({
-      id: `msg_thread_${randomUUID()}`,
-      conversationId: threadedConversationId,
-      kind: 'outgoing',
-      body: 'Our reply',
-      senderKind: 'agent',
-      channelMessageId: storedMessageId,
-      createdAt: now,
-    })
+    await db.insert(conversationMessage).values([
+      {
+        id: `msg_thread_${randomUUID()}`,
+        conversationId: threadedConversationId,
+        kind: 'outgoing',
+        body: 'Our reply',
+        senderKind: 'agent',
+        channelMessageId: storedMessageId,
+        createdAt: now,
+      },
+      {
+        id: `msg_thread_other_${randomUUID()}`,
+        conversationId: otherInboxConversationId,
+        kind: 'outgoing',
+        body: 'Same provider ID in another inbox',
+        senderKind: 'agent',
+        channelMessageId: storedMessageId,
+        createdAt: now,
+      },
+    ])
   })
 
   afterAll(async () => {
@@ -143,6 +180,53 @@ describe('resolveThread (real Postgres)', () => {
     )
 
     expect(result.conversationId).toBe(threadedConversationId)
+  })
+
+  it('resolves the same RFC Message-ID independently in each inbox', async () => {
+    const result = await resolve(
+      { messageId: 'new@x.com', inReplyTo: storedMessageId, references: [], subject: 'Re: other invoice' },
+      contactId,
+      { id: otherInboxId, teamId }
+    )
+
+    expect(result).toEqual({ conversationId: otherInboxConversationId, matchedBy: 'message-id' })
+  })
+
+  it('returns an ambiguity outcome and does not fall back inside one inbox', async () => {
+    const collisionConversationId = `conv_thread_collision_${randomUUID()}`
+    await db.insert(conversation).values({
+      id: collisionConversationId,
+      inboxId,
+      teamId,
+      contactId,
+      displayId: 9003,
+      subject: 'Invoice question',
+      status: 'open',
+      channelThreadKey: storedMessageId,
+      lastActivityAt: new Date(now.getTime() + 1),
+      createdAt: now,
+      updatedAt: now,
+    })
+    await db.insert(conversationMessage).values({
+      id: `msg_thread_collision_${randomUUID()}`,
+      conversationId: collisionConversationId,
+      kind: 'outgoing',
+      body: 'Conflicting message identity',
+      senderKind: 'agent',
+      channelMessageId: storedMessageId,
+      createdAt: new Date(now.getTime() + 1),
+    })
+
+    try {
+      const result = await resolve(
+        { messageId: 'new@x.com', inReplyTo: storedMessageId, references: [], subject: 'Invoice question' },
+        contactId
+      )
+
+      expect(result).toMatchObject({ conversationId: null, matchedBy: 'ambiguous-message-id' })
+    } finally {
+      await db.delete(conversation).where(eq(conversation.id, collisionConversationId))
+    }
   })
 
   it('falls back to the thread key when no stored message matches', async () => {

@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ALLOWED_ATTACHMENT_CONTENT_TYPES,
-  MAX_ATTACHMENT_BYTES,
-  buildOutboundAttachmentStorageKey,
-  createAttachmentUploadToken,
+  SUPPORT_MAX_ATTACHMENT_BYTES,
+  signSupportUploadToken,
+  createSupportUploadTempKey,
+  createSupportAttachmentFinalKey,
   validateAttachmentUploadInput,
-  verifyAttachmentUploadToken,
+  verifySupportUploadToken,
 } from '../server/utils/support-attachments'
 
 function installNuxtServerStubs() {
@@ -20,25 +21,13 @@ function installNuxtServerStubs() {
   })
 }
 
-describe('buildOutboundAttachmentStorageKey', () => {
-  it('keys by conversation, attachment id, and a sanitized filename', () => {
-    const key = buildOutboundAttachmentStorageKey('conv_1', 'att_1', 'Invoice (final).pdf')
-    expect(key).toBe('support/attachments/outbound/conv_1/att_1/Invoice-final-.pdf')
-  })
-
-  it('strips a path from the filename rather than nesting it', () => {
-    const key = buildOutboundAttachmentStorageKey('conv_1', 'att_1', '../../etc/passwd')
-    expect(key).toBe('support/attachments/outbound/conv_1/att_1/passwd')
-  })
-})
-
 describe('validateAttachmentUploadInput', () => {
   beforeEach(installNuxtServerStubs)
   afterEach(() => vi.unstubAllGlobals())
 
   it('accepts every type in the allowlist at the size cap', () => {
     for (const contentType of ALLOWED_ATTACHMENT_CONTENT_TYPES) {
-      expect(() => validateAttachmentUploadInput(contentType, MAX_ATTACHMENT_BYTES)).not.toThrow()
+      expect(() => validateAttachmentUploadInput(contentType, SUPPORT_MAX_ATTACHMENT_BYTES)).not.toThrow()
     }
   })
 
@@ -47,7 +36,9 @@ describe('validateAttachmentUploadInput', () => {
   })
 
   it('rejects a file over the per-part cap', () => {
-    expect(() => validateAttachmentUploadInput('application/pdf', MAX_ATTACHMENT_BYTES + 1)).toThrow(/too large/i)
+    expect(() => validateAttachmentUploadInput('application/pdf', SUPPORT_MAX_ATTACHMENT_BYTES + 1)).toThrow(
+      /too large/i
+    )
   })
 
   it('rejects a non-positive size', () => {
@@ -55,59 +46,40 @@ describe('validateAttachmentUploadInput', () => {
   })
 })
 
-describe('createAttachmentUploadToken / verifyAttachmentUploadToken', () => {
+describe('signSupportUploadToken / verifySupportUploadToken', () => {
   beforeEach(installNuxtServerStubs)
   afterEach(() => vi.unstubAllGlobals())
 
   it('round-trips a valid token', () => {
-    const { token } = createAttachmentUploadToken(
-      {
-        conversationId: 'conv_1',
-        userId: 'user_1',
-        storageKey: 'support/attachments/outbound/conv_1/att_1/file.pdf',
-        contentType: 'application/pdf',
-        sizeBytes: 1024,
-      },
-      60
-    )
+    const expiresAt = new Date(Date.now() + 60_000)
+    const token = signSupportUploadToken({ uploadId: 'upload_1', expiresAt })
 
-    const verified = verifyAttachmentUploadToken(token)
-    expect(verified.conversationId).toBe('conv_1')
-    expect(verified.userId).toBe('user_1')
-    expect(verified.storageKey).toBe('support/attachments/outbound/conv_1/att_1/file.pdf')
-    expect(verified.contentType).toBe('application/pdf')
-    expect(verified.sizeBytes).toBe(1024)
+    const verified = verifySupportUploadToken(token)
+    expect(verified.uploadId).toBe('upload_1')
+    expect(verified.expiresAt.getTime()).toBe(Math.floor(expiresAt.getTime() / 1000) * 1000)
+    expect(token).not.toContain('storageKey')
   })
 
   it('rejects a tampered token', () => {
-    const { token } = createAttachmentUploadToken(
-      {
-        conversationId: 'conv_1',
-        userId: 'user_1',
-        storageKey: 'support/attachments/outbound/conv_1/att_1/file.pdf',
-        contentType: 'application/pdf',
-        sizeBytes: 1024,
-      },
-      60
-    )
+    const token = signSupportUploadToken({ uploadId: 'upload_1', expiresAt: new Date(Date.now() + 60_000) })
 
     const [payload, signature] = token.split('.')
     const tamperedToken = `${payload.slice(0, -1)}x.${signature}`
-    expect(() => verifyAttachmentUploadToken(tamperedToken)).toThrow()
+    expect(() => verifySupportUploadToken(tamperedToken)).toThrow(/signature/i)
   })
 
-  it('rejects an expired token', () => {
-    const { token } = createAttachmentUploadToken(
-      {
-        conversationId: 'conv_1',
-        userId: 'user_1',
-        storageKey: 'support/attachments/outbound/conv_1/att_1/file.pdf',
-        contentType: 'application/pdf',
-        sizeBytes: 1024,
-      },
-      -1
-    )
+  it('rejects an expired token input', () => {
+    expect(() => signSupportUploadToken({ uploadId: 'upload_1', expiresAt: new Date(Date.now() - 1_000) })).toThrow(/invalid/i)
+  })
+})
 
-    expect(() => verifyAttachmentUploadToken(token)).toThrow(/expired/i)
+describe('server-owned attachment keys', () => {
+  it('keeps temporary and final namespaces separate', () => {
+    expect(createSupportUploadTempKey('upload_1', '../../invoice.pdf')).toBe(
+      'support/attachments/uploads/upload_1/invoice.pdf'
+    )
+    expect(createSupportAttachmentFinalKey('attachment_1', 'invoice.pdf')).toBe(
+      'support/attachments/outbound/attachment_1/invoice.pdf'
+    )
   })
 })

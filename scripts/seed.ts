@@ -304,8 +304,8 @@ async function seed(client: Client) {
  * Should this run be refused?
  *
  * This script creates accounts with fixed, published passwords
- * (`test@preview.local` / `password123`). It is wired into `postbuild`, so a
- * plain `yarn build` pointed at a real database would create them there.
+ * (`test@preview.local` / `password123`). Seeding is an explicit development
+ * or test operation and is never part of build/package lifecycle hooks.
  *
  * The original guard only checked `VERCEL_ENV`, which left self-hosted
  * deployments and any local production build unprotected. `NODE_ENV` covers

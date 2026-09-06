@@ -1,9 +1,36 @@
-import { auth } from '~/lib/auth'
+import { and, eq, gt } from 'drizzle-orm'
+import { db } from '~/server/database/drizzle'
+import { session as sessionTable } from '~/server/database/schema/auth'
 import { removePeerFromAllChannels, subscribePeer, unsubscribePeer } from '~/server/utils/ws-connections'
 import { userChannel } from '~/server/services/realtime'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('ws')
+
+/**
+ * Resolve a session directly from its opaque token.
+ *
+ * Deliberately not `auth.api.getSession()` with a bearer header. Making Better
+ * Auth accept `Authorization: Bearer <session-token>` requires the `bearer`
+ * plugin, which is global: it would turn this token into a credential for every
+ * API route. That is not a theoretical widening - the client hands this exact
+ * value to `buildUrl()` in `plugins/realtime.client.ts`, which puts it in a
+ * WebSocket URL query string, and proxies, CDNs, and load balancers log query
+ * strings by default. Anyone who can read an access log could then replay it
+ * against the whole API.
+ *
+ * Resolving the token here keeps its blast radius to the realtime transport,
+ * which is the only thing that ever needed it.
+ */
+async function resolveSessionByToken(token: string): Promise<{ userId: string } | null> {
+  const [row] = await db
+    .select({ userId: sessionTable.userId })
+    .from(sessionTable)
+    .where(and(eq(sessionTable.token, token), gt(sessionTable.expiresAt, new Date())))
+    .limit(1)
+
+  return row ?? null
+}
 
 export default defineWebSocketHandler({
   async open(peer) {
@@ -28,29 +55,26 @@ export default defineWebSocketHandler({
     }
 
     try {
-      // Validate session token using Better-Auth
-      const session = await auth.api.getSession({
-        headers: new Headers({ Authorization: `Bearer ${token}` }),
-      })
+      const session = await resolveSessionByToken(token)
 
-      if (!session?.user) {
+      if (!session) {
         peer.send(JSON.stringify({ type: 'error', message: 'Invalid session' }))
         peer.close(4001, 'Invalid session')
         return
       }
 
       // Store userId on the peer context for later use
-      peer.context.userId = session.user.id
+      peer.context.userId = session.userId
 
-      logger.info('WebSocket connected', { userId: session.user.id })
+      logger.info('WebSocket connected', { userId: session.userId })
 
       // Every peer listens to its own user channel automatically. Doing it here
       // rather than making the client ask means the client never has to know or
       // send its own user id, and the subscription cannot be spoofed — the id
       // comes from the validated session, not from the wire.
-      await subscribePeer(peer, userChannel(session.user.id), session.user.id)
+      await subscribePeer(peer, userChannel(session.userId), session.userId)
 
-      peer.send(JSON.stringify({ type: 'connected', userId: session.user.id }))
+      peer.send(JSON.stringify({ type: 'connected', userId: session.userId }))
     } catch (err) {
       logger.error('WS auth failed', { error: err instanceof Error ? err.message : err })
       peer.send(JSON.stringify({ type: 'error', message: 'Auth failed' }))

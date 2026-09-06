@@ -8,8 +8,7 @@
             <div
               class="flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors"
               :class="{
-                'bg-primary text-primary-foreground': currentStep === index,
-                'bg-primary text-primary-foreground': currentStep > index,
+                'bg-primary text-primary-foreground': currentStep >= index,
                 'bg-muted text-muted-foreground': currentStep < index,
               }"
             >

@@ -134,6 +134,27 @@ describe('checkRateLimit / requireRateLimit call-site contract', () => {
     expect(consume).toHaveBeenCalledWith('default:203.0.113.1', 60_000, 5)
   })
 
+  it('uses an explicit subject to isolate shared-provider webhook traffic by inbox', async () => {
+    const consume = vi.fn(async () => true)
+    setRateLimitStore({ name: 'fake', consume })
+
+    await checkRateLimit(makeEvent('198.51.100.20'), {
+      maxRequests: 120,
+      windowSeconds: 60,
+      identifier: 'support-inbound',
+      subject: 'inbox-a',
+    } as any)
+    await checkRateLimit(makeEvent('198.51.100.20'), {
+      maxRequests: 120,
+      windowSeconds: 60,
+      identifier: 'support-inbound',
+      subject: 'inbox-b',
+    } as any)
+
+    expect(consume).toHaveBeenNthCalledWith(1, 'support-inbound:inbox-a', 60_000, 120)
+    expect(consume).toHaveBeenNthCalledWith(2, 'support-inbound:inbox-b', 60_000, 120)
+  })
+
   it('requireRateLimit throws a 429 when the store denies the request', async () => {
     setRateLimitStore({ name: 'fake', consume: async () => false })
 

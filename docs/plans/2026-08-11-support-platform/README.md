@@ -15,20 +15,46 @@ was cut and why, so the cuts are not "completed" back in by a later agent.
 
 ---
 
-## Current state — updated August 23, 2026
+## Current state — updated September 3, 2026
 
 **Integration branch: `support-platform`.** Not `main`. See delta D-17. Every stage validates here
 until the program is deliberately integrated into `main`.
 
-|                    |                                                                   |
-| ------------------ | ----------------------------------------------------------------- |
-| Stage 00           | **Complete** — 10/10 items                                        |
-| Stage 01           | **Complete** — contact identity, integrity, timeline, and UI      |
-| Stage 02           | **Complete** — inbox and conversation core                        |
-| Stage 03           | **Complete** — inbound email                                      |
-| Stage 04           | **Complete** — 11/11 items                                        |
-| Stage 05          | **Re-cut for MVP** Aug 30, 2026 — split into 05a/05b, delta D-36   |
-| Open cross-cutting | SUP-X-1 (Redis integration suite, delta D-15)                     |
+|                       |                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stage 00              | **Complete** — 10/10 items                                                                                                                                                                        |
+| Stage 01              | **Complete** — contact identity, integrity, timeline, and UI                                                                                                                                      |
+| Stage 02              | **Complete** — inbox and conversation core                                                                                                                                                        |
+| Stage 03              | **Complete** — inbound email                                                                                                                                                                      |
+| Stage 04              | **Complete** — 11/11 items                                                                                                                                                                        |
+| Stage 01-04 hardening | **Complete** — 16/16 tasks, review gate passed — [design](stage-01-04-hardening-design.md) · [execution plan](stage-01-04-hardening-implementation.md) · [handoff](stage-01-04-review-handoff.md) |
+| Stage 05              | **Re-cut for MVP** Aug 30, 2026 — split into 05a/05b, delta D-36                                                                                                                                  |
+| Open cross-cutting    | SUP-X-1 (Redis integration suite, delta D-15)                                                                                                                                                     |
+
+**Verification is recorded in two separate places, on purpose.** Automated results live in
+[`stage-01-04-review-handoff.md`](stage-01-04-review-handoff.md). Anything that can only be checked
+against a real provider lives in
+[`stage-01-04-provider-checklist.md`](stage-01-04-provider-checklist.md), and **every row there is
+still `pending` or `unavailable`** — no Postmark/Mailgun credentials, no Gmail/Outlook mailboxes, and
+no real S3 on the machine that built these stages. Read the two together before treating email
+delivery as validated; the automated counts prove the code matches our assumptions, not that the
+providers do.
+
+**Support observability.** `server/utils/support-observability.ts` is the only sanctioned way to emit
+a support metric. The metric names are a closed set and the fields are an allowlist of identifiers,
+statuses, and counts — support payloads carry customer message bodies, filenames, storage keys, and
+provider credentials, and logs are retained longer and read more widely than the database. Add a name
+or a field there and nowhere else; `support.delivery.uncorrelated` is an alert, not a statistic, and
+`reason` is a closed vocabulary because a permitted key with free-text values leaks just as easily.
+
+**Realtime had never worked before September 3, 2026.** `server/routes/_ws.ts` authenticated with a
+bearer token that Better Auth was not configured to accept, so every WebSocket closed with 4001 and
+`NotificationBell`'s polling fallback masked it. It is now fixed and proven by
+`tests/integration/realtime-two-process.test.ts` against a shared Redis. **The session token is not an
+API credential:** `_ws.ts` resolves it directly against the `session` row, because the client puts
+that token in a WebSocket URL query string and proxies log query strings. Do not reintroduce a global
+`bearer` plugin to solve this. Any behaviour that was only ever validated at unit level across that
+seam should be treated as unproven until re-checked against a real socket.
 
 **Related branches.** `sleekplan-export` holds an unrelated changelog + Sleekplan/CSV import feature
 that was recovered from the working tree. Both branches define a migration `0019`, so merging them
@@ -47,24 +73,24 @@ ls server/api/support/contacts/
 
 ## Stage map
 
-| Stage                                | Title                     | Depends on | Status  |
-| ------------------------------------ | ------------------------- | ---------- | ------- |
-| [00](stage-00-foundations.md)        | Foundations               | —          | DONE    |
-| [01](stage-01-contacts.md)           | Contact identity          | 00         | ACTIVE  |
-| [02](stage-02-conversation-core.md)  | Inbox + conversation core | 00, 01     | Next    |
-| [03](stage-03-inbound-email.md)      | Inbound email             | 02         | Blocked |
-| [04](stage-04-outbound-replies.md)   | Outbound replies          | 03         | Blocked |
-| [05a](stage-05a-agent-speed.md)      | Agent speed (MVP)         | 02, 04     | Next    |
-| [05b](stage-05b-feedback-bridge.md)  | Feedback bridge           | 05a        | Blocked |
-| [06](stage-06-sla.md)                | Business hours + SLA      | 02, 04     | Blocked |
-| [07](stage-07-automation.md)         | Automation rules          | 02, 04     | Blocked |
-| [08](stage-08-csat.md)               | CSAT                      | 04         | Blocked |
-| [09](stage-09-reporting.md)          | Reporting                 | 02, 06     | Blocked |
-| [09b](stage-09b-home.md)             | Home (cross-team)         | 02         | Future  |
-| [10](stage-10-customer-portal.md)    | Customer portal           | 02         | Blocked |
-| [11](stage-11-live-chat.md)          | Live chat                 | 00, 02     | Blocked |
-| [12](stage-12-social-channels.md)    | Social channels           | 03, 11     | Blocked |
-| [13](stage-13-importers.md)          | Migration importers       | 02         | Blocked |
+| Stage                               | Title                     | Depends on | Status  |
+| ----------------------------------- | ------------------------- | ---------- | ------- |
+| [00](stage-00-foundations.md)       | Foundations               | —          | DONE    |
+| [01](stage-01-contacts.md)          | Contact identity          | 00         | ACTIVE  |
+| [02](stage-02-conversation-core.md) | Inbox + conversation core | 00, 01     | Next    |
+| [03](stage-03-inbound-email.md)     | Inbound email             | 02         | Blocked |
+| [04](stage-04-outbound-replies.md)  | Outbound replies          | 03         | Blocked |
+| [05a](stage-05a-agent-speed.md)     | Agent speed (MVP)         | 02, 04     | Next    |
+| [05b](stage-05b-feedback-bridge.md) | Feedback bridge           | 05a        | Blocked |
+| [06](stage-06-sla.md)               | Business hours + SLA      | 02, 04     | Blocked |
+| [07](stage-07-automation.md)        | Automation rules          | 02, 04     | Blocked |
+| [08](stage-08-csat.md)              | CSAT                      | 04         | Blocked |
+| [09](stage-09-reporting.md)         | Reporting                 | 02, 06     | Blocked |
+| [09b](stage-09b-home.md)            | Home (cross-team)         | 02         | Future  |
+| [10](stage-10-customer-portal.md)   | Customer portal           | 02         | Blocked |
+| [11](stage-11-live-chat.md)         | Live chat                 | 00, 02     | Blocked |
+| [12](stage-12-social-channels.md)   | Social channels           | 03, 11     | Blocked |
+| [13](stage-13-importers.md)         | Migration importers       | 02         | Blocked |
 
 **Deferred, not planned:** Knowledge base / help center. Dropped from this program on August 11, 2026.
 Stage 10 (customer portal) ships its ticket list and submit form without KB integration; wire the two

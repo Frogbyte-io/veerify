@@ -6,8 +6,8 @@
  *     summary: Download a conversation attachment
  *     description: >
  *       Serves the bytes through the app rather than exposing a storage URL,
- *       so access is checked on every request. Inline images in a sanitized
- *       message body point here.
+ *       so access is checked on every request. Responses always download
+ *       rather than render in the application origin.
  *     operationId: getSupportConversationAttachment
  *     parameters:
  *       - in: path
@@ -28,6 +28,31 @@ import { getStorageProvider } from '~/server/utils/storage'
 import { db } from '~/server/database/drizzle'
 import { conversationAttachment, conversationMessage } from '~/server/database/schema/support'
 
+function storageReadError(error: unknown): never {
+  const candidate = error as {
+    code?: string
+    name?: string
+    statusCode?: number
+    $metadata?: { httpStatusCode?: number }
+  }
+  const missing =
+    candidate.code === 'ENOENT' ||
+    candidate.code === 'OBJECT_NOT_FOUND' ||
+    candidate.name === 'NotFound' ||
+    candidate.name === 'NoSuchKey' ||
+    candidate.statusCode === 404 ||
+    candidate.$metadata?.httpStatusCode === 404
+
+  throw createError({
+    statusCode: missing ? 404 : 503,
+    statusMessage: missing ? 'Not Found' : 'Service Unavailable',
+    data: createErrorResponse(
+      missing ? ErrorCode.NOT_FOUND : ErrorCode.INTERNAL_ERROR,
+      missing ? 'Attachment not found' : 'Attachment is temporarily unavailable'
+    ),
+  })
+}
+
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const attachmentId = getRouterParam(event, 'id') as string
@@ -37,7 +62,6 @@ export default defineEventHandler(async (event) => {
       storageKey: conversationAttachment.storageKey,
       fileName: conversationAttachment.fileName,
       contentType: conversationAttachment.contentType,
-      isInline: conversationAttachment.isInline,
       conversationId: conversationMessage.conversationId,
     })
     .from(conversationAttachment)
@@ -58,20 +82,30 @@ export default defineEventHandler(async (event) => {
   // 403, not a customer's file.
   await requireConversationAccess(row.conversationId, session.user.id)
 
-  const body = await getStorageProvider().getObject(row.storageKey)
+  let body: Buffer
+  try {
+    body = await getStorageProvider().getObject(row.storageKey)
+  } catch (error) {
+    storageReadError(error)
+  }
 
   setResponseHeader(event, 'Content-Type', row.contentType || 'application/octet-stream')
-  // Inline images render in place; everything else downloads rather than
-  // rendering, so an HTML or SVG attachment cannot execute in our origin.
+  const safeFileName = row.fileName
+    .split('')
+    .filter((character) => {
+      const code = character.charCodeAt(0)
+      return code > 0x1f && code !== 0x7f
+    })
+    .join('')
+    .replace(/["\\]/g, '_')
+    .trim() || 'attachment'
   setResponseHeader(
     event,
     'Content-Disposition',
-    row.isInline
-      ? `inline; filename="${encodeURIComponent(row.fileName)}"`
-      : `attachment; filename="${encodeURIComponent(row.fileName)}"`
+    `attachment; filename="${safeFileName.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(safeFileName)}`
   )
-  // Belt and braces for the inline case: even served inline, the browser must
-  // not sniff a different type, and nothing here may run script.
+  // The download response is deliberately non-inline. Even if a stored MIME
+  // is later misclassified, the browser must not sniff or execute it.
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff')
   setResponseHeader(event, 'Content-Security-Policy', "default-src 'none'; img-src 'self'; sandbox")
   setResponseHeader(event, 'Cache-Control', 'private, max-age=300')

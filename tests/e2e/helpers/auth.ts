@@ -22,7 +22,17 @@ async function gotoWithRetry(page: Page, path: string) {
   throw lastError
 }
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
+export function getPlaywrightBaseURL() {
+  return process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${process.env.PLAYWRIGHT_PORT || 4173}`
+}
+
+export function withOriginHeaders(refererPath = '/') {
+  const baseURL = getPlaywrightBaseURL()
+  return {
+    origin: baseURL,
+    referer: `${baseURL}${refererPath}`,
+  }
+}
 
 /**
  * Build request headers for authenticated API calls in tests that use the
@@ -32,9 +42,8 @@ const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:4173'
  */
 export function withAuthHeaders(sessionCookie: string, refererPath = '/feedback') {
   return {
+    ...withOriginHeaders(refererPath),
     cookie: sessionCookie,
-    origin: BASE_URL,
-    referer: `${BASE_URL}${refererPath}`,
   }
 }
 
@@ -50,8 +59,7 @@ export async function signInAndGetSessionCookie(
 ): Promise<string> {
   const signInResponse = await request.post('/api/auth/sign-in/email', {
     headers: {
-      origin: BASE_URL,
-      referer: `${BASE_URL}/login`,
+      ...withOriginHeaders('/login'),
     },
     data: {
       email: credentials.email,
@@ -87,6 +95,7 @@ export async function signInAndGetSessionCookie(
  */
 export async function loginViaProgrammatic(request: APIRequestContext, credentials: LoginCredentials): Promise<void> {
   const response = await request.post('/api/auth/sign-in/email', {
+    headers: withOriginHeaders('/login'),
     data: { email: credentials.email, password: credentials.password },
   })
   if (!response.ok()) {
@@ -108,6 +117,7 @@ export async function loginViaProgrammatic(request: APIRequestContext, credentia
  */
 export async function loginViaProgrammaticPage(page: Page, credentials: LoginCredentials): Promise<void> {
   const response = await page.request.post('/api/auth/sign-in/email', {
+    headers: withOriginHeaders('/login'),
     data: { email: credentials.email, password: credentials.password },
   })
   if (!response.ok()) {

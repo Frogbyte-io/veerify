@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import type { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, conversationParticipant } from '~/server/database/schema/support'
 import type { InboundAddress } from '~/server/services/support-channels/types'
+import { lockContactTeam } from '~/server/utils/contact-lock'
 
 /**
  * Contact and CC-participant resolution for inbound mail (SUP-03-11).
@@ -56,6 +57,8 @@ export async function resolveOrCreateContact(
   address: InboundAddress
 ): Promise<{ contactId: string; created: boolean }> {
   const email = address.address.trim().toLowerCase()
+
+  await lockContactTeam(tx, teamId)
 
   const [identity] = await tx
     .select({ contactId: contactIdentity.contactId })

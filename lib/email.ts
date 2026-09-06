@@ -53,6 +53,12 @@ export interface SendEmailOptions {
   attachments?: EmailAttachment[]
 }
 
+export interface SendEmailResult {
+  accepted: boolean
+  providerMessageId?: string
+  response: string
+}
+
 /** The object handed to nodemailer. */
 export interface MailPayload {
   to: string | string[]
@@ -177,7 +183,7 @@ interface CustomDomainEmailOptions {
   domain: string
 }
 
-export async function sendEmail(options: SendEmailOptions) {
+export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult | Response> {
   // Check if we're on the server side
   if (import.meta.server) {
     // Directly use NodeMailer on server side
@@ -187,16 +193,14 @@ export async function sendEmail(options: SendEmailOptions) {
       const result = await sendMail(buildMailPayload(options))
 
       return {
-        success: true,
-        message: 'Email sent successfully',
-        messageId: result.messageId,
+        accepted: true,
+        response: typeof result.response === 'string' ? result.response : 'Email accepted by transport',
       }
     } catch (error) {
       logger.error('Email sending failed', { error: error instanceof Error ? error.message : error })
       return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to send email',
-        error: error,
+        accepted: false,
+        response: error instanceof Error ? error.message : 'Failed to send email',
       }
     }
   } else {

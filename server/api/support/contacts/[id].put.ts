@@ -28,6 +28,7 @@ import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, supportCompany } from '~/server/database/schema/support'
+import { lockContactTeam } from '~/server/utils/contact-lock'
 
 const bodySchema = z.object({
   name: z.string().trim().max(200).nullable().optional(),
@@ -43,10 +44,12 @@ export default defineEventHandler(async (event) => {
   const contactId = getRouterParam(event, 'id') as string
   const body = await validateBody(event, bodySchema)
 
-  await requireContactAccess(contactId, session.user.id)
+  const accessibleContact = await requireContactAccess(contactId, session.user.id)
 
   try {
     return await db.transaction(async (tx) => {
+      await lockContactTeam(tx, accessibleContact.teamId)
+
       // The access check above establishes the caller's team membership. The
       // row itself must be re-read and locked here: a merge may have turned
       // this contact into a tombstone while the request was entering its

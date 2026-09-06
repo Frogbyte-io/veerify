@@ -6,6 +6,15 @@
         <p class="text-muted-foreground mt-1">Configure your team's shared inbox</p>
       </div>
 
+      <div
+        v-if="inboxAccessError"
+        data-testid="support-inbox-access-error"
+        class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+        role="alert"
+      >
+        {{ inboxAccessError }}
+      </div>
+
       <!-- Loading -->
       <div v-if="isLoading" class="space-y-6">
         <Skeleton class="h-10 w-full" />
@@ -28,7 +37,7 @@
       </Card>
 
       <!-- No inbox yet -->
-      <Card v-else-if="!hasInboxes">
+      <Card v-else-if="!hasInboxes && canManageTeamSupport">
         <CardHeader>
           <CardTitle>Create your support inbox</CardTitle>
           <CardDescription>
@@ -70,371 +79,450 @@
         </CardContent>
       </Card>
 
-      <!-- Inbox settings -->
+      <Card v-else-if="!hasInboxes" data-testid="support-no-assignment">
+        <CardHeader>
+          <CardTitle>No support inboxes are assigned to you.</CardTitle>
+          <CardDescription>Ask a support administrator to add you to an inbox.</CardDescription>
+        </CardHeader>
+      </Card>
+
+      <Card v-else-if="!selectedInboxId" data-testid="support-no-assignment">
+        <CardHeader>
+          <CardTitle>No support inboxes are assigned to you.</CardTitle>
+          <CardDescription>Ask a support administrator to add you to an inbox.</CardDescription>
+        </CardHeader>
+      </Card>
+
       <template v-else>
-        <div v-if="inboxes.length > 1" class="flex items-center gap-3">
-          <Label for="inbox-switcher" class="shrink-0">Inbox</Label>
-          <select
-            id="inbox-switcher"
-            v-model="selectedInboxId"
-            :class="selectClasses + ' max-w-xs'"
-            @change="handleInboxSwitch"
-          >
-            <option v-for="inbox in inboxes" :key="inbox.id" :value="inbox.id">{{ inbox.name }}</option>
-          </select>
-        </div>
-
-        <!-- General -->
-        <Card>
+        <Card v-if="canManageTeamSupport" data-testid="support-team-policy">
           <CardHeader>
-            <CardTitle>General</CardTitle>
-            <CardDescription>Basic identity for this inbox.</CardDescription>
+            <CardTitle>Team support policy</CardTitle>
+            <CardDescription>Controls how signed-in customer feedback is linked to support contacts.</CardDescription>
           </CardHeader>
-          <CardContent class="space-y-4">
-            <div>
-              <Label for="general-name">Name</Label>
-              <Input id="general-name" v-model="generalName" class="mt-2" :disabled="isSavingGeneral" />
-            </div>
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label for="general-from-address">From address</Label>
-                <Input
-                  id="general-from-address"
-                  v-model="generalEmailAddress"
-                  type="email"
-                  placeholder="support@yourdomain.com"
-                  class="mt-2"
-                  :disabled="isSavingGeneral"
-                />
-                <p class="text-sm text-muted-foreground mt-1">Used as the From on outgoing replies.</p>
-              </div>
-              <div>
-                <Label for="general-from-name">From name</Label>
-                <Input
-                  id="general-from-name"
-                  v-model="generalFromName"
-                  placeholder="Acme Support"
-                  class="mt-2"
-                  :disabled="isSavingGeneral"
-                />
-              </div>
-            </div>
-
-            <div v-if="isLoadingSendingStatus" class="space-y-2">
-              <Skeleton class="h-10 w-full" />
-            </div>
-            <div v-else-if="sendingStatusError" class="text-sm">
-              <p class="text-destructive mb-2">{{ sendingStatusError }}</p>
-              <Button variant="outline" size="sm" @click="loadSendingStatus">Retry</Button>
-            </div>
-            <template v-else-if="sendingStatus">
-              <p v-if="!sendingStatus.address" class="text-sm text-muted-foreground">
-                Set a From address above to have it checked against your provider.
-              </p>
-              <div
-                v-else-if="sendingStatus.authorization.status === 'unauthorized'"
-                class="flex items-start gap-2 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 p-3 text-sm"
-                data-testid="support-settings-sending-unauthorized"
-              >
-                <Icon name="lucide:alert-triangle" class="w-4 h-4 mt-0.5 shrink-0" />
-                <span>
-                  "{{ sendingStatus.address }}" is not on a domain your provider is verified to send from. Replies sent
-                  as this address may be rejected. Verify the domain with your provider, or use an address on a verified
-                  domain.
-                </span>
-              </div>
-              <div
-                v-else-if="sendingStatus.authorization.status === 'authorized'"
-                class="flex items-center gap-2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 p-3 text-sm"
-                data-testid="support-settings-sending-authorized"
-              >
-                <Icon name="lucide:check-circle-2" class="w-4 h-4 shrink-0" />
-                <span>Your provider is verified to send as "{{ sendingStatus.address }}".</span>
-              </div>
-              <div
-                v-else
-                class="flex items-start gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground"
-                data-testid="support-settings-sending-unknown"
-              >
-                <Icon name="lucide:help-circle" class="w-4 h-4 mt-0.5 shrink-0" />
-                <span>
-                  Cannot verify whether "{{ sendingStatus.address }}" is authorized to send ({{
-                    sendingStatus.authorization.reason
-                  }}). This is not a failure — most deployments have not set a provider account credential yet.
-                </span>
-              </div>
-            </template>
-
-            <div>
-              <Label for="general-signature">Signature</Label>
-              <Textarea
-                id="general-signature"
-                v-model="generalSignature"
-                rows="5"
-                class="mt-2"
-                :disabled="isSavingGeneral"
+          <CardContent>
+            <div class="flex items-center justify-between gap-4 rounded-lg border p-4">
+              <Label for="support-team-policy-toggle" class="text-sm font-medium">
+                Automatically link signed-in customer feedback
+              </Label>
+              <Switch
+                id="support-team-policy-toggle"
+                v-model="autoLinkFeedback"
+                data-testid="support-team-policy-toggle"
+                :disabled="isSavingTeamPolicy"
+                @update:model-value="saveTeamPolicy"
               />
-              <p class="text-sm text-muted-foreground mt-1">Appended to outgoing replies.</p>
-            </div>
-            <div class="flex justify-end">
-              <Button :disabled="isSavingGeneral || !generalHasChanges" @click="saveGeneral">
-                <Icon v-if="isSavingGeneral" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-                Save changes
-              </Button>
             </div>
           </CardContent>
         </Card>
 
-        <!-- Channel (SUP-03-13) -->
-        <Card data-testid="support-settings-channel">
-          <CardHeader>
-            <CardTitle>Channel</CardTitle>
-            <CardDescription>
-              How inbound mail reaches this inbox. The provider and its webhook credentials are set once per deployment
-              as environment variables, not here — so this shows what is configured rather than editing it.
-            </CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <div v-if="isLoadingChannel" class="space-y-2">
-              <Skeleton v-for="i in 3" :key="i" class="h-10 w-full" />
-            </div>
+        <!-- Inbox settings -->
+        <template v-if="hasInboxes">
+          <div v-if="inboxes.length > 1" class="flex items-center gap-3">
+            <Label for="inbox-switcher" class="shrink-0">Inbox</Label>
+            <select
+              id="inbox-switcher"
+              v-model="selectedInboxId"
+              :class="selectClasses + ' max-w-xs'"
+              @change="handleInboxSwitch"
+            >
+              <option v-for="inbox in inboxes" :key="inbox.id" :value="inbox.id">{{ inbox.name }}</option>
+            </select>
+          </div>
 
-            <div v-else-if="channelError" class="text-sm">
-              <p class="text-destructive mb-2">Could not load channel status</p>
-              <Button variant="outline" size="sm" @click="loadChannelStatus">Retry</Button>
-            </div>
-
-            <template v-else-if="channel">
-              <div class="flex items-center gap-2">
-                <span
-                  class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium"
-                  :class="
-                    channelReady
-                      ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-                      : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
-                  "
-                  data-testid="support-settings-channel-state"
-                >
-                  <Icon :name="channelReady ? 'lucide:check-circle-2' : 'lucide:alert-triangle'" class="w-3.5 h-3.5" />
-                  {{ channelReady ? 'Ready to receive' : 'Not receiving mail' }}
-                </span>
-                <span class="text-sm text-muted-foreground"
-                  >Provider: <strong>{{ channel.provider }}</strong></span
-                >
+          <!-- General -->
+          <Card>
+            <CardHeader>
+              <CardTitle>General</CardTitle>
+              <CardDescription>Basic identity for this inbox.</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <div>
+                <Label for="general-name">Name</Label>
+                <Input
+                  id="general-name"
+                  v-model="generalName"
+                  class="mt-2"
+                  :disabled="isSavingGeneral || !canManageInbox"
+                  :readonly="!canManageInbox"
+                />
               </div>
-
-              <p v-if="!channel.driverAvailable" class="text-sm text-muted-foreground">
-                <code>SUPPORT_CHANNEL_PROVIDER</code> is set to <code>{{ channel.provider }}</code
-                >, which is not one of {{ channel.supportedProviders.join(', ') }}. Inbound mail is rejected until it
-                names a supported provider.
-              </p>
-
-              <div v-else-if="channel.missingEnvVars.length > 0" class="text-sm text-muted-foreground">
-                <p class="mb-1">
-                  Credentials are missing, so inbound mail is rejected. An unset credential never means “accept
-                  anything”. Set these and restart:
-                </p>
-                <ul class="list-disc pl-5 space-y-0.5">
-                  <li v-for="name in channel.missingEnvVars" :key="name">
-                    <code>{{ name }}</code>
-                  </li>
-                </ul>
-              </div>
-
-              <div class="space-y-1">
-                <Label>Webhook URL to register with {{ channel.provider }}</Label>
-                <div class="flex items-center gap-2">
-                  <Input :model-value="webhookUrl" readonly data-testid="support-settings-channel-webhook" />
-                  <Button variant="outline" size="sm" @click="copy(webhookUrl)">Copy</Button>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label for="general-from-address">From address</Label>
+                  <Input
+                    id="general-from-address"
+                    v-model="generalEmailAddress"
+                    type="email"
+                    placeholder="support@yourdomain.com"
+                    class="mt-2"
+                    :disabled="isSavingGeneral || !canManageInbox"
+                    :readonly="!canManageInbox"
+                  />
+                  <p class="text-sm text-muted-foreground mt-1">Used as the From on outgoing replies.</p>
+                </div>
+                <div>
+                  <Label for="general-from-name">From name</Label>
+                  <Input
+                    id="general-from-name"
+                    v-model="generalFromName"
+                    placeholder="Acme Support"
+                    class="mt-2"
+                    :disabled="isSavingGeneral || !canManageInbox"
+                    :readonly="!canManageInbox"
+                  />
                 </div>
               </div>
 
-              <div v-if="primaryAddress" class="space-y-1">
-                <Label>Forward mail to</Label>
-                <div class="flex items-center gap-2">
-                  <Input :model-value="primaryAddress" readonly data-testid="support-settings-channel-forward" />
-                  <Button variant="outline" size="sm" @click="copy(primaryAddress)">Copy</Button>
-                </div>
-                <p class="text-xs text-muted-foreground">
-                  Point an MX record or a forwarding rule at this address. Add more addresses below to route different
-                  products into this inbox.
-                </p>
+              <div v-if="isLoadingSendingStatus" class="space-y-2">
+                <Skeleton class="h-10 w-full" />
               </div>
-              <p v-else class="text-sm text-muted-foreground">
-                Add a receiving address below before pointing mail at this inbox.
-              </p>
-            </template>
-          </CardContent>
-        </Card>
-
-        <!-- Agents -->
-        <Card>
-          <CardHeader>
-            <CardTitle>Agents</CardTitle>
-            <CardDescription>
-              People who can work this inbox. Inbox access is separate from team membership — a team member does not
-              automatically get access to this inbox.
-            </CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <div v-if="isSwitchingInbox" class="space-y-2">
-              <Skeleton v-for="i in 2" :key="i" class="h-14 w-full" />
-            </div>
-            <div v-else>
-              <p v-if="members.length === 0" class="text-sm text-muted-foreground">
-                No agents have access to this inbox yet.
-              </p>
-              <div v-else class="space-y-2">
+              <div v-else-if="sendingStatusError" class="text-sm">
+                <p class="text-destructive mb-2">{{ sendingStatusError }}</p>
+                <Button variant="outline" size="sm" @click="loadSendingStatus">Retry</Button>
+              </div>
+              <template v-else-if="sendingStatus">
+                <p v-if="!sendingStatus.address" class="text-sm text-muted-foreground">
+                  Set a From address above to have it checked against your provider.
+                </p>
                 <div
-                  v-for="member in members"
-                  :key="member.id"
-                  class="flex items-center justify-between rounded-lg border p-3"
+                  v-else-if="sendingStatus.authorization.status === 'unauthorized'"
+                  class="flex items-start gap-2 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 p-3 text-sm"
+                  data-testid="support-settings-sending-unauthorized"
                 >
-                  <div class="flex items-center gap-3 min-w-0">
-                    <Avatar class="h-9 w-9 shrink-0">
-                      <AvatarFallback>{{ initials(member.userName || member.userEmail) }}</AvatarFallback>
-                    </Avatar>
-                    <div class="min-w-0">
-                      <p class="font-medium truncate">{{ member.userName || member.userEmail }}</p>
-                      <p class="text-sm text-muted-foreground truncate">{{ member.userEmail }}</p>
+                  <Icon name="lucide:alert-triangle" class="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    "{{ sendingStatus.address }}" is not on a domain your provider is verified to send from. Replies
+                    sent as this address may be rejected. Verify the domain with your provider, or use an address on a
+                    verified domain.
+                  </span>
+                </div>
+                <div
+                  v-else-if="sendingStatus.authorization.status === 'authorized'"
+                  class="flex items-center gap-2 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 p-3 text-sm"
+                  data-testid="support-settings-sending-authorized"
+                >
+                  <Icon name="lucide:check-circle-2" class="w-4 h-4 shrink-0" />
+                  <span>Your provider is verified to send as "{{ sendingStatus.address }}".</span>
+                </div>
+                <div
+                  v-else
+                  class="flex items-start gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground"
+                  data-testid="support-settings-sending-unknown"
+                >
+                  <Icon name="lucide:help-circle" class="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    Cannot verify whether "{{ sendingStatus.address }}" is authorized to send ({{
+                      sendingStatus.authorization.reason
+                    }}). This is not a failure — most deployments have not set a provider account credential yet.
+                  </span>
+                </div>
+              </template>
+
+              <div>
+                <Label for="general-signature">Signature</Label>
+                <Textarea
+                  id="general-signature"
+                  v-model="generalSignature"
+                  rows="5"
+                  class="mt-2"
+                  :disabled="isSavingGeneral || !canManageInbox"
+                  :readonly="!canManageInbox"
+                />
+                <p class="text-sm text-muted-foreground mt-1">Appended to outgoing replies.</p>
+              </div>
+              <div v-if="canManageInbox" class="flex justify-end">
+                <Button
+                  data-testid="support-inbox-settings-save"
+                  :disabled="isSavingGeneral || !generalHasChanges"
+                  @click="saveGeneral"
+                >
+                  <Icon v-if="isSavingGeneral" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                  Save changes
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <!-- Channel (SUP-03-13) -->
+          <Card data-testid="support-settings-channel">
+            <CardHeader>
+              <CardTitle>Channel</CardTitle>
+              <CardDescription>
+                How inbound mail reaches this inbox. The provider and its webhook credentials are set once per
+                deployment as environment variables, not here — so this shows what is configured rather than editing it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <div v-if="isLoadingChannel" class="space-y-2">
+                <Skeleton v-for="i in 3" :key="i" class="h-10 w-full" />
+              </div>
+
+              <div v-else-if="channelError" class="text-sm">
+                <p class="text-destructive mb-2">Could not load channel status</p>
+                <Button variant="outline" size="sm" @click="loadChannelStatus">Retry</Button>
+              </div>
+
+              <template v-else-if="channel">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium"
+                    :class="
+                      channelReady
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                        : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                    "
+                    data-testid="support-settings-channel-state"
+                  >
+                    <Icon
+                      :name="channelReady ? 'lucide:check-circle-2' : 'lucide:alert-triangle'"
+                      class="w-3.5 h-3.5"
+                    />
+                    {{ channelReady ? 'Ready to receive' : 'Not receiving mail' }}
+                  </span>
+                  <span class="text-sm text-muted-foreground"
+                    >Provider: <strong>{{ channel.provider }}</strong></span
+                  >
+                </div>
+
+                <p v-if="!channel.driverAvailable" class="text-sm text-muted-foreground">
+                  <code>SUPPORT_CHANNEL_PROVIDER</code> is set to <code>{{ channel.provider }}</code
+                  >, which is not one of {{ channel.supportedProviders.join(', ') }}. Inbound mail is rejected until it
+                  names a supported provider.
+                </p>
+
+                <div v-else-if="channel.missingEnvVars.length > 0" class="text-sm text-muted-foreground">
+                  <p class="mb-1">
+                    Credentials are missing, so inbound mail is rejected. An unset credential never means “accept
+                    anything”. Set these and restart:
+                  </p>
+                  <ul class="list-disc pl-5 space-y-0.5">
+                    <li v-for="name in channel.missingEnvVars" :key="name">
+                      <code>{{ name }}</code>
+                    </li>
+                  </ul>
+                </div>
+
+                <div class="space-y-1">
+                  <Label>Webhook URL to register with {{ channel.provider }}</Label>
+                  <div class="flex items-center gap-2">
+                    <Input :model-value="webhookUrl" readonly data-testid="support-settings-channel-webhook" />
+                    <Button variant="outline" size="sm" @click="copy(webhookUrl)">Copy</Button>
+                  </div>
+                </div>
+
+                <div v-if="primaryAddress" class="space-y-1">
+                  <Label>Forward mail to</Label>
+                  <div class="flex items-center gap-2">
+                    <Input :model-value="primaryAddress" readonly data-testid="support-settings-channel-forward" />
+                    <Button variant="outline" size="sm" @click="copy(primaryAddress)">Copy</Button>
+                  </div>
+                  <p class="text-xs text-muted-foreground">
+                    Point an MX record or a forwarding rule at this address. Add more addresses below to route different
+                    products into this inbox.
+                  </p>
+                </div>
+                <p v-else class="text-sm text-muted-foreground">
+                  Add a receiving address below before pointing mail at this inbox.
+                </p>
+              </template>
+            </CardContent>
+          </Card>
+
+          <!-- Agents -->
+          <Card>
+            <CardHeader>
+              <CardTitle>Agents</CardTitle>
+              <CardDescription>
+                People who can work this inbox. Inbox access is separate from team membership — a team member does not
+                automatically get access to this inbox.
+              </CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <div v-if="isSwitchingInbox" class="space-y-2">
+                <Skeleton v-for="i in 2" :key="i" class="h-14 w-full" />
+              </div>
+              <div v-else>
+                <p v-if="members.length === 0" class="text-sm text-muted-foreground">
+                  No agents have access to this inbox yet.
+                </p>
+                <div v-else class="space-y-2">
+                  <div
+                    v-for="member in members"
+                    :key="member.id"
+                    data-testid="support-inbox-member-row"
+                    class="flex items-center justify-between rounded-lg border p-3"
+                  >
+                    <div class="flex items-center gap-3 min-w-0">
+                      <Avatar class="h-9 w-9 shrink-0">
+                        <AvatarFallback>{{ initials(member.userName || member.userEmail) }}</AvatarFallback>
+                      </Avatar>
+                      <div class="min-w-0">
+                        <p class="font-medium truncate">{{ member.userName || member.userEmail }}</p>
+                        <p class="text-sm text-muted-foreground truncate">{{ member.userEmail }}</p>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0 ml-4">
+                      <Badge variant="outline">{{ member.role }}</Badge>
+                      <Button
+                        v-if="canManageMembers"
+                        data-testid="support-remove-inbox-member"
+                        :aria-label="
+                          'Remove inbox member ' +
+                          (member.userName || member.userEmail) +
+                          (member.userName && member.userEmail ? ' (' + member.userEmail + ')' : '')
+                        "
+                        variant="ghost"
+                        size="icon"
+                        :disabled="removingMemberId === member.id"
+                        @click="openRemoveMemberDialog(member)"
+                      >
+                        <Icon name="lucide:x" class="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div class="flex items-center gap-2 shrink-0 ml-4">
-                    <Badge variant="outline">{{ member.role }}</Badge>
+                </div>
+              </div>
+
+              <Separator />
+
+              <p v-if="!isSwitchingInbox && availableTeamMembers.length === 0" class="text-sm text-muted-foreground">
+                Every team member already has access to this inbox.
+              </p>
+              <div
+                v-else-if="!isSwitchingInbox && canManageMembers"
+                class="flex flex-col sm:flex-row gap-2 sm:items-end"
+              >
+                <div class="flex-1">
+                  <Label for="new-member-select">Team member</Label>
+                  <select id="new-member-select" v-model="newMemberUserId" :class="selectClasses + ' mt-2'">
+                    <option value="" disabled>Select a team member</option>
+                    <option v-for="tm in availableTeamMembers" :key="tm.id" :value="tm.userId">
+                      {{ tm.userName || tm.userEmail }}
+                    </option>
+                  </select>
+                </div>
+                <div>
+                  <Label for="new-member-role">Role</Label>
+                  <select id="new-member-role" v-model="newMemberRole" :class="selectClasses + ' mt-2'">
+                    <option value="agent">Agent</option>
+                    <option value="supervisor">Supervisor</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <p class="mt-1 text-xs text-muted-foreground">{{ roleDescriptions[newMemberRole] }}</p>
+                </div>
+                <Button
+                  data-testid="support-add-inbox-member"
+                  :disabled="isAddingMember || !newMemberUserId"
+                  @click="addMember"
+                >
+                  <Icon v-if="isAddingMember" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                  Add inbox member
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <!-- Receiving addresses -->
+          <Card>
+            <CardHeader>
+              <CardTitle>Receiving addresses</CardTitle>
+              <CardDescription>
+                An inbound email carries no product signal of its own — the address it arrived at is what attributes it
+                to a product. Setting a new primary address clears the previous one.
+              </CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <div v-if="isSwitchingInbox" class="space-y-2">
+                <Skeleton v-for="i in 2" :key="i" class="h-14 w-full" />
+              </div>
+              <div v-else>
+                <p v-if="addresses.length === 0" class="text-sm text-muted-foreground">
+                  No receiving addresses configured yet.
+                </p>
+                <div v-else class="space-y-2">
+                  <div
+                    v-for="address in addresses"
+                    :key="address.id"
+                    class="flex items-center justify-between rounded-lg border p-3"
+                  >
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-2">
+                        <span class="font-mono text-sm truncate">{{ address.address }}</span>
+                        <Badge v-if="address.isPrimary" variant="outline" class="text-xs">Primary</Badge>
+                      </div>
+                      <p class="text-sm mt-0.5">
+                        <span v-if="productName(address.projectId)">{{ productName(address.projectId) }}</span>
+                        <span v-else class="text-muted-foreground">Unattributed</span>
+                      </p>
+                    </div>
                     <Button
+                      v-if="canManageInbox"
                       variant="ghost"
                       size="icon"
-                      :disabled="removingMemberId === member.id"
-                      @click="openRemoveMemberDialog(member)"
+                      class="shrink-0 ml-4"
+                      :aria-label="`Remove receiving address ${address.address}`"
+                      :disabled="removingAddressId === address.id"
+                      @click="openRemoveAddressDialog(address)"
                     >
                       <Icon name="lucide:x" class="w-4 h-4" />
                     </Button>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <Separator />
+              <Separator />
 
-            <p v-if="!isSwitchingInbox && availableTeamMembers.length === 0" class="text-sm text-muted-foreground">
-              Every team member already has access to this inbox.
-            </p>
-            <div v-else-if="!isSwitchingInbox" class="flex flex-col sm:flex-row gap-2 sm:items-end">
-              <div class="flex-1">
-                <Label for="new-member-select">Team member</Label>
-                <select id="new-member-select" v-model="newMemberUserId" :class="selectClasses + ' mt-2'">
-                  <option value="" disabled>Select a team member</option>
-                  <option v-for="tm in availableTeamMembers" :key="tm.id" :value="tm.userId">
-                    {{ tm.userName || tm.userEmail }}
-                  </option>
-                </select>
-              </div>
-              <div>
-                <Label for="new-member-role">Role</Label>
-                <select id="new-member-role" v-model="newMemberRole" :class="selectClasses + ' mt-2'">
-                  <option value="agent">agent</option>
-                  <option value="supervisor">supervisor</option>
-                  <option value="admin">admin</option>
-                </select>
-              </div>
-              <Button :disabled="isAddingMember || !newMemberUserId" @click="addMember">
-                <Icon v-if="isAddingMember" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-                Add
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <!-- Receiving addresses -->
-        <Card>
-          <CardHeader>
-            <CardTitle>Receiving addresses</CardTitle>
-            <CardDescription>
-              An inbound email carries no product signal of its own — the address it arrived at is what attributes it to
-              a product. Setting a new primary address clears the previous one.
-            </CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <div v-if="isSwitchingInbox" class="space-y-2">
-              <Skeleton v-for="i in 2" :key="i" class="h-14 w-full" />
-            </div>
-            <div v-else>
-              <p v-if="addresses.length === 0" class="text-sm text-muted-foreground">
-                No receiving addresses configured yet.
-              </p>
-              <div v-else class="space-y-2">
-                <div
-                  v-for="address in addresses"
-                  :key="address.id"
-                  class="flex items-center justify-between rounded-lg border p-3"
-                >
-                  <div class="min-w-0">
-                    <div class="flex items-center gap-2">
-                      <span class="font-mono text-sm truncate">{{ address.address }}</span>
-                      <Badge v-if="address.isPrimary" variant="outline" class="text-xs">Primary</Badge>
-                    </div>
-                    <p class="text-sm mt-0.5">
-                      <span v-if="productName(address.projectId)">{{ productName(address.projectId) }}</span>
-                      <span v-else class="text-muted-foreground">Unattributed</span>
-                    </p>
+              <div v-if="!isSwitchingInbox && canManageInbox" class="space-y-3">
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label for="new-address">Email address</Label>
+                    <Input
+                      id="new-address"
+                      v-model="newAddress"
+                      type="email"
+                      placeholder="support@yourdomain.com"
+                      class="mt-2"
+                      :disabled="isAddingAddress"
+                    />
+                  </div>
+                  <div>
+                    <Label for="new-address-project">Product</Label>
+                    <select id="new-address-project" v-model="newAddressProjectId" :class="selectClasses + ' mt-2'">
+                      <option value="">Unattributed</option>
+                      <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <Switch id="new-address-primary" v-model="newAddressIsPrimary" :disabled="isAddingAddress" />
+                    <Label for="new-address-primary">Primary sending address</Label>
                   </div>
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    class="shrink-0 ml-4"
-                    :disabled="removingAddressId === address.id"
-                    @click="openRemoveAddressDialog(address)"
+                    data-testid="support-address-add"
+                    :disabled="isAddingAddress || !newAddress.trim()"
+                    @click="addAddress"
                   >
-                    <Icon name="lucide:x" class="w-4 h-4" />
+                    <Icon v-if="isAddingAddress" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                    Add address
                   </Button>
                 </div>
               </div>
-            </div>
-
-            <Separator />
-
-            <div v-if="!isSwitchingInbox" class="space-y-3">
-              <div class="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <Label for="new-address">Email address</Label>
-                  <Input
-                    id="new-address"
-                    v-model="newAddress"
-                    type="email"
-                    placeholder="support@yourdomain.com"
-                    class="mt-2"
-                    :disabled="isAddingAddress"
-                  />
-                </div>
-                <div>
-                  <Label for="new-address-project">Product</Label>
-                  <select id="new-address-project" v-model="newAddressProjectId" :class="selectClasses + ' mt-2'">
-                    <option value="">Unattributed</option>
-                    <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-                  </select>
-                </div>
-              </div>
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <Switch id="new-address-primary" v-model="newAddressIsPrimary" :disabled="isAddingAddress" />
-                  <Label for="new-address-primary">Primary sending address</Label>
-                </div>
-                <Button :disabled="isAddingAddress || !newAddress.trim()" @click="addAddress">
-                  <Icon v-if="isAddingAddress" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-                  Add address
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </template>
       </template>
 
       <!-- Remove member confirmation -->
       <Dialog :open="isRemoveMemberDialogOpen" @update:open="isRemoveMemberDialogOpen = $event">
-        <DialogContent class="sm:max-w-[420px]">
+        <DialogContent class="sm:max-w-[420px]" data-testid="support-remove-member-dialog">
           <DialogHeader>
             <DialogTitle>Remove agent</DialogTitle>
-            <DialogDescription>
+            <DialogDescription v-if="isSelfRemoval">
+              You are removing your own access. You will lose access to this inbox immediately; a team admin can add you
+              back later.
+            </DialogDescription>
+            <DialogDescription v-else>
               Are you sure you want to remove "{{ memberPendingRemoval?.userName || memberPendingRemoval?.userEmail }}"
               from this inbox? They will lose access to its conversations.
             </DialogDescription>
@@ -451,7 +539,7 @@
                 name="lucide:loader-2"
                 class="w-4 h-4 mr-2 animate-spin"
               />
-              Remove
+              Remove member
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -459,7 +547,7 @@
 
       <!-- Remove address confirmation -->
       <Dialog :open="isRemoveAddressDialogOpen" @update:open="isRemoveAddressDialogOpen = $event">
-        <DialogContent class="sm:max-w-[420px]">
+        <DialogContent class="sm:max-w-[420px]" data-testid="support-remove-address-dialog">
           <DialogHeader>
             <DialogTitle>Remove address</DialogTitle>
             <DialogDescription>
@@ -479,7 +567,7 @@
                 name="lucide:loader-2"
                 class="w-4 h-4 mr-2 animate-spin"
               />
-              Remove
+              Remove address
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -505,10 +593,25 @@ export default {
       addresses: [],
       teamMembers: [],
       projects: [],
+      teamSettings: null,
+      teamSettingsCapabilities: {},
+      autoLinkFeedback: false,
+      currentUserId: '',
+      inboxAccessError: null,
+      requestToken: 0,
+      isRecoveringInbox: false,
+      recoveryOwnerToken: null,
 
       isLoading: true,
       error: null,
       isSwitchingInbox: false,
+      isSavingTeamPolicy: false,
+
+      roleDescriptions: {
+        agent: 'Works conversations and applies existing tags.',
+        supervisor: 'Also manages the shared tag list.',
+        admin: 'Also manages inbox settings and members.',
+      },
 
       // native <select> styling shared across the pickers on this page —
       // there is no shadcn Select component available in this worktree yet.
@@ -566,6 +669,26 @@ export default {
       return this.inboxes.find((inbox) => inbox.id === this.selectedInboxId) || null
     },
 
+    selectedCapabilities() {
+      return this.selectedInbox?.capabilities || {}
+    },
+
+    canManageInbox() {
+      return this.selectedCapabilities.canManageInbox === true
+    },
+
+    canManageMembers() {
+      return this.selectedCapabilities.canManageMembers === true
+    },
+
+    canManageTeamSupport() {
+      return this.teamSettingsCapabilities.canManageTeamSupport === true
+    },
+
+    isSelfRemoval() {
+      return this.memberPendingRemoval?.userId === this.currentUserId
+    },
+
     availableTeamMembers() {
       const memberUserIds = new Set(this.members.map((m) => m.userId))
       return this.teamMembers.filter((tm) => !memberUserIds.has(tm.userId))
@@ -601,7 +724,6 @@ export default {
 
   async mounted() {
     await this.initPage()
-    await this.loadChannelStatus()
     if (import.meta.client) {
       window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
     }
@@ -619,43 +741,163 @@ export default {
     },
 
     async initPage() {
+      const token = ++this.requestToken
+      this.isRecoveringInbox = false
+      this.recoveryOwnerToken = null
       this.isLoading = true
       this.error = null
+      this.inboxAccessError = null
+      this.clearInboxScopedState()
 
       try {
-        const teamResponse = await $fetch('/api/teams/active')
+        const [teamResponse, sessionResponse] = await Promise.all([
+          $fetch('/api/teams/active'),
+          $fetch('/api/auth/session'),
+        ])
         const activeTeamData = teamResponse?.data
+        if (token !== this.requestToken) return
+        this.currentUserId = sessionResponse?.data?.user?.id || ''
 
         if (!activeTeamData?.id) {
-          this.error = 'No active team found'
-          this.isLoading = false
+          if (token === this.requestToken) {
+            this.error = 'No active team found'
+            this.isLoading = false
+          }
           return
         }
 
         this.activeTeamId = activeTeamData.id
 
-        const [inboxesResponse, teamMembersResponse, projectsResponse] = await Promise.all([
+        const [inboxesResponse, teamMembersResponse, projectsResponse, teamSettingsResponse] = await Promise.all([
           $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } }),
           $fetch('/api/teams/members', { params: { teamId: this.activeTeamId } }),
           $fetch(`/api/teams/${this.activeTeamId}/projects`),
+          $fetch(`/api/support/teams/${this.activeTeamId}/settings`),
         ])
+        if (token !== this.requestToken) return
 
         this.inboxes = inboxesResponse?.data?.inboxes || []
         // These two endpoints return the array directly as `data`, not wrapped
         // in a named property like the inbox endpoints above.
         this.teamMembers = teamMembersResponse?.data || []
         this.projects = projectsResponse?.data || []
+        this.teamSettings = teamSettingsResponse?.data?.settings || null
+        this.teamSettingsCapabilities = teamSettingsResponse?.data?.capabilities || {}
+        this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
 
         if (this.inboxes.length > 0) {
-          this.selectedInboxId = this.inboxes[0].id
+          const requestedInboxId = this.$route.query.inboxId
+          const requestedIsAccessible =
+            typeof requestedInboxId === 'string' && this.inboxes.some((inbox) => inbox.id === requestedInboxId)
+          this.selectedInboxId = requestedIsAccessible ? requestedInboxId : this.inboxes[0].id
+          if (requestedInboxId && !requestedIsAccessible) {
+            this.inboxAccessError = 'You do not have access to this support inbox'
+            await this.replaceInboxQuery(this.selectedInboxId)
+          }
           this.syncGeneralForm()
-          await this.loadInboxContext()
+          await this.loadInboxContext({ recovering: Boolean(requestedInboxId && !requestedIsAccessible) })
+        } else if (this.$route.query.inboxId) {
+          this.inboxAccessError = 'You do not have access to this support inbox'
+          await this.replaceInboxQuery(null)
         }
-      } catch {
+      } catch (error) {
+        if (token !== this.requestToken) return
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox()
+          return
+        }
         this.error = 'Something went wrong. Please try again.'
       } finally {
-        this.isLoading = false
+        if (token === this.requestToken) this.isLoading = false
       }
+    },
+
+    clearInboxScopedState() {
+      this.selectedInboxId = ''
+      this.members = []
+      this.addresses = []
+      this.sendingStatus = null
+      this.sendingStatusError = null
+      this.channel = null
+      this.channelError = null
+      this.isSwitchingInbox = false
+      this.isLoadingSendingStatus = false
+      this.isLoadingChannel = false
+    },
+
+    async replaceInboxQuery(inboxId) {
+      if (!import.meta.client) return
+      const query = { ...this.$route.query }
+      if (inboxId) query.inboxId = inboxId
+      else delete query.inboxId
+      await this.$router.replace({ query }).catch(() => {})
+    },
+
+    async recoverFromForbiddenInbox({
+      teamId = this.activeTeamId,
+      sourceToken = this.requestToken,
+      sourceInboxId = this.selectedInboxId,
+    } = {}) {
+      if (this.isRecoveringInbox) return
+      if (!this.isCurrentRequest(sourceToken, teamId, sourceInboxId)) return
+      this.isRecoveringInbox = true
+      this.inboxAccessError = 'You do not have access to this support inbox'
+      this.clearInboxScopedState()
+      const token = ++this.requestToken
+      this.recoveryOwnerToken = token
+      try {
+        if (!this.isCurrentRecovery(token, teamId)) return
+        const response = await $fetch('/api/support/inboxes', { params: { teamId } })
+        if (!this.isCurrentRecovery(token, teamId)) return
+        this.inboxes = response?.data?.inboxes || []
+        try {
+          if (!this.isCurrentRecovery(token, teamId)) return
+          const settingsResponse = await $fetch(`/api/support/teams/${teamId}/settings`)
+          if (this.isCurrentRecovery(token, teamId)) {
+            this.teamSettings = settingsResponse?.data?.settings || null
+            this.teamSettingsCapabilities = settingsResponse?.data?.capabilities || {}
+            this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
+          }
+        } catch {
+          if (this.isCurrentRecovery(token, teamId)) {
+            this.teamSettings = null
+            this.teamSettingsCapabilities = {}
+            this.autoLinkFeedback = false
+          }
+        }
+        if (!this.isCurrentRecovery(token, teamId)) return
+        const fallback = this.inboxes[0]?.id || null
+        if (!this.isCurrentRecovery(token, teamId)) return
+        await this.replaceInboxQuery(fallback)
+        if (!this.isCurrentRecovery(token, teamId)) return
+        if (fallback) {
+          this.selectedInboxId = fallback
+          if (!this.isCurrentRecovery(token, teamId)) return
+          this.syncGeneralForm()
+          const loaded = await this.loadInboxContext({ recovering: true })
+          if (loaded === false && this.isCurrentRecovery(token, teamId)) {
+            this.clearInboxScopedState()
+            if (!this.isCurrentRecovery(token, teamId)) return
+            await this.replaceInboxQuery(null)
+          }
+        }
+      } catch {
+        if (this.isCurrentRecovery(token, teamId)) this.inboxes = []
+      } finally {
+        if (this.recoveryOwnerToken === token && this.isCurrentRequest(token, teamId, null)) {
+          this.isRecoveringInbox = false
+          this.recoveryOwnerToken = null
+          this.isLoading = false
+        }
+      }
+    },
+
+    isCurrentRecovery(token, teamId) {
+      return this.recoveryOwnerToken === token && this.isCurrentRequest(token, teamId, null)
+    },
+
+    isCurrentRequest(token, teamId = this.activeTeamId, inboxId = this.selectedInboxId) {
+      return token === this.requestToken && teamId === this.activeTeamId && (!inboxId || inboxId === this.selectedInboxId)
     },
 
     syncGeneralForm() {
@@ -665,44 +907,118 @@ export default {
       this.generalFromName = this.selectedInbox?.fromName || ''
     },
 
-    async loadInboxContext() {
-      if (!this.selectedInboxId) return
+    async saveTeamPolicy(value) {
+      if (!this.canManageTeamSupport) return
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      this.isSavingTeamPolicy = true
+      try {
+        const response = await $fetch(`/api/support/teams/${teamId}/settings`, {
+          method: 'PUT',
+          body: { autoLinkFeedback: value === true },
+        })
+        if (!this.isCurrentRequest(token, teamId)) return
+        this.teamSettings = response?.data?.settings || this.teamSettings
+        this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
+      } catch (err) {
+        if (!this.isCurrentRequest(token, teamId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: this.selectedInboxId })
+          return
+        }
+        this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
+        toast.error(this.extractErrorMessage(err, 'Failed to save team support policy'))
+      } finally {
+        if (this.isCurrentRequest(token, teamId)) this.isSavingTeamPolicy = false
+      }
+    },
+
+    async loadInboxContext({ recovering = false } = {}) {
+      if (!this.selectedInboxId) return false
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
       this.isSwitchingInbox = true
+      this.members = []
+      this.addresses = []
+      this.sendingStatus = null
+      this.channel = null
 
       try {
         const [membersResponse, addressesResponse] = await Promise.all([
-          $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`),
-          $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`),
+          $fetch(`/api/support/inboxes/${inboxId}/members`),
+          $fetch(`/api/support/inboxes/${inboxId}/addresses`),
         ])
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         this.members = membersResponse?.data?.members || []
         this.addresses = addressesResponse?.data?.addresses || []
-      } catch {
-        toast.error('Failed to load inbox details')
+      } catch (err) {
+        if (this.isForbiddenError(err)) {
+          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!recovering) {
+            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+            return false
+          }
+          if (this.isCurrentRequest(token, teamId, inboxId)) {
+            this.clearInboxScopedState()
+            await this.replaceInboxQuery(null)
+          }
+          return false
+        }
+        if (!recovering) toast.error('Failed to load inbox details')
       } finally {
-        this.isSwitchingInbox = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isSwitchingInbox = false
       }
 
-      await this.loadSendingStatus()
+      if (this.isCurrentRequest(token, teamId, inboxId)) {
+        const statuses = await Promise.all([
+          this.loadSendingStatus({ recovering, token, teamId, inboxId }),
+          this.loadChannelStatus({ recovering, token, teamId, inboxId }),
+        ])
+        if (statuses.some((loaded) => loaded === false) && this.isCurrentRequest(token, teamId, inboxId)) {
+          this.clearInboxScopedState()
+          await this.replaceInboxQuery(null)
+          return false
+        }
+      }
+      return this.isCurrentRequest(token, teamId, inboxId)
     },
 
-    async loadSendingStatus() {
-      if (!this.selectedInboxId) return
+    async loadSendingStatus({ recovering = false, token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
       this.isLoadingSendingStatus = true
       this.sendingStatusError = null
 
       try {
-        const response = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/sending-status`)
-        this.sendingStatus = response?.data || null
+        const response = await $fetch(`/api/support/inboxes/${inboxId}/sending-status`)
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.sendingStatus = response?.data || null
       } catch (err) {
-        this.sendingStatusError = this.extractErrorMessage(err, 'Failed to check sending authorization')
+        if (this.isForbiddenError(err)) {
+          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!recovering) {
+            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+          }
+          return false
+        }
+        if (this.isCurrentRequest(token, teamId, inboxId))
+          this.sendingStatusError = this.extractErrorMessage(err, 'Failed to check sending authorization')
       } finally {
-        this.isLoadingSendingStatus = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isLoadingSendingStatus = false
       }
+      return this.isCurrentRequest(token, teamId, inboxId)
     },
 
     async handleInboxSwitch() {
+      this.requestToken += 1
+      this.isRecoveringInbox = false
+      this.recoveryOwnerToken = null
+      await this.replaceInboxQuery(this.selectedInboxId)
       this.syncGeneralForm()
       await this.loadInboxContext()
+    },
+
+    isForbiddenError(err) {
+      return err?.statusCode === 403 || err?.status === 403 || err?.response?.status === 403
     },
 
     extractErrorMessage(err, fallback) {
@@ -735,24 +1051,28 @@ export default {
       }
 
       this.isCreatingInbox = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
 
       try {
         const response = await $fetch('/api/support/inboxes', {
           method: 'POST',
           body: {
-            teamId: this.activeTeamId,
+            teamId,
             name: this.newInboxName.trim(),
             slug: this.newInboxSlug.trim(),
           },
         })
         const created = response?.data?.inbox
+        if (!this.isCurrentRequest(token, teamId, null)) return
 
         toast.success('Inbox created')
         this.newInboxName = ''
         this.newInboxSlug = ''
         this.slugManuallyEdited = false
 
-        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
+        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId } })
+        if (!this.isCurrentRequest(token, teamId, null)) return
         this.inboxes = inboxesResponse?.data?.inboxes || []
         this.selectedInboxId = created?.id || this.inboxes[0]?.id || ''
 
@@ -761,18 +1081,26 @@ export default {
           await this.loadInboxContext()
         }
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, null)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: null })
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to create inbox'))
       } finally {
-        this.isCreatingInbox = false
+        if (this.isCurrentRequest(token, teamId, null)) this.isCreatingInbox = false
       }
     },
 
     async saveGeneral() {
       if (!this.selectedInbox) return
       this.isSavingGeneral = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}`, {
+        await $fetch(`/api/support/inboxes/${inboxId}`, {
           method: 'PUT',
           body: {
             name: this.generalName.trim(),
@@ -782,21 +1110,36 @@ export default {
           },
         })
 
-        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } })
+        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId } })
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         this.inboxes = inboxesResponse?.data?.inboxes || []
         this.syncGeneralForm()
         toast.success('Inbox settings saved')
-        await this.loadSendingStatus()
+        await this.loadSendingStatus({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ teamId })
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to save inbox settings'))
       } finally {
-        this.isSavingGeneral = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isSavingGeneral = false
       }
     },
 
-    async reloadMembers() {
-      const membersResponse = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`)
-      this.members = membersResponse?.data?.members || []
+    async reloadMembers({ token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
+      try {
+        const membersResponse = await $fetch(`/api/support/inboxes/${inboxId}/members`)
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+        this.members = membersResponse?.data?.members || []
+        return true
+      } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ teamId })
+        throw err
+      }
     },
 
     async addMember() {
@@ -806,21 +1149,30 @@ export default {
       }
 
       this.isAddingMember = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}/members`, {
+        await $fetch(`/api/support/inboxes/${inboxId}/members`, {
           method: 'POST',
           body: { userId: this.newMemberUserId, role: this.newMemberRole },
         })
 
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         toast.success('Agent added')
         this.newMemberUserId = ''
         this.newMemberRole = 'agent'
-        await this.reloadMembers()
+        await this.reloadMembers({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ teamId })
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to add agent'))
       } finally {
-        this.isAddingMember = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isAddingMember = false
       }
     },
 
@@ -833,31 +1185,55 @@ export default {
       if (!this.memberPendingRemoval) return
       const memberId = this.memberPendingRemoval.id
       this.removingMemberId = memberId
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}/members/${memberId}`, { method: 'DELETE' })
+        await $fetch(`/api/support/inboxes/${inboxId}/members/${memberId}`, { method: 'DELETE' })
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         toast.success('Agent removed')
         this.isRemoveMemberDialogOpen = false
         this.memberPendingRemoval = null
-        await this.reloadMembers()
+        await this.reloadMembers({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ teamId })
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to remove agent'))
       } finally {
-        this.removingMemberId = null
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.removingMemberId = null
       }
     },
 
-    async loadChannelStatus() {
+    async loadChannelStatus({ recovering = false, token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+      if (!inboxId) {
+        this.channel = null
+        this.isLoadingChannel = false
+        return false
+      }
+      if (!this.isCurrentRequest(token, teamId, inboxId)) return false
       this.isLoadingChannel = true
       this.channelError = null
       try {
-        const response = await $fetch('/api/support/channel-status')
-        this.channel = response?.data || null
+        const response = await $fetch('/api/support/channel-status', { params: { inboxId } })
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.channel = response?.data || null
       } catch (err) {
-        this.channelError = err?.data?.error?.message || 'Failed to load channel status'
+        if (this.isForbiddenError(err)) {
+          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!recovering) {
+            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+          }
+          return false
+        }
+        if (this.isCurrentRequest(token, teamId, inboxId))
+          this.channelError = err?.data?.error?.message || 'Failed to load channel status'
       } finally {
-        this.isLoadingChannel = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isLoadingChannel = false
       }
+      return this.isCurrentRequest(token, teamId, inboxId)
     },
 
     async copy(value) {
@@ -870,9 +1246,18 @@ export default {
       }
     },
 
-    async reloadAddresses() {
-      const addressesResponse = await $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`)
-      this.addresses = addressesResponse?.data?.addresses || []
+    async reloadAddresses({ token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
+      try {
+        const addressesResponse = await $fetch(`/api/support/inboxes/${inboxId}/addresses`)
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+        this.addresses = addressesResponse?.data?.addresses || []
+        return true
+      } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ teamId })
+        throw err
+      }
     },
 
     async addAddress() {
@@ -882,9 +1267,12 @@ export default {
       }
 
       this.isAddingAddress = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses`, {
+        await $fetch(`/api/support/inboxes/${inboxId}/addresses`, {
           method: 'POST',
           body: {
             address: this.newAddress.trim(),
@@ -893,15 +1281,21 @@ export default {
           },
         })
 
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         toast.success('Address added')
         this.newAddress = ''
         this.newAddressProjectId = ''
         this.newAddressIsPrimary = false
-        await this.reloadAddresses()
+        await this.reloadAddresses({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ teamId })
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to add address'))
       } finally {
-        this.isAddingAddress = false
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isAddingAddress = false
       }
     },
 
@@ -914,17 +1308,26 @@ export default {
       if (!this.addressPendingRemoval) return
       const addressId = this.addressPendingRemoval.id
       this.removingAddressId = addressId
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const inboxId = this.selectedInboxId
 
       try {
-        await $fetch(`/api/support/inboxes/${this.selectedInboxId}/addresses/${addressId}`, { method: 'DELETE' })
+        await $fetch(`/api/support/inboxes/${inboxId}/addresses/${addressId}`, { method: 'DELETE' })
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
         toast.success('Address removed')
         this.isRemoveAddressDialogOpen = false
         this.addressPendingRemoval = null
-        await this.reloadAddresses()
+        await this.reloadAddresses({ token, teamId, inboxId })
       } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ teamId })
+          return
+        }
         toast.error(this.extractErrorMessage(err, 'Failed to remove address'))
       } finally {
-        this.removingAddressId = null
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.removingAddressId = null
       }
     },
 

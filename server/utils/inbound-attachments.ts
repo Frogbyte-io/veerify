@@ -23,10 +23,10 @@ const logger = createLogger('support-inbound-attachments')
  * well below this, so hitting it means something abnormal - a decompression
  * bomb, or a provider that inlined far more than expected.
  */
-export const MAX_MESSAGE_ATTACHMENT_BYTES = 25 * 1024 * 1024
+export const INBOUND_MAX_MESSAGE_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 /** Per-part ceiling, so one oversized part cannot consume the whole budget. */
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+export const INBOUND_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 export interface StoredAttachment {
   id: string
@@ -94,12 +94,12 @@ export async function ingestInboundAttachments(input: {
       continue
     }
 
-    if (size > MAX_ATTACHMENT_BYTES) {
+    if (size > INBOUND_MAX_ATTACHMENT_BYTES) {
       skipped.push({ fileName: attachment.fileName, reason: 'attachment-too-large' })
       continue
     }
 
-    if (usedBytes + size > MAX_MESSAGE_ATTACHMENT_BYTES) {
+    if (usedBytes + size > INBOUND_MAX_MESSAGE_ATTACHMENT_BYTES) {
       skipped.push({ fileName: attachment.fileName, reason: 'message-cap-exceeded' })
       continue
     }

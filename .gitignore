@@ -32,3 +32,8 @@ test-results
 # Sleekplan/CSV import test exports dropped in the repo root by manual importer runs.
 # These contain real customer data (names, email addresses) and must never be committed.
 export-*.csv
+
+# Generated SDD review packages: a full `git diff -U10` of a task range, often
+# megabytes, and reproducible from history at any time with `review-package`.
+# The task reports beside them are hand-written and stay tracked.
+.superpowers/sdd/**/review-*.diff

@@ -1,11 +1,24 @@
 import { randomUUID } from 'node:crypto'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, gte, isNotNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { conversation, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
-import { sendEmail as defaultSendEmail, type EmailAttachment, type SendEmailOptions } from '~/lib/email'
+import {
+  conversation,
+  conversationAttachment,
+  conversationMessage,
+  supportOutboundDelivery,
+} from '~/server/database/schema/support'
+import {
+  sendEmail as defaultSendEmail,
+  type EmailAttachment,
+  type SendEmailOptions,
+  type SendEmailResult,
+} from '~/lib/email'
+import { getConfiguredChannelDriver, getConfiguredChannelProviderName } from '~/server/services/support-channels'
 import { getStorageProvider } from '~/server/utils/storage'
+import { SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-attachments'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { createLogger } from '~/server/utils/logger'
+import { recordSupportMetric } from '~/server/utils/support-observability'
 
 const logger = createLogger('outbound-delivery')
 
@@ -46,10 +59,19 @@ export interface OutboundDeliveryPayload {
 }
 
 /** How long a claim is held before another worker pass may take it over. */
-export const CLAIM_LEASE_SECONDS = 5 * 60
+export const OUTBOUND_DELIVERY_CLAIM_LEASE_SECONDS = 5 * 60
 
 /** Attempts before a delivery stops retrying and becomes terminal. */
 export const MAX_DELIVERY_ATTEMPTS = 5
+
+const MAX_RETRY_DELAY_MS = 15 * 60 * 1000
+
+/** Exponential retry delay with bounded ±20% jitter. */
+export function computeNextAttemptAt(attemptCount: number, now: Date, random: () => number = Math.random): Date {
+  const baseDelay = Math.min(60_000 * 2 ** Math.max(0, attemptCount - 1), MAX_RETRY_DELAY_MS)
+  const jitter = 0.8 + Math.min(1, Math.max(0, random())) * 0.4
+  return new Date(now.getTime() + Math.round(baseDelay * jitter))
+}
 
 /**
  * Insert a pending delivery inside the caller's transaction.
@@ -64,14 +86,27 @@ export async function enqueueOutboundDelivery(
   input: { messageId: string; kind?: string; payload: OutboundDeliveryPayload; idempotencyKey?: string }
 ): Promise<void> {
   const now = new Date()
+  const deliveryId = randomUUID()
   await tx.insert(supportOutboundDelivery).values({
-    id: randomUUID(),
+    id: deliveryId,
     messageId: input.messageId,
     kind: input.kind ?? 'email',
     payload: input.payload,
     idempotencyKey: input.idempotencyKey ?? randomUUID(),
     createdAt: now,
     updatedAt: now,
+  })
+
+  // Emitted inside the caller's transaction, so a rollback leaves a queued
+  // count with no row behind it. Accepted rather than papered over: this
+  // function only ever receives a `tx`, and the alternative is threading a
+  // post-commit hook through every enqueuing endpoint. Treat `queued` as an
+  // upper bound and compare it against `sent` + `failed`, not as an exact
+  // depth - the outbox table itself is the authority on what is pending.
+  recordSupportMetric('support.delivery.queued', {
+    deliveryId,
+    messageId: input.messageId,
+    kind: input.kind ?? 'email',
   })
 }
 
@@ -82,6 +117,104 @@ export interface OutboundClaim {
   payload: OutboundDeliveryPayload
   idempotencyKey: string
   attemptCount: number
+  provider?: string
+  providerAccountKey?: string
+}
+
+export interface DeliveryCorrelationInput {
+  correlationKey: string | null
+  provider: string
+  providerAccountKey: string
+  providerMessageId: string | null
+  recipient: string | null
+}
+
+export interface DeliveryCorrelationCandidate {
+  messageId: string
+  conversationId: string
+  idempotencyKey: string
+  provider: string | null
+  providerAccountKey: string | null
+  providerMessageId: string | null
+  payload: OutboundDeliveryPayload
+}
+
+function payloadRecipients(payload: OutboundDeliveryPayload): string[] {
+  const to = Array.isArray(payload.to) ? payload.to : [payload.to]
+  return [...to, ...(payload.cc ?? [])].map((value) => value.trim().toLowerCase())
+}
+
+/** Select only an identity-exact outbox row; ambiguous provider fallbacks fail closed. */
+export function selectDeliveryCorrelationCandidate(
+  input: DeliveryCorrelationInput,
+  candidates: DeliveryCorrelationCandidate[]
+): DeliveryCorrelationCandidate | null {
+  if (input.correlationKey) {
+    const primary = candidates.filter((candidate) => candidate.idempotencyKey === input.correlationKey)
+    if (primary.length === 1) return primary[0]
+  }
+
+  if (!input.providerMessageId || !input.recipient) return null
+  const recipient = input.recipient.trim().toLowerCase()
+  const fallback = candidates.filter(
+    (candidate) =>
+      candidate.provider === input.provider &&
+      candidate.providerAccountKey === input.providerAccountKey &&
+      candidate.providerMessageId === input.providerMessageId &&
+      payloadRecipients(candidate.payload).includes(recipient)
+  )
+  return fallback.length === 1 ? fallback[0] : null
+}
+
+/** Resolve delivery metadata exclusively through the durable outbound outbox. */
+export async function resolveDeliveryCorrelation(
+  input: DeliveryCorrelationInput
+): Promise<{ id: string; conversationId: string } | null> {
+  const rows: DeliveryCorrelationCandidate[] = []
+
+  if (input.correlationKey) {
+    const primary = await db
+      .select({
+        messageId: supportOutboundDelivery.messageId,
+        conversationId: conversationMessage.conversationId,
+        idempotencyKey: supportOutboundDelivery.idempotencyKey,
+        provider: supportOutboundDelivery.provider,
+        providerAccountKey: supportOutboundDelivery.providerAccountKey,
+        providerMessageId: supportOutboundDelivery.providerMessageId,
+        payload: supportOutboundDelivery.payload,
+      })
+      .from(supportOutboundDelivery)
+      .innerJoin(conversationMessage, eq(conversationMessage.id, supportOutboundDelivery.messageId))
+      .where(eq(supportOutboundDelivery.idempotencyKey, input.correlationKey))
+      .limit(1)
+    rows.push(...(primary as DeliveryCorrelationCandidate[]))
+  }
+
+  if (rows.length === 0 && input.providerMessageId && input.recipient) {
+    const fallback = await db
+      .select({
+        messageId: supportOutboundDelivery.messageId,
+        conversationId: conversationMessage.conversationId,
+        idempotencyKey: supportOutboundDelivery.idempotencyKey,
+        provider: supportOutboundDelivery.provider,
+        providerAccountKey: supportOutboundDelivery.providerAccountKey,
+        providerMessageId: supportOutboundDelivery.providerMessageId,
+        payload: supportOutboundDelivery.payload,
+      })
+      .from(supportOutboundDelivery)
+      .innerJoin(conversationMessage, eq(conversationMessage.id, supportOutboundDelivery.messageId))
+      .where(
+        and(
+          eq(supportOutboundDelivery.provider, input.provider),
+          eq(supportOutboundDelivery.providerAccountKey, input.providerAccountKey),
+          eq(supportOutboundDelivery.providerMessageId, input.providerMessageId)
+        )
+      )
+    rows.push(...(fallback as DeliveryCorrelationCandidate[]))
+  }
+
+  const match = selectDeliveryCorrelationCandidate(input, rows)
+  return match ? { id: match.messageId, conversationId: match.conversationId } : null
 }
 
 /**
@@ -93,9 +226,12 @@ export interface OutboundClaim {
  * locked row is invisible to a concurrent claim rather than making it wait
  * and then reclaim nothing, which a plain `WHERE` would do.
  */
-export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null> {
-  const now = new Date()
-  const leaseExpiresAt = new Date(now.getTime() + CLAIM_LEASE_SECONDS * 1000)
+export async function claimNextOutboundDelivery(options: { now?: Date } = {}): Promise<OutboundClaim | null> {
+  const now = options.now ?? new Date()
+  const leaseExpiresAt = new Date(now.getTime() + OUTBOUND_DELIVERY_CLAIM_LEASE_SECONDS * 1000)
+  const driver = getConfiguredChannelDriver()
+  const provider = driver?.name ?? getConfiguredChannelProviderName()
+  const providerAccountKey = driver?.accountKey ?? ''
 
   const result = await db.execute<{
     id: string
@@ -104,19 +240,26 @@ export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null>
     payload: OutboundDeliveryPayload
     idempotency_key: string
     attempt_count: number
+    provider: string
+    provider_account_key: string
   }>(sql`
     UPDATE support_outbound_delivery
-    SET attempt_count = attempt_count + 1, lease_expires_at = ${leaseExpiresAt}, updated_at = ${now}
+    SET attempt_count = attempt_count + 1,
+        lease_expires_at = ${leaseExpiresAt},
+        provider = COALESCE(provider, ${provider}),
+        provider_account_key = COALESCE(provider_account_key, ${providerAccountKey}),
+        updated_at = ${now}
     WHERE id = (
       SELECT id FROM support_outbound_delivery
       WHERE status = 'pending'
         AND attempt_count < ${MAX_DELIVERY_ATTEMPTS}
         AND (lease_expires_at IS NULL OR lease_expires_at < ${now})
+        AND (next_attempt_at IS NULL OR next_attempt_at <= ${now})
       ORDER BY created_at ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
-    RETURNING id, message_id, kind, payload, idempotency_key, attempt_count
+    RETURNING id, message_id, kind, payload, idempotency_key, attempt_count, provider, provider_account_key
   `)
 
   const row = result.rows[0]
@@ -129,6 +272,8 @@ export async function claimNextOutboundDelivery(): Promise<OutboundClaim | null>
     payload: row.payload,
     idempotencyKey: row.idempotency_key,
     attemptCount: row.attempt_count,
+    provider: row.provider,
+    providerAccountKey: row.provider_account_key,
   }
 }
 
@@ -148,13 +293,34 @@ async function applyDeliveryOutcome(input: {
   messageId: string
   deliveryPatch: Partial<typeof supportOutboundDelivery.$inferInsert>
   messagePatch: Partial<typeof conversationMessage.$inferInsert>
-}): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx
+  attemptCount?: number
+  requiredStatus?: string
+}): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const where =
+      input.attemptCount !== undefined
+        ? and(
+            eq(supportOutboundDelivery.id, input.deliveryId),
+            eq(supportOutboundDelivery.messageId, input.messageId),
+            eq(supportOutboundDelivery.status, 'pending'),
+            eq(supportOutboundDelivery.attemptCount, input.attemptCount),
+            isNotNull(supportOutboundDelivery.leaseExpiresAt)
+          )
+        : input.requiredStatus
+          ? and(
+              eq(supportOutboundDelivery.id, input.deliveryId),
+              eq(supportOutboundDelivery.messageId, input.messageId),
+              eq(supportOutboundDelivery.status, input.requiredStatus)
+            )
+          : eq(supportOutboundDelivery.id, input.deliveryId)
+    const [updated] = await tx
       .update(supportOutboundDelivery)
       .set(input.deliveryPatch)
-      .where(eq(supportOutboundDelivery.id, input.deliveryId))
+      .where(where)
+      .returning({ id: supportOutboundDelivery.id })
+    if (!updated) return false
     await tx.update(conversationMessage).set(input.messagePatch).where(eq(conversationMessage.id, input.messageId))
+    return true
   })
 }
 
@@ -199,14 +365,46 @@ export async function publishDeliveryStatusChanged(messageId: string): Promise<v
 }
 
 /** Mark a delivery sent. Terminal - never claimed again. */
-export async function completeOutboundDelivery(id: string, messageId: string): Promise<void> {
-  await applyDeliveryOutcome({
+export async function completeOutboundDelivery(
+  id: string,
+  messageId: string,
+  attemptCount: number,
+  diagnostics?: { provider: string; providerAccountKey: string; providerMessageId?: string }
+): Promise<boolean> {
+  const completed = await applyDeliveryOutcome({
     deliveryId: id,
     messageId,
-    deliveryPatch: { status: 'sent', leaseExpiresAt: null, lastError: null, updatedAt: new Date() },
+    attemptCount,
+    deliveryPatch: {
+      status: 'sent',
+      leaseExpiresAt: null,
+      nextAttemptAt: null,
+      lastError: null,
+      ...(diagnostics
+        ? {
+            provider: diagnostics.provider,
+            providerAccountKey: diagnostics.providerAccountKey,
+            providerMessageId: diagnostics.providerMessageId ?? null,
+          }
+        : {}),
+      updatedAt: new Date(),
+    },
     messagePatch: { deliveryStatus: 'sent', deliveryError: null },
   })
-  await publishDeliveryStatusChanged(messageId)
+  if (completed) {
+    // Guarded on `completed`: a worker that lost its lease to a newer attempt
+    // must not count a send the newer attempt owns.
+    recordSupportMetric('support.delivery.sent', {
+      deliveryId: id,
+      messageId,
+      attemptCount,
+      provider: diagnostics?.provider,
+      providerAccountKey: diagnostics?.providerAccountKey,
+      providerMessageId: diagnostics?.providerMessageId,
+    })
+    await publishDeliveryStatusChanged(messageId)
+  }
+  return completed
 }
 
 /**
@@ -227,24 +425,44 @@ export async function failOutboundDelivery(
   id: string,
   messageId: string,
   error: unknown,
-  attemptCount: number
-): Promise<void> {
+  attemptCount: number,
+  deps: { now?: Date; random?: () => number } = {}
+): Promise<boolean> {
   const terminal = attemptCount >= MAX_DELIVERY_ATTEMPTS
   const sanitized = sanitizeDeliveryError(error)
+  const now = deps.now ?? new Date()
 
-  await applyDeliveryOutcome({
+  const failed = await applyDeliveryOutcome({
     deliveryId: id,
     messageId,
+    attemptCount,
     deliveryPatch: {
       status: terminal ? 'failed' : 'pending',
       leaseExpiresAt: null,
+      nextAttemptAt: terminal ? null : computeNextAttemptAt(attemptCount, now, deps.random),
       lastError: sanitized,
-      updatedAt: new Date(),
+      updatedAt: now,
     },
     messagePatch: { deliveryStatus: terminal ? 'failed' : 'pending', deliveryError: sanitized },
   })
 
-  if (terminal) await publishDeliveryStatusChanged(messageId)
+  if (failed) {
+    // Counted on every owned failure, not only terminal ones, so the retry
+    // curve is visible. `terminal` separates "will retry" from "gave up";
+    // `reason` is the same sanitized short string stored on the row, never
+    // the raw provider error.
+    recordSupportMetric('support.delivery.failed', {
+      deliveryId: id,
+      messageId,
+      attemptCount,
+      terminal,
+      // A category, never the provider text: `sanitized` can embed the recipient
+      // address, and it is already stored on the delivery row as `lastError`.
+      reason: 'send-failed',
+    })
+  }
+  if (failed && terminal) await publishDeliveryStatusChanged(messageId)
+  return failed
 }
 
 /**
@@ -256,14 +474,23 @@ export async function failOutboundDelivery(
  * attempts" - resetting `attemptCount` rather than just clearing the lease is
  * what distinguishes it from `failOutboundDelivery`'s own below-the-cap path.
  */
-export async function resetOutboundDeliveryForRetry(id: string, messageId: string): Promise<void> {
-  await applyDeliveryOutcome({
+export async function resetOutboundDeliveryForRetry(id: string, messageId: string): Promise<boolean> {
+  const reset = await applyDeliveryOutcome({
     deliveryId: id,
     messageId,
-    deliveryPatch: { status: 'pending', attemptCount: 0, leaseExpiresAt: null, lastError: null, updatedAt: new Date() },
+    requiredStatus: 'failed',
+    deliveryPatch: {
+      status: 'pending',
+      attemptCount: 0,
+      leaseExpiresAt: null,
+      nextAttemptAt: new Date(),
+      lastError: null,
+      updatedAt: new Date(),
+    },
     messagePatch: { deliveryStatus: 'pending', deliveryError: null },
   })
-  await publishDeliveryStatusChanged(messageId)
+  if (reset) await publishDeliveryStatusChanged(messageId)
+  return reset
 }
 
 /** Maximum stored error length. Enough to diagnose, short of storing a payload. */
@@ -281,7 +508,7 @@ export function sanitizeDeliveryError(error: unknown): string {
   return raw.replace(/\s+/g, ' ').trim().slice(0, MAX_ERROR_LENGTH)
 }
 
-export type SendEmailFn = (options: SendEmailOptions) => Promise<{ success: boolean; message: string; error?: unknown }>
+export type SendEmailFn = (options: SendEmailOptions) => Promise<SendEmailResult>
 export type GetObjectFn = (storageKey: string) => Promise<Buffer>
 
 export interface ProcessOutboundDeliveryDeps {
@@ -289,8 +516,15 @@ export interface ProcessOutboundDeliveryDeps {
   sendEmail?: SendEmailFn
   /** Defaults to the real storage provider - injectable so tests never touch disk/S3. */
   getObject?: GetObjectFn
+  /** Defaults to canonical attachment rows for the claimed message. */
+  getAttachmentSizes?: (messageId: string) => Promise<Array<{ storageKey: string; sizeBytes: number | null }>>
   /** Defaults to `completeOutboundDelivery` - injectable so unit tests never touch the db. */
-  onSent?: (id: string, messageId: string) => Promise<void>
+  onSent?: (
+    id: string,
+    messageId: string,
+    attemptCount: number,
+    diagnostics: { provider: string; providerAccountKey: string; providerMessageId?: string }
+  ) => Promise<void>
   /** Defaults to `failOutboundDelivery` - injectable so unit tests never touch the db. */
   onFailed?: (id: string, messageId: string, error: unknown, attemptCount: number) => Promise<void>
 }
@@ -316,20 +550,53 @@ export async function processOutboundDelivery(
   // a real mismatch.
   const send = deps.sendEmail ?? (defaultSendEmail as SendEmailFn)
   const getObject = deps.getObject ?? ((key: string) => getStorageProvider().getObject(key))
+  const getAttachmentSizes =
+    deps.getAttachmentSizes ??
+    (async (messageId: string) =>
+      db
+        .select({ storageKey: conversationAttachment.storageKey, sizeBytes: conversationAttachment.sizeBytes })
+        .from(conversationAttachment)
+        .where(eq(conversationAttachment.messageId, messageId)))
   const onSent = deps.onSent ?? completeOutboundDelivery
   const onFailed = deps.onFailed ?? failOutboundDelivery
+  const driver = getConfiguredChannelDriver()
 
   try {
-    const attachments: EmailAttachment[] | undefined = claim.payload.attachments
-      ? await Promise.all(
-          claim.payload.attachments.map(async (attachment) => ({
-            filename: attachment.filename,
-            contentType: attachment.contentType,
-            cid: attachment.cid,
-            content: await getObject(attachment.storageKey),
-          }))
-        )
-      : undefined
+    let attachments: EmailAttachment[] | undefined
+    if (claim.payload.attachments) {
+      const canonical = await getAttachmentSizes(claim.messageId)
+      const canonicalByKey = new Map(canonical.map((attachment) => [attachment.storageKey, attachment]))
+      const payloadKeys = claim.payload.attachments.map((attachment) => attachment.storageKey)
+      const canonicalKeys = canonical.map((attachment) => attachment.storageKey)
+      const hasDuplicate = (keys: string[]) => new Set(keys).size !== keys.length
+      if (hasDuplicate(payloadKeys) || hasDuplicate(canonicalKeys)) {
+        throw new Error('Outbound attachment references are invalid')
+      }
+      let totalBytes = 0
+      for (const attachment of claim.payload.attachments) {
+        const row = canonicalByKey.get(attachment.storageKey)
+        if (!row || typeof row.sizeBytes !== 'number' || !Number.isSafeInteger(row.sizeBytes) || row.sizeBytes <= 0) {
+          throw new Error('Outbound attachment metadata is invalid')
+        }
+        const sizeBytes = row.sizeBytes
+        totalBytes += sizeBytes
+      }
+      if (canonical.length !== claim.payload.attachments.length) {
+        throw new Error('Outbound attachment references are invalid')
+      }
+      if (totalBytes > SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES) {
+        throw new Error('Outbound attachments exceed the 25 MB per-message limit')
+      }
+      // The canonical size check completes before the first storage read.
+      attachments = await Promise.all(
+        claim.payload.attachments.map(async (attachment) => ({
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          cid: attachment.cid,
+          content: await getObject(attachment.storageKey),
+        }))
+      )
+    }
 
     const result = await send({
       to: claim.payload.to,
@@ -343,17 +610,25 @@ export async function processOutboundDelivery(
       // key as a stable, traceable header alongside the already-stable
       // Message-ID so provider webhooks and support investigations can
       // correlate every retry to one queued delivery.
-      headers: { ...claim.payload.headers, 'X-Veerify-Idempotency-Key': claim.idempotencyKey },
+      headers: {
+        ...claim.payload.headers,
+        'X-Veerify-Idempotency-Key': claim.idempotencyKey,
+        ...(driver?.buildDeliveryCorrelationHeaders(claim.idempotencyKey) ?? {}),
+      },
       attachments,
     })
 
-    if (result.success) {
-      await onSent(claim.id, claim.messageId)
+    if (result.accepted) {
+      await onSent(claim.id, claim.messageId, claim.attemptCount, {
+        provider: claim.provider ?? driver?.name ?? getConfiguredChannelProviderName(),
+        providerAccountKey: claim.providerAccountKey ?? driver?.accountKey ?? '',
+        providerMessageId: result.providerMessageId,
+      })
       return { outcome: 'sent' }
     }
 
-    await onFailed(claim.id, claim.messageId, result.error ?? result.message, claim.attemptCount)
-    return { outcome: 'failed', error: sanitizeDeliveryError(result.error ?? result.message) }
+    await onFailed(claim.id, claim.messageId, result.response, claim.attemptCount)
+    return { outcome: 'failed', error: sanitizeDeliveryError(result.response) }
   } catch (error) {
     await onFailed(claim.id, claim.messageId, error, claim.attemptCount)
     return { outcome: 'failed', error: sanitizeDeliveryError(error) }
@@ -363,6 +638,60 @@ export async function processOutboundDelivery(
 /** One worker pass may claim and send at most this many deliveries. */
 export const DEFAULT_WORKER_MAX_BATCH = 10
 
+/**
+ * Recover deliveries abandoned on their final attempt.
+ *
+ * `claimNextOutboundDelivery` increments `attempt_count` as it claims, so a
+ * worker killed mid-send on the last attempt leaves the row `pending` at the
+ * cap. The claim predicate requires `attempt_count < MAX_DELIVERY_ATTEMPTS`, so
+ * nothing reclaims it; the message shows as forever-sending in the agent UI, and
+ * the manual retry endpoint refuses it because that requires `failed`. Without
+ * this sweep the row is recoverable only by hand-written SQL.
+ *
+ * Marking it terminal `failed` is the honest outcome: the send may or may not
+ * have reached the provider, which is exactly what `failed` plus the retry
+ * endpoint's duplicate-risk confirmation already communicates.
+ */
+export async function reapAbandonedOutboundDeliveries(options: { now?: Date } = {}): Promise<number> {
+  const now = options.now ?? new Date()
+
+  const abandoned = await db
+    .update(supportOutboundDelivery)
+    .set({
+      status: 'failed',
+      leaseExpiresAt: null,
+      nextAttemptAt: null,
+      lastError: 'DELIVERY_ABANDONED',
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(supportOutboundDelivery.status, 'pending'),
+        gte(supportOutboundDelivery.attemptCount, MAX_DELIVERY_ATTEMPTS),
+        isNotNull(supportOutboundDelivery.leaseExpiresAt),
+        lt(supportOutboundDelivery.leaseExpiresAt, now)
+      )
+    )
+    .returning({ id: supportOutboundDelivery.id, messageId: supportOutboundDelivery.messageId })
+
+  for (const row of abandoned) {
+    await db
+      .update(conversationMessage)
+      .set({ deliveryStatus: 'failed', deliveryError: 'DELIVERY_ABANDONED' })
+      .where(and(eq(conversationMessage.id, row.messageId), eq(conversationMessage.deliveryStatus, 'pending')))
+    recordSupportMetric('support.delivery.failed', {
+      deliveryId: row.id,
+      messageId: row.messageId,
+      attemptCount: MAX_DELIVERY_ATTEMPTS,
+      terminal: true,
+      reason: 'abandoned',
+    })
+    await publishDeliveryStatusChanged(row.messageId)
+  }
+
+  return abandoned.length
+}
+
 export interface RunOutboundDeliveryWorkerDeps {
   /** Defaults to `claimNextOutboundDelivery` - injectable so unit tests never touch the db. */
   claimNext?: () => Promise<OutboundClaim | null>
@@ -370,6 +699,8 @@ export interface RunOutboundDeliveryWorkerDeps {
   process?: (claim: OutboundClaim) => ReturnType<typeof processOutboundDelivery>
   /** Upper bound on deliveries claimed in one pass, so a runaway queue cannot make one invocation run forever. */
   maxBatch?: number
+  /** Defaults to `reapAbandonedOutboundDeliveries` - injectable so unit tests never touch the db. */
+  reap?: () => Promise<number>
 }
 
 /**
@@ -386,7 +717,12 @@ export async function runOutboundDeliveryWorker(
 ): Promise<{ processed: number }> {
   const claimNext = deps.claimNext ?? claimNextOutboundDelivery
   const process = deps.process ?? processOutboundDelivery
+  const reap = deps.reap ?? reapAbandonedOutboundDeliveries
   const maxBatch = deps.maxBatch ?? DEFAULT_WORKER_MAX_BATCH
+
+  // Before claiming: anything abandoned on its final attempt is invisible to the
+  // claim predicate, so it must be settled here or never.
+  await reap()
 
   let processed = 0
   for (let i = 0; i < maxBatch; i++) {

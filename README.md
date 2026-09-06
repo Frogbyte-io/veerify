@@ -131,7 +131,13 @@ yarn db:studio
 yarn build
 ```
 
-The build automatically runs migrations and seeds test data via the `postbuild` script. Seed is skipped on production (`VERCEL_ENV=production`).
+`yarn build` compiles only; it never connects to or mutates a database. Run deployment migrations explicitly before starting a new release:
+
+```bash
+yarn db:migrate:deploy
+```
+
+Preview/test data is always an explicit operation (`yarn db:seed` or `yarn db:seed:e2e`) and must never be part of a build or package-install hook. Vercel's `vercel-build` command runs deployment migration first and compilation second, without seeding.
 
 #### Configure the PostgreSQL database
 

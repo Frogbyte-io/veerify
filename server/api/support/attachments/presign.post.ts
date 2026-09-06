@@ -5,13 +5,9 @@
  *     tags: [Support]
  *     summary: Get an upload target for an agent attachment before sending a reply
  *     description: >
- *       Enforces the per-file type allowlist and size cap
- *       (`server/utils/support-attachments.ts`); the per-message total cap is
- *       enforced where the full attachment list for a message is known, which
- *       is not here. Returns a storage key the client includes when it later
- *       posts the reply - nothing is written to `conversationAttachment` at
- *       this point, since that table's `messageId` is not nullable and no
- *       message exists yet.
+ *       Enforces the per-file type allowlist and size cap. Creates a
+ *       server-owned pending upload session; clients receive only an opaque
+ *       upload id and an upload target, never a storage key.
  *     operationId: presignSupportAttachmentUpload
  *     responses:
  *       200: { description: Upload target }
@@ -25,10 +21,12 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { getStorageProvider } from '~/server/utils/storage'
+import { db } from '~/server/database/drizzle'
+import { supportAttachmentUpload } from '~/server/database/schema/support'
 import {
   ATTACHMENT_UPLOAD_EXPIRES_SECONDS,
-  buildOutboundAttachmentStorageKey,
-  createAttachmentUploadToken,
+  createSupportUploadTempKey,
+  signSupportUploadToken,
   newAttachmentId,
   validateAttachmentUploadInput,
 } from '~/server/utils/support-attachments'
@@ -49,49 +47,50 @@ export default defineEventHandler(async (event) => {
   const normalizedContentType = body.contentType.trim().toLowerCase()
   validateAttachmentUploadInput(normalizedContentType, body.sizeBytes)
 
-  const attachmentId = newAttachmentId()
-  const storageKey = buildOutboundAttachmentStorageKey(body.conversationId, attachmentId, body.filename)
+  const uploadId = newAttachmentId()
+  const expiresAtDate = new Date(Date.now() + ATTACHMENT_UPLOAD_EXPIRES_SECONDS * 1000)
+  const tempStorageKey = createSupportUploadTempKey(uploadId, body.filename)
+  await db.insert(supportAttachmentUpload).values({
+    id: uploadId,
+    conversationId: body.conversationId,
+    userId: session.user.id,
+    tempStorageKey,
+    finalStorageKey: null,
+    fileName: body.filename,
+    requestedContentType: normalizedContentType,
+    requestedSizeBytes: body.sizeBytes,
+    status: 'pending',
+    expiresAt: expiresAtDate,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })
 
   const storage = getStorageProvider()
 
   let uploadTarget: { uploadUrl: string; method: 'PUT'; headers: Record<string, string> }
-  let expiresAt: string
+  const expiresAt = expiresAtDate.toISOString()
 
-  if (storage.driver === 's3') {
+  if (storage.directUploadConstraints === 'content-length-enforced') {
     const presigned = await storage.getPresignedUploadTarget(
-      storageKey,
+      tempStorageKey,
       normalizedContentType,
-      ATTACHMENT_UPLOAD_EXPIRES_SECONDS
+      ATTACHMENT_UPLOAD_EXPIRES_SECONDS,
+      { expectedSizeBytes: body.sizeBytes }
     )
     uploadTarget = presigned
-    expiresAt = new Date(Date.now() + ATTACHMENT_UPLOAD_EXPIRES_SECONDS * 1000).toISOString()
   } else {
-    // The local driver's generic `getPresignedUploadTarget` points at
-    // `/api/uploads/temp/[token]`, which verifies a project-asset-shaped
-    // token (`upload-token.ts`). This token has a different shape, so it is
-    // routed at our own finalize endpoint instead rather than reusing that
-    // URL-building helper.
-    const { token, expiresAt: tokenExpiresAt } = createAttachmentUploadToken({
-      conversationId: body.conversationId,
-      userId: session.user.id,
-      storageKey,
-      contentType: normalizedContentType,
-      sizeBytes: body.sizeBytes,
-    })
+    const token = signSupportUploadToken({ uploadId, expiresAt: expiresAtDate })
     uploadTarget = {
       uploadUrl: `/api/support/attachments/upload/${encodeURIComponent(token)}`,
       method: 'PUT',
       headers: { 'content-type': normalizedContentType },
     }
-    expiresAt = tokenExpiresAt
   }
 
   return createSuccessResponse({
-    attachmentId,
-    storageKey,
+    uploadId,
     fileName: body.filename,
     contentType: normalizedContentType,
-    sizeBytes: body.sizeBytes,
     uploadUrl: uploadTarget.uploadUrl,
     method: uploadTarget.method,
     headers: uploadTarget.headers,

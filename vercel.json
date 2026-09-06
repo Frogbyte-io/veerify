@@ -9,6 +9,10 @@
     {
       "path": "/api/cron/support-outbound-delivery",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/support-attachment-cleanup",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

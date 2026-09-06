@@ -184,6 +184,23 @@ describe('buildMailPayload - RFC-5322 threading headers', () => {
     expect(payload.headers).toEqual({ 'Auto-Submitted': 'auto-replied' })
     expect(payload.messageId).toBe('<a@b>')
   })
+
+  it('preserves provider correlation metadata as transport headers', () => {
+    const payload = buildMailPayload({
+      to: 'ada@example.com',
+      subject: 'Hi',
+      text: 'Hello',
+      headers: {
+        'X-PM-KeepID': 'true',
+        'X-PM-Metadata-veerify-delivery-id': 'delivery-1',
+      },
+    })
+
+    expect(payload.headers).toEqual({
+      'X-PM-KeepID': 'true',
+      'X-PM-Metadata-veerify-delivery-id': 'delivery-1',
+    })
+  })
 })
 
 describe('buildMailPayload - attachments', () => {

@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  computeNextAttemptAt,
   processOutboundDelivery,
   runOutboundDeliveryWorker,
   sanitizeDeliveryError,
@@ -27,6 +28,21 @@ describe('sanitizeDeliveryError', () => {
   })
 })
 
+describe('computeNextAttemptAt', () => {
+  const now = new Date('2026-08-20T10:00:00Z')
+
+  it('uses exponential delays with deterministic midpoint jitter', () => {
+    expect(computeNextAttemptAt(1, now, () => 0.5)).toEqual(new Date('2026-08-20T10:01:00Z'))
+    expect(computeNextAttemptAt(2, now, () => 0.5)).toEqual(new Date('2026-08-20T10:02:00Z'))
+    expect(computeNextAttemptAt(5, now, () => 0.5)).toEqual(new Date('2026-08-20T10:15:00Z'))
+  })
+
+  it('keeps jitter inside 80 to 120 percent', () => {
+    expect(computeNextAttemptAt(1, now, () => 0)).toEqual(new Date('2026-08-20T10:00:48Z'))
+    expect(computeNextAttemptAt(1, now, () => 1)).toEqual(new Date('2026-08-20T10:01:12Z'))
+  })
+})
+
 describe('processOutboundDelivery', () => {
   function claim(overrides: Partial<OutboundClaim> = {}): OutboundClaim {
     return {
@@ -36,12 +52,14 @@ describe('processOutboundDelivery', () => {
       payload: { to: 'customer@example.com', subject: 'Re: Invoice' },
       idempotencyKey: 'idem-1',
       attemptCount: 1,
+      provider: 'postmark',
+      providerAccountKey: 'server-main',
       ...overrides,
     }
   }
 
   it('sends and reports success without touching storage when there are no attachments', async () => {
-    const sendEmail = vi.fn().mockResolvedValue({ success: true, message: 'sent', messageId: 'abc@domain' })
+    const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'sent', providerMessageId: 'provider-1' })
     const getObject = vi.fn()
     const onSent = vi.fn().mockResolvedValue(undefined)
     const onFailed = vi.fn().mockResolvedValue(undefined)
@@ -50,19 +68,27 @@ describe('processOutboundDelivery', () => {
 
     expect(result).toEqual({ outcome: 'sent' })
     expect(getObject).not.toHaveBeenCalled()
-    expect(onSent).toHaveBeenCalledWith('delivery-1', 'msg-1')
+    expect(onSent).toHaveBeenCalledWith('delivery-1', 'msg-1', 1, {
+      provider: 'postmark',
+      providerAccountKey: 'server-main',
+      providerMessageId: 'provider-1',
+    })
     expect(onFailed).not.toHaveBeenCalled()
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'customer@example.com',
         subject: 'Re: Invoice',
-        headers: { 'X-Veerify-Idempotency-Key': 'idem-1' },
+        headers: {
+          'X-Veerify-Idempotency-Key': 'idem-1',
+          'X-PM-KeepID': 'true',
+          'X-PM-Metadata-veerify-delivery-id': 'idem-1',
+        },
       })
     )
   })
 
   it('resolves each attachment storage key to bytes before sending', async () => {
-    const sendEmail = vi.fn().mockResolvedValue({ success: true, message: 'sent' })
+    const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'sent' })
     const getObject = vi.fn().mockResolvedValue(Buffer.from('file-bytes'))
     const onSent = vi.fn().mockResolvedValue(undefined)
 
@@ -74,7 +100,13 @@ describe('processOutboundDelivery', () => {
       },
     })
 
-    await processOutboundDelivery(withAttachment, { sendEmail, getObject, onSent, onFailed: vi.fn() })
+    await processOutboundDelivery(withAttachment, {
+      sendEmail,
+      getObject,
+      getAttachmentSizes: async () => [{ storageKey: 'support/abc.pdf', sizeBytes: 10 }],
+      onSent,
+      onFailed: vi.fn(),
+    })
 
     expect(getObject).toHaveBeenCalledWith('support/abc.pdf')
     expect(sendEmail).toHaveBeenCalledWith(
@@ -90,8 +122,54 @@ describe('processOutboundDelivery', () => {
     )
   })
 
+  it('rejects an oversized canonical payload before reading the first object', async () => {
+    const getObject = vi.fn().mockResolvedValue(Buffer.from('should not be read'))
+    const onFailed = vi.fn().mockResolvedValue(undefined)
+    const result = await processOutboundDelivery(
+      claim({
+        payload: {
+          to: 'customer@example.com',
+          subject: 'Too large',
+          attachments: [{ filename: 'large.bin', storageKey: 'support/large.bin' }],
+        },
+      }),
+      {
+        getObject,
+        getAttachmentSizes: async () => [{ storageKey: 'support/large.bin', sizeBytes: 25 * 1024 * 1024 + 1 }],
+        onFailed,
+      }
+    )
+    expect(result).toEqual({ outcome: 'failed', error: 'Outbound attachments exceed the 25 MB per-message limit' })
+    expect(getObject).not.toHaveBeenCalled()
+    expect(onFailed).toHaveBeenCalled()
+  })
+
+  it('rejects duplicate or non-canonical references before reading storage', async () => {
+    const getObject = vi.fn().mockResolvedValue(Buffer.from('should not be read'))
+    const onFailed = vi.fn().mockResolvedValue(undefined)
+    const result = await processOutboundDelivery(
+      claim({
+        payload: {
+          to: 'customer@example.com',
+          subject: 'Invalid',
+          attachments: [
+            { filename: 'a.txt', storageKey: 'support/a.txt' },
+            { filename: 'a-again.txt', storageKey: 'support/a.txt' },
+          ],
+        },
+      }),
+      {
+        getObject,
+        getAttachmentSizes: async () => [{ storageKey: 'support/a.txt', sizeBytes: 1 }],
+        onFailed,
+      }
+    )
+    expect(result).toEqual({ outcome: 'failed', error: 'Outbound attachment references are invalid' })
+    expect(getObject).not.toHaveBeenCalled()
+  })
+
   it('calls onFailed and never onSent when the send reports failure', async () => {
-    const sendEmail = vi.fn().mockResolvedValue({ success: false, message: 'rejected', error: 'SMTP rejected' })
+    const sendEmail = vi.fn().mockResolvedValue({ accepted: false, response: 'SMTP rejected' })
     const onSent = vi.fn().mockResolvedValue(undefined)
     const onFailed = vi.fn().mockResolvedValue(undefined)
 
@@ -114,6 +192,12 @@ describe('processOutboundDelivery', () => {
 })
 
 describe('runOutboundDeliveryWorker', () => {
+  // The worker settles abandoned final attempts before claiming, which is a real
+  // database write. These are unit tests that stub every db-touching dependency.
+  const reap = vi.fn(async () => 0)
+
+  beforeEach(() => reap.mockClear())
+
   function claim(id: string): OutboundClaim {
     return {
       id,
@@ -130,17 +214,20 @@ describe('runOutboundDeliveryWorker', () => {
     const claimNext = vi.fn().mockImplementation(async () => queue.shift() ?? null)
     const process = vi.fn().mockResolvedValue({ outcome: 'sent' })
 
-    const result = await runOutboundDeliveryWorker({ claimNext, process })
+    const result = await runOutboundDeliveryWorker({ claimNext, process, reap })
 
     expect(result).toEqual({ processed: 2 })
     expect(process).toHaveBeenCalledTimes(2)
+    // Abandoned final attempts are invisible to the claim predicate, so the
+    // sweep must run even on a pass that finds work.
+    expect(reap).toHaveBeenCalledTimes(1)
   })
 
   it('stops at maxBatch even when more deliveries are claimable', async () => {
     const claimNext = vi.fn().mockResolvedValue(claim('a'))
     const process = vi.fn().mockResolvedValue({ outcome: 'sent' })
 
-    const result = await runOutboundDeliveryWorker({ claimNext, process, maxBatch: 3 })
+    const result = await runOutboundDeliveryWorker({ claimNext, process, reap, maxBatch: 3 })
 
     expect(result).toEqual({ processed: 3 })
     expect(claimNext).toHaveBeenCalledTimes(3)
@@ -151,7 +238,7 @@ describe('runOutboundDeliveryWorker', () => {
     const claimNext = vi.fn().mockImplementation(async () => queue.shift() ?? null)
     const process = vi.fn().mockResolvedValue({ outcome: 'failed', error: 'boom' })
 
-    const result = await runOutboundDeliveryWorker({ claimNext, process })
+    const result = await runOutboundDeliveryWorker({ claimNext, process, reap })
 
     expect(result).toEqual({ processed: 2 })
   })
@@ -160,7 +247,7 @@ describe('runOutboundDeliveryWorker', () => {
     const claimNext = vi.fn().mockResolvedValue(null)
     const process = vi.fn()
 
-    const result = await runOutboundDeliveryWorker({ claimNext, process })
+    const result = await runOutboundDeliveryWorker({ claimNext, process, reap })
 
     expect(result).toEqual({ processed: 0 })
     expect(process).not.toHaveBeenCalled()

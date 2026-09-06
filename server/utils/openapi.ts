@@ -68,7 +68,7 @@ export function defineOpenAPIRoute(operation: OpenAPIOperation) {
 /**
  * Common OpenAPI schemas for reuse
  */
-export const commonSchemas = {
+export const openapiCommonSchemas = {
   Error: {
     type: 'object',
     properties: {
@@ -179,7 +179,7 @@ export const commonResponses = {
     description: 'Unauthorized - Authentication required',
     content: {
       'application/json': {
-        schema: commonSchemas.Error,
+        schema: openapiCommonSchemas.Error,
       },
     },
   } as OpenAPIResponse,
@@ -188,7 +188,7 @@ export const commonResponses = {
     description: 'Forbidden - Insufficient permissions',
     content: {
       'application/json': {
-        schema: commonSchemas.Error,
+        schema: openapiCommonSchemas.Error,
       },
     },
   } as OpenAPIResponse,
@@ -197,7 +197,7 @@ export const commonResponses = {
     description: 'Not found',
     content: {
       'application/json': {
-        schema: commonSchemas.Error,
+        schema: openapiCommonSchemas.Error,
       },
     },
   } as OpenAPIResponse,
@@ -206,7 +206,7 @@ export const commonResponses = {
     description: 'Validation error',
     content: {
       'application/json': {
-        schema: commonSchemas.Error,
+        schema: openapiCommonSchemas.Error,
       },
     },
   } as OpenAPIResponse,
@@ -215,7 +215,7 @@ export const commonResponses = {
     description: 'Rate limit exceeded',
     content: {
       'application/json': {
-        schema: commonSchemas.Error,
+        schema: openapiCommonSchemas.Error,
       },
     },
   } as OpenAPIResponse,
@@ -224,7 +224,7 @@ export const commonResponses = {
     description: 'Not implemented - Endpoint is scaffolded but not yet implemented',
     content: {
       'application/json': {
-        schema: commonSchemas.Error,
+        schema: openapiCommonSchemas.Error,
       },
     },
   } as OpenAPIResponse,
@@ -233,7 +233,7 @@ export const commonResponses = {
     description: 'Internal server error',
     content: {
       'application/json': {
-        schema: commonSchemas.Error,
+        schema: openapiCommonSchemas.Error,
       },
     },
   } as OpenAPIResponse,
