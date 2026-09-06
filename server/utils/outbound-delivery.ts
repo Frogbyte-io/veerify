@@ -1,14 +1,24 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, eq, gte, isNotNull, lt, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { conversation, conversationAttachment, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
-import { sendEmail as defaultSendEmail, type EmailAttachment, type SendEmailOptions, type SendEmailResult } from '~/lib/email'
+import {
+  conversation,
+  conversationAttachment,
+  conversationMessage,
+  supportOutboundDelivery,
+} from '~/server/database/schema/support'
+import {
+  sendEmail as defaultSendEmail,
+  type EmailAttachment,
+  type SendEmailOptions,
+  type SendEmailResult,
+} from '~/lib/email'
 import { getConfiguredChannelDriver, getConfiguredChannelProviderName } from '~/server/services/support-channels'
 import { getStorageProvider } from '~/server/utils/storage'
 import { SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-attachments'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { createLogger } from '~/server/utils/logger'
-import { MAX_SUPPORT_METRIC_STRING_LENGTH, recordSupportMetric } from '~/server/utils/support-observability'
+import { recordSupportMetric } from '~/server/utils/support-observability'
 
 const logger = createLogger('outbound-delivery')
 
@@ -287,21 +297,22 @@ async function applyDeliveryOutcome(input: {
   requiredStatus?: string
 }): Promise<boolean> {
   return db.transaction(async (tx) => {
-    const where = input.attemptCount !== undefined
-      ? and(
-          eq(supportOutboundDelivery.id, input.deliveryId),
-          eq(supportOutboundDelivery.messageId, input.messageId),
-          eq(supportOutboundDelivery.status, 'pending'),
-          eq(supportOutboundDelivery.attemptCount, input.attemptCount),
-          isNotNull(supportOutboundDelivery.leaseExpiresAt)
-        )
-      : input.requiredStatus
+    const where =
+      input.attemptCount !== undefined
         ? and(
             eq(supportOutboundDelivery.id, input.deliveryId),
             eq(supportOutboundDelivery.messageId, input.messageId),
-            eq(supportOutboundDelivery.status, input.requiredStatus)
+            eq(supportOutboundDelivery.status, 'pending'),
+            eq(supportOutboundDelivery.attemptCount, input.attemptCount),
+            isNotNull(supportOutboundDelivery.leaseExpiresAt)
           )
-        : eq(supportOutboundDelivery.id, input.deliveryId)
+        : input.requiredStatus
+          ? and(
+              eq(supportOutboundDelivery.id, input.deliveryId),
+              eq(supportOutboundDelivery.messageId, input.messageId),
+              eq(supportOutboundDelivery.status, input.requiredStatus)
+            )
+          : eq(supportOutboundDelivery.id, input.deliveryId)
     const [updated] = await tx
       .update(supportOutboundDelivery)
       .set(input.deliveryPatch)
@@ -445,7 +456,9 @@ export async function failOutboundDelivery(
       messageId,
       attemptCount,
       terminal,
-      reason: sanitized.slice(0, MAX_SUPPORT_METRIC_STRING_LENGTH),
+      // A category, never the provider text: `sanitized` can embed the recipient
+      // address, and it is already stored on the delivery row as `lastError`.
+      reason: 'send-failed',
     })
   }
   if (failed && terminal) await publishDeliveryStatusChanged(messageId)
@@ -537,11 +550,13 @@ export async function processOutboundDelivery(
   // a real mismatch.
   const send = deps.sendEmail ?? (defaultSendEmail as SendEmailFn)
   const getObject = deps.getObject ?? ((key: string) => getStorageProvider().getObject(key))
-  const getAttachmentSizes = deps.getAttachmentSizes ?? (async (messageId: string) =>
-    db
-      .select({ storageKey: conversationAttachment.storageKey, sizeBytes: conversationAttachment.sizeBytes })
-      .from(conversationAttachment)
-      .where(eq(conversationAttachment.messageId, messageId)))
+  const getAttachmentSizes =
+    deps.getAttachmentSizes ??
+    (async (messageId: string) =>
+      db
+        .select({ storageKey: conversationAttachment.storageKey, sizeBytes: conversationAttachment.sizeBytes })
+        .from(conversationAttachment)
+        .where(eq(conversationAttachment.messageId, messageId)))
   const onSent = deps.onSent ?? completeOutboundDelivery
   const onFailed = deps.onFailed ?? failOutboundDelivery
   const driver = getConfiguredChannelDriver()
@@ -623,6 +638,60 @@ export async function processOutboundDelivery(
 /** One worker pass may claim and send at most this many deliveries. */
 export const DEFAULT_WORKER_MAX_BATCH = 10
 
+/**
+ * Recover deliveries abandoned on their final attempt.
+ *
+ * `claimNextOutboundDelivery` increments `attempt_count` as it claims, so a
+ * worker killed mid-send on the last attempt leaves the row `pending` at the
+ * cap. The claim predicate requires `attempt_count < MAX_DELIVERY_ATTEMPTS`, so
+ * nothing reclaims it; the message shows as forever-sending in the agent UI, and
+ * the manual retry endpoint refuses it because that requires `failed`. Without
+ * this sweep the row is recoverable only by hand-written SQL.
+ *
+ * Marking it terminal `failed` is the honest outcome: the send may or may not
+ * have reached the provider, which is exactly what `failed` plus the retry
+ * endpoint's duplicate-risk confirmation already communicates.
+ */
+export async function reapAbandonedOutboundDeliveries(options: { now?: Date } = {}): Promise<number> {
+  const now = options.now ?? new Date()
+
+  const abandoned = await db
+    .update(supportOutboundDelivery)
+    .set({
+      status: 'failed',
+      leaseExpiresAt: null,
+      nextAttemptAt: null,
+      lastError: 'DELIVERY_ABANDONED',
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(supportOutboundDelivery.status, 'pending'),
+        gte(supportOutboundDelivery.attemptCount, MAX_DELIVERY_ATTEMPTS),
+        isNotNull(supportOutboundDelivery.leaseExpiresAt),
+        lt(supportOutboundDelivery.leaseExpiresAt, now)
+      )
+    )
+    .returning({ id: supportOutboundDelivery.id, messageId: supportOutboundDelivery.messageId })
+
+  for (const row of abandoned) {
+    await db
+      .update(conversationMessage)
+      .set({ deliveryStatus: 'failed', deliveryError: 'DELIVERY_ABANDONED' })
+      .where(and(eq(conversationMessage.id, row.messageId), eq(conversationMessage.deliveryStatus, 'pending')))
+    recordSupportMetric('support.delivery.failed', {
+      deliveryId: row.id,
+      messageId: row.messageId,
+      attemptCount: MAX_DELIVERY_ATTEMPTS,
+      terminal: true,
+      reason: 'abandoned',
+    })
+    await publishDeliveryStatusChanged(row.messageId)
+  }
+
+  return abandoned.length
+}
+
 export interface RunOutboundDeliveryWorkerDeps {
   /** Defaults to `claimNextOutboundDelivery` - injectable so unit tests never touch the db. */
   claimNext?: () => Promise<OutboundClaim | null>
@@ -630,6 +699,8 @@ export interface RunOutboundDeliveryWorkerDeps {
   process?: (claim: OutboundClaim) => ReturnType<typeof processOutboundDelivery>
   /** Upper bound on deliveries claimed in one pass, so a runaway queue cannot make one invocation run forever. */
   maxBatch?: number
+  /** Defaults to `reapAbandonedOutboundDeliveries` - injectable so unit tests never touch the db. */
+  reap?: () => Promise<number>
 }
 
 /**
@@ -646,7 +717,12 @@ export async function runOutboundDeliveryWorker(
 ): Promise<{ processed: number }> {
   const claimNext = deps.claimNext ?? claimNextOutboundDelivery
   const process = deps.process ?? processOutboundDelivery
+  const reap = deps.reap ?? reapAbandonedOutboundDeliveries
   const maxBatch = deps.maxBatch ?? DEFAULT_WORKER_MAX_BATCH
+
+  // Before claiming: anything abandoned on its final attempt is invisible to the
+  // claim predicate, so it must be settled here or never.
+  await reap()
 
   let processed = 0
   for (let i = 0; i < maxBatch; i++) {

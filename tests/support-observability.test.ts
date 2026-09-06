@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   MAX_SUPPORT_METRIC_STRING_LENGTH,
   SUPPORT_METRIC_NAMES,
+  SUPPORT_METRIC_REASONS,
   recordSupportMetric,
   validateSupportMetric,
   type SupportMetricName,
@@ -68,7 +69,7 @@ describe('support metric field allowlist', () => {
       providerAccountKey: 'account-1',
       attemptCount: 3,
       terminal: true,
-      reason: 'Recipient rejected',
+      reason: 'send-failed',
     })
 
     expect(result).toEqual({
@@ -82,7 +83,7 @@ describe('support metric field allowlist', () => {
           providerAccountKey: 'account-1',
           attemptCount: 3,
           terminal: true,
-          reason: 'Recipient rejected',
+          reason: 'send-failed',
         },
       },
     })
@@ -152,16 +153,16 @@ describe('support metric value contract', () => {
     // A value this long is a payload that reached a field it should not have.
     // Rejected rather than truncated: truncating leaves part of a customer
     // message in the log.
-    const result = validateSupportMetric('support.delivery.failed', {
-      reason: 'x'.repeat(MAX_SUPPORT_METRIC_STRING_LENGTH + 1),
+    const result = validateSupportMetric('support.delivery.sent', {
+      providerMessageId: 'x'.repeat(MAX_SUPPORT_METRIC_STRING_LENGTH + 1),
     })
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.reason).toContain('exceeds the length limit')
   })
 
   it('accepts a string exactly at the length limit', () => {
-    const result = validateSupportMetric('support.delivery.failed', {
-      reason: 'x'.repeat(MAX_SUPPORT_METRIC_STRING_LENGTH),
+    const result = validateSupportMetric('support.delivery.sent', {
+      providerMessageId: 'x'.repeat(MAX_SUPPORT_METRIC_STRING_LENGTH),
     })
     expect(result.ok).toBe(true)
   })
@@ -237,5 +238,34 @@ describe('recordSupportMetric', () => {
       expect(recordSupportMetric(name as SupportMetricName, { uploadId: 'upload-1' })).toBe(true)
     }
     expect(info).toHaveBeenCalledTimes(SUPPORT_METRIC_NAMES.length)
+  })
+})
+
+describe('support metric reason vocabulary', () => {
+  it('accepts every declared reason code', () => {
+    for (const reason of SUPPORT_METRIC_REASONS) {
+      expect(validateSupportMetric('support.delivery.failed', { reason }).ok).toBe(true)
+    }
+  })
+
+  // The defect this closes: the allowlist governs keys, but `reason` was being
+  // fed the sanitized provider error, and an SMTP rejection embeds the recipient
+  // address. It is short enough to pass every other check.
+  it('rejects a provider error string carrying a recipient address', () => {
+    const smtpRejection = '550 5.1.1 <alice.smith@customer-co.example>: Recipient address rejected: User unknown'
+    expect(smtpRejection.length).toBeLessThan(MAX_SUPPORT_METRIC_STRING_LENGTH)
+
+    const result = validateSupportMetric('support.delivery.failed', { reason: smtpRejection } as never)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toBe('Support metric field is not a known reason code: reason')
+  })
+
+  it('never echoes the rejected reason value', () => {
+    recordSupportMetric('support.delivery.failed', {
+      reason: '550 rejected <alice.smith@customer-co.example>',
+    } as never)
+
+    expect(info).not.toHaveBeenCalled()
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('alice.smith@customer-co.example')
   })
 })

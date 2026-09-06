@@ -19,6 +19,7 @@ import {
   enqueueOutboundDelivery,
   failOutboundDelivery,
   processOutboundDelivery,
+  reapAbandonedOutboundDeliveries,
   resetOutboundDeliveryForRetry,
   runOutboundDeliveryWorker,
 } from '../../server/utils/outbound-delivery'
@@ -128,7 +129,10 @@ describe('outbound delivery outbox (real Postgres)', () => {
     // Clean up so this does not linger as 'pending' and get claimed ahead of
     // a later test's own row - claimNextOutboundDelivery takes the oldest
     // pending row across the whole table, unscoped to a test.
-    const [row] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.messageId, messageId))
+    const [row] = await db
+      .select()
+      .from(supportOutboundDelivery)
+      .where(eq(supportOutboundDelivery.messageId, messageId))
     await db.delete(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, row.id))
   })
 
@@ -231,7 +235,10 @@ describe('outbound delivery outbox (real Postgres)', () => {
     })
     expect(result.processed).toBe(1)
     expect(processed).toBe(1)
-    const [row] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.messageId, messageId))
+    const [row] = await db
+      .select()
+      .from(supportOutboundDelivery)
+      .where(eq(supportOutboundDelivery.messageId, messageId))
     expect(row.status).toBe('pending')
     expect(row.nextAttemptAt).not.toBeNull()
     await db.delete(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, row.id))
@@ -298,9 +305,9 @@ describe('outbound delivery outbox (real Postgres)', () => {
       .set({ attemptCount: MAX_DELIVERY_ATTEMPTS })
       .where(eq(supportOutboundDelivery.id, claim!.id))
 
-    expect(await failOutboundDelivery(claim!.id, messageId, new Error('Permanent rejection'), MAX_DELIVERY_ATTEMPTS)).toBe(
-      true
-    )
+    expect(
+      await failOutboundDelivery(claim!.id, messageId, new Error('Permanent rejection'), MAX_DELIVERY_ATTEMPTS)
+    ).toBe(true)
 
     const [row] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
     expect(row.status).toBe('failed')
@@ -412,10 +419,7 @@ describe('outbound delivery outbox (real Postgres)', () => {
       })
       expect(result).toEqual({ outcome: 'sent' })
 
-      const [stored] = await db
-        .select()
-        .from(supportOutboundDelivery)
-        .where(eq(supportOutboundDelivery.id, deliveryId))
+      const [stored] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, deliveryId))
       expect(stored.payload).toEqual(legacyPayload)
       expect(stored.provider).toBe('postmark')
       expect(stored.providerAccountKey).toBe('legacy-server')
@@ -427,5 +431,75 @@ describe('outbound delivery outbox (real Postgres)', () => {
       if (previousAccount === undefined) delete process.env.SUPPORT_POSTMARK_ACCOUNT_KEY
       else process.env.SUPPORT_POSTMARK_ACCOUNT_KEY = previousAccount
     }
+  })
+
+  it('recovers a delivery abandoned on its final attempt instead of stranding it', async () => {
+    // A worker killed mid-send on the last attempt: the claim already
+    // incremented attemptCount to the cap, so the row stays `pending` at 5 with
+    // a lease that lapses. `attempt_count < MAX` is now false, so no worker can
+    // reclaim it, and the manual retry endpoint requires `failed`. Before the
+    // reaper this was recoverable only by hand-written SQL.
+    const messageId = newMessage()
+    await insertMessage(messageId)
+    const deliveryId = randomUUID()
+    const lapsed = new Date(Date.now() - 60_000)
+    await db.insert(supportOutboundDelivery).values({
+      id: deliveryId,
+      messageId,
+      kind: 'email',
+      payload: { to: 'customer@example.com', subject: 'Abandoned' },
+      idempotencyKey: deliveryId,
+      status: 'pending',
+      attemptCount: MAX_DELIVERY_ATTEMPTS,
+      leaseExpiresAt: lapsed,
+      createdAt: now,
+      updatedAt: now,
+    })
+    await db.update(conversationMessage).set({ deliveryStatus: 'pending' }).where(eq(conversationMessage.id, messageId))
+
+    // Confirm the row really is unreachable by the ordinary claim path first,
+    // so this test fails loudly if the claim predicate ever changes.
+    const unreachable = await claimNextOutboundDelivery()
+    expect(unreachable?.id).not.toBe(deliveryId)
+
+    expect(await reapAbandonedOutboundDeliveries()).toBeGreaterThanOrEqual(1)
+
+    const [settled] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, deliveryId))
+    expect(settled.status).toBe('failed')
+    expect(settled.leaseExpiresAt).toBeNull()
+
+    const [message] = await db
+      .select({ deliveryStatus: conversationMessage.deliveryStatus })
+      .from(conversationMessage)
+      .where(eq(conversationMessage.id, messageId))
+    // `failed` is what makes the agent-facing retry action legal again.
+    expect(message.deliveryStatus).toBe('failed')
+
+    expect(await resetOutboundDeliveryForRetry(deliveryId, messageId)).toBe(true)
+  })
+
+  it('leaves a still-leased final attempt alone', async () => {
+    // The worker may simply still be running. Reaping on attempt count alone
+    // would settle a live send as failed and invite a duplicate.
+    const messageId = newMessage()
+    await insertMessage(messageId)
+    const deliveryId = randomUUID()
+    await db.insert(supportOutboundDelivery).values({
+      id: deliveryId,
+      messageId,
+      kind: 'email',
+      payload: { to: 'customer@example.com', subject: 'In flight' },
+      idempotencyKey: deliveryId,
+      status: 'pending',
+      attemptCount: MAX_DELIVERY_ATTEMPTS,
+      leaseExpiresAt: new Date(Date.now() + 300_000),
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await reapAbandonedOutboundDeliveries()
+
+    const [stored] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, deliveryId))
+    expect(stored.status).toBe('pending')
   })
 })

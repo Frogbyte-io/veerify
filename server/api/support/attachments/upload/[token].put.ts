@@ -24,7 +24,7 @@ import { finished } from 'node:stream/promises'
 import { once } from 'node:events'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { getStorageProvider } from '~/server/utils/storage'
@@ -88,31 +88,56 @@ export default defineEventHandler(async (event) => {
   const contentType = normalizeContentType(String(getHeader(event, 'content-type') || ''))
   if (!contentType) uploadError(400, 'Upload content type is required')
 
-  return await db.transaction(async (tx) => {
-    const [upload] = await tx
-      .select()
-      .from(supportAttachmentUpload)
-      .where(eq(supportAttachmentUpload.id, token.uploadId))
-      .for('update')
-      .limit(1)
-    if (!upload) uploadError(404, 'Upload session not found')
-    if (upload.status !== 'pending') uploadError(409, 'Upload session has already been used')
-    if (upload.expiresAt.getTime() <= Date.now() || token.expiresAt.getTime() <= Date.now()) uploadError(400, 'Upload session has expired')
-    if (upload.requestedContentType !== contentType) uploadError(400, 'Upload content type does not match the presigned type')
+  // Read the session without holding a transaction. Streaming a 10 MB body and
+  // two storage round trips inside `db.transaction` pins a pooled connection for
+  // the whole transfer, so a handful of deliberately slow uploads can occupy the
+  // entire pool and stall every other query in the process. The durable state
+  // machine does not need the connection held: the short transaction at the end
+  // re-reads the row `FOR UPDATE` and re-checks every precondition, so a session
+  // consumed concurrently still loses cleanly.
+  const [preflight] = await db
+    .select()
+    .from(supportAttachmentUpload)
+    .where(eq(supportAttachmentUpload.id, token.uploadId))
+    .limit(1)
+  if (!preflight) uploadError(404, 'Upload session not found')
+  if (preflight.status !== 'pending') uploadError(409, 'Upload session has already been used')
+  if (preflight.expiresAt.getTime() <= Date.now() || token.expiresAt.getTime() <= Date.now())
+    uploadError(400, 'Upload session has expired')
+  if (preflight.requestedContentType !== contentType)
+    uploadError(400, 'Upload content type does not match the presigned type')
 
-    const { filePath, directory, sizeBytes } = await streamBoundedBody(event)
-    try {
-      const storage = getStorageProvider()
-      await storage.putObject({ key: upload.tempStorageKey, buffer: await readFile(filePath), contentType })
-      const metadata = await storage.headObject(upload.tempStorageKey)
-      if (metadata.sizeBytes !== upload.requestedSizeBytes || metadata.sizeBytes !== sizeBytes) {
-        await storage.deleteObject(upload.tempStorageKey).catch(() => undefined)
-        uploadError(400, 'Uploaded size does not match the presigned size')
-      }
-      if (metadata.contentType && metadata.contentType !== contentType) {
-        await storage.deleteObject(upload.tempStorageKey).catch(() => undefined)
-        uploadError(400, 'Uploaded content type does not match the presigned type')
-      }
+  const { filePath, directory, sizeBytes } = await streamBoundedBody(event)
+  const storage = getStorageProvider()
+  let stored = false
+  try {
+    await storage.putObject({ key: preflight.tempStorageKey, buffer: await readFile(filePath), contentType })
+    stored = true
+    const metadata = await storage.headObject(preflight.tempStorageKey)
+    if (metadata.sizeBytes !== preflight.requestedSizeBytes || metadata.sizeBytes !== sizeBytes) {
+      uploadError(400, 'Uploaded size does not match the presigned size')
+    }
+    if (metadata.contentType && metadata.contentType !== contentType) {
+      uploadError(400, 'Uploaded content type does not match the presigned type')
+    }
+
+    const committed = await db.transaction(async (tx) => {
+      const [upload] = await tx
+        .select()
+        .from(supportAttachmentUpload)
+        .where(eq(supportAttachmentUpload.id, token.uploadId))
+        .for('update')
+        .limit(1)
+      // Re-checked under the lock, not merely re-read: between the preflight and
+      // here another request may have consumed or expired this session.
+      if (!upload) return false
+      if (upload.status !== 'pending') return false
+      if (upload.expiresAt.getTime() <= Date.now()) return false
+      if (upload.requestedContentType !== contentType) return false
+
+      // The row is held `FOR UPDATE` and its status was just re-checked in this
+      // same transaction, so the status predicate here cannot fail. It is kept
+      // as a defensive assertion of the state this write assumes.
       await tx
         .update(supportAttachmentUpload)
         .set({
@@ -123,10 +148,21 @@ export default defineEventHandler(async (event) => {
           status: 'uploaded',
           updatedAt: new Date(),
         })
-        .where(eq(supportAttachmentUpload.id, upload.id))
-      return createSuccessResponse({ uploaded: true, uploadId: upload.id, sizeBytes: metadata.sizeBytes })
-    } finally {
-      await rm(directory, { recursive: true, force: true }).catch(() => undefined)
+        .where(and(eq(supportAttachmentUpload.id, upload.id), eq(supportAttachmentUpload.status, 'pending')))
+      return true
+    })
+
+    if (!committed) {
+      // The object is orphaned by definition: no row now references it.
+      await storage.deleteObject(preflight.tempStorageKey).catch(() => undefined)
+      uploadError(409, 'Upload session has already been used')
     }
-  })
+
+    return createSuccessResponse({ uploaded: true, uploadId: preflight.id, sizeBytes: metadata.sizeBytes })
+  } catch (error) {
+    if (stored) await storage.deleteObject(preflight.tempStorageKey).catch(() => undefined)
+    throw error
+  } finally {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined)
+  }
 })

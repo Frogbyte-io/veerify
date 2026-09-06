@@ -78,9 +78,26 @@ export const SUPPORT_METRIC_FIELDS = [
 
 export type SupportMetricField = (typeof SUPPORT_METRIC_FIELDS)[number]
 
+/**
+ * `reason` is a closed vocabulary, not free text.
+ *
+ * An allowlist of field *keys* stops `body` or `filename` reaching a log, but it
+ * says nothing about what a permitted key carries. `reason` was being fed the
+ * sanitized provider error, and an SMTP rejection routinely embeds the recipient
+ * address -- `550 5.1.1 <alice@customer.example>: Recipient address rejected` is
+ * 60 characters and would have passed every other check here. That defeats the
+ * whole point of excluding `recipient`. The full provider text is still stored on
+ * the delivery row, which is the right place for it; a counter needs a category.
+ */
+export const SUPPORT_METRIC_REASONS = ['send-failed', 'abandoned', 'storage-delete-failed'] as const
+
+export type SupportMetricReason = (typeof SUPPORT_METRIC_REASONS)[number]
+
 export type SupportMetricValue = string | number | boolean | null | undefined
 
-export type SupportMetricFields = Partial<Record<SupportMetricField, SupportMetricValue>>
+export type SupportMetricFields = Partial<Record<SupportMetricField, SupportMetricValue>> & {
+  reason?: SupportMetricReason | null
+}
 
 /**
  * A status or reason code, not a sentence. Anything longer is a payload that
@@ -91,6 +108,7 @@ export const MAX_SUPPORT_METRIC_STRING_LENGTH = 120
 
 const metricNames: ReadonlySet<string> = new Set(SUPPORT_METRIC_NAMES)
 const metricFields: ReadonlySet<string> = new Set(SUPPORT_METRIC_FIELDS)
+const metricReasons: ReadonlySet<string> = new Set(SUPPORT_METRIC_REASONS)
 
 export interface SupportMetricRecord {
   metric: SupportMetricName
@@ -122,6 +140,11 @@ export function validateSupportMetric(name: string, fields: SupportMetricFields 
     }
 
     if (typeof value === 'string') {
+      if (key === 'reason' && !metricReasons.has(value)) {
+        // Reported without echoing the value: the rejected string is exactly the
+        // kind of provider text that may carry a recipient address.
+        return { ok: false, reason: 'Support metric field is not a known reason code: reason' }
+      }
       if (value.length > MAX_SUPPORT_METRIC_STRING_LENGTH) {
         return { ok: false, reason: `Support metric field exceeds the length limit: ${key}` }
       }

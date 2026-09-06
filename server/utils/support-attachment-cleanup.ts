@@ -36,7 +36,12 @@ function parsePgTimestamp(value: unknown): Date {
 }
 
 function isMissingObject(error: unknown): boolean {
-  const candidate = error as { code?: string; name?: string; statusCode?: number; $metadata?: { httpStatusCode?: number } }
+  const candidate = error as {
+    code?: string
+    name?: string
+    statusCode?: number
+    $metadata?: { httpStatusCode?: number }
+  }
   return (
     candidate.code === 'OBJECT_NOT_FOUND' ||
     candidate.name === 'NotFound' ||
@@ -126,7 +131,13 @@ async function completeExpired(row: ClaimedUpload, now: Date, tempDeleted: boole
       cleanupLastError: null,
       updatedAt: now,
     })
-    .where(and(eq(supportAttachmentUpload.id, row.id), eq(supportAttachmentUpload.status, row.status), eq(supportAttachmentUpload.finalizeLeaseExpiresAt, row.claimLease)))
+    .where(
+      and(
+        eq(supportAttachmentUpload.id, row.id),
+        eq(supportAttachmentUpload.status, row.status),
+        eq(supportAttachmentUpload.finalizeLeaseExpiresAt, row.claimLease)
+      )
+    )
   return result.rowCount === 1
 }
 
@@ -134,11 +145,21 @@ async function completeConsumed(row: ClaimedUpload, now: Date): Promise<boolean>
   const result = await db
     .update(supportAttachmentUpload)
     .set({ tempDeletedAt: now, finalizeLeaseExpiresAt: null, cleanupLastError: null, updatedAt: now })
-    .where(and(eq(supportAttachmentUpload.id, row.id), eq(supportAttachmentUpload.status, 'consumed'), eq(supportAttachmentUpload.finalizeLeaseExpiresAt, row.claimLease)))
+    .where(
+      and(
+        eq(supportAttachmentUpload.id, row.id),
+        eq(supportAttachmentUpload.status, 'consumed'),
+        eq(supportAttachmentUpload.finalizeLeaseExpiresAt, row.claimLease)
+      )
+    )
   return result.rowCount === 1
 }
 
-async function completeFinalCleanup(row: ClaimedUpload, now: Date, tempDeleted: boolean): Promise<{ updated: boolean; outcome: 'restored' | 'expired' }> {
+async function completeFinalCleanup(
+  row: ClaimedUpload,
+  now: Date,
+  tempDeleted: boolean
+): Promise<{ updated: boolean; outcome: 'restored' | 'expired' }> {
   const expired = row.expiresAt.getTime() <= now.getTime()
   const patch = expired
     ? { status: 'expired' as const, finalStorageKey: null, tempDeletedAt: tempDeleted ? now : row.tempDeletedAt }
@@ -146,7 +167,13 @@ async function completeFinalCleanup(row: ClaimedUpload, now: Date, tempDeleted: 
   const result = await db
     .update(supportAttachmentUpload)
     .set({ ...patch, finalizeLeaseExpiresAt: null, cleanupLastError: null, updatedAt: now })
-    .where(and(eq(supportAttachmentUpload.id, row.id), eq(supportAttachmentUpload.status, 'cleanup_required'), eq(supportAttachmentUpload.finalizeLeaseExpiresAt, row.claimLease)))
+    .where(
+      and(
+        eq(supportAttachmentUpload.id, row.id),
+        eq(supportAttachmentUpload.status, 'cleanup_required'),
+        eq(supportAttachmentUpload.finalizeLeaseExpiresAt, row.claimLease)
+      )
+    )
   return { updated: result.rowCount === 1, outcome: expired ? 'expired' : 'restored' }
 }
 
@@ -155,17 +182,26 @@ async function completeFinalCleanup(row: ClaimedUpload, now: Date, tempDeleted: 
  * short and committed before provider calls, so a slow provider never holds a
  * row lock. Every external deletion is followed by an exact lease/state guard.
  */
-export async function runAttachmentCleanup(input: {
-  now?: Date
-  maxBatch?: number
-  storage?: StorageProvider
-} = {}): Promise<AttachmentCleanupResult> {
+export async function runAttachmentCleanup(
+  input: {
+    now?: Date
+    maxBatch?: number
+    storage?: StorageProvider
+  } = {}
+): Promise<AttachmentCleanupResult> {
   const currentTime = () => input.now ?? new Date()
   const claimTime = currentTime()
   const maxBatch = Math.max(1, Math.min(input.maxBatch ?? DEFAULT_ATTACHMENT_CLEANUP_BATCH, 100))
   const storage = input.storage ?? getStorageProvider()
   const claimed = await claimUploads(claimTime, maxBatch)
-  const result: AttachmentCleanupResult = { claimed: claimed.length, expired: 0, restored: 0, consumedTempDeleted: 0, deleted: 0, retried: 0 }
+  const result: AttachmentCleanupResult = {
+    claimed: claimed.length,
+    expired: 0,
+    restored: 0,
+    consumedTempDeleted: 0,
+    deleted: 0,
+    retried: 0,
+  }
 
   for (const row of claimed) {
     try {
@@ -174,7 +210,11 @@ export async function runAttachmentCleanup(input: {
           await completeConsumed(row, currentTime())
           continue
         }
-        try { await storage.deleteObject(row.tempStorageKey) } catch (error) { if (!isMissingObject(error)) throw error }
+        try {
+          await storage.deleteObject(row.tempStorageKey)
+        } catch (error) {
+          if (!isMissingObject(error)) throw error
+        }
         if (await completeConsumed(row, currentTime())) {
           result.consumedTempDeleted++
           result.deleted++
@@ -183,7 +223,11 @@ export async function runAttachmentCleanup(input: {
       }
 
       if (row.status === 'pending' || row.status === 'uploaded') {
-        try { await storage.deleteObject(row.tempStorageKey) } catch (error) { if (!isMissingObject(error)) throw error }
+        try {
+          await storage.deleteObject(row.tempStorageKey)
+        } catch (error) {
+          if (!isMissingObject(error)) throw error
+        }
         if (await completeExpired(row, currentTime(), true)) {
           // Guarded on the state/lease-checked update, so a stale worker that
           // lost the row does not count an expiry another worker owns. Storage
@@ -198,13 +242,21 @@ export async function runAttachmentCleanup(input: {
       // A stale finalization is claimed as cleanup_required. Delete the final
       // orphan first; only then may its key be cleared or the row restored.
       if (row.finalStorageKey) {
-        try { await storage.deleteObject(row.finalStorageKey) } catch (error) { if (!isMissingObject(error)) throw error }
+        try {
+          await storage.deleteObject(row.finalStorageKey)
+        } catch (error) {
+          if (!isMissingObject(error)) throw error
+        }
         result.deleted++
       }
       let tempDeleted = Boolean(row.tempDeletedAt)
       const completionTime = currentTime()
       if (row.expiresAt.getTime() <= completionTime.getTime()) {
-        try { await storage.deleteObject(row.tempStorageKey) } catch (error) { if (!isMissingObject(error)) throw error }
+        try {
+          await storage.deleteObject(row.tempStorageKey)
+        } catch (error) {
+          if (!isMissingObject(error)) throw error
+        }
         tempDeleted = true
       }
       const outcome = await completeFinalCleanup(row, completionTime, tempDeleted)
@@ -222,7 +274,7 @@ export async function runAttachmentCleanup(input: {
         recordSupportMetric('support.attachment.cleanup_failed', {
           uploadId: row.id,
           status: row.status,
-          reason: safeCleanupError(error),
+          reason: 'storage-delete-failed',
         })
         result.retried++
       }

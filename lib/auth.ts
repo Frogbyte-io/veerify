@@ -1,6 +1,5 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { bearer } from 'better-auth/plugins/bearer'
 import { magicLink, multiSession, organization, testUtils, twoFactor } from 'better-auth/plugins'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../server/database/drizzle'
@@ -133,10 +132,6 @@ export const auth = betterAuth({
     },
   },
   plugins: [
-    // The WebSocket transport cannot send HttpOnly cookies reliably across
-    // every runtime, so `server/routes/_ws.ts` authenticates with the opaque
-    // Better Auth session token in an Authorization header.
-    bearer(),
     organization({
       allowUserToCreateOrganization: true,
       organizationLimit: 5,

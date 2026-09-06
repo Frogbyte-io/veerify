@@ -222,14 +222,45 @@ async function postJson<T = unknown>(
   return JSON.parse(text) as T
 }
 
+/**
+ * Sign up through the running app so the returned cookie is a genuine, signed
+ * Better Auth session cookie.
+ *
+ * The suite previously inserted a `session` row by hand and sent
+ * `Authorization: Bearer <token>` on its HTTP calls. That only worked because a
+ * global `bearer` plugin was registered, which made the realtime token a
+ * credential for the entire API - the security regression this test's own fix
+ * wave removed. Authenticating the way a browser does keeps the HTTP half
+ * honest; the WebSocket half still uses the raw session token, which is now the
+ * only thing that token is good for.
+ */
+async function signUpAndAuthenticate(
+  baseUrl: string,
+  credentials: { name: string; email: string; password: string }
+): Promise<{ userId: string; cookie: string }> {
+  const response = await fetch(`${baseUrl}/api/auth/sign-up/email`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify(credentials),
+  })
+  const text = await response.text()
+  if (!response.ok) throw new Error(`Sign-up failed (${response.status}): ${text}`)
+
+  const setCookie = response.headers.getSetCookie?.() ?? []
+  const cookie = setCookie
+    .map((entry) => entry.split(';')[0])
+    .filter((entry) => entry.startsWith('better-auth.'))
+    .join('; ')
+  if (!cookie) throw new Error(`Sign-up returned no session cookie: ${setCookie.join(' | ')}`)
+
+  return { userId: (JSON.parse(text) as { user: { id: string } }).user.id, cookie }
+}
+
 describe.skipIf(skipReason !== null)('realtime across two application processes', () => {
   const suffix = randomUUID()
   const ids = {
     organization: `realtime-org-${suffix}`,
     team: `realtime-team-${suffix}`,
-    user: `realtime-user-${suffix}`,
-    session: `realtime-session-${suffix}`,
-    token: `realtime-token-${suffix}`,
     inbox: `realtime-inbox-${suffix}`,
     inboxMember: `realtime-inbox-member-${suffix}`,
     contact: `realtime-contact-${suffix}`,
@@ -237,6 +268,9 @@ describe.skipIf(skipReason !== null)('realtime across two application processes'
     deliveryMessage: `realtime-delivery-message-${suffix}`,
     delivery: `realtime-delivery-${suffix}`,
   }
+  // Resolved during setup: the user id, the signed cookie for HTTP calls, and
+  // the raw session token the WebSocket authenticates with.
+  const auth = { userId: '', cookie: '', token: '' }
   const temporaryRoot = mkdtempSync(join(tmpdir(), 'veerify-realtime-two-process-'))
   const apps: AppProcess[] = []
   const sockets: SocketClient[] = []
@@ -245,30 +279,43 @@ describe.skipIf(skipReason !== null)('realtime across two application processes'
   beforeAll(async () => {
     if (!DATABASE_URL || !REDIS_URL) throw new Error('DATABASE_URL and REDIS_URL are required')
     const now = new Date()
-    await db.insert(organization).values({ id: ids.organization, name: 'Realtime test', slug: `realtime-${suffix}` })
-    await db.insert(user).values({
-      id: ids.user,
+
+    // Apps first: the user is created through the running app's sign-up route
+    // so the session cookie is genuinely signed, rather than hand-inserted.
+    apps.push(
+      await startApp('instance A', join(temporaryRoot, 'instance-a')),
+      await startApp('instance B', join(temporaryRoot, 'instance-b'))
+    )
+
+    const credentials = {
       name: 'Realtime Agent',
       email: `realtime-${suffix}@example.com`,
-      emailVerified: true,
-    })
+      password: `Realtime-${suffix.slice(0, 8)}!`,
+    }
+    const signedUp = await signUpAndAuthenticate(apps[0].baseUrl, credentials)
+    auth.userId = signedUp.userId
+    auth.cookie = signedUp.cookie
+
+    const [issuedSession] = await db
+      .select({ token: session.token })
+      .from(session)
+      .where(eq(session.userId, auth.userId))
+      .limit(1)
+    if (!issuedSession) throw new Error('Sign-up created no session row')
+    auth.token = issuedSession.token
+
+    await db.insert(organization).values({ id: ids.organization, name: 'Realtime test', slug: `realtime-${suffix}` })
     await db.insert(team).values({
       id: ids.team,
       name: 'Realtime team',
       slug: `realtime-team-${suffix}`,
       organizationId: ids.organization,
     })
-    await db.insert(teamMember).values({ id: randomUUID(), teamId: ids.team, userId: ids.user, role: 'member' })
-    await db.insert(session).values({
-      id: ids.session,
-      token: ids.token,
-      userId: ids.user,
-      activeOrganizationId: ids.organization,
-      activeTeamId: ids.team,
-      createdAt: now,
-      updatedAt: now,
-      expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
-    })
+    await db.insert(teamMember).values({ id: randomUUID(), teamId: ids.team, userId: auth.userId, role: 'member' })
+    await db
+      .update(session)
+      .set({ activeOrganizationId: ids.organization, activeTeamId: ids.team, updatedAt: now })
+      .where(eq(session.userId, auth.userId))
     await db.insert(supportInbox).values({
       id: ids.inbox,
       teamId: ids.team,
@@ -278,7 +325,7 @@ describe.skipIf(skipReason !== null)('realtime across two application processes'
     await db.insert(supportInboxMember).values({
       id: ids.inboxMember,
       inboxId: ids.inbox,
-      userId: ids.user,
+      userId: auth.userId,
       role: 'agent',
     })
     await db.insert(contact).values({
@@ -301,7 +348,7 @@ describe.skipIf(skipReason !== null)('realtime across two application processes'
       kind: 'outgoing',
       body: 'Delivery status fixture',
       senderKind: 'agent',
-      senderUserId: ids.user,
+      senderUserId: auth.userId,
       deliveryStatus: 'sent',
     })
     await db.insert(supportOutboundDelivery).values({
@@ -318,30 +365,27 @@ describe.skipIf(skipReason !== null)('realtime across two application processes'
     })
 
     redis = new Redis(REDIS_URL)
-    apps.push(
-      await startApp('instance A', join(temporaryRoot, 'instance-a')),
-      await startApp('instance B', join(temporaryRoot, 'instance-b'))
-    )
   }, 180_000)
 
   afterAll(async () => {
     for (const socket of sockets) socket.socket.close()
     for (const app of apps.reverse()) await stopApp(app)
     if (redis) await redis.quit()
-    await db.delete(user).where(eq(user.id, ids.user))
+    if (auth.userId) await db.delete(user).where(eq(user.id, auth.userId))
     await db.delete(organization).where(eq(organization.id, ids.organization))
     rmSync(temporaryRoot, { recursive: true, force: true })
   }, 30_000)
 
   it('delivers message events across instances and restores subscriptions after Redis reconnect', async () => {
     const [instanceA, instanceB] = apps
-    const clientA = await connectSocket(instanceA, ids.token)
-    const clientB = await connectSocket(instanceB, ids.token)
+    const clientA = await connectSocket(instanceA, auth.token)
+    const clientB = await connectSocket(instanceB, auth.token)
     sockets.push(clientA, clientB)
     const channel = `conversation:${ids.conversation}`
     await Promise.all([subscribe(clientA, channel), subscribe(clientB, channel)])
 
-    const authHeaders = { authorization: `Bearer ${ids.token}` }
+    // A browser's credentials: the signed session cookie, not the raw token.
+    const authHeaders = { cookie: auth.cookie }
     const created = await postJson<{ data: { message: { id: string } } }>(
       instanceA.baseUrl,
       `/api/support/conversations/${ids.conversation}/messages`,
