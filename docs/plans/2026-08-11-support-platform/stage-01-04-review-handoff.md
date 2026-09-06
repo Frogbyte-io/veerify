@@ -7,7 +7,7 @@ Updated: 2026-09-03
 - Working branch: `review/stage-01-04-audit`
 - Current worktree: `/home/dev/code/veerify-stage-01-04-review`
 - Merge base: `83603d24c766631230e3c76501fb08bc3503eab4` (`origin/support-platform` at the start of the review)
-- Last completed task commit: `ddb1716` (`fix(support): close the review gate's important findings`)
+- Last completed task commit: `3375287` (`fix(support): resolve the review gate's minor findings`)
 - Saved Task 10/handoff checkpoints: `fc20edf` and `f19de54`
 - Remote preservation branch: `origin/review/stage-01-04-audit`
 - Integration target: `support-platform`
@@ -302,14 +302,28 @@ because the plan's `gpt-5.6-luna` does not exist here, so independence is lower 
 reviewer explicitly did not examine the Vue UI changes (~2,500 lines), the E2E suites, Task 14's Docker
 and CI changes, or the OpenAPI surface. Those are unreviewed, not cleared.
 
-**Five Minor findings were deliberately left unfixed**, each recorded with a reason in the plan. The one
-to note: the delivery-correlation fallback is dead by construction — the account key and provider
-message id never match what the provider sends — and it must not be fixed without live provider
-credentials, because the correct value on each side is precisely what the unexecuted provider checklist
-is for.
+**All five Minor findings are also fixed** (`3375287`): the capability payload no longer defaults an
+unassigned member to `agent`, the shared tag list requires support-team access, contact locking moved
+from a `team` row `FOR UPDATE` to `pg_advisory_xact_lock` (the row lock conflicted with the
+`FOR KEY SHARE` twelve child tables take on FK checks), and an insecure-cookie configuration now warns
+at startup.
 
-Post-fix: `yarn harness:verify` green (unit 580/580 across 51 files, Redis 6/6, PostgreSQL 101/101
-across 11 files), support E2E 28 passed / 2 skipped / 0 failed on a fresh database.
+**One is resolved as documentation, deliberately.** The delivery-correlation fallback is dead by
+construction — the outbox's operator-chosen account key and the provider's own reported identifier
+come from unrelated sources, and `providerMessageId` is never populated on the SMTP path. Fixing it
+blind would replace a dead fallback with a wrong one, so `.env.example` states the requirement and
+checklist rows 2.3a/2.3b/3.1a verify it. **That finding is closed only when those rows pass against a
+live account.**
+
+Post-fix: `yarn harness:verify` green (unit 582/582 across 51 files, Redis 6/6, PostgreSQL 101/101
+across 11 files), support E2E 28 passed / 2 skipped / 0 failed, run twice consecutively on a fresh
+database.
+
+**Known test-isolation weakness, not a product bug.** `support-contact-timeline.spec.ts` keys fixtures
+on the shared seed email, so an aborted run leaves residue that fails the _next_ run and then clears —
+an alternating fail/pass that reads like product flakiness. It predates this branch. Recreate the
+database before trusting any E2E result, and treat a single failure in that spec as suspect until
+reproduced from a clean database.
 
 ## Local runtime findings
 

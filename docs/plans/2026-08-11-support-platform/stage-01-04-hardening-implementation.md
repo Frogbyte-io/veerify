@@ -1290,31 +1290,28 @@ with one Minor that contradicted a contract introduced by this branch:
 | 3   | Important | Global `bearer()` turned the realtime token — which the client puts in a WS URL query string — into an API-wide credential | Fixed  |
 | 4   | Minor     | `reason` carried SMTP text containing the recipient address, defeating the module's own exclusion of `recipient`           | Fixed  |
 
-### Deliberately not fixed — carry these forward
+### Minor findings — all resolved in `3375287`
 
-The gate mandates fixing Critical and Important. These five Minors are recorded with an assessment
-rather than patched blind, each for a stated reason.
+The gate mandates only Critical and Important. All five Minors were subsequently fixed as well, with
+one deliberately resolved as documentation rather than code.
 
-- **Delivery-correlation fallback is dead by construction.** The outbox stores `provider_account_key`
-  from `SUPPORT_*_ACCOUNT_KEY` (an operator-chosen string) while `parseDeliveryEvent` reports the
-  provider's own server id / sending domain, and `provider_message_id` is never populated on the SMTP
-  path at all. So only the metadata key ever correlates. **Do not fix this without live provider
-  credentials** — the correct value on each side is exactly what the unexecuted provider checklist
-  exists to establish, and guessing would replace a dead path with a wrong one.
-- **`useSecureCookies` on HTTPS without `NODE_ENV=production`.** Cookies would ship without `Secure`.
-  The shipped `Dockerfile` sets `NODE_ENV=production`, so the documented deployment is unaffected;
-  this is the hand-rolled `node .output/server/index.mjs` shape. Worth hardening if that shape is
-  ever supported.
-- **Capability payload defaults to `agent` for a team member in no inbox**, where the approved matrix
-  says no conversation capability. Presentation-only — `requireInboxAccess` still refuses every
-  action. Not patched because `?? 'agent'` is load-bearing for other callers, and changing it needs
-  its own test rather than a one-line edit at the end of a fix wave.
-- **Shared tag list uses team membership** where the design says support-team access. Reading team tag
-  names and colours; creation and deletion are correctly gated.
-- **`lockContactTeams` takes `FOR UPDATE` on the `team` row**, which conflicts with the `FOR KEY SHARE`
-  that twelve child tables' FK checks take. Under an inbound burst this serialises unrelated inserts
-  for that team. A throughput ceiling, not a correctness bug; `pg_advisory_xact_lock` would give the
-  same serialisation without touching the FK-referenced row. Needs measurement first.
+- **Delivery-correlation fallback is dead by construction** — the outbox stores an operator-chosen
+  `SUPPORT_*_ACCOUNT_KEY` while `parseDeliveryEvent` reports the provider's own server id / sending
+  domain, and `provider_message_id` is never populated on the SMTP path. Only the metadata key ever
+  correlates. **Resolved as documentation, deliberately not as code.** The correct value on each side
+  is exactly what the provider checklist exists to establish, and guessing would replace a dead
+  fallback with a wrong one. `.env.example` now states the requirement, and checklist rows 2.3a, 2.3b,
+  and 3.1a verify it against a live account. **This finding is closed only once those rows pass.**
+- **`useSecureCookies` on HTTPS without `NODE_ENV=production`** — now warns loudly at startup. The
+  shipped `Dockerfile` sets `NODE_ENV=production`, so this targets the hand-rolled
+  `node .output/server/index.mjs` shape.
+- **Capability payload defaulted an unassigned member to `agent`** — `capabilitiesForRole` now takes a
+  null role and grants nothing, matching the approved matrix. Two unit tests cover it.
+- **Shared tag list now requires support-team access**, matching creation and deletion. The executable
+  authorization inventory records the corrected boundary.
+- **`lockContactTeams` now uses `pg_advisory_xact_lock`** instead of `FOR UPDATE` on the `team` row,
+  which conflicted with the `FOR KEY SHARE` taken by twelve child tables' foreign-key checks. The
+  concurrency tests assert the advisory lock, so serialization is still proven.
 
 ### Reviewer coverage gaps — not an all-clear
 
@@ -1323,9 +1320,15 @@ The reviewer stated plainly what it did not examine: the Vue UI changes (~2,500 
 and the two-process realtime test, Task 14's `Dockerfile`/`profile-build.mjs`/CI workflow, and the
 OpenAPI surface. Treat those as unreviewed.
 
-**Post-fix verification.** `yarn harness:verify` all gates passed — unit **580/580 across 51 files**,
+**Post-fix verification.** `yarn harness:verify` all gates passed — unit **582/582 across 51 files**,
 lint 0 errors / 206 warnings, Redis integration 6/6, PostgreSQL integration **101/101 across 11 files**.
-Support E2E **28 passed, 2 skipped, 0 failed** on a freshly created and seeded database, matching the
-pre-fix baseline exactly. One transient `support-contact-timeline` failure appeared in the first
-post-fix run; it passes in isolation and the re-run was green, so it was residue from an aborted run
-rather than the fix wave — recorded rather than quietly re-run away. 4. Re-run the complete verification matrix. 5. Use `superpowers:finishing-a-development-branch` and present integration options; do not merge or push without explicit user approval.
+Support E2E **28 passed, 2 skipped, 0 failed**, run twice consecutively on a freshly created and
+seeded database, matching the pre-fix baseline exactly.
+
+**One pre-existing test-isolation weakness surfaced and is worth knowing about.**
+`support-contact-timeline.spec.ts` builds fixtures keyed on the shared seed email. When a run aborts
+mid-suite its cleanup does not complete, and the _next_ run trips over the residue — producing an
+alternating fail/pass pattern that looks like flakiness in the product. It passes in isolation and
+passes repeatedly from a fresh database. It is not a regression from this branch (the same spec failed
+this way against fixture rows dated 2026-09-01, before any of this work), but it will keep costing
+diagnostic time until the spec cleans up by suffix rather than by shared email. 4. Re-run the complete verification matrix. 5. Use `superpowers:finishing-a-development-branch` and present integration options; do not merge or push without explicit user approval.
