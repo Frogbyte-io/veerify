@@ -33,3 +33,6 @@ Base: `56484fe65f87838497ae97fa50f5b6763e9dc777`
 ## Progress
 
 - Task 1 dispatched to `/root/sup_05a_1` from base `56484fe` on branch `agent/SUP-05A-1-claim-assignment`.
+- Task 1 review round 1: atomic explicit claim and UI workflow coverage required fixes.
+- Task 1: complete — commits `20df161`, `b94c2e7`; task review approved; merged as `c02e2d2`.
+- Task 1 integrated verification: `yarn harness:verify` passed with 583 unit, 6 Redis, and 105 Postgres tests; one nested realtime test skipped because `REDIS_URL` was unset. Focused forced Chromium workflows passed 2/2. Broad E2E guard skipped because the environment is not cloud/CI and `PLAYWRIGHT_FORCE` was not set for the harness run.

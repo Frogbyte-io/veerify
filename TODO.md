@@ -405,7 +405,8 @@ Plan: `docs/plans/2026-08-11-support-platform/stage-05a-agent-speed.md`. Read
 **`support-platform`**, not `main`. Scope is fixed for a 1–3 agent team; do not restore deferred Stage 05
 features.
 
-- [ ] **SUP-05A-1** Implement claim, auto-claim on first `outgoing` reply (notes excluded), unassign, and assign-to-another-agent, each writing an `activity` message; reopen preserves assignee
+- [x] **SUP-05A-1** Implement claim, auto-claim on first `outgoing` reply (notes excluded), unassign, and assign-to-another-agent, each writing an `activity` message; reopen preserves assignee
+  - `20df161`, `b94c2e7`, merged in `c02e2d2`. Explicit Claim uses a conditional transaction so concurrent claimers cannot overwrite the winner and only one assignment activity is written. Outgoing replies auto-claim unassigned conversations in their message transaction; notes never claim, existing owners are never stolen, and inbound reopen preserves the assignee. The header supports Claim, handoff, and release, with real-Postgres concurrency coverage and forced Playwright coverage for composer auto-claim plus dropdown handoff/release.
 - [ ] **SUP-05A-2** Add per-user conversation read state with the handled-ness supersede rule, manual mark-unread, and unread badges on `Unassigned` and `Assigned to me`
 - [ ] **SUP-05A-3** Implement the four fixed views with `Unassigned` as the landing view
 - [ ] **SUP-05A-4** Implement local draft persistence keyed by `(conversationId, mode)` that restores composer mode, clears on send, and shows an unsaved-draft indicator in the list
