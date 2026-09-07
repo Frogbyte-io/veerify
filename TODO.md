@@ -397,3 +397,19 @@ separate: the **agent workspace** (`/support`, team-scoped, this stage) and the 
   - `tests/e2e/support-conversation-flow.spec.ts`. Covers the full agent flow: create a conversation (asserting a real `displayId` from `supportCounter`), post a reply, post an internal note, change status, and confirm the change rendered into the thread as an `activity` message from the same ordered query. Also asserts `isPrivate` is **false** on the reply and **true** on the note — the server derives it from `kind`, so this tests the guard rather than what the client asked for — and that re-sending an unchanged status appends no phantom activity message.
   - **The spec is written but could not be executed**, because of a pre-existing blocker (delta D-33, queued as SUP-X-5): any Playwright spec importing `db` dies at collection on a `consola`/`createConsola` export-condition mismatch. Stage 01's `support-contact-timeline.spec.ts` fails identically, so this is not new. **Every assertion in the spec was instead verified by hand against a live dev server and database** — create, reply, note, status change, activity body text, sender kind, and the no-op guard all confirmed, then the test data removed. So the behaviour is verified; the automated spec is not yet proven runnable.
   - **Not covered:** acceptance criterion 1's realtime half — two agents in two browsers on two app instances, one replying and the other seeing it without a refresh. That needs two app instances and a shared broker, which this suite cannot stand up. Left explicitly open rather than pretended.
+
+## Support Platform — Stage 05A: Agent speed (MVP)
+
+Plan: `docs/plans/2026-08-11-support-platform/stage-05a-agent-speed.md`. Read
+`stage-05-decisions.md`, `design.md`, and `deltas.md` in the same directory first. Integration branch is
+**`support-platform`**, not `main`. Scope is fixed for a 1–3 agent team; do not restore deferred Stage 05
+features.
+
+- [ ] **SUP-05A-1** Implement claim, auto-claim on first `outgoing` reply (notes excluded), unassign, and assign-to-another-agent, each writing an `activity` message; reopen preserves assignee
+- [ ] **SUP-05A-2** Add per-user conversation read state with the handled-ness supersede rule, manual mark-unread, and unread badges on `Unassigned` and `Assigned to me`
+- [ ] **SUP-05A-3** Implement the four fixed views with `Unassigned` as the landing view
+- [ ] **SUP-05A-4** Implement local draft persistence keyed by `(conversationId, mode)` that restores composer mode, clears on send, and shows an unsaved-draft indicator in the list
+- [ ] **SUP-05A-5** Add the team-scoped `cannedResponse` table (no `inboxId`) + CRUD + `/shortcode` insert-at-cursor with `{{contact.name}}` and `{{agent.name}}`
+- [ ] **SUP-05A-6** Implement global scoped search over `displayId`, subject, and contact name/email; no `conversationMessage` access
+- [ ] **SUP-05A-7** Add keyboard shortcuts scoped to `/support` with a `?` help overlay — build last
+- [ ] **SUP-05A-8** Add E2E coverage: reply auto-claims, note does not, draft restores its own mode, search finds a resolved conversation from another view
