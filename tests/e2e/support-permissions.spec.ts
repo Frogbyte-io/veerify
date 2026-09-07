@@ -127,12 +127,12 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.locator('#general-name')).toHaveAttribute('readonly', '')
   })
 
-  test('agent can claim an unassigned conversation from the thread header', async ({ browser }) => {
+  test('agent sees the winning owner when an explicit claim loses a race', async ({ browser }) => {
     const page = await openAs(browser, 'agent', '/support')
     const conversationId = 'claim-ui-conversation'
     const contactId = 'claim-ui-contact'
     let assigneeUserId: string | null = null
-    let patchBody: Record<string, unknown> | null = null
+    let claimMethod = ''
     const conversationRow = () => ({
       id: conversationId,
       inboxId: fixture.primaryInboxId,
@@ -156,17 +156,19 @@ test.describe.serial('support permission-aware navigation', () => {
         }),
       })
     })
+    await page.route(`**/api/support/conversations/${conversationId}/claim`, async (route) => {
+      claimMethod = route.request().method()
+      assigneeUserId = fixture.users.supervisor.userId
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { conversation: conversationRow(), claimed: false },
+        }),
+      })
+    })
     await page.route(`**/api/support/conversations/${conversationId}`, async (route) => {
-      if (route.request().method() === 'PATCH') {
-        patchBody = route.request().postDataJSON()
-        assigneeUserId = String(patchBody?.assigneeUserId || '') || null
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ success: true, data: { conversation: conversationRow(), changed: true } }),
-        })
-        return
-      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -209,10 +211,14 @@ test.describe.serial('support permission-aware navigation', () => {
     await page.getByTestId(`support-conversation-${conversationId}`).click()
     const claimButton = page.getByTestId('support-thread-claim')
     await expect(claimButton).toBeVisible()
+    const dialog = page.waitForEvent('dialog')
     await claimButton.click()
 
-    await expect.poll(() => patchBody).toEqual({ assigneeUserId: fixture.users.agent.userId })
-    await expect(page.getByTestId('support-thread-assignee')).toHaveValue(fixture.users.agent.userId)
+    const lostClaimDialog = await dialog
+    expect(lostClaimDialog.message()).toBe('This conversation was claimed by another agent.')
+    await lostClaimDialog.accept()
+    expect(claimMethod).toBe('POST')
+    await expect(page.getByTestId('support-thread-assignee')).toHaveValue(fixture.users.supervisor.userId)
     await expect(claimButton).toHaveCount(0)
   })
 

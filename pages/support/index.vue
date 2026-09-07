@@ -83,6 +83,7 @@
             @retry-detail="loadConversationDetail"
             @retry-messages="loadMessages"
             @update-conversation="patchConversation"
+            @claim-conversation="claimConversation"
             @toggle-contact-panel="showContactPanel = !showContactPanel"
           >
             <template #composer>
@@ -743,6 +744,37 @@ export default {
           return
         }
         alert(err?.data?.error?.message || 'Failed to update this conversation')
+      } finally {
+        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.isUpdatingConversation = false
+      }
+    },
+
+    async claimConversation() {
+      if (!this.selectedConversationId) return
+      const generation = this.contextGeneration
+      const teamId = this.activeTeamId
+      const inboxId = this.activeInboxId
+      const conversationId = this.selectedConversationId
+      if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+
+      this.isUpdatingConversation = true
+      try {
+        const response = await $fetch(`/api/support/conversations/${conversationId}/claim`, { method: 'POST' })
+        if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+        if (response?.data?.conversation) this.conversationDetail = response.data.conversation
+        if (response?.data?.claimed === false) alert('This conversation was claimed by another agent.')
+
+        await Promise.all([
+          this.loadMessages({ generation, teamId, inboxId, conversationId }),
+          this.loadConversations(true, { generation, teamId, inboxId }),
+        ])
+      } catch (err) {
+        if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+        if (this.isForbiddenError(err)) {
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+          return
+        }
+        alert(err?.data?.error?.message || 'Failed to claim this conversation')
       } finally {
         if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.isUpdatingConversation = false
       }

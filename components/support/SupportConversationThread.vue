@@ -61,7 +61,7 @@
             size="sm"
             data-testid="support-thread-claim"
             :disabled="isUpdating"
-            @click="onUpdate('assigneeUserId', currentUserId)"
+            @click="$emit('claim-conversation')"
           >
             <Icon name="lucide:hand" class="w-3.5 h-3.5 mr-1.5" />
             Claim
@@ -178,7 +178,7 @@ export default {
     isUpdating: { type: Boolean, default: false },
   },
 
-  emits: ['retry-detail', 'retry-messages', 'update-conversation', 'toggle-contact-panel'],
+  emits: ['retry-detail', 'retry-messages', 'update-conversation', 'claim-conversation', 'toggle-contact-panel'],
 
   computed: {
     showCurrentUserOption() {

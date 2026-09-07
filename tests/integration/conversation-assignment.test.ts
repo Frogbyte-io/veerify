@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { db } from '../../server/database/drizzle'
 import { organization, team, user } from '../../server/database/schema/auth'
 import { contact, conversation, conversationMessage, supportInbox } from '../../server/database/schema/support'
+import { claimConversationForAgent } from '../../server/utils/conversation-assignment'
 import { commitMessageWithAttachments } from '../../server/utils/support-attachment-finalization'
 
 const suffix = randomUUID()
@@ -197,5 +198,33 @@ describe('conversation assignment while posting messages (real Postgres)', () =>
     expect([agentAId, agentBId]).toContain(updated.assigneeUserId)
     expect(messages.filter((message) => message.kind === 'outgoing')).toHaveLength(2)
     expect(messages.filter((message) => message.kind === 'activity')).toHaveLength(1)
+  })
+
+  it('lets only one agent win two concurrent explicit claims', async () => {
+    const results = await Promise.all([
+      claimConversationForAgent(conversationId, agentAId, now),
+      claimConversationForAgent(conversationId, agentBId, now),
+    ])
+
+    const [updated] = await db.select().from(conversation).where(eq(conversation.id, conversationId))
+    const activities = await db
+      .select()
+      .from(conversationMessage)
+      .where(eq(conversationMessage.conversationId, conversationId))
+
+    const winners = results.filter((result) => result.claimed)
+    const losers = results.filter((result) => !result.claimed)
+    expect(winners).toHaveLength(1)
+    expect(losers).toHaveLength(1)
+    expect(winners[0].conversation?.assigneeUserId).toBe(updated.assigneeUserId)
+    expect(losers[0].conversation?.assigneeUserId).toBe(updated.assigneeUserId)
+    expect(activities.filter((message) => message.kind === 'activity')).toMatchObject([
+      {
+        body: updated.assigneeUserId === agentAId ? 'Assigned to Agent A.' : 'Assigned to Agent B.',
+        senderKind: 'system',
+        senderUserId: updated.assigneeUserId,
+        isPrivate: true,
+      },
+    ])
   })
 })

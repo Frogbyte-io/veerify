@@ -4,7 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { contact, conversation, supportInbox } from '../../server/database/schema/support'
 import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
-import { signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
+import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -20,14 +20,15 @@ async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie
  * internal note, change status, and confirm the status change rendered itself
  * into the thread as an `activity` message.
  *
- * Deliberately API-level. The realtime half of acceptance criterion 1 ("two
+ * Setup and final persistence assertions use the API, while the agent actions
+ * run through the real support UI. The realtime half of acceptance criterion 1 ("two
  * agents in two browsers on two app instances, one replies and the other sees
  * it without a refresh") is **not** covered here — it needs two app instances
  * and a shared broker, which this suite has no way to stand up. Tracked as
  * still-open in TODO.md rather than pretended to be covered.
  */
 test.describe.serial('support conversation flow', () => {
-  test('create, reply, note, status change, and activity message', async ({ request }) => {
+  test('create, reply, note, assign, status change, and activity message', async ({ page, request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie, '/support')
     const teamId = await activeTeamId(request, sessionCookie)
@@ -131,55 +132,77 @@ test.describe.serial('support conversation flow', () => {
       // 2. An internal note on an unassigned conversation stays unassigned.
       // `isPrivate` is derived server-side from `kind`, so this also asserts
       // the note cannot accidentally become customer-visible.
-      const noteResponse = await request.post(`/api/support/conversations/${conversationId}/messages`, {
-        headers,
-        data: { kind: 'note', body: 'Third report of this today — possible regression.' },
+      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+      const activeTeamResponse = await page.request.post('/api/teams/active', {
+        headers: withOriginHeaders('/support'),
+        data: { teamId },
       })
-      expect(noteResponse.ok()).toBeTruthy()
-      const note = (await noteResponse.json()).data.message
-      expect(note.kind).toBe('note')
-      expect(note.isPrivate).toBe(true)
+      expect(activeTeamResponse.ok()).toBeTruthy()
+      await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, {
+        waitUntil: 'domcontentloaded',
+      })
+      await expect(page.getByTestId('support-thread-assignee')).toHaveValue('')
+
+      await page.getByTestId('support-composer-mode-note').click()
+      await page.getByTestId('support-composer-input').fill('Third report of this today — possible regression.')
+      const noteResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/support/conversations/${conversationId}/messages`)
+      )
+      await page.getByTestId('support-composer-submit').click()
+      expect((await noteResponse).ok()).toBeTruthy()
+      await expect(page.getByTestId('support-thread-assignee')).toHaveValue('')
+      await expect(page.getByText('Third report of this today — possible regression.')).toBeVisible()
 
       const afterNoteResponse = await request.get(`/api/support/conversations/${conversationId}`, { headers })
       expect(afterNoteResponse.ok()).toBeTruthy()
       expect((await afterNoteResponse.json()).data.conversation.assigneeUserId).toBeNull()
 
       // 3. The first customer-visible reply atomically claims the ticket.
-      const replyResponse = await request.post(`/api/support/conversations/${conversationId}/messages`, {
-        headers,
-        data: { kind: 'outgoing', body: 'Have you tried resetting your password?' },
-      })
-      expect(replyResponse.ok()).toBeTruthy()
-      const reply = (await replyResponse.json()).data.message
-      expect(reply.kind).toBe('outgoing')
-      expect(reply.isPrivate).toBe(false)
-
-      const afterReplyResponse = await request.get(`/api/support/conversations/${conversationId}`, { headers })
-      expect(afterReplyResponse.ok()).toBeTruthy()
-      expect((await afterReplyResponse.json()).data.conversation.assigneeUserId).toBe(agentUserId)
+      await page.getByTestId('support-composer-mode-reply').click()
+      await page.getByTestId('support-composer-input').fill('Have you tried resetting your password?')
+      const replyResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/support/conversations/${conversationId}/messages`)
+      )
+      await page.getByTestId('support-composer-submit').click()
+      expect((await replyResponse).ok()).toBeTruthy()
+      await expect(page.getByTestId('support-thread-assignee')).toHaveValue(agentUserId)
+      await expect(page.getByTestId('support-thread-claim')).toHaveCount(0)
+      await expect(page.getByText('Have you tried resetting your password?')).toBeVisible()
 
       // 4. Handoff, release, and reclaim all use the same assignment API.
       if (!adminUserId) throw new Error('Support flow admin fixture disappeared')
-      const handoffResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
-        headers,
-        data: { assigneeUserId: adminUserId },
-      })
-      expect(handoffResponse.ok()).toBeTruthy()
-      expect((await handoffResponse.json()).data.conversation.assigneeUserId).toBe(adminUserId)
+      const assigneeSelect = page.getByTestId('support-thread-assignee')
+      const handoffResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          response.url().endsWith(`/api/support/conversations/${conversationId}`)
+      )
+      await assigneeSelect.selectOption(adminUserId)
+      expect((await handoffResponse).ok()).toBeTruthy()
+      await expect(assigneeSelect).toHaveValue(adminUserId)
 
-      const unassignResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
-        headers,
-        data: { assigneeUserId: null },
-      })
-      expect(unassignResponse.ok()).toBeTruthy()
-      expect((await unassignResponse.json()).data.conversation.assigneeUserId).toBeNull()
+      const unassignResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          response.url().endsWith(`/api/support/conversations/${conversationId}`)
+      )
+      await assigneeSelect.selectOption('')
+      expect((await unassignResponse).ok()).toBeTruthy()
+      await expect(assigneeSelect).toHaveValue('')
+      await expect(page.getByTestId('support-thread-claim')).toBeVisible()
 
-      const reclaimResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
-        headers,
-        data: { assigneeUserId: agentUserId },
-      })
-      expect(reclaimResponse.ok()).toBeTruthy()
-      expect((await reclaimResponse.json()).data.conversation.assigneeUserId).toBe(agentUserId)
+      const reclaimResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().endsWith(`/api/support/conversations/${conversationId}/claim`)
+      )
+      await page.getByTestId('support-thread-claim').click()
+      expect((await reclaimResponse).ok()).toBeTruthy()
+      await expect(assigneeSelect).toHaveValue(agentUserId)
 
       // 5. Change status.
       const patchResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
