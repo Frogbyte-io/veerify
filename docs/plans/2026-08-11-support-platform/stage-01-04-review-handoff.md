@@ -1,6 +1,6 @@
 # Stage 01-04 hardening review handoff
 
-Updated: 2026-09-03
+Updated: 2026-09-06
 
 ## Repository state
 
@@ -15,7 +15,7 @@ Updated: 2026-09-03
 
 The durable implementation plan is
 `docs/plans/2026-08-11-support-platform/stage-01-04-hardening-implementation.md`.
-**All sixteen tasks are complete, and the Final Review Gate has run.** Its three Important findings are fixed. What remains is integration into `support-platform`.
+**Complete and integrated.** All sixteen tasks, the Final Review Gate, and both fix waves are merged into `support-platform` as `4a19726`. Nothing here is outstanding except the provider checklist.
 
 ## Completed work
 
@@ -355,18 +355,30 @@ yarn test:e2e:worktree -- tests/e2e/support-outbound-reply.spec.ts --workers=1
 
 ## Resume order
 
-Tasks 1-16 and the Final Review Gate are done. What remains is integration.
+**This review is finished and integrated.** `support-platform` is at `4a19726`; branch new work from
+there, not from this branch. What is left is not hardening work:
 
-1. Confirm this branch/worktree and run `yarn harness:context`.
-2. Start Postgres and Valkey. **Create a fresh database rather than reusing one** — residue in a
-   long-lived database causes failures that look like regressions.
-3. Before any E2E run, check nothing is listening on the worktree port (`ss -ltnp | grep <port>`) and
-   kill orphaned workers — killing the `nuxi.mjs` parent leaves the `_dev` child holding the socket.
-4. Merge or rebase onto `support-platform`. The target has two later documentation commits
-   (`c3c19b1`, `5b82348`) not yet in this branch. Run `yarn harness:verify` after.
-5. Decide on the five deferred Minor findings recorded in the implementation plan.
-6. Carry `stage-01-04-provider-checklist.md` to whoever has provider credentials. It is the only
-   remaining validation, it is entirely unexecuted, and one deferred finding is blocked on it.
+1. **Run the provider checklist.** `stage-01-04-provider-checklist.md` is entirely unexecuted — every
+   row is `pending` or `unavailable`. It needs Postmark/Mailgun credentials, Gmail/Outlook mailboxes,
+   and a real S3 bucket. **One review finding (the dead delivery-correlation fallback) is closed only
+   when rows 2.3a, 2.3b, and 3.1a pass.** Until then, treat email delivery as unvalidated against real
+   providers regardless of the automated counts.
+2. **Stage 05a is the next stage.** Read `stage-05-decisions.md` before `stage-05a-agent-speed.md` —
+   most of Stage 05 is deliberately-cut scope, and the decisions file exists to stop it being
+   "completed" back in.
+3. **Two things the reviewer never examined:** the Vue UI under `pages/support/*` and
+   `components/support/*` (~2,500 lines, checked only for Options API compliance) and Task 14's
+   Docker/CI changes. Unreviewed, not cleared.
+
+### Before any E2E run
+
+- **Create a fresh database.** Residue in a long-lived one produces failures that look like
+  regressions. `support-contact-timeline.spec.ts` keys fixtures on the shared seed email, so an
+  aborted run fails the next run and then self-clears — an alternating fail/pass that reads like a
+  product bug. Fixing that spec to clean up by suffix would remove a recurring diagnostic cost.
+- **Check nothing already holds the worktree port** (`ss -ltnp | grep <port>`). Killing the
+  `nuxi.mjs` parent leaves the `_dev` child holding the socket, and a stale worker answering on the
+  expected port means tests silently run against another worktree's code.
 
 ## Other worktrees and branches at handoff
 
