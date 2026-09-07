@@ -135,7 +135,7 @@ export async function recordConversationActivity(
   tx: Tx,
   conversationId: string,
   changes: ConversationChange[],
-  actorUserId: string
+  actorUserId: string | null
 ): Promise<void> {
   if (changes.length === 0) return
 

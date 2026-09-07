@@ -33,7 +33,8 @@ import { emailDomain, getChannelDriver, type InboundMessage } from '~/server/ser
 import { resolveInboxByAddress } from '~/server/utils/support-access'
 import { allocateConversationDisplayId } from '~/server/utils/support-counter'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
-import { resolveThread } from '~/server/utils/inbound-threading'
+import { resolveThread, updatesForInboundReply } from '~/server/utils/inbound-threading'
+import { recordConversationActivity } from '~/server/utils/conversation-activity'
 import { stripQuotedReply } from '~/server/utils/inbound-content'
 import { sanitizeInboundHtml } from '~/server/utils/inbound-sanitize'
 import { isAutoResponse } from '~/server/utils/inbound-autoresponse'
@@ -308,14 +309,23 @@ export default defineEventHandler(async (event) => {
       } else {
         // Never overwrite `projectId` on an existing conversation - an agent
         // may have corrected it (stage doc step 7).
-        await tx
-          .update(conversation)
-          .set({
-            lastActivityAt: message.receivedAt,
-            lastCustomerReplyAt: message.receivedAt,
-            updatedAt: new Date(),
-          })
+        const [existingThread] = await tx
+          .select({ status: conversation.status })
+          .from(conversation)
           .where(eq(conversation.id, conversationId))
+          .limit(1)
+
+        const updates = updatesForInboundReply(existingThread, message.receivedAt, new Date())
+        await tx.update(conversation).set(updates).where(eq(conversation.id, conversationId))
+
+        if (existingThread.status === 'resolved') {
+          await recordConversationActivity(
+            tx,
+            conversationId,
+            [{ field: 'status', from: 'resolved', to: 'open' }],
+            null
+          )
+        }
       }
 
       // ---- 8. Message ------------------------------------------------------

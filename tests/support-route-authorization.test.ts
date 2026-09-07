@@ -239,6 +239,7 @@ const conversationList = (await import('~/server/api/support/conversations/index
 const conversationCreate = (await import('~/server/api/support/conversations/index.post')).default
 const conversationGet = (await import('~/server/api/support/conversations/[id].get')).default
 const conversationUpdate = (await import('~/server/api/support/conversations/[id].patch')).default
+const conversationClaim = (await import('~/server/api/support/conversations/[id]/claim.post')).default
 const participantCreate = (await import('~/server/api/support/conversations/[id]/participants/index.post')).default
 const participantDelete = (await import('~/server/api/support/conversations/[id]/participants/[participantId].delete'))
   .default
@@ -632,6 +633,12 @@ const executableBoundaryCases: BoundaryCase[] = [
     }),
   },
   {
+    name: 'conversations/[id]/claim.post',
+    ...boundary(conversationClaim, 'requireConversationAccess', ['conversation-1', 'user-1'], {
+      params: { id: 'conversation-1' },
+    }),
+  },
+  {
     name: 'conversations/[id]/participants/index.post',
     ...boundary(participantCreate, 'requireConversationAccess', ['conversation-1', 'user-1'], {
       params: { id: 'conversation-1' },
@@ -735,7 +742,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(46)
+    expect(executableBoundaryCases).toHaveLength(47)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}

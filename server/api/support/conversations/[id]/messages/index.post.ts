@@ -11,8 +11,10 @@
  *       `isPrivate` is derived from `kind` server-side and is never taken
  *       from the request body, since a private note rendered as a public
  *       reply is the worst failure mode in a support tool. An `outgoing`
- *       message is enqueued to the durable outbox in the same transaction as
- *       its insert (SUP-04-4); a `note` never dispatches mail (SUP-04-5).
+ *       message atomically claims an unassigned conversation for the replying
+ *       agent, writes the matching activity, and enqueues the durable outbox
+ *       delivery in the same transaction; a `note` never claims or dispatches
+ *       mail.
  *     operationId: createSupportConversationMessage
  *     parameters:
  *       - in: path

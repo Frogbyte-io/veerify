@@ -4,7 +4,7 @@ import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { contact, conversation, supportInbox } from '../../server/database/schema/support'
 import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
-import { signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
+import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -20,14 +20,15 @@ async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie
  * internal note, change status, and confirm the status change rendered itself
  * into the thread as an `activity` message.
  *
- * Deliberately API-level. The realtime half of acceptance criterion 1 ("two
+ * Setup and final persistence assertions use the API, while the agent actions
+ * run through the real support UI. The realtime half of acceptance criterion 1 ("two
  * agents in two browsers on two app instances, one replies and the other sees
  * it without a refresh") is **not** covered here — it needs two app instances
  * and a shared broker, which this suite has no way to stand up. Tracked as
  * still-open in TODO.md rather than pretended to be covered.
  */
 test.describe.serial('support conversation flow', () => {
-  test('create, reply, note, status change, and activity message', async ({ request }) => {
+  test('create, reply, note, assign, status change, and activity message', async ({ page, request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie, '/support')
     const teamId = await activeTeamId(request, sessionCookie)
@@ -76,7 +77,8 @@ test.describe.serial('support conversation flow', () => {
 
       const agentSessionResponse = await request.get('/api/auth/session', { headers })
       expect(agentSessionResponse.ok()).toBeTruthy()
-      const agentUserId = (await agentSessionResponse.json()).data.user.id as string
+      const agentSession = (await agentSessionResponse.json()).data.user as { id: string; name: string }
+      const agentUserId = agentSession.id
       const addAgentResponse = await request.post(`/api/support/inboxes/${inboxId}/members`, {
         headers: adminHeaders,
         data: { userId: agentUserId, role: 'agent' },
@@ -127,29 +129,82 @@ test.describe.serial('support conversation flow', () => {
       })
       expect(identityResponse.ok()).toBeTruthy()
 
-      // 2. Reply — customer-visible.
-      const replyResponse = await request.post(`/api/support/conversations/${conversationId}/messages`, {
-        headers,
-        data: { kind: 'outgoing', body: 'Have you tried resetting your password?' },
+      // 2. An internal note on an unassigned conversation stays unassigned.
+      // `isPrivate` is derived server-side from `kind`, so this also asserts
+      // the note cannot accidentally become customer-visible.
+      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+      const activeTeamResponse = await page.request.post('/api/teams/active', {
+        headers: withOriginHeaders('/support'),
+        data: { teamId },
       })
-      expect(replyResponse.ok()).toBeTruthy()
-      const reply = (await replyResponse.json()).data.message
-      expect(reply.kind).toBe('outgoing')
-      expect(reply.isPrivate).toBe(false)
-
-      // 3. Internal note — must never be customer-visible. `isPrivate` is
-      // derived server-side from `kind`, so this asserts the server's guard,
-      // not just what the client asked for.
-      const noteResponse = await request.post(`/api/support/conversations/${conversationId}/messages`, {
-        headers,
-        data: { kind: 'note', body: 'Third report of this today — possible regression.' },
+      expect(activeTeamResponse.ok()).toBeTruthy()
+      await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, {
+        waitUntil: 'domcontentloaded',
       })
-      expect(noteResponse.ok()).toBeTruthy()
-      const note = (await noteResponse.json()).data.message
-      expect(note.kind).toBe('note')
-      expect(note.isPrivate).toBe(true)
+      await expect(page.getByTestId('support-thread-assignee')).toHaveValue('')
 
-      // 4. Change status.
+      await page.getByTestId('support-composer-mode-note').click()
+      await page.getByTestId('support-composer-input').fill('Third report of this today — possible regression.')
+      const noteResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/support/conversations/${conversationId}/messages`)
+      )
+      await page.getByTestId('support-composer-submit').click()
+      expect((await noteResponse).ok()).toBeTruthy()
+      await expect(page.getByTestId('support-thread-assignee')).toHaveValue('')
+      await expect(page.getByText('Third report of this today — possible regression.')).toBeVisible()
+
+      const afterNoteResponse = await request.get(`/api/support/conversations/${conversationId}`, { headers })
+      expect(afterNoteResponse.ok()).toBeTruthy()
+      expect((await afterNoteResponse.json()).data.conversation.assigneeUserId).toBeNull()
+
+      // 3. The first customer-visible reply atomically claims the ticket.
+      await page.getByTestId('support-composer-mode-reply').click()
+      await page.getByTestId('support-composer-input').fill('Have you tried resetting your password?')
+      const replyResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/support/conversations/${conversationId}/messages`)
+      )
+      await page.getByTestId('support-composer-submit').click()
+      expect((await replyResponse).ok()).toBeTruthy()
+      await expect(page.getByTestId('support-thread-assignee')).toHaveValue(agentUserId)
+      await expect(page.getByTestId('support-thread-claim')).toHaveCount(0)
+      await expect(page.getByText('Have you tried resetting your password?')).toBeVisible()
+
+      // 4. Handoff, release, and reclaim all use the same assignment API.
+      if (!adminUserId) throw new Error('Support flow admin fixture disappeared')
+      const assigneeSelect = page.getByTestId('support-thread-assignee')
+      const handoffResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          response.url().endsWith(`/api/support/conversations/${conversationId}`)
+      )
+      await assigneeSelect.selectOption(adminUserId)
+      expect((await handoffResponse).ok()).toBeTruthy()
+      await expect(assigneeSelect).toHaveValue(adminUserId)
+
+      const unassignResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          response.url().endsWith(`/api/support/conversations/${conversationId}`)
+      )
+      await assigneeSelect.selectOption('')
+      expect((await unassignResponse).ok()).toBeTruthy()
+      await expect(assigneeSelect).toHaveValue('')
+      await expect(page.getByTestId('support-thread-claim')).toBeVisible()
+
+      const reclaimResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().endsWith(`/api/support/conversations/${conversationId}/claim`)
+      )
+      await page.getByTestId('support-thread-claim').click()
+      expect((await reclaimResponse).ok()).toBeTruthy()
+      await expect(assigneeSelect).toHaveValue(agentUserId)
+
+      // 5. Change status.
       const patchResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
         headers,
         data: { status: 'resolved' },
@@ -160,30 +215,59 @@ test.describe.serial('support conversation flow', () => {
       expect(patched.data.conversation.status).toBe('resolved')
       expect(patched.data.conversation.resolvedAt).not.toBeNull()
 
-      // 5. The status change must render inline in the thread as an activity
+      // 6. Every ownership and status change renders once in the thread as an activity
       // message, from the same ordered query as the replies.
       const messagesResponse = await request.get(`/api/support/conversations/${conversationId}/messages`, { headers })
       expect(messagesResponse.ok()).toBeTruthy()
       const messages = (await messagesResponse.json()).data.messages as Array<Record<string, unknown>>
 
-      expect(messages).toHaveLength(3)
-      expect(messages.map((m) => m.kind)).toEqual(['outgoing', 'note', 'activity'])
+      expect(messages).toHaveLength(7)
+      expect(messages.map((m) => m.kind)).toEqual([
+        'note',
+        'outgoing',
+        'activity',
+        'activity',
+        'activity',
+        'activity',
+        'activity',
+      ])
 
-      const activity = messages[2]
+      const claimActivity = messages[2]
+      expect(claimActivity.body).toBe(`Assigned to ${agentSession.name}.`)
+      expect(claimActivity.senderKind).toBe('system')
+
+      expect(messages[3].body).toBe('Assigned to Support flow setup admin.')
+      expect(messages[4].body).toBe('Unassigned.')
+      expect(messages[5].body).toBe(`Assigned to ${agentSession.name}.`)
+
+      const activity = messages[6]
       expect(activity.body).toBe('Status changed from open to resolved.')
       expect(activity.senderKind).toBe('system')
 
-      // 6. Re-sending the same status is not a change, so it must not append a
+      // 7. Reopening preserves the owner and records only the status change.
+      const reopenResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
+        headers,
+        data: { status: 'open' },
+      })
+      expect(reopenResponse.ok()).toBeTruthy()
+      const reopened = (await reopenResponse.json()).data.conversation
+      expect(reopened.status).toBe('open')
+      expect(reopened.resolvedAt).toBeNull()
+      expect(reopened.assigneeUserId).toBe(agentUserId)
+
+      // 8. Re-sending the same status is not a change, so it must not append a
       // second activity message saying nothing happened.
       const noopResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
         headers,
-        data: { status: 'resolved' },
+        data: { status: 'open' },
       })
       expect(noopResponse.ok()).toBeTruthy()
       expect((await noopResponse.json()).data.changed).toBe(false)
 
       const afterNoop = await request.get(`/api/support/conversations/${conversationId}/messages`, { headers })
-      expect(((await afterNoop.json()).data.messages as unknown[]).length).toBe(3)
+      const afterNoopMessages = (await afterNoop.json()).data.messages as Array<Record<string, unknown>>
+      expect(afterNoopMessages).toHaveLength(8)
+      expect(afterNoopMessages[7].body).toBe('Status changed from resolved to open.')
     } finally {
       // Conversations first: supportInbox is referenced with onDelete restrict.
       if (createdConversationIds.length > 0) {

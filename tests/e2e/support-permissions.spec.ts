@@ -127,6 +127,101 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.locator('#general-name')).toHaveAttribute('readonly', '')
   })
 
+  test('agent sees the winning owner when an explicit claim loses a race', async ({ browser }) => {
+    const page = await openAs(browser, 'agent', '/support')
+    const conversationId = 'claim-ui-conversation'
+    const contactId = 'claim-ui-contact'
+    let assigneeUserId: string | null = null
+    let claimMethod = ''
+    const conversationRow = () => ({
+      id: conversationId,
+      inboxId: fixture.primaryInboxId,
+      teamId: fixture.teamId,
+      contactId,
+      subject: 'Claim this conversation',
+      displayId: 4051,
+      status: 'open',
+      priority: null,
+      assigneeUserId,
+      createdAt: new Date().toISOString(),
+    })
+
+    await page.route('**/api/support/conversations?*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { conversations: [conversationRow()], hasMore: false, nextCursor: null },
+        }),
+      })
+    })
+    await page.route(`**/api/support/conversations/${conversationId}/claim`, async (route) => {
+      claimMethod = route.request().method()
+      assigneeUserId = fixture.users.supervisor.userId
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { conversation: conversationRow(), claimed: false },
+        }),
+      })
+    })
+    await page.route(`**/api/support/conversations/${conversationId}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            conversation: conversationRow(),
+            contact: { id: contactId, name: 'Claim UI Customer', email: 'claim-ui@example.com' },
+            participants: [],
+          },
+        }),
+      })
+    })
+    await page.route(`**/api/support/conversations/${conversationId}/messages`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { messages: [] } }),
+      })
+    })
+    await page.route(`**/api/support/contacts/${contactId}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: { contact: { id: contactId, name: 'Claim UI Customer', email: 'claim-ui@example.com' }, company: null },
+        }),
+      })
+    })
+    await page.route(`**/api/support/contacts/${contactId}/timeline?*`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { linked: [], probableFeedback: [] } }),
+      })
+    })
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByTestId(`support-conversation-${conversationId}`).click()
+    const claimButton = page.getByTestId('support-thread-claim')
+    await expect(claimButton).toBeVisible()
+    const dialog = page.waitForEvent('dialog')
+    await claimButton.click()
+
+    const lostClaimDialog = await dialog
+    expect(lostClaimDialog.message()).toBe('This conversation was claimed by another agent.')
+    await lostClaimDialog.accept()
+    expect(claimMethod).toBe('POST')
+    await expect(page.getByTestId('support-thread-assignee')).toHaveValue(fixture.users.supervisor.userId)
+    await expect(claimButton).toHaveCount(0)
+  })
+
   test('tag 403 recovers the inbox without throwing from an unrelated conversation snapshot', async ({ browser }) => {
     const page = await openAs(browser, 'supervisor', '/support')
     let tagCalls = 0
@@ -442,10 +537,18 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     })
     await page.route('**/api/support/tags?*', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { tags: [] } }) })
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { tags: [] } }),
+      })
     )
     await page.route('**/api/support/inboxes/*/members', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { members: [] } }) })
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { members: [] } }),
+      })
     )
     await page.route('**/api/support/conversations?*', (route) =>
       route.fulfill({
@@ -584,7 +687,10 @@ test.describe.serial('support permission-aware navigation', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { settings: { autoLinkFeedback: false }, capabilities: { canManageTeamSupport: true } } }),
+        body: JSON.stringify({
+          success: true,
+          data: { settings: { autoLinkFeedback: false }, capabilities: { canManageTeamSupport: true } },
+        }),
       })
     })
     await page.route('**/api/support/inboxes?*', async (route) => {
@@ -592,7 +698,11 @@ test.describe.serial('support permission-aware navigation', () => {
       if (teamId === fixture.teamId) {
         recoveryListStarted()
         await recoveryListRelease
-        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { inboxes: [] } }) })
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, data: { inboxes: [] } }),
+        })
         return
       }
       switchedInboxListCalls += 1
@@ -601,7 +711,9 @@ test.describe.serial('support permission-aware navigation', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { inboxes: [{ id: switchedInboxId, name: 'Switched team inbox', capabilities: { canManageInbox: true } }] },
+          data: {
+            inboxes: [{ id: switchedInboxId, name: 'Switched team inbox', capabilities: { canManageInbox: true } }],
+          },
         }),
       })
     })
@@ -623,16 +735,32 @@ test.describe.serial('support permission-aware navigation', () => {
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
     )
     await page.route('**/api/support/inboxes/*/members', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { members: [] } }) })
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { members: [] } }),
+      })
     )
     await page.route('**/api/support/inboxes/*/addresses', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { addresses: [] } }) })
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { addresses: [] } }),
+      })
     )
     await page.route('**/api/support/inboxes/*/sending-status', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) })
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: null }),
+      })
     )
     await page.route('**/api/support/channel-status?*', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: null }) })
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: null }),
+      })
     )
 
     await page.getByTestId('support-team-policy-toggle').click()

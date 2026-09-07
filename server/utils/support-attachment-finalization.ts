@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
 import {
@@ -10,6 +10,7 @@ import {
 } from '~/server/database/schema/support'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { enqueueOutboundDelivery } from '~/server/utils/outbound-delivery'
+import { recordConversationActivity } from '~/server/utils/conversation-activity'
 import type { OutgoingReplyResult } from '~/server/utils/outbound-reply'
 import { getStorageProvider } from '~/server/utils/storage'
 import type { StorageObjectMetadata, StorageProvider } from '~/server/utils/storage/types'
@@ -130,9 +131,7 @@ async function verifyAndCopy(
     if (
       metadata.sizeBytes !== item.actualSizeBytes ||
       metadata.sizeBytes > SUPPORT_MAX_ATTACHMENT_BYTES ||
-      (metadata.contentType === null
-        ? storage.driver !== 'local'
-        : metadata.contentType !== item.storedContentType) ||
+      (metadata.contentType === null ? storage.driver !== 'local' : metadata.contentType !== item.storedContentType) ||
       metadata.objectVersion !== item.objectVersion
     ) {
       throw new Error(`Attachment source changed: ${item.uploadId}`)
@@ -302,6 +301,25 @@ export async function commitMessageWithAttachments(
       if (input.outgoing) {
         conversationUpdates.lastAgentReplyAt = now
         if (!input.existingConversation.firstResponseAt) conversationUpdates.firstResponseAt = now
+
+        // The claim is conditional at the database boundary, not on the
+        // caller's earlier conversation snapshot. Two agents may have the
+        // same unassigned thread open; only the first transaction to change
+        // NULL wins, and only that transaction records the claim activity.
+        const [claimed] = await tx
+          .update(conversation)
+          .set({ assigneeUserId: input.userId })
+          .where(and(eq(conversation.id, input.conversationId), isNull(conversation.assigneeUserId)))
+          .returning({ id: conversation.id })
+
+        if (claimed) {
+          await recordConversationActivity(
+            tx,
+            input.conversationId,
+            [{ field: 'assigneeUserId', from: null, to: input.userId }],
+            input.userId
+          )
+        }
       }
       await tx.update(conversation).set(conversationUpdates).where(eq(conversation.id, input.conversationId))
       if (input.outgoing) {

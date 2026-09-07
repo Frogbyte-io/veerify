@@ -42,6 +42,25 @@ export interface ThreadResolution {
   matchedBy: ThreadMatch
 }
 
+interface InboundConversationState {
+  status: string
+}
+
+/**
+ * State written when mail continues an existing thread. A resolved ticket is
+ * reopened, while omission of `assigneeUserId` deliberately preserves its
+ * owner. The weak subject fallback never selects a resolved thread, so this
+ * path is reached only by a strong RFC header/thread-key match.
+ */
+export function updatesForInboundReply(existing: InboundConversationState, receivedAt: Date, updatedAt: Date) {
+  return {
+    ...(existing.status === 'resolved' ? { status: 'open', resolvedAt: null } : {}),
+    lastActivityAt: receivedAt,
+    lastCustomerReplyAt: receivedAt,
+    updatedAt,
+  }
+}
+
 /** How far back the subject heuristic will look. Bounded on purpose. */
 export const SUBJECT_FALLBACK_WINDOW_DAYS = 7
 
