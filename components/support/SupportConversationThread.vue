@@ -56,6 +56,17 @@
              through PATCH .../conversations/[id], which writes an `activity`
              message server-side - that's what makes it show up inline below. -->
         <div class="flex items-center gap-2 mt-3 flex-wrap">
+          <Button
+            v-if="!conversation.assigneeUserId && currentUserId"
+            size="sm"
+            data-testid="support-thread-claim"
+            :disabled="isUpdating"
+            @click="onUpdate('assigneeUserId', currentUserId)"
+          >
+            <Icon name="lucide:hand" class="w-3.5 h-3.5 mr-1.5" />
+            Claim
+          </Button>
+
           <select
             data-testid="support-thread-status"
             class="h-8 px-2 text-xs bg-background border rounded-md focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
@@ -92,6 +103,7 @@
             @change="onUpdate('assigneeUserId', $event.target.value || null)"
           >
             <option value="">Unassigned</option>
+            <option v-if="showCurrentUserOption" :value="currentUserId">You</option>
             <option v-for="member in members" :key="member.userId" :value="member.userId">
               {{ member.userName || member.userEmail }}
             </option>
@@ -156,6 +168,7 @@ export default {
     conversationId: { type: String, default: null },
     conversation: { type: Object, default: null },
     contact: { type: Object, default: null },
+    currentUserId: { type: String, default: '' },
     members: { type: Array, default: () => [] },
     messages: { type: Array, default: () => [] },
     isLoadingDetail: { type: Boolean, default: false },
@@ -166,6 +179,12 @@ export default {
   },
 
   emits: ['retry-detail', 'retry-messages', 'update-conversation', 'toggle-contact-panel'],
+
+  computed: {
+    showCurrentUserOption() {
+      return Boolean(this.currentUserId && !this.members.some((member) => member.userId === this.currentUserId))
+    },
+  },
 
   methods: {
     onUpdate(field, value) {

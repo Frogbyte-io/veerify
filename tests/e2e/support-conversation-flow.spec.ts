@@ -76,7 +76,8 @@ test.describe.serial('support conversation flow', () => {
 
       const agentSessionResponse = await request.get('/api/auth/session', { headers })
       expect(agentSessionResponse.ok()).toBeTruthy()
-      const agentUserId = (await agentSessionResponse.json()).data.user.id as string
+      const agentSession = (await agentSessionResponse.json()).data.user as { id: string; name: string }
+      const agentUserId = agentSession.id
       const addAgentResponse = await request.post(`/api/support/inboxes/${inboxId}/members`, {
         headers: adminHeaders,
         data: { userId: agentUserId, role: 'agent' },
@@ -127,19 +128,9 @@ test.describe.serial('support conversation flow', () => {
       })
       expect(identityResponse.ok()).toBeTruthy()
 
-      // 2. Reply — customer-visible.
-      const replyResponse = await request.post(`/api/support/conversations/${conversationId}/messages`, {
-        headers,
-        data: { kind: 'outgoing', body: 'Have you tried resetting your password?' },
-      })
-      expect(replyResponse.ok()).toBeTruthy()
-      const reply = (await replyResponse.json()).data.message
-      expect(reply.kind).toBe('outgoing')
-      expect(reply.isPrivate).toBe(false)
-
-      // 3. Internal note — must never be customer-visible. `isPrivate` is
-      // derived server-side from `kind`, so this asserts the server's guard,
-      // not just what the client asked for.
+      // 2. An internal note on an unassigned conversation stays unassigned.
+      // `isPrivate` is derived server-side from `kind`, so this also asserts
+      // the note cannot accidentally become customer-visible.
       const noteResponse = await request.post(`/api/support/conversations/${conversationId}/messages`, {
         headers,
         data: { kind: 'note', body: 'Third report of this today — possible regression.' },
@@ -149,7 +140,48 @@ test.describe.serial('support conversation flow', () => {
       expect(note.kind).toBe('note')
       expect(note.isPrivate).toBe(true)
 
-      // 4. Change status.
+      const afterNoteResponse = await request.get(`/api/support/conversations/${conversationId}`, { headers })
+      expect(afterNoteResponse.ok()).toBeTruthy()
+      expect((await afterNoteResponse.json()).data.conversation.assigneeUserId).toBeNull()
+
+      // 3. The first customer-visible reply atomically claims the ticket.
+      const replyResponse = await request.post(`/api/support/conversations/${conversationId}/messages`, {
+        headers,
+        data: { kind: 'outgoing', body: 'Have you tried resetting your password?' },
+      })
+      expect(replyResponse.ok()).toBeTruthy()
+      const reply = (await replyResponse.json()).data.message
+      expect(reply.kind).toBe('outgoing')
+      expect(reply.isPrivate).toBe(false)
+
+      const afterReplyResponse = await request.get(`/api/support/conversations/${conversationId}`, { headers })
+      expect(afterReplyResponse.ok()).toBeTruthy()
+      expect((await afterReplyResponse.json()).data.conversation.assigneeUserId).toBe(agentUserId)
+
+      // 4. Handoff, release, and reclaim all use the same assignment API.
+      if (!adminUserId) throw new Error('Support flow admin fixture disappeared')
+      const handoffResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
+        headers,
+        data: { assigneeUserId: adminUserId },
+      })
+      expect(handoffResponse.ok()).toBeTruthy()
+      expect((await handoffResponse.json()).data.conversation.assigneeUserId).toBe(adminUserId)
+
+      const unassignResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
+        headers,
+        data: { assigneeUserId: null },
+      })
+      expect(unassignResponse.ok()).toBeTruthy()
+      expect((await unassignResponse.json()).data.conversation.assigneeUserId).toBeNull()
+
+      const reclaimResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
+        headers,
+        data: { assigneeUserId: agentUserId },
+      })
+      expect(reclaimResponse.ok()).toBeTruthy()
+      expect((await reclaimResponse.json()).data.conversation.assigneeUserId).toBe(agentUserId)
+
+      // 5. Change status.
       const patchResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
         headers,
         data: { status: 'resolved' },
@@ -160,30 +192,59 @@ test.describe.serial('support conversation flow', () => {
       expect(patched.data.conversation.status).toBe('resolved')
       expect(patched.data.conversation.resolvedAt).not.toBeNull()
 
-      // 5. The status change must render inline in the thread as an activity
+      // 6. Every ownership and status change renders once in the thread as an activity
       // message, from the same ordered query as the replies.
       const messagesResponse = await request.get(`/api/support/conversations/${conversationId}/messages`, { headers })
       expect(messagesResponse.ok()).toBeTruthy()
       const messages = (await messagesResponse.json()).data.messages as Array<Record<string, unknown>>
 
-      expect(messages).toHaveLength(3)
-      expect(messages.map((m) => m.kind)).toEqual(['outgoing', 'note', 'activity'])
+      expect(messages).toHaveLength(7)
+      expect(messages.map((m) => m.kind)).toEqual([
+        'note',
+        'outgoing',
+        'activity',
+        'activity',
+        'activity',
+        'activity',
+        'activity',
+      ])
 
-      const activity = messages[2]
+      const claimActivity = messages[2]
+      expect(claimActivity.body).toBe(`Assigned to ${agentSession.name}.`)
+      expect(claimActivity.senderKind).toBe('system')
+
+      expect(messages[3].body).toBe('Assigned to Support flow setup admin.')
+      expect(messages[4].body).toBe('Unassigned.')
+      expect(messages[5].body).toBe(`Assigned to ${agentSession.name}.`)
+
+      const activity = messages[6]
       expect(activity.body).toBe('Status changed from open to resolved.')
       expect(activity.senderKind).toBe('system')
 
-      // 6. Re-sending the same status is not a change, so it must not append a
+      // 7. Reopening preserves the owner and records only the status change.
+      const reopenResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
+        headers,
+        data: { status: 'open' },
+      })
+      expect(reopenResponse.ok()).toBeTruthy()
+      const reopened = (await reopenResponse.json()).data.conversation
+      expect(reopened.status).toBe('open')
+      expect(reopened.resolvedAt).toBeNull()
+      expect(reopened.assigneeUserId).toBe(agentUserId)
+
+      // 8. Re-sending the same status is not a change, so it must not append a
       // second activity message saying nothing happened.
       const noopResponse = await request.patch(`/api/support/conversations/${conversationId}`, {
         headers,
-        data: { status: 'resolved' },
+        data: { status: 'open' },
       })
       expect(noopResponse.ok()).toBeTruthy()
       expect((await noopResponse.json()).data.changed).toBe(false)
 
       const afterNoop = await request.get(`/api/support/conversations/${conversationId}/messages`, { headers })
-      expect(((await afterNoop.json()).data.messages as unknown[]).length).toBe(3)
+      const afterNoopMessages = (await afterNoop.json()).data.messages as Array<Record<string, unknown>>
+      expect(afterNoopMessages).toHaveLength(8)
+      expect(afterNoopMessages[7].body).toBe('Status changed from resolved to open.')
     } finally {
       // Conversations first: supportInbox is referenced with onDelete restrict.
       if (createdConversationIds.length > 0) {

@@ -152,8 +152,10 @@ describe('diffConversationPatch', () => {
   })
 
   it('clears resolvedAt when a resolved conversation is reopened', () => {
-    const resolved = { ...open, status: 'resolved' }
-    expect(diffConversationPatch(resolved, { status: 'open' }, now).updates.resolvedAt).toBeNull()
+    const resolved = { ...open, status: 'resolved', assigneeUserId: 'u1' }
+    const { updates } = diffConversationPatch(resolved, { status: 'open' }, now)
+    expect(updates.resolvedAt).toBeNull()
+    expect('assigneeUserId' in updates).toBe(false)
   })
 
   it('leaves resolvedAt alone when status is not part of the patch', () => {

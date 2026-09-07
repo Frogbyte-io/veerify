@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import type { InboundMessage } from '../server/services/support-channels/types'
 import type { ThreadableMessage } from '../server/utils/inbound-threading'
-import { normalizeSubject, SUBJECT_FALLBACK_WINDOW_DAYS } from '../server/utils/inbound-threading'
+import {
+  normalizeSubject,
+  SUBJECT_FALLBACK_WINDOW_DAYS,
+  updatesForInboundReply,
+} from '../server/utils/inbound-threading'
 
 /**
  * Compile-time proof that the two halves of Stage 03 actually fit.
@@ -88,5 +92,31 @@ describe('normalizeSubject', () => {
     // A wide window turns unrelated same-subject mail into a false match.
     expect(SUBJECT_FALLBACK_WINDOW_DAYS).toBeGreaterThan(0)
     expect(SUBJECT_FALLBACK_WINDOW_DAYS).toBeLessThanOrEqual(30)
+  })
+})
+
+describe('inbound conversation updates', () => {
+  it('reopens a resolved thread while preserving its assignee', () => {
+    const receivedAt = new Date('2026-09-07T12:00:00.000Z')
+    const updatedAt = new Date('2026-09-07T12:00:01.000Z')
+    const existing = {
+      status: 'resolved',
+      resolvedAt: new Date('2026-09-06T12:00:00.000Z'),
+      assigneeUserId: 'agent-a',
+    }
+
+    const updates = updatesForInboundReply(existing, receivedAt, updatedAt)
+    expect(updates).toEqual({
+      status: 'open',
+      resolvedAt: null,
+      lastActivityAt: receivedAt,
+      lastCustomerReplyAt: receivedAt,
+      updatedAt,
+    })
+    expect({ ...existing, ...updates }).toMatchObject({
+      status: 'open',
+      resolvedAt: null,
+      assigneeUserId: 'agent-a',
+    })
   })
 })

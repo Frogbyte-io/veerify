@@ -72,6 +72,7 @@
             :conversation-id="selectedConversationId"
             :conversation="conversationDetail"
             :contact="conversationContact"
+            :current-user-id="currentUserId"
             :members="inboxMembers"
             :messages="messages"
             :is-loading-detail="isLoadingDetail"
@@ -88,7 +89,7 @@
               <SupportComposer
                 v-if="selectedConversationId"
                 :conversation-id="selectedConversationId"
-                @posted="loadMessages"
+                @posted="handleMessagePosted"
               />
             </template>
           </SupportConversationThread>
@@ -138,6 +139,7 @@ export default {
   data() {
     return {
       activeTeamId: '',
+      currentUserId: '',
       contextGeneration: 0,
       isLoadingTeam: true,
       teamError: null,
@@ -259,6 +261,7 @@ export default {
         this.unsubscribeConversationChannel = null
       }
       this.inboxes = []
+      this.currentUserId = ''
       this.activeInboxId = null
       this.inboxMembers = []
       this.tags = []
@@ -280,7 +283,10 @@ export default {
       this.teamError = null
 
       try {
-        const teamResponse = await $fetch('/api/teams/active')
+        const [teamResponse, sessionResponse] = await Promise.all([
+          $fetch('/api/teams/active'),
+          $fetch('/api/auth/session'),
+        ])
         const activeTeamData = teamResponse?.data
 
         if (!activeTeamData?.id) {
@@ -293,6 +299,7 @@ export default {
 
         if (generation !== this.contextGeneration) return
         this.activeTeamId = activeTeamData.id
+        this.currentUserId = sessionResponse?.data?.user?.id || ''
         this.isLoadingTeam = false
         await this.loadInboxes({ generation, teamId: activeTeamData.id })
         if (generation === this.contextGeneration && this.activeInboxId)
@@ -739,6 +746,23 @@ export default {
       } finally {
         if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.isUpdatingConversation = false
       }
+    },
+
+    async handleMessagePosted() {
+      const generation = this.contextGeneration
+      const teamId = this.activeTeamId
+      const inboxId = this.activeInboxId
+      const conversationId = this.selectedConversationId
+      if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+
+      // An outgoing reply may have auto-claimed the conversation in the same
+      // transaction as the message. Refresh all three views immediately so
+      // the owner shown in the header/list does not lag behind the thread.
+      await Promise.all([
+        this.loadConversationDetail({ generation, teamId, inboxId, conversationId }),
+        this.loadMessages({ generation, teamId, inboxId, conversationId }),
+        this.loadConversations(true, { generation, teamId, inboxId }),
+      ])
     },
 
     resetContactPanel() {
