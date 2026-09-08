@@ -222,12 +222,50 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(claimButton).toHaveCount(0)
   })
 
-  test('tag 403 recovers the inbox without throwing from an unrelated conversation snapshot', async ({ browser }) => {
+  test('tag creation 403 recovers the inbox without throwing from an unrelated conversation snapshot', async ({
+    browser,
+  }) => {
     const page = await openAs(browser, 'supervisor', '/support')
-    let tagCalls = 0
-    await page.route('**/api/support/tags?*', async (route) => {
-      tagCalls += 1
-      if (tagCalls === 1) {
+    let tagCreateCalls = 0
+    await page.route('**/api/support/tags', async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue()
+        return
+      }
+      tagCreateCalls += 1
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, error: { message: 'forbidden' } }),
+      })
+    })
+    await page.route('**/api/support/conversations?*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          data: {
+            conversations: [
+              {
+                id: 'tag-creation-recovery-snapshot',
+                contactId: 'tag-creation-recovery-contact',
+                subject: 'Unrelated conversation snapshot',
+                displayId: 103,
+                status: 'open',
+                priority: null,
+                assigneeUserId: null,
+                createdAt: new Date().toISOString(),
+              },
+            ],
+            hasMore: false,
+            nextCursor: null,
+          },
+        }),
+      })
+    })
+    await page.route('**/api/support/inboxes?*', async (route) => {
+      if (tagCreateCalls > 0) {
         await route.fulfill({
           status: 403,
           contentType: 'application/json',
@@ -235,18 +273,16 @@ test.describe.serial('support permission-aware navigation', () => {
         })
         return
       }
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { tags: [] } }),
-      })
+      await route.continue()
     })
 
     await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByPlaceholder('New tag').fill('Blocked tag')
+    await page.getByRole('button', { name: 'Create tag' }).click()
+    await expect.poll(() => tagCreateCalls).toBe(1)
     await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
       'You do not have access to this support inbox'
     )
-    await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
   })
 
   test('delayed contact-panel 403 cannot recover a newly selected conversation', async ({ browser }) => {

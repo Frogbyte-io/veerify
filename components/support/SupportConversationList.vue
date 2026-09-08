@@ -42,7 +42,7 @@
       <div v-else-if="conversations.length === 0" class="p-6 text-center">
         <Icon name="lucide:inbox" class="w-8 h-8 text-muted-foreground mx-auto mb-3" />
         <p class="text-sm font-medium mb-1">No conversations</p>
-        <p class="text-xs text-muted-foreground">Conversations matching these filters will appear here.</p>
+        <p class="text-xs text-muted-foreground">Conversations for this view will appear here.</p>
       </div>
 
       <!-- List -->
