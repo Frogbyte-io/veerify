@@ -37,14 +37,15 @@
  *       404: { description: Inbox not found }
  */
 import { z } from 'zod'
-import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, inArray, lt, or, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { db } from '~/server/database/drizzle'
-import { conversation, conversationTag } from '~/server/database/schema/support'
+import { conversation, conversationReadState, conversationTag } from '~/server/database/schema/support'
+import { isConversationUnread } from '~/server/utils/conversation-read-state'
 
 const querySchema = z.object({
   inboxId: z.string().min(1),
@@ -93,20 +94,55 @@ export default defineEventHandler(async (event) => {
   }
 
   const rows = await db
-    .select()
+    .select({
+      ...getTableColumns(conversation),
+      lastReadAt: conversationReadState.lastReadAt,
+    })
     .from(conversation)
+    .leftJoin(
+      conversationReadState,
+      and(eq(conversationReadState.conversationId, conversation.id), eq(conversationReadState.userId, session.user.id))
+    )
     .where(and(...conditions))
     .orderBy(desc(conversation.createdAt), desc(conversation.id))
     .limit(query.limit + 1)
 
   const hasMore = rows.length > query.limit
-  const items = hasMore ? rows.slice(0, query.limit) : rows
+  const pageRows = hasMore ? rows.slice(0, query.limit) : rows
+  const items = pageRows.map((row) => ({
+    ...row,
+    isUnread: isConversationUnread(row, session.user.id),
+  }))
+
+  const unreadSignalAt = sql`coalesce(${conversation.lastCustomerReplyAt}, ${conversation.createdAt})`
+  const unreadForViewer = sql`(${conversationReadState.lastReadAt} is null or ${conversationReadState.lastReadAt} < ${unreadSignalAt})`
+  const [unreadCounts = { unassigned: 0, assignedToMe: 0 }] = await db
+    .select({
+      unassigned:
+        sql<number>`count(*) filter (where ${conversation.assigneeUserId} is null and ${unreadForViewer})`.mapWith(
+          Number
+        ),
+      assignedToMe:
+        sql<number>`count(*) filter (where ${conversation.assigneeUserId} = ${session.user.id} and ${unreadForViewer})`.mapWith(
+          Number
+        ),
+    })
+    .from(conversation)
+    .leftJoin(
+      conversationReadState,
+      and(eq(conversationReadState.conversationId, conversation.id), eq(conversationReadState.userId, session.user.id))
+    )
+    .where(eq(conversation.inboxId, query.inboxId))
 
   return createSuccessResponse({
     conversations: items,
     hasMore,
     nextCursor: hasMore
-      ? encodeListCursor({ createdAt: items[items.length - 1].createdAt, id: items[items.length - 1].id })
+      ? encodeListCursor({
+          createdAt: pageRows[pageRows.length - 1].createdAt,
+          id: pageRows[pageRows.length - 1].id,
+        })
       : null,
+    unreadCounts,
   })
 })

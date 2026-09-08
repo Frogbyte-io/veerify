@@ -1,7 +1,25 @@
 <template>
   <div class="flex h-full flex-col">
-    <div class="px-3 py-3 border-b">
+    <div class="space-y-2 border-b px-3 py-3">
       <h2 class="text-sm font-semibold text-foreground">Conversations</h2>
+      <div class="flex items-center gap-2 text-[11px] text-muted-foreground" aria-label="Unread queues">
+        <span class="inline-flex items-center gap-1">
+          Unassigned
+          <Badge data-testid="support-unread-unassigned" variant="secondary" class="h-5 min-w-5 justify-center px-1.5">
+            {{ unreadCounts.unassigned }}
+          </Badge>
+        </span>
+        <span class="inline-flex items-center gap-1">
+          Assigned to me
+          <Badge
+            data-testid="support-unread-assigned-to-me"
+            variant="secondary"
+            class="h-5 min-w-5 justify-center px-1.5"
+          >
+            {{ unreadCounts.assignedToMe }}
+          </Badge>
+        </span>
+      </div>
     </div>
 
     <div class="flex-1 overflow-y-auto">
@@ -34,8 +52,9 @@
           :key="item.id"
           type="button"
           :data-testid="`support-conversation-${item.id}`"
+          :data-unread="String(item.isUnread === true)"
           class="w-full text-left px-3 py-3 border-b transition-colors"
-          :class="item.id === selectedConversationId ? 'bg-accent' : 'bg-transparent hover:bg-accent/50'"
+          :class="rowClass(item)"
           @click="$emit('select', item.id)"
         >
           <div class="flex items-start gap-2.5">
@@ -44,12 +63,17 @@
             </Avatar>
             <div class="min-w-0 flex-1">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-medium truncate">{{ contactLabel(item) }}</span>
+                <span class="truncate text-sm" :class="item.isUnread ? 'font-semibold text-foreground' : 'font-medium'">
+                  {{ contactLabel(item) }}
+                </span>
                 <span class="text-xs text-muted-foreground shrink-0">{{
                   formatRelativeTime(item.lastActivityAt || item.createdAt)
                 }}</span>
               </div>
-              <p class="text-sm text-foreground/90 truncate mt-0.5">
+              <p
+                class="mt-0.5 truncate text-sm text-foreground/90"
+                :class="item.isUnread ? 'font-semibold' : 'font-normal'"
+              >
                 {{ item.subject || 'No subject' }}
               </p>
               <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -87,11 +111,20 @@ export default {
     isLoadingMore: { type: Boolean, default: false },
     error: { type: String, default: null },
     hasMore: { type: Boolean, default: false },
+    unreadCounts: {
+      type: Object,
+      default: () => ({ unassigned: 0, assignedToMe: 0 }),
+    },
   },
 
   emits: ['select', 'retry', 'load-more'],
 
   methods: {
+    rowClass(item) {
+      if (item.id === this.selectedConversationId) return 'bg-accent'
+      return item.isUnread ? 'bg-primary/[0.04] hover:bg-accent/60' : 'bg-transparent hover:bg-accent/50'
+    },
+
     contactLabel(item) {
       if (item.contactLoading) return 'Loading…'
       return item.contact?.name || item.contact?.email || 'Unknown contact'

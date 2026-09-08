@@ -15,13 +15,14 @@
  *       403: { description: Not a member of this inbox or a team admin }
  *       404: { description: Conversation not found }
  */
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
-import { contact, conversationParticipant } from '~/server/database/schema/support'
+import { contact, conversationParticipant, conversationReadState } from '~/server/database/schema/support'
 import { user } from '~/server/database/schema/auth'
+import { isConversationUnread } from '~/server/utils/conversation-read-state'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -31,6 +32,13 @@ export default defineEventHandler(async (event) => {
   const row = await requireConversationAccess(conversationId, session.user.id)
 
   const [conversationContact] = await db.select().from(contact).where(eq(contact.id, row.contactId)).limit(1)
+  const [readState] = await db
+    .select({ lastReadAt: conversationReadState.lastReadAt })
+    .from(conversationReadState)
+    .where(
+      and(eq(conversationReadState.conversationId, conversationId), eq(conversationReadState.userId, session.user.id))
+    )
+    .limit(1)
 
   // Participants carry either a contactId (a CC'd customer) or a userId (an
   // internal follower), never both - resolve each side's display fields so the
@@ -53,7 +61,11 @@ export default defineEventHandler(async (event) => {
     .where(eq(conversationParticipant.conversationId, conversationId))
 
   return createSuccessResponse({
-    conversation: row,
+    conversation: {
+      ...row,
+      lastReadAt: readState?.lastReadAt ?? null,
+      isUnread: isConversationUnread({ ...row, lastReadAt: readState?.lastReadAt ?? null }, session.user.id),
+    },
     contact: conversationContact ?? null,
     participants: participantRows,
   })

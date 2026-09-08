@@ -247,6 +247,16 @@ export default defineEventHandler(() => {
             lastActivityAt: { type: 'string', format: 'date-time', nullable: true },
             lastCustomerReplyAt: { type: 'string', format: 'date-time', nullable: true },
             lastAgentReplyAt: { type: 'string', format: 'date-time', nullable: true },
+            lastReadAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              description: "The current agent's per-conversation read cursor",
+            },
+            isUnread: {
+              type: 'boolean',
+              description: 'Viewer-specific unread state after the handled-conversation supersede rule',
+            },
             metadata: { type: 'object', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
@@ -848,6 +858,14 @@ export default defineEventHandler(() => {
                           conversations: { type: 'array', items: { $ref: '#/components/schemas/Conversation' } },
                           hasMore: { type: 'boolean' },
                           nextCursor: { type: 'string', nullable: true },
+                          unreadCounts: {
+                            type: 'object',
+                            properties: {
+                              unassigned: { type: 'integer', minimum: 0 },
+                              assignedToMe: { type: 'integer', minimum: 0 },
+                            },
+                            required: ['unassigned', 'assignedToMe'],
+                          },
                         },
                       },
                     },
@@ -894,6 +912,33 @@ export default defineEventHandler(() => {
           responses: {
             '200': { description: 'Conversation updated' },
             '400': { description: 'assigneeUserId or projectId does not belong to this team' },
+            '403': { description: 'Not a member of this inbox or a team admin' },
+            '404': { description: 'Conversation not found' },
+          },
+        },
+      },
+      '/api/support/conversations/{id}/read-state': {
+        put: {
+          tags: ['Support'],
+          summary: 'Mark a conversation read or unread for the current agent',
+          operationId: 'updateSupportConversationReadState',
+          parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['isUnread'],
+                  properties: { isUnread: { type: 'boolean' } },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': { description: 'Viewer read state updated' },
+            '400': { description: 'Validation failed' },
             '403': { description: 'Not a member of this inbox or a team admin' },
             '404': { description: 'Conversation not found' },
           },
@@ -1106,7 +1151,15 @@ export default defineEventHandler(() => {
                       success: { type: 'boolean', example: true },
                       data: {
                         type: 'object',
-                        required: ['uploadId', 'uploadUrl', 'method', 'headers', 'expiresAt', 'fileName', 'contentType'],
+                        required: [
+                          'uploadId',
+                          'uploadUrl',
+                          'method',
+                          'headers',
+                          'expiresAt',
+                          'fileName',
+                          'contentType',
+                        ],
                         properties: {
                           uploadId: { type: 'string', format: 'uuid' },
                           uploadUrl: { type: 'string', format: 'uri-reference' },

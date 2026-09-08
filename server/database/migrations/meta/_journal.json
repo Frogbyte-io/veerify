@@ -211,6 +211,13 @@
       "when": 1788286440138,
       "tag": "0029_lyrical_ultimo",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788816168897,
+      "tag": "0030_flimsy_grim_reaper",
+      "breakpoints": true
     }
   ]
 }
