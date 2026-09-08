@@ -53,6 +53,7 @@
           type="button"
           :data-testid="`support-conversation-${item.id}`"
           :data-unread="String(item.isUnread === true)"
+          :data-has-draft="String(item.hasDraft === true)"
           class="w-full text-left px-3 py-3 border-b transition-colors"
           :class="rowClass(item)"
           @click="$emit('select', item.id)"
@@ -83,6 +84,15 @@
                 <Badge v-if="item.priority" variant="outline" class="text-[10px] px-1.5 py-0 font-normal">
                   {{ item.priority }}
                 </Badge>
+                <span
+                  v-if="item.hasDraft"
+                  data-testid="support-conversation-draft-indicator"
+                  class="inline-flex items-center gap-1 rounded-sm border border-amber-400/60 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                  aria-label="Unsaved draft"
+                >
+                  <Icon name="lucide:pencil-line" class="h-3 w-3" />
+                  Draft
+                </span>
                 <span class="text-[11px] text-muted-foreground ml-auto">#{{ item.displayId }}</span>
               </div>
             </div>

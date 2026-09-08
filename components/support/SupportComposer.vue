@@ -155,6 +155,7 @@
         >
           <Icon name="lucide:paperclip" class="w-3.5 h-3.5" />Attach
         </button>
+        <!-- prettier-ignore -->
         <input
           ref="fileInput"
           type="file"
@@ -188,6 +189,8 @@ import { toast } from 'vue-sonner'
 const MAX_ATTACHMENT_FILES = 10
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
+const DRAFT_MODES = ['reply', 'note']
 const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -213,10 +216,17 @@ function nextClientId() {
 export default {
   name: 'SupportComposer',
   props: { conversationId: { type: String, required: true } },
-  emits: ['posted'],
+  emits: ['posted', 'draft-state-changed'],
 
   data() {
-    return { mode: 'reply', draft: '', submitting: false, attachments: [], conversationGeneration: 0 }
+    return {
+      mode: 'reply',
+      draft: '',
+      submitting: false,
+      attachments: [],
+      conversationGeneration: 0,
+      isRestoringDraft: false,
+    }
   },
 
   computed: {
@@ -247,14 +257,21 @@ export default {
   },
 
   watch: {
+    draft() {
+      if (this.isRestoringDraft) return
+      this.saveCurrentDraft()
+    },
     conversationId() {
       this.conversationGeneration += 1
       this.abortUploads()
-      this.draft = ''
-      this.mode = 'reply'
+      this.restoreDraftForConversation()
       this.submitting = false
       this.attachments = []
     },
+  },
+
+  mounted() {
+    this.restoreDraftForConversation()
   },
 
   beforeUnmount() {
@@ -264,11 +281,116 @@ export default {
   methods: {
     setMode(mode) {
       if (this.submitting) return
+      if (!DRAFT_MODES.includes(mode) || mode === this.mode) return
       if (mode === 'note' && this.attachments.length > 0) {
         toast.warning('Remove attachments before switching to an internal note.')
         return
       }
+      this.restoreDraftMode(mode)
+    },
+
+    draftKey(conversationId, mode) {
+      return `${DRAFT_STORAGE_PREFIX}:${conversationId}:${mode}`
+    },
+
+    draftModeKey(conversationId) {
+      return `${DRAFT_STORAGE_PREFIX}:${conversationId}:mode`
+    },
+
+    storageGet(key) {
+      if (!import.meta.client) return null
+      try {
+        return window.localStorage.getItem(key)
+      } catch {
+        return null
+      }
+    },
+
+    storageSet(key, value) {
+      if (!import.meta.client) return
+      try {
+        window.localStorage.setItem(key, value)
+      } catch {
+        // Browser storage may be blocked; drafts are best-effort only.
+      }
+    },
+
+    storageRemove(key) {
+      if (!import.meta.client) return
+      try {
+        window.localStorage.removeItem(key)
+      } catch {
+        // Browser storage may be blocked; drafts are best-effort only.
+      }
+    },
+
+    readDraft(conversationId, mode) {
+      return this.storageGet(this.draftKey(conversationId, mode)) || ''
+    },
+
+    hasAnyDraft(conversationId) {
+      if (!conversationId) return false
+      return DRAFT_MODES.some((mode) => this.readDraft(conversationId, mode).trim().length > 0)
+    },
+
+    preferredDraftMode(conversationId) {
+      const storedMode = this.storageGet(this.draftModeKey(conversationId))
+      if (DRAFT_MODES.includes(storedMode) && this.readDraft(conversationId, storedMode).trim().length > 0)
+        return storedMode
+      if (this.readDraft(conversationId, 'reply').trim().length > 0) return 'reply'
+      if (this.readDraft(conversationId, 'note').trim().length > 0) return 'note'
+      return 'reply'
+    },
+
+    emitDraftState(conversationId = this.conversationId) {
+      if (!conversationId) return
+      this.$emit('draft-state-changed', {
+        conversationId,
+        hasDraft: this.hasAnyDraft(conversationId),
+      })
+    },
+
+    saveCurrentDraft() {
+      const conversationId = this.conversationId
+      if (!conversationId) return
+
+      const key = this.draftKey(conversationId, this.mode)
+      if (this.draft.trim().length > 0) {
+        this.storageSet(key, this.draft)
+        this.storageSet(this.draftModeKey(conversationId), this.mode)
+      } else {
+        this.storageRemove(key)
+        if (!this.hasAnyDraft(conversationId)) this.storageRemove(this.draftModeKey(conversationId))
+      }
+      this.emitDraftState(conversationId)
+    },
+
+    clearDraft(conversationId, mode) {
+      this.storageRemove(this.draftKey(conversationId, mode))
+      if (!this.hasAnyDraft(conversationId)) this.storageRemove(this.draftModeKey(conversationId))
+      else if (this.storageGet(this.draftModeKey(conversationId)) === mode) {
+        const nextMode = DRAFT_MODES.find((candidate) => this.readDraft(conversationId, candidate).trim().length > 0)
+        if (nextMode) this.storageSet(this.draftModeKey(conversationId), nextMode)
+      }
+      this.emitDraftState(conversationId)
+    },
+
+    restoreDraftMode(mode) {
+      this.isRestoringDraft = true
       this.mode = mode
+      this.draft = this.readDraft(this.conversationId, mode)
+      this.isRestoringDraft = false
+      if (this.draft.trim().length > 0) this.storageSet(this.draftModeKey(this.conversationId), mode)
+      this.emitDraftState()
+    },
+
+    restoreDraftForConversation() {
+      const mode = this.preferredDraftMode(this.conversationId)
+      this.isRestoringDraft = true
+      this.mode = mode
+      this.draft = this.readDraft(this.conversationId, mode)
+      this.isRestoringDraft = false
+      this.emitDraftState()
     },
 
     syncExpiredAttachments() {
@@ -285,6 +407,7 @@ export default {
       const submitGeneration = this.conversationGeneration
       this.submitting = true
       const kind = this.isNote ? 'note' : 'outgoing'
+      const submitMode = this.mode
       const body = this.draft.trim()
       const attachments = this.attachments.map((attachment) => ({ uploadId: attachment.uploadId }))
       try {
@@ -294,6 +417,7 @@ export default {
         })
         if (submitGeneration !== this.conversationGeneration || submitConversationId !== this.conversationId) return
         this.clearAttachmentTimers()
+        this.clearDraft(submitConversationId, submitMode)
         this.draft = ''
         this.attachments = []
         this.$emit('posted')

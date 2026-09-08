@@ -91,6 +91,7 @@
                 v-if="selectedConversationId"
                 :conversation-id="selectedConversationId"
                 @posted="handleMessagePosted"
+                @draft-state-changed="handleDraftStateChanged"
               />
             </template>
           </SupportConversationThread>
@@ -134,6 +135,8 @@
 <script>
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'all']
+const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
+const DRAFT_MODES = ['reply', 'note']
 
 export default {
   name: 'SupportInboxPage',
@@ -163,6 +166,7 @@ export default {
       hasMoreConversations: false,
       conversationsNextCursor: null,
       unreadCounts: { unassigned: 0, assignedToMe: 0 },
+      conversationDraftIds: [],
       contactCache: {},
 
       selectedConversationId: null,
@@ -221,6 +225,7 @@ export default {
           ...item,
           contact: cached && !isSentinel ? cached : null,
           contactLoading: cached === 'loading',
+          hasDraft: this.conversationDraftIds.includes(item.id),
         }
       })
     },
@@ -267,6 +272,7 @@ export default {
       this.activeView = 'unassigned'
       this.conversations = []
       this.unreadCounts = { unassigned: 0, assignedToMe: 0 }
+      this.conversationDraftIds = []
       this.contactCache = {}
       this.selectedConversationId = null
       this.conversationDetail = null
@@ -530,6 +536,7 @@ export default {
         this.unreadCounts = response?.data?.unreadCounts || { unassigned: 0, assignedToMe: 0 }
         this.hasMoreConversations = Boolean(response?.data?.hasMore)
         this.conversationsNextCursor = response?.data?.nextCursor || null
+        this.syncConversationDraftIndicators()
 
         await this.ensureContactsLoaded(
           page.map((c) => c.contactId),
@@ -548,6 +555,43 @@ export default {
           this.isLoadingMoreConversations = false
         }
       }
+    },
+
+    draftKey(conversationId, mode) {
+      return `${DRAFT_STORAGE_PREFIX}:${conversationId}:${mode}`
+    },
+
+    storageGet(key) {
+      if (!import.meta.client) return null
+      try {
+        return window.localStorage.getItem(key)
+      } catch {
+        return null
+      }
+    },
+
+    conversationHasDraft(conversationId) {
+      if (!conversationId) return false
+      return DRAFT_MODES.some((mode) => (this.storageGet(this.draftKey(conversationId, mode)) || '').trim().length > 0)
+    },
+
+    syncConversationDraftIndicators() {
+      if (!import.meta.client) return
+      this.conversationDraftIds = this.conversations
+        .map((item) => item.id)
+        .filter((conversationId) => this.conversationHasDraft(conversationId))
+    },
+
+    setConversationDraftIndicator(conversationId, hasDraft) {
+      if (!conversationId) return
+      const ids = new Set(this.conversationDraftIds)
+      if (hasDraft) ids.add(conversationId)
+      else ids.delete(conversationId)
+      this.conversationDraftIds = [...ids]
+    },
+
+    handleDraftStateChanged({ conversationId, hasDraft }) {
+      this.setConversationDraftIndicator(conversationId, Boolean(hasDraft))
     },
 
     async ensureContactsLoaded(
