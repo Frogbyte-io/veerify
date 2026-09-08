@@ -375,6 +375,7 @@ export const conversationReadState = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.userId, table.conversationId] }),
+    conversationIdx: index('conversation_read_state_conversation_idx').on(table.conversationId),
   })
 )
 

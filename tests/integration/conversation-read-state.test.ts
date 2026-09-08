@@ -9,6 +9,7 @@ import {
   isConversationUnread,
   reMarkConversationUnreadForIncoming,
   setConversationReadState,
+  setConversationReadStateInTransaction,
 } from '../../server/utils/conversation-read-state'
 
 const suffix = randomUUID()
@@ -140,6 +141,38 @@ describe('conversation read state (real Postgres)', () => {
     expect(isConversationUnread(await snapshot(agentBId), agentBId)).toBe(true)
   })
 
+  it('records the actual future-dated customer signal that was read without regressing a newer cursor', async () => {
+    const futureSignalAt = new Date('2040-01-01T12:00:00.000Z')
+    const olderSignalAt = new Date('2040-01-01T11:00:00.000Z')
+
+    await db
+      .update(conversation)
+      .set({ lastCustomerReplyAt: futureSignalAt })
+      .where(eq(conversation.id, conversationId))
+
+    await setConversationReadState(conversationId, agentAId, false)
+    expect((await snapshot(agentAId)).lastReadAt).toEqual(futureSignalAt)
+
+    await db.update(conversation).set({ lastCustomerReplyAt: olderSignalAt }).where(eq(conversation.id, conversationId))
+
+    await setConversationReadState(conversationId, agentAId, false)
+    expect((await snapshot(agentAId)).lastReadAt).toEqual(futureSignalAt)
+  })
+
+  it('does not advance a read cursor past the customer signal observed before inbound completed', async () => {
+    const laterIncomingAt = new Date('2026-09-07T11:00:00.000Z')
+
+    await db
+      .update(conversation)
+      .set({ lastCustomerReplyAt: laterIncomingAt })
+      .where(eq(conversation.id, conversationId))
+
+    await setConversationReadState(conversationId, agentAId, false, firstIncomingAt)
+
+    expect((await snapshot(agentAId)).lastReadAt).toEqual(firstIncomingAt)
+    expect(isConversationUnread(await snapshot(agentAId), agentAId)).toBe(true)
+  })
+
   it('suppresses handled unread state for everyone except the owner after a customer reply', async () => {
     await db
       .update(conversation)
@@ -152,6 +185,81 @@ describe('conversation read state (real Postgres)', () => {
 
     expect(isConversationUnread(await snapshot(agentAId), agentAId)).toBe(true)
     expect(isConversationUnread(await snapshot(agentBId), agentBId)).toBe(false)
+  })
+
+  it('leaves a handled conversation unread only for its assignee after the owner receives a later incoming signal', async () => {
+    const handledAt = new Date('2026-09-07T10:00:00.000Z')
+    const laterIncomingAt = new Date('2026-09-07T11:00:00.000Z')
+
+    await db
+      .update(conversation)
+      .set({
+        assigneeUserId: agentAId,
+        lastAgentReplyAt: handledAt,
+        lastCustomerReplyAt: laterIncomingAt,
+      })
+      .where(eq(conversation.id, conversationId))
+
+    await setConversationReadState(conversationId, agentAId, false, handledAt)
+    await setConversationReadState(conversationId, agentBId, false, handledAt)
+
+    expect(isConversationUnread(await snapshot(agentAId), agentAId)).toBe(true)
+    expect(isConversationUnread(await snapshot(agentBId), agentBId)).toBe(false)
+  })
+
+  it('leaves an owned conversation unread only for its assignee even before that owner sends an outgoing reply', async () => {
+    await db
+      .update(conversation)
+      .set({
+        assigneeUserId: agentAId,
+        lastAgentReplyAt: null,
+        lastCustomerReplyAt: new Date('2026-09-07T11:00:00.000Z'),
+      })
+      .where(eq(conversation.id, conversationId))
+
+    expect(isConversationUnread(await snapshot(agentAId), agentAId)).toBe(true)
+    expect(isConversationUnread(await snapshot(agentBId), agentBId)).toBe(false)
+  })
+
+  it('serializes a stale read with inbound invalidation so the new incoming signal remains unread', async () => {
+    const laterIncomingAt = new Date('2026-09-07T11:00:00.000Z')
+    let releaseReadLock!: () => void
+    const readLockReleased = new Promise<void>((resolve) => {
+      releaseReadLock = resolve
+    })
+    let signalObserved!: () => void
+    const signalWasObserved = new Promise<void>((resolve) => {
+      signalObserved = resolve
+    })
+
+    const staleRead = db.transaction(async (tx) => {
+      await setConversationReadStateInTransaction(tx, conversationId, agentAId, false, firstIncomingAt)
+      signalObserved()
+      await readLockReleased
+    })
+
+    await signalWasObserved
+
+    const inbound = db.transaction(async (tx) => {
+      const [lockedConversation] = await tx
+        .select({ assigneeUserId: conversation.assigneeUserId })
+        .from(conversation)
+        .where(eq(conversation.id, conversationId))
+        .for('update')
+      await tx
+        .update(conversation)
+        .set({ lastCustomerReplyAt: laterIncomingAt })
+        .where(eq(conversation.id, conversationId))
+      await reMarkConversationUnreadForIncoming(tx, conversationId, lockedConversation.assigneeUserId)
+    })
+
+    releaseReadLock()
+    await Promise.all([staleRead, inbound])
+
+    expect(
+      await db.select().from(conversationReadState).where(eq(conversationReadState.conversationId, conversationId))
+    ).toEqual([])
+    expect(isConversationUnread(await snapshot(agentAId), agentAId)).toBe(true)
   })
 
   it('implements manual mark-unread by removing the viewer cursor', async () => {

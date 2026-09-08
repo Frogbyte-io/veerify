@@ -218,6 +218,13 @@
       "when": 1788816168897,
       "tag": "0030_flimsy_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788848541808,
+      "tag": "0031_productive_kang",
+      "breakpoints": true
     }
   ]
 }

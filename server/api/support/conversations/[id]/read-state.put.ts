@@ -21,10 +21,15 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, bodySchema)
   const existing = await requireConversationAccess(conversationId, session.user.id)
 
-  const readState = await setConversationReadState(conversationId, session.user.id, body.isUnread)
+  const { conversation, readState } = await setConversationReadState(
+    conversationId,
+    session.user.id,
+    body.isUnread,
+    existing.lastCustomerReplyAt ?? existing.createdAt
+  )
   const isUnread = isConversationUnread(
     {
-      ...existing,
+      ...conversation,
       lastReadAt: readState?.lastReadAt ?? null,
     },
     session.user.id
