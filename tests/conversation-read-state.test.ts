@@ -39,9 +39,21 @@ vi.mock('~/server/database/drizzle', () => {
 })
 
 const listHandler = (await import('~/server/api/support/conversations/index.get')).default as EventHandler
+const { setConversationReadStateInTransaction } = await import('~/server/utils/conversation-read-state')
 
 function asEvent(value: unknown): Parameters<EventHandler>[0] {
   return value as Parameters<EventHandler>[0]
+}
+
+function txWithLockedConversations(rows: unknown[]) {
+  const query = {
+    from: () => query,
+    where: () => query,
+    for: () => Promise.resolve(rows),
+  }
+  return {
+    select: () => query,
+  } as unknown as Parameters<typeof setConversationReadStateInTransaction>[0]
 }
 
 describe('conversation read state list contract', () => {
@@ -109,6 +121,24 @@ describe('conversation read state list contract', () => {
           { id: 'read-by-b', isUnread: false },
         ],
         unreadCounts: { unassigned: 1, assignedToMe: 1 },
+      },
+    })
+  })
+})
+
+describe('setConversationReadStateInTransaction', () => {
+  it('reports a missing locked conversation as a standardized 404', async () => {
+    await expect(
+      setConversationReadStateInTransaction(txWithLockedConversations([]), 'conversation-missing', 'agent-b', false)
+    ).rejects.toMatchObject({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: {
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Conversation not found',
+        },
       },
     })
   })

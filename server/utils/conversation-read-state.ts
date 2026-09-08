@@ -1,6 +1,8 @@
 import { and, eq, sql } from 'drizzle-orm'
+import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { conversation, conversationReadState } from '~/server/database/schema/support'
+import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
 interface ConversationUnreadInput {
   assigneeUserId: string | null
@@ -79,7 +81,11 @@ export async function setConversationReadStateInTransaction(
     .for('update')
 
   if (!lockedConversation) {
-    throw new Error(`Conversation ${conversationId} vanished before its read state could be updated`)
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Conversation not found'),
+    })
   }
 
   if (isUnread) {
