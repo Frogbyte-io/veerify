@@ -32,20 +32,18 @@
         >
           {{ inboxAccessError }}
         </div>
-        <!-- Left: inbox switcher + filters -->
+        <!-- Left: inbox switcher + fixed views -->
         <div class="w-[220px] shrink-0 border-r bg-muted/20">
           <SupportInboxSidebar
             :inboxes="inboxes"
             :active-inbox-id="activeInboxId"
             :is-loading="isLoadingInboxes"
             :error="inboxesError"
-            :members="inboxMembers"
-            :tags="tags"
-            :tags-available="tagsAvailable"
             :capabilities="activeInbox?.capabilities"
-            :filters="filters"
+            :active-view="activeView"
+            :unread-counts="unreadCounts"
             @select-inbox="selectInbox"
-            @update:filters="onFiltersChange"
+            @select-view="selectView"
             @retry="loadInboxes"
             @create-tag="createTag"
           />
@@ -135,6 +133,7 @@
 
 <script>
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'all']
 
 export default {
   name: 'SupportInboxPage',
@@ -155,10 +154,7 @@ export default {
 
       inboxMembers: [],
 
-      tags: [],
-      tagsAvailable: false,
-
-      filters: { status: '', assigneeUserId: '', tagId: '' },
+      activeView: 'unassigned',
 
       conversations: [],
       isLoadingConversations: true,
@@ -268,9 +264,7 @@ export default {
       this.currentUserId = ''
       this.activeInboxId = null
       this.inboxMembers = []
-      this.tags = []
-      this.tagsAvailable = false
-      this.filters = { status: '', assigneeUserId: '', tagId: '' }
+      this.activeView = 'unassigned'
       this.conversations = []
       this.unreadCounts = { unassigned: 0, assignedToMe: 0 }
       this.contactCache = {}
@@ -307,8 +301,6 @@ export default {
         this.currentUserId = sessionResponse?.data?.user?.id || ''
         this.isLoadingTeam = false
         await this.loadInboxes({ generation, teamId: activeTeamData.id })
-        if (generation === this.contextGeneration && this.activeInboxId)
-          await this.loadTags({ generation, teamId: activeTeamData.id })
       } catch {
         if (generation === this.contextGeneration) {
           this.teamError = 'Something went wrong. Please try again.'
@@ -350,7 +342,7 @@ export default {
           null
 
         if (initialInboxId) {
-          await this.selectInbox(initialInboxId, { generation, teamId })
+          await this.selectInbox(initialInboxId, { generation, teamId, useRouteView: true })
           // Deep link from a conversation_assigned notification
           // (`/support?conversationId=…`). Opened after the inbox loads,
           // because selectInbox clears any current selection.
@@ -362,8 +354,6 @@ export default {
           this.inboxes = []
           this.activeInboxId = null
           this.inboxMembers = []
-          this.tags = []
-          this.tagsAvailable = false
           if (!recovering) this.inboxAccessError = 'You do not have access to this support inbox'
           return
         }
@@ -373,52 +363,10 @@ export default {
       }
     },
 
-    async loadTags({ generation = this.contextGeneration, teamId = this.activeTeamId } = {}) {
-      // Best effort: a team with no tags yet, or a failed lookup, hides the tag
-      // filter rather than showing an empty control - no fallback/fake data.
-      if (!teamId || !this.activeInboxId || !this.isCurrentContext(generation, teamId)) return
-      const inboxId = this.activeInboxId
-      try {
-        const response = await $fetch('/api/support/tags', { params: { teamId } })
-        if (!this.isCurrentContext(generation, teamId, inboxId)) return
-        this.tags = response?.data?.tags || []
-        this.tagsAvailable = true
-      } catch (error) {
-        if (this.isForbiddenError(error)) {
-          if (this.isCurrentContext(generation, teamId, inboxId))
-            await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
-          return
-        }
-        if (!this.isCurrentContext(generation, teamId, inboxId)) return
-        this.tags = []
-        this.tagsAvailable = false
-      }
-    },
-
-    async createTag(name) {
-      if (!this.activeTeamId) return
-      const generation = this.contextGeneration
-      const teamId = this.activeTeamId
-      const inboxId = this.activeInboxId
-      if (!this.isCurrentContext(generation, teamId, inboxId)) return
-      try {
-        await $fetch('/api/support/tags', {
-          method: 'POST',
-          body: { teamId, name },
-        })
-        if (!this.isCurrentContext(generation, teamId, inboxId)) return
-        await this.loadTags({ generation, teamId })
-      } catch (error) {
-        if (!this.isCurrentContext(generation, teamId, inboxId)) return
-        if (this.isForbiddenError(error)) {
-          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
-          return
-        }
-        alert(error?.data?.error?.message || 'Failed to create tag')
-      }
-    },
-
-    async selectInbox(inboxId, { generation = this.contextGeneration, teamId = this.activeTeamId } = {}) {
+    async selectInbox(
+      inboxId,
+      { generation = this.contextGeneration, teamId = this.activeTeamId, useRouteView = false } = {}
+    ) {
       if (!inboxId || inboxId === this.activeInboxId) return
       if (!this.isCurrentContext(generation, teamId)) return
 
@@ -430,10 +378,18 @@ export default {
 
       this.activeInboxId = inboxId
       this.inboxAccessError = null
-      this.filters = { status: '', assigneeUserId: '', tagId: '' }
+      this.activeView = useRouteView ? this.normalizeSupportView(this.$route.query.view) : 'unassigned'
 
       if (import.meta.client) {
-        this.$router.replace({ query: { ...this.$route.query, inboxId } }).catch(() => {})
+        this.$router
+          .replace({
+            query: {
+              ...this.$route.query,
+              inboxId,
+              view: this.activeView === 'unassigned' ? undefined : this.activeView,
+            },
+          })
+          .catch(() => {})
       }
 
       await Promise.all([
@@ -456,8 +412,6 @@ export default {
       this.unselectConversation()
       this.activeInboxId = null
       this.inboxMembers = []
-      this.tags = []
-      this.tagsAvailable = false
       this.conversations = []
       this.contactCache = {}
       if (import.meta.client) {
@@ -499,8 +453,50 @@ export default {
       }
     },
 
-    async onFiltersChange(newFilters) {
-      this.filters = newFilters
+    async createTag(name) {
+      if (!this.activeTeamId) return
+      const generation = this.contextGeneration
+      const teamId = this.activeTeamId
+      const inboxId = this.activeInboxId
+      if (!this.isCurrentContext(generation, teamId, inboxId)) return
+      try {
+        await $fetch('/api/support/tags', {
+          method: 'POST',
+          body: { teamId, name },
+        })
+      } catch (error) {
+        if (!this.isCurrentContext(generation, teamId, inboxId)) return
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+          return
+        }
+        alert(error?.data?.error?.message || 'Failed to create tag')
+      }
+    },
+
+    normalizeSupportView(value) {
+      return typeof value === 'string' && SUPPORT_VIEWS.includes(value) ? value : 'unassigned'
+    },
+
+    async selectView(view) {
+      const nextView = this.normalizeSupportView(view)
+      if (nextView === this.activeView) return
+
+      this.unselectConversation()
+      this.activeView = nextView
+
+      if (import.meta.client) {
+        await this.$router
+          .replace({
+            query: {
+              ...this.$route.query,
+              view: nextView === 'unassigned' ? undefined : nextView,
+              conversationId: undefined,
+            },
+          })
+          .catch(() => {})
+      }
+
       await this.loadConversations(true)
     },
 
@@ -522,9 +518,7 @@ export default {
         const response = await $fetch('/api/support/conversations', {
           params: {
             inboxId,
-            status: this.filters.status || undefined,
-            assigneeUserId: this.filters.assigneeUserId || undefined,
-            tagId: this.filters.tagId || undefined,
+            view: this.activeView,
             limit: 25,
             cursor: reset ? undefined : this.conversationsNextCursor || undefined,
           },

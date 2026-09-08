@@ -11,6 +11,9 @@
  *         required: true
  *         schema: { type: string }
  *       - in: query
+ *         name: view
+ *         schema: { type: string, enum: [unassigned, assigned-to-me, resolved, all] }
+ *       - in: query
  *         name: status
  *         schema: { type: string }
  *       - in: query
@@ -37,7 +40,7 @@
  *       404: { description: Inbox not found }
  */
 import { z } from 'zod'
-import { and, desc, eq, getTableColumns, inArray, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess } from '~/server/utils/support-access'
@@ -49,6 +52,7 @@ import { isConversationUnread } from '~/server/utils/conversation-read-state'
 
 const querySchema = z.object({
   inboxId: z.string().min(1),
+  view: z.enum(['unassigned', 'assigned-to-me', 'resolved', 'all']).optional(),
   status: z.enum(['open', 'pending', 'resolved', 'snoozed', 'closed']).optional(),
   assigneeUserId: z.string().optional(),
   contactId: z.string().optional(),
@@ -65,6 +69,15 @@ export default defineEventHandler(async (event) => {
   await requireInboxAccess(query.inboxId, session.user.id)
 
   const conditions = [eq(conversation.inboxId, query.inboxId)]
+  const activeStatuses = ['open', 'pending'] as const
+
+  if (query.view === 'unassigned') {
+    conditions.push(isNull(conversation.assigneeUserId), inArray(conversation.status, activeStatuses))
+  } else if (query.view === 'assigned-to-me') {
+    conditions.push(eq(conversation.assigneeUserId, session.user.id), inArray(conversation.status, activeStatuses))
+  } else if (query.view === 'resolved') {
+    conditions.push(eq(conversation.status, 'resolved'))
+  }
 
   if (query.status) conditions.push(eq(conversation.status, query.status))
   if (query.assigneeUserId) conditions.push(eq(conversation.assigneeUserId, query.assigneeUserId))
@@ -119,11 +132,11 @@ export default defineEventHandler(async (event) => {
   const [unreadCounts = { unassigned: 0, assignedToMe: 0 }] = await db
     .select({
       unassigned:
-        sql<number>`count(*) filter (where ${conversation.assigneeUserId} is null and ${unreadForViewer})`.mapWith(
+        sql<number>`count(*) filter (where ${conversation.assigneeUserId} is null and ${conversation.status} in ('open', 'pending') and ${unreadForViewer})`.mapWith(
           Number
         ),
       assignedToMe:
-        sql<number>`count(*) filter (where ${conversation.assigneeUserId} = ${session.user.id} and ${unreadForViewer})`.mapWith(
+        sql<number>`count(*) filter (where ${conversation.assigneeUserId} = ${session.user.id} and ${conversation.status} in ('open', 'pending') and ${unreadForViewer})`.mapWith(
           Number
         ),
     })

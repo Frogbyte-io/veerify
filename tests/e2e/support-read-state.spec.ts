@@ -172,7 +172,7 @@ test.describe.serial('support conversation read state', () => {
       })
 
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      await page.goto(`/support?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
+      await page.goto(`/support?inboxId=${inboxId}&view=all`, { waitUntil: 'domcontentloaded' })
 
       const row = page.getByTestId(`support-conversation-${conversationId}`)
       await expect(row).toHaveAttribute('data-unread', 'false')
