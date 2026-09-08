@@ -60,6 +60,7 @@
             :is-loading-more="isLoadingMoreConversations"
             :error="conversationsError"
             :has-more="hasMoreConversations"
+            :unread-counts="unreadCounts"
             @select="selectConversation"
             @retry="() => loadConversations(true)"
             @load-more="() => loadConversations(false)"
@@ -84,6 +85,7 @@
             @retry-messages="loadMessages"
             @update-conversation="patchConversation"
             @claim-conversation="claimConversation"
+            @mark-unread="markConversationUnread"
             @toggle-contact-panel="showContactPanel = !showContactPanel"
           >
             <template #composer>
@@ -164,6 +166,7 @@ export default {
       conversationsError: null,
       hasMoreConversations: false,
       conversationsNextCursor: null,
+      unreadCounts: { unassigned: 0, assignedToMe: 0 },
       contactCache: {},
 
       selectedConversationId: null,
@@ -269,6 +272,7 @@ export default {
       this.tagsAvailable = false
       this.filters = { status: '', assigneeUserId: '', tagId: '' }
       this.conversations = []
+      this.unreadCounts = { unassigned: 0, assignedToMe: 0 }
       this.contactCache = {}
       this.selectedConversationId = null
       this.conversationDetail = null
@@ -529,6 +533,7 @@ export default {
         if (!this.isCurrentContext(generation, teamId, inboxId)) return
         const page = response?.data?.conversations || []
         this.conversations = reset ? page : [...this.conversations, ...page]
+        this.unreadCounts = response?.data?.unreadCounts || { unassigned: 0, assignedToMe: 0 }
         this.hasMoreConversations = Boolean(response?.data?.hasMore)
         this.conversationsNextCursor = response?.data?.nextCursor || null
 
@@ -626,8 +631,53 @@ export default {
 
       this.subscribeConversation(conversationId)
 
-      await this.loadConversationDetail({ generation, teamId, inboxId, conversationId })
-      await this.loadMessages({ generation, teamId, inboxId, conversationId })
+      await this.updateConversationReadState(false, { generation, teamId, inboxId, conversationId })
+      await Promise.all([
+        this.loadConversationDetail({ generation, teamId, inboxId, conversationId }),
+        this.loadMessages({ generation, teamId, inboxId, conversationId }),
+        this.loadConversations(true, { generation, teamId, inboxId }),
+      ])
+    },
+
+    async updateConversationReadState(isUnread, context) {
+      const { generation, teamId, inboxId, conversationId } = context
+      if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+
+      try {
+        await $fetch(`/api/support/conversations/${conversationId}/read-state`, {
+          method: 'PUT',
+          body: { isUnread },
+        })
+      } catch (error) {
+        if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+          return
+        }
+        alert(error?.data?.error?.message || 'Failed to update read state')
+      }
+    },
+
+    async markConversationUnread() {
+      const context = {
+        generation: this.contextGeneration,
+        teamId: this.activeTeamId,
+        inboxId: this.activeInboxId,
+        conversationId: this.selectedConversationId,
+      }
+      if (!this.isCurrentConversation(context.generation, context.teamId, context.inboxId, context.conversationId))
+        return
+
+      this.isUpdatingConversation = true
+      try {
+        await this.updateConversationReadState(true, context)
+        if (!this.isCurrentConversation(context.generation, context.teamId, context.inboxId, context.conversationId))
+          return
+        await Promise.all([this.loadConversationDetail(context), this.loadConversations(true, context)])
+      } finally {
+        if (this.isCurrentConversation(context.generation, context.teamId, context.inboxId, context.conversationId))
+          this.isUpdatingConversation = false
+      }
     },
 
     async loadConversationDetail({

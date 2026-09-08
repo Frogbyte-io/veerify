@@ -50,6 +50,24 @@
             <Icon name="lucide:panel-right" class="w-3.5 h-3.5 mr-1.5" />
             Contact info
           </Button>
+          <Button
+            v-if="canMarkUnread"
+            variant="ghost"
+            size="sm"
+            data-testid="support-thread-mark-unread"
+            :disabled="isUpdating"
+            @click="$emit('mark-unread')"
+          >
+            <Icon name="lucide:mail" class="w-3.5 h-3.5 mr-1.5" />
+            Mark unread
+          </Button>
+          <p
+            v-else-if="isHandledByAnotherAgent"
+            data-testid="support-thread-mark-unread-unavailable"
+            class="max-w-56 text-right text-xs text-muted-foreground"
+          >
+            This conversation is handled by another agent. Only its assignee can mark it unread.
+          </p>
         </div>
 
         <!-- Quick-edit: status / priority / assignee. Every change here goes
@@ -178,9 +196,24 @@ export default {
     isUpdating: { type: Boolean, default: false },
   },
 
-  emits: ['retry-detail', 'retry-messages', 'update-conversation', 'claim-conversation', 'toggle-contact-panel'],
+  emits: [
+    'retry-detail',
+    'retry-messages',
+    'update-conversation',
+    'claim-conversation',
+    'mark-unread',
+    'toggle-contact-panel',
+  ],
 
   computed: {
+    isHandledByAnotherAgent() {
+      return Boolean(this.conversation?.assigneeUserId && this.conversation.assigneeUserId !== this.currentUserId)
+    },
+
+    canMarkUnread() {
+      return Boolean(!this.conversation?.isUnread && !this.isHandledByAnotherAgent)
+    },
+
     showCurrentUserOption() {
       return Boolean(this.currentUserId && !this.members.some((member) => member.userId === this.currentUserId))
     },

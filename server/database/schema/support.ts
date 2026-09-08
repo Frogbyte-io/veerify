@@ -35,6 +35,7 @@ import {
   boolean,
   integer,
   check,
+  primaryKey,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
@@ -354,6 +355,27 @@ export const conversation = pgTable(
     contactCreatedAtIdx: index('conversation_contact_created_at_idx').on(table.contactId, table.createdAt),
     channelThreadKeyIdx: index('conversation_channel_thread_key_idx').on(table.channelThreadKey),
     projectStatusIdx: index('conversation_project_status_idx').on(table.projectId, table.status),
+  })
+)
+
+// Per-agent read cursor for a conversation. The row itself means "read at
+// least once"; deleting it implements an explicit mark-unread without a
+// second source of truth. The user-first primary key supports inbox list
+// joins/counts for the current agent while enforcing one cursor per pair.
+export const conversationReadState = pgTable(
+  'conversation_read_state',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    lastReadAt: timestamp('last_read_at').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.conversationId] }),
+    conversationIdx: index('conversation_read_state_conversation_idx').on(table.conversationId),
   })
 )
 

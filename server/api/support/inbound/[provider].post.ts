@@ -59,6 +59,7 @@ import {
   shouldSendAutoReply,
 } from '~/server/utils/auto-reply'
 import { enqueueOutboundDelivery, runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
+import { reMarkConversationUnreadForIncoming } from '~/server/utils/conversation-read-state'
 import { db } from '~/server/database/drizzle'
 import {
   conversation,
@@ -310,13 +311,19 @@ export default defineEventHandler(async (event) => {
         // Never overwrite `projectId` on an existing conversation - an agent
         // may have corrected it (stage doc step 7).
         const [existingThread] = await tx
-          .select({ status: conversation.status })
+          .select({ status: conversation.status, assigneeUserId: conversation.assigneeUserId })
           .from(conversation)
           .where(eq(conversation.id, conversationId))
+          .for('update')
           .limit(1)
 
         const updates = updatesForInboundReply(existingThread, message.receivedAt, new Date())
-        await tx.update(conversation).set(updates).where(eq(conversation.id, conversationId))
+        const [updatedThread] = await tx
+          .update(conversation)
+          .set(updates)
+          .where(eq(conversation.id, conversationId))
+          .returning({ assigneeUserId: conversation.assigneeUserId })
+        await reMarkConversationUnreadForIncoming(tx, conversationId, updatedThread.assigneeUserId)
 
         if (existingThread.status === 'resolved') {
           await recordConversationActivity(
