@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { eq, inArray } from 'drizzle-orm'
+import { inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { contact, conversation, supportInbox, supportInboxMember } from '../../server/database/schema/support'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
@@ -20,10 +20,12 @@ test('support inbox exposes four fixed views with Unassigned as the scoped landi
 
   const suffix = randomUUID().slice(0, 8)
   const inboxId = `views-e2e-inbox-${suffix}`
+  const secondInboxId = `views-e2e-second-inbox-${suffix}`
   const membershipId = `views-e2e-member-${suffix}`
+  const secondMembershipId = `views-e2e-second-member-${suffix}`
   const now = new Date()
   const displayIdBase = 810000 + (Number.parseInt(suffix, 16) % 10000) * 10
-  const contactIds = ['unassigned', 'assigned', 'resolved', 'closed'].map(
+  const contactIds = ['unassigned', 'assigned', 'resolved', 'closed', 'second-unassigned'].map(
     (kind) => `views-e2e-${kind}-contact-${suffix}`
   )
   const conversationRows = [
@@ -59,24 +61,51 @@ test('support inbox exposes four fixed views with Unassigned as the scoped landi
       assigneeUserId: null,
       displayId: displayIdBase + 3,
     },
+    {
+      id: `views-e2e-second-unassigned-${suffix}`,
+      contactId: contactIds[4],
+      subject: 'Fixed views second inbox unassigned',
+      status: 'open',
+      assigneeUserId: null,
+      displayId: displayIdBase + 4,
+    },
   ]
 
   try {
-    await db.insert(supportInbox).values({
-      id: inboxId,
-      teamId,
-      name: `Fixed views ${suffix}`,
-      slug: `fixed-views-${suffix}`,
-      createdAt: now,
-      updatedAt: now,
-    })
-    await db.insert(supportInboxMember).values({
-      id: membershipId,
-      inboxId,
-      userId,
-      role: 'agent',
-      createdAt: now,
-    })
+    await db.insert(supportInbox).values([
+      {
+        id: inboxId,
+        teamId,
+        name: `Fixed views ${suffix}`,
+        slug: `fixed-views-${suffix}`,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: secondInboxId,
+        teamId,
+        name: `Fixed views second ${suffix}`,
+        slug: `fixed-views-second-${suffix}`,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
+    await db.insert(supportInboxMember).values([
+      {
+        id: membershipId,
+        inboxId,
+        userId,
+        role: 'agent',
+        createdAt: now,
+      },
+      {
+        id: secondMembershipId,
+        inboxId: secondInboxId,
+        userId,
+        role: 'agent',
+        createdAt: now,
+      },
+    ])
     await db.insert(contact).values(
       contactIds.map((id, index) => ({
         id,
@@ -90,7 +119,7 @@ test('support inbox exposes four fixed views with Unassigned as the scoped landi
     await db.insert(conversation).values(
       conversationRows.map((row, index) => ({
         ...row,
-        inboxId,
+        inboxId: row.id.includes('second-unassigned') ? secondInboxId : inboxId,
         teamId,
         lastActivityAt: new Date(now.getTime() + index * 1000),
         lastCustomerReplyAt: new Date(now.getTime() + index * 1000),
@@ -130,6 +159,13 @@ test('support inbox exposes four fixed views with Unassigned as the scoped landi
     await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${conversationRows[2].id}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${conversationRows[3].id}`)).toBeVisible()
+
+    await page.getByTestId(`support-inbox-switch-${secondInboxId}`).click()
+    await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')
+    await expect.poll(() => new URL(page.url()).searchParams.get('inboxId')).toBe(secondInboxId)
+    expect(new URL(page.url()).searchParams.get('view')).toBeNull()
+    await expect(page.getByTestId(`support-conversation-${conversationRows[4].id}`)).toBeVisible()
+    await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toHaveCount(0)
   } finally {
     await db.delete(conversation).where(
       inArray(
@@ -138,7 +174,7 @@ test('support inbox exposes four fixed views with Unassigned as the scoped landi
       )
     )
     await db.delete(contact).where(inArray(contact.id, contactIds))
-    await db.delete(supportInboxMember).where(eq(supportInboxMember.id, membershipId))
-    await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
+    await db.delete(supportInboxMember).where(inArray(supportInboxMember.id, [membershipId, secondMembershipId]))
+    await db.delete(supportInbox).where(inArray(supportInbox.id, [inboxId, secondInboxId]))
   }
 })

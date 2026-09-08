@@ -833,6 +833,11 @@ export default defineEventHandler(() => {
             { in: 'query', name: 'inboxId', required: true, schema: { type: 'string' } },
             {
               in: 'query',
+              name: 'view',
+              schema: { type: 'string', enum: ['unassigned', 'assigned-to-me', 'resolved', 'all'] },
+            },
+            {
+              in: 'query',
               name: 'status',
               schema: { type: 'string', enum: ['open', 'pending', 'resolved', 'snoozed', 'closed'] },
             },
