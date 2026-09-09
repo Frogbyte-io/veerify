@@ -40,3 +40,5 @@ Base: `56484fe65f87838497ae97fa50f5b6763e9dc777`
 - Task 2 integrated verification: `yarn harness:verify` passed with 585 unit, 6 Redis, and 115 Postgres tests. Focused forced read-state Chromium passed 2/2. Broad E2E guard skipped because the environment is local and `PLAYWRIGHT_FORCE` was not set for the harness run.
 - Task 3: complete — commits `f8ea7c1`, `5da3d57`; task review approved after one fix round; merged as `b7ecf4b`.
 - Task 3 integrated verification: `yarn harness:verify` passed with 585 unit, 6 Redis, and 115 Postgres tests. Focused fixed-view/API-doc/permissions Chromium passed 4/4. Broad E2E guard skipped because the environment is local and `PLAYWRIGHT_FORCE` was not set for the harness run.
+- Task 4: complete — commits `8ae0c2f`, `716928c`; task review approved after one fix round; merged as `96faf33`.
+- Task 4 integrated verification: `yarn harness:verify` passed with 585 unit, 6 Redis, and 115 Postgres tests. Focused related support Chromium passed 8/8. Broad E2E guard skipped because the environment is local and `PLAYWRIGHT_FORCE` was not set for the harness run.
