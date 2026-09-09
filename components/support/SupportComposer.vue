@@ -415,9 +415,9 @@ export default {
           method: 'POST',
           body: attachments.length > 0 ? { kind, body, attachments } : { kind, body },
         })
+        this.clearDraft(submitConversationId, submitMode)
         if (submitGeneration !== this.conversationGeneration || submitConversationId !== this.conversationId) return
         this.clearAttachmentTimers()
-        this.clearDraft(submitConversationId, submitMode)
         this.draft = ''
         this.attachments = []
         this.$emit('posted')

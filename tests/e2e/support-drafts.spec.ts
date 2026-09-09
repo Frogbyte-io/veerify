@@ -210,4 +210,199 @@ test.describe.serial('support local drafts', () => {
       await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
     }
   })
+
+  test('delayed successful send clears the submitted conversation draft without mutating the new composer', async ({
+    page,
+    request,
+  }) => {
+    const { teamId, userId } = await activeTeamAndUser(request)
+    const suffix = randomUUID().slice(0, 8)
+    const inboxId = `draft-stale-e2e-inbox-${suffix}`
+    const membershipId = `draft-stale-e2e-member-${suffix}`
+    const contactIds = [`draft-stale-e2e-contact-a-${suffix}`, `draft-stale-e2e-contact-b-${suffix}`]
+    const conversationIds = [`draft-stale-e2e-conversation-a-${suffix}`, `draft-stale-e2e-conversation-b-${suffix}`]
+    const now = new Date()
+    let releasePost: (() => void) | null = null
+    const releaseDelayedPost = () => {
+      if (!releasePost) throw new Error('Delayed message POST was not intercepted')
+      releasePost()
+    }
+
+    try {
+      await db.insert(supportInbox).values({
+        id: inboxId,
+        teamId,
+        name: `Draft stale ${suffix}`,
+        slug: `draft-stale-${suffix}`,
+        emailAddress: `draft-stale-${suffix}@example.com`,
+        fromName: 'Draft Stale E2E',
+        createdAt: now,
+        updatedAt: now,
+      })
+      await db.insert(supportInboxMember).values({
+        id: membershipId,
+        inboxId,
+        userId,
+        role: 'agent',
+        createdAt: now,
+      })
+      await db.insert(contact).values(
+        contactIds.map((id, index) => ({
+          id,
+          teamId,
+          name: `Draft Stale Customer ${index + 1}`,
+          email: `draft-stale-customer-${index + 1}-${suffix}@example.com`,
+          createdAt: now,
+          updatedAt: now,
+        }))
+      )
+      await db.insert(conversation).values(
+        conversationIds.map((id, index) => ({
+          id,
+          inboxId,
+          teamId,
+          contactId: contactIds[index],
+          displayId: 850000 + (Number.parseInt(suffix, 16) % 10000) * 10 + index,
+          subject: index === 0 ? 'Delayed draft sender' : 'Delayed draft destination',
+          status: 'open',
+          lastActivityAt: new Date(now.getTime() + index * 1000),
+          lastCustomerReplyAt: new Date(now.getTime() + index * 1000),
+          createdAt: new Date(now.getTime() + index * 1000),
+          updatedAt: now,
+        }))
+      )
+
+      await page.route(`**/api/support/conversations/${conversationIds[0]}/messages`, async (route) => {
+        await new Promise<void>((resolve) => {
+          releasePost = resolve
+        })
+        await route.continue()
+      })
+
+      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+      await page.goto(`/support?inboxId=${inboxId}&view=all&conversationId=${conversationIds[0]}`, {
+        waitUntil: 'domcontentloaded',
+      })
+
+      const submittedRow = page.getByTestId(`support-conversation-${conversationIds[0]}`)
+      const destinationRow = page.getByTestId(`support-conversation-${conversationIds[1]}`)
+      const composer = page.getByTestId('support-composer-input')
+
+      await expect(submittedRow).toHaveAttribute('data-has-draft', 'false')
+      await composer.fill('This reply is waiting on the network.')
+      await expect(submittedRow).toHaveAttribute('data-has-draft', 'true')
+
+      const delayedResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/support/conversations/${conversationIds[0]}/messages`)
+      )
+      await page.getByTestId('support-composer-submit').click()
+      await expect(page.getByTestId('support-composer-submit')).toBeDisabled()
+
+      await destinationRow.click()
+      await expect(page.getByRole('heading', { name: 'Delayed draft destination' })).toBeVisible()
+      await composer.fill('Destination draft must not be overwritten.')
+      releaseDelayedPost()
+      expect((await delayedResponse).ok()).toBeTruthy()
+
+      await expect(submittedRow).toHaveAttribute('data-has-draft', 'false')
+      await expect(destinationRow).toHaveAttribute('data-has-draft', 'true')
+      await expect(page.getByTestId('support-composer-reply')).toBeVisible()
+      await expect(composer).toHaveValue('Destination draft must not be overwritten.')
+    } finally {
+      await page.unroute(`**/api/support/conversations/${conversationIds[0]}/messages`).catch(() => {})
+      await db.delete(conversation).where(inArray(conversation.id, conversationIds))
+      await db.delete(contact).where(inArray(contact.id, contactIds))
+      await db.delete(supportInboxMember).where(eq(supportInboxMember.id, membershipId))
+      await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
+    }
+  })
+
+  test('failed send keeps the draft and row indicator', async ({ page, request }) => {
+    const { teamId, userId } = await activeTeamAndUser(request)
+    const suffix = randomUUID().slice(0, 8)
+    const inboxId = `draft-fail-e2e-inbox-${suffix}`
+    const membershipId = `draft-fail-e2e-member-${suffix}`
+    const contactId = `draft-fail-e2e-contact-${suffix}`
+    const conversationId = `draft-fail-e2e-conversation-${suffix}`
+    const now = new Date()
+
+    try {
+      await db.insert(supportInbox).values({
+        id: inboxId,
+        teamId,
+        name: `Draft fail ${suffix}`,
+        slug: `draft-fail-${suffix}`,
+        emailAddress: `draft-fail-${suffix}@example.com`,
+        fromName: 'Draft Fail E2E',
+        createdAt: now,
+        updatedAt: now,
+      })
+      await db.insert(supportInboxMember).values({
+        id: membershipId,
+        inboxId,
+        userId,
+        role: 'agent',
+        createdAt: now,
+      })
+      await db.insert(contact).values({
+        id: contactId,
+        teamId,
+        name: 'Draft Failure Customer',
+        email: `draft-fail-${suffix}@example.com`,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await db.insert(conversation).values({
+        id: conversationId,
+        inboxId,
+        teamId,
+        contactId,
+        displayId: 860000 + (Number.parseInt(suffix, 16) % 10000),
+        subject: 'Draft failed send',
+        status: 'open',
+        lastActivityAt: now,
+        lastCustomerReplyAt: now,
+        createdAt: now,
+        updatedAt: now,
+      })
+
+      await page.route(`**/api/support/conversations/${conversationId}/messages`, async (route) => {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ data: { error: { message: 'Injected failure' } } }),
+        })
+      })
+
+      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+      await page.goto(`/support?inboxId=${inboxId}&view=all&conversationId=${conversationId}`, {
+        waitUntil: 'domcontentloaded',
+      })
+
+      const row = page.getByTestId(`support-conversation-${conversationId}`)
+      const composer = page.getByTestId('support-composer-input')
+      await composer.fill('This draft should survive a failed send.')
+      await expect(row).toHaveAttribute('data-has-draft', 'true')
+
+      const failedResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes(`/api/support/conversations/${conversationId}/messages`)
+      )
+      await page.getByTestId('support-composer-submit').click()
+      expect((await failedResponse).status()).toBe(500)
+
+      await expect(composer).toHaveValue('This draft should survive a failed send.')
+      await expect(row).toHaveAttribute('data-has-draft', 'true')
+      await expect(row.getByTestId('support-conversation-draft-indicator')).toBeVisible()
+    } finally {
+      await page.unroute(`**/api/support/conversations/${conversationId}/messages`).catch(() => {})
+      await db.delete(conversation).where(eq(conversation.id, conversationId))
+      await db.delete(contact).where(eq(contact.id, contactId))
+      await db.delete(supportInboxMember).where(eq(supportInboxMember.id, membershipId))
+      await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
+    }
+  })
 })
