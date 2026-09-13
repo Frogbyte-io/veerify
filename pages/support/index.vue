@@ -966,7 +966,7 @@ export default {
     },
 
     async patchConversation(patch) {
-      if (!this.selectedConversationId) return
+      if (!this.selectedConversationId || this.isUpdatingConversation) return
       const generation = this.contextGeneration
       const teamId = this.activeTeamId
       const inboxId = this.activeInboxId
@@ -1003,7 +1003,7 @@ export default {
     },
 
     async claimConversation() {
-      if (!this.selectedConversationId) return
+      if (!this.selectedConversationId || this.isUpdatingConversation) return
       const generation = this.contextGeneration
       const teamId = this.activeTeamId
       const inboxId = this.activeInboxId
