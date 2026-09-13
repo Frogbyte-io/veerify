@@ -13,6 +13,11 @@ Playwright workflows covering the final Stage 05A cross-feature contract:
    conversation excluded from that view, and the selected conversation remains
    deep-linkable after a reload.
 
+The claim workflow also checks persisted ownership and the exact message-kind
+sequence from an initially empty thread: `note`, then `outgoing`, `activity`.
+The search workflow reasserts the exact query, fixed-view hydration, input
+value, target row, and excluded non-target row after reload.
+
 Each test creates unique inbox/contact/conversation rows through the E2E DB
 helper and removes them in `finally` blocks. No production code, `TODO.md`, or
 `progress.md` was changed.

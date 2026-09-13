@@ -1,8 +1,14 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { eq, inArray } from 'drizzle-orm'
+import { asc, eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
-import { contact, conversation, supportInbox, supportInboxMember } from '../../server/database/schema/support'
+import {
+  contact,
+  conversation,
+  conversationMessage,
+  supportInbox,
+  supportInboxMember,
+} from '../../server/database/schema/support'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
@@ -97,6 +103,18 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
       expect((await noteResponse).ok()).toBeTruthy()
       await expect(assignee).toHaveValue('')
 
+      const [afterNote] = await db
+        .select({ assigneeUserId: conversation.assigneeUserId })
+        .from(conversation)
+        .where(eq(conversation.id, conversationId))
+      expect(afterNote?.assigneeUserId).toBeNull()
+      const afterNoteMessages = await db
+        .select({ kind: conversationMessage.kind })
+        .from(conversationMessage)
+        .where(eq(conversationMessage.conversationId, conversationId))
+        .orderBy(asc(conversationMessage.createdAt))
+      expect(afterNoteMessages.map(({ kind }) => kind)).toEqual(['note'])
+
       await page.getByTestId('support-composer-mode-reply').click()
       await composer.fill('A public reply claims this ticket for the replying agent.')
       const replyResponse = page.waitForResponse(
@@ -113,6 +131,12 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
         .from(conversation)
         .where(eq(conversation.id, conversationId))
       expect(persisted?.assigneeUserId).toBe(userId)
+      const afterReplyMessages = await db
+        .select({ kind: conversationMessage.kind })
+        .from(conversationMessage)
+        .where(eq(conversationMessage.conversationId, conversationId))
+        .orderBy(asc(conversationMessage.createdAt))
+      expect(afterReplyMessages.map(({ kind }) => kind)).toEqual(['note', 'outgoing', 'activity'])
     } finally {
       await db.delete(conversation).where(eq(conversation.id, conversationId))
       await db.delete(contact).where(eq(contact.id, contactId))
@@ -296,6 +320,12 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
       await page.reload({ waitUntil: 'domcontentloaded' })
       await expect(page.getByRole('heading', { name: `Stage 05A resolved target ${suffix}` })).toBeVisible()
       await expect.poll(() => new URL(page.url()).searchParams.get('conversationId')).toBe(conversationIds[0])
+      expect(new URL(page.url()).searchParams.get('search')).toBe(`Stage 05A resolved target ${suffix}`)
+      expect(new URL(page.url()).searchParams.get('view')).toBe('assigned-to-me')
+      await expect(page.getByTestId('support-view-assigned-to-me')).toHaveAttribute('aria-pressed', 'true')
+      await expect(searchInput).toHaveValue(`Stage 05A resolved target ${suffix}`)
+      await expect(page.getByTestId(`support-conversation-${conversationIds[0]}`)).toBeVisible()
+      await expect(page.getByTestId(`support-conversation-${conversationIds[1]}`)).toHaveCount(0)
     } finally {
       await db.delete(conversation).where(inArray(conversation.id, conversationIds))
       await db.delete(contact).where(inArray(contact.id, contactIds))
