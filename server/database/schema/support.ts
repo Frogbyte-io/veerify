@@ -698,3 +698,28 @@ export const supportDeliveryEvent = pgTable(
     messageIdx: index('support_delivery_event_message_idx').on(table.messageId),
   })
 )
+
+// Team-scoped canned responses (Stage 05a). Deliberately no inboxId: the
+// approved MVP has one shared inbox per team, so inbox scope would be redundant.
+export const cannedResponse = pgTable(
+  'canned_response',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    shortcode: text('shortcode').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueTeamShortcode: uniqueIndex('canned_response_team_shortcode_idx').on(table.teamId, table.shortcode),
+  })
+)
