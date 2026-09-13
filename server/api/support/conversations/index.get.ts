@@ -29,6 +29,9 @@
  *         name: projectId
  *         schema: { type: string }
  *       - in: query
+ *         name: search
+ *         schema: { type: string, maxLength: 200 }
+ *       - in: query
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
  *       - in: query
@@ -40,15 +43,17 @@
  *       404: { description: Inbox not found }
  */
 import { z } from 'zod'
-import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, ilike, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { db } from '~/server/database/drizzle'
-import { conversation, conversationReadState, conversationTag } from '~/server/database/schema/support'
+import { contact, conversation, conversationReadState, conversationTag } from '~/server/database/schema/support'
 import { isConversationUnread } from '~/server/utils/conversation-read-state'
+
+const MAX_POSTGRES_INTEGER = 2147483647
 
 const querySchema = z.object({
   inboxId: z.string().min(1),
@@ -58,6 +63,7 @@ const querySchema = z.object({
   contactId: z.string().optional(),
   tagId: z.string().optional(),
   projectId: z.string().optional(),
+  search: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   cursor: z.string().optional(),
 })
@@ -70,12 +76,13 @@ export default defineEventHandler(async (event) => {
 
   const conditions = [eq(conversation.inboxId, query.inboxId)]
   const activeStatuses = ['open', 'pending'] as const
+  const search = query.search?.trim()
 
-  if (query.view === 'unassigned') {
+  if (!search && query.view === 'unassigned') {
     conditions.push(isNull(conversation.assigneeUserId), inArray(conversation.status, activeStatuses))
-  } else if (query.view === 'assigned-to-me') {
+  } else if (!search && query.view === 'assigned-to-me') {
     conditions.push(eq(conversation.assigneeUserId, session.user.id), inArray(conversation.status, activeStatuses))
-  } else if (query.view === 'resolved') {
+  } else if (!search && query.view === 'resolved') {
     conditions.push(eq(conversation.status, 'resolved'))
   }
 
@@ -96,6 +103,20 @@ export default defineEventHandler(async (event) => {
     )
   }
 
+  if (search) {
+    const pattern = `%${search}%`
+    const searchConditions = [
+      ilike(conversation.subject, pattern),
+      ilike(contact.name, pattern),
+      ilike(contact.email, pattern),
+    ]
+    const displayId = /^\d+$/.test(search) ? Number(search) : null
+    if (displayId !== null && Number.isSafeInteger(displayId) && displayId <= MAX_POSTGRES_INTEGER) {
+      searchConditions.push(eq(conversation.displayId, displayId))
+    }
+    conditions.push(or(...searchConditions)!)
+  }
+
   if (query.cursor) {
     const cursor = decodeListCursor(query.cursor, 'conversation')
     conditions.push(
@@ -106,12 +127,16 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  const rows = await db
+  const listBase = db
     .select({
       ...getTableColumns(conversation),
       lastReadAt: conversationReadState.lastReadAt,
     })
     .from(conversation)
+
+  const joinedListBase = search ? listBase.innerJoin(contact, eq(conversation.contactId, contact.id)) : listBase
+
+  const rows = await joinedListBase
     .leftJoin(
       conversationReadState,
       and(eq(conversationReadState.conversationId, conversation.id), eq(conversationReadState.userId, session.user.id))

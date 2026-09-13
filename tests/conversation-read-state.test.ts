@@ -4,6 +4,8 @@ import type { EventHandler } from 'h3'
 const state = vi.hoisted(() => ({
   query: { inboxId: 'inbox-1' } as Record<string, unknown>,
   queuedRows: [] as unknown[][],
+  fromTables: [] as unknown[],
+  joinedTables: [] as unknown[],
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
@@ -21,8 +23,18 @@ vi.mock('~/server/database/drizzle', () => {
   const chain = (rows: unknown[]) => {
     const result = Promise.resolve(rows)
     const fluent: Record<string, unknown> = {
-      from: () => fluent,
-      leftJoin: () => fluent,
+      from: (table: unknown) => {
+        state.fromTables.push(table)
+        return fluent
+      },
+      innerJoin: (table: unknown) => {
+        state.joinedTables.push(table)
+        return fluent
+      },
+      leftJoin: (table: unknown) => {
+        state.joinedTables.push(table)
+        return fluent
+      },
       where: () => fluent,
       orderBy: () => fluent,
       limit: () => result,
@@ -40,6 +52,7 @@ vi.mock('~/server/database/drizzle', () => {
 
 const listHandler = (await import('~/server/api/support/conversations/index.get')).default as EventHandler
 const { setConversationReadStateInTransaction } = await import('~/server/utils/conversation-read-state')
+const supportSchema = await import('~/server/database/schema/support')
 
 function asEvent(value: unknown): Parameters<EventHandler>[0] {
   return value as Parameters<EventHandler>[0]
@@ -60,6 +73,8 @@ describe('conversation read state list contract', () => {
   beforeEach(() => {
     state.query = { inboxId: 'inbox-1' }
     state.queuedRows = []
+    state.fromTables = []
+    state.joinedTables = []
   })
 
   it('derives unread per user while handled conversations disappear from other agents queues', async () => {
@@ -123,6 +138,36 @@ describe('conversation read state list contract', () => {
         unreadCounts: { unassigned: 1, assignedToMe: 1 },
       },
     })
+  })
+
+  it('searches globally inside the inbox through conversation and contact fields only', async () => {
+    const createdAt = new Date('2026-09-07T08:00:00.000Z')
+
+    state.query = { inboxId: 'inbox-1', view: 'unassigned', search: 'resolved@example.com' }
+    state.queuedRows.push(
+      [
+        {
+          id: 'resolved-from-search',
+          inboxId: 'inbox-1',
+          assigneeUserId: 'agent-b',
+          status: 'resolved',
+          createdAt,
+          lastCustomerReplyAt: createdAt,
+          lastAgentReplyAt: createdAt,
+          lastReadAt: createdAt,
+        },
+      ],
+      [{ unassigned: 0, assignedToMe: 0 }]
+    )
+
+    const result = await listHandler(asEvent({}))
+
+    expect(result.data.conversations).toEqual([
+      expect.objectContaining({ id: 'resolved-from-search', status: 'resolved' }),
+    ])
+    expect(state.fromTables).toContain(supportSchema.conversation)
+    expect(state.joinedTables).toContain(supportSchema.contact)
+    expect([...state.fromTables, ...state.joinedTables]).not.toContain(supportSchema.conversationMessage)
   })
 })
 
