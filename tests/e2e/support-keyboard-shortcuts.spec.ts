@@ -98,13 +98,20 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
 
     await page.keyboard.press('k')
     await expect(firstRow).toHaveClass(/bg-accent/)
+    await expect(page.getByRole('heading', { name: 'Shortcut first visible' })).toBeVisible()
+    await expect(page.getByTestId('support-composer-input')).toBeVisible()
 
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.keyboard.press('n')
     await expect(page.getByTestId('support-composer-note')).toBeVisible()
 
+    // Mode shortcuts focus the composer so typing can continue immediately;
+    // blur it before asserting the next global shortcut.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.keyboard.press('r')
     await expect(page.getByTestId('support-composer-reply')).toBeVisible()
 
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const claimResponse = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
@@ -114,6 +121,7 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
     expect((await claimResponse).ok()).toBeTruthy()
     await expect(page.getByTestId('support-thread-assignee')).toHaveValue(userId)
 
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const resolveResponse = page.waitForResponse(
       (response) =>
         response.request().method() === 'PATCH' &&
@@ -123,6 +131,7 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
     expect((await resolveResponse).ok()).toBeTruthy()
     await expect(page.getByTestId('support-thread-status')).toHaveValue('resolved')
 
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     await page.keyboard.press('/')
     const searchInput = page.getByTestId('support-conversation-search')
     await expect(searchInput).toBeFocused()

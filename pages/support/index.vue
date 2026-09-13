@@ -358,7 +358,8 @@ export default {
     },
 
     focusConversationSearch() {
-      const input = this.$el?.querySelector?.('[data-testid="support-conversation-search"]')
+      if (!import.meta.client) return
+      const input = document.querySelector('[data-testid="support-conversation-search"]')
       input?.focus?.()
     },
 
