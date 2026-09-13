@@ -37,8 +37,12 @@ export function isSupportShortcutEditableTarget(target: EventTarget | null): boo
     closest?: unknown
   }
   const tagName = element.tagName?.toUpperCase()
-  if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') return true
+  if (tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || tagName === 'BUTTON') return true
   if (element.isContentEditable) return true
   if (typeof element.closest !== 'function') return false
-  return Boolean(Reflect.apply(element.closest, element, ['input, textarea, select, [contenteditable="true"]']))
+  return Boolean(
+    Reflect.apply(element.closest, element, [
+      'button, [role="button"], input, textarea, select, [contenteditable="true"]',
+    ])
+  )
 }
