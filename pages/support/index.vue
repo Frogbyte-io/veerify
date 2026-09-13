@@ -92,6 +92,7 @@
             <template #composer>
               <SupportComposer
                 v-if="selectedConversationId"
+                ref="composer"
                 :conversation-id="selectedConversationId"
                 :team-id="activeTeamId"
                 :contact="conversationContact"
@@ -101,6 +102,48 @@
               />
             </template>
           </SupportConversationThread>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="showShortcutHelp"
+      data-testid="support-shortcut-help"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="support-shortcut-help-title"
+      class="fixed inset-0 z-50 flex items-start justify-center bg-black/20 p-6 pt-24 backdrop-blur-[1px]"
+      @click.self="showShortcutHelp = false"
+    >
+      <div class="w-full max-w-sm rounded-lg border bg-card p-4 text-card-foreground shadow-xl">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p id="support-shortcut-help-title" class="text-sm font-semibold">Keyboard shortcuts</p>
+            <p class="mt-1 text-xs text-muted-foreground">Shortcuts work when you are not editing a field.</p>
+          </div>
+          <button
+            type="button"
+            data-testid="support-shortcut-help-close"
+            aria-label="Close keyboard shortcuts"
+            class="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            @click="showShortcutHelp = false"
+          >
+            <Icon name="lucide:x" class="h-4 w-4" />
+          </button>
+        </div>
+        <div class="mt-4 grid grid-cols-[4rem_1fr] items-center gap-x-3 gap-y-2 text-xs">
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">j / k</kbd>
+          <span>Next / previous conversation</span>
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">r / n</kbd>
+          <span>Reply / internal note</span>
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">c</kbd>
+          <span>Claim conversation</span>
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">e</kbd>
+          <span>Resolve conversation</span>
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">/</kbd>
+          <span>Focus conversation search</span>
+          <kbd class="rounded border bg-muted px-1.5 py-1 text-center font-mono">?</kbd>
+          <span>Toggle this help</span>
         </div>
       </div>
     </div>
@@ -139,6 +182,12 @@
 </template>
 
 <script>
+import {
+  getNextSupportConversationId,
+  getSupportShortcutAction,
+  isSupportShortcutEditableTarget,
+} from '~/lib/support-keyboard-shortcuts'
+
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'all']
 const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
@@ -218,6 +267,7 @@ export default {
       unsubscribeInboxChannel: null,
       unsubscribeConversationChannel: null,
       unregisterReconnectHook: null,
+      showShortcutHelp: false,
     }
   },
 
@@ -241,6 +291,7 @@ export default {
   },
 
   async mounted() {
+    if (import.meta.client) window.addEventListener('keydown', this.handleKeyboardShortcut)
     await this.initTeamContext()
 
     if (import.meta.client) {
@@ -251,6 +302,7 @@ export default {
 
   beforeUnmount() {
     if (import.meta.client) {
+      window.removeEventListener('keydown', this.handleKeyboardShortcut)
       window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
     }
     if (this.unregisterReconnectHook) this.unregisterReconnectHook()
@@ -260,6 +312,57 @@ export default {
   },
 
   methods: {
+    handleKeyboardShortcut(event) {
+      if (event.key === 'Escape' && this.showShortcutHelp) {
+        event.preventDefault()
+        this.showShortcutHelp = false
+        return
+      }
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return
+      if (isSupportShortcutEditableTarget(event.target)) return
+
+      const action = getSupportShortcutAction(event.key)
+      if (!action) return
+      event.preventDefault()
+
+      if (action === 'next' || action === 'previous') {
+        this.navigateConversations(action === 'next' ? 1 : -1)
+      } else if (action === 'reply' || action === 'note') {
+        this.setComposerMode(action)
+      } else if (action === 'claim') {
+        void this.claimConversation()
+      } else if (action === 'resolve') {
+        void this.patchConversation({ status: 'resolved' })
+      } else if (action === 'search') {
+        this.focusConversationSearch()
+      } else if (action === 'help') {
+        this.showShortcutHelp = !this.showShortcutHelp
+      }
+    },
+
+    navigateConversations(direction) {
+      const nextConversationId = getNextSupportConversationId(
+        this.conversations.map((conversation) => conversation.id),
+        this.selectedConversationId,
+        direction
+      )
+      if (!nextConversationId || nextConversationId === this.selectedConversationId) return
+      void this.selectConversation(nextConversationId)
+    },
+
+    setComposerMode(mode) {
+      const composer = this.$refs.composer
+      if (!composer || typeof composer.setMode !== 'function') return
+      composer.setMode(mode)
+      this.$nextTick(() => composer.$refs?.input?.focus?.())
+    },
+
+    focusConversationSearch() {
+      if (!import.meta.client) return
+      const input = document.querySelector('[data-testid="support-conversation-search"]')
+      input?.focus?.()
+    },
+
     async handleActiveTeamChanged() {
       this.resetInboxState()
       await this.initTeamContext()
