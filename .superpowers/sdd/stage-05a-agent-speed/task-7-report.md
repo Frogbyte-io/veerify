@@ -26,8 +26,9 @@ Base: `origin/support-platform` at `d07ecef`
 - `yarn typecheck` — passed.
 - `yarn lint` — passed with the existing repo warning set, 0 errors / 206 warnings.
 - Targeted ESLint and Prettier checks — passed.
-- `yarn test:e2e tests/e2e/support-keyboard-shortcuts.spec.ts` — blocked during app boot because `UPLOAD_TOKEN_SECRET` is not configured in the local environment; the seeded browser test did not execute.
+- `yarn test:e2e tests/e2e/support-keyboard-shortcuts.spec.ts` — the worker's first run was blocked during app boot because `UPLOAD_TOKEN_SECRET` was not configured; the orchestrator reran it with explicit test secrets and seeded Postgres, passing 1/1.
 
 ## Notes
 
 - `TODO.md` and the Stage 05A progress ledger were not edited by this worker.
+- Review fix round added button/role-button guards and ignored overlapping claim/resolve updates while a conversation mutation is in flight.
