@@ -90,6 +90,9 @@
               <SupportComposer
                 v-if="selectedConversationId"
                 :conversation-id="selectedConversationId"
+                :team-id="activeTeamId"
+                :contact="conversationContact"
+                :current-user-name="currentUserName"
                 @posted="handleMessagePosted"
                 @draft-state-changed="handleDraftStateChanged"
               />
@@ -145,6 +148,7 @@ export default {
     return {
       activeTeamId: '',
       currentUserId: '',
+      currentUserName: '',
       contextGeneration: 0,
       isLoadingTeam: true,
       teamError: null,
@@ -267,6 +271,7 @@ export default {
       }
       this.inboxes = []
       this.currentUserId = ''
+      this.currentUserName = ''
       this.activeInboxId = null
       this.inboxMembers = []
       this.activeView = 'unassigned'
@@ -305,6 +310,7 @@ export default {
         if (generation !== this.contextGeneration) return
         this.activeTeamId = activeTeamData.id
         this.currentUserId = sessionResponse?.data?.user?.id || ''
+        this.currentUserName = sessionResponse?.data?.user?.name || sessionResponse?.data?.user?.email || ''
         this.isLoadingTeam = false
         await this.loadInboxes({ generation, teamId: activeTeamData.id })
       } catch {

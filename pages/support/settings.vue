@@ -243,6 +243,125 @@
             </CardContent>
           </Card>
 
+          <!-- Canned responses -->
+          <Card data-testid="support-canned-responses">
+            <CardHeader>
+              <CardTitle>Canned responses</CardTitle>
+              <CardDescription>Team shortcuts agents can insert from the support composer.</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-4">
+              <div v-if="isLoadingCannedResponses" class="space-y-2">
+                <Skeleton v-for="i in 2" :key="i" class="h-14 w-full" />
+              </div>
+              <div v-else-if="cannedResponsesError" class="text-sm">
+                <p class="text-destructive mb-2">{{ cannedResponsesError }}</p>
+                <Button variant="outline" size="sm" @click="loadCannedResponses()">Retry</Button>
+              </div>
+              <div v-else>
+                <p v-if="cannedResponses.length === 0" class="text-sm text-muted-foreground">
+                  No canned responses saved yet.
+                </p>
+                <div v-else class="space-y-2">
+                  <div
+                    v-for="response in cannedResponses"
+                    :key="response.id"
+                    data-testid="support-canned-response-row"
+                    class="flex items-start justify-between gap-3 rounded-lg border p-3"
+                  >
+                    <div class="min-w-0 space-y-1">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-mono text-sm">/{{ response.shortcode }}</span>
+                        <span class="font-medium">{{ response.title }}</span>
+                      </div>
+                      <p class="whitespace-pre-wrap text-sm text-muted-foreground">{{ response.body }}</p>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid="support-canned-response-edit"
+                        :aria-label="`Edit canned response ${response.shortcode}`"
+                        :disabled="isSavingCannedResponse || deletingCannedResponseId === response.id"
+                        @click="editCannedResponse(response)"
+                      >
+                        <Icon name="lucide:pencil" class="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid="support-canned-response-delete"
+                        :aria-label="`Delete canned response ${response.shortcode}`"
+                        :disabled="isSavingCannedResponse || deletingCannedResponseId === response.id"
+                        @click="deleteCannedResponse(response)"
+                      >
+                        <Icon name="lucide:trash-2" class="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label for="canned-response-shortcode">Shortcode</Label>
+                  <Input
+                    id="canned-response-shortcode"
+                    v-model="cannedResponseShortcode"
+                    class="mt-2 font-mono"
+                    placeholder="greeting"
+                    :disabled="isSavingCannedResponse"
+                  />
+                </div>
+                <div>
+                  <Label for="canned-response-title">Title</Label>
+                  <Input
+                    id="canned-response-title"
+                    v-model="cannedResponseTitle"
+                    class="mt-2"
+                    placeholder="Friendly greeting"
+                    :disabled="isSavingCannedResponse"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label for="canned-response-body">Body</Label>
+                <Textarea
+                  id="canned-response-body"
+                  v-model="cannedResponseBody"
+                  rows="5"
+                  class="mt-2"
+                  placeholder="Hi {{contact.name}}, {{agent.name}} here."
+                  :disabled="isSavingCannedResponse"
+                />
+              </div>
+              <div class="flex justify-end gap-2">
+                <Button
+                  v-if="editingCannedResponseId"
+                  variant="outline"
+                  :disabled="isSavingCannedResponse"
+                  @click="resetCannedResponseForm"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  data-testid="support-canned-response-submit"
+                  :disabled="
+                    isSavingCannedResponse ||
+                    !cannedResponseShortcode.trim() ||
+                    !cannedResponseTitle.trim() ||
+                    !cannedResponseBody.trim()
+                  "
+                  @click="saveCannedResponse"
+                >
+                  <Icon v-if="isSavingCannedResponse" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                  {{ editingCannedResponseId ? 'Save response' : 'Add response' }}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <!-- Channel (SUP-03-13) -->
           <Card data-testid="support-settings-channel">
             <CardHeader>
@@ -596,6 +715,7 @@ export default {
       teamSettings: null,
       teamSettingsCapabilities: {},
       autoLinkFeedback: false,
+      cannedResponses: [],
       currentUserId: '',
       inboxAccessError: null,
       requestToken: 0,
@@ -630,6 +750,16 @@ export default {
       generalEmailAddress: '',
       generalFromName: '',
       isSavingGeneral: false,
+
+      // canned responses
+      cannedResponseShortcode: '',
+      cannedResponseTitle: '',
+      cannedResponseBody: '',
+      editingCannedResponseId: null,
+      isLoadingCannedResponses: false,
+      cannedResponsesError: null,
+      isSavingCannedResponse: false,
+      deletingCannedResponseId: null,
 
       // sending authorization (SUP-04-6)
       sendingStatus: null,
@@ -800,6 +930,7 @@ export default {
           this.inboxAccessError = 'You do not have access to this support inbox'
           await this.replaceInboxQuery(null)
         }
+        if (token === this.requestToken) await this.loadCannedResponses({ token, teamId: this.activeTeamId })
       } catch (error) {
         if (token !== this.requestToken) return
         if (this.isForbiddenError(error)) {
@@ -820,9 +951,13 @@ export default {
       this.sendingStatusError = null
       this.channel = null
       this.channelError = null
+      this.cannedResponses = []
+      this.cannedResponsesError = null
+      this.resetCannedResponseForm()
       this.isSwitchingInbox = false
       this.isLoadingSendingStatus = false
       this.isLoadingChannel = false
+      this.isLoadingCannedResponses = false
     },
 
     async replaceInboxQuery(inboxId) {
@@ -897,7 +1032,9 @@ export default {
     },
 
     isCurrentRequest(token, teamId = this.activeTeamId, inboxId = this.selectedInboxId) {
-      return token === this.requestToken && teamId === this.activeTeamId && (!inboxId || inboxId === this.selectedInboxId)
+      return (
+        token === this.requestToken && teamId === this.activeTeamId && (!inboxId || inboxId === this.selectedInboxId)
+      )
     },
 
     syncGeneralForm() {
@@ -984,7 +1121,31 @@ export default {
       return this.isCurrentRequest(token, teamId, inboxId)
     },
 
-    async loadSendingStatus({ recovering = false, token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+    async loadCannedResponses({ token = this.requestToken, teamId = this.activeTeamId } = {}) {
+      if (!teamId || token !== this.requestToken) return false
+      this.isLoadingCannedResponses = true
+      this.cannedResponsesError = null
+      try {
+        const response = await $fetch('/api/support/canned-responses', { params: { teamId } })
+        if (token !== this.requestToken || teamId !== this.activeTeamId) return false
+        this.cannedResponses = response?.data?.cannedResponses || []
+        return true
+      } catch (err) {
+        if (token !== this.requestToken || teamId !== this.activeTeamId) return false
+        this.cannedResponses = []
+        this.cannedResponsesError = this.extractErrorMessage(err, 'Failed to load canned responses')
+        return false
+      } finally {
+        if (token === this.requestToken && teamId === this.activeTeamId) this.isLoadingCannedResponses = false
+      }
+    },
+
+    async loadSendingStatus({
+      recovering = false,
+      token = this.requestToken,
+      teamId = this.activeTeamId,
+      inboxId = this.selectedInboxId,
+    } = {}) {
       if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
       this.isLoadingSendingStatus = true
       this.sendingStatusError = null
@@ -1128,7 +1289,82 @@ export default {
       }
     },
 
-    async reloadMembers({ token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+    editCannedResponse(response) {
+      this.editingCannedResponseId = response.id
+      this.cannedResponseShortcode = response.shortcode || ''
+      this.cannedResponseTitle = response.title || ''
+      this.cannedResponseBody = response.body || ''
+    },
+
+    resetCannedResponseForm() {
+      this.cannedResponseShortcode = ''
+      this.cannedResponseTitle = ''
+      this.cannedResponseBody = ''
+      this.editingCannedResponseId = null
+      this.isSavingCannedResponse = false
+      this.deletingCannedResponseId = null
+    },
+
+    async saveCannedResponse() {
+      if (!this.activeTeamId) return
+      if (!this.cannedResponseShortcode.trim() || !this.cannedResponseTitle.trim() || !this.cannedResponseBody.trim()) {
+        toast.error('Shortcode, title, and body are required')
+        return
+      }
+
+      this.isSavingCannedResponse = true
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      const editingId = this.editingCannedResponseId
+      const payload = {
+        shortcode: this.cannedResponseShortcode.trim(),
+        title: this.cannedResponseTitle.trim(),
+        body: this.cannedResponseBody.trim(),
+      }
+
+      try {
+        if (editingId) {
+          await $fetch(`/api/support/canned-responses/${editingId}`, { method: 'PUT', body: payload })
+        } else {
+          await $fetch('/api/support/canned-responses', { method: 'POST', body: { teamId, ...payload } })
+        }
+
+        if (token !== this.requestToken || teamId !== this.activeTeamId) return
+        toast.success(editingId ? 'Canned response saved' : 'Canned response added')
+        this.resetCannedResponseForm()
+        await this.loadCannedResponses({ token, teamId })
+      } catch (err) {
+        if (token !== this.requestToken || teamId !== this.activeTeamId) return
+        toast.error(this.extractErrorMessage(err, 'Failed to save canned response'))
+      } finally {
+        if (token === this.requestToken && teamId === this.activeTeamId) this.isSavingCannedResponse = false
+      }
+    },
+
+    async deleteCannedResponse(response) {
+      if (!response?.id || !this.activeTeamId) return
+      this.deletingCannedResponseId = response.id
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      try {
+        await $fetch(`/api/support/canned-responses/${response.id}`, { method: 'DELETE' })
+        if (token !== this.requestToken || teamId !== this.activeTeamId) return
+        toast.success('Canned response deleted')
+        if (this.editingCannedResponseId === response.id) this.resetCannedResponseForm()
+        await this.loadCannedResponses({ token, teamId })
+      } catch (err) {
+        if (token !== this.requestToken || teamId !== this.activeTeamId) return
+        toast.error(this.extractErrorMessage(err, 'Failed to delete canned response'))
+      } finally {
+        if (token === this.requestToken && teamId === this.activeTeamId) this.deletingCannedResponseId = null
+      }
+    },
+
+    async reloadMembers({
+      token = this.requestToken,
+      teamId = this.activeTeamId,
+      inboxId = this.selectedInboxId,
+    } = {}) {
       if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
       try {
         const membersResponse = await $fetch(`/api/support/inboxes/${inboxId}/members`)
@@ -1208,7 +1444,12 @@ export default {
       }
     },
 
-    async loadChannelStatus({ recovering = false, token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+    async loadChannelStatus({
+      recovering = false,
+      token = this.requestToken,
+      teamId = this.activeTeamId,
+      inboxId = this.selectedInboxId,
+    } = {}) {
       if (!inboxId) {
         this.channel = null
         this.isLoadingChannel = false
@@ -1246,7 +1487,11 @@ export default {
       }
     },
 
-    async reloadAddresses({ token = this.requestToken, teamId = this.activeTeamId, inboxId = this.selectedInboxId } = {}) {
+    async reloadAddresses({
+      token = this.requestToken,
+      teamId = this.activeTeamId,
+      inboxId = this.selectedInboxId,
+    } = {}) {
       if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
       try {
         const addressesResponse = await $fetch(`/api/support/inboxes/${inboxId}/addresses`)

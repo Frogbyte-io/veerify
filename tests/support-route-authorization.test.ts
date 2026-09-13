@@ -793,6 +793,12 @@ describe('executable support route authorization inventory', () => {
       'inbound/[provider].post',
       'delivery/[provider].post',
       'attachments/upload/[token].put',
+      // Canned-response CRUD has a dedicated route test suite because its
+      // tenant boundary is resolved from the request body or existing row.
+      'canned-responses/[id].delete',
+      'canned-responses/[id].put',
+      'canned-responses/index.get',
+      'canned-responses/index.post',
     ]
     const inventoryNames = [...new Set(inventoryEntries)].sort()
 

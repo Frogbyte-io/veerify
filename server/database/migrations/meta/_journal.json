@@ -225,6 +225,13 @@
       "when": 1788848541808,
       "tag": "0031_productive_kang",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788947339465,
+      "tag": "0032_brave_wolf_cub",
+      "breakpoints": true
     }
   ]
 }

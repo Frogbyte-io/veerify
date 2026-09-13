@@ -50,6 +50,9 @@
       :disabled="submitting"
       class="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       :class="isNote ? 'border-amber-400/70' : 'border-input'"
+      @click="rememberCursor"
+      @keyup="rememberCursor"
+      @select="rememberCursor"
       @keydown.ctrl.enter.prevent="submit"
       @keydown.meta.enter.prevent="submit"
     />
@@ -155,6 +158,43 @@
         >
           <Icon name="lucide:paperclip" class="w-3.5 h-3.5" />Attach
         </button>
+        <div class="relative">
+          <button
+            type="button"
+            data-testid="support-composer-canned-trigger"
+            class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+            :disabled="submitting || !teamId"
+            @click="toggleCannedResponses"
+          >
+            <Icon name="lucide:message-square-text" class="w-3.5 h-3.5" />Shortcodes
+          </button>
+          <div
+            v-if="showCannedResponses"
+            data-testid="support-composer-canned-menu"
+            class="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
+          >
+            <div v-if="isLoadingCannedResponses" class="p-3 text-xs text-muted-foreground">Loading responses...</div>
+            <div v-else-if="cannedResponsesError" class="p-3 text-xs text-destructive">
+              {{ cannedResponsesError }}
+            </div>
+            <div v-else-if="visibleCannedResponses.length === 0" class="p-3 text-xs text-muted-foreground">
+              No saved responses
+            </div>
+            <template v-else>
+              <button
+                v-for="response in visibleCannedResponses"
+                :key="response.id"
+                type="button"
+                class="block w-full px-3 py-2 text-left hover:bg-muted"
+                :data-testid="`support-composer-canned-option-${response.shortcode}`"
+                @click="insertCannedResponse(response)"
+              >
+                <span class="block text-xs font-medium">/{{ response.shortcode }}</span>
+                <span class="block truncate text-xs text-muted-foreground">{{ response.title }}</span>
+              </button>
+            </template>
+          </div>
+        </div>
         <!-- prettier-ignore -->
         <input
           ref="fileInput"
@@ -185,6 +225,7 @@
 
 <script>
 import { toast } from 'vue-sonner'
+import { insertTextAtCursor, substituteCannedResponse } from '~/lib/support-canned-responses'
 
 const MAX_ATTACHMENT_FILES = 10
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
@@ -215,7 +256,12 @@ function nextClientId() {
 
 export default {
   name: 'SupportComposer',
-  props: { conversationId: { type: String, required: true } },
+  props: {
+    conversationId: { type: String, required: true },
+    teamId: { type: String, default: '' },
+    contact: { type: Object, default: null },
+    currentUserName: { type: String, default: '' },
+  },
   emits: ['posted', 'draft-state-changed'],
 
   data() {
@@ -226,6 +272,11 @@ export default {
       attachments: [],
       conversationGeneration: 0,
       isRestoringDraft: false,
+      cannedResponses: [],
+      isLoadingCannedResponses: false,
+      cannedResponsesError: null,
+      showCannedResponses: false,
+      lastCursor: 0,
     }
   },
 
@@ -254,6 +305,11 @@ export default {
         !this.attachments.some((attachment) => blocked.has(attachment.phase))
       )
     },
+    visibleCannedResponses() {
+      const query = this.currentShortcodeQuery()
+      if (!query) return this.cannedResponses
+      return this.cannedResponses.filter((response) => response.shortcode.startsWith(query))
+    },
   },
 
   watch: {
@@ -267,11 +323,19 @@ export default {
       this.restoreDraftForConversation()
       this.submitting = false
       this.attachments = []
+      this.showCannedResponses = false
+      this.lastCursor = 0
+    },
+    teamId() {
+      this.cannedResponses = []
+      this.showCannedResponses = false
+      void this.loadCannedResponses()
     },
   },
 
   mounted() {
     this.restoreDraftForConversation()
+    void this.loadCannedResponses()
   },
 
   beforeUnmount() {
@@ -287,6 +351,60 @@ export default {
         return
       }
       this.restoreDraftMode(mode)
+    },
+
+    rememberCursor() {
+      const input = this.$refs.input
+      if (!input) return
+      this.lastCursor = Number.isFinite(input.selectionStart) ? input.selectionStart : this.draft.length
+    },
+
+    currentShortcodeQuery() {
+      const beforeCursor = this.draft.slice(0, this.lastCursor)
+      const match = beforeCursor.match(/\/([a-z0-9_-]*)$/i)
+      return match ? match[1].toLowerCase() : ''
+    },
+
+    async loadCannedResponses() {
+      if (!this.teamId) return
+      this.isLoadingCannedResponses = true
+      this.cannedResponsesError = null
+      try {
+        const response = await $fetch('/api/support/canned-responses', { params: { teamId: this.teamId } })
+        this.cannedResponses = response?.data?.cannedResponses || []
+      } catch {
+        this.cannedResponses = []
+        this.cannedResponsesError = 'Could not load responses'
+      } finally {
+        this.isLoadingCannedResponses = false
+      }
+    },
+
+    async toggleCannedResponses() {
+      this.rememberCursor()
+      if (this.cannedResponses.length === 0 && !this.isLoadingCannedResponses) await this.loadCannedResponses()
+      this.showCannedResponses = !this.showCannedResponses
+    },
+
+    insertCannedResponse(response) {
+      const input = this.$refs.input
+      const cursor = input && Number.isFinite(input.selectionStart) ? input.selectionStart : this.lastCursor
+      const body = substituteCannedResponse(response.body, {
+        contact: { name: this.contact?.name || '' },
+        agent: { name: this.currentUserName || '' },
+      })
+      const shortcodeMatch = this.draft.slice(0, cursor).match(/(?:^|\s)(\/[a-z0-9_-]*)$/i)
+      const replaceStart = shortcodeMatch ? cursor - shortcodeMatch[1].length : cursor
+      const next = insertTextAtCursor(this.draft, body, cursor, replaceStart)
+      this.draft = next.value
+      this.lastCursor = next.cursor
+      this.showCannedResponses = false
+      this.$nextTick(() => {
+        const textarea = this.$refs.input
+        if (!textarea) return
+        textarea.focus()
+        textarea.setSelectionRange(next.cursor, next.cursor)
+      })
     },
 
     draftKey(conversationId, mode) {
