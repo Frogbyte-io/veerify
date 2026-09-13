@@ -2,6 +2,31 @@
   <div class="flex h-full flex-col">
     <div class="space-y-2 border-b px-3 py-3">
       <h2 class="text-sm font-semibold text-foreground">Conversations</h2>
+      <div class="relative">
+        <Icon
+          name="lucide:search"
+          class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          :model-value="searchQuery"
+          data-testid="support-conversation-search"
+          placeholder="Search conversations"
+          class="h-8 pl-8 pr-8 text-sm"
+          @input="$emit('search', $event.target.value)"
+        />
+        <Button
+          v-if="searchQuery"
+          type="button"
+          variant="ghost"
+          size="icon"
+          data-testid="support-conversation-search-clear"
+          class="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2"
+          aria-label="Clear conversation search"
+          @click="$emit('clear-search')"
+        >
+          <Icon name="lucide:x" class="h-3.5 w-3.5" />
+        </Button>
+      </div>
       <div class="flex items-center gap-2 text-[11px] text-muted-foreground" aria-label="Unread queues">
         <span class="inline-flex items-center gap-1">
           Unassigned
@@ -40,9 +65,14 @@
 
       <!-- Empty -->
       <div v-else-if="conversations.length === 0" class="p-6 text-center">
-        <Icon name="lucide:inbox" class="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-        <p class="text-sm font-medium mb-1">No conversations</p>
-        <p class="text-xs text-muted-foreground">Conversations for this view will appear here.</p>
+        <Icon
+          :name="searchQuery ? 'lucide:search-x' : 'lucide:inbox'"
+          class="w-8 h-8 text-muted-foreground mx-auto mb-3"
+        />
+        <p class="text-sm font-medium mb-1">{{ searchQuery ? 'No matching conversations' : 'No conversations' }}</p>
+        <p class="text-xs text-muted-foreground">
+          {{ searchQuery ? 'Try another search.' : 'Conversations for this view will appear here.' }}
+        </p>
       </div>
 
       <!-- List -->
@@ -121,13 +151,14 @@ export default {
     isLoadingMore: { type: Boolean, default: false },
     error: { type: String, default: null },
     hasMore: { type: Boolean, default: false },
+    searchQuery: { type: String, default: '' },
     unreadCounts: {
       type: Object,
       default: () => ({ unassigned: 0, assignedToMe: 0 }),
     },
   },
 
-  emits: ['select', 'retry', 'load-more'],
+  emits: ['select', 'retry', 'load-more', 'search', 'clear-search'],
 
   methods: {
     rowClass(item) {

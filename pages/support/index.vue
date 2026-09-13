@@ -58,8 +58,11 @@
             :is-loading-more="isLoadingMoreConversations"
             :error="conversationsError"
             :has-more="hasMoreConversations"
+            :search-query="conversationSearch"
             :unread-counts="unreadCounts"
             @select="selectConversation"
+            @search="handleConversationSearch"
+            @clear-search="clearConversationSearch"
             @retry="() => loadConversations(true)"
             @load-more="() => loadConversations(false)"
           />
@@ -169,6 +172,8 @@ export default {
       conversationsError: null,
       hasMoreConversations: false,
       conversationsNextCursor: null,
+      conversationSearch: '',
+      conversationSearchDebounceTimer: null,
       unreadCounts: { unassigned: 0, assignedToMe: 0 },
       conversationDraftIds: [],
       contactCache: {},
@@ -251,6 +256,7 @@ export default {
     if (this.unregisterReconnectHook) this.unregisterReconnectHook()
     if (this.unsubscribeInboxChannel) this.unsubscribeInboxChannel()
     if (this.unsubscribeConversationChannel) this.unsubscribeConversationChannel()
+    if (this.conversationSearchDebounceTimer) clearTimeout(this.conversationSearchDebounceTimer)
   },
 
   methods: {
@@ -275,6 +281,11 @@ export default {
       this.activeInboxId = null
       this.inboxMembers = []
       this.activeView = 'unassigned'
+      this.conversationSearch = ''
+      if (this.conversationSearchDebounceTimer) {
+        clearTimeout(this.conversationSearchDebounceTimer)
+        this.conversationSearchDebounceTimer = null
+      }
       this.conversations = []
       this.unreadCounts = { unassigned: 0, assignedToMe: 0 }
       this.conversationDraftIds = []
@@ -391,6 +402,7 @@ export default {
       this.activeInboxId = inboxId
       this.inboxAccessError = null
       this.activeView = useRouteView ? this.normalizeSupportView(this.$route.query.view) : 'unassigned'
+      this.conversationSearch = useRouteView ? this.normalizeConversationSearch(this.$route.query.search) : ''
 
       if (import.meta.client) {
         this.$router
@@ -399,6 +411,7 @@ export default {
               ...this.$route.query,
               inboxId,
               view: this.activeView === 'unassigned' ? undefined : this.activeView,
+              search: this.conversationSearch || undefined,
             },
           })
           .catch(() => {})
@@ -490,6 +503,11 @@ export default {
       return typeof value === 'string' && SUPPORT_VIEWS.includes(value) ? value : 'unassigned'
     },
 
+    normalizeConversationSearch(value) {
+      if (typeof value !== 'string') return ''
+      return value.trim().slice(0, 200)
+    },
+
     async selectView(view) {
       const nextView = this.normalizeSupportView(view)
       if (nextView === this.activeView) return
@@ -504,6 +522,7 @@ export default {
               ...this.$route.query,
               view: nextView === 'unassigned' ? undefined : nextView,
               conversationId: undefined,
+              search: this.conversationSearch || undefined,
             },
           })
           .catch(() => {})
@@ -531,6 +550,7 @@ export default {
           params: {
             inboxId,
             view: this.activeView,
+            search: this.conversationSearch || undefined,
             limit: 25,
             cursor: reset ? undefined : this.conversationsNextCursor || undefined,
           },
@@ -561,6 +581,42 @@ export default {
           this.isLoadingMoreConversations = false
         }
       }
+    },
+
+    async applyConversationSearch() {
+      if (!this.activeInboxId) return
+
+      if (import.meta.client) {
+        await this.$router
+          .replace({
+            query: {
+              ...this.$route.query,
+              search: this.conversationSearch || undefined,
+            },
+          })
+          .catch(() => {})
+      }
+
+      await this.loadConversations(true)
+    },
+
+    handleConversationSearch(value) {
+      this.conversationSearch = this.normalizeConversationSearch(value)
+      if (this.conversationSearchDebounceTimer) clearTimeout(this.conversationSearchDebounceTimer)
+      this.conversationSearchDebounceTimer = setTimeout(() => {
+        this.conversationSearchDebounceTimer = null
+        this.applyConversationSearch()
+      }, 250)
+    },
+
+    async clearConversationSearch() {
+      if (this.conversationSearchDebounceTimer) {
+        clearTimeout(this.conversationSearchDebounceTimer)
+        this.conversationSearchDebounceTimer = null
+      }
+      if (!this.conversationSearch) return
+      this.conversationSearch = ''
+      await this.applyConversationSearch()
     },
 
     draftKey(conversationId, mode) {
