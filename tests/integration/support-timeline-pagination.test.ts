@@ -6,11 +6,7 @@ import { db } from '../../server/database/drizzle'
 import { organization, team, teamMember, user } from '../../server/database/schema/auth'
 import { feedback, project } from '../../server/database/schema/feedback'
 import { contact, contactLink } from '../../server/database/schema/support'
-import {
-  DEFAULT_TIMELINE_LIMIT,
-  getContactTimeline,
-  MAX_TIMELINE_LIMIT,
-} from '../../server/utils/support-timeline'
+import { DEFAULT_TIMELINE_LIMIT, getContactTimeline, MAX_TIMELINE_LIMIT } from '../../server/utils/support-timeline'
 
 const ids = {
   org: `timeline_page_org_${randomUUID()}`,
@@ -67,7 +63,14 @@ describe('support contact timeline pagination (real Postgres)', () => {
       updatedAt: now,
     })
     await db.insert(contact).values([
-      { id: ids.contact, teamId: ids.team, name: 'Timeline contact', email: 'timeline@example.com', createdAt: now, updatedAt: now },
+      {
+        id: ids.contact,
+        teamId: ids.team,
+        name: 'Timeline contact',
+        email: 'timeline@example.com',
+        createdAt: now,
+        updatedAt: now,
+      },
       { id: ids.otherContact, teamId: ids.team, name: 'Other timeline contact', createdAt: now, updatedAt: now },
     ])
   })

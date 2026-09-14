@@ -68,7 +68,11 @@ export async function claimDeliveryEvent(input: {
       createdAt: now,
     })
     .onConflictDoUpdate({
-      target: [supportDeliveryEvent.provider, supportDeliveryEvent.providerAccountKey, supportDeliveryEvent.providerEventId],
+      target: [
+        supportDeliveryEvent.provider,
+        supportDeliveryEvent.providerAccountKey,
+        supportDeliveryEvent.providerEventId,
+      ],
       set: {
         status: 'processing',
         recordType: input.recordType,

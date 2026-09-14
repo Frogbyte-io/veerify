@@ -145,7 +145,13 @@ export function verifySupportUploadToken(token: string): { uploadId: string; exp
   const secret = getUploadTokenSecret()
   const pieces = token.split('.')
   const [payloadBase64, signature] = pieces
-  if (pieces.length !== 2 || !payloadBase64 || !signature || !/^[A-Za-z0-9_-]+$/.test(payloadBase64) || !/^[A-Za-z0-9_-]+$/.test(signature)) {
+  if (
+    pieces.length !== 2 ||
+    !payloadBase64 ||
+    !signature ||
+    !/^[A-Za-z0-9_-]+$/.test(payloadBase64) ||
+    !/^[A-Za-z0-9_-]+$/.test(signature)
+  ) {
     invalidTokenError('Malformed upload token')
   }
 

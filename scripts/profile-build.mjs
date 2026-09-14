@@ -23,7 +23,7 @@ function processTreeRssKilobytes(rootPid) {
       [
         '-NoProfile',
         '-Command',
-        "Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize | ConvertTo-Csv -NoTypeInformation",
+        'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,WorkingSetSize | ConvertTo-Csv -NoTypeInformation',
       ],
       { encoding: 'utf8', windowsHide: true }
     )
@@ -117,9 +117,9 @@ async function profileBuild(label, directory) {
     phaseTimings[current.phase] = (phaseTimings[current.phase] ?? 0) + endedAt - current.at
   }
   console.log(
-    `[build-profile] ${label} exit=${exitCode} elapsedMs=${elapsedMs} peakRssMiB=${(
-      peakRssKilobytes / 1024
-    ).toFixed(1)} lastPhase=${lastPhase} phases=${JSON.stringify(phaseTimings)}`
+    `[build-profile] ${label} exit=${exitCode} elapsedMs=${elapsedMs} peakRssMiB=${(peakRssKilobytes / 1024).toFixed(
+      1
+    )} lastPhase=${lastPhase} phases=${JSON.stringify(phaseTimings)}`
   )
   return exitCode
 }
@@ -136,7 +136,10 @@ try {
   }
 } finally {
   const cleanupTarget = resolve(resolvedOwnedRoot)
-  if (cleanupTarget.startsWith(`${temporaryRoot}${sep}`) && basename(cleanupTarget).startsWith('veerify-build-profile-')) {
+  if (
+    cleanupTarget.startsWith(`${temporaryRoot}${sep}`) &&
+    basename(cleanupTarget).startsWith('veerify-build-profile-')
+  ) {
     rmSync(cleanupTarget, { recursive: true, force: true })
   } else {
     console.error(`[build-profile] Refusing to remove unowned path: ${cleanupTarget}`)

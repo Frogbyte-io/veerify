@@ -90,15 +90,16 @@ export default defineEventHandler(async (event) => {
   }
 
   setResponseHeader(event, 'Content-Type', row.contentType || 'application/octet-stream')
-  const safeFileName = row.fileName
-    .split('')
-    .filter((character) => {
-      const code = character.charCodeAt(0)
-      return code > 0x1f && code !== 0x7f
-    })
-    .join('')
-    .replace(/["\\]/g, '_')
-    .trim() || 'attachment'
+  const safeFileName =
+    row.fileName
+      .split('')
+      .filter((character) => {
+        const code = character.charCodeAt(0)
+        return code > 0x1f && code !== 0x7f
+      })
+      .join('')
+      .replace(/["\\]/g, '_')
+      .trim() || 'attachment'
   setResponseHeader(
     event,
     'Content-Disposition',

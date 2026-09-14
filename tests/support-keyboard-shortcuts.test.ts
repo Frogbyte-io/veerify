@@ -32,7 +32,9 @@ describe('support keyboard shortcut helpers', () => {
     expect(isSupportShortcutEditableTarget({ tagName: 'SELECT' } as unknown as EventTarget)).toBe(true)
     expect(isSupportShortcutEditableTarget({ isContentEditable: true } as unknown as EventTarget)).toBe(true)
     expect(isSupportShortcutEditableTarget({ tagName: 'BUTTON' } as unknown as EventTarget)).toBe(true)
-    expect(isSupportShortcutEditableTarget({ tagName: 'DIV', closest: () => ({}) } as unknown as EventTarget)).toBe(true)
+    expect(isSupportShortcutEditableTarget({ tagName: 'DIV', closest: () => ({}) } as unknown as EventTarget)).toBe(
+      true
+    )
     expect(isSupportShortcutEditableTarget(null)).toBe(false)
   })
 })

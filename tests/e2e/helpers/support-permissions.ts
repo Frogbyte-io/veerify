@@ -261,8 +261,14 @@ export async function cleanupSupportPermissionFixture(fixture: SupportPermission
       db.select({ id: verification.id }).from(verification).where(inArray(verification.identifier, fixture.userEmails))
     )
   if (fixture.userIds.length) {
-    await assertNoOwned('accounts', db.select({ id: account.id }).from(account).where(inArray(account.userId, fixture.userIds)))
-    await assertNoOwned('sessions', db.select({ id: session.id }).from(session).where(inArray(session.userId, fixture.userIds)))
+    await assertNoOwned(
+      'accounts',
+      db.select({ id: account.id }).from(account).where(inArray(account.userId, fixture.userIds))
+    )
+    await assertNoOwned(
+      'sessions',
+      db.select({ id: session.id }).from(session).where(inArray(session.userId, fixture.userIds))
+    )
   }
   if (fixture.teamMemberIds.length)
     await assertNoOwned(
@@ -272,10 +278,16 @@ export async function cleanupSupportPermissionFixture(fixture: SupportPermission
   if (fixture.inboxMemberIds.length)
     await assertNoOwned(
       'inbox members',
-      db.select({ id: supportInboxMember.id }).from(supportInboxMember).where(inArray(supportInboxMember.id, fixture.inboxMemberIds))
+      db
+        .select({ id: supportInboxMember.id })
+        .from(supportInboxMember)
+        .where(inArray(supportInboxMember.id, fixture.inboxMemberIds))
     )
   if (fixture.contactIds.length)
-    await assertNoOwned('contacts', db.select({ id: contact.id }).from(contact).where(inArray(contact.id, fixture.contactIds)))
+    await assertNoOwned(
+      'contacts',
+      db.select({ id: contact.id }).from(contact).where(inArray(contact.id, fixture.contactIds))
+    )
   if (fixture.conversationIds.length)
     await assertNoOwned(
       'conversations',

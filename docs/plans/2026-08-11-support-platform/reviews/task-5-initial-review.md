@@ -137,7 +137,7 @@ copy that does not claim agent confirmation.
   disabling does not delete existing links. The existing team-admin settings
   route remains in force.
 - The automatic-link badge and conditional `aria-label="Remove automatic
-  link"` are accurate for the newly-created automatic rows, and the normal
+link"` are accurate for the newly-created automatic rows, and the normal
   link-delete endpoint remains authorized and usable for unlinking.
 - The private route's pre-existing GitHub issue creation has a rollback path
   around local transaction failure; this task did not move external GitHub

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { attachmentCleanupTask, ATTACHMENT_CLEANUP_TASK_NAME, runScheduledAttachmentCleanup } from '../server/services/scheduler/tasks/attachment-cleanup'
+import {
+  attachmentCleanupTask,
+  ATTACHMENT_CLEANUP_TASK_NAME,
+  runScheduledAttachmentCleanup,
+} from '../server/services/scheduler/tasks/attachment-cleanup'
 import { clearScheduledTasks, defineScheduledTask } from '../server/services/scheduler/registry'
 
 describe('runScheduledAttachmentCleanup', () => {
@@ -10,7 +14,9 @@ describe('runScheduledAttachmentCleanup', () => {
   })
 
   it('runs one bounded cleanup pass', async () => {
-    const runCleanup = vi.fn().mockResolvedValue({ claimed: 2, expired: 1, restored: 1, consumedTempDeleted: 0, deleted: 2, retried: 0 })
+    const runCleanup = vi
+      .fn()
+      .mockResolvedValue({ claimed: 2, expired: 1, restored: 1, consumedTempDeleted: 0, deleted: 2, retried: 0 })
     await expect(runScheduledAttachmentCleanup({ runCleanup })).resolves.toMatchObject({ claimed: 2 })
     expect(runCleanup).toHaveBeenCalledOnce()
   })
@@ -36,7 +42,10 @@ describe('runScheduledAttachmentCleanup', () => {
     await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 401 })
     expect(run).not.toHaveBeenCalled()
     getHeader.mockReturnValue('Bearer cron-test-secret')
-    await expect(handler({} as never)).resolves.toMatchObject({ success: true, data: { task: 'test:attachment-cleanup' } })
+    await expect(handler({} as never)).resolves.toMatchObject({
+      success: true,
+      data: { task: 'test:attachment-cleanup' },
+    })
     expect(run).toHaveBeenCalledOnce()
     if (originalSecret === undefined) delete process.env.CRON_SECRET
     else process.env.CRON_SECRET = originalSecret

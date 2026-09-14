@@ -39,7 +39,10 @@ function normalizeEtag(etag: string | undefined) {
 }
 
 function encodeCopySource(bucket: string, key: string) {
-  return `${bucket}/${key.split('/').map((segment) => encodeURIComponent(segment)).join('/')}`
+  return `${bucket}/${key
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')}`
 }
 
 function buildDefaultPublicUrl(opts: S3StorageProviderOptions, key: string) {
@@ -80,18 +83,19 @@ export class S3StorageProvider implements StorageProvider {
 
   constructor(options: S3StorageProviderOptions) {
     this.options = options
-    this.client = options.client || new S3Client({
-      region: options.region,
-      endpoint: options.endpoint || undefined,
-      forcePathStyle: options.forcePathStyle === true,
-      credentials: {
-        accessKeyId: options.accessKeyId,
-        secretAccessKey: options.secretAccessKey,
-      },
-    })
-    this.directUploadConstraints = options.directUploadConstraints === 'content-length-enforced'
-      ? 'content-length-enforced'
-      : 'proxy-required'
+    this.client =
+      options.client ||
+      new S3Client({
+        region: options.region,
+        endpoint: options.endpoint || undefined,
+        forcePathStyle: options.forcePathStyle === true,
+        credentials: {
+          accessKeyId: options.accessKeyId,
+          secretAccessKey: options.secretAccessKey,
+        },
+      })
+    this.directUploadConstraints =
+      options.directUploadConstraints === 'content-length-enforced' ? 'content-length-enforced' : 'proxy-required'
   }
 
   async getPresignedUploadTarget(
@@ -101,8 +105,8 @@ export class S3StorageProvider implements StorageProvider {
     options: PresignedUploadOptions = {}
   ): Promise<PresignedUploadTarget> {
     if (
-      this.directUploadConstraints === 'content-length-enforced'
-      && (!Number.isSafeInteger(options.expectedSizeBytes) || options.expectedSizeBytes! <= 0)
+      this.directUploadConstraints === 'content-length-enforced' &&
+      (!Number.isSafeInteger(options.expectedSizeBytes) || options.expectedSizeBytes! <= 0)
     ) {
       throw new Error('A positive expected object size is required for constrained direct uploads')
     }
@@ -146,13 +150,15 @@ export class S3StorageProvider implements StorageProvider {
     }
   }
 
-  async copyObject(sourceKey: string, destinationKey: string, options: CopyObjectOptions): Promise<StorageObjectMetadata> {
+  async copyObject(
+    sourceKey: string,
+    destinationKey: string,
+    options: CopyObjectOptions
+  ): Promise<StorageObjectMetadata> {
     const source = trimSlashes(sourceKey)
     const destination = trimSlashes(destinationKey)
     try {
-      const sourceHead = await this.client.send(
-        new HeadObjectCommand({ Bucket: this.options.bucket, Key: source })
-      )
+      const sourceHead = await this.client.send(new HeadObjectCommand({ Bucket: this.options.bucket, Key: source }))
       const sourceObjectVersion = sourceHead.VersionId || normalizeEtag(sourceHead.ETag)
       if (!sourceObjectVersion || sourceObjectVersion !== options.ifMatch) {
         const mismatch = new Error('Object version does not match') as Error & { code?: string }
@@ -178,7 +184,11 @@ export class S3StorageProvider implements StorageProvider {
       return await this.headObject(destination)
     } catch (error: unknown) {
       const cause = error as { code?: string; name?: string; $metadata?: { httpStatusCode?: number } }
-      if (cause.code === 'OBJECT_VERSION_MISMATCH' || cause.name === 'PreconditionFailed' || cause.$metadata?.httpStatusCode === 412) {
+      if (
+        cause.code === 'OBJECT_VERSION_MISMATCH' ||
+        cause.name === 'PreconditionFailed' ||
+        cause.$metadata?.httpStatusCode === 412
+      ) {
         const mismatch = new Error('Object version does not match') as Error & { code?: string }
         mismatch.code = 'OBJECT_VERSION_MISMATCH'
         throw mismatch

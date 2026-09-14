@@ -53,7 +53,8 @@ vi.mock('~/server/database/drizzle', () => ({
     insert: (...args: unknown[]) => state.insert(...args),
     update: (...args: unknown[]) => state.update(...args),
     select: (...args: unknown[]) => state.select(...args),
-    transaction: async (fn: (tx: any) => unknown) => fn({ insert: state.insert, update: state.update, select: state.select }),
+    transaction: async (fn: (tx: any) => unknown) =>
+      fn({ insert: state.insert, update: state.update, select: state.select }),
   },
 }))
 
@@ -87,7 +88,9 @@ beforeEach(() => {
   vi.restoreAllMocks()
   vi.clearAllMocks()
   vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
-  vi.stubGlobal('createError', (input: any) => Object.assign(new Error(input?.statusMessage || 'Request failed'), input))
+  vi.stubGlobal('createError', (input: any) =>
+    Object.assign(new Error(input?.statusMessage || 'Request failed'), input)
+  )
   vi.stubGlobal('readBody', async () => state.body)
   vi.stubGlobal('getRouterParam', () => 'opaque-token')
   vi.stubGlobal('getHeader', () => 'text/plain')
@@ -105,7 +108,9 @@ beforeEach(() => {
   state.select.mockReturnValue(chain([state.row]))
   state.provider.putObject.mockReset().mockResolvedValue(undefined)
   state.provider.deleteObject.mockReset().mockResolvedValue(undefined)
-  state.provider.headObject.mockReset().mockResolvedValue({ sizeBytes: 5, contentType: 'text/plain', objectVersion: 'version-1' })
+  state.provider.headObject
+    .mockReset()
+    .mockResolvedValue({ sizeBytes: 5, contentType: 'text/plain', objectVersion: 'version-1' })
   state.session = { user: { id: 'user-1' } }
   state.conversationError = null
   state.body = { conversationId: 'conversation-1', filename: 'file.txt', contentType: 'text/plain', sizeBytes: 5 }
@@ -148,11 +153,18 @@ describe('attachment presign route', () => {
   it('selects direct S3 only when the provider proves signed length enforcement', async () => {
     state.provider.driver = 's3'
     state.provider.directUploadConstraints = 'content-length-enforced'
-    state.provider.getPresignedUploadTarget.mockResolvedValue({ uploadUrl: 'https://s3.test/signed', method: 'PUT', headers: { 'content-type': 'text/plain' } })
+    state.provider.getPresignedUploadTarget.mockResolvedValue({
+      uploadUrl: 'https://s3.test/signed',
+      method: 'PUT',
+      headers: { 'content-type': 'text/plain' },
+    })
     const result = await presign({} as never)
     expect(result.data.uploadUrl).toBe('https://s3.test/signed')
     expect(state.provider.getPresignedUploadTarget).toHaveBeenCalledWith(
-      expect.stringContaining('support/attachments/uploads/'), 'text/plain', expect.any(Number), { expectedSizeBytes: 5 }
+      expect.stringContaining('support/attachments/uploads/'),
+      'text/plain',
+      expect.any(Number),
+      { expectedSizeBytes: 5 }
     )
   })
 })
@@ -168,12 +180,19 @@ describe('bounded proxy upload route', () => {
     } as never
     vi.stubGlobal('getRouterParam', () => 'opaque-token')
     vi.stubGlobal('getHeader', () => 'text/plain')
-    vi.stubGlobal('readRawBody', () => { throw new Error('readRawBody must not be called') })
+    vi.stubGlobal('readRawBody', () => {
+      throw new Error('readRawBody must not be called')
+    })
     const tokenModule = await import('../server/utils/support-attachments')
-    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({ uploadId: 'upload-1', expiresAt: state.row.expiresAt })
+    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({
+      uploadId: 'upload-1',
+      expiresAt: state.row.expiresAt,
+    })
 
     await expect(upload(event)).resolves.toMatchObject({ data: { uploaded: true, uploadId: 'upload-1', sizeBytes: 5 } })
-    expect(state.provider.putObject).toHaveBeenCalledWith(expect.objectContaining({ key: state.row.tempStorageKey, contentType: 'text/plain' }))
+    expect(state.provider.putObject).toHaveBeenCalledWith(
+      expect.objectContaining({ key: state.row.tempStorageKey, contentType: 'text/plain' })
+    )
   })
 
   it('stops consuming immediately after the first byte over 10 MB', async () => {
@@ -194,7 +213,10 @@ describe('bounded proxy upload route', () => {
     vi.stubGlobal('getRouterParam', () => 'opaque-token')
     vi.stubGlobal('getHeader', () => 'text/plain')
     const tokenModule = await import('../server/utils/support-attachments')
-    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({ uploadId: 'upload-1', expiresAt: state.row.expiresAt })
+    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({
+      uploadId: 'upload-1',
+      expiresAt: state.row.expiresAt,
+    })
 
     await expect(upload(event)).rejects.toMatchObject({ statusCode: 413 })
     expect(consumed).toBe(2)
@@ -203,27 +225,48 @@ describe('bounded proxy upload route', () => {
 
   it('rejects a repeated local upload token after the session is uploaded', async () => {
     state.row.status = 'uploaded'
-    const event = { node: { req: Readable.from([Buffer.from('hello')]) }, context: {}, params: { token: 'opaque-token' } } as never
+    const event = {
+      node: { req: Readable.from([Buffer.from('hello')]) },
+      context: {},
+      params: { token: 'opaque-token' },
+    } as never
     const tokenModule = await import('../server/utils/support-attachments')
-    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({ uploadId: 'upload-1', expiresAt: state.row.expiresAt })
+    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({
+      uploadId: 'upload-1',
+      expiresAt: state.row.expiresAt,
+    })
     await expect(upload(event)).rejects.toMatchObject({ statusCode: 409 })
     expect(state.provider.putObject).not.toHaveBeenCalled()
   })
 
   it('rejects an expired session before consuming its body', async () => {
     state.row.expiresAt = new Date(Date.now() - 1_000)
-    const event = { node: { req: Readable.from([Buffer.from('hello')]) }, context: {}, params: { token: 'opaque-token' } } as never
+    const event = {
+      node: { req: Readable.from([Buffer.from('hello')]) },
+      context: {},
+      params: { token: 'opaque-token' },
+    } as never
     const tokenModule = await import('../server/utils/support-attachments')
-    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({ uploadId: 'upload-1', expiresAt: new Date(Date.now() + 60_000) })
+    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({
+      uploadId: 'upload-1',
+      expiresAt: new Date(Date.now() + 60_000),
+    })
     await expect(upload(event)).rejects.toMatchObject({ statusCode: 400 })
     expect(state.provider.putObject).not.toHaveBeenCalled()
   })
 
   it('rejects a proxy content-type mismatch before consuming the body', async () => {
     vi.stubGlobal('getHeader', () => 'application/pdf')
-    const event = { node: { req: Readable.from([Buffer.from('hello')]) }, context: {}, params: { token: 'opaque-token' } } as never
+    const event = {
+      node: { req: Readable.from([Buffer.from('hello')]) },
+      context: {},
+      params: { token: 'opaque-token' },
+    } as never
     const tokenModule = await import('../server/utils/support-attachments')
-    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({ uploadId: 'upload-1', expiresAt: state.row.expiresAt })
+    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({
+      uploadId: 'upload-1',
+      expiresAt: state.row.expiresAt,
+    })
 
     await expect(upload(event)).rejects.toMatchObject({ statusCode: 400 })
     expect(state.provider.putObject).not.toHaveBeenCalled()
@@ -231,9 +274,16 @@ describe('bounded proxy upload route', () => {
 
   it('deletes stored bytes when the actual proxy size differs from the declaration', async () => {
     state.provider.headObject.mockResolvedValue({ sizeBytes: 4, contentType: 'text/plain', objectVersion: 'version-1' })
-    const event = { node: { req: Readable.from([Buffer.from('four')]) }, context: {}, params: { token: 'opaque-token' } } as never
+    const event = {
+      node: { req: Readable.from([Buffer.from('four')]) },
+      context: {},
+      params: { token: 'opaque-token' },
+    } as never
     const tokenModule = await import('../server/utils/support-attachments')
-    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({ uploadId: 'upload-1', expiresAt: state.row.expiresAt })
+    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({
+      uploadId: 'upload-1',
+      expiresAt: state.row.expiresAt,
+    })
 
     await expect(upload(event)).rejects.toMatchObject({ statusCode: 400 })
     expect(state.provider.putObject).toHaveBeenCalledOnce()
@@ -244,9 +294,16 @@ describe('bounded proxy upload route', () => {
   it('removes the temporary file when the storage provider fails', async () => {
     const before = (await readdir(tmpdir())).filter((name) => name.startsWith('veerify-attachment-')).sort()
     state.provider.putObject.mockRejectedValueOnce(new Error('storage unavailable'))
-    const event = { node: { req: Readable.from([Buffer.from('hello')]) }, context: {}, params: { token: 'opaque-token' } } as never
+    const event = {
+      node: { req: Readable.from([Buffer.from('hello')]) },
+      context: {},
+      params: { token: 'opaque-token' },
+    } as never
     const tokenModule = await import('../server/utils/support-attachments')
-    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({ uploadId: 'upload-1', expiresAt: state.row.expiresAt })
+    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({
+      uploadId: 'upload-1',
+      expiresAt: state.row.expiresAt,
+    })
 
     await expect(upload(event)).rejects.toThrow('storage unavailable')
     const after = (await readdir(tmpdir())).filter((name) => name.startsWith('veerify-attachment-')).sort()
@@ -312,7 +369,10 @@ describe('direct upload completion route', () => {
 
   it.each([
     ['actual size', { sizeBytes: 6, contentType: 'text/plain', objectVersion: 'version-1' }],
-    ['oversized actual object', { sizeBytes: 10 * 1024 * 1024 + 1, contentType: 'text/plain', objectVersion: 'version-1' }],
+    [
+      'oversized actual object',
+      { sizeBytes: 10 * 1024 * 1024 + 1, contentType: 'text/plain', objectVersion: 'version-1' },
+    ],
     ['actual type', { sizeBytes: 5, contentType: 'application/pdf', objectVersion: 'version-1' }],
     ['missing actual type', { sizeBytes: 5, contentType: null, objectVersion: 'version-1' }],
   ])('rejects an object with mismatched %s', async (_label, metadata) => {
