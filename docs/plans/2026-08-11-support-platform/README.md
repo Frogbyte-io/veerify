@@ -29,7 +29,7 @@ until the program is deliberately integrated into `main`.
 | Stage 04              | **Complete** — 11/11 items                                                                                                                                                                        |
 | Stage 01-04 hardening | **Complete** — 16/16 tasks, review gate passed — [design](stage-01-04-hardening-design.md) · [execution plan](stage-01-04-hardening-implementation.md) · [handoff](stage-01-04-review-handoff.md) |
 | Stage 05              | **Re-cut for MVP** Aug 30, 2026 — split into 05a/05b, delta D-36                                                                                                                                  |
-| Open cross-cutting    | SUP-X-4 (admin-only module toggles, delta D-28)                                                                                                                                                   |
+| Open cross-cutting    | E2E gate collection semantics (follow-up noted under SUP-X-5)                                                                                                                                     |
 
 **Verification is recorded in two separate places, on purpose.** Automated results live in
 [`stage-01-04-review-handoff.md`](stage-01-04-review-handoff.md). Anything that can only be checked

@@ -393,8 +393,8 @@ what the inbox _receives_.
 
 ### D-28 — Module toggles require the existing team-admin role
 
-**Found:** UI design discussion before Stage 02. **Status:** RESOLVED by the Stage 01-04 hardening design
-(2026-08-25).
+**Found:** UI design discussion before Stage 02. **Status:** RESOLVED by SUP-X-4 (`97f7575`, 2026-09-14),
+building on the server-side admin guard from the Stage 01-04 hardening work.
 
 Enabling or disabling a whole module has a much larger blast radius than editing a signature: switching
 Support off stops inbound mail for the entire team. That argues for restricting module toggles to admins
@@ -404,6 +404,9 @@ while leaving day-to-day inbox configuration open to team members.
 `teamMember.role === 'admin'`. Changing a module affects every teammate and can stop inbound support
 processing, so it is a workspace-administration action. Inbox-specific conversation and workflow access
 continues to live on `supportInboxMember.role`; this does not collapse the two role systems.
+
+The GET module endpoint now returns a `canManage` capability for the caller, and the Settings Tools tab
+renders member access as read-only while the PUT endpoint remains the final authorization boundary.
 
 ### D-29 — IMAP driver dropped from Stage 03
 
