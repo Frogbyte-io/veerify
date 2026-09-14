@@ -277,7 +277,7 @@ uses unique `(conversationId, metric)` `slaBreach` rows.
 
 ### D-23 — `server/utils/openapi.ts` has no route-registration mechanism
 
-**Found:** SUP-01-9. **Status:** worked around; real fix queued as SUP-X-3.
+**Found:** SUP-01-9. **Status:** resolved by SUP-X-3 (`6d5a372`, merged in `03b7de3`).
 
 The stage-01 plan said "register support contact routes in `server/utils/openapi.ts`", assuming it held
 a route registry. It does not — it is only type helpers and `commonSchemas`. The actual served spec is
@@ -294,12 +294,11 @@ even a scanner couldn't be added without a real dependency.
 This makes the served `/api/openapi.json` correct for support today, but it is duplication that will
 drift the moment an endpoint's JSDoc changes without a matching manual edit.
 
-**Real fix, not done here:** a build-time scan of `server/api/**/*.ts` for `@openapi` blocks, parsed with
-`js-yaml` (added as a direct dependency) and merged into the served spec. Must run at build time, not
-request time — the TS source is not necessarily present in a Vercel serverless deployment, only the
-compiled output, so a runtime filesystem scan would work in dev and self-hosted but silently produce an
-empty spec on Vercel. This is repo-wide scope (fixes all 24 files, not just support's 16), so it was not
-done inside a support-platform stage item.
+**Real fix:** `scripts/openapi-scanner.ts` now performs that scan at build time, parsing all annotated route
+files with direct `js-yaml` and emitting the checked-in `server/generated/openapi-routes.ts` artifact. The
+`build`, `generate`, and `vercel-build` scripts regenerate it before compilation, while the request handler
+only imports the generated paths. The scanner covers 68 annotated route files, producing 46 paths and 68
+operations; no request-time source filesystem access remains.
 
 ### D-24 — `isUniqueViolation` never matched a real drizzle error
 
