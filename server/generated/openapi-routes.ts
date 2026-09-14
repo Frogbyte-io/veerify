@@ -2632,7 +2632,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Module settings"
+          "description": "Module settings and whether the caller may change them"
         },
         "403": {
           "description": "Not a member of this team"
@@ -2661,7 +2661,7 @@ export const openapiPaths = {
           "description": "Module settings updated"
         },
         "403": {
-          "description": "Not a member of this team"
+          "description": "Team admin required"
         }
       }
     }

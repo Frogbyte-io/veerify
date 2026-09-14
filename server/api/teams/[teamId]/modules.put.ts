@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Module settings updated }
- *       403: { description: Not a member of this team }
+ *       403: { description: Team admin required }
  */
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

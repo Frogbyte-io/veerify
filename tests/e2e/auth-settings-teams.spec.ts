@@ -335,6 +335,41 @@ test('support nav is hidden until the support module is enabled', async ({ page 
   await expect(sidebar.locator('a[href="/support/contacts"]')).toHaveCount(0)
 })
 
+test('non-admins can view but cannot change team module settings', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
+
+  let putRequests = 0
+  await page.route('**/api/teams/*/modules', async (route) => {
+    if (route.request().method() === 'PUT') {
+      putRequests += 1
+      await route.abort()
+      return
+    }
+
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({
+      response,
+      json: {
+        ...payload,
+        data: {
+          ...payload.data,
+          canManage: false,
+        },
+      },
+    })
+  })
+
+  await page.goto('/settings#tools')
+  await expect(page.locator('[data-testid="settings-tools-read-only"]')).toBeVisible()
+
+  const supportSwitch = page.locator('[data-testid="settings-tools-supportEnabled"] [role="switch"]')
+  await expect(supportSwitch).toBeDisabled()
+  await supportSwitch.click({ force: true })
+  expect(putRequests).toBe(0)
+})
+
 test('settings team panel tracks active team selected in sidebar', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 

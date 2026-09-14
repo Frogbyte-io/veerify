@@ -11,7 +11,7 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Module settings }
+ *       200: { description: Module settings and whether the caller may change them }
  *       403: { description: Not a member of this team }
  */
 import { and, eq } from 'drizzle-orm'
@@ -45,11 +45,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Team membership only — restricting module toggles to team admins was
-  // considered and deliberately deferred (delta D-28). Do not add a role check
-  // here without reading that entry first.
   const [membership] = await db
-    .select({ id: teamMember.id })
+    .select({ id: teamMember.id, role: teamMember.role })
     .from(teamMember)
     .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, session.user.id)))
     .limit(1)
@@ -65,6 +62,7 @@ export default defineEventHandler(async (event) => {
   const [row] = await db.select().from(teamModuleSettings).where(eq(teamModuleSettings.teamId, teamId)).limit(1)
 
   return createSuccessResponse({
+    canManage: membership.role === 'admin',
     modules: row
       ? {
           feedbackEnabled: row.feedbackEnabled,

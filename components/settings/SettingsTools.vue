@@ -23,6 +23,13 @@
       </div>
 
       <div v-else class="space-y-3">
+        <p
+          v-if="!canManage"
+          class="rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+          data-testid="settings-tools-read-only"
+        >
+          You can view these module settings, but only team admins can change them.
+        </p>
         <div
           v-for="module in modules"
           :key="module.key"
@@ -44,7 +51,7 @@
           </div>
           <Switch
             :model-value="values[module.key]"
-            :disabled="saving === module.key"
+            :disabled="saving === module.key || !canManage"
             class="shrink-0 ml-4 mt-0.5"
             @update:model-value="toggle(module.key, $event)"
           />
@@ -102,6 +109,7 @@ export default {
         supportEnabled: false,
       },
       teamId: null,
+      canManage: false,
       isLoading: true,
       error: null,
       saving: null,
@@ -130,6 +138,7 @@ export default {
     async fetchModules() {
       this.isLoading = true
       this.error = null
+      this.canManage = false
 
       try {
         const activeTeam = await $fetch('/api/teams/active')
@@ -142,6 +151,7 @@ export default {
 
         const response = await $fetch(`/api/teams/${this.teamId}/modules`)
         const modules = response?.data?.modules
+        this.canManage = response?.data?.canManage === true
         if (modules) this.values = { ...this.values, ...modules }
       } catch (err) {
         this.error = err?.data?.error?.message || 'Failed to load modules'
@@ -151,6 +161,8 @@ export default {
     },
 
     async toggle(key, value) {
+      if (!this.canManage) return
+
       const previous = this.values[key]
       this.values[key] = value
       this.saving = key

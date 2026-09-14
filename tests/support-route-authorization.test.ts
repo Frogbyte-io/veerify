@@ -220,6 +220,7 @@ const addressList = (await import('~/server/api/support/inboxes/[id]/addresses/i
 const memberList = (await import('~/server/api/support/inboxes/[id]/members/index.get')).default
 const tagList = (await import('~/server/api/support/tags/index.get')).default
 const supportSettingsGet = (await import('~/server/api/support/teams/[teamId]/settings.get')).default
+const teamModulesGet = (await import('~/server/api/teams/[teamId]/modules.get')).default
 
 const contactList = (await import('~/server/api/support/contacts/index.get')).default
 const contactCreate = (await import('~/server/api/support/contacts/index.post')).default
@@ -280,6 +281,28 @@ beforeEach(() => {
 })
 
 describe('support route authorization inventory', () => {
+  it('reports module-management capability from the caller team role', async () => {
+    state.queuedRows = [
+      [{ id: 'team-member-1', role: 'member' }],
+      [{ feedbackEnabled: true, roadmapEnabled: false, changelogEnabled: false, supportEnabled: false }],
+    ]
+
+    await expect(teamModulesGet(event)).resolves.toMatchObject({
+      success: true,
+      data: { canManage: false },
+    })
+
+    state.queuedRows = [
+      [{ id: 'team-member-1', role: 'admin' }],
+      [{ feedbackEnabled: true, roadmapEnabled: false, changelogEnabled: false, supportEnabled: false }],
+    ]
+
+    await expect(teamModulesGet(event)).resolves.toMatchObject({
+      success: true,
+      data: { canManage: true },
+    })
+  })
+
   it.each([
     ['inbox creation', inboxCreate, 'requireTeamAdmin', 'team-1', 'team-admin'],
     ['inbox settings', inboxUpdate, 'requireInboxRole', 'inbox-1', 'admin'],
