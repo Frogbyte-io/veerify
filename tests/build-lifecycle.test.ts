@@ -10,7 +10,10 @@ const temporaryDirectories: string[] = []
 
 function fakeExecutable(directory: string, name: string) {
   const script = join(directory, name)
-  writeFileSync(script, `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.LIFECYCLE_LOG, '${name}\\n')\n`)
+  writeFileSync(
+    script,
+    `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.LIFECYCLE_LOG, '${name}\\n')\n`
+  )
   chmodSync(script, 0o755)
   writeFileSync(`${script}.cmd`, `@node "${script}" %*\r\n`)
 }
@@ -41,11 +44,11 @@ afterEach(() => {
 })
 
 describe('build lifecycle', () => {
-  it('keeps yarn build compile-only', () => {
-    expect(runLifecycle('build')).toEqual(['nuxt'])
+  it('generates the OpenAPI artifact before compiling', () => {
+    expect(runLifecycle('build')).toEqual(['tsx', 'nuxt'])
   })
 
-  it('runs deployment migration before Vercel compilation and never seeds', () => {
-    expect(runLifecycle('vercel-build')).toEqual(['drizzle-kit', 'nuxt'])
+  it('runs deployment migration and OpenAPI generation before Vercel compilation', () => {
+    expect(runLifecycle('vercel-build')).toEqual(['drizzle-kit', 'tsx', 'nuxt'])
   })
 })
