@@ -25,7 +25,9 @@ class FakeStorage implements StorageProvider {
   readonly objects = new Set<string>()
   readonly failed = new Set<string>()
   deletes: string[] = []
-  async getPresignedUploadTarget() { return { uploadUrl: '/unused', method: 'PUT' as const, headers: {} } }
+  async getPresignedUploadTarget() {
+    return { uploadUrl: '/unused', method: 'PUT' as const, headers: {} }
+  }
   async putObject() {}
   async headObject(key: string): Promise<StorageObjectMetadata> {
     if (!this.objects.has(key)) throw Object.assign(new Error('Object not found'), { code: 'OBJECT_NOT_FOUND' })
@@ -38,24 +40,49 @@ class FakeStorage implements StorageProvider {
     this.objects.add(destinationKey)
     return { sizeBytes: 1, contentType: 'text/plain', objectVersion: 'v1' }
   }
-  async getObject() { return Buffer.from('unused') }
+  async getObject() {
+    return Buffer.from('unused')
+  }
   async deleteObject(key: string) {
     this.deletes.push(key)
     if (this.failed.has(key)) throw new Error('provider unavailable')
     this.objects.delete(key)
   }
-  getPublicUrl(key: string) { return `/objects/${key}` }
+  getPublicUrl(key: string) {
+    return `/objects/${key}`
+  }
 }
 
 const storage = new FakeStorage()
 
 beforeAll(async () => {
   await db.insert(organization).values({ id: ids.org, name: 'Cleanup Org', slug: `cleanup-${randomUUID()}` })
-  await db.insert(team).values({ id: ids.team, name: 'Cleanup Team', slug: `cleanup-team-${randomUUID()}`, organizationId: ids.org })
+  await db
+    .insert(team)
+    .values({ id: ids.team, name: 'Cleanup Team', slug: `cleanup-team-${randomUUID()}`, organizationId: ids.org })
   await db.insert(user).values({ id: ids.user, name: 'Cleanup Agent', email: `cleanup-${randomUUID()}@example.com` })
-  await db.insert(supportInbox).values({ id: ids.inbox, teamId: ids.team, name: 'Cleanup Inbox', slug: `cleanup-inbox-${randomUUID()}`, emailAddress: `cleanup-${randomUUID()}@example.com` })
-  await db.insert(contact).values({ id: ids.contact, teamId: ids.team, name: 'Cleanup Customer', email: `cleanup-customer-${randomUUID()}@example.com` })
-  await db.insert(conversation).values({ id: ids.conversation, inboxId: ids.inbox, teamId: ids.team, contactId: ids.contact, displayId: 987654, subject: 'Cleanup', status: 'open' })
+  await db.insert(supportInbox).values({
+    id: ids.inbox,
+    teamId: ids.team,
+    name: 'Cleanup Inbox',
+    slug: `cleanup-inbox-${randomUUID()}`,
+    emailAddress: `cleanup-${randomUUID()}@example.com`,
+  })
+  await db.insert(contact).values({
+    id: ids.contact,
+    teamId: ids.team,
+    name: 'Cleanup Customer',
+    email: `cleanup-customer-${randomUUID()}@example.com`,
+  })
+  await db.insert(conversation).values({
+    id: ids.conversation,
+    inboxId: ids.inbox,
+    teamId: ids.team,
+    contactId: ids.contact,
+    displayId: 987654,
+    subject: 'Cleanup',
+    status: 'open',
+  })
 })
 
 afterAll(async () => {
@@ -64,9 +91,7 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
-  await db
-    .delete(supportAttachmentUpload)
-    .where(eq(supportAttachmentUpload.conversationId, ids.conversation))
+  await db.delete(supportAttachmentUpload).where(eq(supportAttachmentUpload.conversationId, ids.conversation))
   storage.objects.clear()
   storage.failed.clear()
   storage.deletes = []
@@ -102,18 +127,28 @@ describe('support attachment cleanup (real Postgres)', () => {
     const result = await runAttachmentCleanup({ now, storage, maxBatch: 10 })
     expect(result.claimed).toBe(2)
     expect(result.expired).toBe(2)
-    expect(storage.deletes).toEqual(expect.arrayContaining([
-      `support/attachments/uploads/${pending}/file.txt`,
-      `support/attachments/uploads/${uploaded}/file.txt`,
-    ]))
-    const rows = await db.select().from(supportAttachmentUpload).where(inArray(supportAttachmentUpload.id, [pending, uploaded]))
+    expect(storage.deletes).toEqual(
+      expect.arrayContaining([
+        `support/attachments/uploads/${pending}/file.txt`,
+        `support/attachments/uploads/${uploaded}/file.txt`,
+      ])
+    )
+    const rows = await db
+      .select()
+      .from(supportAttachmentUpload)
+      .where(inArray(supportAttachmentUpload.id, [pending, uploaded]))
     expect(rows.every((row) => row.status === 'expired' && row.tempDeletedAt)).toBe(true)
   })
 
   it('cleans consumed temporary objects while retaining the consumed final object', async () => {
     const temp = `support/attachments/uploads/consumed/file.txt`
     const final = `support/attachments/outbound/consumed/file.txt`
-    const id = await upload('consumed', { tempStorageKey: temp, finalStorageKey: final, expiresAt: new Date(now.getTime() + 60_000), consumedAt: now })
+    const id = await upload('consumed', {
+      tempStorageKey: temp,
+      finalStorageKey: final,
+      expiresAt: new Date(now.getTime() + 60_000),
+      consumedAt: now,
+    })
     const result = await runAttachmentCleanup({ now, storage, maxBatch: 10 })
     expect(result.consumedTempDeleted).toBe(1)
     const [row] = await db.select().from(supportAttachmentUpload).where(eq(supportAttachmentUpload.id, id))
@@ -148,7 +183,13 @@ describe('support attachment cleanup (real Postgres)', () => {
     })
 
     await expect(
-      reserveAttachmentFinalization({ uploadIds: [id], conversationId: ids.conversation, userId: ids.user, now, storage })
+      reserveAttachmentFinalization({
+        uploadIds: [id],
+        conversationId: ids.conversation,
+        userId: ids.user,
+        now,
+        storage,
+      })
     ).rejects.toMatchObject({
       statusCode: 409,
       data: {
@@ -160,7 +201,13 @@ describe('support attachment cleanup (real Postgres)', () => {
 
     await expect(runAttachmentCleanup({ now, storage, maxBatch: 1 })).resolves.toMatchObject({ restored: 1 })
     await expect(
-      reserveAttachmentFinalization({ uploadIds: [id], conversationId: ids.conversation, userId: ids.user, now, storage })
+      reserveAttachmentFinalization({
+        uploadIds: [id],
+        conversationId: ids.conversation,
+        userId: ids.user,
+        now,
+        storage,
+      })
     ).resolves.toMatchObject([{ uploadId: id }])
   })
 
@@ -207,13 +254,22 @@ describe('support attachment cleanup (real Postgres)', () => {
   it('keeps a partial multi-object failure retryable while completing the other row', async () => {
     const failedFinal = `support/attachments/outbound/partial-failed/file.txt`
     const succeededFinal = `support/attachments/outbound/partial-ok/file.txt`
-    const failed = await upload('cleanup_required', { finalStorageKey: failedFinal, expiresAt: new Date(now.getTime() + 60_000) })
-    const succeeded = await upload('cleanup_required', { finalStorageKey: succeededFinal, expiresAt: new Date(now.getTime() + 60_000) })
+    const failed = await upload('cleanup_required', {
+      finalStorageKey: failedFinal,
+      expiresAt: new Date(now.getTime() + 60_000),
+    })
+    const succeeded = await upload('cleanup_required', {
+      finalStorageKey: succeededFinal,
+      expiresAt: new Date(now.getTime() + 60_000),
+    })
     storage.failed.add(failedFinal)
     const result = await runAttachmentCleanup({ now, storage, maxBatch: 10 })
     expect(result.retried).toBeGreaterThanOrEqual(1)
     expect(result.restored).toBeGreaterThanOrEqual(1)
-    const rows = await db.select().from(supportAttachmentUpload).where(inArray(supportAttachmentUpload.id, [failed, succeeded]))
+    const rows = await db
+      .select()
+      .from(supportAttachmentUpload)
+      .where(inArray(supportAttachmentUpload.id, [failed, succeeded]))
     expect(rows.find((row) => row.id === failed)?.finalStorageKey).toBe(failedFinal)
     expect(rows.find((row) => row.id === succeeded)?.status).toBe('uploaded')
   })
@@ -245,13 +301,24 @@ describe('support attachment cleanup (real Postgres)', () => {
     const id = await upload('pending')
     let release!: () => void
     let started!: () => void
-    const paused = new Promise<void>((resolve) => { release = resolve })
-    const deleteStarted = new Promise<void>((resolve) => { started = resolve })
+    const paused = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const deleteStarted = new Promise<void>((resolve) => {
+      started = resolve
+    })
     const originalDelete = storage.deleteObject.bind(storage)
-    storage.deleteObject = async (key: string) => { started(); await paused; return originalDelete(key) }
+    storage.deleteObject = async (key: string) => {
+      started()
+      await paused
+      return originalDelete(key)
+    }
     const run = runAttachmentCleanup({ now, storage, maxBatch: 1 })
     await deleteStarted
-    await db.update(supportAttachmentUpload).set({ finalizeLeaseExpiresAt: new Date(now.getTime() + 120_000) }).where(eq(supportAttachmentUpload.id, id))
+    await db
+      .update(supportAttachmentUpload)
+      .set({ finalizeLeaseExpiresAt: new Date(now.getTime() + 120_000) })
+      .where(eq(supportAttachmentUpload.id, id))
     release()
     const result = await run
     storage.deleteObject = originalDelete
@@ -278,10 +345,7 @@ describe('support attachment cleanup (real Postgres)', () => {
       .select()
       .from(supportAttachmentUpload)
       .where(
-        and(
-          eq(supportAttachmentUpload.conversationId, ids.conversation),
-          eq(supportAttachmentUpload.status, 'pending')
-        )
+        and(eq(supportAttachmentUpload.conversationId, ids.conversation), eq(supportAttachmentUpload.status, 'pending'))
       )
     expect(remaining).toHaveLength(1)
   })

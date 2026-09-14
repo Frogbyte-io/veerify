@@ -30,7 +30,9 @@ describe('local storage provider contract', () => {
     await expect(
       storage.copyObject('uploads/source', 'final/file', { contentType: 'text/plain', ifMatch: 'wrong-version' })
     ).rejects.toMatchObject({ code: 'OBJECT_VERSION_MISMATCH' })
-    expect(await storage.copyObject('uploads/source', 'final/file', { contentType: 'text/plain', ifMatch: version })).toEqual({
+    expect(
+      await storage.copyObject('uploads/source', 'final/file', { contentType: 'text/plain', ifMatch: version })
+    ).toEqual({
       sizeBytes: 4,
       contentType: 'text/plain',
       objectVersion: version,
@@ -60,7 +62,9 @@ describe('S3 storage provider contract', () => {
       contentType: 'text/plain',
       objectVersion: 'version-1',
     })
-    expect(await storage.copyObject('source', 'destination', { contentType: 'application/pdf', ifMatch: 'version-1' })).toMatchObject({
+    expect(
+      await storage.copyObject('source', 'destination', { contentType: 'application/pdf', ifMatch: 'version-1' })
+    ).toMatchObject({
       sizeBytes: 4,
       contentType: 'application/pdf',
       objectVersion: 'etag-destination',
@@ -87,7 +91,12 @@ describe('S3 storage provider contract', () => {
       .fn()
       .mockResolvedValueOnce({ ContentLength: 4, ContentType: 'text/plain', VersionId: 'version/one', ETag: '"etag"' })
       .mockResolvedValueOnce({ CopyObjectResult: { ETag: '"etag-2"' } })
-      .mockResolvedValueOnce({ ContentLength: 4, ContentType: 'text/plain', VersionId: 'version-two', ETag: '"etag-2"' })
+      .mockResolvedValueOnce({
+        ContentLength: 4,
+        ContentType: 'text/plain',
+        VersionId: 'version-two',
+        ETag: '"etag-2"',
+      })
     ;(storage as any).client.send = send
 
     await expect(

@@ -44,9 +44,7 @@ describe('delivery route correlation controls', () => {
   })
 
   it('fails closed when the provider fallback is ambiguous', () => {
-    expect(
-      selectDeliveryCorrelationCandidate(event, [candidate(), candidate({ messageId: 'message-2' })])
-    ).toBeNull()
+    expect(selectDeliveryCorrelationCandidate(event, [candidate(), candidate({ messageId: 'message-2' })])).toBeNull()
   })
 
   it('records a valid event as uncorrelated when no identity matches', () => {

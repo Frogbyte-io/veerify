@@ -132,9 +132,9 @@ test.describe.serial('inbound email', () => {
           updatedAt: now,
         }))
       )
-      await db.insert(teamModuleSettings).values(
-        teamIds.map((teamId) => ({ teamId, supportEnabled: true, createdAt: now, updatedAt: now }))
-      )
+      await db
+        .insert(teamModuleSettings)
+        .values(teamIds.map((teamId) => ({ teamId, supportEnabled: true, createdAt: now, updatedAt: now })))
       await db.insert(supportInbox).values(
         inboxIds.map((id, index) => ({
           id,

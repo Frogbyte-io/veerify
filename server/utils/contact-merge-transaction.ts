@@ -8,11 +8,7 @@ import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-export async function mergeContactsInTransaction(
-  tx: Transaction,
-  survivorId: string,
-  sourceContactId: string
-) {
+export async function mergeContactsInTransaction(tx: Transaction, survivorId: string, sourceContactId: string) {
   // These are deliberately non-locking reads. They provide the owning team
   // ids used to establish the stable lock order before either contact row is
   // locked. The contacts are re-read and validated below after the team lock.
@@ -22,7 +18,10 @@ export async function mergeContactsInTransaction(
     .where(inArray(contact.id, [survivorId, sourceContactId]))
     .orderBy(asc(contact.id))
 
-  await lockContactTeams(tx, candidates.map((candidate) => candidate.teamId))
+  await lockContactTeams(
+    tx,
+    candidates.map((candidate) => candidate.teamId)
+  )
 
   const lockedContacts = await tx
     .select()
@@ -70,7 +69,10 @@ export async function mergeContactsInTransaction(
   }
 
   await tx.update(contactLink).set({ contactId: lockedSurvivor.id }).where(eq(contactLink.contactId, lockedLoser.id))
-  await tx.update(contactIdentity).set({ contactId: lockedSurvivor.id }).where(eq(contactIdentity.contactId, lockedLoser.id))
+  await tx
+    .update(contactIdentity)
+    .set({ contactId: lockedSurvivor.id })
+    .where(eq(contactIdentity.contactId, lockedLoser.id))
 
   await tx
     .update(contact)

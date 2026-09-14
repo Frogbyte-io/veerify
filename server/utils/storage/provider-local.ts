@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import type { StorageProvider, PutObjectInput, PresignedUploadTarget, StorageObjectMetadata, CopyObjectOptions } from './types'
+import type {
+  StorageProvider,
+  PutObjectInput,
+  PresignedUploadTarget,
+  StorageObjectMetadata,
+  CopyObjectOptions,
+} from './types'
 
 export interface LocalStorageProviderOptions {
   rootDir: string
@@ -93,7 +99,11 @@ export class LocalStorageProvider implements StorageProvider {
     }
   }
 
-  async copyObject(sourceKey: string, destinationKey: string, options: CopyObjectOptions): Promise<StorageObjectMetadata> {
+  async copyObject(
+    sourceKey: string,
+    destinationKey: string,
+    options: CopyObjectOptions
+  ): Promise<StorageObjectMetadata> {
     const sourcePath = this.resolvePathForKey(sourceKey)
     const bytes = await readFile(sourcePath.absolute)
     const objectVersion = createHash('sha256').update(bytes).digest('hex')

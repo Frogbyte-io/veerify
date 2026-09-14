@@ -96,25 +96,21 @@ class FakeStorage implements StorageProvider {
 const storage = new FakeStorage()
 
 beforeAll(async () => {
-  await db
-    .insert(organization)
-    .values({
-      id: orgId,
-      name: 'Finalization Org',
-      slug: `finalization-${randomUUID()}`,
-      createdAt: now,
-      updatedAt: now,
-    })
-  await db
-    .insert(team)
-    .values({
-      id: teamId,
-      name: 'Finalization Team',
-      slug: `finalization-team-${randomUUID()}`,
-      organizationId: orgId,
-      createdAt: now,
-      updatedAt: now,
-    })
+  await db.insert(organization).values({
+    id: orgId,
+    name: 'Finalization Org',
+    slug: `finalization-${randomUUID()}`,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(team).values({
+    id: teamId,
+    name: 'Finalization Team',
+    slug: `finalization-team-${randomUUID()}`,
+    organizationId: orgId,
+    createdAt: now,
+    updatedAt: now,
+  })
   await db.insert(user).values([
     {
       id: userId,
@@ -131,36 +127,32 @@ beforeAll(async () => {
       updatedAt: now,
     },
   ])
-  await db
-    .insert(supportInbox)
-    .values({
-      id: inboxId,
-      teamId,
-      name: 'Finalization Inbox',
-      slug: `finalization-inbox-${randomUUID()}`,
-      emailAddress: 'support@example.com',
-      createdAt: now,
-      updatedAt: now,
-    })
+  await db.insert(supportInbox).values({
+    id: inboxId,
+    teamId,
+    name: 'Finalization Inbox',
+    slug: `finalization-inbox-${randomUUID()}`,
+    emailAddress: 'support@example.com',
+    createdAt: now,
+    updatedAt: now,
+  })
   await db
     .insert(supportInboxMember)
     .values({ id: `finalization_member_${randomUUID()}`, inboxId, userId, role: 'agent', createdAt: now })
   await db
     .insert(contact)
     .values({ id: contactId, teamId, name: 'Customer', email: 'customer@example.com', createdAt: now, updatedAt: now })
-  await db
-    .insert(conversation)
-    .values({
-      id: conversationId,
-      inboxId,
-      teamId,
-      contactId,
-      displayId: 9901,
-      subject: 'Finalization',
-      status: 'open',
-      createdAt: now,
-      updatedAt: now,
-    })
+  await db.insert(conversation).values({
+    id: conversationId,
+    inboxId,
+    teamId,
+    contactId,
+    displayId: 9901,
+    subject: 'Finalization',
+    status: 'open',
+    createdAt: now,
+    updatedAt: now,
+  })
 })
 
 afterAll(async () => {
@@ -491,8 +483,12 @@ describe('durable support attachment finalization (real Postgres)', () => {
     const uploadId = await createUpload({ expiresAt: new Date(Date.now() + 150) })
     let releaseLock!: () => void
     let reportLocked!: () => void
-    const release = new Promise<void>((resolve) => { releaseLock = resolve })
-    const locked = new Promise<void>((resolve) => { reportLocked = resolve })
+    const release = new Promise<void>((resolve) => {
+      releaseLock = resolve
+    })
+    const locked = new Promise<void>((resolve) => {
+      reportLocked = resolve
+    })
     const blocker = db.transaction(async (tx) => {
       await tx.select().from(supportAttachmentUpload).where(eq(supportAttachmentUpload.id, uploadId)).for('update')
       reportLocked()
@@ -541,8 +537,12 @@ describe('durable support attachment finalization (real Postgres)', () => {
 
     let releaseLock!: () => void
     let reportLocked!: () => void
-    const release = new Promise<void>((resolve) => { releaseLock = resolve })
-    const locked = new Promise<void>((resolve) => { reportLocked = resolve })
+    const release = new Promise<void>((resolve) => {
+      releaseLock = resolve
+    })
+    const locked = new Promise<void>((resolve) => {
+      reportLocked = resolve
+    })
     const blocker = db.transaction(async (tx) => {
       await tx.select().from(supportAttachmentUpload).where(eq(supportAttachmentUpload.id, uploadId)).for('update')
       reportLocked()
@@ -564,15 +564,25 @@ describe('durable support attachment finalization (real Postgres)', () => {
 
   it('rolls back message, attachments, and outbox when a late transaction write fails', async () => {
     const uploadId = await createUpload()
-    const reservation = await reserveAttachmentFinalization({ uploadIds: [uploadId], conversationId, userId, now, storage })
+    const reservation = await reserveAttachmentFinalization({
+      uploadIds: [uploadId],
+      conversationId,
+      userId,
+      now,
+      storage,
+    })
     const messageId = `rollback_late_${randomUUID()}`
     const invalidOutgoing = outgoing(messageId)
     ;(invalidOutgoing.deliveryPayload as Record<string, unknown>).unserializable = 1n
 
     await expect(commit(reservation, messageId, invalidOutgoing)).rejects.toThrow()
     expect(await db.select().from(conversationMessage).where(eq(conversationMessage.id, messageId))).toHaveLength(0)
-    expect(await db.select().from(conversationAttachment).where(eq(conversationAttachment.messageId, messageId))).toHaveLength(0)
-    expect(await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.messageId, messageId))).toHaveLength(0)
+    expect(
+      await db.select().from(conversationAttachment).where(eq(conversationAttachment.messageId, messageId))
+    ).toHaveLength(0)
+    expect(
+      await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.messageId, messageId))
+    ).toHaveLength(0)
     const [upload] = await db.select().from(supportAttachmentUpload).where(eq(supportAttachmentUpload.id, uploadId))
     expect(upload.status).toBe('cleanup_required')
     expect(upload.finalStorageKey).toBe(reservation[0].finalStorageKey)

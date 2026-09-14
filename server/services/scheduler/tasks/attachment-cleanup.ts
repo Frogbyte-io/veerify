@@ -3,9 +3,11 @@ import { defineScheduledTask } from '../registry'
 
 export const ATTACHMENT_CLEANUP_TASK_NAME = 'support:attachment-cleanup'
 
-export async function runScheduledAttachmentCleanup(deps: {
-  runCleanup?: () => ReturnType<typeof runAttachmentCleanup>
-} = {}) {
+export async function runScheduledAttachmentCleanup(
+  deps: {
+    runCleanup?: () => ReturnType<typeof runAttachmentCleanup>
+  } = {}
+) {
   try {
     return await (deps.runCleanup ?? runAttachmentCleanup)()
   } catch {

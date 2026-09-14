@@ -23,7 +23,9 @@ describe('support contact timeline', () => {
   })
 
   it('returns independent page metadata for linked and probable sections', () => {
-    const linked = [{ id: 'link-1', entityType: 'feedback', entityId: 'feedback-1', createdAt: new Date('2026-08-13T12:00:00.000Z') }]
+    const linked = [
+      { id: 'link-1', entityType: 'feedback', entityId: 'feedback-1', createdAt: new Date('2026-08-13T12:00:00.000Z') },
+    ]
     const probableFeedback = [{ id: 'feedback-2', createdAt: new Date('2026-08-13T11:00:00.000Z') }]
 
     expect(buildContactTimeline(linked, probableFeedback, { limit: 25 })).toMatchObject({

@@ -10,7 +10,10 @@ const temporaryDirectories: string[] = []
 
 function fakeExecutable(directory: string, name: string) {
   const script = join(directory, name)
-  writeFileSync(script, `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.LIFECYCLE_LOG, '${name}\\n')\n`)
+  writeFileSync(
+    script,
+    `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(process.env.LIFECYCLE_LOG, '${name}\\n')\n`
+  )
   chmodSync(script, 0o755)
   writeFileSync(`${script}.cmd`, `@node "${script}" %*\r\n`)
 }

@@ -69,7 +69,9 @@ describe('signSupportUploadToken / verifySupportUploadToken', () => {
   })
 
   it('rejects an expired token input', () => {
-    expect(() => signSupportUploadToken({ uploadId: 'upload_1', expiresAt: new Date(Date.now() - 1_000) })).toThrow(/invalid/i)
+    expect(() => signSupportUploadToken({ uploadId: 'upload_1', expiresAt: new Date(Date.now() - 1_000) })).toThrow(
+      /invalid/i
+    )
   })
 })
 

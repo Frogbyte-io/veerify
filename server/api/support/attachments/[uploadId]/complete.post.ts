@@ -28,7 +28,11 @@ import { db } from '~/server/database/drizzle'
 import { supportAttachmentUpload } from '~/server/database/schema/support'
 
 function completionError(statusCode: number, message: string, code: string = ErrorCode.VALIDATION_ERROR): never {
-  throw createError({ statusCode, statusMessage: statusCode === 404 ? 'Not Found' : 'Validation failed', data: createErrorResponse(code, message) })
+  throw createError({
+    statusCode,
+    statusMessage: statusCode === 404 ? 'Not Found' : 'Validation failed',
+    data: createErrorResponse(code, message),
+  })
 }
 
 export default defineEventHandler(async (event) => {
@@ -47,7 +51,8 @@ export default defineEventHandler(async (event) => {
 
     await requireConversationAccess(upload.conversationId, session.user.id)
     if (upload.expiresAt.getTime() <= Date.now()) completionError(400, 'Upload session has expired')
-    if (upload.status !== 'pending' && upload.status !== 'uploaded') completionError(409, 'Upload session is not available')
+    if (upload.status !== 'pending' && upload.status !== 'uploaded')
+      completionError(409, 'Upload session is not available')
 
     const storage = getStorageProvider()
     if (storage.directUploadConstraints !== 'content-length-enforced') {
@@ -63,8 +68,10 @@ export default defineEventHandler(async (event) => {
       }
       throw error
     }
-    if (metadata.sizeBytes !== upload.requestedSizeBytes) completionError(400, 'Uploaded size does not match the presigned size')
-    if (metadata.contentType !== upload.requestedContentType) completionError(400, 'Uploaded content type does not match the presigned type')
+    if (metadata.sizeBytes !== upload.requestedSizeBytes)
+      completionError(400, 'Uploaded size does not match the presigned size')
+    if (metadata.contentType !== upload.requestedContentType)
+      completionError(400, 'Uploaded content type does not match the presigned type')
     if (upload.status === 'uploaded' && upload.objectVersion && upload.objectVersion !== metadata.objectVersion) {
       completionError(409, 'Uploaded object has changed', ErrorCode.CONFLICT)
     }

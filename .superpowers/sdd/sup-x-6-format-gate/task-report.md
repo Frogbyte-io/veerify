@@ -21,6 +21,37 @@ The focused gate changes passed these checks before the unrelated format-only ch
 - `yarn test:e2e:if-available`: skipped by the local guard because `PLAYWRIGHT_FORCE=1` and a configured database were not set.
 - The full harness with explicit Redis/Postgres variables passed all gates, including the new format step, while the reviewed formatting normalization was present.
 
-## Integration note
+## Final normalization
 
-The repository baseline has 26 pre-existing Prettier differences unrelated to this gate. The normalization was reviewed as whitespace/quote/table alignment only, but was reverted from the worker branch at the orchestrator's request to avoid unrelated churn. With only the focused gate changes remaining, `yarn format:check` still reports those 26 files. The integration branch must either retain that reviewed format-only normalization or resolve the baseline drift separately before the new harness gate can be green.
+The repository baseline had 26 pre-existing Prettier differences unrelated to this gate. In the follow-up commit, Prettier was run only on the exact 26 paths emitted by the failing `yarn format:check` command:
+
+```text
+docs/plans/2026-08-11-support-platform/reviews/task-5-initial-review.md
+docs/plans/2026-08-11-support-platform/stage-05-decisions.md
+scripts/profile-build.mjs
+server/api/support/attachments/[id].get.ts
+server/api/support/attachments/[uploadId]/complete.post.ts
+server/services/scheduler/tasks/attachment-cleanup.ts
+server/services/scheduler/tasks/outbound-delivery.ts
+server/utils/contact-merge-transaction.ts
+server/utils/delivery-events.ts
+server/utils/storage/provider-local.ts
+server/utils/storage/provider-s3.ts
+server/utils/support-attachments.ts
+tests/attachment-cleanup-scheduler.test.ts
+tests/build-lifecycle.test.ts
+tests/delivery-route-control.test.ts
+tests/e2e/helpers/support-permissions.ts
+tests/e2e/support-inbound-email.spec.ts
+tests/integration/support-attachment-cleanup.test.ts
+tests/integration/support-attachment-finalization.test.ts
+tests/integration/support-timeline-pagination.test.ts
+tests/storage-provider-contract.test.ts
+tests/support-attachment-read-routes.test.ts
+tests/support-attachment-routes.test.ts
+tests/support-attachments.test.ts
+tests/support-keyboard-shortcuts.test.ts
+tests/support-timeline.test.ts
+```
+
+The resulting diff is formatting-only (whitespace, wrapping, quote normalization, or Markdown table alignment), and the final repo-wide `yarn format:check` passes.
