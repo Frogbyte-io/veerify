@@ -83,8 +83,8 @@ ls server/api/support/contacts/
 | [05a](stage-05a-agent-speed.md)     | Agent speed (MVP)         | 02, 04     | Next    |
 | [05b](stage-05b-feedback-bridge.md) | Feedback bridge           | 05a        | DONE    |
 | [06](stage-06-sla.md)               | Business hours + SLA      | 02, 04     | DONE    |
-| [07](stage-07-automation.md)        | Automation rules          | 02, 04     | ACTIVE  |
-| [08](stage-08-csat.md)              | CSAT                      | 04         | Blocked |
+| [07](stage-07-automation.md)        | Automation rules          | 02, 04     | DONE    |
+| [08](stage-08-csat.md)              | CSAT                      | 04         | ACTIVE  |
 | [09](stage-09-reporting.md)         | Reporting                 | 02, 06     | Blocked |
 | [09b](stage-09b-home.md)            | Home (cross-team)         | 02         | Future  |
 | [10](stage-10-customer-portal.md)   | Customer portal           | 02         | Blocked |

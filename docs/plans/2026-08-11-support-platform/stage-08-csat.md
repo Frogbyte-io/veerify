@@ -5,7 +5,8 @@
 
 **Goal:** Ask customers how the support went, and turn the answers into a number per agent and per inbox.
 
-> Outline-level detail. Refine when unblocked.
+Stage 08 is now active on `support-platform`. The durable survey/response schema and five-minute
+dispatch pass are implemented first; the public rating flow and configuration surfaces build on them.
 
 ## Schema
 
@@ -47,8 +48,8 @@
 
 ## TODO items
 
-- [ ] Add `csatSurvey` and `csatResponse` tables; generate migration
-- [ ] Implement survey dispatch on the Stage 00 scheduler with trigger, delay, and all four guards
+- [x] Add `csatSurvey` and `csatResponse` tables; generate migration
+- [x] Implement survey dispatch on the Stage 00 scheduler with trigger, delay, and all four guards
 - [ ] Add the CSAT email template following the existing `lib/email-templates.ts` pattern, with one tokenized URL per rating option
 - [ ] Build the public rating landing page with follow-up comment capture; no authentication required
 - [ ] Implement token single-use semantics for rating and bounded-window validity for comments

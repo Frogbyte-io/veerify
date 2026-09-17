@@ -821,6 +821,91 @@ export const supportDeliveryEvent = pgTable(
   })
 )
 
+// ---------------------------------------------------------------------------
+// Stage 08 — CSAT surveys
+// ---------------------------------------------------------------------------
+
+export type CsatScale = 'csat_5' | 'thumbs' | 'nps_10'
+export type CsatSendTrigger = 'on_resolve' | 'on_close'
+
+export const csatSurvey = pgTable(
+  'csat_survey',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    // NULL means the survey applies to every inbox owned by the team.
+    inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    scale: text('scale').$type<CsatScale>().notNull(),
+    question: text('question').notNull(),
+    followUpQuestion: text('follow_up_question'),
+    sendTrigger: text('send_trigger').$type<CsatSendTrigger>().notNull(),
+    delayMinutes: integer('delay_minutes').default(0).notNull(),
+    // Controls the per-contact survey fatigue guard. Thirty days is the
+    // default; teams can choose a shorter or longer window in settings.
+    contactCooldownMinutes: integer('contact_cooldown_minutes').default(43200).notNull(),
+    isEnabled: boolean('is_enabled').default(false).notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamIdx: index('csat_survey_team_idx').on(table.teamId),
+    inboxIdx: index('csat_survey_inbox_idx').on(table.inboxId),
+    enabledIdx: index('csat_survey_enabled_idx').on(table.teamId, table.isEnabled),
+    validScale: check('csat_survey_scale_check', sql`${table.scale} in ('csat_5','thumbs','nps_10')`),
+    validTrigger: check('csat_survey_trigger_check', sql`${table.sendTrigger} in ('on_resolve','on_close')`),
+    validDelay: check('csat_survey_delay_check', sql`${table.delayMinutes} >= 0`),
+    validCooldown: check('csat_survey_cooldown_check', sql`${table.contactCooldownMinutes} >= 0`),
+  })
+)
+
+export const csatResponse = pgTable(
+  'csat_response',
+  {
+    id: text('id').primaryKey(),
+    surveyId: text('survey_id')
+      .notNull()
+      .references(() => csatSurvey.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    contactId: text('contact_id')
+      .notNull()
+      .references(() => contact.id, { onDelete: 'cascade' }),
+    agentUserId: text('agent_user_id').references(() => user.id, { onDelete: 'set null' }),
+    rating: integer('rating'),
+    comment: text('comment'),
+    // Opaque token used by the public rating endpoint. The rating is carried
+    // in the URL query string, so each option has a distinct URL while one
+    // response row still enforces single-use rating semantics.
+    token: text('token').notNull(),
+    sentAt: timestamp('sent_at').notNull(),
+    respondedAt: timestamp('responded_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueConversation: uniqueIndex('csat_response_conversation_idx').on(table.conversationId),
+    uniqueToken: uniqueIndex('csat_response_token_idx').on(table.token),
+    surveyCreatedAtIdx: index('csat_response_survey_created_at_idx').on(table.surveyId, table.createdAt),
+    contactSentAtIdx: index('csat_response_contact_sent_at_idx').on(table.contactId, table.sentAt),
+    validRating: check(
+      'csat_response_rating_check',
+      sql`${table.rating} is null or (${table.rating} >= 0 and ${table.rating} <= 10)`
+    ),
+  })
+)
+
 // Team-scoped canned responses (Stage 05a). Deliberately no inboxId: the
 // approved MVP has one shared inbox per team, so inbox scope would be redundant.
 export const cannedResponse = pgTable(

@@ -8,8 +8,9 @@ to the escalations agent" — without code.
 
 ## Implementation status
 
-Stage 07 is in progress. The persistence layer and pure condition evaluator are shipped; action
-execution, event wiring, loop protection, dry-run reporting, and the rule-builder UI remain.
+Stage 07 is complete on `support-platform`. Persistence, condition evaluation, isolated action
+execution, event wiring, loop protection, dry-run reporting, authenticated rule APIs, and the
+rule-builder UI are implemented and covered by the focused/unit/integration suites.
 
 > Outline-level detail. Refine when unblocked. The engine shape is settled; the condition and action
 > vocabularies will grow and should be treated as extensible from the start.

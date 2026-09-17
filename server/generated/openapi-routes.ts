@@ -98,6 +98,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/support-csat-dispatch": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Dispatch due CSAT surveys",
+      "operationId": "cronSupportCsatDispatch",
+      "responses": {
+        "200": {
+          "description": "CSAT dispatch pass executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/support-sla-breach": {
     "get": {
       "tags": [
