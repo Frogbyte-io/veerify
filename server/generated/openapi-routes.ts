@@ -1607,6 +1607,17 @@ export const openapiPaths = {
         },
         {
           "in": "query",
+          "name": "csat",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "rated",
+              "unrated"
+            ]
+          }
+        },
+        {
+          "in": "query",
           "name": "search",
           "schema": {
             "type": "string",
@@ -2859,6 +2870,56 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Not a member of the team"
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/csat-summary": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Summarize rated CSAT responses",
+      "operationId": "getSupportCsatSummary",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "from",
+          "schema": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        {
+          "in": "query",
+          "name": "to",
+          "schema": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        {
+          "in": "query",
+          "name": "inboxId",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "CSAT score summary"
+        },
+        "403": {
+          "description": "Not a support agent on this team"
         }
       }
     }

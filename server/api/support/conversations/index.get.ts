@@ -29,6 +29,9 @@
  *         name: projectId
  *         schema: { type: string }
  *       - in: query
+ *         name: csat
+ *         schema: { type: string, enum: [rated, unrated] }
+ *       - in: query
  *         name: search
  *         schema: { type: string, maxLength: 200 }
  *       - in: query
@@ -50,7 +53,13 @@ import { requireInboxAccess } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { db } from '~/server/database/drizzle'
-import { contact, conversation, conversationReadState, conversationTag } from '~/server/database/schema/support'
+import {
+  contact,
+  conversation,
+  conversationReadState,
+  conversationTag,
+  csatResponse,
+} from '~/server/database/schema/support'
 import { isConversationUnread } from '~/server/utils/conversation-read-state'
 
 const MAX_POSTGRES_INTEGER = 2147483647
@@ -63,6 +72,7 @@ const querySchema = z.object({
   contactId: z.string().optional(),
   tagId: z.string().optional(),
   projectId: z.string().optional(),
+  csat: z.enum(['rated', 'unrated']).optional(),
   search: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(25),
   cursor: z.string().optional(),
@@ -101,6 +111,9 @@ export default defineEventHandler(async (event) => {
   if (query.assigneeUserId) conditions.push(eq(conversation.assigneeUserId, query.assigneeUserId))
   if (query.contactId) conditions.push(eq(conversation.contactId, query.contactId))
   if (query.projectId) conditions.push(eq(conversation.projectId, query.projectId))
+
+  if (query.csat === 'rated') conditions.push(isNotNull(csatResponse.rating))
+  if (query.csat === 'unrated') conditions.push(isNull(csatResponse.rating))
 
   if (query.tagId) {
     conditions.push(
@@ -142,12 +155,16 @@ export default defineEventHandler(async (event) => {
     .select({
       ...getTableColumns(conversation),
       lastReadAt: conversationReadState.lastReadAt,
+      csatRating: csatResponse.rating,
+      csatComment: csatResponse.comment,
+      csatRespondedAt: csatResponse.respondedAt,
     })
     .from(conversation)
 
   const joinedListBase = search ? listBase.innerJoin(contact, eq(conversation.contactId, contact.id)) : listBase
 
   const rows = await joinedListBase
+    .leftJoin(csatResponse, eq(csatResponse.conversationId, conversation.id))
     .leftJoin(
       conversationReadState,
       and(eq(conversationReadState.conversationId, conversation.id), eq(conversationReadState.userId, session.user.id))

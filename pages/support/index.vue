@@ -59,10 +59,14 @@
             :error="conversationsError"
             :has-more="hasMoreConversations"
             :search-query="conversationSearch"
+            :csat-filter="csatFilter"
+            :csat-summary="csatSummary"
+            :active-inbox-id="activeInboxId"
             :unread-counts="unreadCounts"
             @select="selectConversation"
             @search="handleConversationSearch"
             @clear-search="clearConversationSearch"
+            @csat-filter="handleCsatFilter"
             @retry="() => loadConversations(true)"
             @load-more="() => loadConversations(false)"
           />
@@ -202,6 +206,7 @@ import {
 
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'all']
+const CSAT_FILTERS = ['all', 'rated', 'unrated']
 const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
 const DRAFT_MODES = ['reply', 'note']
 
@@ -234,6 +239,8 @@ export default {
       hasMoreConversations: false,
       conversationsNextCursor: null,
       conversationSearch: '',
+      csatFilter: 'all',
+      csatSummary: null,
       conversationSearchDebounceTimer: null,
       unreadCounts: { unassigned: 0, assignedToMe: 0 },
       conversationDraftIds: [],
@@ -399,6 +406,8 @@ export default {
       this.inboxMembers = []
       this.activeView = 'unassigned'
       this.conversationSearch = ''
+      this.csatFilter = 'all'
+      this.csatSummary = null
       if (this.conversationSearchDebounceTimer) {
         clearTimeout(this.conversationSearchDebounceTimer)
         this.conversationSearchDebounceTimer = null
@@ -520,6 +529,7 @@ export default {
       this.inboxAccessError = null
       this.activeView = useRouteView ? this.normalizeSupportView(this.$route.query.view) : 'unassigned'
       this.conversationSearch = useRouteView ? this.normalizeConversationSearch(this.$route.query.search) : ''
+      this.csatFilter = useRouteView ? this.normalizeCsatFilter(this.$route.query.csat) : 'all'
 
       if (import.meta.client) {
         this.$router
@@ -529,6 +539,7 @@ export default {
               inboxId,
               view: this.activeView === 'unassigned' ? undefined : this.activeView,
               search: this.conversationSearch || undefined,
+              csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
             },
           })
           .catch(() => {})
@@ -537,6 +548,7 @@ export default {
       await Promise.all([
         this.loadInboxMembers({ generation, teamId, inboxId }),
         this.loadConversations(true, { generation, teamId, inboxId }),
+        this.loadCsatSummary({ generation, teamId }),
       ])
       if (this.isCurrentContext(generation, teamId, inboxId)) this.subscribeInbox()
     },
@@ -625,6 +637,10 @@ export default {
       return value.trim().slice(0, 200)
     },
 
+    normalizeCsatFilter(value) {
+      return typeof value === 'string' && CSAT_FILTERS.includes(value) ? value : 'all'
+    },
+
     async selectView(view) {
       const nextView = this.normalizeSupportView(view)
       if (nextView === this.activeView) return
@@ -640,6 +656,7 @@ export default {
               view: nextView === 'unassigned' ? undefined : nextView,
               conversationId: undefined,
               search: this.conversationSearch || undefined,
+              csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
             },
           })
           .catch(() => {})
@@ -668,6 +685,7 @@ export default {
             inboxId,
             view: this.activeView,
             search: this.conversationSearch || undefined,
+            csat: this.csatFilter === 'all' ? undefined : this.csatFilter,
             limit: 25,
             cursor: reset ? undefined : this.conversationsNextCursor || undefined,
           },
@@ -700,6 +718,17 @@ export default {
       }
     },
 
+    async loadCsatSummary({ generation = this.contextGeneration, teamId = this.activeTeamId } = {}) {
+      if (!teamId || !this.isCurrentContext(generation, teamId)) return
+      try {
+        const response = await $fetch(`/api/support/teams/${teamId}/csat-summary`)
+        if (!this.isCurrentContext(generation, teamId)) return
+        this.csatSummary = response?.data || null
+      } catch {
+        if (this.isCurrentContext(generation, teamId)) this.csatSummary = null
+      }
+    },
+
     async applyConversationSearch() {
       if (!this.activeInboxId) return
 
@@ -724,6 +753,25 @@ export default {
         this.conversationSearchDebounceTimer = null
         this.applyConversationSearch()
       }, 250)
+    },
+
+    async handleCsatFilter(value) {
+      const nextFilter = this.normalizeCsatFilter(value)
+      if (nextFilter === this.csatFilter) return
+      this.csatFilter = nextFilter
+      this.unselectConversation()
+      if (import.meta.client) {
+        await this.$router
+          .replace({
+            query: {
+              ...this.$route.query,
+              csat: nextFilter === 'all' ? undefined : nextFilter,
+              conversationId: undefined,
+            },
+          })
+          .catch(() => {})
+      }
+      await this.loadConversations(true)
     },
 
     async clearConversationSearch() {

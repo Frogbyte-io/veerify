@@ -5,8 +5,8 @@
 
 **Goal:** Ask customers how the support went, and turn the answers into a number per agent and per inbox.
 
-Stage 08 is now active on `support-platform`. The durable survey/response schema and five-minute
-dispatch pass are implemented first; the public rating flow and configuration surfaces build on them.
+Stage 08 is complete on `support-platform`. The durable survey/response schema, five-minute dispatch
+pass, public rating flow, configuration surfaces, and live score surfaces are implemented.
 
 ## Schema
 
@@ -56,7 +56,7 @@ dispatch pass are implemented first; the public rating flow and configuration su
 - [x] Implement token single-use semantics for rating and bounded-window validity for comments
 - [x] Write an `activity` message into the thread on response
 - [x] Build survey configuration UI per inbox
-- [ ] Add CSAT column and filter to the conversation list, and per-agent/per-inbox score summaries
+- [x] Add CSAT column and filter to the conversation list, and per-agent/per-inbox score summaries
 
 ## Risks
 

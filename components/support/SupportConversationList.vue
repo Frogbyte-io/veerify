@@ -45,6 +45,39 @@
           </Badge>
         </span>
       </div>
+      <label class="flex items-center gap-2 text-[11px] text-muted-foreground">
+        <span class="shrink-0">CSAT</span>
+        <select
+          :value="csatFilter"
+          data-testid="support-csat-filter"
+          class="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs text-foreground"
+          aria-label="Filter conversations by CSAT response"
+          @change="$emit('csat-filter', $event.target.value)"
+        >
+          <option value="all">All responses</option>
+          <option value="rated">Rated</option>
+          <option value="unrated">Awaiting rating</option>
+        </select>
+      </label>
+      <div
+        v-if="csatSummary && csatSummary.responseCount"
+        data-testid="support-csat-summary"
+        class="rounded-md border border-cyan-400/30 bg-cyan-500/[0.06] px-2.5 py-2 text-[11px]"
+      >
+        <div class="flex items-center justify-between gap-2">
+          <span class="font-medium text-foreground">CSAT pulse</span>
+          <span class="font-semibold text-cyan-700 dark:text-cyan-300">
+            {{ formatScore(csatSummary.scorePercent) }}%
+          </span>
+        </div>
+        <div class="mt-1 flex items-center justify-between gap-2 text-muted-foreground">
+          <span>{{ csatSummary.responseCount }} responses</span>
+          <span v-if="activeInboxScore">Inbox {{ formatScore(activeInboxScore.scorePercent) }}%</span>
+        </div>
+        <div v-if="topAgent" class="mt-1 truncate text-muted-foreground">
+          Top agent: <span class="text-foreground">{{ topAgent.agentName }}</span>
+        </div>
+      </div>
     </div>
 
     <div class="flex-1 overflow-y-auto">
@@ -133,6 +166,15 @@
                   <Icon name="lucide:pencil-line" class="h-3 w-3" />
                   Draft
                 </span>
+                <span
+                  v-if="item.csatRating !== null && item.csatRating !== undefined"
+                  data-testid="support-conversation-csat"
+                  class="inline-flex items-center gap-1 rounded-sm border border-cyan-400/60 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-medium text-cyan-700 dark:text-cyan-300"
+                  :aria-label="`CSAT rating ${item.csatRating}`"
+                >
+                  <Icon name="lucide:star" class="h-3 w-3" />
+                  {{ item.csatRating }}
+                </span>
                 <span class="text-[11px] text-muted-foreground ml-auto">#{{ item.displayId }}</span>
               </div>
             </div>
@@ -162,16 +204,29 @@ export default {
     error: { type: String, default: null },
     hasMore: { type: Boolean, default: false },
     searchQuery: { type: String, default: '' },
+    csatFilter: { type: String, default: 'all' },
+    csatSummary: { type: Object, default: null },
+    activeInboxId: { type: String, default: null },
     unreadCounts: {
       type: Object,
       default: () => ({ unassigned: 0, assignedToMe: 0 }),
     },
   },
 
-  emits: ['select', 'retry', 'load-more', 'search', 'clear-search'],
+  emits: ['select', 'retry', 'load-more', 'search', 'clear-search', 'csat-filter'],
 
   data() {
     return { nowMs: Date.now(), slaTicker: null }
+  },
+
+  computed: {
+    activeInboxScore() {
+      return this.csatSummary?.byInbox?.find((item) => item.inboxId === this.activeInboxId) || null
+    },
+
+    topAgent() {
+      return this.csatSummary?.byAgent?.[0] || null
+    },
   },
 
   mounted() {
@@ -260,6 +315,10 @@ export default {
       return minutes <= 60
         ? 'border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-300'
         : 'border-emerald-400/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+    },
+
+    formatScore(value) {
+      return value === null || value === undefined ? '—' : Math.round(value)
     },
   },
 }

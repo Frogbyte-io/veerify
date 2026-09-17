@@ -17,9 +17,10 @@
 
 ## Remaining Stage 08 work
 
-- Conversation-list score surfaces and per-agent/per-inbox summaries.
+Stage 08 implementation work is complete. Stage 09 owns the longer-lived reporting rollups and
+dashboard surfaces; this stage now exposes the live CSAT summary needed to feed them.
 
 ## Validation
 
 - Focused unit and Postgres integration tests pass.
-- Full harness verification will run after the next CSAT API/UI slice.
+- Full harness verification passes for the complete Stage 08 slice.

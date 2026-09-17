@@ -912,6 +912,7 @@ describe('executable support route authorization inventory', () => {
       'teams/[teamId]/csat-surveys/[id].put',
       'teams/[teamId]/csat-surveys/index.get',
       'teams/[teamId]/csat-surveys/index.post',
+      'teams/[teamId]/csat-summary.get',
     ]
     const inventoryNames = [...new Set(inventoryEntries)].sort()
 
