@@ -264,6 +264,12 @@ export default {
     showCurrentUserOption() {
       return Boolean(this.currentUserId && !this.members.some((member) => member.userId === this.currentUserId))
     },
+  },
+
+  methods: {
+    onUpdate(field, value) {
+      this.$emit('update-conversation', { [field]: value })
+    },
 
     slaDueAt(item) {
       return item?.nextResponseDueAt || item?.firstResponseDueAt || item?.resolutionDueAt || null
@@ -291,12 +297,6 @@ export default {
       return minutes <= 60
         ? 'border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-300'
         : 'border-emerald-400/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-    },
-  },
-
-  methods: {
-    onUpdate(field, value) {
-      this.$emit('update-conversation', { [field]: value })
     },
   },
 }
