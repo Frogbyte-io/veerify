@@ -73,6 +73,7 @@ import {
 } from '~/server/database/schema/support'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
 import { resumeSlaDeadlines } from '~/server/utils/sla-timers'
+import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 // Module toggles live in their own schema file, not the support one (delta D-31).
 import { teamModuleSettings } from '~/server/database/schema/teams'
 
@@ -582,6 +583,10 @@ export default defineEventHandler(async (event) => {
       inboxId: inbox.id,
       conversationId: result.conversationId,
       messageId: result.messageId,
+    })
+    await triggerAutomationEvent({
+      conversationId: result.conversationId,
+      trigger: result.isNewConversation ? 'conversation_created' : 'message_created',
     })
 
     if (result.autoReplyMessageId) {

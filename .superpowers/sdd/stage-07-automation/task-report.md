@@ -14,11 +14,16 @@
   `all`/`any` groups, and one permitted nesting level.
 - Added an ordered action executor with injectable handlers, per-action failure isolation, and helpers
   for collecting applied and failed action records.
+- Added a persistence-backed engine that loads enabled rules in `sortOrder`, evaluates conversation
+  and latest-message context, audits applied/skipped/failed runs, and triggers after committed manual,
+  inbound, and message writes.
+- Added dry-run reports with no writes or handler calls, plus a default three-level cascade guard that
+  records truncation in the run audit.
 - Added unit coverage for matching, grouping, depth limits, custom fields, and empty groups.
 
 ## Remaining Stage 07 work
 
-- Event/time-based evaluation, cascade-depth protection, dry-run,
+- Time-based evaluation,
   and the rule-management UI.
 
 ## Validation

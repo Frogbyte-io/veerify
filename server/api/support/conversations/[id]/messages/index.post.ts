@@ -43,6 +43,7 @@ import { contact, conversationMessage, conversationParticipant, supportInbox } f
 import { emailDomain, parseReferences } from '~/server/services/support-channels/types'
 import { buildOutgoingReply } from '~/server/utils/outbound-reply'
 import { runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
+import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import {
   commitMessageWithAttachments,
   markAttachmentCleanupRequired,
@@ -229,6 +230,11 @@ export default defineEventHandler(async (event) => {
     inboxId: existing.inboxId,
     conversationId,
     messageId: created.id,
+  })
+  await triggerAutomationEvent({
+    conversationId,
+    trigger: 'message_created',
+    actorUserId: session.user.id,
   })
 
   // Fire-and-forget: the response must not wait on SMTP either. The outbox

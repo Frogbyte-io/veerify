@@ -31,6 +31,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
+import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { db } from '~/server/database/drizzle'
 import { contactLink, conversation, conversationMessage } from '~/server/database/schema/support'
 import { feedback, feedbackCategory, project } from '~/server/database/schema/feedback'
@@ -188,6 +189,7 @@ export default defineEventHandler(async (event) => {
     inboxId: accessibleConversation.inboxId,
     conversationId,
   })
+  await triggerAutomationEvent({ conversationId, trigger: 'conversation_updated', actorUserId: session.user.id })
 
   return createSuccessResponse(result)
 })

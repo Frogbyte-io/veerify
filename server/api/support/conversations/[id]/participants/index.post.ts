@@ -30,6 +30,7 @@ import { requireConversationAccess } from '~/server/utils/support-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
+import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { db } from '~/server/database/drizzle'
 import { contact, conversationParticipant } from '~/server/database/schema/support'
 import { teamMember } from '~/server/database/schema/auth'
@@ -120,6 +121,7 @@ export default defineEventHandler(async (event) => {
       inboxId: existing.inboxId,
       conversationId,
     })
+    await triggerAutomationEvent({ conversationId, trigger: 'conversation_updated', actorUserId: session.user.id })
 
     return createSuccessResponse({ participant: created })
   } catch (error) {

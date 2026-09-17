@@ -29,6 +29,7 @@ import { db } from '~/server/database/drizzle'
 import { contact, conversation } from '~/server/database/schema/support'
 import { project } from '~/server/database/schema/feedback'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
+import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 
 const bodySchema = z.object({
   inboxId: z.string().min(1),
@@ -121,6 +122,7 @@ export default defineEventHandler(async (event) => {
     inboxId: inbox.id,
     conversationId,
   })
+  await triggerAutomationEvent({ conversationId, trigger: 'conversation_created' })
 
   return createSuccessResponse({ conversation: created })
 })

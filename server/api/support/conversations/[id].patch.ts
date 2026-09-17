@@ -36,6 +36,7 @@ import { contact, conversation, conversationTag } from '~/server/database/schema
 import { teamMember } from '~/server/database/schema/auth'
 import { project } from '~/server/database/schema/feedback'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
+import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 
 const bodySchema = z.object({
   status: z.enum(['open', 'pending', 'resolved', 'snoozed', 'closed']).optional(),
@@ -144,6 +145,11 @@ export default defineEventHandler(async (event) => {
     teamId: existing.teamId,
     inboxId: existing.inboxId,
     conversationId,
+  })
+  await triggerAutomationEvent({
+    conversationId,
+    trigger: 'conversation_updated',
+    actorUserId: session.user.id,
   })
 
   // Tell the new assignee they now own this ticket. Fire-and-forget: a

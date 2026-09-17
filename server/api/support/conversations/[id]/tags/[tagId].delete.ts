@@ -25,6 +25,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
+import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { db } from '~/server/database/drizzle'
 import { contact, conversation, conversationTag } from '~/server/database/schema/support'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
@@ -86,6 +87,7 @@ export default defineEventHandler(async (event) => {
     inboxId: existing.inboxId,
     conversationId,
   })
+  await triggerAutomationEvent({ conversationId, trigger: 'conversation_updated', actorUserId: session.user.id })
 
   return createSuccessResponse({ deleted: true })
 })

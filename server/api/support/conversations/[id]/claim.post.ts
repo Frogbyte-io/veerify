@@ -25,6 +25,7 @@ import { claimConversationForAgent } from '~/server/utils/conversation-assignmen
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
+import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -47,6 +48,7 @@ export default defineEventHandler(async (event) => {
       inboxId: existing.inboxId,
       conversationId,
     })
+    await triggerAutomationEvent({ conversationId, trigger: 'conversation_updated', actorUserId: session.user.id })
   }
 
   return createSuccessResponse(result)
