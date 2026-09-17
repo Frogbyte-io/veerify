@@ -291,6 +291,98 @@ export const supportInboxMember = pgTable(
   })
 )
 
+// ---------------------------------------------------------------------------
+// Stage 06 — business hours and SLA policy
+// ---------------------------------------------------------------------------
+
+export type BusinessHoursWindow = { open: string; close: string }
+export type BusinessHoursWeeklySchedule = Record<string, BusinessHoursWindow[]>
+
+export const businessHours = pgTable(
+  'business_hours',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    timezone: text('timezone').notNull(),
+    weeklySchedule: jsonb('weekly_schedule').$type<BusinessHoursWeeklySchedule>().notNull(),
+    holidays: jsonb('holidays').$type<string[]>().notNull(),
+    isDefault: boolean('is_default').default(false).notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamIdx: index('business_hours_team_idx').on(table.teamId),
+    defaultIdx: index('business_hours_default_idx').on(table.teamId, table.isDefault),
+  })
+)
+
+export type SlaConditions = {
+  inboxIds?: string[]
+  priorities?: string[]
+  tagIds?: string[]
+  companyIds?: string[]
+}
+
+export type SlaEscalation = {
+  notifyAssignee?: boolean
+  notifySupervisor?: boolean
+  raisePriority?: string | null
+}
+
+export const slaPolicy = pgTable(
+  'sla_policy',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    businessHoursId: text('business_hours_id').references(() => businessHours.id, { onDelete: 'set null' }),
+    conditions: jsonb('conditions').$type<SlaConditions>().notNull(),
+    escalation: jsonb('escalation').$type<SlaEscalation>().notNull(),
+    isDefault: boolean('is_default').default(false).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamIdx: index('sla_policy_team_idx').on(table.teamId),
+    orderIdx: index('sla_policy_team_order_idx').on(table.teamId, table.sortOrder),
+  })
+)
+
+export const slaTarget = pgTable(
+  'sla_target',
+  {
+    id: text('id').primaryKey(),
+    slaPolicyId: text('sla_policy_id')
+      .notNull()
+      .references(() => slaPolicy.id, { onDelete: 'cascade' }),
+    metric: text('metric').notNull(),
+    priority: text('priority'),
+    targetMinutes: integer('target_minutes').notNull(),
+  },
+  (table) => ({
+    uniquePolicyMetricPriority: uniqueIndex('sla_target_policy_metric_priority_idx').on(
+      table.slaPolicyId,
+      table.metric,
+      table.priority
+    ),
+    policyIdx: index('sla_target_policy_idx').on(table.slaPolicyId),
+  })
+)
+
 // Per-team `displayId` allocation for conversations. A row per team,
 // incremented with `SELECT … FOR UPDATE` inside the same transaction as the
 // conversation insert - not a sequence, because the number must be per-team
@@ -327,6 +419,12 @@ export const conversation = pgTable(
     priority: text('priority'),
     assigneeUserId: text('assignee_user_id').references(() => user.id, { onDelete: 'set null' }),
     linkedFeedbackId: text('linked_feedback_id').references(() => feedback.id, { onDelete: 'set null' }),
+    slaPolicyId: text('sla_policy_id').references(() => slaPolicy.id, { onDelete: 'set null' }),
+    firstResponseDueAt: timestamp('first_response_due_at'),
+    nextResponseDueAt: timestamp('next_response_due_at'),
+    resolutionDueAt: timestamp('resolution_due_at'),
+    slaPausedAt: timestamp('sla_paused_at'),
+    slaPausedMinutes: integer('sla_paused_minutes').default(0).notNull(),
     // Root RFC Message-ID, used to thread replies onto this conversation
     channelThreadKey: text('channel_thread_key'),
     firstResponseAt: timestamp('first_response_at'),
@@ -355,6 +453,30 @@ export const conversation = pgTable(
     contactCreatedAtIdx: index('conversation_contact_created_at_idx').on(table.contactId, table.createdAt),
     channelThreadKeyIdx: index('conversation_channel_thread_key_idx').on(table.channelThreadKey),
     projectStatusIdx: index('conversation_project_status_idx').on(table.projectId, table.status),
+    slaPolicyIdx: index('conversation_sla_policy_idx').on(table.slaPolicyId),
+  })
+)
+
+export const slaBreach = pgTable(
+  'sla_breach',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    metric: text('metric').notNull(),
+    breachedAt: timestamp('breached_at').notNull(),
+    notifiedAt: timestamp('notified_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueConversationMetric: uniqueIndex('sla_breach_conversation_metric_idx').on(table.conversationId, table.metric),
+    conversationIdx: index('sla_breach_conversation_idx').on(table.conversationId),
   })
 )
 
