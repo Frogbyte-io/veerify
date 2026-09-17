@@ -72,14 +72,17 @@ export default defineEventHandler(async (event) => {
   }
 
   const result = items.map((item) => ({
+    // Support-derived feedback is an internal bridge record. Keep its public
+    // listing free of the original ticket body and author identity.
+    // `metadata` is intentionally not returned by this public endpoint.
     id: item.feedback.id,
     title: item.feedback.title,
-    body: item.feedback.body,
+    body: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.body,
     status: item.feedback.status,
     tag: item.feedback.metadata?.feedbackType || null,
     voteCount: item.feedback.voteCount,
     commentCount: item.feedback.commentCount,
-    authorName: item.feedback.authorName,
+    authorName: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.authorName,
     isPinned: item.feedback.isPinned,
     createdAt: item.feedback.createdAt,
     hasVoted: voterVoteMap.has(item.feedback.id),

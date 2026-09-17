@@ -51,6 +51,28 @@
             Contact info
           </Button>
           <Button
+            v-if="!conversation.linkedFeedbackId"
+            variant="outline"
+            size="sm"
+            data-testid="support-thread-convert-feedback"
+            @click="$emit('convert-to-feedback')"
+          >
+            <Icon name="lucide:message-square-plus" class="w-3.5 h-3.5 mr-1.5" />
+            Convert to feedback
+          </Button>
+          <a
+            v-else
+            :href="`/feedback/${conversation.linkedFeedbackId}`"
+            data-testid="support-thread-linked-feedback"
+            class="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium hover:bg-muted"
+          >
+            <Icon name="lucide:external-link" class="w-3.5 h-3.5 mr-1.5" />
+            <span class="max-w-48 truncate">{{ conversation.linkedFeedback?.title || 'View linked feedback' }}</span>
+            <span v-if="conversation.linkedFeedback" class="ml-1.5 text-muted-foreground">
+              {{ conversation.linkedFeedback.status }} · {{ conversation.linkedFeedback.voteCount }} votes
+            </span>
+          </a>
+          <Button
             v-if="canMarkUnread"
             variant="ghost"
             size="sm"
@@ -202,6 +224,7 @@ export default {
     'update-conversation',
     'claim-conversation',
     'mark-unread',
+    'convert-to-feedback',
     'toggle-contact-panel',
   ],
 

@@ -10,6 +10,7 @@ import { sendStatusChangeNotificationEmail } from '~/lib/email'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 import { createLogger } from '~/server/utils/logger'
 import { notifyProjectTeam, notifyFeedbackSubscribers } from '~/server/utils/notifications'
+import { notifyLinkedFeedbackContacts } from '~/server/utils/feedback-support-notifications'
 
 const logger = createLogger('feedback')
 
@@ -123,6 +124,15 @@ export default defineEventHandler(async (event) => {
         error: err instanceof Error ? err.message : err,
       })
     }
+
+    await notifyLinkedFeedbackContacts({
+      feedbackId: id,
+      feedbackTitle: updated.title,
+      projectId: fb.projectId,
+      status: updated.status,
+      actorUserId: session.user.id,
+      actorName: session.user.name,
+    })
   }
 
   return createSuccessResponse(updated)

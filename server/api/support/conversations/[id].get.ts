@@ -21,6 +21,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { contact, conversationParticipant, conversationReadState } from '~/server/database/schema/support'
+import { feedback } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
 import { isConversationUnread } from '~/server/utils/conversation-read-state'
 
@@ -32,6 +33,13 @@ export default defineEventHandler(async (event) => {
   const row = await requireConversationAccess(conversationId, session.user.id)
 
   const [conversationContact] = await db.select().from(contact).where(eq(contact.id, row.contactId)).limit(1)
+  const [linkedFeedback] = row.linkedFeedbackId
+    ? await db
+        .select({ id: feedback.id, title: feedback.title, status: feedback.status, voteCount: feedback.voteCount })
+        .from(feedback)
+        .where(eq(feedback.id, row.linkedFeedbackId))
+        .limit(1)
+    : []
   const [readState] = await db
     .select({ lastReadAt: conversationReadState.lastReadAt })
     .from(conversationReadState)
@@ -63,6 +71,7 @@ export default defineEventHandler(async (event) => {
   return createSuccessResponse({
     conversation: {
       ...row,
+      linkedFeedback: linkedFeedback ?? null,
       lastReadAt: readState?.lastReadAt ?? null,
       isUnread: isConversationUnread({ ...row, lastReadAt: readState?.lastReadAt ?? null }, session.user.id),
     },

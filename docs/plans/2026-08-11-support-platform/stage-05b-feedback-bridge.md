@@ -62,11 +62,11 @@ on the public board. The link is internal. Contacts and feedback stay separate b
 
 ## TODO items
 
-- [ ] Implement convert-conversation-to-feedback: prefilled dialog, transactional creation of feedback + `linkedFeedbackId` + `contactLink` + activity message
-- [ ] Implement link-to-existing-feedback with search and select
-- [ ] Implement notify-contact-on-linked-feedback-shipped, reusing `feedbackSubscription` and existing notification dispatch, deduplicated per contact
-- [ ] Show the feedback link in the thread and the linked-conversation count on team-facing feedback views only
-- [ ] Add E2E coverage: convert to feedback, then verify the public board leaks no contact identity or ticket content
+- [x] Implement convert-conversation-to-feedback: prefilled dialog, transactional creation of feedback + `linkedFeedbackId` + `contactLink` + activity message
+- [x] Implement link-to-existing-feedback with search and select
+- [x] Implement notify-contact-on-linked-feedback-shipped, reusing existing feedback notification dispatch, deduplicated per contact
+- [x] Show the feedback link in the thread and the linked-conversation count on team-facing feedback views only
+- [x] Add E2E coverage: convert to feedback, then verify the public board leaks no contact identity or ticket content
 
 ## Risks
 

@@ -1669,6 +1669,123 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/support/conversations/{id}/feedback": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Search feedback for a conversation link",
+      "operationId": "searchSupportConversationFeedback",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "schema": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Matching team feedback items"
+        },
+        "403": {
+          "description": "Not a member of this inbox or a team admin"
+        },
+        "404": {
+          "description": "Conversation not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Convert a support conversation into feedback",
+      "description": "Creates an agent-authored feedback item, links it to the conversation, and records the contact link and private activity entry in one transaction. The product defaults to the conversation's resolved inbox/address attribution when the caller does not provide one.\n",
+      "operationId": "convertSupportConversationToFeedback",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Feedback created and conversation linked"
+        },
+        "400": {
+          "description": "Invalid product or category selection"
+        },
+        "403": {
+          "description": "Not a member of this inbox or a team admin"
+        },
+        "404": {
+          "description": "Conversation not found"
+        },
+        "409": {
+          "description": "Conversation already has linked feedback"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Link an existing feedback item to a conversation",
+      "operationId": "linkSupportConversationFeedback",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Feedback linked"
+        },
+        "400": {
+          "description": "Feedback is not part of this team"
+        },
+        "403": {
+          "description": "Not a member of this inbox or a team admin"
+        },
+        "404": {
+          "description": "Conversation or feedback not found"
+        },
+        "409": {
+          "description": "Conversation already has linked feedback"
+        }
+      }
+    }
+  },
   "/api/support/conversations/{id}/messages": {
     "get": {
       "tags": [

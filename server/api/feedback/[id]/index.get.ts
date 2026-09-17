@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm'
+import { eq, and, count } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
@@ -6,6 +6,7 @@ import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, vote, project, feedbackSubscription } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
+import { conversation } from '~/server/database/schema/support'
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
@@ -58,6 +59,12 @@ export default defineEventHandler(async (event) => {
     }
   } else {
     await requirePublicProject(item.feedback.projectId)
+  }
+
+  let linkedConversationCount: number | null = null
+  if (isTeamMember) {
+    const [result] = await db.select({ count: count() }).from(conversation).where(eq(conversation.linkedFeedbackId, id))
+    linkedConversationCount = result?.count ?? 0
   }
 
   // Get author info if feedback was created by a registered user
@@ -119,10 +126,16 @@ export default defineEventHandler(async (event) => {
     subscribeChannel = sub?.notifyChannel || null
   }
 
+  const publicSafeFeedback =
+    !isTeamMember && item.feedback.metadata?.source === 'support_conversation'
+      ? { ...item.feedback, body: null, authorName: null, authorEmail: null, metadata: null }
+      : item.feedback
+  const publicSafeAuthor = !isTeamMember && item.feedback.metadata?.source === 'support_conversation' ? null : author
+
   return createSuccessResponse({
-    ...item.feedback,
+    ...publicSafeFeedback,
     category: item.category,
-    author,
+    author: publicSafeAuthor,
     project: proj,
     tag: item.feedback.metadata?.feedbackType || null,
     hasVoted: voteType !== null,
@@ -133,5 +146,6 @@ export default defineEventHandler(async (event) => {
     canEdit: isOwn || isTeamMember,
     canDelete: isOwn || isTeamMember,
     canManage: isTeamMember,
+    linkedConversationCount,
   })
 })

@@ -164,6 +164,16 @@
                       <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Updated</div>
                       <div class="mt-2 text-sm font-medium">{{ formatDate(item.updatedAt) }}</div>
                     </div>
+                    <div
+                      v-if="canManageFeedback && item.linkedConversationCount !== null"
+                      class="rounded-xl bg-background/80 p-4"
+                    >
+                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Support conversations</div>
+                      <div class="mt-2 flex items-center gap-2 text-sm font-medium">
+                        <Icon name="lucide:inbox" class="h-4 w-4 text-muted-foreground" />
+                        {{ item.linkedConversationCount }} linked
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

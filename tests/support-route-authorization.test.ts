@@ -182,6 +182,7 @@ vi.mock('~/server/database/drizzle', () => {
       set: () => fluent,
       values: () => fluent,
       onConflictDoUpdate: () => fluent,
+      onConflictDoNothing: () => fluent,
       for: () => fluent,
       orderBy: () => fluent,
       limit: () => result,
@@ -240,6 +241,9 @@ const conversationList = (await import('~/server/api/support/conversations/index
 const conversationCreate = (await import('~/server/api/support/conversations/index.post')).default
 const conversationGet = (await import('~/server/api/support/conversations/[id].get')).default
 const conversationUpdate = (await import('~/server/api/support/conversations/[id].patch')).default
+const conversationFeedback = (await import('~/server/api/support/conversations/[id]/feedback.post')).default
+const conversationFeedbackSearch = (await import('~/server/api/support/conversations/[id]/feedback.get')).default
+const conversationFeedbackLink = (await import('~/server/api/support/conversations/[id]/feedback.put')).default
 const conversationClaim = (await import('~/server/api/support/conversations/[id]/claim.post')).default
 const conversationReadState = (await import('~/server/api/support/conversations/[id]/read-state.put')).default
 const participantCreate = (await import('~/server/api/support/conversations/[id]/participants/index.post')).default
@@ -364,6 +368,48 @@ describe('support route authorization inventory', () => {
     access.requireInboxRole.mockImplementationOnce(() => forbidden())
     await expect(channelStatus(event)).rejects.toMatchObject({ statusCode: 403 })
     expect(access.requireInboxRole).toHaveBeenCalledWith('inbox-1', 'user-1', 'agent')
+  })
+
+  it('converts a conversation and records the feedback link in one transaction', async () => {
+    state.params = { ...state.params, id: 'conversation-1' }
+    state.body = {
+      title: 'Export to CSV',
+      body: 'The customer needs a CSV export.',
+      projectId: 'project-1',
+      categoryId: 'category-1',
+    }
+    access.requireConversationAccess.mockResolvedValueOnce({
+      id: 'conversation-1',
+      inboxId: 'inbox-1',
+      teamId: 'team-1',
+    } as never)
+    state.queuedRows = [
+      [
+        {
+          id: 'conversation-1',
+          inboxId: 'inbox-1',
+          teamId: 'team-1',
+          contactId: 'contact-1',
+          projectId: 'project-1',
+          linkedFeedbackId: null,
+        },
+      ],
+      [{ id: 'project-1' }],
+      [{ id: 'category-1' }],
+      [{ id: 'feedback-1', title: 'Export to CSV' }],
+      [{ id: 'link-1' }],
+      [{ id: 'conversation-1', linkedFeedbackId: 'feedback-1' }],
+      [],
+    ]
+
+    await expect(conversationFeedback(event)).resolves.toMatchObject({
+      success: true,
+      data: {
+        feedback: { id: 'feedback-1' },
+        conversation: { linkedFeedbackId: 'feedback-1' },
+        link: { id: 'link-1' },
+      },
+    })
   })
 
   it('validates member role writes against the exact three-value enum', async () => {
@@ -657,6 +703,27 @@ const executableBoundaryCases: BoundaryCase[] = [
     }),
   },
   {
+    name: 'conversations/[id]/feedback.post',
+    ...boundary(conversationFeedback, 'requireConversationAccess', ['conversation-1', 'user-1'], {
+      params: { id: 'conversation-1' },
+      body: { title: 'Feedback', projectId: 'project-1' },
+    }),
+  },
+  {
+    name: 'conversations/[id]/feedback.get',
+    ...boundary(conversationFeedbackSearch, 'requireConversationAccess', ['conversation-1', 'user-1'], {
+      params: { id: 'conversation-1' },
+      query: { limit: '20' },
+    }),
+  },
+  {
+    name: 'conversations/[id]/feedback.put',
+    ...boundary(conversationFeedbackLink, 'requireConversationAccess', ['conversation-1', 'user-1'], {
+      params: { id: 'conversation-1' },
+      body: { feedbackId: 'feedback-1' },
+    }),
+  },
+  {
     name: 'conversations/[id]/claim.post',
     ...boundary(conversationClaim, 'requireConversationAccess', ['conversation-1', 'user-1'], {
       params: { id: 'conversation-1' },
@@ -773,7 +840,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(48)
+    expect(executableBoundaryCases).toHaveLength(51)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}

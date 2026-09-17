@@ -87,6 +87,7 @@
             @update-conversation="patchConversation"
             @claim-conversation="claimConversation"
             @mark-unread="markConversationUnread"
+            @convert-to-feedback="openFeedbackBridgeDialog"
             @toggle-contact-panel="showContactPanel = !showContactPanel"
           >
             <template #composer>
@@ -105,6 +106,17 @@
         </div>
       </div>
     </div>
+
+    <SupportConversationFeedbackDialog
+      :open="showFeedbackBridgeDialog"
+      :conversation="conversationDetail"
+      :messages="messages"
+      :team-id="activeTeamId"
+      :is-submitting="isCreatingFeedback"
+      @update:open="showFeedbackBridgeDialog = $event"
+      @submit="convertConversationToFeedback"
+      @link="linkExistingFeedback"
+    />
 
     <div
       v-if="showShortcutHelp"
@@ -233,6 +245,8 @@ export default {
       isLoadingDetail: false,
       detailError: null,
       isUpdatingConversation: false,
+      showFeedbackBridgeDialog: false,
+      isCreatingFeedback: false,
 
       messages: [],
       isLoadingMessages: false,
@@ -999,6 +1013,83 @@ export default {
         alert(err?.data?.error?.message || 'Failed to update this conversation')
       } finally {
         if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.isUpdatingConversation = false
+      }
+    },
+
+    openFeedbackBridgeDialog() {
+      if (!this.selectedConversationId || this.conversationDetail?.linkedFeedbackId) return
+      this.showFeedbackBridgeDialog = true
+    },
+
+    async convertConversationToFeedback(payload) {
+      if (!this.selectedConversationId || this.isCreatingFeedback) return
+
+      const generation = this.contextGeneration
+      const teamId = this.activeTeamId
+      const inboxId = this.activeInboxId
+      const conversationId = this.selectedConversationId
+      if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+
+      this.isCreatingFeedback = true
+      try {
+        const response = await $fetch(`/api/support/conversations/${conversationId}/feedback`, {
+          method: 'POST',
+          body: payload,
+        })
+        if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+
+        if (response?.data?.conversation) this.conversationDetail = response.data.conversation
+        this.showFeedbackBridgeDialog = false
+        await Promise.all([
+          this.loadConversationDetail({ generation, teamId, inboxId, conversationId }),
+          this.loadMessages({ generation, teamId, inboxId, conversationId }),
+          this.loadConversations(true, { generation, teamId, inboxId }),
+        ])
+      } catch (error) {
+        if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+          return
+        }
+        alert(error?.data?.error?.message || 'Failed to create feedback from this conversation')
+      } finally {
+        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.isCreatingFeedback = false
+      }
+    },
+
+    async linkExistingFeedback(feedbackId) {
+      if (!this.selectedConversationId || this.isCreatingFeedback || !feedbackId) return
+
+      const generation = this.contextGeneration
+      const teamId = this.activeTeamId
+      const inboxId = this.activeInboxId
+      const conversationId = this.selectedConversationId
+      if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+
+      this.isCreatingFeedback = true
+      try {
+        const response = await $fetch(`/api/support/conversations/${conversationId}/feedback`, {
+          method: 'PUT',
+          body: { feedbackId },
+        })
+        if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+
+        if (response?.data?.conversation) this.conversationDetail = response.data.conversation
+        this.showFeedbackBridgeDialog = false
+        await Promise.all([
+          this.loadConversationDetail({ generation, teamId, inboxId, conversationId }),
+          this.loadMessages({ generation, teamId, inboxId, conversationId }),
+          this.loadConversations(true, { generation, teamId, inboxId }),
+        ])
+      } catch (error) {
+        if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+        if (this.isForbiddenError(error)) {
+          await this.recoverFromForbiddenInbox({ generation, teamId, inboxId })
+          return
+        }
+        alert(error?.data?.error?.message || 'Failed to link this feedback')
+      } finally {
+        if (this.isCurrentConversation(generation, teamId, inboxId, conversationId)) this.isCreatingFeedback = false
       }
     },
 

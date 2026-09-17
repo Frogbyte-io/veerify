@@ -81,7 +81,7 @@ ls server/api/support/contacts/
 | [03](stage-03-inbound-email.md)     | Inbound email             | 02         | Blocked |
 | [04](stage-04-outbound-replies.md)  | Outbound replies          | 03         | Blocked |
 | [05a](stage-05a-agent-speed.md)     | Agent speed (MVP)         | 02, 04     | Next    |
-| [05b](stage-05b-feedback-bridge.md) | Feedback bridge           | 05a        | Blocked |
+| [05b](stage-05b-feedback-bridge.md) | Feedback bridge           | 05a        | DONE    |
 | [06](stage-06-sla.md)               | Business hours + SLA      | 02, 04     | Blocked |
 | [07](stage-07-automation.md)        | Automation rules          | 02, 04     | Blocked |
 | [08](stage-08-csat.md)              | CSAT                      | 04         | Blocked |
