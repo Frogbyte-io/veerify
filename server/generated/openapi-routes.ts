@@ -81,6 +81,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/support-sla-breach": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Stamp overdue SLA metrics and dispatch escalation notifications",
+      "operationId": "cronSupportSlaBreach",
+      "responses": {
+        "200": {
+          "description": "SLA breach pass executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/github/issues": {
     "get": {
       "tags": [

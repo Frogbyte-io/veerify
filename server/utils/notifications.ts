@@ -13,6 +13,7 @@ export type NotificationType =
   | 'new_comment'
   | 'new_feedback'
   | 'feedback_pinned'
+  | 'sla_breach'
   | 'conversation_assigned'
   | 'conversation_mention'
 
