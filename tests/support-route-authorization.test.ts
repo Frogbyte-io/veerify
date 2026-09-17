@@ -221,6 +221,8 @@ const addressList = (await import('~/server/api/support/inboxes/[id]/addresses/i
 const memberList = (await import('~/server/api/support/inboxes/[id]/members/index.get')).default
 const tagList = (await import('~/server/api/support/tags/index.get')).default
 const supportSettingsGet = (await import('~/server/api/support/teams/[teamId]/settings.get')).default
+const slaSettingsGet = (await import('~/server/api/support/teams/[teamId]/sla.get')).default
+const slaSettingsPut = (await import('~/server/api/support/teams/[teamId]/sla.put')).default
 const teamModulesGet = (await import('~/server/api/teams/[teamId]/modules.get')).default
 
 const contactList = (await import('~/server/api/support/contacts/index.get')).default
@@ -612,6 +614,17 @@ const executableBoundaryCases: BoundaryCase[] = [
     }),
   },
   {
+    name: 'teams/[teamId]/sla.get',
+    ...boundary(slaSettingsGet, 'requireTeamMembership', ['team-1', 'user-1'], { params: { teamId: 'team-1' } }),
+  },
+  {
+    name: 'teams/[teamId]/sla.put',
+    ...boundary(slaSettingsPut, 'requireTeamAdmin', ['team-1', 'user-1'], {
+      params: { teamId: 'team-1' },
+      body: { policies: [] },
+    }),
+  },
+  {
     name: 'contacts/index.get',
     ...boundary(contactList, 'requireTeamMembership', ['team-1', 'user-1'], { query: { teamId: 'team-1' } }),
   },
@@ -840,7 +853,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(51)
+    expect(executableBoundaryCases).toHaveLength(53)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}

@@ -1493,6 +1493,7 @@ export const openapiPaths = {
               "unassigned",
               "assigned-to-me",
               "resolved",
+              "breaching-soon",
               "all"
             ]
           }
@@ -2712,6 +2713,61 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Not a member of the team"
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/sla": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Read business-hours and SLA policy settings",
+      "operationId": "getSupportSlaSettings",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "SLA settings"
+        },
+        "403": {
+          "description": "Not a member of the team"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Upsert business-hours and SLA policy settings",
+      "operationId": "updateSupportSlaSettings",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "SLA settings updated"
+        },
+        "400": {
+          "description": "Invalid SLA settings"
+        },
+        "403": {
+          "description": "Team administrator required"
         }
       }
     }

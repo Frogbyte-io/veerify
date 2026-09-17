@@ -115,6 +115,112 @@
           </CardContent>
         </Card>
 
+        <Card v-if="canManageTeamSupport" data-testid="support-sla-settings">
+          <CardHeader>
+            <CardTitle>SLA commitments</CardTitle>
+            <CardDescription>Set the working week and the default response and resolution targets.</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-5">
+            <div v-if="isLoadingSla" class="space-y-2">
+              <Skeleton class="h-10 w-full" />
+              <Skeleton class="h-24 w-full" />
+            </div>
+            <div v-else-if="slaError" class="text-sm">
+              <p class="text-destructive mb-2">{{ slaError }}</p>
+              <Button variant="outline" size="sm" @click="loadSlaSettings">Retry</Button>
+            </div>
+            <template v-else>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label for="sla-hours-name">Schedule name</Label>
+                  <Input id="sla-hours-name" v-model="slaDraft.name" class="mt-2" />
+                </div>
+                <div>
+                  <Label for="sla-hours-timezone">Timezone</Label>
+                  <Input id="sla-hours-timezone" v-model="slaDraft.timezone" class="mt-2" placeholder="UTC" />
+                </div>
+              </div>
+
+              <div>
+                <Label>Weekly hours</Label>
+                <div class="mt-2 divide-y rounded-md border">
+                  <div
+                    v-for="day in slaWeekdays"
+                    :key="day"
+                    class="grid grid-cols-[5.5rem_1fr_1fr] items-center gap-2 px-3 py-2"
+                  >
+                    <span class="text-xs font-medium capitalize">{{ day }}</span>
+                    <Input
+                      v-model="slaDraft.weeklySchedule[day][0].open"
+                      type="time"
+                      class="h-8 text-xs"
+                      :aria-label="`${day} opens`"
+                    />
+                    <Input
+                      v-model="slaDraft.weeklySchedule[day][0].close"
+                      type="time"
+                      class="h-8 text-xs"
+                      :aria-label="`${day} closes`"
+                    />
+                  </div>
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">Use 00:00–00:00 for a closed day.</p>
+              </div>
+
+              <div>
+                <Label for="sla-holidays">Holidays</Label>
+                <Input id="sla-holidays" v-model="slaHolidayText" class="mt-2" placeholder="2026-12-25, 2027-01-01" />
+                <p class="mt-1 text-xs text-muted-foreground">Comma-separated dates excluded from the schedule.</p>
+              </div>
+
+              <div class="grid gap-4 sm:grid-cols-3">
+                <div v-for="target in slaPolicyDraft.targets" :key="target.metric">
+                  <Label :for="`sla-target-${target.metric}`">{{ formatSlaMetric(target.metric) }} (minutes)</Label>
+                  <Input
+                    :id="`sla-target-${target.metric}`"
+                    v-model.number="target.targetMinutes"
+                    type="number"
+                    min="1"
+                    class="mt-2"
+                  />
+                </div>
+              </div>
+
+              <div class="grid gap-3 rounded-md border bg-muted/20 p-3 sm:grid-cols-3">
+                <div class="flex items-center gap-2">
+                  <Switch id="sla-notify-assignee" v-model="slaPolicyDraft.escalation.notifyAssignee" />
+                  <Label for="sla-notify-assignee" class="text-xs">Notify assignee</Label>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Switch id="sla-notify-supervisor" v-model="slaPolicyDraft.escalation.notifySupervisor" />
+                  <Label for="sla-notify-supervisor" class="text-xs">Notify supervisor</Label>
+                </div>
+                <div>
+                  <Label for="sla-raise-priority" class="text-xs">Raise priority on breach</Label>
+                  <select
+                    id="sla-raise-priority"
+                    v-model="slaPolicyDraft.escalation.raisePriority"
+                    :class="selectClasses + ' mt-2 h-8 text-xs'"
+                  >
+                    <option :value="null">No change</option>
+                    <option value="normal">Normal</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-xs text-muted-foreground">Applies to conversations without a more specific policy.</p>
+                <Button data-testid="support-sla-save" :disabled="isSavingSla" @click="saveSlaSettings">
+                  <Icon v-if="isSavingSla" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+                  Save SLA settings
+                </Button>
+              </div>
+            </template>
+          </CardContent>
+        </Card>
+
         <!-- Inbox settings -->
         <template v-if="hasInboxes">
           <div v-if="inboxes.length > 1" class="flex items-center gap-3">
@@ -715,6 +821,32 @@ export default {
       teamSettings: null,
       teamSettingsCapabilities: {},
       autoLinkFeedback: false,
+      slaSettings: null,
+      isLoadingSla: false,
+      isSavingSla: false,
+      slaError: null,
+      slaHolidayText: '',
+      slaDraft: {
+        id: null,
+        name: 'Default business hours',
+        timezone: 'UTC',
+        weeklySchedule: {},
+        holidays: [],
+        isDefault: true,
+      },
+      slaPolicyDraft: {
+        id: null,
+        name: 'Default policy',
+        conditions: {},
+        escalation: { notifyAssignee: true, notifySupervisor: false, raisePriority: null },
+        isDefault: true,
+        sortOrder: 0,
+        targets: [
+          { metric: 'first_response', priority: null, targetMinutes: 240 },
+          { metric: 'next_response', priority: null, targetMinutes: 240 },
+          { metric: 'resolution', priority: null, targetMinutes: 1440 },
+        ],
+      },
       cannedResponses: [],
       currentUserId: '',
       inboxAccessError: null,
@@ -850,6 +982,10 @@ export default {
       const list = this.addresses || []
       return (list.find((a) => a.isPrimary) || list[0])?.address || ''
     },
+
+    slaWeekdays() {
+      return ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+    },
   },
 
   async mounted() {
@@ -914,6 +1050,7 @@ export default {
         this.teamSettings = teamSettingsResponse?.data?.settings || null
         this.teamSettingsCapabilities = teamSettingsResponse?.data?.capabilities || {}
         this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
+        if (this.canManageTeamSupport) await this.loadSlaSettings()
 
         if (this.inboxes.length > 0) {
           const requestedInboxId = this.$route.query.inboxId
@@ -1067,6 +1204,118 @@ export default {
         toast.error(this.extractErrorMessage(err, 'Failed to save team support policy'))
       } finally {
         if (this.isCurrentRequest(token, teamId)) this.isSavingTeamPolicy = false
+      }
+    },
+
+    formatSlaMetric(metric) {
+      return (
+        { first_response: 'First response', next_response: 'Next response', resolution: 'Resolution' }[metric] || metric
+      )
+    },
+
+    ensureSlaWeekdays() {
+      for (const day of this.slaWeekdays) {
+        const closed = day === 'saturday' || day === 'sunday'
+        const fallback = closed ? { open: '00:00', close: '00:00' } : { open: '09:00', close: '17:00' }
+        if (!this.slaDraft.weeklySchedule[day]) this.slaDraft.weeklySchedule[day] = [fallback]
+        if (!this.slaDraft.weeklySchedule[day][0]) this.slaDraft.weeklySchedule[day][0] = fallback
+      }
+    },
+
+    syncSlaDraft(settings) {
+      const hours = settings?.businessHours?.find((item) => item.isDefault) || settings?.businessHours?.[0]
+      if (hours) {
+        this.slaDraft = {
+          id: hours.id,
+          name: hours.name,
+          timezone: hours.timezone,
+          weeklySchedule: JSON.parse(JSON.stringify(hours.weeklySchedule || {})),
+          holidays: [...(hours.holidays || [])],
+          isDefault: true,
+        }
+      }
+      this.ensureSlaWeekdays()
+      this.slaHolidayText = (this.slaDraft.holidays || []).join(', ')
+      const policy = settings?.policies?.find((item) => item.isDefault) || settings?.policies?.[0]
+      if (policy) {
+        const existingTargets = new Map((policy.targets || []).map((target) => [target.metric, target]))
+        this.slaPolicyDraft = {
+          id: policy.id,
+          name: policy.name,
+          conditions: policy.conditions || {},
+          escalation: {
+            notifyAssignee: true,
+            notifySupervisor: false,
+            raisePriority: null,
+            ...(policy.escalation || {}),
+          },
+          isDefault: true,
+          sortOrder: policy.sortOrder || 0,
+          targets: ['first_response', 'next_response', 'resolution'].map((metric) => ({
+            id: existingTargets.get(metric)?.id,
+            metric,
+            priority: null,
+            targetMinutes: existingTargets.get(metric)?.targetMinutes || (metric === 'resolution' ? 1440 : 240),
+          })),
+        }
+      }
+    },
+
+    async loadSlaSettings() {
+      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      this.isLoadingSla = true
+      this.slaError = null
+      try {
+        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/sla`)
+        this.slaSettings = response?.data || null
+        this.syncSlaDraft(this.slaSettings)
+      } catch {
+        this.slaError = 'Failed to load SLA settings.'
+      } finally {
+        this.isLoadingSla = false
+      }
+    },
+
+    async saveSlaSettings() {
+      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      this.isSavingSla = true
+      try {
+        const holidays = this.slaHolidayText
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/sla`, {
+          method: 'PUT',
+          body: {
+            businessHours: {
+              name: this.slaDraft.name,
+              timezone: this.slaDraft.timezone,
+              weeklySchedule: this.slaDraft.weeklySchedule,
+              isDefault: true,
+              ...(this.slaDraft.id ? { id: this.slaDraft.id } : {}),
+              holidays,
+            },
+            policies: [
+              {
+                name: this.slaPolicyDraft.name,
+                conditions: this.slaPolicyDraft.conditions,
+                escalation: this.slaPolicyDraft.escalation,
+                isDefault: true,
+                sortOrder: this.slaPolicyDraft.sortOrder,
+                ...(this.slaPolicyDraft.id ? { id: this.slaPolicyDraft.id } : {}),
+                businessHoursId: this.slaDraft.id || null,
+                targets: this.slaPolicyDraft.targets,
+              },
+            ],
+          },
+        })
+        this.slaSettings = response?.data || this.slaSettings
+        this.syncSlaDraft(this.slaSettings)
+        toast.success('SLA settings saved')
+      } catch (error) {
+        toast.error(this.extractErrorMessage(error, 'Failed to save SLA settings'))
+      } finally {
+        this.isSavingSla = false
       }
     },
 

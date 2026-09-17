@@ -62,6 +62,15 @@ describe('SLA due dates', () => {
     expect(due.next_response).toBeNull()
   })
 
+  it('can calculate a next-response deadline after the first response', () => {
+    const due = calculateSlaDueDates(
+      new Date('2026-08-14T21:30:00.000Z'),
+      [{ metric: 'next_response', priority: null, targetMinutes: 60 }],
+      'normal'
+    )
+    expect(due.next_response?.toISOString()).toBe('2026-08-14T22:30:00.000Z')
+  })
+
   it('calculates business-hours deadlines from the same start instant', () => {
     const due = calculateSlaDueDates(
       new Date('2026-08-14T21:30:00.000Z'),
