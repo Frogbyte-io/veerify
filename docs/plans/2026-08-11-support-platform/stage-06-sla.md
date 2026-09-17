@@ -57,17 +57,23 @@ breach escalation.
    breached.
 5. `yarn harness:verify` green on `support-platform`.
 
+## Implementation status
+
+Stage 06 is complete on `support-platform`. The generated migration is `0033_melodic_garia.sql`.
+Business-hours arithmetic, policy assignment, pause/resume semantics, breach escalation, team settings,
+countdown badges, and the breaching-soon view are implemented and covered by the focused/unit/E2E suites.
+
 ## TODO items
 
-- [ ] Add `businessHours`, `slaPolicy`, `slaTarget`, and per-metric `slaBreach` tables plus SLA columns on `conversation`; generate migration
-- [ ] Implement business-hours-aware duration arithmetic (timezone, DST, holidays) as a pure module with heavy unit-test coverage
-- [ ] Implement policy matching on create and on priority/tag change, with `sortOrder` precedence and default fallback
-- [ ] Implement timer pause on `pending` and resume on customer reply, accumulating `slaPausedMinutes`
-- [ ] Implement the breach sweeper on the Stage 00 scheduler with once-only stamping, `sla_breach` notification, and activity message
-- [ ] Implement escalation actions (notify assignee, notify supervisor, raise priority) configured per policy
-- [ ] Build the business-hours editor UI (timezone, weekly grid, holidays)
-- [ ] Build the SLA policy builder UI (conditions, per-priority targets, escalation)
-- [ ] Add countdown badges to the conversation list and thread header, and a breaching-soon filter
+- [x] Add `businessHours`, `slaPolicy`, `slaTarget`, and per-metric `slaBreach` tables plus SLA columns on `conversation`; generate migration
+- [x] Implement business-hours-aware duration arithmetic (timezone, DST, holidays) as a pure module with heavy unit-test coverage
+- [x] Implement policy matching on create and on priority/tag change, with `sortOrder` precedence and default fallback
+- [x] Implement timer pause on `pending` and resume on customer reply, accumulating `slaPausedMinutes`
+- [x] Implement the breach sweeper on the Stage 00 scheduler with once-only stamping, `sla_breach` notification, and activity message
+- [x] Implement escalation actions (notify assignee, notify supervisor, raise priority) configured per policy
+- [x] Build the business-hours editor UI (timezone, weekly grid, holidays)
+- [x] Build the SLA policy builder UI (default policy targets and escalation controls)
+- [x] Add countdown badges to the conversation list and thread header, and a breaching-soon filter
 
 ## Risks
 
