@@ -12,11 +12,13 @@
   ordering indexes, and audit fields.
 - Added a pure condition evaluator with an extensible field registry, scalar/text/numeric operators,
   `all`/`any` groups, and one permitted nesting level.
+- Added an ordered action executor with injectable handlers, per-action failure isolation, and helpers
+  for collecting applied and failed action records.
 - Added unit coverage for matching, grouping, depth limits, custom fields, and empty groups.
 
 ## Remaining Stage 07 work
 
-- Action execution and error isolation, event/time-based evaluation, cascade-depth protection, dry-run,
+- Event/time-based evaluation, cascade-depth protection, dry-run,
   and the rule-management UI.
 
 ## Validation
