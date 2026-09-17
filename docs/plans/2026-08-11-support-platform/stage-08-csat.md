@@ -55,7 +55,7 @@ dispatch pass are implemented first; the public rating flow and configuration su
 - [x] Build the public rating landing page with follow-up comment capture; no authentication required
 - [x] Implement token single-use semantics for rating and bounded-window validity for comments
 - [x] Write an `activity` message into the thread on response
-- [ ] Build survey configuration UI per inbox
+- [x] Build survey configuration UI per inbox
 - [ ] Add CSAT column and filter to the conversation list, and per-agent/per-inbox score summaries
 
 ## Risks

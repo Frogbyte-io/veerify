@@ -13,10 +13,11 @@
   follow-up window, and timeline activity messages.
 - Added the mobile-first public `/csat/:token` response page and Playwright coverage for rating plus
   follow-up submission.
+- Added authenticated team-admin survey CRUD and a per-inbox configuration card in Support settings.
 
 ## Remaining Stage 08 work
 
-- Survey configuration UI and conversation-list score surfaces.
+- Conversation-list score surfaces and per-agent/per-inbox summaries.
 
 ## Validation
 

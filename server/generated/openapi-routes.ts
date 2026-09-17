@@ -2863,6 +2863,82 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/support/teams/{teamId}/csat-surveys": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "List team CSAT surveys",
+      "operationId": "listSupportCsatSurveys",
+      "responses": {
+        "200": {
+          "description": "CSAT survey configurations"
+        },
+        "403": {
+          "description": "Not a member of the team"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Create a team CSAT survey",
+      "operationId": "createSupportCsatSurvey",
+      "responses": {
+        "200": {
+          "description": "CSAT survey created"
+        },
+        "400": {
+          "description": "Invalid survey or inbox scope"
+        },
+        "403": {
+          "description": "Team administrator required"
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/csat-surveys/{id}": {
+    "delete": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Delete a team CSAT survey",
+      "operationId": "deleteSupportCsatSurvey",
+      "responses": {
+        "200": {
+          "description": "CSAT survey deleted"
+        },
+        "403": {
+          "description": "Team administrator required"
+        },
+        "404": {
+          "description": "Survey not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Update a team CSAT survey",
+      "operationId": "updateSupportCsatSurvey",
+      "responses": {
+        "200": {
+          "description": "CSAT survey updated"
+        },
+        "400": {
+          "description": "Invalid survey or inbox scope"
+        },
+        "403": {
+          "description": "Team administrator required"
+        },
+        "404": {
+          "description": "Survey not found"
+        }
+      }
+    }
+  },
   "/api/support/teams/{teamId}/settings": {
     "get": {
       "tags": [

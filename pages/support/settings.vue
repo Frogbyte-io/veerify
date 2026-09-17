@@ -221,6 +221,156 @@
           </CardContent>
         </Card>
 
+        <Card v-if="canManageTeamSupport" data-testid="support-csat-settings">
+          <CardHeader>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle>Customer pulse</CardTitle>
+                <CardDescription
+                  >Ask for one focused signal after a conversation is resolved or closed.</CardDescription
+                >
+              </div>
+              <span class="rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                {{ csatSurveys.filter((survey) => survey.isEnabled).length }} live
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent class="space-y-5">
+            <div v-if="isLoadingCsatSurveys" class="space-y-2">
+              <Skeleton v-for="i in 2" :key="i" class="h-12 w-full" />
+            </div>
+            <div v-else-if="csatSurveysError" class="text-sm">
+              <p class="mb-2 text-destructive">{{ csatSurveysError }}</p>
+              <Button variant="outline" size="sm" @click="loadCsatSurveys">Retry</Button>
+            </div>
+            <template v-else>
+              <div v-if="csatSurveys.length" class="divide-y rounded-lg border">
+                <div
+                  v-for="survey in csatSurveys"
+                  :key="survey.id"
+                  class="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
+                  data-testid="support-csat-survey-row"
+                >
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="truncate font-medium">{{ survey.name }}</span>
+                      <span class="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                        {{ survey.scale.replace('_', ' ') }}
+                      </span>
+                    </div>
+                    <p class="mt-1 truncate text-xs text-muted-foreground">
+                      {{ survey.sendTrigger === 'on_resolve' ? 'On resolve' : 'On close' }} ·
+                      {{ survey.delayMinutes }} min delay · {{ survey.contactCooldownMinutes / 1440 }} day cooldown
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" @click="editCsatSurvey(survey)">Edit</Button>
+                    <Button variant="ghost" size="sm" class="text-destructive" @click="deleteCsatSurvey(survey)">
+                      <Icon name="lucide:trash-2" class="h-4 w-4" />
+                    </Button>
+                    <Switch
+                      :model-value="survey.isEnabled"
+                      :aria-label="`${survey.isEnabled ? 'Disable' : 'Enable'} ${survey.name}`"
+                      @update:model-value="toggleCsatSurvey(survey, $event)"
+                    />
+                  </div>
+                </div>
+              </div>
+              <p v-else class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                No survey configured yet. Keep the first question short and specific.
+              </p>
+
+              <div class="grid gap-4 rounded-xl border bg-muted/10 p-4">
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-sm font-medium">{{ csatDraft.id ? 'Edit survey' : 'New survey' }}</p>
+                    <p class="text-xs text-muted-foreground">Ratings are collected without requiring sign-in.</p>
+                  </div>
+                  <Button v-if="csatDraft.id" variant="ghost" size="sm" @click="resetCsatDraft">New</Button>
+                </div>
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label for="csat-survey-name">Name</Label>
+                    <Input id="csat-survey-name" v-model="csatDraft.name" class="mt-2" placeholder="Default CSAT" />
+                  </div>
+                  <div>
+                    <Label for="csat-survey-inbox">Inbox scope</Label>
+                    <select id="csat-survey-inbox" v-model="csatDraft.inboxId" :class="selectClasses + ' mt-2'">
+                      <option :value="null">All inboxes</option>
+                      <option v-for="inbox in inboxes" :key="inbox.id" :value="inbox.id">{{ inbox.name }}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label for="csat-survey-scale">Scale</Label>
+                    <select id="csat-survey-scale" v-model="csatDraft.scale" :class="selectClasses + ' mt-2'">
+                      <option value="csat_5">1–5 satisfaction</option>
+                      <option value="thumbs">Thumbs up / down</option>
+                      <option value="nps_10">0–10 likelihood</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label for="csat-survey-trigger">Send after</Label>
+                    <select id="csat-survey-trigger" v-model="csatDraft.sendTrigger" :class="selectClasses + ' mt-2'">
+                      <option value="on_resolve">Conversation resolves</option>
+                      <option value="on_close">Conversation closes</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <Label for="csat-survey-question">Question</Label>
+                  <Input
+                    id="csat-survey-question"
+                    v-model="csatDraft.question"
+                    class="mt-2"
+                    placeholder="How was your support experience?"
+                  />
+                </div>
+                <div>
+                  <Label for="csat-survey-follow-up">Follow-up prompt (optional)</Label>
+                  <Input
+                    id="csat-survey-follow-up"
+                    v-model="csatDraft.followUpQuestion"
+                    class="mt-2"
+                    placeholder="What could we improve?"
+                  />
+                </div>
+                <div class="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <Label for="csat-survey-delay">Delay (minutes)</Label>
+                    <Input
+                      id="csat-survey-delay"
+                      v-model.number="csatDraft.delayMinutes"
+                      type="number"
+                      min="0"
+                      class="mt-2"
+                    />
+                  </div>
+                  <div>
+                    <Label for="csat-survey-cooldown">Contact cooldown (days)</Label>
+                    <Input
+                      id="csat-survey-cooldown"
+                      v-model.number="csatDraft.cooldownDays"
+                      type="number"
+                      min="0"
+                      class="mt-2"
+                    />
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-2">
+                    <Switch id="csat-survey-enabled" v-model="csatDraft.isEnabled" />
+                    <Label for="csat-survey-enabled">Enable dispatch</Label>
+                  </div>
+                  <Button data-testid="support-csat-save" :disabled="isSavingCsatSurvey" @click="saveCsatSurvey">
+                    <Icon v-if="isSavingCsatSurvey" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+                    {{ csatDraft.id ? 'Update survey' : 'Save survey' }}
+                  </Button>
+                </div>
+              </div>
+            </template>
+          </CardContent>
+        </Card>
+
         <!-- Automation control room -->
         <Card v-if="canManageTeamSupport" data-testid="support-automation-settings" class="overflow-hidden">
           <CardHeader class="border-b bg-[#16211f] text-[#f5f1e8] dark:bg-[#111917]">
@@ -1117,6 +1267,22 @@ export default {
           { metric: 'resolution', priority: null, targetMinutes: 1440 },
         ],
       },
+      csatSurveys: [],
+      isLoadingCsatSurveys: false,
+      csatSurveysError: null,
+      isSavingCsatSurvey: false,
+      csatDraft: {
+        id: null,
+        inboxId: null,
+        name: 'Default CSAT',
+        scale: 'csat_5',
+        question: 'How was your support experience?',
+        followUpQuestion: 'What could we improve?',
+        sendTrigger: 'on_resolve',
+        delayMinutes: 0,
+        cooldownDays: 30,
+        isEnabled: false,
+      },
       automationRules: [],
       isLoadingAutomationRules: false,
       automationRulesError: null,
@@ -1341,7 +1507,7 @@ export default {
         this.teamSettingsCapabilities = teamSettingsResponse?.data?.capabilities || {}
         this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
         if (this.canManageTeamSupport) {
-          await Promise.all([this.loadSlaSettings(), this.loadAutomationRules()])
+          await Promise.all([this.loadSlaSettings(), this.loadCsatSurveys(), this.loadAutomationRules()])
         }
 
         if (this.inboxes.length > 0) {
@@ -1608,6 +1774,108 @@ export default {
         toast.error(this.extractErrorMessage(error, 'Failed to save SLA settings'))
       } finally {
         this.isSavingSla = false
+      }
+    },
+
+    resetCsatDraft() {
+      this.csatDraft = {
+        id: null,
+        inboxId: null,
+        name: 'Default CSAT',
+        scale: 'csat_5',
+        question: 'How was your support experience?',
+        followUpQuestion: 'What could we improve?',
+        sendTrigger: 'on_resolve',
+        delayMinutes: 0,
+        cooldownDays: 30,
+        isEnabled: false,
+      }
+    },
+
+    async loadCsatSurveys() {
+      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      this.isLoadingCsatSurveys = true
+      this.csatSurveysError = null
+      try {
+        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/csat-surveys`)
+        this.csatSurveys = response?.data?.surveys || []
+      } catch (error) {
+        this.csatSurveys = []
+        this.csatSurveysError = this.extractErrorMessage(error, 'Failed to load CSAT surveys')
+      } finally {
+        this.isLoadingCsatSurveys = false
+      }
+    },
+
+    editCsatSurvey(survey) {
+      this.csatDraft = {
+        id: survey.id,
+        inboxId: survey.inboxId || null,
+        name: survey.name,
+        scale: survey.scale,
+        question: survey.question,
+        followUpQuestion: survey.followUpQuestion || '',
+        sendTrigger: survey.sendTrigger,
+        delayMinutes: survey.delayMinutes || 0,
+        cooldownDays: Math.round((survey.contactCooldownMinutes || 0) / 1440),
+        isEnabled: survey.isEnabled,
+      }
+    },
+
+    async saveCsatSurvey() {
+      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      if (!this.csatDraft.name.trim() || !this.csatDraft.question.trim()) {
+        toast.error('Add a survey name and question')
+        return
+      }
+      this.isSavingCsatSurvey = true
+      try {
+        const body = {
+          inboxId: this.csatDraft.inboxId || null,
+          name: this.csatDraft.name.trim(),
+          scale: this.csatDraft.scale,
+          question: this.csatDraft.question.trim(),
+          followUpQuestion: this.csatDraft.followUpQuestion.trim() || null,
+          sendTrigger: this.csatDraft.sendTrigger,
+          delayMinutes: Math.max(0, Number(this.csatDraft.delayMinutes) || 0),
+          contactCooldownMinutes: Math.max(0, Number(this.csatDraft.cooldownDays) || 0) * 1440,
+          isEnabled: this.csatDraft.isEnabled === true,
+        }
+        const endpoint = this.csatDraft.id
+          ? `/api/support/teams/${this.activeTeamId}/csat-surveys/${this.csatDraft.id}`
+          : `/api/support/teams/${this.activeTeamId}/csat-surveys`
+        await $fetch(endpoint, { method: this.csatDraft.id ? 'PUT' : 'POST', body })
+        await this.loadCsatSurveys()
+        this.resetCsatDraft()
+        toast.success('CSAT survey saved')
+      } catch (error) {
+        toast.error(this.extractErrorMessage(error, 'Failed to save CSAT survey'))
+      } finally {
+        this.isSavingCsatSurvey = false
+      }
+    },
+
+    async toggleCsatSurvey(survey, value) {
+      try {
+        await $fetch(`/api/support/teams/${this.activeTeamId}/csat-surveys/${survey.id}`, {
+          method: 'PUT',
+          body: { isEnabled: value === true },
+        })
+        survey.isEnabled = value === true
+      } catch (error) {
+        toast.error(this.extractErrorMessage(error, 'Failed to update CSAT survey'))
+      }
+    },
+
+    async deleteCsatSurvey(survey) {
+      if (!confirm(`Delete CSAT survey “${survey.name}”?`)) return
+      try {
+        await $fetch(`/api/support/teams/${this.activeTeamId}/csat-surveys/${survey.id}`, { method: 'DELETE' })
+        this.csatSurveys = this.csatSurveys.filter((item) => item.id !== survey.id)
+        if (this.csatDraft.id === survey.id) this.resetCsatDraft()
+        toast.success('CSAT survey deleted')
+      } catch (error) {
+        toast.error(this.extractErrorMessage(error, 'Failed to delete CSAT survey'))
       }
     },
 
