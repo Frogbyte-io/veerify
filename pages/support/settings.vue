@@ -221,6 +221,276 @@
           </CardContent>
         </Card>
 
+        <!-- Automation control room -->
+        <Card v-if="canManageTeamSupport" data-testid="support-automation-settings" class="overflow-hidden">
+          <CardHeader class="border-b bg-[#16211f] text-[#f5f1e8] dark:bg-[#111917]">
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <CardTitle class="font-mono tracking-tight">Automation control room</CardTitle>
+                <CardDescription class="mt-1 text-[#a9b9ae]">
+                  Turn triage intent into ordered, auditable moves across every inbox.
+                </CardDescription>
+              </div>
+              <div
+                class="rounded-full border border-[#b8d96b]/40 bg-[#b8d96b]/10 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[#cfe995]"
+              >
+                {{ automationRules.filter((rule) => rule.isEnabled).length }} live
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent class="space-y-5 bg-[#f8f7f2] p-0 dark:bg-[#18201e]">
+            <div v-if="isLoadingAutomationRules" class="space-y-2 p-5">
+              <Skeleton v-for="i in 2" :key="i" class="h-16 w-full" />
+            </div>
+            <div v-else-if="automationRulesError" class="p-5 text-sm">
+              <p class="mb-2 text-destructive">{{ automationRulesError }}</p>
+              <Button variant="outline" size="sm" @click="loadAutomationRules">Retry</Button>
+            </div>
+            <template v-else>
+              <div v-if="automationRules.length === 0" class="border-b border-dashed p-5 text-sm text-muted-foreground">
+                No rules yet. Start with a narrow condition and one reversible action.
+              </div>
+              <div v-else class="divide-y border-b">
+                <div
+                  v-for="rule in automationRules"
+                  :key="rule.id"
+                  class="grid gap-3 px-5 py-4 transition-colors hover:bg-[#ebece4] dark:hover:bg-[#202b28] sm:grid-cols-[1fr_auto_auto] sm:items-center"
+                  data-testid="support-automation-rule-row"
+                >
+                  <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="h-2 w-2 rounded-full" :class="rule.isEnabled ? 'bg-[#8aa84c]' : 'bg-slate-300'" />
+                      <p class="truncate font-medium">{{ rule.name }}</p>
+                      <span
+                        class="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground"
+                      >
+                        {{ rule.trigger.replaceAll('_', ' ') }}
+                      </span>
+                    </div>
+                    <p class="mt-1 truncate pl-4 font-mono text-[11px] text-muted-foreground">
+                      {{ (rule.conditions?.all || rule.conditions?.any || []).length }} conditions ·
+                      {{ rule.actions?.length || 0 }} actions · {{ rule.runCount || 0 }} runs
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" class="font-mono text-xs" @click="editAutomationRule(rule)"
+                      >Edit</Button
+                    >
+                    <Button variant="ghost" size="sm" class="font-mono text-xs" @click="loadAutomationRuns(rule)">
+                      History
+                    </Button>
+                    <Button variant="ghost" size="sm" class="text-destructive" @click="deleteAutomationRule(rule)">
+                      <Icon name="lucide:trash-2" class="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Switch
+                    :model-value="rule.isEnabled"
+                    :aria-label="`${rule.isEnabled ? 'Disable' : 'Enable'} ${rule.name}`"
+                    @update:model-value="toggleAutomationRule(rule, $event)"
+                  />
+                </div>
+              </div>
+
+              <div class="grid gap-5 p-5 lg:grid-cols-[1.15fr_0.85fr]">
+                <div class="space-y-4 rounded-xl border bg-background p-4 shadow-sm">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        {{ automationDraft.id ? 'Edit rule' : 'New rule' }}
+                      </p>
+                      <p class="mt-1 text-sm text-muted-foreground">Conditions are evaluated top to bottom.</p>
+                    </div>
+                    <Button v-if="automationDraft.id" variant="ghost" size="sm" @click="resetAutomationDraft"
+                      >New</Button
+                    >
+                  </div>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label for="automation-rule-name">Rule name</Label>
+                      <Input
+                        id="automation-rule-name"
+                        v-model="automationDraft.name"
+                        class="mt-2"
+                        placeholder="Enterprise escalation"
+                      />
+                    </div>
+                    <div>
+                      <Label for="automation-rule-trigger">Trigger</Label>
+                      <select
+                        id="automation-rule-trigger"
+                        v-model="automationDraft.trigger"
+                        :class="selectClasses + ' mt-2'"
+                      >
+                        <option value="conversation_created">Conversation created</option>
+                        <option value="conversation_updated">Conversation updated</option>
+                        <option value="message_created">Message created</option>
+                        <option value="time_based">Time based</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Label for="automation-rule-order">Order</Label>
+                      <Input
+                        id="automation-rule-order"
+                        v-model.number="automationDraft.sortOrder"
+                        type="number"
+                        min="0"
+                        class="mt-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="rounded-lg border border-dashed p-3">
+                    <div class="mb-3 flex items-center justify-between gap-3">
+                      <Label>Match</Label>
+                      <select v-model="automationDraft.group" :class="selectClasses + ' h-8 w-auto text-xs'">
+                        <option value="all">All conditions</option>
+                        <option value="any">Any condition</option>
+                      </select>
+                    </div>
+                    <div
+                      v-for="(condition, index) in automationDraft.conditions"
+                      :key="condition.key"
+                      class="mb-2 grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]"
+                    >
+                      <select v-model="condition.field" :class="selectClasses + ' h-9 text-xs'">
+                        <option value="company">Company</option>
+                        <option value="priority">Priority</option>
+                        <option value="status">Status</option>
+                        <option value="tag">Tag</option>
+                        <option value="assignee">Assignee</option>
+                        <option value="subject">Subject</option>
+                        <option value="body">Body</option>
+                        <option value="sla_state">SLA state</option>
+                      </select>
+                      <select v-model="condition.operator" :class="selectClasses + ' h-9 text-xs'">
+                        <option value="equals">Equals</option>
+                        <option value="contains">Contains</option>
+                        <option value="matches">Matches</option>
+                        <option value="not_equals">Does not equal</option>
+                      </select>
+                      <Input v-model="condition.value" class="h-9 text-xs" placeholder="Value" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        :disabled="automationDraft.conditions.length === 1"
+                        @click="removeAutomationCondition(index)"
+                      >
+                        <Icon name="lucide:x" class="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <Button variant="outline" size="sm" class="font-mono text-xs" @click="addAutomationCondition">
+                      <Icon name="lucide:plus" class="mr-1 h-3 w-3" /> Add condition
+                    </Button>
+                  </div>
+
+                  <div class="rounded-lg border border-dashed p-3">
+                    <div class="mb-3 flex items-center justify-between gap-3">
+                      <Label>Then do</Label>
+                      <span class="font-mono text-[10px] uppercase tracking-wide text-muted-foreground"
+                        >ordered actions</span
+                      >
+                    </div>
+                    <div
+                      v-for="(action, index) in automationDraft.actions"
+                      :key="action.key"
+                      class="mb-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+                    >
+                      <select v-model="action.type" :class="selectClasses + ' h-9 text-xs'">
+                        <option value="set_status">Set status</option>
+                        <option value="set_priority">Set priority</option>
+                        <option value="assign_to_agent">Assign to agent</option>
+                        <option value="add_tag">Add tag</option>
+                        <option value="remove_tag">Remove tag</option>
+                        <option value="add_private_note">Add private note</option>
+                        <option value="call_webhook">Call webhook</option>
+                      </select>
+                      <Input v-model="action.value" class="h-9 text-xs" placeholder="Value or id" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        :disabled="automationDraft.actions.length === 1"
+                        @click="removeAutomationAction(index)"
+                      >
+                        <Icon name="lucide:x" class="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <Button variant="outline" size="sm" class="font-mono text-xs" @click="addAutomationAction">
+                      <Icon name="lucide:plus" class="mr-1 h-3 w-3" /> Add action
+                    </Button>
+                  </div>
+
+                  <div class="flex justify-end">
+                    <Button
+                      data-testid="support-automation-save"
+                      :disabled="isSavingAutomationRule"
+                      @click="saveAutomationRule"
+                    >
+                      <Icon v-if="isSavingAutomationRule" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+                      {{ automationDraft.id ? 'Update rule' : 'Save rule' }}
+                    </Button>
+                  </div>
+                </div>
+
+                <div class="space-y-4">
+                  <div class="rounded-xl bg-[#16211f] p-4 text-[#f5f1e8] shadow-sm dark:bg-[#111917]">
+                    <div class="flex items-center gap-2">
+                      <Icon name="lucide:flask-conical" class="h-4 w-4 text-[#cfe995]" />
+                      <p class="font-mono text-xs uppercase tracking-[0.16em]">Dry run</p>
+                    </div>
+                    <p class="mt-2 text-sm text-[#a9b9ae]">
+                      Preview matching actions against a real conversation without writing state.
+                    </p>
+                    <div class="mt-4 flex gap-2">
+                      <Input
+                        v-model="automationDryRunConversationId"
+                        class="border-[#61716a] bg-[#202d29] text-[#f5f1e8] placeholder:text-[#8fa097]"
+                        placeholder="Conversation ID"
+                      />
+                      <Button
+                        class="shrink-0 bg-[#cfe995] text-[#16211f] hover:bg-[#b8d96b]"
+                        :disabled="isRunningAutomationDryRun"
+                        @click="runAutomationDryRun"
+                      >
+                        Run
+                      </Button>
+                    </div>
+                    <p v-if="automationDryRunError" class="mt-2 text-xs text-[#ffb4a9]">{{ automationDryRunError }}</p>
+                    <div v-if="automationDryRunResult" class="mt-4 space-y-2 border-t border-[#3d5148] pt-3">
+                      <div
+                        v-for="evaluation in automationDryRunResult.evaluations"
+                        :key="evaluation.ruleId"
+                        class="rounded border border-[#3d5148] p-2"
+                      >
+                        <div class="flex items-center justify-between gap-2 text-xs">
+                          <span class="truncate font-medium">{{ evaluation.ruleName }}</span>
+                          <span class="font-mono text-[#cfe995]">{{ evaluation.actions.length }} actions</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div v-if="automationRuns.length" class="rounded-xl border bg-background p-4 shadow-sm">
+                    <div class="mb-3 flex items-center justify-between gap-3">
+                      <p class="font-mono text-xs uppercase tracking-[0.16em] text-muted-foreground">Run history</p>
+                      <span class="text-xs text-muted-foreground">{{ automationRuns.length }} latest</span>
+                    </div>
+                    <div class="space-y-2">
+                      <div
+                        v-for="run in automationRuns.slice(0, 6)"
+                        :key="run.id"
+                        class="flex items-center justify-between gap-3 rounded-md border p-2 text-xs"
+                      >
+                        <span class="font-mono text-muted-foreground">{{ run.status }}</span>
+                        <span class="truncate">{{ run.error || `${(run.appliedActions || []).length} actions` }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </CardContent>
+        </Card>
+
         <!-- Inbox settings -->
         <template v-if="hasInboxes">
           <div v-if="inboxes.length > 1" class="flex items-center gap-3">
@@ -847,6 +1117,26 @@ export default {
           { metric: 'resolution', priority: null, targetMinutes: 1440 },
         ],
       },
+      automationRules: [],
+      isLoadingAutomationRules: false,
+      automationRulesError: null,
+      isSavingAutomationRule: false,
+      automationDraft: {
+        id: null,
+        name: '',
+        inboxId: null,
+        trigger: 'conversation_created',
+        group: 'all',
+        conditions: [{ key: 'condition-initial', field: 'priority', operator: 'equals', value: 'urgent' }],
+        actions: [{ key: 'action-initial', type: 'set_priority', value: 'urgent' }],
+        isEnabled: true,
+        sortOrder: 0,
+      },
+      automationRuns: [],
+      automationDryRunConversationId: '',
+      automationDryRunResult: null,
+      automationDryRunError: null,
+      isRunningAutomationDryRun: false,
       cannedResponses: [],
       currentUserId: '',
       inboxAccessError: null,
@@ -1050,7 +1340,9 @@ export default {
         this.teamSettings = teamSettingsResponse?.data?.settings || null
         this.teamSettingsCapabilities = teamSettingsResponse?.data?.capabilities || {}
         this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
-        if (this.canManageTeamSupport) await this.loadSlaSettings()
+        if (this.canManageTeamSupport) {
+          await Promise.all([this.loadSlaSettings(), this.loadAutomationRules()])
+        }
 
         if (this.inboxes.length > 0) {
           const requestedInboxId = this.$route.query.inboxId
@@ -1316,6 +1608,190 @@ export default {
         toast.error(this.extractErrorMessage(error, 'Failed to save SLA settings'))
       } finally {
         this.isSavingSla = false
+      }
+    },
+
+    resetAutomationDraft() {
+      this.automationDraft = {
+        id: null,
+        name: '',
+        inboxId: null,
+        trigger: 'conversation_created',
+        group: 'all',
+        conditions: [{ key: `condition-${Date.now()}`, field: 'priority', operator: 'equals', value: 'urgent' }],
+        actions: [{ key: `action-${Date.now()}`, type: 'set_priority', value: 'urgent' }],
+        isEnabled: true,
+        sortOrder: this.automationRules.length,
+      }
+      this.automationRuns = []
+    },
+
+    async loadAutomationRules() {
+      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      this.isLoadingAutomationRules = true
+      this.automationRulesError = null
+      try {
+        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules`)
+        this.automationRules = response?.data?.rules || []
+      } catch (error) {
+        this.automationRules = []
+        this.automationRulesError = this.extractErrorMessage(error, 'Failed to load automation rules')
+      } finally {
+        this.isLoadingAutomationRules = false
+      }
+    },
+
+    editAutomationRule(rule) {
+      const group = Array.isArray(rule.conditions?.any) ? 'any' : 'all'
+      const sourceConditions = rule.conditions?.[group] || []
+      this.automationDraft = {
+        id: rule.id,
+        name: rule.name,
+        inboxId: rule.inboxId || null,
+        trigger: rule.trigger,
+        group,
+        conditions: sourceConditions.map((condition, index) => ({
+          key: `${rule.id}-condition-${index}`,
+          field: condition.field || 'priority',
+          operator: condition.operator || 'equals',
+          value: condition.value ?? '',
+        })),
+        actions: (rule.actions || []).map((action, index) => ({
+          key: `${rule.id}-action-${index}`,
+          type: action.type,
+          value: action.value ?? action.priority ?? action.status ?? action.tagId ?? action.body ?? action.url ?? '',
+        })),
+        isEnabled: rule.isEnabled,
+        sortOrder: rule.sortOrder || 0,
+      }
+      if (this.automationDraft.conditions.length === 0) this.addAutomationCondition()
+      if (this.automationDraft.actions.length === 0) this.addAutomationAction()
+    },
+
+    addAutomationCondition() {
+      this.automationDraft.conditions.push({
+        key: `condition-${Date.now()}-${this.automationDraft.conditions.length}`,
+        field: 'priority',
+        operator: 'equals',
+        value: 'urgent',
+      })
+    },
+
+    removeAutomationCondition(index) {
+      if (this.automationDraft.conditions.length > 1) this.automationDraft.conditions.splice(index, 1)
+    },
+
+    addAutomationAction() {
+      this.automationDraft.actions.push({
+        key: `action-${Date.now()}-${this.automationDraft.actions.length}`,
+        type: 'set_priority',
+        value: 'urgent',
+      })
+    },
+
+    removeAutomationAction(index) {
+      if (this.automationDraft.actions.length > 1) this.automationDraft.actions.splice(index, 1)
+    },
+
+    automationActionPayload(action) {
+      const payload = { type: action.type, value: action.value }
+      if (action.type === 'set_priority') payload.priority = action.value
+      if (action.type === 'set_status') payload.status = action.value
+      if (action.type === 'assign_to_agent') payload.userId = action.value
+      if (action.type === 'add_tag' || action.type === 'remove_tag') payload.tagId = action.value
+      if (action.type === 'add_private_note') payload.body = action.value
+      if (action.type === 'call_webhook') payload.url = action.value
+      return payload
+    },
+
+    async saveAutomationRule() {
+      if (!this.activeTeamId || !this.canManageTeamSupport || !this.automationDraft.name.trim()) {
+        toast.error('Add a name for this automation rule')
+        return
+      }
+      this.isSavingAutomationRule = true
+      try {
+        const body = {
+          name: this.automationDraft.name.trim(),
+          inboxId: this.automationDraft.inboxId || null,
+          trigger: this.automationDraft.trigger,
+          conditions: {
+            [this.automationDraft.group]: this.automationDraft.conditions.map(({ field, operator, value }) => ({
+              field,
+              operator,
+              value,
+            })),
+          },
+          actions: this.automationDraft.actions.map((action) => this.automationActionPayload(action)),
+          isEnabled: this.automationDraft.isEnabled,
+          sortOrder: this.automationDraft.sortOrder,
+        }
+        const endpoint = this.automationDraft.id
+          ? `/api/support/teams/${this.activeTeamId}/automation-rules/${this.automationDraft.id}`
+          : `/api/support/teams/${this.activeTeamId}/automation-rules`
+        await $fetch(endpoint, { method: this.automationDraft.id ? 'PUT' : 'POST', body })
+        await this.loadAutomationRules()
+        this.resetAutomationDraft()
+        toast.success('Automation rule saved')
+      } catch (error) {
+        toast.error(this.extractErrorMessage(error, 'Failed to save automation rule'))
+      } finally {
+        this.isSavingAutomationRule = false
+      }
+    },
+
+    async toggleAutomationRule(rule, value) {
+      try {
+        await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules/${rule.id}`, {
+          method: 'PUT',
+          body: { isEnabled: value === true },
+        })
+        rule.isEnabled = value === true
+        toast.success(value ? 'Automation rule enabled' : 'Automation rule paused')
+      } catch (error) {
+        toast.error(this.extractErrorMessage(error, 'Failed to update automation rule'))
+      }
+    },
+
+    async deleteAutomationRule(rule) {
+      if (!confirm(`Delete automation rule “${rule.name}”?`)) return
+      try {
+        await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules/${rule.id}`, { method: 'DELETE' })
+        this.automationRules = this.automationRules.filter((item) => item.id !== rule.id)
+        if (this.automationDraft.id === rule.id) this.resetAutomationDraft()
+        toast.success('Automation rule deleted')
+      } catch (error) {
+        toast.error(this.extractErrorMessage(error, 'Failed to delete automation rule'))
+      }
+    },
+
+    async loadAutomationRuns(rule) {
+      try {
+        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules/${rule.id}/runs`)
+        this.automationRuns = response?.data?.runs || []
+      } catch (error) {
+        toast.error(this.extractErrorMessage(error, 'Failed to load run history'))
+      }
+    },
+
+    async runAutomationDryRun() {
+      if (!this.activeTeamId || !this.automationDryRunConversationId.trim()) {
+        this.automationDryRunError = 'Enter a conversation id first.'
+        return
+      }
+      this.isRunningAutomationDryRun = true
+      this.automationDryRunError = null
+      this.automationDryRunResult = null
+      try {
+        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules/dry-run`, {
+          method: 'POST',
+          body: { conversationId: this.automationDryRunConversationId.trim(), trigger: 'conversation_updated' },
+        })
+        this.automationDryRunResult = response?.data || null
+      } catch (error) {
+        this.automationDryRunError = this.extractErrorMessage(error, 'Dry run failed')
+      } finally {
+        this.isRunningAutomationDryRun = false
       }
     },
 

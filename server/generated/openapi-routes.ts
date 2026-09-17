@@ -2682,6 +2682,132 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/support/teams/{teamId}/automation-rules": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "List support automation rules",
+      "operationId": "listSupportAutomationRules",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Automation rules"
+        },
+        "403": {
+          "description": "Not a member of the team"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Create a support automation rule",
+      "operationId": "createSupportAutomationRule",
+      "responses": {
+        "200": {
+          "description": "Automation rule created"
+        },
+        "400": {
+          "description": "Invalid rule or inbox scope"
+        },
+        "403": {
+          "description": "Team administrator required"
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/automation-rules/{id}": {
+    "delete": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Delete a support automation rule",
+      "operationId": "deleteSupportAutomationRule",
+      "responses": {
+        "200": {
+          "description": "Automation rule deleted"
+        },
+        "403": {
+          "description": "Team administrator required"
+        },
+        "404": {
+          "description": "Rule not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Update a support automation rule",
+      "operationId": "updateSupportAutomationRule",
+      "responses": {
+        "200": {
+          "description": "Automation rule updated"
+        },
+        "400": {
+          "description": "Invalid rule or inbox scope"
+        },
+        "403": {
+          "description": "Team administrator required"
+        },
+        "404": {
+          "description": "Rule not found"
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/automation-rules/{id}/runs": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "List automation rule run history",
+      "operationId": "listSupportAutomationRuleRuns",
+      "responses": {
+        "200": {
+          "description": "Automation rule run history"
+        },
+        "403": {
+          "description": "Not a member of the team"
+        },
+        "404": {
+          "description": "Rule not found"
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/automation-rules/dry-run": {
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Dry-run support automation rules for a conversation",
+      "operationId": "dryRunSupportAutomationRules",
+      "responses": {
+        "200": {
+          "description": "Dry-run action plan"
+        },
+        "400": {
+          "description": "Conversation is not part of the team"
+        },
+        "403": {
+          "description": "Not a member of the team"
+        }
+      }
+    }
+  },
   "/api/support/teams/{teamId}/settings": {
     "get": {
       "tags": [

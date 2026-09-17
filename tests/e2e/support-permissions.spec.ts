@@ -80,6 +80,8 @@ test.describe.serial('support permission-aware navigation', () => {
 
     await expect(page.getByTestId('support-team-policy')).toBeVisible()
     await expect(page.getByTestId('support-sla-settings')).toBeVisible()
+    await expect(page.getByTestId('support-automation-settings')).toBeVisible()
+    await expect(page.getByTestId('support-automation-save')).toBeVisible()
     await expect(page.getByTestId('support-sla-save')).toBeVisible()
     await expect(page.getByText('Automatically link signed-in customer feedback')).toBeVisible()
     await expect(page.getByTestId('support-add-inbox-member')).toBeVisible()
@@ -111,6 +113,7 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.getByTestId('support-add-inbox-member')).toBeVisible()
     await expect(page.getByTestId('support-team-policy')).toHaveCount(0)
     await expect(page.getByTestId('support-sla-settings')).toHaveCount(0)
+    await expect(page.getByTestId('support-automation-settings')).toHaveCount(0)
   })
 
   test('supervisor manages tags and receives descriptive role choices', async ({ browser }) => {

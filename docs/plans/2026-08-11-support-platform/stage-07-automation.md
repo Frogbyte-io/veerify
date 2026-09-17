@@ -74,9 +74,9 @@ touching the engine.
 - [x] Implement time-based rule evaluation on the Stage 00 scheduler
 - [x] Implement the cascade-depth loop guard with truncation recorded in `automationRuleRun`
 - [x] Implement dry-run evaluation that reports without mutating
-- [ ] Build the rule list UI with enable/disable, reordering, and run counts
-- [ ] Build the condition and action builder UI with grouping
-- [ ] Build the dry-run panel and per-rule run history view
+- [x] Build the rule list UI with enable/disable, reordering, and run counts
+- [x] Build the condition and action builder UI with grouping
+- [x] Build the dry-run panel and per-rule run history view
 
 ## Risks
 

@@ -902,6 +902,12 @@ describe('executable support route authorization inventory', () => {
       'canned-responses/[id].put',
       'canned-responses/index.get',
       'canned-responses/index.post',
+      'teams/[teamId]/automation-rules/[id].delete',
+      'teams/[teamId]/automation-rules/[id].put',
+      'teams/[teamId]/automation-rules/[id]/runs.get',
+      'teams/[teamId]/automation-rules/dry-run.post',
+      'teams/[teamId]/automation-rules/index.get',
+      'teams/[teamId]/automation-rules/index.post',
     ]
     const inventoryNames = [...new Set(inventoryEntries)].sort()
 

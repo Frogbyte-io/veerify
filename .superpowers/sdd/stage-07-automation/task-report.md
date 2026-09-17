@@ -22,13 +22,15 @@
 - Added a five-minute time-based sweep with Nitro task, Vercel cron endpoint, and active-conversation
   filtering.
 - Added unit coverage for matching, grouping, depth limits, custom fields, and empty groups.
+- Added authenticated rule CRUD, run-history, and dry-run endpoints with team ownership checks.
+- Added an admin-only settings control room with enable/disable, ordering, grouped condition/action
+  builders, run history, and dry-run preview.
 
 ## Remaining Stage 07 work
 
-- Rule-management and dry-run UI.
-  and the rule-management UI.
+- None for the Stage 07 scope.
 
 ## Validation
 
-- Focused condition tests and typecheck passed.
-- Full harness verification is deferred until the next automation slice is complete.
+- Full harness verification is run after each committed slice; the latest pass is recorded in the
+  handoff update.
