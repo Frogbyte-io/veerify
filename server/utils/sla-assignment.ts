@@ -12,6 +12,7 @@ export async function resolveSlaAssignment(
     companyId: string | null | undefined
     tagIds: string[]
     start: Date
+    includeNextResponse?: boolean
   },
   executor: Pick<typeof db, 'select'> = db
 ) {
@@ -44,6 +45,7 @@ export async function resolveSlaAssignment(
     targets,
     start: input.start,
     priority: input.priority,
+    includeNextResponse: input.includeNextResponse,
     businessHours: selectedPolicyRow?.hours
       ? {
           timezone: selectedPolicyRow.hours.timezone,

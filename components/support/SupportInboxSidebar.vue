@@ -132,6 +132,7 @@ export default {
         { value: 'unassigned', label: 'Unassigned', icon: 'lucide:inbox', badgeKey: 'unassigned' },
         { value: 'assigned-to-me', label: 'Assigned to me', icon: 'lucide:user-check', badgeKey: 'assignedToMe' },
         { value: 'resolved', label: 'Resolved', icon: 'lucide:check-circle-2' },
+        { value: 'breaching-soon', label: 'Breaching soon', icon: 'lucide:alarm-clock' },
         { value: 'all', label: 'All', icon: 'lucide:layers-3' },
       ]
     },

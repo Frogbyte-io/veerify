@@ -67,6 +67,7 @@ import {
   conversation,
   conversationAttachment,
   conversationMessage,
+  conversationTag,
   slaPolicy,
   supportInboxAddress,
 } from '~/server/database/schema/support'
@@ -337,6 +338,9 @@ export default defineEventHandler(async (event) => {
           .select({
             status: conversation.status,
             assigneeUserId: conversation.assigneeUserId,
+            contactId: conversation.contactId,
+            priority: conversation.priority,
+            firstResponseAt: conversation.firstResponseAt,
             slaPolicyId: conversation.slaPolicyId,
             firstResponseDueAt: conversation.firstResponseDueAt,
             nextResponseDueAt: conversation.nextResponseDueAt,
@@ -384,6 +388,30 @@ export default defineEventHandler(async (event) => {
           updates.resolutionDueAt = resumed.resolutionDueAt
           updates.slaPausedAt = null
           updates.slaPausedMinutes = existingThread.slaPausedMinutes + resumed.pausedMinutes
+        }
+        if (existingThread.firstResponseAt) {
+          const [contactRow] = await tx
+            .select({ companyId: contact.companyId })
+            .from(contact)
+            .where(eq(contact.id, existingThread.contactId))
+            .limit(1)
+          const tags = await tx
+            .select({ tagId: conversationTag.tagId })
+            .from(conversationTag)
+            .where(eq(conversationTag.conversationId, conversationId))
+          const nextSla = await resolveSlaAssignment(
+            {
+              teamId: inbox.teamId,
+              inboxId: inbox.id,
+              priority: existingThread.priority,
+              companyId: contactRow?.companyId,
+              tagIds: tags.map((tag) => tag.tagId),
+              start: message.receivedAt,
+              includeNextResponse: true,
+            },
+            tx
+          )
+          updates.nextResponseDueAt = nextSla?.nextResponseDueAt ?? null
         }
         const [updatedThread] = await tx
           .update(conversation)

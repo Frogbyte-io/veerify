@@ -37,6 +37,16 @@
             <div class="flex items-center gap-2">
               <h2 class="text-sm font-semibold truncate">{{ conversation.subject || 'No subject' }}</h2>
               <span class="text-xs text-muted-foreground shrink-0">#{{ conversation.displayId }}</span>
+              <span
+                v-if="slaCountdown(conversation)"
+                data-testid="support-thread-sla"
+                class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium"
+                :class="slaClass(conversation)"
+                :aria-label="`SLA ${slaCountdown(conversation)}`"
+              >
+                <Icon name="lucide:timer" class="h-3 w-3" />
+                {{ slaCountdown(conversation) }}
+              </span>
             </div>
             <button
               type="button"
@@ -228,6 +238,20 @@ export default {
     'toggle-contact-panel',
   ],
 
+  data() {
+    return { nowMs: Date.now(), slaTicker: null }
+  },
+
+  mounted() {
+    this.slaTicker = window.setInterval(() => {
+      this.nowMs = Date.now()
+    }, 30_000)
+  },
+
+  beforeUnmount() {
+    if (this.slaTicker) window.clearInterval(this.slaTicker)
+  },
+
   computed: {
     isHandledByAnotherAgent() {
       return Boolean(this.conversation?.assigneeUserId && this.conversation.assigneeUserId !== this.currentUserId)
@@ -239,6 +263,34 @@ export default {
 
     showCurrentUserOption() {
       return Boolean(this.currentUserId && !this.members.some((member) => member.userId === this.currentUserId))
+    },
+
+    slaDueAt(item) {
+      return item?.nextResponseDueAt || item?.firstResponseDueAt || item?.resolutionDueAt || null
+    },
+
+    slaCountdown(item) {
+      const dueAt = this.slaDueAt(item)
+      if (!dueAt) return ''
+      if (item.slaPausedAt) return 'Paused'
+      const diffMin = Math.ceil((new Date(dueAt).getTime() - this.nowMs) / 60000)
+      if (diffMin <= 0) return 'Breached'
+      if (diffMin < 60) return `${diffMin}m`
+      const hours = Math.floor(diffMin / 60)
+      const minutes = diffMin % 60
+      return minutes ? `${hours}h ${minutes}m` : `${hours}h`
+    },
+
+    slaClass(item) {
+      const dueAt = this.slaDueAt(item)
+      if (item.slaPausedAt) return 'border-slate-300/70 bg-slate-500/10 text-slate-600 dark:text-slate-300'
+      if (!dueAt || new Date(dueAt).getTime() <= this.nowMs) {
+        return 'border-red-400/60 bg-red-500/10 text-red-700 dark:text-red-300'
+      }
+      const minutes = (new Date(dueAt).getTime() - this.nowMs) / 60000
+      return minutes <= 60
+        ? 'border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+        : 'border-emerald-400/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
     },
   },
 

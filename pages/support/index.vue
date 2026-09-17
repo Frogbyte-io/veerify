@@ -201,7 +201,7 @@ import {
 } from '~/lib/support-keyboard-shortcuts'
 
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
-const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'all']
+const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'all']
 const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
 const DRAFT_MODES = ['reply', 'note']
 

@@ -300,6 +300,7 @@ export async function commitMessageWithAttachments(
       }
       if (input.outgoing) {
         conversationUpdates.lastAgentReplyAt = now
+        conversationUpdates.nextResponseDueAt = null
         if (!input.existingConversation.firstResponseAt) conversationUpdates.firstResponseAt = now
 
         // The claim is conditional at the database boundary, not on the

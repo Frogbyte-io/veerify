@@ -12,7 +12,7 @@
  *         schema: { type: string }
  *       - in: query
  *         name: view
- *         schema: { type: string, enum: [unassigned, assigned-to-me, resolved, all] }
+ *         schema: { type: string, enum: [unassigned, assigned-to-me, resolved, breaching-soon, all] }
  *       - in: query
  *         name: status
  *         schema: { type: string }
@@ -43,7 +43,7 @@
  *       404: { description: Inbox not found }
  */
 import { z } from 'zod'
-import { and, desc, eq, getTableColumns, ilike, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, ilike, inArray, isNotNull, isNull, lte, lt, or, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess } from '~/server/utils/support-access'
@@ -57,7 +57,7 @@ const MAX_POSTGRES_INTEGER = 2147483647
 
 const querySchema = z.object({
   inboxId: z.string().min(1),
-  view: z.enum(['unassigned', 'assigned-to-me', 'resolved', 'all']).optional(),
+  view: z.enum(['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'all']).optional(),
   status: z.enum(['open', 'pending', 'resolved', 'snoozed', 'closed']).optional(),
   assigneeUserId: z.string().optional(),
   contactId: z.string().optional(),
@@ -84,6 +84,17 @@ export default defineEventHandler(async (event) => {
     conditions.push(eq(conversation.assigneeUserId, session.user.id), inArray(conversation.status, activeStatuses))
   } else if (!search && query.view === 'resolved') {
     conditions.push(eq(conversation.status, 'resolved'))
+  } else if (!search && query.view === 'breaching-soon') {
+    const soon = new Date(Date.now() + 60 * 60_000)
+    conditions.push(
+      inArray(conversation.status, activeStatuses),
+      isNull(conversation.slaPausedAt),
+      or(
+        and(isNotNull(conversation.firstResponseDueAt), lte(conversation.firstResponseDueAt, soon)),
+        and(isNotNull(conversation.nextResponseDueAt), lte(conversation.nextResponseDueAt, soon)),
+        and(isNotNull(conversation.resolutionDueAt), lte(conversation.resolutionDueAt, soon))
+      )!
+    )
   }
 
   if (query.status) conditions.push(eq(conversation.status, query.status))

@@ -115,6 +115,16 @@
                   {{ item.priority }}
                 </Badge>
                 <span
+                  v-if="slaCountdown(item)"
+                  data-testid="support-conversation-sla"
+                  class="inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium"
+                  :class="slaClass(item)"
+                  :aria-label="`SLA ${slaCountdown(item)}`"
+                >
+                  <Icon name="lucide:timer" class="h-3 w-3" />
+                  {{ slaCountdown(item) }}
+                </span>
+                <span
                   v-if="item.hasDraft"
                   data-testid="support-conversation-draft-indicator"
                   class="inline-flex items-center gap-1 rounded-sm border border-amber-400/60 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300"
@@ -159,6 +169,20 @@ export default {
   },
 
   emits: ['select', 'retry', 'load-more', 'search', 'clear-search'],
+
+  data() {
+    return { nowMs: Date.now(), slaTicker: null }
+  },
+
+  mounted() {
+    this.slaTicker = window.setInterval(() => {
+      this.nowMs = Date.now()
+    }, 30_000)
+  },
+
+  beforeUnmount() {
+    if (this.slaTicker) window.clearInterval(this.slaTicker)
+  },
 
   methods: {
     rowClass(item) {
@@ -208,6 +232,34 @@ export default {
         closed: 'secondary',
       }
       return variants[status] || 'outline'
+    },
+
+    slaDueAt(item) {
+      return item.nextResponseDueAt || item.firstResponseDueAt || item.resolutionDueAt || null
+    },
+
+    slaCountdown(item) {
+      const dueAt = this.slaDueAt(item)
+      if (!dueAt) return ''
+      if (item.slaPausedAt) return 'Paused'
+      const diffMin = Math.ceil((new Date(dueAt).getTime() - this.nowMs) / 60000)
+      if (diffMin <= 0) return 'Breached'
+      if (diffMin < 60) return `${diffMin}m`
+      const hours = Math.floor(diffMin / 60)
+      const minutes = diffMin % 60
+      return minutes ? `${hours}h ${minutes}m` : `${hours}h`
+    },
+
+    slaClass(item) {
+      const dueAt = this.slaDueAt(item)
+      if (item.slaPausedAt) return 'border-slate-300/70 bg-slate-500/10 text-slate-600 dark:text-slate-300'
+      if (!dueAt || new Date(dueAt).getTime() <= this.nowMs) {
+        return 'border-red-400/60 bg-red-500/10 text-red-700 dark:text-red-300'
+      }
+      const minutes = (new Date(dueAt).getTime() - this.nowMs) / 60000
+      return minutes <= 60
+        ? 'border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+        : 'border-emerald-400/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
     },
   },
 }

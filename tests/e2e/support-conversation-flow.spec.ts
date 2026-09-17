@@ -120,6 +120,14 @@ test.describe.serial('support conversation flow', () => {
       expect(typeof created.displayId).toBe('number')
       expect(created.displayId).toBeGreaterThan(0)
 
+      // Seed a visible deadline so the SLA countdown surface is exercised
+      // independently of policy-builder setup in this broader conversation
+      // flow. The UI must render the same timestamp returned by the API.
+      await db
+        .update(conversation)
+        .set({ firstResponseDueAt: new Date(Date.now() + 90 * 60_000) })
+        .where(eq(conversation.id, conversationId))
+
       // Outgoing replies require an explicit From identity. Configure the
       // inbox through the same operator-facing API used by Stage 04 before
       // exercising the Stage 02 reply flow.
@@ -141,6 +149,7 @@ test.describe.serial('support conversation flow', () => {
       await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, {
         waitUntil: 'domcontentloaded',
       })
+      await expect(page.getByTestId('support-thread-sla')).toBeVisible()
       await expect(page.getByTestId('support-thread-assignee')).toHaveValue('')
 
       await page.getByTestId('support-composer-mode-note').click()

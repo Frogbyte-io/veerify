@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { contact, conversation, supportInbox, supportInboxMember } from '../../server/database/schema/support'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
@@ -8,7 +8,7 @@ import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders } 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-test('support inbox exposes four fixed views with Unassigned as the scoped landing view', async ({ page, request }) => {
+test('support inbox exposes fixed views with Unassigned as the scoped landing view', async ({ page, request }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const headers = withAuthHeaders(sessionCookie, '/support')
   const teamResponse = await request.get('/api/teams/active', { headers })
@@ -127,6 +127,10 @@ test('support inbox exposes four fixed views with Unassigned as the scoped landi
         updatedAt: now,
       }))
     )
+    await db
+      .update(conversation)
+      .set({ firstResponseDueAt: new Date(now.getTime() + 30 * 60_000) })
+      .where(eq(conversation.id, conversationRows[0].id))
 
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.goto(`/support?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
@@ -134,6 +138,7 @@ test('support inbox exposes four fixed views with Unassigned as the scoped landi
     await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId('support-view-assigned-to-me')).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('support-view-resolved')).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByTestId('support-view-breaching-soon')).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('support-view-all')).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('support-filter-status')).toHaveCount(0)
     await expect(page.getByTestId('support-filter-assignee')).toHaveCount(0)
@@ -159,6 +164,11 @@ test('support inbox exposes four fixed views with Unassigned as the scoped landi
     await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${conversationRows[2].id}`)).toBeVisible()
     await expect(page.getByTestId(`support-conversation-${conversationRows[3].id}`)).toBeVisible()
+
+    await page.getByTestId('support-view-breaching-soon').click()
+    await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('breaching-soon')
+    await expect(page.getByTestId(`support-conversation-${conversationRows[0].id}`)).toBeVisible()
+    await expect(page.getByTestId(`support-conversation-${conversationRows[1].id}`)).toHaveCount(0)
 
     await page.getByTestId(`support-inbox-switch-${secondInboxId}`).click()
     await expect(page.getByTestId('support-view-unassigned')).toHaveAttribute('aria-pressed', 'true')

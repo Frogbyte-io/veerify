@@ -113,6 +113,7 @@ export function buildSlaAssignment(input: {
   start: Date
   priority: string | null | undefined
   businessHours?: BusinessHoursConfig | null
+  includeNextResponse?: boolean
 }): SlaAssignment {
   const due = calculateSlaDueDates(input.start, input.targets, input.priority, input.businessHours)
   return {
@@ -120,7 +121,7 @@ export function buildSlaAssignment(input: {
     firstResponseDueAt: due.first_response,
     // There is no pending response obligation until the first customer reply
     // after an agent response. The runtime fills this when that event occurs.
-    nextResponseDueAt: null,
+    nextResponseDueAt: input.includeNextResponse ? due.next_response : null,
     resolutionDueAt: due.resolution,
   }
 }
