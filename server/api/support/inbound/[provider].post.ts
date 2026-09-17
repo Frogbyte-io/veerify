@@ -62,11 +62,16 @@ import { enqueueOutboundDelivery, runOutboundDeliveryWorker } from '~/server/uti
 import { reMarkConversationUnreadForIncoming } from '~/server/utils/conversation-read-state'
 import { db } from '~/server/database/drizzle'
 import {
+  businessHours,
+  contact,
   conversation,
   conversationAttachment,
   conversationMessage,
+  slaPolicy,
   supportInboxAddress,
 } from '~/server/database/schema/support'
+import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
+import { resumeSlaDeadlines } from '~/server/utils/sla-timers'
 // Module toggles live in their own schema file, not the support one (delta D-31).
 import { teamModuleSettings } from '~/server/database/schema/teams'
 
@@ -261,6 +266,7 @@ export default defineEventHandler(async (event) => {
 
       let conversationId = thread.conversationId
       let isNewConversation = false
+      let initialSla: Awaited<ReturnType<typeof resolveSlaAssignment>> = null
       const threadingCollision =
         thread.matchedBy === 'ambiguous-message-id'
           ? {
@@ -274,6 +280,22 @@ export default defineEventHandler(async (event) => {
         conversationId = randomUUID()
         isNewConversation = true
         const displayId = await allocateConversationDisplayId(tx, inbox.teamId)
+        const [contactRow] = await tx
+          .select({ companyId: contact.companyId })
+          .from(contact)
+          .where(eq(contact.id, contactId))
+          .limit(1)
+        initialSla = await resolveSlaAssignment(
+          {
+            teamId: inbox.teamId,
+            inboxId: inbox.id,
+            priority: null,
+            companyId: contactRow?.companyId,
+            tagIds: [],
+            start: message.receivedAt,
+          },
+          tx
+        )
 
         await tx.insert(conversation).values({
           id: conversationId,
@@ -289,6 +311,7 @@ export default defineEventHandler(async (event) => {
           displayId,
           subject: message.subject,
           status: 'open',
+          ...(initialSla ?? {}),
           // Agent 2's threading matches replies against this. Writing it is
           // what makes their `thread-key` branch reachable at all.
           channelThreadKey: message.references[0] ?? message.messageId,
@@ -311,13 +334,57 @@ export default defineEventHandler(async (event) => {
         // Never overwrite `projectId` on an existing conversation - an agent
         // may have corrected it (stage doc step 7).
         const [existingThread] = await tx
-          .select({ status: conversation.status, assigneeUserId: conversation.assigneeUserId })
+          .select({
+            status: conversation.status,
+            assigneeUserId: conversation.assigneeUserId,
+            slaPolicyId: conversation.slaPolicyId,
+            firstResponseDueAt: conversation.firstResponseDueAt,
+            nextResponseDueAt: conversation.nextResponseDueAt,
+            resolutionDueAt: conversation.resolutionDueAt,
+            slaPausedAt: conversation.slaPausedAt,
+            slaPausedMinutes: conversation.slaPausedMinutes,
+          })
           .from(conversation)
           .where(eq(conversation.id, conversationId))
           .for('update')
           .limit(1)
 
-        const updates = updatesForInboundReply(existingThread, message.receivedAt, new Date())
+        const updates: Partial<typeof conversation.$inferInsert> = updatesForInboundReply(
+          existingThread,
+          message.receivedAt,
+          new Date()
+        )
+        if (existingThread.slaPausedAt) {
+          const [policyRow] = existingThread.slaPolicyId
+            ? await tx
+                .select({ hours: businessHours })
+                .from(slaPolicy)
+                .leftJoin(businessHours, eq(slaPolicy.businessHoursId, businessHours.id))
+                .where(eq(slaPolicy.id, existingThread.slaPolicyId))
+                .limit(1)
+            : []
+          const resumed = resumeSlaDeadlines({
+            deadlines: {
+              firstResponseDueAt: existingThread.firstResponseDueAt,
+              nextResponseDueAt: existingThread.nextResponseDueAt,
+              resolutionDueAt: existingThread.resolutionDueAt,
+            },
+            pausedAt: existingThread.slaPausedAt,
+            resumedAt: message.receivedAt,
+            businessHours: policyRow?.hours
+              ? {
+                  timezone: policyRow.hours.timezone,
+                  weeklySchedule: policyRow.hours.weeklySchedule,
+                  holidays: policyRow.hours.holidays,
+                }
+              : null,
+          })
+          updates.firstResponseDueAt = resumed.firstResponseDueAt
+          updates.nextResponseDueAt = resumed.nextResponseDueAt
+          updates.resolutionDueAt = resumed.resolutionDueAt
+          updates.slaPausedAt = null
+          updates.slaPausedMinutes = existingThread.slaPausedMinutes + resumed.pausedMinutes
+        }
         const [updatedThread] = await tx
           .update(conversation)
           .set(updates)
@@ -325,11 +392,11 @@ export default defineEventHandler(async (event) => {
           .returning({ assigneeUserId: conversation.assigneeUserId })
         await reMarkConversationUnreadForIncoming(tx, conversationId, updatedThread.assigneeUserId)
 
-        if (existingThread.status === 'resolved') {
+        if (existingThread.status === 'resolved' || existingThread.status === 'pending') {
           await recordConversationActivity(
             tx,
             conversationId,
-            [{ field: 'status', from: 'resolved', to: 'open' }],
+            [{ field: 'status', from: existingThread.status, to: 'open' }],
             null
           )
         }

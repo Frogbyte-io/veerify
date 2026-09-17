@@ -17,7 +17,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
@@ -26,9 +26,9 @@ import { allocateConversationDisplayId } from '~/server/utils/support-counter'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { businessHours, contact, conversation, slaPolicy, slaTarget } from '~/server/database/schema/support'
+import { contact, conversation } from '~/server/database/schema/support'
 import { project } from '~/server/database/schema/feedback'
-import { buildSlaAssignment, selectSlaPolicy, type SlaPolicyCandidate } from '~/server/utils/sla'
+import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
 
 const bodySchema = z.object({
   inboxId: z.string().min(1),
@@ -82,49 +82,14 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   const conversationId = randomUUID()
 
-  const policyRows = await db
-    .select({
-      policy: slaPolicy,
-      hours: businessHours,
-    })
-    .from(slaPolicy)
-    .leftJoin(businessHours, eq(slaPolicy.businessHoursId, businessHours.id))
-    .where(eq(slaPolicy.teamId, inbox.teamId))
-    .orderBy(asc(slaPolicy.sortOrder), asc(slaPolicy.id))
-
-  const selectedPolicy = selectSlaPolicy(
-    policyRows.map(({ policy }) => policy as SlaPolicyCandidate),
-    {
-      inboxId: inbox.id,
-      priority: body.priority ?? null,
-      tagIds: [],
-      companyId: matchedContact.companyId,
-    }
-  )
-  const selectedPolicyRow = selectedPolicy
-    ? (policyRows.find(({ policy }) => policy.id === selectedPolicy.id) ?? null)
-    : null
-  const targets = selectedPolicy
-    ? await db
-        .select({ metric: slaTarget.metric, priority: slaTarget.priority, targetMinutes: slaTarget.targetMinutes })
-        .from(slaTarget)
-        .where(eq(slaTarget.slaPolicyId, selectedPolicy.id))
-    : []
-  const sla = selectedPolicy
-    ? buildSlaAssignment({
-        policy: selectedPolicy,
-        targets,
-        start: now,
-        priority: body.priority ?? null,
-        businessHours: selectedPolicyRow?.hours
-          ? {
-              timezone: selectedPolicyRow.hours.timezone,
-              weeklySchedule: selectedPolicyRow.hours.weeklySchedule,
-              holidays: selectedPolicyRow.hours.holidays,
-            }
-          : null,
-      })
-    : null
+  const sla = await resolveSlaAssignment({
+    teamId: inbox.teamId,
+    inboxId: inbox.id,
+    priority: body.priority ?? null,
+    companyId: matchedContact.companyId,
+    tagIds: [],
+    start: now,
+  })
 
   const created = await db.transaction(async (tx) => {
     const displayId = await allocateConversationDisplayId(tx, inbox.teamId)

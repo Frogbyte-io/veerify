@@ -28,7 +28,8 @@ import { isUniqueViolation } from '~/server/utils/support-errors'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { conversationTag, supportTag } from '~/server/database/schema/support'
+import { contact, conversation, conversationTag, supportTag } from '~/server/database/schema/support'
+import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
 
 const bodySchema = z.object({
   tagId: z.string().min(1),
@@ -64,6 +65,36 @@ export default defineEventHandler(async (event) => {
         createdAt: new Date(),
       })
       .returning()
+
+    const [contactRow] = await db
+      .select({ companyId: contact.companyId })
+      .from(contact)
+      .where(eq(contact.id, existing.contactId))
+      .limit(1)
+    const tags = await db
+      .select({ tagId: conversationTag.tagId })
+      .from(conversationTag)
+      .where(eq(conversationTag.conversationId, conversationId))
+    const sla = await resolveSlaAssignment({
+      teamId: existing.teamId,
+      inboxId: existing.inboxId,
+      priority: existing.priority,
+      companyId: contactRow?.companyId,
+      tagIds: tags.map((row) => row.tagId),
+      start: new Date(),
+    })
+    await db
+      .update(conversation)
+      .set({
+        ...(sla ?? {
+          slaPolicyId: null,
+          firstResponseDueAt: null,
+          nextResponseDueAt: null,
+          resolutionDueAt: null,
+        }),
+        updatedAt: new Date(),
+      })
+      .where(eq(conversation.id, conversationId))
 
     // `conversation.updated` rather than a bespoke type - envelopes carry no
     // detail and clients refetch, so reusing the type PATCH already emits

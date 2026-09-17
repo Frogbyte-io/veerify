@@ -26,7 +26,8 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { db } from '~/server/database/drizzle'
-import { conversationTag } from '~/server/database/schema/support'
+import { contact, conversation, conversationTag } from '~/server/database/schema/support'
+import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -47,6 +48,36 @@ export default defineEventHandler(async (event) => {
       data: createErrorResponse(ErrorCode.NOT_FOUND, 'Tag is not on this conversation'),
     })
   }
+
+  const [contactRow] = await db
+    .select({ companyId: contact.companyId })
+    .from(contact)
+    .where(eq(contact.id, existing.contactId))
+    .limit(1)
+  const tags = await db
+    .select({ tagId: conversationTag.tagId })
+    .from(conversationTag)
+    .where(eq(conversationTag.conversationId, conversationId))
+  const sla = await resolveSlaAssignment({
+    teamId: existing.teamId,
+    inboxId: existing.inboxId,
+    priority: existing.priority,
+    companyId: contactRow?.companyId,
+    tagIds: tags.map((row) => row.tagId),
+    start: new Date(),
+  })
+  await db
+    .update(conversation)
+    .set({
+      ...(sla ?? {
+        slaPolicyId: null,
+        firstResponseDueAt: null,
+        nextResponseDueAt: null,
+        resolutionDueAt: null,
+      }),
+      updatedAt: new Date(),
+    })
+    .where(eq(conversation.id, conversationId))
 
   // Same event as the add path - see the comment there.
   await publishConversationEvent({

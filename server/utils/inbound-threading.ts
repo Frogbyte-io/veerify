@@ -54,7 +54,9 @@ interface InboundConversationState {
  */
 export function updatesForInboundReply(existing: InboundConversationState, receivedAt: Date, updatedAt: Date) {
   return {
-    ...(existing.status === 'resolved' ? { status: 'open', resolvedAt: null } : {}),
+    ...(existing.status === 'resolved' || existing.status === 'pending'
+      ? { status: 'open', ...(existing.status === 'resolved' ? { resolvedAt: null } : {}) }
+      : {}),
     lastActivityAt: receivedAt,
     lastCustomerReplyAt: receivedAt,
     updatedAt,

@@ -119,4 +119,14 @@ describe('inbound conversation updates', () => {
       assigneeUserId: 'agent-a',
     })
   })
+
+  it('resumes a pending thread when the customer replies', () => {
+    const receivedAt = new Date('2026-09-07T12:00:00.000Z')
+    const updatedAt = new Date('2026-09-07T12:00:01.000Z')
+    expect(updatesForInboundReply({ status: 'pending' }, receivedAt, updatedAt)).toMatchObject({
+      status: 'open',
+      lastCustomerReplyAt: receivedAt,
+      updatedAt,
+    })
+  })
 })

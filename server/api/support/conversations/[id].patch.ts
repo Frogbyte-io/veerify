@@ -32,9 +32,10 @@ import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { notifyUser } from '~/server/utils/notifications'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { conversation } from '~/server/database/schema/support'
+import { contact, conversation, conversationTag } from '~/server/database/schema/support'
 import { teamMember } from '~/server/database/schema/auth'
 import { project } from '~/server/database/schema/feedback'
+import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
 
 const bodySchema = z.object({
   status: z.enum(['open', 'pending', 'resolved', 'snoozed', 'closed']).optional(),
@@ -93,10 +94,41 @@ export default defineEventHandler(async (event) => {
     return createSuccessResponse({ conversation: existing, changed: false })
   }
 
+  let sla: Awaited<ReturnType<typeof resolveSlaAssignment>> | null | undefined
+  if (updates.priority !== undefined) {
+    const nextPriority = updates.priority as string | null
+    const [contactRow] = await db
+      .select({ companyId: contact.companyId })
+      .from(contact)
+      .where(eq(contact.id, existing.contactId))
+      .limit(1)
+    const tags = await db
+      .select({ tagId: conversationTag.tagId })
+      .from(conversationTag)
+      .where(eq(conversationTag.conversationId, existing.id))
+    sla = await resolveSlaAssignment({
+      teamId: existing.teamId,
+      inboxId: existing.inboxId,
+      priority: nextPriority,
+      companyId: contactRow?.companyId,
+      tagIds: tags.map((tag) => tag.tagId),
+      start: now,
+    })
+  }
+
   const updated = await db.transaction(async (tx) => {
+    const slaPause = updates.status === 'pending' && existing.status !== 'pending' ? { slaPausedAt: now } : {}
     const [row] = await tx
       .update(conversation)
-      .set({ ...updates, lastActivityAt: now, updatedAt: now })
+      .set({
+        ...updates,
+        ...slaPause,
+        ...(updates.priority !== undefined
+          ? (sla ?? { slaPolicyId: null, firstResponseDueAt: null, nextResponseDueAt: null, resolutionDueAt: null })
+          : {}),
+        lastActivityAt: now,
+        updatedAt: now,
+      })
       .where(eq(conversation.id, conversationId))
       .returning()
 
