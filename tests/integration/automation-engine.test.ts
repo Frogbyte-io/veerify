@@ -14,7 +14,7 @@ import {
   supportInbox,
   supportTag,
 } from '../../server/database/schema/support'
-import { runAutomationRules } from '../../server/utils/automation-engine'
+import { runAutomationRules, runTimeBasedAutomationSweep } from '../../server/utils/automation-engine'
 
 const ids = {
   org: `automation_engine_org_${randomUUID()}`,
@@ -29,6 +29,7 @@ const ids = {
   dryRunRule: `automation_engine_dry_run_rule_${randomUUID()}`,
   loopRule: `automation_engine_loop_rule_${randomUUID()}`,
   failureRule: `automation_engine_failure_rule_${randomUUID()}`,
+  timeRule: `automation_engine_time_rule_${randomUUID()}`,
 }
 
 const now = new Date()
@@ -225,5 +226,29 @@ describe('automation engine (real Postgres)', () => {
     expect(loopRuns.some((run) => run.error?.includes('depth limit'))).toBe(true)
     expect(failureResult.evaluations.find((evaluation) => evaluation.ruleId === ids.failureRule)?.status).toBe('failed')
     expect(failureRun?.appliedActions).toEqual([{ type: 'add_tag', tagId: ids.tag }])
+  })
+
+  it('evaluates active conversations from the time-based sweep', async () => {
+    await db.insert(automationRule).values({
+      id: ids.timeRule,
+      teamId: ids.team,
+      inboxId: ids.inbox,
+      name: 'Time-based priority',
+      trigger: 'time_based',
+      conditions: {},
+      actions: [{ type: 'set_priority', priority: 'urgent' }],
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    const result = await runTimeBasedAutomationSweep()
+    const [updated] = await db
+      .select({ priority: conversation.priority })
+      .from(conversation)
+      .where(eq(conversation.id, ids.conversation))
+
+    expect(result.scanned).toBeGreaterThanOrEqual(1)
+    expect(result.evaluations).toBeGreaterThanOrEqual(1)
+    expect(updated?.priority).toBe('urgent')
   })
 })

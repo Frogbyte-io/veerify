@@ -19,11 +19,13 @@
   inbound, and message writes.
 - Added dry-run reports with no writes or handler calls, plus a default three-level cascade guard that
   records truncation in the run audit.
+- Added a five-minute time-based sweep with Nitro task, Vercel cron endpoint, and active-conversation
+  filtering.
 - Added unit coverage for matching, grouping, depth limits, custom fields, and empty groups.
 
 ## Remaining Stage 07 work
 
-- Time-based evaluation,
+- Rule-management and dry-run UI.
   and the rule-management UI.
 
 ## Validation

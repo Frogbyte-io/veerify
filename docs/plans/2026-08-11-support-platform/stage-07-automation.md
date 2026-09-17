@@ -71,7 +71,7 @@ touching the engine.
 - [x] Implement the condition evaluator with `all`/`any` grouping and one level of nesting, as a pure unit-tested module
 - [x] Implement the action executor as an extensible registry with per-action error isolation
 - [x] Wire event-triggered evaluation after commit for create, update, and message events, ordered by `sortOrder`
-- [ ] Implement time-based rule evaluation on the Stage 00 scheduler
+- [x] Implement time-based rule evaluation on the Stage 00 scheduler
 - [x] Implement the cascade-depth loop guard with truncation recorded in `automationRuleRun`
 - [x] Implement dry-run evaluation that reports without mutating
 - [ ] Build the rule list UI with enable/disable, reordering, and run counts

@@ -81,6 +81,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/support-automation-rules": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Evaluate time-based support automation rules",
+      "operationId": "cronSupportAutomationRules",
+      "responses": {
+        "200": {
+          "description": "Time-based automation pass executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/support-sla-breach": {
     "get": {
       "tags": [

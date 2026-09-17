@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, isNull, or } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, or } from 'drizzle-orm'
 import {
   automationRule,
   automationRuleRun,
@@ -57,6 +57,7 @@ type ConversationAutomationState = {
   priority: string | null
   assigneeUserId: string | null
   companyId: string | null
+  lastActivityAt: Date | null
   tagIds: string[]
   latestBody: string | null
 }
@@ -89,6 +90,7 @@ async function loadConversationState(conversationId: string): Promise<Conversati
       priority: conversation.priority,
       assigneeUserId: conversation.assigneeUserId,
       companyId: contact.companyId,
+      lastActivityAt: conversation.lastActivityAt,
     })
     .from(conversation)
     .innerJoin(contact, eq(contact.id, conversation.contactId))
@@ -127,6 +129,9 @@ function buildConditionContext(state: ConversationAutomationState): AutomationCo
     subject: state.subject,
     body: state.latestBody,
     channel: 'email',
+    hoursSinceLastActivity: state.lastActivityAt
+      ? Math.max(0, (Date.now() - state.lastActivityAt.getTime()) / 3_600_000)
+      : null,
   }
 }
 
@@ -426,4 +431,41 @@ export async function triggerAutomationEvent(input: Omit<AutomationRunInput, 'dr
     // action failure is audited by the engine; this guard covers unexpected
     // persistence/configuration failures around the audit itself.
   }
+}
+
+/** Run enabled time-based rules against active conversations once per sweep. */
+export async function runTimeBasedAutomationSweep(): Promise<{
+  scanned: number
+  evaluations: number
+  failures: number
+}> {
+  const rules = await db
+    .select({ teamId: automationRule.teamId, inboxId: automationRule.inboxId })
+    .from(automationRule)
+    .where(and(eq(automationRule.trigger, 'time_based'), eq(automationRule.isEnabled, true)))
+
+  const conversationIds = new Set<string>()
+  for (const rule of rules) {
+    const rows = await db
+      .select({ id: conversation.id })
+      .from(conversation)
+      .where(
+        and(
+          eq(conversation.teamId, rule.teamId),
+          rule.inboxId ? eq(conversation.inboxId, rule.inboxId) : undefined,
+          inArray(conversation.status, ['open', 'pending', 'snoozed'])
+        )
+      )
+    for (const row of rows) conversationIds.add(row.id)
+  }
+
+  let evaluations = 0
+  let failures = 0
+  for (const conversationId of conversationIds) {
+    const result = await runAutomationRules({ conversationId, trigger: 'time_based' })
+    evaluations += result.evaluations.length
+    failures += result.evaluations.filter((evaluation) => evaluation.status === 'failed').length
+  }
+
+  return { scanned: conversationIds.size, evaluations, failures }
 }

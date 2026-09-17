@@ -17,6 +17,10 @@
     {
       "path": "/api/cron/support-sla-breach",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/support-automation-rules",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
