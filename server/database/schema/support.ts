@@ -845,3 +845,107 @@ export const cannedResponse = pgTable(
     uniqueTeamShortcode: uniqueIndex('canned_response_team_shortcode_idx').on(table.teamId, table.shortcode),
   })
 )
+
+// ---------------------------------------------------------------------------
+// Stage 07 — automation rules
+// ---------------------------------------------------------------------------
+
+export type AutomationRuleTrigger = 'conversation_created' | 'conversation_updated' | 'message_created' | 'time_based'
+
+export type AutomationConditionOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'in'
+  | 'not_in'
+  | 'contains'
+  | 'not_contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'matches'
+  | 'greater_than'
+  | 'greater_than_or_equal'
+  | 'less_than'
+  | 'less_than_or_equal'
+  | (string & {})
+
+export type AutomationCondition = {
+  field: string
+  operator?: AutomationConditionOperator
+  value?: unknown
+}
+
+export type AutomationConditionGroup = {
+  all?: AutomationConditionNode[]
+  any?: AutomationConditionNode[]
+}
+
+export type AutomationConditionNode = AutomationCondition | AutomationConditionGroup
+
+export type AutomationRuleAction = {
+  type: string
+  [key: string]: unknown
+}
+
+export const automationRule = pgTable(
+  'automation_rule',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    // NULL means the rule applies to every inbox owned by the team.
+    inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    trigger: text('trigger').$type<AutomationRuleTrigger>().notNull(),
+    conditions: jsonb('conditions').$type<AutomationConditionGroup>().notNull(),
+    actions: jsonb('actions').$type<AutomationRuleAction[]>().notNull(),
+    isEnabled: boolean('is_enabled').default(true).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    runCount: integer('run_count').default(0).notNull(),
+    lastRunAt: timestamp('last_run_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamIdx: index('automation_rule_team_idx').on(table.teamId),
+    inboxIdx: index('automation_rule_inbox_idx').on(table.inboxId),
+    enabledOrderIdx: index('automation_rule_enabled_order_idx').on(table.teamId, table.isEnabled, table.sortOrder),
+    validTrigger: check(
+      'automation_rule_trigger_check',
+      sql`${table.trigger} in ('conversation_created','conversation_updated','message_created','time_based')`
+    ),
+  })
+)
+
+export const automationRuleRun = pgTable(
+  'automation_rule_run',
+  {
+    id: text('id').primaryKey(),
+    ruleId: text('rule_id')
+      .notNull()
+      .references(() => automationRule.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    // 'applied' | 'skipped' | 'failed'
+    status: text('status').notNull(),
+    matchedConditions: jsonb('matched_conditions').$type<AutomationConditionGroup>().notNull(),
+    appliedActions: jsonb('applied_actions').$type<AutomationRuleAction[]>().notNull(),
+    error: text('error'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    ruleCreatedAtIdx: index('automation_rule_run_rule_created_at_idx').on(table.ruleId, table.createdAt),
+    conversationCreatedAtIdx: index('automation_rule_run_conversation_created_at_idx').on(
+      table.conversationId,
+      table.createdAt
+    ),
+    validStatus: check('automation_rule_run_status_check', sql`${table.status} in ('applied','skipped','failed')`),
+  })
+)

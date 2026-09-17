@@ -239,6 +239,13 @@
       "when": 1789652977750,
       "tag": "0033_melodic_garia",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1789677473006,
+      "tag": "0034_steady_the_watchers",
+      "breakpoints": true
     }
   ]
 }

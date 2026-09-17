@@ -6,6 +6,11 @@
 **Goal:** Teams define their own triage — "tag anything from an enterprise company urgent and assign it
 to the escalations agent" — without code.
 
+## Implementation status
+
+Stage 07 is in progress. The persistence layer and pure condition evaluator are shipped; action
+execution, event wiring, loop protection, dry-run reporting, and the rule-builder UI remain.
+
 > Outline-level detail. Refine when unblocked. The engine shape is settled; the condition and action
 > vocabularies will grow and should be treated as extensible from the start.
 
@@ -62,8 +67,8 @@ touching the engine.
 
 ## TODO items
 
-- [ ] Add `automationRule` and `automationRuleRun` tables; generate migration
-- [ ] Implement the condition evaluator with `all`/`any` grouping and one level of nesting, as a pure unit-tested module
+- [x] Add `automationRule` and `automationRuleRun` tables; generate migration
+- [x] Implement the condition evaluator with `all`/`any` grouping and one level of nesting, as a pure unit-tested module
 - [ ] Implement the action executor as an extensible registry with per-action error isolation
 - [ ] Wire event-triggered evaluation after commit for create, update, and message events, ordered by `sortOrder`
 - [ ] Implement time-based rule evaluation on the Stage 00 scheduler
