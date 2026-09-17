@@ -761,6 +761,44 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/public/csat/{token}": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Read a public CSAT survey response state",
+      "operationId": "getPublicCsatResponse",
+      "responses": {
+        "200": {
+          "description": "CSAT response state"
+        },
+        "404": {
+          "description": "CSAT response not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Submit a public CSAT rating or follow-up comment",
+      "operationId": "submitPublicCsatResponse",
+      "responses": {
+        "200": {
+          "description": "CSAT response recorded"
+        },
+        "400": {
+          "description": "Invalid rating or request"
+        },
+        "404": {
+          "description": "CSAT response not found"
+        },
+        "409": {
+          "description": "Rating already submitted or comment window closed"
+        }
+      }
+    }
+  },
   "/api/support/attachments/{id}": {
     "get": {
       "tags": [

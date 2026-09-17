@@ -9,11 +9,14 @@
 - Queued survey messages through the existing durable outbound-delivery outbox with tokenized rating
   links for the configured scale.
 - Added pure email/rating helper tests and a real-Postgres dispatch integration test.
+- Added the unauthenticated token read/submit API with rate limiting, single-use ratings, a seven-day
+  follow-up window, and timeline activity messages.
+- Added the mobile-first public `/csat/:token` response page and Playwright coverage for rating plus
+  follow-up submission.
 
 ## Remaining Stage 08 work
 
-- Public rating landing page and token single-use response endpoint.
-- Activity message on response, survey configuration UI, and conversation-list score surfaces.
+- Survey configuration UI and conversation-list score surfaces.
 
 ## Validation
 

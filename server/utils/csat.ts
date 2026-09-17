@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { and, asc, eq, gte, lte, or } from 'drizzle-orm'
+import { and, asc, eq, gte, isNotNull, isNull, lte, or } from 'drizzle-orm'
+import { getCsatSurveyTemplate } from '~/lib/email-templates'
 import { db } from '~/server/database/drizzle'
 import {
   contact,
@@ -13,6 +14,7 @@ import { enqueueOutboundDelivery } from '~/server/utils/outbound-delivery'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 
 export const DEFAULT_CSAT_CONTACT_COOLDOWN_MINUTES = 43_200
+export const CSAT_COMMENT_WINDOW_MINUTES = 10_080
 
 export type CsatDispatchResult = {
   scanned: number
@@ -26,20 +28,13 @@ export function csatRatings(scale: 'csat_5' | 'thumbs' | 'nps_10'): number[] {
   return [1, 2, 3, 4, 5]
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>'"]/g,
-    (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character] ?? character
-  )
-}
-
 function csatPublicBaseUrl(): string {
   const configured = process.env.NUXT_PUBLIC_SITE_URL || process.env.APP_URL || process.env.SITE_URL || ''
   return configured.replace(/\/$/, '')
 }
 
 export function csatRatingUrl(token: string, rating: number): string {
-  const path = `/support/csat/${encodeURIComponent(token)}?rating=${encodeURIComponent(String(rating))}`
+  const path = `/csat/${encodeURIComponent(token)}?rating=${encodeURIComponent(String(rating))}`
   return `${csatPublicBaseUrl()}${path}`
 }
 
@@ -50,28 +45,126 @@ export function buildCsatSurveyEmail(input: {
   token: string
   contactName?: string | null
 }): { subject: string; html: string; text: string } {
-  const greeting = input.contactName ? `Hi ${input.contactName},` : 'Hi,'
   const labels = input.scale === 'thumbs' ? ['Not helpful', 'Helpful'] : csatRatings(input.scale).map(String)
   const links = csatRatings(input.scale).map((rating, index) => ({
     rating,
     label: labels[index],
     url: csatRatingUrl(input.token, rating),
   }))
-  const htmlLinks = links
-    .map(
-      ({ label, url }) =>
-        `<a href="${escapeHtml(url)}" style="display:inline-block;margin:4px;padding:10px 14px;border:1px solid #d0d7de;border-radius:6px;color:#17202a;text-decoration:none">${escapeHtml(label)}</a>`
-    )
-    .join('')
-  const textLinks = links.map(({ label, url }) => `${label}: ${url}`).join('\n')
-  const question = escapeHtml(input.question)
-  const followUp = input.followUpQuestion ? `<p>${escapeHtml(input.followUpQuestion)}</p>` : ''
+  return getCsatSurveyTemplate({
+    question: input.question,
+    followUpQuestion: input.followUpQuestion,
+    contactName: input.contactName,
+    ratingLinks: links.map(({ label, url }) => ({ label, url })),
+  })
+}
 
-  return {
-    subject: 'How did we do?',
-    html: `<p>${escapeHtml(greeting)}</p><p>${question}</p><p>${htmlLinks}</p>${followUp}<p>Thanks for helping us improve.</p>`,
-    text: `${greeting}\n\n${input.question}\n\n${textLinks}\n\n${input.followUpQuestion ?? ''}\nThanks for helping us improve.`,
+export function isValidCsatRating(scale: 'csat_5' | 'thumbs' | 'nps_10', rating: number): boolean {
+  return csatRatings(scale).includes(rating)
+}
+
+export class CsatResponseError extends Error {
+  public readonly code: 'not_found' | 'already_rated' | 'comment_closed' | 'invalid_rating'
+
+  constructor(code: 'not_found' | 'already_rated' | 'comment_closed' | 'invalid_rating', message: string) {
+    super(message)
+    this.name = 'CsatResponseError'
+    this.code = code
   }
+}
+
+export async function getCsatResponse(token: string) {
+  const [row] = await db
+    .select({ response: csatResponse, survey: csatSurvey })
+    .from(csatResponse)
+    .innerJoin(csatSurvey, eq(csatSurvey.id, csatResponse.surveyId))
+    .where(eq(csatResponse.token, token))
+    .limit(1)
+  return row ?? null
+}
+
+export async function submitCsatResponse(input: {
+  token: string
+  rating?: number
+  comment?: string
+  now?: Date
+}): Promise<{ response: typeof csatResponse.$inferSelect; messageId: string }> {
+  const row = await getCsatResponse(input.token)
+  if (!row) throw new CsatResponseError('not_found', 'CSAT response not found')
+  const now = input.now ?? new Date()
+  const comment = input.comment?.trim() || null
+
+  if (input.rating !== undefined && !isValidCsatRating(row.survey.scale, input.rating)) {
+    throw new CsatResponseError('invalid_rating', 'Rating is not valid for this survey scale')
+  }
+
+  if (input.rating === undefined) {
+    if (!row.response.respondedAt || row.response.comment || !comment) {
+      throw new CsatResponseError('comment_closed', 'A follow-up comment is no longer available')
+    }
+    if (now.getTime() > row.response.respondedAt.getTime() + CSAT_COMMENT_WINDOW_MINUTES * 60_000) {
+      throw new CsatResponseError('comment_closed', 'The follow-up comment window has closed')
+    }
+  } else if (row.response.respondedAt) {
+    throw new CsatResponseError('already_rated', 'This CSAT response has already been rated')
+  }
+
+  const messageId = randomUUID()
+  const response = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(csatResponse)
+      .set(
+        input.rating !== undefined
+          ? { rating: input.rating, comment, respondedAt: now, updatedAt: now }
+          : { comment, updatedAt: now }
+      )
+      .where(
+        input.rating !== undefined
+          ? and(eq(csatResponse.id, row.response.id), isNull(csatResponse.respondedAt))
+          : and(eq(csatResponse.id, row.response.id), isNotNull(csatResponse.respondedAt), isNull(csatResponse.comment))
+      )
+      .returning()
+    if (!updated) {
+      throw new CsatResponseError(
+        input.rating !== undefined ? 'already_rated' : 'comment_closed',
+        input.rating !== undefined
+          ? 'This CSAT response has already been rated'
+          : 'A follow-up comment is no longer available'
+      )
+    }
+
+    const ratingText = input.rating === undefined ? '' : ` Rating: ${input.rating}.`
+    await tx.insert(conversationMessage).values({
+      id: messageId,
+      conversationId: updated.conversationId,
+      kind: 'activity',
+      body: `Customer submitted CSAT feedback.${ratingText}${comment ? ` Comment: ${comment}` : ''}`,
+      senderKind: 'system',
+      senderContactId: updated.contactId,
+      senderUserId: null,
+      isPrivate: true,
+      deliveryStatus: 'delivered',
+      metadata: { type: 'csat_response', responseId: updated.id },
+      createdAt: now,
+    })
+    return updated
+  })
+
+  const [conversationRow] = await db
+    .select({ teamId: conversation.teamId, inboxId: conversation.inboxId })
+    .from(conversation)
+    .where(eq(conversation.id, response.conversationId))
+    .limit(1)
+  if (conversationRow) {
+    await publishConversationEvent({
+      type: 'message.created',
+      teamId: conversationRow.teamId,
+      inboxId: conversationRow.inboxId,
+      conversationId: response.conversationId,
+      messageId,
+    })
+  }
+  return { response, messageId }
 }
 
 function hasCsatOptedOut(attributes: Record<string, unknown> | null | undefined): boolean {

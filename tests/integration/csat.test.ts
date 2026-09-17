@@ -13,7 +13,7 @@ import {
   supportInbox,
   supportOutboundDelivery,
 } from '../../server/database/schema/support'
-import { runCsatDispatchSweep } from '../../server/utils/csat'
+import { runCsatDispatchSweep, submitCsatResponse } from '../../server/utils/csat'
 
 const now = new Date('2026-01-15T12:00:00.000Z')
 const ids = {
@@ -182,5 +182,20 @@ describe('CSAT dispatch (real Postgres)', () => {
     expect(allResponses).toHaveLength(1)
     expect(delivery?.idempotencyKey).toBe(`csat:${response?.id}`)
     expect(delivery?.payload).toMatchObject({ to: expect.any(String), subject: 'How did we do?' })
+
+    const rated = await submitCsatResponse({ token: response!.token, rating: 5, now })
+    expect(rated.response.rating).toBe(5)
+    expect(rated.response.respondedAt).toEqual(now)
+
+    const commented = await submitCsatResponse({
+      token: response!.token,
+      comment: 'The fast answer helped.',
+      now: new Date(now.getTime() + 60_000),
+    })
+    expect(commented.response.comment).toBe('The fast answer helped.')
+
+    await expect(submitCsatResponse({ token: response!.token, rating: 4, now })).rejects.toMatchObject({
+      code: 'already_rated',
+    })
   })
 })

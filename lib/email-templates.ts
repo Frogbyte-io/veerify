@@ -8,6 +8,40 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#x27;')
 }
 
+interface CsatSurveyTemplateOptions {
+  question: string
+  followUpQuestion?: string | null
+  contactName?: string | null
+  ratingLinks: Array<{ label: string; url: string }>
+}
+
+export function getCsatSurveyTemplate({
+  question,
+  followUpQuestion,
+  contactName,
+  ratingLinks,
+}: CsatSurveyTemplateOptions) {
+  const greeting = contactName ? `Hi ${contactName},` : 'Hi,'
+  const safeGreeting = escapeHtml(greeting)
+  const safeQuestion = escapeHtml(question)
+  const safeFollowUpQuestion = followUpQuestion ? escapeHtml(followUpQuestion) : ''
+  const htmlLinks = ratingLinks
+    .map(
+      ({ label, url }) =>
+        `<a href="${escapeHtml(url)}" style="display:inline-block;margin:4px;padding:10px 14px;border:1px solid #d0d7de;border-radius:6px;color:#17202a;text-decoration:none">${escapeHtml(label)}</a>`
+    )
+    .join('')
+  const textLinks = ratingLinks.map(({ label, url }) => `${label}: ${url}`).join('\n')
+
+  return {
+    subject: 'How did we do?',
+    html: `<p>${safeGreeting}</p><p>${safeQuestion}</p><p>${htmlLinks}</p>${
+      safeFollowUpQuestion ? `<p>${safeFollowUpQuestion}</p>` : ''
+    }<p>Thanks for helping us improve.</p>`,
+    text: `${greeting}\n\n${question}\n\n${textLinks}\n\n${followUpQuestion ?? ''}\nThanks for helping us improve.`,
+  }
+}
+
 interface FeedbackConfirmationOptions {
   authorName: string
   feedbackTitle: string

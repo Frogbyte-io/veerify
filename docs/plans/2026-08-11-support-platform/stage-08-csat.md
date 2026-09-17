@@ -51,9 +51,10 @@ dispatch pass are implemented first; the public rating flow and configuration su
 - [x] Add `csatSurvey` and `csatResponse` tables; generate migration
 - [x] Implement survey dispatch on the Stage 00 scheduler with trigger, delay, and all four guards
 - [ ] Add the CSAT email template following the existing `lib/email-templates.ts` pattern, with one tokenized URL per rating option
-- [ ] Build the public rating landing page with follow-up comment capture; no authentication required
-- [ ] Implement token single-use semantics for rating and bounded-window validity for comments
-- [ ] Write an `activity` message into the thread on response
+- [x] Add the CSAT email template following the existing `lib/email-templates.ts` pattern, with one tokenized URL per rating option
+- [x] Build the public rating landing page with follow-up comment capture; no authentication required
+- [x] Implement token single-use semantics for rating and bounded-window validity for comments
+- [x] Write an `activity` message into the thread on response
 - [ ] Build survey configuration UI per inbox
 - [ ] Add CSAT column and filter to the conversation list, and per-agent/per-inbox score summaries
 
