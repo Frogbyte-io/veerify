@@ -37,9 +37,11 @@ export default defineEventHandler(async (event) => {
   const now = Date.now()
   const status = !row.response.respondedAt
     ? 'pending_rating'
-    : commentWindowEndsAt && commentWindowEndsAt.getTime() >= now
-      ? 'comment_open'
-      : 'complete'
+    : row.response.comment !== null
+      ? 'complete'
+      : commentWindowEndsAt && commentWindowEndsAt.getTime() >= now
+        ? 'comment_open'
+        : 'complete'
 
   return createSuccessResponse({
     survey: {

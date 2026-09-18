@@ -36,10 +36,12 @@ import {
   csatSurvey,
   supportInbox,
   supportInboxMember,
+  supportTeamSettings,
 } from '~/server/database/schema/support'
 import { user } from '~/server/database/schema/auth'
 import { summarizeCsatRows } from '~/server/utils/csat-reporting'
 import { resolveCsatInboxScope } from '~/server/utils/csat-access'
+import { reportingDayBounds, reportingDateAt } from '~/server/utils/support-reporting-calendar'
 
 const querySchema = z
   .object({
@@ -52,16 +54,6 @@ const querySchema = z
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['to'], message: 'to must be on or after from' })
     }
   })
-
-function startOfUtcDay(value: Date): Date {
-  return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()))
-}
-
-function endOfUtcDay(value: Date): Date {
-  const next = startOfUtcDay(value)
-  next.setUTCDate(next.getUTCDate() + 1)
-  return next
-}
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -78,8 +70,17 @@ export default defineEventHandler(async (event) => {
     requestedInboxTeamId: requestedInboxAccess?.teamId,
   })
 
-  const from = query.from ? startOfUtcDay(query.from) : new Date(Date.now() - 30 * 24 * 60 * 60_000)
-  const to = query.to ? endOfUtcDay(query.to) : new Date()
+  const [settings] = await db
+    .select({ reportingTimezone: supportTeamSettings.reportingTimezone })
+    .from(supportTeamSettings)
+    .where(eq(supportTeamSettings.teamId, teamId))
+  const reportingTimezone = settings?.reportingTimezone ?? 'UTC'
+  const fromDate = query.from
+    ? query.from.toISOString().slice(0, 10)
+    : reportingDateAt(new Date(Date.now() - 30 * 24 * 60 * 60_000), reportingTimezone)
+  const toDate = query.to ? query.to.toISOString().slice(0, 10) : reportingDateAt(new Date(), reportingTimezone)
+  const from = reportingDayBounds(fromDate, reportingTimezone).start
+  const to = reportingDayBounds(toDate, reportingTimezone).end
   const conditions = [
     eq(csatSurvey.teamId, teamId),
     eq(conversation.teamId, teamId),
@@ -125,7 +126,8 @@ export default defineEventHandler(async (event) => {
           (row): row is typeof row & { rating: number; respondedAt: Date } =>
             row.rating !== null && row.respondedAt !== null
         )
-        .map((row) => ({ ...row, rating: row.rating as number, respondedAt: row.respondedAt as Date }))
+        .map((row) => ({ ...row, rating: row.rating as number, respondedAt: row.respondedAt as Date })),
+      reportingTimezone
     ),
   })
 })

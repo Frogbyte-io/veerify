@@ -32,7 +32,7 @@ const bodySchema = z.object({
   teamId: z.string().min(1),
   name: z.string().trim().min(1).max(200),
   slug: commonSchemas.slug,
-  projectId: z.string().optional(),
+  projectId: z.string().min(1).optional(),
 })
 
 export default defineEventHandler(async (event) => {

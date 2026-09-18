@@ -1319,6 +1319,9 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Contact not found"
+        },
+        "409": {
+          "description": "Contact has conversations or merge tombstones"
         }
       }
     },
@@ -2723,7 +2726,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Delete a tag",
-      "description": "Hard delete. `conversationTag` rows referencing this tag cascade with it, so deleting a tag unassigns it from every conversation it was on.\n",
+      "description": "Hard delete. Conversations that used this tag have their SLA assignment recomputed and emit the usual conversation update and automation events.\n",
       "operationId": "deleteSupportTag",
       "parameters": [
         {
@@ -2975,6 +2978,9 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Survey not found"
+        },
+        "409": {
+          "description": "CSAT survey has responses and must be disabled"
         }
       }
     },

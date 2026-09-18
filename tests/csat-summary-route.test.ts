@@ -56,8 +56,8 @@ describe('CSAT summary route query scope', () => {
   it('keeps team-admin summary rows on inboxes owned by the requested team', async () => {
     await handler({} as never)
 
-    expect(state.whereConditions).toHaveLength(1)
-    const sql = new PgDialect().sqlToQuery(state.whereConditions[0] as never).sql
+    expect(state.whereConditions).toHaveLength(2)
+    const sql = new PgDialect().sqlToQuery(state.whereConditions[1] as never).sql
     expect(sql).toContain('"support_inbox"."team_id"')
   })
 

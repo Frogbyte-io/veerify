@@ -1,6 +1,6 @@
 # Stage 11 — Live chat
 
-**Depends on:** Stages 00, 02. **Blocks:** Stage 12.
+**Depends on:** Stages 00, 02, 04. **Blocks:** Stage 12.
 
 **Goal:** An embeddable chat widget as a second inbox type — the Chatwoot experience the UI was designed
 for from Stage 02.

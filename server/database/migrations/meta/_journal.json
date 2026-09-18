@@ -288,6 +288,13 @@
       "when": 1789737235790,
       "tag": "0040_thankful_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789737917740,
+      "tag": "0041_nifty_lilandra",
+      "breakpoints": true
     }
   ]
 }

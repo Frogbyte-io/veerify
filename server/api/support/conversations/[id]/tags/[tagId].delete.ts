@@ -37,48 +37,53 @@ export default defineEventHandler(async (event) => {
 
   const existing = await requireConversationAccess(conversationId, session.user.id)
 
-  const [deleted] = await db
-    .delete(conversationTag)
-    .where(and(eq(conversationTag.conversationId, conversationId), eq(conversationTag.tagId, tagId)))
-    .returning({ id: conversationTag.id })
+  await db.transaction(async (tx) => {
+    const [deleted] = await tx
+      .delete(conversationTag)
+      .where(and(eq(conversationTag.conversationId, conversationId), eq(conversationTag.tagId, tagId)))
+      .returning({ id: conversationTag.id })
 
-  if (!deleted) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Tag is not on this conversation'),
-    })
-  }
+    if (!deleted) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Not Found',
+        data: createErrorResponse(ErrorCode.NOT_FOUND, 'Tag is not on this conversation'),
+      })
+    }
 
-  const [contactRow] = await db
-    .select({ companyId: contact.companyId })
-    .from(contact)
-    .where(eq(contact.id, existing.contactId))
-    .limit(1)
-  const tags = await db
-    .select({ tagId: conversationTag.tagId })
-    .from(conversationTag)
-    .where(eq(conversationTag.conversationId, conversationId))
-  const sla = await resolveSlaAssignment({
-    teamId: existing.teamId,
-    inboxId: existing.inboxId,
-    priority: existing.priority,
-    companyId: contactRow?.companyId,
-    tagIds: tags.map((row) => row.tagId),
-    start: new Date(),
+    const [contactRow] = await tx
+      .select({ companyId: contact.companyId })
+      .from(contact)
+      .where(eq(contact.id, existing.contactId))
+      .limit(1)
+    const tags = await tx
+      .select({ tagId: conversationTag.tagId })
+      .from(conversationTag)
+      .where(eq(conversationTag.conversationId, conversationId))
+    const sla = await resolveSlaAssignment(
+      {
+        teamId: existing.teamId,
+        inboxId: existing.inboxId,
+        priority: existing.priority,
+        companyId: contactRow?.companyId,
+        tagIds: tags.map((row) => row.tagId),
+        start: new Date(),
+      },
+      tx
+    )
+    await tx
+      .update(conversation)
+      .set({
+        ...(sla ?? {
+          slaPolicyId: null,
+          firstResponseDueAt: null,
+          nextResponseDueAt: null,
+          resolutionDueAt: null,
+        }),
+        updatedAt: new Date(),
+      })
+      .where(eq(conversation.id, conversationId))
   })
-  await db
-    .update(conversation)
-    .set({
-      ...(sla ?? {
-        slaPolicyId: null,
-        firstResponseDueAt: null,
-        nextResponseDueAt: null,
-        resolutionDueAt: null,
-      }),
-      updatedAt: new Date(),
-    })
-    .where(eq(conversation.id, conversationId))
 
   // Same event as the add path - see the comment there.
   await publishConversationEvent({

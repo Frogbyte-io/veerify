@@ -35,8 +35,8 @@ export const notification = pgTable(
     userIdx: index('notification_user_idx').on(table.userId),
     // Composite index for user + read status (unread count, filtering)
     userReadIdx: index('notification_user_read_idx').on(table.userId, table.isRead),
-    // Composite index for user + created date (paginated list)
-    userCreatedAtIdx: index('notification_user_created_at_idx').on(table.userId, table.createdAt),
+    // Composite index for user + created date + id (stable keyset pagination)
+    userCreatedAtIdx: index('notification_user_created_at_idx').on(table.userId, table.createdAt, table.id),
     // Index for querying by feedback (cleanup on feedback delete)
     feedbackIdx: index('notification_feedback_idx').on(table.feedbackId),
   })

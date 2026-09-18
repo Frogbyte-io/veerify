@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { and, asc, eq, gte, isNotNull, isNull, lte, or } from 'drizzle-orm'
+import { and, asc, eq, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { getCsatSurveyTemplate } from '~/lib/email-templates'
 import { db } from '~/server/database/drizzle'
 import {
@@ -29,7 +29,30 @@ export function csatRatings(scale: 'csat_5' | 'thumbs' | 'nps_10'): number[] {
 }
 
 function csatPublicBaseUrl(): string {
-  const configured = process.env.NUXT_PUBLIC_SITE_URL || process.env.APP_URL || process.env.SITE_URL || ''
+  const configured =
+    process.env.NUXT_PUBLIC_SITE_URL ||
+    process.env.APP_URL ||
+    process.env.SITE_URL ||
+    process.env.BETTER_AUTH_URL ||
+    (process.env.APP_DASHBOARD_DOMAIN || process.env.APP_DOMAIN
+      ? `https://${process.env.APP_DASHBOARD_DOMAIN || process.env.APP_DOMAIN}`
+      : '')
+  if (!configured) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('CSAT public URL is not configured')
+    }
+    return 'http://localhost:3000'
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(configured)
+  } catch {
+    throw new Error('CSAT public URL must be an absolute URL')
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('CSAT public URL must use HTTP or HTTPS')
+  }
   return configured.replace(/\/$/, '')
 }
 
@@ -202,9 +225,14 @@ async function hasAgentReply(conversationId: string): Promise<boolean> {
   return Boolean(reply)
 }
 
-async function contactWasRecentlySurveyed(contactId: string, cooldownMinutes: number, now: Date): Promise<boolean> {
+async function contactWasRecentlySurveyed(
+  contactId: string,
+  cooldownMinutes: number,
+  now: Date,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<boolean> {
   const cutoff = new Date(now.getTime() - cooldownMinutes * 60_000)
-  const [recent] = await db
+  const [recent] = await executor
     .select({ id: csatResponse.id })
     .from(csatResponse)
     .where(and(eq(csatResponse.contactId, contactId), gte(csatResponse.sentAt, cutoff)))
@@ -220,7 +248,6 @@ async function dispatchCandidate(candidate: CsatCandidate, now: Date): Promise<b
   if (!(await hasAgentReply(candidate.conversation.id))) return false
 
   const cooldown = candidate.survey.contactCooldownMinutes ?? DEFAULT_CSAT_CONTACT_COOLDOWN_MINUTES
-  if (await contactWasRecentlySurveyed(candidate.contact.id, cooldown, now)) return false
 
   const responseId = randomUUID()
   const messageId = randomUUID()
@@ -233,6 +260,12 @@ async function dispatchCandidate(candidate: CsatCandidate, now: Date): Promise<b
     contactName: candidate.contact.name,
   })
   const created = await db.transaction(async (tx) => {
+    // Serialize dispatches for the same contact before checking the cooldown.
+    // The check and insert must share this transaction or overlapping workers
+    // can both observe the old state and send duplicate surveys.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${candidate.contact.id}, 0))`)
+    if (await contactWasRecentlySurveyed(candidate.contact.id, cooldown, now, tx)) return false
+
     const [response] = await tx
       .insert(csatResponse)
       .values({

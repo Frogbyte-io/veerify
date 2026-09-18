@@ -57,10 +57,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = useRuntimeConfig()
-  const appDomain = String(config.public.appDomain || '')
+  // Read deployment domains at request time as well as from Nuxt's build-time
+  // runtime config. Self-hosted deployments can change these env vars without
+  // rebuilding the image, and the TLS gate must follow the live hostnames.
+  const appDomain = String(process.env.APP_DOMAIN || config.public.appDomain || '')
     .trim()
     .toLowerCase()
-  const dashboardDomain = String(config.public.dashboardDomain || '')
+  const dashboardDomain = String(process.env.APP_DASHBOARD_DOMAIN || config.public.dashboardDomain || '')
     .trim()
     .toLowerCase()
 

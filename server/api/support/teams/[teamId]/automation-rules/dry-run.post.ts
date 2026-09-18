@@ -15,7 +15,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireSupportTeamRole } from '~/server/utils/support-access'
+import { requireInboxRole, requireSupportTeamRole } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { conversation } from '~/server/database/schema/support'
@@ -35,7 +35,7 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, bodySchema)
 
   const [matched] = await db
-    .select({ id: conversation.id })
+    .select({ id: conversation.id, inboxId: conversation.inboxId })
     .from(conversation)
     .where(and(eq(conversation.id, body.conversationId), eq(conversation.teamId, teamId)))
     .limit(1)
@@ -46,6 +46,10 @@ export default defineEventHandler(async (event) => {
       data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Conversation is not part of this team'),
     })
   }
+
+  // Team-level support membership is not enough to inspect every inbox: an
+  // agent may be assigned to only one of several inboxes in the team.
+  await requireInboxRole(matched.inboxId, session.user.id, 'agent')
 
   const result = await runAutomationRules({
     conversationId: body.conversationId,

@@ -1,4 +1,5 @@
 import type { CsatScale } from '~/server/database/schema/support'
+import { reportingDateAt } from '~/server/utils/support-reporting-calendar'
 
 export type CsatReportRow = {
   rating: number
@@ -47,7 +48,7 @@ function scoreForRows(rows: CsatReportRow[]): CsatScore {
   }
 }
 
-export function summarizeCsatRows(rows: CsatReportRow[]): CsatSummary {
+export function summarizeCsatRows(rows: CsatReportRow[], timezone = 'UTC'): CsatSummary {
   const byInbox = new Map<string, CsatReportRow[]>()
   const byAgent = new Map<string, CsatReportRow[]>()
   const byDate = new Map<string, CsatReportRow[]>()
@@ -63,7 +64,7 @@ export function summarizeCsatRows(rows: CsatReportRow[]): CsatSummary {
     agentRows.push(row)
     byAgent.set(agentKey, agentRows)
 
-    const date = row.respondedAt.toISOString().slice(0, 10)
+    const date = reportingDateAt(row.respondedAt, timezone)
     const dateRows = byDate.get(date) || []
     dateRows.push(row)
     byDate.set(date, dateRows)

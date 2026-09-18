@@ -29,7 +29,7 @@ A modern feedback management platform built with Nuxt 3, TypeScript, and shadcn-
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+
 - Yarn package manager
 
 ### Installation
@@ -244,9 +244,12 @@ broker for realtime + rate limiting), MinIO (S3-compatible object storage), and 
 #### Prerequisites
 
 - A VM (or bare-metal host) with Docker Engine and the Compose plugin installed.
-- Two DNS `A`/`AAAA` records pointed at the VM's public IP:
+- DNS `A`/`AAAA` records pointed at the VM's public IP:
   - `APP_DASHBOARD_DOMAIN` (e.g. `app.veerify.io`) — the dashboard/login/API host.
-  - `APP_DOMAIN` (e.g. `veerify.io`) — the base host for team public boards (`<team-slug>.APP_DOMAIN`).
+  - `APP_DOMAIN` (e.g. `veerify.io`) — the base host for team public boards.
+  - `*.APP_DOMAIN` (e.g. `*.veerify.io`) — a wildcard record required for
+    team public boards at `<team-slug>.APP_DOMAIN`; the base `APP_DOMAIN` record
+    is still needed for the root host.
 - A third record for `STORAGE_DOMAIN` (e.g. `assets.veerify.io`) pointed at the same IP. Uploads (logos,
   banners) are presigned directly against MinIO, so this host must be reachable from customers' browsers —
   it is proxied by Caddy, not exposed on its own port.

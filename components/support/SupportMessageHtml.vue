@@ -87,7 +87,10 @@ export default {
       try {
         const frame = this.$refs.frame
         const body = frame?.contentDocument?.body
-        if (!body) return
+        if (!body) {
+          this.height = 240
+          return
+        }
 
         const measured = Math.ceil(body.scrollHeight)
         this.height = Math.min(Math.max(measured, MIN_HEIGHT), MAX_HEIGHT)

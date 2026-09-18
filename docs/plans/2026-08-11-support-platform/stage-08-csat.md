@@ -5,8 +5,9 @@
 
 **Goal:** Ask customers how the support went, and turn the answers into a number per agent and per inbox.
 
-Stage 08 is complete on `support-platform`. The durable survey/response schema, five-minute dispatch
-pass, public rating flow, configuration surfaces, and live score surfaces are implemented.
+Stage 08's core implementation is complete on `support-platform`. The durable survey/response schema,
+five-minute dispatch pass, public rating flow, configuration surfaces, and live score surfaces are
+implemented. Atomic cross-worker contact cooldown claiming remains open.
 
 ## Schema
 
@@ -21,12 +22,13 @@ pass, public rating flow, configuration surfaces, and live score surfaces are im
 
 - Sent on the configured trigger, after `delayMinutes`, through Stage 04's durable
   `supportOutboundDelivery` outbox rather than a request-lifetime send.
-- **One-click rating in the email.** Each rating option is a distinct tokenized URL, so the customer
-  rates without logging in and without a page load first. Landing on that URL records the rating and
-  then offers the optional free-text follow-up.
+- **Tokenized rating links in the email.** Each rating option is a distinct tokenized URL, so the
+  customer can open the public page without logging in. The page presents the selected scale and
+  records the rating when the customer chooses an option, then offers the optional free-text follow-up.
 - Tokens are single-use for the rating and remain valid for the follow-up comment for a bounded window.
 - Guards: never survey a conversation with no agent reply; never survey the same conversation twice;
-  never survey a contact more than once per configurable window; respect a per-contact opt-out.
+  check that a contact has not been surveyed within the configured window under a per-contact
+  transaction lock; respect a per-contact opt-out.
 - A response writes an `activity` message into the thread so the agent sees the outcome in context.
 
 ## UI
@@ -39,7 +41,7 @@ pass, public rating flow, configuration surfaces, and live score surfaces are im
 ## Acceptance criteria
 
 1. Resolving a conversation with at least one agent reply sends a survey after the configured delay.
-2. Clicking a rating in the email records it in one request, with no login and no intermediate page.
+2. Opening a rating link records its rating in one request, with no login or extra button click.
 3. The same token cannot change a submitted rating, but can still attach a follow-up comment within the
    window.
 4. A conversation resolved with no agent reply is never surveyed.
@@ -50,13 +52,13 @@ pass, public rating flow, configuration surfaces, and live score surfaces are im
 
 - [x] Add `csatSurvey` and `csatResponse` tables; generate migration
 - [x] Implement survey dispatch on the Stage 00 scheduler with trigger, delay, and all four guards
-- [ ] Add the CSAT email template following the existing `lib/email-templates.ts` pattern, with one tokenized URL per rating option
 - [x] Add the CSAT email template following the existing `lib/email-templates.ts` pattern, with one tokenized URL per rating option
 - [x] Build the public rating landing page with follow-up comment capture; no authentication required
 - [x] Implement token single-use semantics for rating and bounded-window validity for comments
 - [x] Write an `activity` message into the thread on response
 - [x] Build survey configuration UI per inbox
 - [x] Add CSAT column and filter to the conversation list, and per-agent/per-inbox score summaries
+- [x] Make the per-contact cooldown claim atomic across overlapping dispatch workers
 
 ## Risks
 

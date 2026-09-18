@@ -109,7 +109,7 @@ export default defineEventHandler(async (event) => {
   // is later misclassified, the browser must not sniff or execute it.
   setResponseHeader(event, 'X-Content-Type-Options', 'nosniff')
   setResponseHeader(event, 'Content-Security-Policy', "default-src 'none'; img-src 'self'; sandbox")
-  setResponseHeader(event, 'Cache-Control', 'private, max-age=300')
+  setResponseHeader(event, 'Cache-Control', 'private, no-store')
 
   return body
 })

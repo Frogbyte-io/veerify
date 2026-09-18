@@ -1,4 +1,4 @@
-import { eq, and, ne } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project, projectDomain, feedback } from '~/server/database/schema/feedback'
 import { teamMember, team } from '~/server/database/schema/auth'
@@ -133,7 +133,7 @@ export async function findPublicProjectByDomain(hostname: string) {
     .where(
       and(
         eq(projectDomain.hostname, normalizedHostname),
-        ne(projectDomain.status, 'detached'),
+        eq(projectDomain.status, 'active'),
         eq(project.isPublic, true)
       )
     )

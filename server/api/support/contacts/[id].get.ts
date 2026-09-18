@@ -15,7 +15,7 @@
  *       403: { description: Not a member of the contact's team }
  *       404: { description: Contact not found }
  */
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireContactAccess } from '~/server/utils/support-access'
@@ -31,7 +31,13 @@ export default defineEventHandler(async (event) => {
   const identities = await db.select().from(contactIdentity).where(eq(contactIdentity.contactId, contactId))
 
   const company = row.companyId
-    ? ((await db.select().from(supportCompany).where(eq(supportCompany.id, row.companyId)).limit(1))[0] ?? null)
+    ? ((
+        await db
+          .select()
+          .from(supportCompany)
+          .where(and(eq(supportCompany.id, row.companyId), eq(supportCompany.teamId, row.teamId)))
+          .limit(1)
+      )[0] ?? null)
     : null
 
   return createSuccessResponse({ contact: row, identities, company })

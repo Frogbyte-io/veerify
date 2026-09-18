@@ -53,7 +53,9 @@ async function verifyRedisAvailable() {
 const redisAvailable = await verifyRedisAvailable()
 
 if (!redisAvailable) {
-  const reason = `Redis is not reachable at ${redisUrl}`
+  // Do not echo redisUrl: REDIS_URL may contain a username and password, and
+  // CI logs are not a safe place to disclose credentials.
+  const reason = 'Redis is not reachable'
 
   if (failOnPreflightSkip) {
     console.error(`[redis-integration] Preflight failed: ${reason}.`)

@@ -174,6 +174,16 @@ async function loadSurvey() {
   try {
     const payload = await $fetch<CsatApiPayload>(`/api/public/csat/${encodeURIComponent(token)}`)
     readResponse(payload)
+
+    const requestedRating = route.query.rating
+    const parsedRating = typeof requestedRating === 'string' ? Number(requestedRating) : NaN
+    if (
+      response.value?.status === 'pending_rating' &&
+      Number.isInteger(parsedRating) &&
+      ratings.value.includes(parsedRating)
+    ) {
+      await submitRating(parsedRating)
+    }
   } catch (error: unknown) {
     errorMessage.value = readErrorMessage(error, 'Please ask the support team for a fresh link.')
   } finally {
