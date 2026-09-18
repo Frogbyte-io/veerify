@@ -136,6 +136,12 @@ describe('support hardening schema contracts (real Postgres)', () => {
         group by index_row.indexrelid
         `
     )
+    const slaTargetIndexes = await db.execute<{ indexname: string; indexdef: string }>(
+      sql`select indexname, indexdef
+        from pg_indexes
+        where schemaname = 'public'
+          and indexname in ('sla_target_policy_metric_priority_idx', 'sla_target_policy_metric_catch_all_idx')`
+    )
 
     expect(uploadColumns).toEqual(
       expect.arrayContaining([
@@ -195,5 +201,8 @@ describe('support hardening schema contracts (real Postgres)', () => {
       'provider_account_key',
       'provider_event_id',
     ])
+    const slaTargetIndexDefinitions = new Map(slaTargetIndexes.rows.map((row) => [row.indexname, row.indexdef]))
+    expect(slaTargetIndexDefinitions.get('sla_target_policy_metric_priority_idx')).toMatch(/priority.*IS NOT NULL/i)
+    expect(slaTargetIndexDefinitions.get('sla_target_policy_metric_catch_all_idx')).toMatch(/priority.*IS NULL/i)
   })
 })

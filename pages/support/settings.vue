@@ -510,7 +510,6 @@
                         <option value="assignee">Assignee</option>
                         <option value="subject">Subject</option>
                         <option value="body">Body</option>
-                        <option value="sla_state">SLA state</option>
                       </select>
                       <select v-model="condition.operator" :class="selectClasses + ' h-9 text-xs'">
                         <option value="equals">Equals</option>

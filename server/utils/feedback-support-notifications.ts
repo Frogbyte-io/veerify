@@ -19,11 +19,11 @@ export async function notifyLinkedFeedbackContacts(params: {
   feedbackTitle: string
   projectId: string
   status: string
-  isTerminal?: boolean
+  subscribedEmails?: ReadonlySet<string>
   actorUserId: string | null
   actorName: string | null
 }) {
-  if (params.status !== 'completed' && !params.isTerminal) return
+  if (params.status !== 'completed') return
 
   try {
     const links = await db
@@ -59,7 +59,7 @@ export async function notifyLinkedFeedbackContacts(params: {
             })
           )
         }
-        if (linkedContact.email) {
+        if (linkedContact.email && !params.subscribedEmails?.has(linkedContact.email.trim().toLowerCase())) {
           deliveries.push(
             sendStatusChangeNotificationEmail({
               to: linkedContact.email,

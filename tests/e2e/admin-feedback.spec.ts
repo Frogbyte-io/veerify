@@ -10,6 +10,7 @@ const ONE_BY_ONE_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=',
   'base64'
 )
+const UI_WORKFLOW_TIMEOUT = 120_000
 
 test.setTimeout(60_000)
 
@@ -114,7 +115,7 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('UI: feedback page loads, add and delete feedback', async ({ request, page }) => {
-    test.setTimeout(120_000)
+    test.setTimeout(UI_WORKFLOW_TIMEOUT)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
     // Transfer auth cookies to browser context
@@ -254,7 +255,7 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('UI: feedback detail page supports edit, comment moderation, and admin controls', async ({ request, page }) => {
-    test.setTimeout(120_000)
+    test.setTimeout(UI_WORKFLOW_TIMEOUT)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
     expect(authCookies.length).toBeGreaterThan(0)

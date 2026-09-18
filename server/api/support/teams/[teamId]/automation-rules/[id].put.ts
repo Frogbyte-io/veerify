@@ -20,6 +20,7 @@ import { requireTeamAdmin } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { automationRule, supportInbox, type AutomationConditionGroup } from '~/server/database/schema/support'
+import { validateAutomationWebhookActions } from '~/server/utils/automation-webhook'
 
 const actionSchema = z.object({ type: z.string().trim().min(1).max(80) }).passthrough()
 const conditionsSchema = z
@@ -72,6 +73,14 @@ export default defineEventHandler(async (event) => {
       .where(and(eq(supportInbox.id, body.inboxId), eq(supportInbox.teamId, teamId)))
       .limit(1)
     if (!ownedInbox) badRequest('Inbox is not part of this team')
+  }
+
+  if (body.actions) {
+    try {
+      validateAutomationWebhookActions(body.actions)
+    } catch (error) {
+      badRequest(error instanceof Error ? error.message : 'Invalid webhook URL')
+    }
   }
 
   const [rule] = await db

@@ -70,6 +70,7 @@ export default defineEventHandler(async (event) => {
 
   // Notify about the status change
   if (updated.status !== fb.status) {
+    const subscribedEmails = new Set<string>()
     const notifParams = {
       type: 'status_change' as const,
       title: `Status changed to "${updated.status}"`,
@@ -93,6 +94,7 @@ export default defineEventHandler(async (event) => {
     try {
       const subscribers = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.feedbackId, id))
       const emailRecipients = subscribers.filter((s) => s.notifyChannel === 'email' || s.notifyChannel === 'both')
+      for (const recipient of emailRecipients) subscribedEmails.add(recipient.email.trim().toLowerCase())
 
       const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
       const notificationResults = await Promise.allSettled(
@@ -125,19 +127,12 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const terminalStatus =
-      updated.status === 'completed' ||
-      updated.status === 'closed' ||
-      (customStatuses.length > 0 &&
-        updated.status ===
-          customStatuses.reduce((last, current) => (current.sortOrder > last.sortOrder ? current : last)).value)
-
     await notifyLinkedFeedbackContacts({
       feedbackId: id,
       feedbackTitle: updated.title,
       projectId: fb.projectId,
       status: updated.status,
-      isTerminal: terminalStatus,
+      subscribedEmails,
       actorUserId: session.user.id,
       actorName: session.user.name,
     })

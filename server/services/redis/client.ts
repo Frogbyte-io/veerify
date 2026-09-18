@@ -8,12 +8,13 @@ function retryStrategy(times: number): number {
   return Math.min(times * 200, 10_000)
 }
 
-function baseOptions(): RedisOptions {
+function baseOptions(overrides: RedisOptions = {}): RedisOptions {
   return {
     retryStrategy,
     // Queue commands issued while disconnected rather than throwing at call sites.
     enableOfflineQueue: true,
     maxRetriesPerRequest: null,
+    ...overrides,
   }
 }
 
@@ -27,8 +28,8 @@ function baseOptions(): RedisOptions {
  * (GET/SET/EVAL/PUBLISH/...) should prefer `getSharedRedisClient` instead of
  * calling this, so subsystems don't each open their own socket for no reason.
  */
-export function createRedisConnection(url: string, label: string): Redis {
-  const client = new Redis(url, baseOptions())
+export function createRedisConnection(url: string, label: string, options: RedisOptions = {}): Redis {
+  const client = new Redis(url, baseOptions(options))
 
   client.on('error', (error: Error) => {
     logger.error('Redis connection error', { label, error: error.message })

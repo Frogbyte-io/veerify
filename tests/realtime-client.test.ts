@@ -50,6 +50,14 @@ class FakeSocket implements RealtimeSocketLike {
   }
 }
 
+class DeferredCloseSocket extends FakeSocket {
+  override close(code = 1000, reason = '') {
+    this.readyState = 3
+    void code
+    void reason
+  }
+}
+
 function subscribeFrames(socket: FakeSocket) {
   return socket.sent.filter((s) => s.includes('"action":"subscribe"'))
 }
@@ -302,6 +310,24 @@ describe('RealtimeClient — auth failure (4001)', () => {
 })
 
 describe('RealtimeClient — idle disconnect', () => {
+  it('clears the pagehide close intent before reconnecting after a BFCache resume', async () => {
+    const client = makeClient({ createSocket: (url) => new DeferredCloseSocket(url) })
+    client.connect()
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
+    const first = latestSocket()
+    first.open()
+
+    client.disconnect()
+    client.resume()
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(2))
+    const resumed = latestSocket()
+    resumed.open()
+    resumed.drop()
+
+    await vi.advanceTimersByTimeAsync(1000)
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(3))
+  })
+
   it('closes the socket after the idle timeout and does not auto-reconnect while hidden', async () => {
     const client = makeClient({ idleTimeoutMs: 5 * 60 * 1000 })
     client.connect()

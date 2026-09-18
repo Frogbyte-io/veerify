@@ -139,6 +139,7 @@ export class RealtimeClient {
   private idleDisconnected = false
   private hasConnectedBefore = false
   private currentToken: string | null = null
+  private connectionGeneration = 0
 
   private readonly channels = new Map<string, ChannelState>()
   private nextListenerId = 1
@@ -182,6 +183,7 @@ export class RealtimeClient {
 
   /** Open the socket if it isn't already open/connecting. Safe to call repeatedly. */
   connect(): void {
+    this.intentionalClose = false
     void this.open()
   }
 
@@ -269,8 +271,17 @@ export class RealtimeClient {
     }
   }
 
+  /** Resume after a page lifecycle suspension, clearing the prior close intent. */
+  resume(): void {
+    if (this.destroyed) return
+    this.intentionalClose = false
+    this.notifyVisible()
+    this.connect()
+  }
+
   /** Tear the connection down without scheduling a reconnect. Call on app teardown. */
   disconnect(): void {
+    this.connectionGeneration += 1
     this.intentionalClose = true
     this.clearReconnectTimer()
     this.stopPing()
@@ -301,6 +312,7 @@ export class RealtimeClient {
 
     this.idleDisconnected = false
     this.connecting = true
+    const generation = this.connectionGeneration
 
     let token: string | null
     try {
@@ -309,7 +321,7 @@ export class RealtimeClient {
       token = null
     }
 
-    if (this.destroyed || this.authFailed) {
+    if (this.destroyed || this.authFailed || generation !== this.connectionGeneration) {
       this.connecting = false
       return
     }

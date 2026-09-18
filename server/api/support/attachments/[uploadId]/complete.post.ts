@@ -57,17 +57,6 @@ export default defineEventHandler(async (event) => {
     completionError(409, 'This upload session must be completed through the proxy', ErrorCode.CONFLICT)
   }
 
-  let metadata
-  try {
-    metadata = await storage.headObject(initialUpload.tempStorageKey)
-  } catch (error: unknown) {
-    const cause = error as { code?: string; name?: string; $metadata?: { httpStatusCode?: number } }
-    if (cause.code === 'OBJECT_NOT_FOUND' || cause.$metadata?.httpStatusCode === 404 || cause.name === 'NotFound') {
-      completionError(404, 'Uploaded object not found')
-    }
-    throw error
-  }
-
   return await db.transaction(async (tx) => {
     const [upload] = await tx
       .select()
@@ -81,6 +70,16 @@ export default defineEventHandler(async (event) => {
     if (upload.expiresAt.getTime() <= Date.now()) completionError(400, 'Upload session has expired')
     if (upload.status !== 'pending' && upload.status !== 'uploaded')
       completionError(409, 'Upload session is not available')
+    let metadata
+    try {
+      metadata = await storage.headObject(upload.tempStorageKey)
+    } catch (error: unknown) {
+      const cause = error as { code?: string; name?: string; $metadata?: { httpStatusCode?: number } }
+      if (cause.code === 'OBJECT_NOT_FOUND' || cause.$metadata?.httpStatusCode === 404 || cause.name === 'NotFound') {
+        completionError(404, 'Uploaded object not found')
+      }
+      throw error
+    }
     if (metadata.sizeBytes !== upload.requestedSizeBytes)
       completionError(400, 'Uploaded size does not match the presigned size')
     if (metadata.contentType !== upload.requestedContentType)

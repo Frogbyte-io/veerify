@@ -1,0 +1,3 @@
+DROP INDEX "sla_target_policy_metric_priority_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "sla_target_policy_metric_catch_all_idx" ON "sla_target" USING btree ("sla_policy_id","metric") WHERE "sla_target"."priority" is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "sla_target_policy_metric_priority_idx" ON "sla_target" USING btree ("sla_policy_id","metric","priority") WHERE "sla_target"."priority" is not null;

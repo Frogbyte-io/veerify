@@ -385,11 +385,15 @@ export const slaTarget = pgTable(
     targetMinutes: integer('target_minutes').notNull(),
   },
   (table) => ({
-    uniquePolicyMetricPriority: uniqueIndex('sla_target_policy_metric_priority_idx').on(
-      table.slaPolicyId,
-      table.metric,
-      table.priority
-    ),
+    // PostgreSQL treats NULLs as distinct in a unique index. Keep the
+    // priority-specific targets unique while enforcing one catch-all target
+    // per policy and metric separately.
+    uniquePolicyMetricPriority: uniqueIndex('sla_target_policy_metric_priority_idx')
+      .on(table.slaPolicyId, table.metric, table.priority)
+      .where(sql`${table.priority} is not null`),
+    uniquePolicyMetricCatchAll: uniqueIndex('sla_target_policy_metric_catch_all_idx')
+      .on(table.slaPolicyId, table.metric)
+      .where(sql`${table.priority} is null`),
     policyIdx: index('sla_target_policy_idx').on(table.slaPolicyId),
   })
 )

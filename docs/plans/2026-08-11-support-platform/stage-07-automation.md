@@ -32,7 +32,7 @@ body match, channel, and hours since last activity. Combined with `all` / `any` 
 **Actions currently supported:** set status, set priority, assign to agent, assign via round-robin, add or
 remove tag, add a private note, and call a webhook.
 
-SLA-state conditions are not exposed until the rule context is populated from the conversation's current
+SLA-state conditions remain deferred until the rule context is populated from the conversation's current
 SLA state. `send_canned_reply` and `run_macro` are also deferred until the automation worker can invoke
 those systems. They are not part of the supported vocabulary or acceptance criteria for this stage.
 

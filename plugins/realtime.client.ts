@@ -45,8 +45,7 @@ export default defineNuxtPlugin(async () => {
   window.addEventListener('focus', () => client.notifyVisible())
   window.addEventListener('pagehide', () => client.disconnect())
   window.addEventListener('pageshow', () => {
-    client.notifyVisible()
-    client.connect()
+    client.resume()
   })
 
   const { data: session } = await authClient.useSession(useFetch)
