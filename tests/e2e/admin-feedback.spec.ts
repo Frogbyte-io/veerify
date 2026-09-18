@@ -384,6 +384,7 @@ test.describe('Admin feedback workflow', () => {
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     const unauthorizedPresign = await request.post('/api/projects/demo/assets/presign', {
+      headers: { cookie: '' },
       data: {
         kind: 'logo',
         filename: 'logo.png',
