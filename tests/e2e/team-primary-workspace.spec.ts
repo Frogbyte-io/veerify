@@ -4,12 +4,11 @@ import { loginViaProgrammatic, signInAndGetSessionCookie, withAuthHeaders } from
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const TEAM_SLUG = process.env.E2E_TEAM_SLUG || 'preview-org'
+const PORT = process.env.PLAYWRIGHT_PORT || '4173'
 
 test.setTimeout(60_000)
 
-test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces duplicate slug conflict', async ({
-  request,
-}) => {
+test('team-primary API flow persists custom domains and enforces URL conflicts', async ({ request, page }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   const activeTeamResponse = await request.get('/api/teams/active', {
@@ -22,6 +21,7 @@ test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces 
   const teamId = activeTeamPayload.data.id as string
 
   const uniqueSlug = `e2e-team-${Date.now()}`
+  const customDomain = `${uniqueSlug}.customer.localhost`
 
   const createResponse = await request.post(`/api/teams/${teamId}/projects`, {
     headers: withAuthHeaders(sessionCookie),
@@ -29,13 +29,17 @@ test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces 
       name: 'E2E Team Product',
       slug: uniqueSlug,
       description: 'Created by Playwright API test',
-      customDomain: null,
+      customDomain,
     },
   })
   const createPayload = await createResponse.json()
   expect(createResponse.status()).toBe(201)
   expect(createPayload?.success).toBeTruthy()
   expect(createPayload?.data?.slug).toBe(uniqueSlug)
+  expect(createPayload?.data?.customDomain).toBe(customDomain)
+
+  await page.goto(`http://${customDomain}:${PORT}`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page.getByRole('heading', { name: 'E2E Team Product' })).toBeVisible()
 
   // Public contract stays orgSlug + projectSlug; team ownership is internal.
   const publicProjectResponse = await request.get(`/api/public/t/${TEAM_SLUG}/${uniqueSlug}`)
@@ -63,6 +67,17 @@ test('team-primary API flow keeps public URL orgSlug + projectSlug and enforces 
       JSON.stringify(duplicatePayload)
   )
   expect(duplicateMessage).toMatch(/workspace URL namespace|conflict/i)
+
+  const duplicateDomainResponse = await request.post(`/api/teams/${teamId}/projects`, {
+    headers: withAuthHeaders(sessionCookie),
+    data: {
+      name: 'E2E Duplicate Domain Product',
+      slug: `${uniqueSlug}-domain-conflict`,
+      description: null,
+      customDomain,
+    },
+  })
+  expect(duplicateDomainResponse.status()).toBe(409)
 })
 
 test('authenticated user can access products UI workflow', async ({ request, page }) => {
@@ -255,6 +270,11 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
         status: 'ownership_verification_required',
         dnsRecords: [
           {
+            type: 'TXT',
+            name: '_vercel.feedback.example.com',
+            value: 'vc-domain-verify=e2e-token',
+          },
+          {
             type: 'CNAME',
             name: 'feedback.example.com',
             value: '23f9267bd57617a5.vercel-dns-017.com.',
@@ -275,13 +295,15 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
 
   await page.goto(`/products/${projectSlug}#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
   await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#domain$`))
-  await expect(page.getByText('Required DNS records')).toBeVisible()
+  await expect(page.getByText('Required DNS records', { exact: true })).toBeVisible()
 
   await page.locator('#custom-domain').fill('feedback.example.com')
   await page.getByRole('button', { name: 'Check DNS' }).click()
 
-  await expect(page.getByText('23f9267bd57617a5.vercel-dns-017.com.')).toBeVisible()
+  await expect(page.getByText('vc-domain-verify=e2e-token')).toBeVisible()
+  await expect(page.getByText('23f9267bd57617a5.vercel-dns-017.com.').last()).toBeVisible()
   await expect(page.getByText('cname.vercel-dns.com.')).toHaveCount(0)
+  await expect(page.getByText(/Last checked/)).toBeVisible()
 })
 
 test('custom domain status downgrades from stored verified state after a failed dns check', async ({
@@ -350,6 +372,7 @@ test('custom domain status downgrades from stored verified state after a failed 
         hostname: 'feedback.example.com',
         provider: 'static-cname',
         verified: false,
+        status: 'dns_required',
         dnsRecords: [
           {
             type: 'CNAME',
@@ -376,6 +399,32 @@ test('custom domain status downgrades from stored verified state after a failed 
     'The domain is added, but the latest DNS check did not find the required records.'
   )
   await expect(page.getByText('No matching DNS records found for')).toBeVisible()
+
+  await page.unroute(`**/api/projects/${projectSlug}/verify-domain?**`)
+  await page.route(`**/api/projects/${projectSlug}/verify-domain?**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        hostname: 'feedback.example.com',
+        provider: 'static-cname',
+        verified: false,
+        status: 'error',
+        dnsRecords: [],
+        configuredBy: null,
+        expected: null,
+        resolvedTo: [],
+        message: 'Domain provider unavailable',
+      }),
+    })
+  })
+
+  await page.getByRole('button', { name: 'Check DNS' }).click()
+  await expect(page.getByTestId('product-domain-status-title')).toHaveText('Domain connection error')
+  await expect(page.getByText('Domain provider unavailable')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Remove' })).toBeVisible()
+  await page.getByRole('button', { name: 'Remove' }).click()
+  await expect(page.getByRole('button', { name: 'Remove' })).toHaveCount(0)
 })
 
 test('project categories API supports create/update/reorder/delete with reassignment rules', async ({ request }) => {

@@ -56,6 +56,41 @@ export const project = pgTable(
   })
 )
 
+// Provider-neutral domain state. project.customDomain remains as temporary
+// compatibility state while callers migrate to this table.
+export const projectDomain = pgTable(
+  'domain',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    hostname: text('hostname').notNull(),
+    kind: text('kind').default('custom_subdomain').notNull(),
+    provider: text('provider').notNull(),
+    status: text('status').default('pending').notNull(),
+    isPrimary: boolean('is_primary').default(true).notNull(),
+    providerDomainId: text('provider_domain_id'),
+    verificationPayload: jsonb('verification_payload').$type<Record<string, unknown>>(),
+    dnsRecords: jsonb('dns_records').$type<Array<{ type: string; name: string; value: string }>>(),
+    lastCheckedAt: timestamp('last_checked_at'),
+    activatedAt: timestamp('activated_at'),
+    errorMessage: text('error_message'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    hostnameIdx: uniqueIndex('domain_hostname_idx').on(table.hostname),
+    projectIdx: index('domain_project_idx').on(table.projectId),
+    projectPrimaryIdx: index('domain_project_primary_idx').on(table.projectId, table.isPrimary),
+    statusIdx: index('domain_status_idx').on(table.status),
+  })
+)
+
 // Anonymous sessions - persistent session tokens for anonymous users
 export const anonymousSession = pgTable(
   'anonymous_session',

@@ -1,6 +1,6 @@
-import { eq, and } from 'drizzle-orm'
+import { eq, and, ne } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { project, feedback } from '~/server/database/schema/feedback'
+import { project, projectDomain, feedback } from '~/server/database/schema/feedback'
 import { teamMember, team } from '~/server/database/schema/auth'
 import { createErrorResponse, ErrorCode } from './response'
 
@@ -125,16 +125,19 @@ export async function findPublicProjectByDomain(hostname: string) {
   const normalizedHostname = hostname.trim().toLowerCase().replace(/\.$/, '')
   if (!normalizedHostname) return null
 
-  const [proj] = await db
-    .select()
-    .from(project)
-    .where(and(eq(project.customDomain, normalizedHostname), eq(project.isPublic, true)))
+  const [result] = await db
+    .select({ project, team })
+    .from(projectDomain)
+    .innerJoin(project, eq(projectDomain.projectId, project.id))
+    .innerJoin(team, eq(project.teamId, team.id))
+    .where(
+      and(
+        eq(projectDomain.hostname, normalizedHostname),
+        ne(projectDomain.status, 'detached'),
+        eq(project.isPublic, true)
+      )
+    )
     .limit(1)
 
-  if (!proj) return null
-
-  const [t] = await db.select().from(team).where(eq(team.id, proj.teamId)).limit(1)
-  if (!t) return null
-
-  return { team: t, project: proj }
+  return result || null
 }

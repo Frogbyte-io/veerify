@@ -118,28 +118,26 @@ function mapVercelDomainResult(
   const recommendedIpv4Values = collectStringValues(configRecord.recommendedIPv4)
   const recommendedIpv6Values = collectStringValues(configRecord.recommendedIPv6)
 
-  if (dnsRecords.length === 0) {
-    for (const value of recommendedCnameValues) {
-      dnsRecords.push({
-        type: 'CNAME',
-        name: hostname,
-        value,
-      })
-    }
-    for (const value of recommendedIpv4Values) {
-      dnsRecords.push({
-        type: 'A',
-        name: hostname,
-        value,
-      })
-    }
-    for (const value of recommendedIpv6Values) {
-      dnsRecords.push({
-        type: 'AAAA',
-        name: hostname,
-        value,
-      })
-    }
+  for (const value of recommendedCnameValues) {
+    dnsRecords.push({
+      type: 'CNAME',
+      name: hostname,
+      value,
+    })
+  }
+  for (const value of recommendedIpv4Values) {
+    dnsRecords.push({
+      type: 'A',
+      name: hostname,
+      value,
+    })
+  }
+  for (const value of recommendedIpv6Values) {
+    dnsRecords.push({
+      type: 'AAAA',
+      name: hostname,
+      value,
+    })
   }
 
   const normalizedRecords = dedupeDnsRecords(prioritizeDnsRecords(dnsRecords))

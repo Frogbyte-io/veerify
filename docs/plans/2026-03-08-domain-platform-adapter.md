@@ -9,6 +9,15 @@
 - Custom domain persistence and a basic DNS verification check exist.
 - Production wildcard DNS for `*.veerify.io` is not yet configured, so tenant subdomains do not currently resolve.
 
+**Implementation progress as of August 31, 2026:**
+
+- Phase 1: implemented. Provider-neutral domain persistence is defined in the `domain` table, existing `project.customDomain` values are backfilled after migrations, and the legacy column remains compatibility state.
+- Phase 2: implemented for Vercel. Registration, status, verification, removal, provider-returned DNS records, and the settings UI are wired.
+- Phase 3: implemented for request-time custom-host resolution. Exact custom-domain lookup now uses the `domain` table; wildcard team-subdomain routing remains intact.
+- Phase 4: partially implemented. Manual DNS refresh and Playwright coverage exist; background verification polling and multi-domain primary selection remain open.
+- Phase 5: adapter compatibility exists through the static CNAME provider, but proxy mapping and certificate automation for a full self-hosted provider remain open.
+- External production task: configure and verify wildcard DNS/TLS for `*.veerify.io` in the hosting account.
+
 **Architecture direction:**
 
 - Keep app routing provider-agnostic and driven by the incoming `Host` header.

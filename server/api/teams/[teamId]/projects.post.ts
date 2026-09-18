@@ -6,6 +6,17 @@ import { team, teamMember } from '~/server/database/schema/auth'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { commonSchemas, validateBody } from '~/server/utils/validation'
+import {
+  buildDomainSettingsPatch,
+  registerProjectCustomDomain,
+  removeProjectCustomDomain,
+  validateProjectCustomDomain,
+} from '~/server/services/domains/domain-service'
+import { assertProjectDomainAvailable, persistProjectDomainResult } from '~/server/services/domains/domain-repository'
+import type { DomainProviderResult } from '~/server/services/domains/provider'
+import { createLogger } from '~/server/utils/logger'
+
+const logger = createLogger('projects')
 
 const createProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(100, 'Project name too long'),
@@ -76,6 +87,13 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date()
   const projectId = crypto.randomUUID()
+  const requestedDomain = body.customDomain?.trim() ? validateProjectCustomDomain(body.customDomain) : null
+  let domainRegistration: DomainProviderResult | null = null
+
+  if (requestedDomain) {
+    await assertProjectDomainAvailable(requestedDomain)
+    domainRegistration = await registerProjectCustomDomain(requestedDomain)
+  }
 
   const defaultCategories = [
     { name: 'Bug', slug: 'bug', icon: '🐛', color: '#ef4444', isDefault: true, description: 'Something isn’t working' },
@@ -89,41 +107,62 @@ export default defineEventHandler(async (event) => {
     },
   ]
 
-  const created = await db.transaction(async (tx) => {
-    const [newProject] = await tx
-      .insert(project)
-      .values({
-        id: projectId,
-        organizationId: selectedTeam.organizationId,
-        teamId: selectedTeam.id,
-        slug: body.slug,
-        name: body.name,
-        description: body.description || null,
-        customDomain: body.customDomain || null,
-        isPublic: body.isPublic ?? true,
-        settings: body.settings ?? null,
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning()
+  let created: typeof project.$inferSelect
+  try {
+    created = await db.transaction(async (tx) => {
+      const [newProject] = await tx
+        .insert(project)
+        .values({
+          id: projectId,
+          organizationId: selectedTeam.organizationId,
+          teamId: selectedTeam.id,
+          slug: body.slug,
+          name: body.name,
+          description: body.description || null,
+          customDomain: requestedDomain,
+          isPublic: body.isPublic ?? true,
+          settings: domainRegistration
+            ? buildDomainSettingsPatch(body.settings, domainRegistration)
+            : (body.settings ?? null),
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning()
 
-    await tx.insert(feedbackCategory).values(
-      defaultCategories.map((category, index) => ({
-        id: crypto.randomUUID(),
-        projectId,
-        name: category.name,
-        slug: category.slug,
-        icon: category.icon,
-        color: category.color,
-        description: category.description,
-        isDefault: category.isDefault,
-        sortOrder: index,
-        createdAt: now,
-      }))
-    )
+      await tx.insert(feedbackCategory).values(
+        defaultCategories.map((category, index) => ({
+          id: crypto.randomUUID(),
+          projectId,
+          name: category.name,
+          slug: category.slug,
+          icon: category.icon,
+          color: category.color,
+          description: category.description,
+          isDefault: category.isDefault,
+          sortOrder: index,
+          createdAt: now,
+        }))
+      )
 
-    return newProject
-  })
+      if (domainRegistration) {
+        await persistProjectDomainResult(projectId, domainRegistration, tx)
+      }
+
+      return newProject
+    })
+  } catch (error) {
+    if (domainRegistration) {
+      try {
+        await removeProjectCustomDomain(domainRegistration.hostname)
+      } catch (cleanupError) {
+        logger.error('Failed to remove custom domain after project creation rolled back', {
+          domain: domainRegistration.hostname,
+          error: cleanupError instanceof Error ? cleanupError.message : cleanupError,
+        })
+      }
+    }
+    throw error
+  }
 
   setResponseStatus(event, 201)
   return createSuccessResponse(created)

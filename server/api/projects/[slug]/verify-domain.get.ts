@@ -9,6 +9,7 @@ import {
   normalizeDomainSettings,
   verifyProjectCustomDomain,
 } from '~/server/services/domains/domain-service'
+import { persistProjectDomainResult } from '~/server/services/domains/domain-repository'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('projects')
@@ -50,13 +51,17 @@ export default defineEventHandler(async (event) => {
     settingsUpdate.domainVerifiedEmailSentAt = new Date().toISOString()
   }
 
-  await db
-    .update(project)
-    .set({
-      settings: settingsUpdate,
-      updatedAt: new Date(),
-    })
-    .where(eq(project.id, selectedProject.id))
+  await db.transaction(async (tx) => {
+    await tx
+      .update(project)
+      .set({
+        settings: settingsUpdate,
+        updatedAt: new Date(),
+      })
+      .where(eq(project.id, selectedProject.id))
+
+    await persistProjectDomainResult(selectedProject.id, result, tx)
+  })
 
   return result
 })

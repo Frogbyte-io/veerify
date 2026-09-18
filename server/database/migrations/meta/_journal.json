@@ -281,6 +281,13 @@
       "when": 1789735675860,
       "tag": "0039_brave_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789737235790,
+      "tag": "0040_thankful_triathlon",
+      "breakpoints": true
     }
   ]
 }

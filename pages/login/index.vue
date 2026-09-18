@@ -203,16 +203,25 @@ export default {
       // because automation waits for a control to be enabled, it also makes
       // scripted sign-in deterministic instead of a race.
       isHydrated: false,
+      requestedRedirect: null,
     }
-  },
-  mounted() {
-    this.isHydrated = true
   },
   computed: {
     signupLink() {
       const redirect = this.$route.query.redirect
       return redirect ? `/signup?redirect=${encodeURIComponent(redirect)}` : '/signup'
     },
+  },
+  mounted() {
+    this.isHydrated = true
+    const redirect = this.$route.query.redirect
+    if (typeof redirect === 'string' && redirect) {
+      this.requestedRedirect = redirect
+      sessionStorage.setItem('veerify:post-auth-redirect', redirect)
+      return
+    }
+
+    this.requestedRedirect = sessionStorage.getItem('veerify:post-auth-redirect')
   },
   methods: {
     async resolveRedirectTarget(rawRedirect, fallback = '/dashboard') {
@@ -231,6 +240,7 @@ export default {
 
       this.isLoading = true
       this.error = ''
+      const requestedRedirect = this.requestedRedirect || this.$route.query.redirect
 
       try {
         const result = await authClient.signIn.email({
@@ -242,7 +252,8 @@ export default {
           this.error = result.error.message || 'Sign in failed'
         } else {
           $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
-          const target = await this.resolvePostAuthTarget(this.$route.query.redirect, '/dashboard')
+          const target = await this.resolvePostAuthTarget(requestedRedirect, '/dashboard')
+          sessionStorage.removeItem('veerify:post-auth-redirect')
           // Hard reload when adding an account to clear all in-memory session caches
           if (this.$route.query.addAccount === 'true') {
             window.location.href = target

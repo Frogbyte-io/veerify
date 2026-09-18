@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDomainSettingsPatch,
   buildTeamSubdomainHostname,
+  getCustomDomainValidationError,
   normalizeCustomDomainInput,
 } from '../server/services/domains/domain-service'
 import { dedupeDnsRecords } from '../server/services/domains/provider'
@@ -13,6 +14,23 @@ describe('domain service helpers', () => {
     expect(normalizeCustomDomainInput(' Feedback.Example.com. ')).toBe('feedback.example.com')
     expect(normalizeCustomDomainInput('')).toBeNull()
     expect(normalizeCustomDomainInput(null)).toBeNull()
+    expect(normalizeCustomDomainInput('BÜCHER.Example.com')).toBe('xn--bcher-kva.example.com')
+  })
+
+  it('requires a customer-owned custom subdomain', () => {
+    const options = { appDomain: 'veerify.io', dashboardDomain: 'app.veerify.io' }
+
+    expect(getCustomDomainValidationError('feedback.customer.co.uk', options)).toBeNull()
+    expect(getCustomDomainValidationError('customer.co.uk', options)).toMatch(/subdomain/i)
+    expect(getCustomDomainValidationError('tenant.veerify.io', options)).toMatch(/platform domain/i)
+    expect(getCustomDomainValidationError('not-a-public-suffix.invalid', options)).toMatch(/public suffix/i)
+  })
+
+  it('allows nested localhost domains used by local custom-domain tests', () => {
+    const options = { appDomain: 'localhost', dashboardDomain: 'localhost' }
+
+    expect(getCustomDomainValidationError('feedback.demo.localhost', options)).toBeNull()
+    expect(getCustomDomainValidationError('demo.localhost', options)).toMatch(/platform domain/i)
   })
 
   it('builds production team subdomain hostnames', () => {
@@ -90,6 +108,11 @@ describe('domain service helpers', () => {
         type: 'TXT',
         name: '_vercel.feedback.example.com',
         value: 'vc-domain-verify=abc123',
+      },
+      {
+        type: 'CNAME',
+        name: 'feedback.example.com',
+        value: 'cname.vercel-dns.com',
       },
     ])
   })

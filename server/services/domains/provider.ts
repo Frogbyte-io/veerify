@@ -1,3 +1,5 @@
+import { domainToASCII } from 'node:url'
+
 export type DomainDnsRecordType = 'A' | 'AAAA' | 'ALIAS' | 'CNAME' | 'TXT'
 
 export type DomainConnectionStatus = 'dns_required' | 'ownership_verification_required' | 'active' | 'error'
@@ -28,7 +30,7 @@ export interface DomainProvider {
 }
 
 export function normalizeDomainHostname(hostname: string): string {
-  return hostname.trim().toLowerCase().replace(/\.$/, '')
+  return domainToASCII(hostname.trim().toLowerCase().replace(/\.$/, ''))
 }
 
 export function dedupeDnsRecords(records: DomainDnsRecord[]): DomainDnsRecord[] {
