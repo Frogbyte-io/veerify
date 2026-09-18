@@ -49,6 +49,6 @@ describe('build lifecycle', () => {
   })
 
   it('runs deployment migration and OpenAPI generation before Vercel compilation', () => {
-    expect(runLifecycle('vercel-build')).toEqual(['drizzle-kit', 'tsx', 'nuxt'])
+    expect(runLifecycle('vercel-build')).toEqual(['drizzle-kit', 'tsx', 'tsx', 'nuxt'])
   })
 })
