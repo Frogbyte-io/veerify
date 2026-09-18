@@ -109,20 +109,18 @@ async function sortFeedbackByNewest(page: Page) {
 }
 
 async function signInOnPublicHost(page: Page, opts: { email: string; password: string }) {
-  const result = await page.evaluate(
-    async ({ email, password }) => {
-      const response = await fetch('/api/auth/sign-in/email', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const body = await response.text().catch(() => '')
-      return { ok: response.ok, status: response.status, body }
+  const publicOrigin = new URL(PUBLIC_PAGE).origin
+  const response = await page.request.post(`${publicOrigin}/api/auth/sign-in/email`, {
+    headers: {
+      'content-type': 'application/json',
+      origin: publicOrigin,
+      referer: `${publicOrigin}/login`,
     },
-    { email: opts.email, password: opts.password }
-  )
+    data: { email: opts.email, password: opts.password },
+  })
+  const body = await response.text().catch(() => '')
 
-  expect(result.ok, `Public-host sign-in failed (${result.status}): ${result.body}`).toBe(true)
+  expect(response.ok(), `Public-host sign-in failed (${response.status()}): ${body}`).toBe(true)
 }
 
 // ---------------------------------------------------------------------------
