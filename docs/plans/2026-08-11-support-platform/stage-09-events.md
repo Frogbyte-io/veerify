@@ -10,7 +10,9 @@ structured status transitions.
 
 1. Add `conversationStatusEvent` in `server/database/schema/support.ts` with text id, denormalized
    teamId and inboxId, conversationId, nullable fromStatus, toStatus, nullable actorUserId, occurredAt,
-   and createdAt. Foreign keys cascade with their owners. Add time-leading indexes on
+   and createdAt. Team, inbox, and conversation ownership foreign keys cascade with their owners;
+   the nullable actor foreign key uses `ON DELETE SET NULL` so deleting an agent never deletes historical
+   status events. Add time-leading indexes on
    `(teamId, occurredAt)` and `(conversationId, occurredAt)` and a status-transition check allowing
    only the supported conversation statuses. Keep the event append-only; there is no update API.
 2. Generate and apply a migration with Drizzle. Never hand-edit generated migration files.

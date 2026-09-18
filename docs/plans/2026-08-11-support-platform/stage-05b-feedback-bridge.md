@@ -28,9 +28,10 @@ what makes item 3 valuable — fifty conversations, one feature request.
 
 ### 3. Notify on ship
 
-When linked feedback moves to a completed status, or a changelog post referencing it publishes, notify
-the conversation's contact. Reuse the existing `feedbackSubscription` and notification machinery; do not
-build a second dispatcher.
+When linked feedback moves to a completed status, notify the conversation's contact. Reuse the existing
+`feedbackSubscription` and notification machinery; do not build a second dispatcher. Changelog posts are
+not yet implemented on this branch, so changelog-triggered notifications are explicitly deferred until
+the changelog subsystem lands and has its own trigger and acceptance coverage.
 
 **Deduplicate per contact, not per conversation.** One feedback item linked to fifty conversations sends
 each contact one notification. This is a grouped query, not an architecture — but it is the only part of

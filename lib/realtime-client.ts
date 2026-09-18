@@ -138,6 +138,7 @@ export class RealtimeClient {
   private intentionalClose = false
   private idleDisconnected = false
   private hasConnectedBefore = false
+  private currentToken: string | null = null
 
   private readonly channels = new Map<string, ChannelState>()
   private nextListenerId = 1
@@ -182,6 +183,15 @@ export class RealtimeClient {
   /** Open the socket if it isn't already open/connecting. Safe to call repeatedly. */
   connect(): void {
     void this.open()
+  }
+
+  /** Reconcile a login/logout transition without reusing the previous user's socket. */
+  resetAuth(): void {
+    this.currentToken = null
+    this.authFailed = false
+    this.reconnectAttempts = 0
+    this.disconnect()
+    this.connect()
   }
 
   /**
@@ -310,10 +320,19 @@ export class RealtimeClient {
       return
     }
 
+    if (this.currentToken && this.currentToken !== token) {
+      this.connecting = false
+      this.disconnect()
+      this.currentToken = token
+      this.connect()
+      return
+    }
+    this.currentToken = token
+
     const socket = this.createSocket(this.buildUrl(token))
     this.socket = socket
     socket.onopen = () => this.handleOpen()
-    socket.onclose = (event) => this.handleClose(event)
+    socket.onclose = (event) => this.handleClose(socket, event)
     socket.onerror = () => {
       // onclose fires next; reconnect handling lives there.
     }
@@ -377,7 +396,10 @@ export class RealtimeClient {
     }
   }
 
-  private handleClose(event: { code: number; reason?: string }): void {
+  private handleClose(socket: RealtimeSocketLike, event: { code: number; reason?: string }): void {
+    // A deliberately closed socket can report its close event after a new
+    // socket has already been opened during an auth transition.
+    if (this.socket !== socket) return
     this.socket = null
     this.connecting = false
     this.stopPing()

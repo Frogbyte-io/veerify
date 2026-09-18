@@ -19,10 +19,11 @@ export async function notifyLinkedFeedbackContacts(params: {
   feedbackTitle: string
   projectId: string
   status: string
+  isTerminal?: boolean
   actorUserId: string | null
   actorName: string | null
 }) {
-  if (params.status !== 'completed') return
+  if (params.status !== 'completed' && !params.isTerminal) return
 
   try {
     const links = await db
@@ -65,7 +66,7 @@ export async function notifyLinkedFeedbackContacts(params: {
               feedbackTitle: params.feedbackTitle,
               newStatus: params.status,
               boardUrl: baseUrl,
-              unsubscribeUrl: `${baseUrl}/feedback/${params.feedbackId}`,
+              unsubscribeUrl: null,
             })
           )
         }

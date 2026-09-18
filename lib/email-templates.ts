@@ -429,7 +429,7 @@ interface StatusChangeNotificationOptions {
   feedbackTitle: string
   newStatus: string
   boardUrl: string
-  unsubscribeUrl: string
+  unsubscribeUrl: string | null
 }
 
 export function getStatusChangeNotificationTemplate({
@@ -442,7 +442,7 @@ export function getStatusChangeNotificationTemplate({
   const safeTitle = escapeHtml(feedbackTitle)
   const safeStatus = escapeHtml(newStatus)
   const safeBoardUrl = escapeHtml(boardUrl)
-  const safeUnsubUrl = escapeHtml(unsubscribeUrl)
+  const safeUnsubUrl = unsubscribeUrl ? escapeHtml(unsubscribeUrl) : null
 
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
@@ -455,16 +455,14 @@ export function getStatusChangeNotificationTemplate({
       <p><a href="${safeBoardUrl}" style="color:#6366f1">View on the feedback board</a></p>
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
       <p style="color:#999;font-size:12px">
-        <a href="${safeUnsubUrl}" style="color:#999">Unsubscribe from this feedback</a> &middot; Powered by Veerify
+        ${safeUnsubUrl ? `<a href="${safeUnsubUrl}" style="color:#999">Unsubscribe from this feedback</a> &middot; ` : ''}Powered by Veerify
       </p>
     </div>
   `
 
   const text = `Feedback status updated: "${feedbackTitle}" is now ${newStatus}.
 
-View on the board: ${boardUrl}
-
-To unsubscribe: ${unsubscribeUrl}
+View on the board: ${boardUrl}${unsubscribeUrl ? `\n\nTo unsubscribe: ${unsubscribeUrl}` : ''}
 `
 
   return { subject, html, text }

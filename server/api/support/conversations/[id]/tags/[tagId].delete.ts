@@ -68,6 +68,7 @@ export default defineEventHandler(async (event) => {
         companyId: contactRow?.companyId,
         tagIds: tags.map((row) => row.tagId),
         start: new Date(),
+        includeNextResponse: Boolean(existing.firstResponseAt),
       },
       tx
     )

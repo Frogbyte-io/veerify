@@ -26,11 +26,15 @@ rule-builder UI are implemented and covered by the focused/unit/integration suit
 
 ## Condition and action vocabulary
 
-**Conditions** — inbox, status, priority, tag, assignee, contact, company, subject or body match,
-channel, hours since last activity, SLA state. Combined with `all` / `any` groups, nested one level.
+**Conditions currently supported:** inbox, status, priority, tag, assignee, contact, company, subject or
+body match, channel, and hours since last activity. Combined with `all` / `any` groups, nested one level.
 
-**Actions** — set status, set priority, assign to agent, assign via round-robin, add or remove tag,
-send a canned reply, run a macro, add a private note, call a webhook.
+**Actions currently supported:** set status, set priority, assign to agent, assign via round-robin, add or
+remove tag, add a private note, and call a webhook.
+
+SLA-state conditions are not exposed until the rule context is populated from the conversation's current
+SLA state. `send_canned_reply` and `run_macro` are also deferred until the automation worker can invoke
+those systems. They are not part of the supported vocabulary or acceptance criteria for this stage.
 
 Both vocabularies are registries, not switch statements, so Stage 12's channels add conditions without
 touching the engine.
@@ -78,6 +82,8 @@ touching the engine.
 - [x] Build the rule list UI with enable/disable, reordering, and run counts
 - [x] Build the condition and action builder UI with grouping
 - [x] Build the dry-run panel and per-rule run history view
+- [ ] Add the current SLA state to the condition context and expose an SLA-state condition
+- [ ] Implement worker-backed canned replies and macros before adding those actions to the supported vocabulary
 
 ## Risks
 

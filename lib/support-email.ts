@@ -12,7 +12,7 @@
  */
 
 export function generateMessageId(input: { messageId: string; domain: string }): string {
-  return `${input.messageId}@${input.domain}`
+  return `${input.messageId.replace(/^<|>$/g, '')}@${input.domain}`
 }
 
 /** Default cap on `References` entries before trimming kicks in. */

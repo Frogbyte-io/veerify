@@ -20,6 +20,7 @@ import { requireTeamAdmin } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { automationRule, supportInbox, type AutomationConditionGroup } from '~/server/database/schema/support'
+import { validateWebhookUrlSyntax } from '~/server/utils/webhook-url'
 
 const actionSchema = z.object({ type: z.string().trim().min(1).max(80) }).passthrough()
 const conditionsSchema = z
@@ -58,6 +59,25 @@ export default defineEventHandler(async (event) => {
       .where(and(eq(supportInbox.id, body.inboxId), eq(supportInbox.teamId, teamId)))
       .limit(1)
     if (!ownedInbox) invalidInbox()
+  }
+
+  for (const action of body.actions) {
+    if (action.type !== 'call_webhook') continue
+    const rawAction = action as { url?: unknown; value?: unknown }
+    const url =
+      typeof rawAction.url === 'string' ? rawAction.url : typeof rawAction.value === 'string' ? rawAction.value : ''
+    try {
+      validateWebhookUrlSyntax(url)
+    } catch (error) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Bad Request',
+        data: createErrorResponse(
+          ErrorCode.VALIDATION_ERROR,
+          error instanceof Error ? error.message : 'Invalid webhook URL'
+        ),
+      })
+    }
   }
 
   const now = new Date()

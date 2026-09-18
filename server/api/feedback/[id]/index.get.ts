@@ -128,7 +128,15 @@ export default defineEventHandler(async (event) => {
 
   const publicSafeFeedback =
     !isTeamMember && item.feedback.metadata?.source === 'support_conversation'
-      ? { ...item.feedback, body: null, authorName: null, authorEmail: null, metadata: null }
+      ? {
+          ...item.feedback,
+          body: null,
+          authorName: null,
+          authorEmail: null,
+          authorUserId: null,
+          authorSessionId: null,
+          metadata: null,
+        }
       : item.feedback
   const publicSafeAuthor = !isTeamMember && item.feedback.metadata?.source === 'support_conversation' ? null : author
 

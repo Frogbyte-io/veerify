@@ -1,5 +1,6 @@
 import { fetchDashboardBootstrap, getCachedDashboardBootstrap } from '~/lib/dashboard-bootstrap-client'
 import { RealtimeClient } from '~/lib/realtime-client'
+import { authClient } from '~/lib/auth-client'
 
 /**
  * Browser wiring for the reusable realtime client (SUP-00-4).
@@ -16,7 +17,7 @@ import { RealtimeClient } from '~/lib/realtime-client'
  * open design question in `docs/plans/2026-08-11-support-platform/deltas.md`
  * (D-01). `$realtime` deliberately ignores `notification` frames.
  */
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin(async () => {
   const client = new RealtimeClient({
     getToken: async () => {
       const cached = getCachedDashboardBootstrap()
@@ -43,6 +44,16 @@ export default defineNuxtPlugin(() => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
   window.addEventListener('focus', () => client.notifyVisible())
   window.addEventListener('pagehide', () => client.disconnect())
+  window.addEventListener('pageshow', () => {
+    client.notifyVisible()
+    client.connect()
+  })
+
+  const { data: session } = await authClient.useSession(useFetch)
+  watch(
+    () => session.value?.user?.id ?? null,
+    () => client.resetAuth()
+  )
 
   return {
     provide: {

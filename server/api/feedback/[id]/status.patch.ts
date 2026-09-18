@@ -125,11 +125,19 @@ export default defineEventHandler(async (event) => {
       })
     }
 
+    const terminalStatus =
+      updated.status === 'completed' ||
+      updated.status === 'closed' ||
+      (customStatuses.length > 0 &&
+        updated.status ===
+          customStatuses.reduce((last, current) => (current.sortOrder > last.sortOrder ? current : last)).value)
+
     await notifyLinkedFeedbackContacts({
       feedbackId: id,
       feedbackTitle: updated.title,
       projectId: fb.projectId,
       status: updated.status,
+      isTerminal: terminalStatus,
       actorUserId: session.user.id,
       actorName: session.user.name,
     })

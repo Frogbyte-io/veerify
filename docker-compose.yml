@@ -7,8 +7,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - '5432:5432'
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -72,6 +70,26 @@ services:
       mc anonymous set download local/\"$$STORAGE_BUCKET\";
       "
 
+  # Run schema migrations and the legacy custom-domain backfill once per
+  # deployment, before any app instance can accept traffic. PostgreSQL stays
+  # on the private Compose network; use a tunnel for admin access.
+  migrate:
+    container_name: veerify-migrate
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: 'no'
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+    command: ['migrate']
+
   app:
     container_name: veerify-app
     build:
@@ -86,6 +104,8 @@ services:
       minio:
         condition: service_healthy
       minio-setup:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
     environment:
       # --- Database (connects to the `db` service directly, not localhost) ---

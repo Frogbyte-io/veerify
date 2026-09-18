@@ -1,4 +1,5 @@
 import type Redis from 'ioredis'
+import { randomUUID } from 'node:crypto'
 import { createLogger } from '~/server/utils/logger'
 import type { RateLimitStore } from '../types'
 
@@ -39,11 +40,30 @@ end
 return 0
 `
 
+async function waitForRedisReady(client: Redis, timeoutMs: number): Promise<boolean> {
+  const initialStatus = client.status as string | undefined
+  // Test doubles and alternate Redis-compatible clients may not expose
+  // ioredis' status property. Let those clients execute normally.
+  if (!initialStatus || initialStatus === 'ready') return true
+  if (initialStatus === 'end' || initialStatus === 'close' || initialStatus === 'wait') return false
+
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const status = String(client.status)
+    if (status === 'ready') return true
+    if (status === 'end' || status === 'close' || status === 'wait') return false
+  }
+
+  return false
+}
+
 export function createRedisStore(client: Redis): RateLimitStore {
   // Per-process counter, not per-key: it only needs to disambiguate members
   // within the same millisecond, and a single counter is simpler than one
   // per key.
   let counter = 0
+  const instanceId = randomUUID()
 
   return {
     name: 'redis',
@@ -51,18 +71,16 @@ export function createRedisStore(client: Redis): RateLimitStore {
     async consume(key: string, windowMs: number, maxRequests: number): Promise<boolean> {
       const now = Date.now()
       counter = (counter + 1) % Number.MAX_SAFE_INTEGER
-      const member = `${now}-${counter}`
+      const member = `${now}-${instanceId}-${counter}`
 
       try {
-        const result = await client.eval(
-          SLIDING_WINDOW_SCRIPT,
-          1,
-          key,
-          String(now),
-          String(windowMs),
-          String(maxRequests),
-          member
-        )
+        if (!(await waitForRedisReady(client, 1_000))) return true
+        const result = await Promise.race([
+          client.eval(SLIDING_WINDOW_SCRIPT, 1, key, String(now), String(windowMs), String(maxRequests), member),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Redis rate-limit request timed out')), 1_000)
+          ),
+        ])
         return result === 1
       } catch (error) {
         // Fail open: a Redis outage must not take down the public API this

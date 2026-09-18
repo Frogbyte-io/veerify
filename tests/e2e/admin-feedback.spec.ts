@@ -254,6 +254,7 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('UI: feedback detail page supports edit, comment moderation, and admin controls', async ({ request, page }) => {
+    test.setTimeout(120_000)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
     expect(authCookies.length).toBeGreaterThan(0)

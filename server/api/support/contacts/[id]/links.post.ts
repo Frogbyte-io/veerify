@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
       await lockContactTeam(tx, accessibleContact.teamId)
 
       const [lockedContact] = await tx
-        .select({ id: contact.id, teamId: contact.teamId })
+        .select({ id: contact.id, teamId: contact.teamId, mergedIntoContactId: contact.mergedIntoContactId })
         .from(contact)
         .where(eq(contact.id, contactId))
         .for('update')
@@ -52,6 +52,13 @@ export default defineEventHandler(async (event) => {
           statusCode: 404,
           statusMessage: 'Not Found',
           data: createErrorResponse(ErrorCode.NOT_FOUND, 'Contact not found'),
+        })
+      }
+      if (lockedContact.mergedIntoContactId) {
+        throw createError({
+          statusCode: 409,
+          statusMessage: 'Conflict',
+          data: createErrorResponse(ErrorCode.CONFLICT, 'Merged contacts cannot receive new links'),
         })
       }
 

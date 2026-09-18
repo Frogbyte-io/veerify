@@ -29,6 +29,7 @@ import {
   signSupportUploadToken,
   newAttachmentId,
   validateAttachmentUploadInput,
+  sanitizeSupportAttachmentFilename,
 } from '~/server/utils/support-attachments'
 
 const bodySchema = z.object({
@@ -45,18 +46,19 @@ export default defineEventHandler(async (event) => {
   await requireConversationAccess(body.conversationId, session.user.id)
 
   const normalizedContentType = body.contentType.trim().toLowerCase()
+  const fileName = sanitizeSupportAttachmentFilename(body.filename)
   validateAttachmentUploadInput(normalizedContentType, body.sizeBytes)
 
   const uploadId = newAttachmentId()
   const expiresAtDate = new Date(Date.now() + ATTACHMENT_UPLOAD_EXPIRES_SECONDS * 1000)
-  const tempStorageKey = createSupportUploadTempKey(uploadId, body.filename)
+  const tempStorageKey = createSupportUploadTempKey(uploadId, fileName)
   await db.insert(supportAttachmentUpload).values({
     id: uploadId,
     conversationId: body.conversationId,
     userId: session.user.id,
     tempStorageKey,
     finalStorageKey: null,
-    fileName: body.filename,
+    fileName,
     requestedContentType: normalizedContentType,
     requestedSizeBytes: body.sizeBytes,
     status: 'pending',
@@ -89,7 +91,7 @@ export default defineEventHandler(async (event) => {
 
   return createSuccessResponse({
     uploadId,
-    fileName: body.filename,
+    fileName,
     contentType: normalizedContentType,
     uploadUrl: uploadTarget.uploadUrl,
     method: uploadTarget.method,

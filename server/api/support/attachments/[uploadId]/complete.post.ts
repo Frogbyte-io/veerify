@@ -40,6 +40,34 @@ export default defineEventHandler(async (event) => {
   const uploadId = getRouterParam(event, 'uploadId')
   if (!uploadId) completionError(400, 'Upload id is required')
 
+  const [initialUpload] = await db
+    .select()
+    .from(supportAttachmentUpload)
+    .where(eq(supportAttachmentUpload.id, uploadId))
+    .limit(1)
+  if (!initialUpload || initialUpload.userId !== session.user.id) completionError(404, 'Upload session not found')
+
+  await requireConversationAccess(initialUpload.conversationId, session.user.id)
+  if (initialUpload.expiresAt.getTime() <= Date.now()) completionError(400, 'Upload session has expired')
+  if (initialUpload.status !== 'pending' && initialUpload.status !== 'uploaded')
+    completionError(409, 'Upload session is not available')
+
+  const storage = getStorageProvider()
+  if (storage.directUploadConstraints !== 'content-length-enforced') {
+    completionError(409, 'This upload session must be completed through the proxy', ErrorCode.CONFLICT)
+  }
+
+  let metadata
+  try {
+    metadata = await storage.headObject(initialUpload.tempStorageKey)
+  } catch (error: unknown) {
+    const cause = error as { code?: string; name?: string; $metadata?: { httpStatusCode?: number } }
+    if (cause.code === 'OBJECT_NOT_FOUND' || cause.$metadata?.httpStatusCode === 404 || cause.name === 'NotFound') {
+      completionError(404, 'Uploaded object not found')
+    }
+    throw error
+  }
+
   return await db.transaction(async (tx) => {
     const [upload] = await tx
       .select()
@@ -49,25 +77,10 @@ export default defineEventHandler(async (event) => {
       .limit(1)
     if (!upload || upload.userId !== session.user.id) completionError(404, 'Upload session not found')
 
-    await requireConversationAccess(upload.conversationId, session.user.id)
+    await requireConversationAccess(upload.conversationId, session.user.id, tx)
     if (upload.expiresAt.getTime() <= Date.now()) completionError(400, 'Upload session has expired')
     if (upload.status !== 'pending' && upload.status !== 'uploaded')
       completionError(409, 'Upload session is not available')
-
-    const storage = getStorageProvider()
-    if (storage.directUploadConstraints !== 'content-length-enforced') {
-      completionError(409, 'This upload session must be completed through the proxy', ErrorCode.CONFLICT)
-    }
-    let metadata
-    try {
-      metadata = await storage.headObject(upload.tempStorageKey)
-    } catch (error: unknown) {
-      const cause = error as { code?: string; name?: string; $metadata?: { httpStatusCode?: number } }
-      if (cause.code === 'OBJECT_NOT_FOUND' || cause.$metadata?.httpStatusCode === 404 || cause.name === 'NotFound') {
-        completionError(404, 'Uploaded object not found')
-      }
-      throw error
-    }
     if (metadata.sizeBytes !== upload.requestedSizeBytes)
       completionError(400, 'Uploaded size does not match the presigned size')
     if (metadata.contentType !== upload.requestedContentType)

@@ -137,6 +137,14 @@ yarn build
 yarn db:migrate:deploy
 ```
 
+Migration history is append-only: never edit a migration that may already have
+been applied. If a constraint or index needs phased validation, add a new
+forward migration and schedule the validation separately. This keeps existing
+Drizzle journals valid and avoids making a deploy replay or skip an unrelated
+range of migrations. For large installations, run the migration command as a
+single controlled deployment job and monitor long-running backfills before
+starting application replicas.
+
 Preview/test data is always an explicit operation (`yarn db:seed` or `yarn db:seed:e2e`) and must never be part of a build or package-install hook. Vercel's `vercel-build` command runs deployment migration first and compilation second, without seeding.
 
 #### Configure the PostgreSQL database
@@ -255,6 +263,8 @@ broker for realtime + rate limiting), MinIO (S3-compatible object storage), and 
   it is proxied by Caddy, not exposed on its own port.
 - Ports `80` and `443` open and free on the host (Caddy binds both; port 80 is required for ACME's HTTP-01
   challenge as well as HTTP→HTTPS redirects).
+- Do not publish PostgreSQL, Valkey, or MinIO ports to the public host. The production Compose file keeps them
+  on its private network; use a temporary SSH tunnel or an authenticated admin network when direct access is needed.
 
 #### Environment
 
@@ -271,9 +281,9 @@ credentials — there is no separate MinIO admin password to set.
 docker compose up -d --build
 ```
 
-This builds the app image, starts Postgres/Valkey/MinIO, creates and publishes the MinIO bucket, runs
-database migrations on container start (before the app begins serving), and brings Caddy up in front of
-everything. `docker compose logs -f app` shows migration output and server startup.
+This builds the app image, starts Postgres/Valkey/MinIO, creates and publishes the MinIO bucket, runs the
+single migration/backfill service before the app begins serving, and brings Caddy up in front of everything.
+`docker compose logs -f migrate` shows migration output; `docker compose logs -f app` shows server startup.
 
 #### Custom domains (`project.customDomain`)
 

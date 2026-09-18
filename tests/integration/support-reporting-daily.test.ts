@@ -9,8 +9,11 @@ import { supportInbox, supportMetricDaily } from '../../server/database/schema/s
 const ids = {
   organization: `reporting_org_${randomUUID()}`,
   team: `reporting_team_${randomUUID()}`,
+  otherOrganization: `reporting_org_${randomUUID()}`,
+  otherTeam: `reporting_team_${randomUUID()}`,
   inbox: `reporting_inbox_${randomUUID()}`,
   secondInbox: `reporting_inbox_${randomUUID()}`,
+  otherInbox: `reporting_inbox_${randomUUID()}`,
   agent: `reporting_agent_${randomUUID()}`,
 }
 const now = new Date()
@@ -28,6 +31,21 @@ beforeAll(async () => {
     name: 'Reporting Team',
     slug: `reporting-${randomUUID()}`,
     organizationId: ids.organization,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(organization).values({
+    id: ids.otherOrganization,
+    name: 'Other Reporting Org',
+    slug: `reporting-${randomUUID()}`,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(team).values({
+    id: ids.otherTeam,
+    name: 'Other Reporting Team',
+    slug: `reporting-${randomUUID()}`,
+    organizationId: ids.otherOrganization,
     createdAt: now,
     updatedAt: now,
   })
@@ -54,11 +72,20 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
+  await db.insert(supportInbox).values({
+    id: ids.otherInbox,
+    teamId: ids.otherTeam,
+    name: 'Other Reporting Inbox',
+    slug: `reporting-${randomUUID()}`,
+    createdAt: now,
+    updatedAt: now,
+  })
 })
 
 afterAll(async () => {
   await db.delete(user).where(sql`${user.id} = ${ids.agent}`)
   await db.delete(organization).where(sql`${organization.id} = ${ids.organization}`)
+  await db.delete(organization).where(sql`${organization.id} = ${ids.otherOrganization}`)
 })
 
 afterEach(async () => {
@@ -92,6 +119,23 @@ async function expectCheckViolation(operation: Promise<unknown>, constraint: str
           ? (error as Record<string, unknown>)
           : undefined
     expect(postgresError?.code).toBe('23514')
+    expect(postgresError?.constraint).toBe(constraint)
+  }
+}
+
+async function expectForeignKeyViolation(operation: Promise<unknown>, constraint: string) {
+  try {
+    await operation
+    throw new Error(`Expected ${constraint} to reject`)
+  } catch (error) {
+    const cause = error && typeof error === 'object' && 'cause' in error ? error.cause : undefined
+    const postgresError =
+      cause && typeof cause === 'object'
+        ? (cause as Record<string, unknown>)
+        : error && typeof error === 'object'
+          ? (error as Record<string, unknown>)
+          : undefined
+    expect(postgresError?.code).toBe('23503')
     expect(postgresError?.constraint).toBe(constraint)
   }
 }
@@ -136,6 +180,16 @@ describe('support metric daily (integration)', () => {
         .insert(supportMetricDaily)
         .values({ ...bucket(`bucket_${randomUUID()}`), metric: 'negative-infinity', value: Number.NEGATIVE_INFINITY }),
       'support_metric_daily_finite_value_check'
+    )
+  })
+
+  it('does not allow a bucket to pair an inbox from another team', async () => {
+    await expectForeignKeyViolation(
+      db.insert(supportMetricDaily).values({
+        ...bucket(`bucket_${randomUUID()}`),
+        inboxId: ids.otherInbox,
+      }),
+      'support_metric_daily_team_inbox_ownership_fk'
     )
   })
 

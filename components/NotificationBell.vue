@@ -82,6 +82,7 @@ export default {
       pollInterval: null,
       useWebSocket: true,
       hasLoadedNotifications: false,
+      notificationFetchVersion: 0,
     }
   },
   mounted() {
@@ -92,11 +93,12 @@ export default {
   },
   methods: {
     async fetchNotifications() {
+      const requestVersion = ++this.notificationFetchVersion
       try {
         const res = await $fetch('/api/notifications', {
           params: { limit: 10 },
         })
-        if (res.success) {
+        if (res.success && requestVersion === this.notificationFetchVersion) {
           this.notifications = res.data.notifications
           this.unreadCount = res.data.unreadCount
           this.hasMore = res.data.hasMore
@@ -106,7 +108,7 @@ export default {
       } catch {
         // Silently fail — bell just shows no notifications
       } finally {
-        this.isLoading = false
+        if (requestVersion === this.notificationFetchVersion) this.isLoading = false
       }
     },
     async connectWebSocket(sessionToken = null) {

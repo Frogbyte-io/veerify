@@ -188,8 +188,10 @@ export async function requireTeamAdmin(teamId: string, userId: string) {
  * need to reach an inbox before anyone has explicitly added them to it).
  * `teamMember.role` semantics are otherwise unchanged (delta D-28).
  */
-export async function requireInboxAccess(inboxId: string, userId: string) {
-  const [inbox] = await db.select().from(supportInbox).where(eq(supportInbox.id, inboxId)).limit(1)
+type SupportAccessExecutor = Pick<typeof db, 'select'>
+
+export async function requireInboxAccess(inboxId: string, userId: string, executor: SupportAccessExecutor = db) {
+  const [inbox] = await executor.select().from(supportInbox).where(eq(supportInbox.id, inboxId)).limit(1)
 
   if (!inbox) {
     throw createError({
@@ -199,13 +201,13 @@ export async function requireInboxAccess(inboxId: string, userId: string) {
     })
   }
 
-  const [membership] = await db
+  const [membership] = await executor
     .select({ id: supportInboxMember.id, role: supportInboxMember.role })
     .from(supportInboxMember)
     .where(and(eq(supportInboxMember.inboxId, inboxId), eq(supportInboxMember.userId, userId)))
     .limit(1)
 
-  const [teamAdmin] = await db
+  const [teamAdmin] = await executor
     .select({ id: teamMember.id, role: teamMember.role })
     .from(teamMember)
     .where(and(eq(teamMember.teamId, inbox.teamId), eq(teamMember.userId, userId), eq(teamMember.role, 'admin')))
@@ -289,8 +291,12 @@ export async function requireSupportTeamRole(
  * ever reachable through the inbox it belongs to, so the 404/403 split is
  * inherited from `requireInboxAccess`.
  */
-export async function requireConversationAccess(conversationId: string, userId: string) {
-  const [row] = await db.select().from(conversation).where(eq(conversation.id, conversationId)).limit(1)
+export async function requireConversationAccess(
+  conversationId: string,
+  userId: string,
+  executor: SupportAccessExecutor = db
+) {
+  const [row] = await executor.select().from(conversation).where(eq(conversation.id, conversationId)).limit(1)
 
   if (!row) {
     throw createError({
@@ -300,7 +306,7 @@ export async function requireConversationAccess(conversationId: string, userId: 
     })
   }
 
-  await requireInboxAccess(row.inboxId, userId)
+  await requireInboxAccess(row.inboxId, userId, executor)
 
   return row
 }

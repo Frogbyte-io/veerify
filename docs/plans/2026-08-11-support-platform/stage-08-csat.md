@@ -7,7 +7,7 @@
 
 Stage 08's core implementation is complete on `support-platform`. The durable survey/response schema,
 five-minute dispatch pass, public rating flow, configuration surfaces, and live score surfaces are
-implemented. Atomic cross-worker contact cooldown claiming remains open.
+implemented. The per-contact cooldown claim is serialized across workers with a transaction lock.
 
 ## Schema
 

@@ -316,7 +316,7 @@ interface StatusChangeNotificationEmailOptions {
   feedbackTitle: string
   newStatus: string
   boardUrl: string
-  unsubscribeUrl: string
+  unsubscribeUrl: string | null
 }
 
 export async function sendStatusChangeNotificationEmail(options: StatusChangeNotificationEmailOptions) {

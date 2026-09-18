@@ -53,6 +53,7 @@ export default defineEventHandler(async (event) => {
       teamId: conversation.teamId,
       inboxId: conversation.inboxId,
       priority: conversation.priority,
+      firstResponseAt: conversation.firstResponseAt,
       contactId: conversation.contactId,
     })
     .from(conversationTag)
@@ -81,6 +82,7 @@ export default defineEventHandler(async (event) => {
           companyId: contactRow?.companyId,
           tagIds: tags.map((tagRow) => tagRow.tagId),
           start: new Date(),
+          includeNextResponse: Boolean(row.firstResponseAt),
         },
         tx
       )

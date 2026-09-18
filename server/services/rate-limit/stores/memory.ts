@@ -9,15 +9,17 @@ import type { RateLimitStore } from '../types'
  */
 export function createMemoryStore(): RateLimitStore {
   const store = new Map<string, number[]>()
+  const retentionMs = new Map<string, number>()
 
   // Clean up stale entries every 5 minutes to prevent unbounded memory growth.
   const cleanup = setInterval(
     () => {
       const now = Date.now()
       for (const [key, timestamps] of store.entries()) {
-        const fresh = timestamps.filter((t) => now - t < 3_600_000)
+        const fresh = timestamps.filter((t) => now - t < (retentionMs.get(key) ?? 3_600_000))
         if (fresh.length === 0) {
           store.delete(key)
+          retentionMs.delete(key)
         } else {
           store.set(key, fresh)
         }
@@ -36,6 +38,7 @@ export function createMemoryStore(): RateLimitStore {
 
     async consume(key: string, windowMs: number, maxRequests: number): Promise<boolean> {
       const now = Date.now()
+      retentionMs.set(key, Math.max(retentionMs.get(key) ?? 0, windowMs))
 
       // Retrieve existing timestamps and discard those outside the current window.
       const timestamps = (store.get(key) ?? []).filter((t) => now - t < windowMs)

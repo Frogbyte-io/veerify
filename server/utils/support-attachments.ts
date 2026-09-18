@@ -52,7 +52,7 @@ export const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set([
 
 export const ATTACHMENT_UPLOAD_EXPIRES_SECONDS = 15 * 60
 
-function sanitizeFilename(filename: string): string {
+export function sanitizeSupportAttachmentFilename(filename: string): string {
   const base = filename.split(/[/\\]/).pop() || 'attachment'
   const cleaned = base
     .trim()
@@ -63,11 +63,11 @@ function sanitizeFilename(filename: string): string {
 }
 
 export function createSupportUploadTempKey(uploadId: string, fileName: string) {
-  return `support/attachments/uploads/${uploadId}/${sanitizeFilename(fileName)}`
+  return `support/attachments/uploads/${uploadId}/${sanitizeSupportAttachmentFilename(fileName)}`
 }
 
 export function createSupportAttachmentFinalKey(attachmentId: string, fileName: string) {
-  return `support/attachments/outbound/${attachmentId}/${sanitizeFilename(fileName)}`
+  return `support/attachments/outbound/${attachmentId}/${sanitizeSupportAttachmentFilename(fileName)}`
 }
 
 export function validateAttachmentUploadInput(contentType: string, sizeBytes: number) {

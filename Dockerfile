@@ -3,8 +3,8 @@
 # ---- deps ----------------------------------------------------------------
 # Installs the full dependency tree (incl. devDependencies) once, shared by
 # the build stage and copied into the runtime stage. devDependencies are kept
-# at runtime because `drizzle-kit migrate` (a devDependency) runs explicitly
-# on container start — see the entrypoint below.
+# at runtime because the dedicated migration service runs `drizzle-kit migrate`
+# before the app service starts. See the entrypoint below.
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json yarn.lock ./
@@ -34,6 +34,7 @@ COPY --from=build /app/.output ./.output
 COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/server/database/migrations ./server/database/migrations
 COPY --from=build /app/server/database/schema ./server/database/schema
+COPY --from=build /app/scripts/backfill-project-domains.ts ./scripts/backfill-project-domains.ts
 COPY --from=build /app/package.json ./package.json
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R nuxt:nodejs /app

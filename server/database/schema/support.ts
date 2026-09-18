@@ -38,6 +38,7 @@ import {
   date,
   check,
   primaryKey,
+  foreignKey,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
@@ -241,6 +242,10 @@ export const supportInbox = pgTable(
   },
   (table) => ({
     uniqueTeamSlug: uniqueIndex('support_inbox_team_slug_idx').on(table.teamId, table.slug),
+    // Required as the referenced key for team-scoped child records. Keeping
+    // the team in the key prevents a child row from pairing this inbox with
+    // a different team's identifier.
+    uniqueTeamId: uniqueIndex('support_inbox_team_id_idx').on(table.teamId, table.id),
     uniqueEmailAddress: uniqueIndex('support_inbox_email_address_idx').on(table.emailAddress),
     teamIdx: index('support_inbox_team_idx').on(table.teamId),
     projectIdx: index('support_inbox_project_idx').on(table.projectId),
@@ -1116,6 +1121,11 @@ export const supportMetricDaily = pgTable(
       .on(table.teamId, table.inboxId, table.agentUserId, table.date, table.timezone, table.metric)
       .where(sql`${table.agentUserId} is not null`),
     teamDateIdx: index('support_metric_daily_team_date_idx').on(table.teamId, table.date),
+    teamInboxOwnershipFk: foreignKey({
+      columns: [table.teamId, table.inboxId],
+      foreignColumns: [supportInbox.teamId, supportInbox.id],
+      name: 'support_metric_daily_team_inbox_ownership_fk',
+    }).onDelete('cascade'),
     sampleCountCheck: check('support_metric_daily_sample_count_check', sql`${table.sampleCount} >= 0`),
     finiteValueCheck: check(
       'support_metric_daily_finite_value_check',

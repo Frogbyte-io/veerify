@@ -17,14 +17,14 @@
 import { asc, eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireSupportTeamRole } from '~/server/utils/support-access'
+import { requireTeamAdmin } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { automationRule } from '~/server/database/schema/support'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const teamId = getRouterParam(event, 'teamId') as string
-  await requireSupportTeamRole(teamId, session.user.id, 'agent')
+  await requireTeamAdmin(teamId, session.user.id)
 
   const rules = await db
     .select()

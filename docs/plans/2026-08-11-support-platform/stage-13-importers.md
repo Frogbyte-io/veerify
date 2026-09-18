@@ -31,9 +31,14 @@ helpers under `server/utils/imports/`. Follow that adapter shape; do not build a
 - **Entity mapping** — tickets → conversations, comments → messages (preserving public versus internal),
   end users → contacts, organizations → companies, tags → tags, agents → users matched by email with
   an explicit unmatched-agent resolution step.
-- **Idempotent, resumable import.** Record source ids on imported rows (in `metadata`) so re-running
-  skips what already landed. Imports of tens of thousands of tickets will be interrupted; resuming must
-  not duplicate.
+- **Idempotent, resumable import.** Do not use a free-form `metadata` field as the sole identity
+  mechanism: contacts, companies, and tags do not all have one, and metadata alone cannot enforce a
+  race-free retry. Add a durable import identity table (or equivalent columns) keyed by the source
+  connection, entity type, and source id, with a unique constraint and an atomic upsert that points to
+  the imported row. Keep source ids in metadata only as supplemental provenance. Every entity type,
+  including contacts, companies, tags, conversations, messages, and attachments, must pass through that
+  identity claim before it is created. Imports of tens of thousands of tickets will be interrupted;
+  resuming must not duplicate or skip work.
 - **Preserve original timestamps.** `createdAt` on imported conversations and messages must be the
   source timestamp, not the import time, or every reporting number in Stage 09 is wrong for historical
   data.
@@ -78,3 +83,6 @@ helpers under `server/utils/imports/`. Follow that adapter shape; do not build a
 - **Duplicate imports.** Long-running imports get interrupted. Idempotency is a requirement, not a
   refinement.
 - **Building a second import system.** The framework exists. Extend it.
+- **Identity drift or duplicate retries.** Source ids are scoped to a provider account, not globally.
+  Store the connection identity with each claim and make the unique key cover `(connection, entityType,
+sourceId)`. The claim and target-row write must be atomic so two workers cannot create duplicates.

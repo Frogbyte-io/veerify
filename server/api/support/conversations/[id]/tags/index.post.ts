@@ -57,45 +57,53 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const [created] = await db
-      .insert(conversationTag)
-      .values({
-        id: randomUUID(),
-        conversationId,
-        tagId: body.tagId,
-        createdAt: new Date(),
-      })
-      .returning()
+    const created = await db.transaction(async (tx) => {
+      const [createdTag] = await tx
+        .insert(conversationTag)
+        .values({
+          id: randomUUID(),
+          conversationId,
+          tagId: body.tagId,
+          createdAt: new Date(),
+        })
+        .returning()
 
-    const [contactRow] = await db
-      .select({ companyId: contact.companyId })
-      .from(contact)
-      .where(eq(contact.id, existing.contactId))
-      .limit(1)
-    const tags = await db
-      .select({ tagId: conversationTag.tagId })
-      .from(conversationTag)
-      .where(eq(conversationTag.conversationId, conversationId))
-    const sla = await resolveSlaAssignment({
-      teamId: existing.teamId,
-      inboxId: existing.inboxId,
-      priority: existing.priority,
-      companyId: contactRow?.companyId,
-      tagIds: tags.map((row) => row.tagId),
-      start: new Date(),
+      const [contactRow] = await tx
+        .select({ companyId: contact.companyId })
+        .from(contact)
+        .where(eq(contact.id, existing.contactId))
+        .limit(1)
+      const tags = await tx
+        .select({ tagId: conversationTag.tagId })
+        .from(conversationTag)
+        .where(eq(conversationTag.conversationId, conversationId))
+      const sla = await resolveSlaAssignment(
+        {
+          teamId: existing.teamId,
+          inboxId: existing.inboxId,
+          priority: existing.priority,
+          companyId: contactRow?.companyId,
+          tagIds: tags.map((row) => row.tagId),
+          start: new Date(),
+          includeNextResponse: Boolean(existing.firstResponseAt),
+        },
+        tx
+      )
+      await tx
+        .update(conversation)
+        .set({
+          ...(sla ?? {
+            slaPolicyId: null,
+            firstResponseDueAt: null,
+            nextResponseDueAt: null,
+            resolutionDueAt: null,
+          }),
+          updatedAt: new Date(),
+        })
+        .where(eq(conversation.id, conversationId))
+
+      return createdTag
     })
-    await db
-      .update(conversation)
-      .set({
-        ...(sla ?? {
-          slaPolicyId: null,
-          firstResponseDueAt: null,
-          nextResponseDueAt: null,
-          resolutionDueAt: null,
-        }),
-        updatedAt: new Date(),
-      })
-      .where(eq(conversation.id, conversationId))
 
     // `conversation.updated` rather than a bespoke type - envelopes carry no
     // detail and clients refetch, so reusing the type PATCH already emits
@@ -107,6 +115,51 @@ export default defineEventHandler(async (event) => {
       conversationId,
     })
     await triggerAutomationEvent({ conversationId, trigger: 'conversation_updated', actorUserId: session.user.id })
+
+    // Automation may add/remove tags. Re-read after it completes so the SLA
+    // assignment reflects the final tag set rather than the pre-automation set.
+    await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({
+          teamId: conversation.teamId,
+          inboxId: conversation.inboxId,
+          contactId: conversation.contactId,
+          priority: conversation.priority,
+          firstResponseAt: conversation.firstResponseAt,
+        })
+        .from(conversation)
+        .where(eq(conversation.id, conversationId))
+        .limit(1)
+      if (!current) return
+      const [contactRow] = await tx
+        .select({ companyId: contact.companyId })
+        .from(contact)
+        .where(eq(contact.id, current.contactId))
+        .limit(1)
+      const tags = await tx
+        .select({ tagId: conversationTag.tagId })
+        .from(conversationTag)
+        .where(eq(conversationTag.conversationId, conversationId))
+      const sla = await resolveSlaAssignment(
+        {
+          teamId: current.teamId,
+          inboxId: current.inboxId,
+          priority: current.priority,
+          companyId: contactRow?.companyId,
+          tagIds: tags.map((row) => row.tagId),
+          start: new Date(),
+          includeNextResponse: Boolean(current.firstResponseAt),
+        },
+        tx
+      )
+      await tx
+        .update(conversation)
+        .set({
+          ...(sla ?? { slaPolicyId: null, firstResponseDueAt: null, nextResponseDueAt: null, resolutionDueAt: null }),
+          updatedAt: new Date(),
+        })
+        .where(eq(conversation.id, conversationId))
+    })
 
     return createSuccessResponse({ tag: created })
   } catch (error) {

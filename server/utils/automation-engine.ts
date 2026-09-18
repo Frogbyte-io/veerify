@@ -18,6 +18,7 @@ import { db } from '~/server/database/drizzle'
 import { executeAutomationActions, type AutomationActionRegistry } from '~/server/utils/automation-actions'
 import { evaluateAutomationConditions, type AutomationConversationContext } from '~/server/utils/automation-conditions'
 import { applyConversationStatusTransition } from '~/server/utils/conversation-activity'
+import { validateWebhookUrlForRequest } from '~/server/utils/webhook-url'
 
 export const DEFAULT_AUTOMATION_CASCADE_DEPTH = 3
 
@@ -231,13 +232,15 @@ function buildActionRegistry(state: ConversationAutomationState, actorUserId: st
     },
     call_webhook: async (action) => {
       const url = stringActionValue(action, 'url', 'value')
-      if (!url || !/^https?:\/\//i.test(url)) return actionFailure('A valid webhook URL is required')
+      if (!url) return actionFailure('A valid webhook URL is required')
       try {
-        const response = await fetch(url, {
+        const safeUrl = await validateWebhookUrlForRequest(url)
+        const response = await fetch(safeUrl, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(action.payload ?? { conversationId: state.id }),
           signal: AbortSignal.timeout(10_000),
+          redirect: 'error',
         })
         if (!response.ok) return actionFailure(`Webhook returned HTTP ${response.status}`)
       } catch (error) {
