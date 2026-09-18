@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { reportingDateAt, reportingDayBounds } from '~/server/utils/support-reporting-calendar'
+import {
+  isValidReportingTimezone,
+  reportingDateAt,
+  reportingDayBounds,
+} from '~/server/utils/support-reporting-calendar'
 
 describe('support reporting calendar', () => {
   it('formats instants as a UTC reporting date', () => {
@@ -37,6 +41,9 @@ describe('support reporting calendar', () => {
     expect(() => reportingDayBounds('2024-13-01', 'UTC')).toThrow(/invalid calendar date/i)
     expect(() => reportingDateAt(new Date(), 'Not/AZone')).toThrow(/invalid timezone/i)
     expect(() => reportingDateAt(new Date('invalid'), 'UTC')).toThrow(/invalid instant/i)
+    expect(isValidReportingTimezone('Pacific/Apia')).toBe(true)
+    expect(isValidReportingTimezone('Not/AZone')).toBe(false)
+    expect(isValidReportingTimezone('')).toBe(false)
   })
 
   it('supports the documented 1900 through 9998 calendar-year range', () => {

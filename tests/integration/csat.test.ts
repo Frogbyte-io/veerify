@@ -172,7 +172,10 @@ describe('CSAT dispatch (real Postgres)', () => {
     const [response] = await db.select().from(csatResponse).where(eq(csatResponse.conversationId, ids.conversation))
     expect(first.sent).toBe(1)
     expect(response?.surveyId).toBe(ids.survey)
+    expect(response?.scale).toBe('csat_5')
     expect(response?.token).toHaveLength(43)
+
+    await db.update(csatSurvey).set({ scale: 'thumbs', updatedAt: now }).where(eq(csatSurvey.id, ids.survey))
 
     const second = await runCsatDispatchSweep({ now })
     const allResponses = await db.select().from(csatResponse).where(eq(csatResponse.surveyId, ids.survey))
@@ -180,9 +183,12 @@ describe('CSAT dispatch (real Postgres)', () => {
 
     expect(second.sent).toBe(0)
     expect(allResponses).toHaveLength(1)
+    expect(allResponses[0]?.scale).toBe('csat_5')
     expect(delivery?.idempotencyKey).toBe(`csat:${response?.id}`)
     expect(delivery?.payload).toMatchObject({ to: expect.any(String), subject: 'How did we do?' })
 
+    // The response keeps the scale used in the email even after the mutable
+    // survey configuration changes.
     const rated = await submitCsatResponse({ token: response!.token, rating: 5, now })
     expect(rated.response.rating).toBe(5)
     expect(rated.response.respondedAt).toEqual(now)

@@ -22,8 +22,19 @@ import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportTeamSettings } from '~/server/database/schema/support'
 import { lockContactTeam } from '~/server/utils/contact-lock'
+import { isValidReportingTimezone } from '~/server/utils/support-reporting-calendar'
 
-const bodySchema = z.object({ autoLinkFeedback: z.boolean() })
+const DEFAULT_REPORTING_TIMEZONE = 'UTC'
+const bodySchema = z.object({
+  autoLinkFeedback: z.boolean(),
+  reportingTimezone: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .refine(isValidReportingTimezone, 'reportingTimezone must be a valid IANA timezone')
+    .optional(),
+})
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -37,10 +48,20 @@ export default defineEventHandler(async (event) => {
 
     const [updated] = await tx
       .insert(supportTeamSettings)
-      .values({ teamId, autoLinkFeedback: body.autoLinkFeedback, createdAt: now, updatedAt: now })
+      .values({
+        teamId,
+        autoLinkFeedback: body.autoLinkFeedback,
+        reportingTimezone: body.reportingTimezone ?? DEFAULT_REPORTING_TIMEZONE,
+        createdAt: now,
+        updatedAt: now,
+      })
       .onConflictDoUpdate({
         target: supportTeamSettings.teamId,
-        set: { autoLinkFeedback: body.autoLinkFeedback, updatedAt: now },
+        set: {
+          autoLinkFeedback: body.autoLinkFeedback,
+          ...(body.reportingTimezone ? { reportingTimezone: body.reportingTimezone } : {}),
+          updatedAt: now,
+        },
       })
       .returning()
 

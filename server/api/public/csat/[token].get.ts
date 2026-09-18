@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
 
   return createSuccessResponse({
     survey: {
-      scale: row.survey.scale,
+      scale: row.response.scale,
       question: row.survey.question,
       followUpQuestion: row.survey.followUpQuestion,
     },

@@ -186,6 +186,10 @@ export const supportTeamSettings = pgTable('support_team_settings', {
     .primaryKey()
     .references(() => team.id, { onDelete: 'cascade' }),
   autoLinkFeedback: boolean('auto_link_feedback').default(false).notNull(),
+  // Reporting dates are bucketed using this team-owned calendar. UTC keeps
+  // existing teams deterministic until an administrator chooses another IANA
+  // timezone.
+  reportingTimezone: text('reporting_timezone').default('UTC').notNull(),
   createdAt: timestamp('created_at')
     .$defaultFn(() => new Date())
     .notNull(),
@@ -918,6 +922,9 @@ export const csatResponse = pgTable(
       .notNull()
       .references(() => contact.id, { onDelete: 'cascade' }),
     agentUserId: text('agent_user_id').references(() => user.id, { onDelete: 'set null' }),
+    // Snapshot the survey scale at dispatch time so later survey edits cannot
+    // reinterpret a historical response.
+    scale: text('scale').$type<CsatScale>().notNull(),
     rating: integer('rating'),
     comment: text('comment'),
     // Opaque token used by the public rating endpoint. The rating is carried
@@ -942,6 +949,7 @@ export const csatResponse = pgTable(
       'csat_response_rating_check',
       sql`${table.rating} is null or (${table.rating} >= 0 and ${table.rating} <= 10)`
     ),
+    validScale: check('csat_response_scale_check', sql`${table.scale} in ('csat_5','thumbs','nps_10')`),
   })
 )
 

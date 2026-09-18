@@ -167,6 +167,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
       conversationId: resolvedConversationId,
       contactId: resolvedContactId,
       agentUserId: userId,
+      scale: 'csat_5',
       rating: 5,
       token: `search-e2e-token-${suffix}`,
       sentAt: now,

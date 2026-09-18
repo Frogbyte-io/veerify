@@ -21,6 +21,8 @@ import { capabilitiesForRole, resolveSupportTeamRole, type SupportInboxRole } fr
 import { db } from '~/server/database/drizzle'
 import { supportTeamSettings } from '~/server/database/schema/support'
 
+const DEFAULT_REPORTING_TIMEZONE = 'UTC'
+
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const teamId = getRouterParam(event, 'teamId') as string
@@ -30,7 +32,13 @@ export default defineEventHandler(async (event) => {
 
   const [settings] = await db.select().from(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId)).limit(1)
   return createSuccessResponse({
-    settings: settings ?? { teamId, autoLinkFeedback: false, createdAt: null, updatedAt: null },
+    settings: settings ?? {
+      teamId,
+      autoLinkFeedback: false,
+      reportingTimezone: DEFAULT_REPORTING_TIMEZONE,
+      createdAt: null,
+      updatedAt: null,
+    },
     effectiveRole,
     isTeamAdmin,
     capabilities: capabilitiesForRole(effectiveRole, isTeamAdmin),

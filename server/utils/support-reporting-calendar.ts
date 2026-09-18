@@ -19,6 +19,17 @@ function formatter(timezone: string): Intl.DateTimeFormat {
   }
 }
 
+/** Return whether a value is accepted as an IANA timezone by the runtime. */
+export function isValidReportingTimezone(timezone: string): boolean {
+  if (typeof timezone !== 'string' || timezone.trim().length === 0) return false
+  try {
+    formatter(timezone)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function formatDate(instant: Date, format: Intl.DateTimeFormat): string {
   const parts = Object.fromEntries(format.formatToParts(instant).map(({ type, value }) => [type, value]))
   return `${parts.year}-${parts.month}-${parts.day}`

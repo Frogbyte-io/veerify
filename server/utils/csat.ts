@@ -94,7 +94,7 @@ export async function submitCsatResponse(input: {
   const now = input.now ?? new Date()
   const comment = input.comment?.trim() || null
 
-  if (input.rating !== undefined && !isValidCsatRating(row.survey.scale, input.rating)) {
+  if (input.rating !== undefined && !isValidCsatRating(row.response.scale, input.rating)) {
     throw new CsatResponseError('invalid_rating', 'Rating is not valid for this survey scale')
   }
 
@@ -241,6 +241,7 @@ async function dispatchCandidate(candidate: CsatCandidate, now: Date): Promise<b
         conversationId: candidate.conversation.id,
         contactId: candidate.contact.id,
         agentUserId: candidate.conversation.assigneeUserId,
+        scale: candidate.survey.scale,
         token,
         sentAt: now,
         createdAt: now,

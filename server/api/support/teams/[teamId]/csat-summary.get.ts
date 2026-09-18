@@ -102,7 +102,7 @@ export default defineEventHandler(async (event) => {
   const rows = await db
     .select({
       rating: csatResponse.rating,
-      scale: csatSurvey.scale,
+      scale: csatResponse.scale,
       inboxId: conversation.inboxId,
       inboxName: supportInbox.name,
       agentUserId: csatResponse.agentUserId,

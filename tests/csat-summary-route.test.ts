@@ -1,8 +1,10 @@
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { csatResponse } from '~/server/database/schema/support'
 
 const state = vi.hoisted(() => ({
   whereConditions: [] as unknown[],
+  selectedFields: null as Record<string, unknown> | null,
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
@@ -27,7 +29,8 @@ vi.mock('~/server/utils/response', () => ({
 
 vi.mock('~/server/database/drizzle', () => ({
   db: {
-    select: vi.fn(() => {
+    select: vi.fn((fields?: Record<string, unknown>) => {
+      state.selectedFields = fields ?? null
       const chain = {
         from: () => chain,
         innerJoin: () => chain,
@@ -47,6 +50,7 @@ const handler = (await import('~/server/api/support/teams/[teamId]/csat-summary.
 describe('CSAT summary route query scope', () => {
   beforeEach(() => {
     state.whereConditions.length = 0
+    state.selectedFields = null
   })
 
   it('keeps team-admin summary rows on inboxes owned by the requested team', async () => {
@@ -55,5 +59,11 @@ describe('CSAT summary route query scope', () => {
     expect(state.whereConditions).toHaveLength(1)
     const sql = new PgDialect().sqlToQuery(state.whereConditions[0] as never).sql
     expect(sql).toContain('"support_inbox"."team_id"')
+  })
+
+  it('projects the immutable response scale for score normalization', async () => {
+    await handler({} as never)
+
+    expect(state.selectedFields?.scale).toBe(csatResponse.scale)
   })
 })
