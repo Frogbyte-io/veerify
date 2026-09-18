@@ -625,8 +625,9 @@ test.describe('Admin feedback workflow', () => {
       await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
 
       // Back button should return to type picker in single-product mode.
-      await expect(page.locator('button:has-text("Back")')).toBeVisible()
-      await page.locator('button:has-text("Back")').click()
+      const singleProductBackButton = page.getByRole('button', { name: 'Back', exact: true })
+      await expect(singleProductBackButton).toBeVisible()
+      await singleProductBackButton.click()
       await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible()
 
       await page.getByRole('button', { name: 'Cancel' }).click()
