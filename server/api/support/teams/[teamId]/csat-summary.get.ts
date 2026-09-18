@@ -75,12 +75,21 @@ export default defineEventHandler(async (event) => {
     .from(supportTeamSettings)
     .where(eq(supportTeamSettings.teamId, teamId))
   const reportingTimezone = settings?.reportingTimezone ?? 'UTC'
-  const fromDate = query.from
-    ? query.from.toISOString().slice(0, 10)
-    : reportingDateAt(new Date(Date.now() - 30 * 24 * 60 * 60_000), reportingTimezone)
-  const toDate = query.to ? query.to.toISOString().slice(0, 10) : reportingDateAt(new Date(), reportingTimezone)
-  const from = reportingDayBounds(fromDate, reportingTimezone).start
-  const to = reportingDayBounds(toDate, reportingTimezone).end
+  let from: Date
+  let to: Date
+  try {
+    const fromDate = query.from
+      ? query.from.toISOString().slice(0, 10)
+      : reportingDateAt(new Date(Date.now() - 30 * 24 * 60 * 60_000), reportingTimezone)
+    const toDate = query.to ? query.to.toISOString().slice(0, 10) : reportingDateAt(new Date(), reportingTimezone)
+    from = reportingDayBounds(fromDate, reportingTimezone).start
+    to = reportingDayBounds(toDate, reportingTimezone).end
+  } catch (error) {
+    if (error instanceof RangeError) {
+      throw createError({ statusCode: 400, statusMessage: 'Invalid reporting date range' })
+    }
+    throw error
+  }
   const conditions = [
     eq(csatSurvey.teamId, teamId),
     eq(conversation.teamId, teamId),

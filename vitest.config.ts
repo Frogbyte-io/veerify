@@ -1,7 +1,11 @@
 import { defineConfig } from 'vitest/config'
 import { fileURLToPath } from 'node:url'
+import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
+  // Vitest bundles a Vite type version that differs from Nuxt's root Vite.
+  // The plugin is runtime-compatible; this cast only bridges those declarations.
+  plugins: [vue() as never],
   resolve: {
     // Mirrors Nuxt's `~` and `@` root aliases (see .nuxt/tsconfig.json) so server
     // modules that import via `~/server/...` resolve under plain vitest, without

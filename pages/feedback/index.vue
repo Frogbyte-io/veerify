@@ -193,7 +193,7 @@
           </div>
 
           <div class="flex items-center gap-2 w-full sm:w-auto">
-            <!-- Search — always visible in both views -->
+            <!-- Search is always visible in both views -->
             <div class="relative flex-1 sm:w-[200px]">
               <Icon
                 name="lucide:search"
@@ -239,7 +239,8 @@
                 v-model="sortBy"
                 data-testid="feedback-sort-filter"
                 class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
-                @change="onFilterChange()"
+                aria-label="Sort feedback"
+                @change="onSortFilterChange"
               >
                 <option value="voteCount">Most votes</option>
                 <option value="updatedAt">Recently updated</option>
@@ -1314,6 +1315,11 @@ export default {
       if (this.viewMode !== 'table') return
       this.pagination.page = 1
       await this.loadFeedback()
+    },
+
+    async onSortFilterChange() {
+      this.sortOrder = 'desc'
+      await this.onFilterChange()
     },
 
     async onSortBy(field) {

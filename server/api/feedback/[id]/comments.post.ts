@@ -215,5 +215,8 @@ export default defineEventHandler(async (event) => {
   return createSuccessResponse({
     ...created,
     author,
+    canEdit: Boolean(isTeamMember || session?.user || anonSessionId),
+    canDelete: Boolean(isTeamMember || session?.user || anonSessionId),
+    isEdited: false,
   })
 })
