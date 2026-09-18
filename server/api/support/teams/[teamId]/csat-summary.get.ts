@@ -83,6 +83,7 @@ export default defineEventHandler(async (event) => {
   const conditions = [
     eq(csatSurvey.teamId, teamId),
     eq(conversation.teamId, teamId),
+    eq(supportInbox.teamId, teamId),
     isNotNull(csatResponse.rating),
     gte(csatResponse.respondedAt, from),
     lt(csatResponse.respondedAt, to),
