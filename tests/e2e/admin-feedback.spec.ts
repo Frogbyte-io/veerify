@@ -134,11 +134,14 @@ test.describe('Admin feedback workflow', () => {
     await expect
       .poll(
         async () => {
-          const response = await request.get(`/api/teams/${teamId}/projects`, {
-            headers: withAuthHeaders(sessionCookie),
-          })
-          if (!response.ok()) return false
-          const payload = await response.json()
+          const activeTeamResponse = await page.request.get('/api/teams/active')
+          if (!activeTeamResponse.ok()) return false
+          const activeTeamPayload = await activeTeamResponse.json()
+          if (activeTeamPayload?.data?.id !== teamId) return false
+
+          const projectsResponse = await page.request.get(`/api/teams/${teamId}/projects`)
+          if (!projectsResponse.ok()) return false
+          const payload = await projectsResponse.json()
           return (payload?.data || []).some((project: { id?: string }) => project.id === projectId)
         },
         { timeout: 20_000, intervals: [500, 1_000, 2_000] }
@@ -146,19 +149,24 @@ test.describe('Admin feedback workflow', () => {
       .toBe(true)
 
     // Verify product cards navigate to their settings page.
+    const browserProjectsResponsePromise = page.waitForResponse(
+      (response) => {
+        if (response.request().method() !== 'GET' || !response.url().includes(`/api/teams/${teamId}/projects`))
+          return false
+        return true
+      },
+      { timeout: 60_000 }
+    )
     await gotoWithRetry(page, '/products')
+    const browserProjectsResponse = await browserProjectsResponsePromise
+    expect(browserProjectsResponse.ok()).toBeTruthy()
+    const browserProjectsPayload = await browserProjectsResponse.json()
+    expect(
+      (browserProjectsPayload?.data || []).some((project: { id?: string }) => project.id === projectId)
+    ).toBeTruthy()
     await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
     const productCard = page.getByRole('link', { name: new RegExp(`E2E Feedback ${slug}`) }).first()
-    await expect
-      .poll(
-        async () => {
-          if (await productCard.isVisible().catch(() => false)) return true
-          await page.reload({ waitUntil: 'domcontentloaded' })
-          return await productCard.isVisible().catch(() => false)
-        },
-        { timeout: 20_000, intervals: [500, 1_000, 2_000] }
-      )
-      .toBe(true)
+    await expect(productCard).toBeVisible({ timeout: 30_000 })
     await expect(productCard).toHaveAttribute('href', `/products/${slug}`)
 
     // Navigate to feedback page with explicit project preselected
