@@ -23,10 +23,10 @@ export type CsatSummary = CsatScore & {
   trend: Array<CsatScore & { date: string }>
 }
 
-function maxRating(scale: CsatScale): number {
-  if (scale === 'thumbs') return 1
-  if (scale === 'csat_5') return 5
-  return 10
+function scorePercentForRating(rating: number, scale: CsatScale): number {
+  if (scale === 'thumbs') return (rating - 1) * 100
+  if (scale === 'csat_5') return (rating / 5) * 100
+  return (rating / 10) * 100
 }
 
 function round(value: number): number {
@@ -39,7 +39,7 @@ function scoreForRows(rows: CsatReportRow[]): CsatScore {
   }
 
   const ratingTotal = rows.reduce((total, row) => total + row.rating, 0)
-  const percentTotal = rows.reduce((total, row) => total + (row.rating / maxRating(row.scale)) * 100, 0)
+  const percentTotal = rows.reduce((total, row) => total + scorePercentForRating(row.rating, row.scale), 0)
   return {
     responseCount: rows.length,
     averageRating: round(ratingTotal / rows.length),

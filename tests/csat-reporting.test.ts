@@ -31,7 +31,7 @@ describe('summarizeCsatRows', () => {
     expect(summary).toMatchObject({
       responseCount: 3,
       averageRating: 3.33,
-      scorePercent: 93.33,
+      scorePercent: 60,
       distribution: [
         { rating: 1, count: 1 },
         { rating: 4, count: 1 },
@@ -62,5 +62,24 @@ describe('summarizeCsatRows', () => {
       byAgent: [],
       trend: [],
     })
+  })
+
+  it('normalizes thumbs ratings from 1 as 0% to 2 as 100%', () => {
+    const summary = summarizeCsatRows([row({ scale: 'thumbs', rating: 1 }), row({ scale: 'thumbs', rating: 2 })])
+
+    expect(summary).toMatchObject({ averageRating: 1.5, scorePercent: 50 })
+    expect(summary.distribution).toEqual([
+      { rating: 1, count: 1 },
+      { rating: 2, count: 1 },
+    ])
+  })
+
+  it('preserves the supported scale-specific score percentages', () => {
+    expect(
+      summarizeCsatRows([row({ scale: 'csat_5', rating: 1 }), row({ scale: 'csat_5', rating: 5 })]).scorePercent
+    ).toBe(60)
+    expect(
+      summarizeCsatRows([row({ scale: 'nps_10', rating: 0 }), row({ scale: 'nps_10', rating: 10 })]).scorePercent
+    ).toBe(50)
   })
 })

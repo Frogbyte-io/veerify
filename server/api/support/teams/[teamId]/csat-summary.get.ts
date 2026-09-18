@@ -23,16 +23,23 @@
  *       200: { description: CSAT score summary }
  *       403: { description: Not a support agent on this team }
  */
-import { and, eq, gte, isNotNull, lt } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm'
 import { z } from 'zod'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireSupportTeamRole } from '~/server/utils/support-access'
+import { requireInboxAccess, requireSupportTeamRole } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { conversation, csatResponse, csatSurvey, supportInbox } from '~/server/database/schema/support'
+import {
+  conversation,
+  csatResponse,
+  csatSurvey,
+  supportInbox,
+  supportInboxMember,
+} from '~/server/database/schema/support'
 import { user } from '~/server/database/schema/auth'
 import { summarizeCsatRows } from '~/server/utils/csat-reporting'
+import { resolveCsatInboxScope } from '~/server/utils/csat-access'
 
 const querySchema = z
   .object({
@@ -59,8 +66,17 @@ function endOfUtcDay(value: Date): Date {
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const teamId = getRouterParam(event, 'teamId') as string
-  await requireSupportTeamRole(teamId, session.user.id, 'agent')
+  const teamAccess = await requireSupportTeamRole(teamId, session.user.id, 'agent')
   const query = validateQuery(event, querySchema)
+
+  const requestedInboxAccess = query.inboxId ? await requireInboxAccess(query.inboxId, session.user.id) : undefined
+  const inboxScope = resolveCsatInboxScope({
+    teamId,
+    userId: session.user.id,
+    teamAccess,
+    requestedInboxId: query.inboxId,
+    requestedInboxTeamId: requestedInboxAccess?.teamId,
+  })
 
   const from = query.from ? startOfUtcDay(query.from) : new Date(Date.now() - 30 * 24 * 60 * 60_000)
   const to = query.to ? endOfUtcDay(query.to) : new Date()
@@ -71,7 +87,16 @@ export default defineEventHandler(async (event) => {
     gte(csatResponse.respondedAt, from),
     lt(csatResponse.respondedAt, to),
   ]
-  if (query.inboxId) conditions.push(eq(conversation.inboxId, query.inboxId))
+  if (inboxScope.kind === 'explicit') {
+    conditions.push(eq(conversation.inboxId, inboxScope.inboxId))
+  } else if (inboxScope.kind === 'member') {
+    const accessibleInboxIds = db
+      .select({ id: supportInboxMember.inboxId })
+      .from(supportInboxMember)
+      .innerJoin(supportInbox, eq(supportInbox.id, supportInboxMember.inboxId))
+      .where(and(eq(supportInbox.teamId, inboxScope.teamId), eq(supportInboxMember.userId, inboxScope.userId)))
+    conditions.push(inArray(conversation.inboxId, accessibleInboxIds))
+  }
 
   const rows = await db
     .select({
