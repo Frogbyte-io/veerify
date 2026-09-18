@@ -85,7 +85,7 @@ ls server/api/support/contacts/
 | [06](stage-06-sla.md)               | Business hours + SLA      | 02, 04     | DONE    |
 | [07](stage-07-automation.md)        | Automation rules          | 02, 04     | DONE    |
 | [08](stage-08-csat.md)              | CSAT                      | 04         | DONE    |
-| [09](stage-09-reporting.md)         | Reporting                 | 02, 06     | Blocked |
+| [09](stage-09-reporting.md)         | Reporting                 | 02, 06     | ACTIVE  |
 | [09b](stage-09b-home.md)            | Home (cross-team)         | 02         | Future  |
 | [10](stage-10-customer-portal.md)   | Customer portal           | 02         | Blocked |
 | [11](stage-11-live-chat.md)         | Live chat                 | 00, 02     | Blocked |

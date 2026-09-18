@@ -253,6 +253,13 @@
       "when": 1789679419903,
       "tag": "0035_smart_baron_strucker",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789731113709,
+      "tag": "0036_lovely_tattoo",
+      "breakpoints": true
     }
   ]
 }

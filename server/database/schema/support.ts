@@ -34,6 +34,8 @@ import {
   index,
   boolean,
   integer,
+  doublePrecision,
+  date,
   check,
   primaryKey,
   type AnyPgColumn,
@@ -1032,5 +1034,47 @@ export const automationRuleRun = pgTable(
       table.createdAt
     ),
     validStatus: check('automation_rule_run_status_check', sql`${table.status} in ('applied','skipped','failed')`),
+  })
+)
+
+// Daily, mergeable reporting buckets. Agent-attributed rows deliberately
+// cascade when the agent is deleted; they must not turn into a colliding
+// team/inbox-wide (NULL agent) bucket.
+export const supportMetricDaily = pgTable(
+  'support_metric_daily',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    inboxId: text('inbox_id')
+      .notNull()
+      .references(() => supportInbox.id, { onDelete: 'cascade' }),
+    agentUserId: text('agent_user_id').references(() => user.id, { onDelete: 'cascade' }),
+    date: date('date', { mode: 'string' }).notNull(),
+    timezone: text('timezone').notNull(),
+    metric: text('metric').notNull(),
+    value: doublePrecision('value').notNull(),
+    sampleCount: integer('sample_count').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueNullAgent: uniqueIndex('support_metric_daily_team_inbox_date_tz_metric_null_idx')
+      .on(table.teamId, table.inboxId, table.date, table.timezone, table.metric)
+      .where(sql`${table.agentUserId} is null`),
+    uniqueAgent: uniqueIndex('support_metric_daily_team_inbox_agent_date_tz_metric_idx')
+      .on(table.teamId, table.inboxId, table.agentUserId, table.date, table.timezone, table.metric)
+      .where(sql`${table.agentUserId} is not null`),
+    teamDateIdx: index('support_metric_daily_team_date_idx').on(table.teamId, table.date),
+    sampleCountCheck: check('support_metric_daily_sample_count_check', sql`${table.sampleCount} >= 0`),
+    finiteValueCheck: check(
+      'support_metric_daily_finite_value_check',
+      sql`${table.value} = ${table.value} and ${table.value} < 'Infinity'::double precision and ${table.value} > '-Infinity'::double precision`
+    ),
   })
 )

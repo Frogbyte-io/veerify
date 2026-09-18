@@ -5,7 +5,29 @@
 **Goal:** Answer the questions a support lead actually asks — how much volume, how fast, who is
 carrying it, and are we hitting our commitments.
 
-> Outline-level detail. Refine when unblocked.
+Implementation started with the [reporting foundation](stage-09-foundation.md).
+The review below identifies prerequisites for the remaining reporting work.
+
+## Plan verification — 2026-09-18
+
+- Daily bucket identity must enforce uniqueness even when agent attribution is null. Store the
+  reporting timezone with each date bucket so different calendars cannot silently mix.
+- Define one reporting timezone source before enabling jobs or reads. Calendar helpers must handle
+  UTC+13, DST, and skipped local dates; fixed 24-hour UTC windows do not meet the acceptance criteria.
+- `conversation.resolvedAt` is cleared on reopen. Existing activity messages contain human-readable
+  status changes, not structured historical facts. Durable status events are a prerequisite for
+  accurate resolved/reopened history; do not infer that history from current state.
+- Store additive metric sums and sample counts. Daily averages and percentiles cannot be averaged
+  into correct range metrics; speed reporting needs mergeable distributions or retained samples.
+- All reporting reads must filter to authorized inboxes, with team admins as the cross-inbox exception.
+  The existing CSAT summary checks team support access but does not restrict its rows to accessible inboxes.
+- CSAT ratings use 1/2 for thumbs, while the current normalization divides thumbs by 1. Correct that
+  definition before using it in rollups. Keep scale-specific distributions and snapshot scale/attribution
+  so later survey edits cannot reinterpret historical responses.
+- Add source indexes appropriate to each date-bounded job and verify query plans before exposing reads.
+  Current message indexes start with conversation ID and do not support arbitrary team/day history scans.
+
+The first slice adds storage and calendar primitives only. Jobs, APIs, dashboard, and export remain open.
 
 ## Metrics
 
@@ -54,7 +76,7 @@ mode.
 
 ## TODO items
 
-- [ ] Add `supportMetricDaily` table; generate migration
+- [x] Add `supportMetricDaily` table; generate migration
 - [ ] Implement the rollup computation job on the Stage 00 scheduler, reusing the Stage 06 business-hours module; idempotent per date
 - [ ] Implement live merge of today's partial window with historical rollups
 - [ ] Add volume, speed (median/p90), and SLA attainment metric endpoints
