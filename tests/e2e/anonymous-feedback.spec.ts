@@ -254,25 +254,45 @@ test.describe('Anonymous feedback sessions', () => {
     }
   })
 
-  test('public board navigation switches between feedback and roadmap pages', async ({ page }) => {
-    await gotoPublicPage(page)
+  test('public board navigation switches between feedback and roadmap pages', async ({ page, request }) => {
+    await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const projectResponse = await request.get(`/api/projects/${PROJECT_SLUG}`)
+    expect(projectResponse.ok()).toBe(true)
+    const projectPayload = await projectResponse.json()
+    const originalSettings = projectPayload?.data?.settings ?? null
+    const roadmapSettings = { ...(originalSettings || {}), roadmapEnabled: true }
+    const updateResponse = await request.put(`/api/projects/${PROJECT_SLUG}`, {
+      data: { settings: roadmapSettings },
+      headers: { 'content-type': 'application/json' },
+    })
+    expect(updateResponse.ok()).toBe(true)
 
-    const roadmapTab = page.getByRole('link', { name: 'Roadmap' })
-    await expect(roadmapTab).toBeVisible()
-    await roadmapTab.hover()
-    await roadmapTab.click()
+    try {
+      await gotoPublicPage(page)
 
-    await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}/roadmap`)
-    await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
+      const roadmapTab = page.getByRole('link', { name: 'Roadmap' })
+      await expect(roadmapTab).toBeVisible()
+      await roadmapTab.hover()
+      await roadmapTab.click()
 
-    const feedbackTab = page.getByRole('link', { name: 'Feedback' }).first()
-    await expect(feedbackTab).toBeVisible()
-    await feedbackTab.hover()
-    await feedbackTab.click()
+      await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}/roadmap`)
+      await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
 
-    await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}`)
-    await expect.poll(() => page.url()).not.toContain('/roadmap')
-    await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
+      const feedbackTab = page.getByRole('link', { name: 'Feedback' }).first()
+      await expect(feedbackTab).toBeVisible()
+      await feedbackTab.hover()
+      await feedbackTab.click()
+
+      await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}`)
+      await expect.poll(() => page.url()).not.toContain('/roadmap')
+      await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
+    } finally {
+      const resetResponse = await request.put(`/api/projects/${PROJECT_SLUG}`, {
+        data: { settings: originalSettings },
+        headers: { 'content-type': 'application/json' },
+      })
+      expect(resetResponse.ok()).toBe(true)
+    }
   })
 
   test('public board auth CTA includes dashboard redirect target', async ({ page }) => {

@@ -186,8 +186,8 @@ async function seed(client: Client) {
   )
 
   await client.query(
-    `INSERT INTO "project" (id, organization_id, team_id, slug, name, description, is_public, submission_mode, settings, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, true, 'anonymous', '{"roadmapEnabled": true}', $7, $7)`,
+    `INSERT INTO "project" (id, organization_id, team_id, slug, name, description, is_public, submission_mode, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, true, 'anonymous', $7, $7)`,
     [IDS.project, IDS.org, IDS.team, 'demo', 'Demo Project', 'A sample project for testing feedback flows', now]
   )
 
