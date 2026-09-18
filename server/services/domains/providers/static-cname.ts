@@ -29,6 +29,20 @@ export class StaticCnameDomainProvider implements DomainProvider {
 
   async registerProjectDomain(input: { hostname: string }) {
     const hostname = normalizeDomainHostname(input.hostname)
+    if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
+      return {
+        hostname,
+        provider: 'static-cname',
+        verified: true,
+        status: 'active',
+        dnsRecords: [],
+        configuredBy: 'local-development',
+        expected: null,
+        resolvedTo: [hostname],
+        message: null,
+      } satisfies DomainProviderResult
+    }
+
     return buildPendingResult(hostname, this.getTarget())
   }
 
