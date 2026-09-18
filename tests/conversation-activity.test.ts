@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   diffConversationPatch,
   recordConversationActivity,
+  recordConversationStatusEvent,
   type ConversationChange,
 } from '../server/utils/conversation-activity'
 
@@ -103,6 +104,32 @@ describe('recordConversationActivity', () => {
       expect(row.senderUserId).toBe('actor1')
       expect(row.isPrivate).toBe(true)
     }
+  })
+})
+
+describe('recordConversationStatusEvent', () => {
+  it('inserts a durable status transition with tenant and actor attribution', async () => {
+    const { tx, inserted } = fakeTx()
+
+    await recordConversationStatusEvent(tx as any, {
+      teamId: 'team1',
+      inboxId: 'inbox1',
+      conversationId: 'conv1',
+      fromStatus: 'open',
+      toStatus: 'resolved',
+      actorUserId: 'actor1',
+      occurredAt: new Date('2026-09-18T12:00:00.000Z'),
+    })
+
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0]).toMatchObject({
+      teamId: 'team1',
+      inboxId: 'inbox1',
+      conversationId: 'conv1',
+      fromStatus: 'open',
+      toStatus: 'resolved',
+      actorUserId: 'actor1',
+    })
   })
 })
 

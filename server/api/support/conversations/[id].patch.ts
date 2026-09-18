@@ -27,7 +27,11 @@ import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
-import { diffConversationPatch, recordConversationActivity } from '~/server/utils/conversation-activity'
+import {
+  diffConversationPatch,
+  recordConversationActivity,
+  recordConversationStatusEvent,
+} from '~/server/utils/conversation-activity'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { notifyUser } from '~/server/utils/notifications'
 import { validateBody } from '~/server/utils/validation'
@@ -136,6 +140,19 @@ export default defineEventHandler(async (event) => {
     // Same transaction as the update it describes, so the two can never
     // diverge.
     await recordConversationActivity(tx, conversationId, changes, session.user.id)
+
+    const statusChange = changes.find((change) => change.field === 'status')
+    if (statusChange) {
+      await recordConversationStatusEvent(tx, {
+        teamId: existing.teamId,
+        inboxId: existing.inboxId,
+        conversationId,
+        fromStatus: statusChange.from,
+        toStatus: statusChange.to as string,
+        actorUserId: session.user.id,
+        occurredAt: now,
+      })
+    }
 
     return row
   })

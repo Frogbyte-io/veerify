@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import type { db } from '~/server/database/drizzle'
-import { conversationMessage } from '~/server/database/schema/support'
+import { conversationMessage, conversationStatusEvent } from '~/server/database/schema/support'
 import { user } from '~/server/database/schema/auth'
 import { project } from '~/server/database/schema/feedback'
 
@@ -52,6 +52,25 @@ interface ConversationState {
 export interface ConversationPatchDiff {
   changes: ConversationChange[]
   updates: Record<string, unknown>
+}
+
+export interface ConversationStatusEventInput {
+  teamId: string
+  inboxId: string
+  conversationId: string
+  fromStatus: string | null
+  toStatus: string
+  actorUserId: string | null
+  occurredAt: Date
+}
+
+/** Append one immutable status transition in the caller's transaction. */
+export async function recordConversationStatusEvent(tx: Tx, input: ConversationStatusEventInput): Promise<void> {
+  await tx.insert(conversationStatusEvent).values({
+    id: randomUUID(),
+    ...input,
+    createdAt: new Date(),
+  })
 }
 
 /**

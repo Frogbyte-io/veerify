@@ -459,6 +459,43 @@ export const conversation = pgTable(
   })
 )
 
+// Immutable conversation status transitions. The denormalized ownership
+// columns keep reporting tenant/inbox scoped without joining the mutable
+// conversation row; all references cascade with their owners.
+export const conversationStatusEvent = pgTable(
+  'conversation_status_event',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    inboxId: text('inbox_id')
+      .notNull()
+      .references(() => supportInbox.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    fromStatus: text('from_status'),
+    toStatus: text('to_status').notNull(),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'cascade' }),
+    occurredAt: timestamp('occurred_at').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamOccurredAtIdx: index('conversation_status_event_team_occurred_at_idx').on(table.teamId, table.occurredAt),
+    conversationOccurredAtIdx: index('conversation_status_event_conversation_occurred_at_idx').on(
+      table.conversationId,
+      table.occurredAt
+    ),
+    statusTransitionCheck: check(
+      'conversation_status_event_status_transition_check',
+      sql`(${table.fromStatus} IS NULL OR ${table.fromStatus} IN ('open', 'pending', 'resolved', 'snoozed', 'closed')) AND ${table.toStatus} IN ('open', 'pending', 'resolved', 'snoozed', 'closed')`
+    ),
+  })
+)
+
 export const slaBreach = pgTable(
   'sla_breach',
   {
