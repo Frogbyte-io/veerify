@@ -570,7 +570,7 @@ test.describe('Admin feedback workflow', () => {
       await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
 
       // Back from type picker returns to product picker.
-      await page.locator('button:has-text("Back")').click()
+      await page.getByRole('button', { name: 'Back', exact: true }).click()
       await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible()
       await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
 
