@@ -7,6 +7,9 @@ Implemented: daily bucket schema and migration `0036_lovely_tattoo`, calendar ut
 six calendar tests, and four Postgres integration tests. Luna implementation and independent review
 completed; the main Stage 09 checklist tracks the remaining jobs, endpoints, and UI.
 
+The follow-up status-event slice is complete in migration `0037_dazzling_forgotten_one`; it records
+structured conversation transitions in the same transaction as status PATCH activity.
+
 ## Global constraints
 
 - Preserve inbox authorization boundaries when future endpoints consume rollups.
