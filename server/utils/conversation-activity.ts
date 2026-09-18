@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import type { db } from '~/server/database/drizzle'
-import { conversationMessage, conversationStatusEvent } from '~/server/database/schema/support'
+import { conversation, conversationMessage, conversationStatusEvent } from '~/server/database/schema/support'
 import { user } from '~/server/database/schema/auth'
 import { project } from '~/server/database/schema/feedback'
 
@@ -71,6 +71,63 @@ export async function recordConversationStatusEvent(tx: Tx, input: ConversationS
     ...input,
     createdAt: new Date(),
   })
+}
+
+export interface ApplyConversationStatusTransitionInput {
+  conversationId: string
+  teamId: string
+  inboxId: string
+  toStatus: string
+  actorUserId: string | null
+  occurredAt: Date
+}
+
+/**
+ * Apply one automation/inbound-style status transition atomically. The row is
+ * locked and re-read inside the transaction so repeated actions cannot emit
+ * duplicate no-op events, and the resolvedAt semantics stay next to the
+ * activity/event writes they describe.
+ */
+export async function applyConversationStatusTransition(
+  tx: Tx,
+  input: ApplyConversationStatusTransitionInput
+): Promise<boolean> {
+  const [existing] = await tx
+    .select({ status: conversation.status })
+    .from(conversation)
+    .where(eq(conversation.id, input.conversationId))
+    .for('update')
+    .limit(1)
+
+  if (!existing) return false
+
+  const { changes, updates } = diffConversationPatch(
+    { status: existing.status },
+    { status: input.toStatus },
+    input.occurredAt
+  )
+  if (changes.length === 0) return false
+
+  await tx
+    .update(conversation)
+    .set({ ...updates, lastActivityAt: input.occurredAt, updatedAt: input.occurredAt })
+    .where(eq(conversation.id, input.conversationId))
+  await recordConversationActivity(tx, input.conversationId, changes, input.actorUserId)
+
+  const statusChange = changes.find((change) => change.field === 'status')
+  if (statusChange) {
+    await recordConversationStatusEvent(tx, {
+      teamId: input.teamId,
+      inboxId: input.inboxId,
+      conversationId: input.conversationId,
+      fromStatus: statusChange.from,
+      toStatus: statusChange.to as string,
+      actorUserId: input.actorUserId,
+      occurredAt: input.occurredAt,
+    })
+  }
+
+  return true
 }
 
 /**

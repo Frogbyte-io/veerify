@@ -17,6 +17,7 @@ import { teamMember } from '~/server/database/schema/auth'
 import { db } from '~/server/database/drizzle'
 import { executeAutomationActions, type AutomationActionRegistry } from '~/server/utils/automation-actions'
 import { evaluateAutomationConditions, type AutomationConversationContext } from '~/server/utils/automation-conditions'
+import { applyConversationStatusTransition } from '~/server/utils/conversation-activity'
 
 export const DEFAULT_AUTOMATION_CASCADE_DEPTH = 3
 
@@ -142,10 +143,16 @@ function buildActionRegistry(state: ConversationAutomationState, actorUserId: st
       if (!status || !['open', 'pending', 'resolved', 'snoozed', 'closed'].includes(status)) {
         return actionFailure('A valid status is required')
       }
-      await db
-        .update(conversation)
-        .set({ status, updatedAt: new Date(), lastActivityAt: new Date() })
-        .where(eq(conversation.id, state.id))
+      await db.transaction(async (tx) => {
+        await applyConversationStatusTransition(tx, {
+          conversationId: state.id,
+          teamId: state.teamId,
+          inboxId: state.inboxId,
+          toStatus: status,
+          actorUserId,
+          occurredAt: new Date(),
+        })
+      })
     },
     set_priority: async (action) => {
       const priority = stringActionValue(action, 'priority', 'value')

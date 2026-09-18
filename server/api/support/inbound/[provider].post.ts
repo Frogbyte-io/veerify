@@ -34,7 +34,7 @@ import { resolveInboxByAddress } from '~/server/utils/support-access'
 import { allocateConversationDisplayId } from '~/server/utils/support-counter'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { resolveThread, updatesForInboundReply } from '~/server/utils/inbound-threading'
-import { recordConversationActivity } from '~/server/utils/conversation-activity'
+import { recordConversationActivity, recordConversationStatusEvent } from '~/server/utils/conversation-activity'
 import { stripQuotedReply } from '~/server/utils/inbound-content'
 import { sanitizeInboundHtml } from '~/server/utils/inbound-sanitize'
 import { isAutoResponse } from '~/server/utils/inbound-autoresponse'
@@ -428,6 +428,15 @@ export default defineEventHandler(async (event) => {
             [{ field: 'status', from: existingThread.status, to: 'open' }],
             null
           )
+          await recordConversationStatusEvent(tx, {
+            teamId: inbox.teamId,
+            inboxId: inbox.id,
+            conversationId,
+            fromStatus: existingThread.status,
+            toStatus: 'open',
+            actorUserId: null,
+            occurredAt: message.receivedAt,
+          })
         }
       }
 

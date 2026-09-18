@@ -477,7 +477,7 @@ export const conversationStatusEvent = pgTable(
       .references(() => conversation.id, { onDelete: 'cascade' }),
     fromStatus: text('from_status'),
     toStatus: text('to_status').notNull(),
-    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'cascade' }),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
     occurredAt: timestamp('occurred_at').notNull(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
