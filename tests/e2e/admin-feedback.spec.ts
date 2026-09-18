@@ -321,13 +321,16 @@ test.describe('Admin feedback workflow', () => {
       await expect(page.getByText(commentBody)).toBeVisible({ timeout: 15_000 })
 
       const commentCard = page.locator('[data-testid^="feedback-detail-comment-"]', { hasText: commentBody }).first()
+      const commentCardTestId = await commentCard.getAttribute('data-testid')
+      expect(commentCardTestId).toBeTruthy()
       await commentCard.locator('[data-testid^="comment-edit-btn-"]').click()
-      await commentCard.locator('textarea').fill(editedCommentBody)
-      await commentCard.getByRole('button', { name: 'Save comment' }).click()
+      const editingCommentCard = page.locator(`[data-testid="${commentCardTestId}"]`)
+      await editingCommentCard.locator('textarea').fill(editedCommentBody)
+      await editingCommentCard.getByRole('button', { name: 'Save comment' }).click()
       await expect(page.getByText(editedCommentBody)).toBeVisible({ timeout: 15_000 })
 
       page.once('dialog', (dialog) => dialog.accept())
-      await commentCard.locator('[data-testid^="comment-delete-btn-"]').click()
+      await editingCommentCard.locator('[data-testid^="comment-delete-btn-"]').click()
       await expect(page.getByText(editedCommentBody)).not.toBeVisible({ timeout: 15_000 })
     } finally {
       await deleteTestProject(request, sessionCookie, teamId, projectId)
