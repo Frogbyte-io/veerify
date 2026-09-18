@@ -105,6 +105,7 @@ jobs:
       PGPASSWORD: veerifypassword
       PGDATABASE: veerifydb
       BETTER_AUTH_URL: http://localhost:4173
+      UPLOAD_TOKEN_SECRET: playwright-e2e-upload-secret
       PLAYWRIGHT_SKIP_IS_FAILURE: '1'
     steps:
       - uses: actions/checkout@v4
