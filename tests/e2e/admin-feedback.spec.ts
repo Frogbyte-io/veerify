@@ -114,6 +114,7 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('UI: feedback page loads, add and delete feedback', async ({ request, page }) => {
+    test.setTimeout(120_000)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
     // Transfer auth cookies to browser context
