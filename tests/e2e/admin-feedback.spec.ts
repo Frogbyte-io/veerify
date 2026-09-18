@@ -561,10 +561,11 @@ test.describe('Admin feedback workflow', () => {
       await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
 
       // Back button is visible since we came from multi-product step 1
-      await expect(page.locator('button:has-text("Back")')).toBeVisible()
+      const backButton = page.getByRole('button', { name: 'Back', exact: true })
+      await expect(backButton).toBeVisible()
 
       // Back from form returns to type picker.
-      await page.locator('button:has-text("Back")').click()
+      await backButton.click()
       await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible()
       await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
 
