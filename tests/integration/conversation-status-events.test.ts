@@ -4,8 +4,18 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
 import { organization, team, user } from '../../server/database/schema/auth'
-import { contact, conversation, conversationStatusEvent, supportInbox } from '../../server/database/schema/support'
-import { recordConversationStatusEvent } from '../../server/utils/conversation-activity'
+import {
+  contact,
+  conversation,
+  conversationMessage,
+  conversationStatusEvent,
+  supportInbox,
+} from '../../server/database/schema/support'
+import {
+  diffConversationPatch,
+  recordConversationActivity,
+  recordConversationStatusEvent,
+} from '../../server/utils/conversation-activity'
 
 const suffix = randomUUID()
 const ids = {
@@ -60,6 +70,61 @@ describe('conversation status events (real Postgres)', () => {
     await db.delete(organization).where(eq(organization.id, ids.organization))
   })
 
+  async function applyPatchStatus(status: 'open' | 'resolved') {
+    const [existing] = await db.select().from(conversation).where(eq(conversation.id, ids.conversation))
+    const now = new Date('2026-09-18T12:00:03.000Z')
+    const { changes, updates } = diffConversationPatch(existing, { status }, now)
+    if (Object.keys(updates).length === 0) return false
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(conversation)
+        .set({ ...updates, updatedAt: now })
+        .where(eq(conversation.id, ids.conversation))
+      await recordConversationActivity(tx as any, ids.conversation, changes, ids.user)
+      const statusChange = changes.find((change) => change.field === 'status')
+      if (statusChange) {
+        await recordConversationStatusEvent(tx as any, {
+          teamId: ids.team,
+          inboxId: ids.inbox,
+          conversationId: ids.conversation,
+          fromStatus: statusChange.from,
+          toStatus: statusChange.to as string,
+          actorUserId: ids.user,
+          occurredAt: now,
+        })
+      }
+    })
+    return true
+  }
+
+  it('keeps a no-op PATCH status change event-free and records one event for a real change', async () => {
+    await db.delete(conversationMessage).where(eq(conversationMessage.conversationId, ids.conversation))
+    await db.delete(conversationStatusEvent).where(eq(conversationStatusEvent.conversationId, ids.conversation))
+    await db.update(conversation).set({ status: 'open' }).where(eq(conversation.id, ids.conversation))
+
+    expect(await applyPatchStatus('open')).toBe(false)
+    expect(
+      await db
+        .select()
+        .from(conversationStatusEvent)
+        .where(eq(conversationStatusEvent.conversationId, ids.conversation))
+    ).toEqual([])
+
+    expect(await applyPatchStatus('resolved')).toBe(true)
+    const events = await db
+      .select()
+      .from(conversationStatusEvent)
+      .where(eq(conversationStatusEvent.conversationId, ids.conversation))
+    const activities = await db
+      .select()
+      .from(conversationMessage)
+      .where(eq(conversationMessage.conversationId, ids.conversation))
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ fromStatus: 'open', toStatus: 'resolved', teamId: ids.team, inboxId: ids.inbox })
+    expect(activities.filter((message) => message.kind === 'activity')).toHaveLength(1)
+  })
+
   it('stores ordered transitions with denormalized tenant and inbox attribution', async () => {
     await db.delete(conversationStatusEvent).where(eq(conversationStatusEvent.conversationId, ids.conversation))
 
@@ -94,12 +159,19 @@ describe('conversation status events (real Postgres)', () => {
   })
 
   it('rolls back a status update and event together', async () => {
+    await db.delete(conversationMessage).where(eq(conversationMessage.conversationId, ids.conversation))
     await db.delete(conversationStatusEvent).where(eq(conversationStatusEvent.conversationId, ids.conversation))
     await db.update(conversation).set({ status: 'open' }).where(eq(conversation.id, ids.conversation))
 
     await expect(
       db.transaction(async (tx) => {
         await tx.update(conversation).set({ status: 'resolved' }).where(eq(conversation.id, ids.conversation))
+        await recordConversationActivity(
+          tx as any,
+          ids.conversation,
+          [{ field: 'status', from: 'open', to: 'resolved' }],
+          ids.user
+        )
         await recordConversationStatusEvent(tx as any, {
           teamId: ids.team,
           inboxId: ids.inbox,
@@ -121,8 +193,13 @@ describe('conversation status events (real Postgres)', () => {
       .select()
       .from(conversationStatusEvent)
       .where(eq(conversationStatusEvent.conversationId, ids.conversation))
+    const activities = await db
+      .select()
+      .from(conversationMessage)
+      .where(eq(conversationMessage.conversationId, ids.conversation))
     expect(updated.status).toBe('open')
     expect(events).toEqual([])
+    expect(activities).toEqual([])
   })
 
   it('enforces supported statuses and the reporting indexes', async () => {
