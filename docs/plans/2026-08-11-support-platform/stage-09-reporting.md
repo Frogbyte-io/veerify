@@ -1,14 +1,14 @@
-# Stage 09 — Reporting
+# Stage 09 reporting
 
 **Depends on:** Stages 02, 06 (and 08 for CSAT metrics). **Blocks:** nothing.
 
-**Goal:** Answer the questions a support lead actually asks — how much volume, how fast, who is
+**Goal:** Answer the questions a support lead actually asks: how much volume, how fast, who is
 carrying it, and are we hitting our commitments.
 
 Implementation started with the [reporting foundation](stage-09-foundation.md).
 The review below identifies prerequisites for the remaining reporting work.
 
-## Plan verification — 2026-09-18
+## Plan verification, 2026-09-18
 
 - Daily bucket identity must enforce uniqueness even when agent attribution is null. Store the
   reporting timezone with each date bucket so different calendars cannot silently mix.
@@ -34,7 +34,7 @@ The first slice adds storage and calendar primitives only. Jobs, APIs, dashboard
 | Group    | Metrics                                                                               |
 | -------- | ------------------------------------------------------------------------------------- |
 | Volume   | Conversations created, resolved, reopened; by inbox, channel, tag, company, over time |
-| Speed    | First response time, next response time, resolution time — median and p90, not mean   |
+| Speed    | First response time, next response time, resolution time, median and p90, not mean    |
 | SLA      | Attainment percentage per policy and per metric; breach count and breach reasons      |
 | Agents   | Assigned, resolved, replies sent, median first response, CSAT score                   |
 | Contacts | Top contacts and companies by volume; new versus returning                            |
@@ -50,7 +50,7 @@ must be exactly one implementation of "how long did this take" in the codebase.
 
 - **Materialized daily rollups**, not live aggregation. `conversationMessage` is the fastest-growing
   table in the system; a dashboard that scans it will be the first thing to fall over.
-- `supportMetricDaily` — `id`, `teamId`, `inboxId`, `agentUserId` (nullable), `date`, `metric`,
+- `supportMetricDaily`: `id`, `teamId`, `inboxId`, `agentUserId` (nullable), `date`, `metric`,
   `value`, `sampleCount`. Recomputed nightly on the Stage 00 scheduler, plus an on-demand recompute for
   a date range.
 - Today's figures are computed live over a bounded window and merged with historical rollups, so the
@@ -69,7 +69,7 @@ mode.
 1. Dashboard figures match hand-computed values on a seeded dataset, including a conversation spanning a
    business-hours boundary and a paused period.
 2. `EXPLAIN` shows no sequential scan on `conversationMessage` for any dashboard query.
-3. Rollup recomputation is idempotent — running it twice for the same date yields identical rows.
+3. Rollup recomputation is idempotent. Running it twice for the same date yields identical rows.
 4. Today's partial data appears without a rollup run.
 5. Timezone handling is correct: a team in UTC+13 sees days bucketed by their own calendar.
 6. `yarn harness:verify` green on `support-platform`.

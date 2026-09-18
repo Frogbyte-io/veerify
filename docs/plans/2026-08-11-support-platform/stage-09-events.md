@@ -6,7 +6,7 @@ This slice makes historical status reporting reliable. Current conversation stat
 resolved or reopened history because reopening clears `resolvedAt`; future rollups need immutable,
 structured status transitions.
 
-## Task 1: Record durable conversation status events — DONE
+## Task 1: Record durable conversation status events (done)
 
 1. Add `conversationStatusEvent` in `server/database/schema/support.ts` with text id, denormalized
    teamId and inboxId, conversationId, nullable fromStatus, toStatus, nullable actorUserId, occurredAt,
