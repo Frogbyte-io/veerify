@@ -28,6 +28,7 @@ const PNG_TWO_BY_TWO = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4EIwESMolGF1FMIAGUQAhI3GfQAAAAASUVORK5CYII=',
   'base64'
 )
+let feedbackSubmitSequence = 0
 
 test.setTimeout(60_000)
 
@@ -64,6 +65,10 @@ async function openSubmitDialog(page: Page) {
 }
 
 async function fillAndSubmitFeedback(page: Page, opts: { title: string; body: string; name: string; email?: string }) {
+  // The public endpoint intentionally limits each client to five submissions per minute.
+  // Give each test a separate synthetic client address so the suite does not share one runner IP.
+  const clientAddress = `198.51.100.${(feedbackSubmitSequence++ % 250) + 1}`
+  await page.setExtraHTTPHeaders({ 'x-forwarded-for': clientAddress })
   await openSubmitDialog(page)
 
   await page.locator('#fb-title').fill(opts.title)
