@@ -77,7 +77,7 @@ mode.
 ## TODO items
 
 - [x] Add `supportMetricDaily` table; generate migration
-- [x] Add durable conversation status events for resolution/reopen attribution
+- [x] Add durable conversation status events for every status-write path
 - [ ] Implement the rollup computation job on the Stage 00 scheduler, reusing the Stage 06 business-hours module; idempotent per date
 - [ ] Implement live merge of today's partial window with historical rollups
 - [ ] Add volume, speed (median/p90), and SLA attainment metric endpoints

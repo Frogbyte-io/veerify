@@ -7,8 +7,10 @@ Implemented: daily bucket schema and migration `0036_lovely_tattoo`, calendar ut
 six calendar tests, and four Postgres integration tests. Luna implementation and independent review
 completed; the main Stage 09 checklist tracks the remaining jobs, endpoints, and UI.
 
-The follow-up status-event slice is complete in migration `0037_dazzling_forgotten_one`; it records
-structured conversation transitions in the same transaction as status PATCH activity.
+The follow-up status-event slices are complete in migrations `0037_dazzling_forgotten_one` and
+`0038_swift_masque`; they record structured transitions for PATCH, inbound reopen, and automation
+status changes in the same transaction as status activity, while preserving events when actors are
+deleted.
 
 ## Global constraints
 
