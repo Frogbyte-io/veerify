@@ -136,7 +136,9 @@ test.describe('Admin feedback workflow', () => {
     const productCard = page.getByRole('link', { name: new RegExp(`E2E Feedback ${slug}`) }).first()
     await expect(productCard).toBeVisible({ timeout: 20_000 })
     await productCard.hover()
-    await productCard.click()
+    // The card footer contains its own prevent-default controls. Click the
+    // product heading so the navigation assertion exercises the card link.
+    await productCard.getByRole('heading', { name: `E2E Feedback ${slug}` }).click()
     await expect(page).toHaveURL(new RegExp(`/products/${slug}$`))
 
     // Navigate to feedback page with explicit project preselected
