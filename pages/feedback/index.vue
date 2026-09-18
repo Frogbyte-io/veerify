@@ -231,6 +231,25 @@
                 class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none"
               />
             </div>
+            <div
+              class="relative flex-1 sm:w-[180px]"
+              :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }"
+            >
+              <select
+                v-model="sortBy"
+                data-testid="feedback-sort-filter"
+                class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
+                @change="onFilterChange()"
+              >
+                <option value="voteCount">Most votes</option>
+                <option value="updatedAt">Recently updated</option>
+                <option value="title">Title</option>
+              </select>
+              <Icon
+                name="lucide:chevron-down"
+                class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none"
+              />
+            </div>
           </div>
         </div>
 
