@@ -79,6 +79,7 @@ mode.
 - [x] Add `supportMetricDaily` table; generate migration
 - [x] Add durable conversation status events for every status-write path
 - [x] Harden CSAT normalization and inbox authorization before reporting reads
+- [x] Persist team reporting timezone and immutable CSAT response scale
 - [ ] Implement the rollup computation job on the Stage 00 scheduler, reusing the Stage 06 business-hours module; idempotent per date
 - [ ] Implement live merge of today's partial window with historical rollups
 - [ ] Add volume, speed (median/p90), and SLA attainment metric endpoints
