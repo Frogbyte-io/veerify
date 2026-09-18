@@ -1,6 +1,6 @@
 # Stage 09 status event coverage
 
-Status: **COMPLETE** (commit `02d5553`; Luna review passed; full harness pending)
+Status: **COMPLETE** (commit `02d5553`; Luna review passed; full harness green)
 
 The initial status-event slice covered the authenticated conversation PATCH route. This follow-up
 closes the remaining write paths before reporting rollups consume the event table.
