@@ -415,7 +415,9 @@ test.describe('Anonymous feedback sessions', () => {
     const voteButton = feedbackCard.locator('button').first()
 
     // Get initial vote count text
-    const voteCountEl = voteButton.locator('span.text-sm.font-semibold').first()
+    const voteCountEl = voteButton.locator(
+      'xpath=following-sibling::span[contains(@class, "text-sm") and contains(@class, "font-semibold")]'
+    )
     const initialCount = parseInt((await voteCountEl.textContent()) || '0', 10)
 
     expect(initialCount).toBeGreaterThan(0)
@@ -510,7 +512,9 @@ test.describe('Anonymous feedback sessions', () => {
 
     const feedbackCard = page.locator('.space-y-3 > div', { hasText: title }).first()
     const voteButton = feedbackCard.locator('button').first()
-    const voteCountEl = voteButton.locator('span.text-sm.font-semibold').first()
+    const voteCountEl = voteButton.locator(
+      'xpath=following-sibling::span[contains(@class, "text-sm") and contains(@class, "font-semibold")]'
+    )
 
     const initialCount = parseInt((await voteCountEl.textContent()) || '0', 10)
 
