@@ -39,6 +39,7 @@ export default defineConfig({
           BETTER_AUTH_SECRET: betterAuthSecret,
           BETTER_AUTH_URL: baseURL,
           BETTER_AUTH_TRUSTED_ORIGINS: trustedOrigins.join(','),
+          NUXT_DEVTOOLS_ENABLED: 'false',
         },
       },
   projects: [

@@ -20,7 +20,7 @@ const deploymentMode =
 export default defineNuxtConfig({
   compatibilityDate: '2025-05-15',
   buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
-  devtools: { enabled: true },
+  devtools: { enabled: process.env.NUXT_DEVTOOLS_ENABLED !== 'false' },
   nitro: {
     output: { dir: process.env.NITRO_OUTPUT_DIR || '.output' },
     // The self-hosted runtime image already carries the installed dependency
