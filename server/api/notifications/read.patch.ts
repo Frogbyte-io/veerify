@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { db } from '~/server/database/drizzle'
-import { notification } from '~/server/database/schema/feedback'
+import { notification } from '~/server/database/schema/notifications'
 
 const readSchema = z.object({
   // If id is provided, mark that single notification as read.

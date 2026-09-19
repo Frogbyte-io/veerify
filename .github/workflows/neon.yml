@@ -26,7 +26,7 @@ jobs:
     name: Create Neon Branch
     outputs:
       db_url: ${{ steps.create_neon_branch.outputs.db_url }}
-      db_url_with_pooler: ${{ steps.create_neon_branch.outputs.db_url_with_pooler }}
+      db_url_pooled: ${{ steps.create_neon_branch.outputs.db_url_pooled }}
     needs: setup
     if: |
       github.event_name == 'pull_request' && (
@@ -57,14 +57,39 @@ jobs:
       || github.event.action == 'reopened')
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: ${{ needs.create_neon_branch.outputs.db_url_with_pooler }}
       BETTER_AUTH_URL: http://localhost:4173
+      UPLOAD_TOKEN_SECRET: playwright-e2e-upload-secret
+      # The OAuth test only validates the generated GitHub authorization URL;
+      # these placeholder credentials keep the provider enabled without using
+      # a real GitHub application or secret in CI.
+      GITHUB_CLIENT_ID: playwright-e2e-github-client
+      GITHUB_CLIENT_SECRET: playwright-e2e-github-secret
     steps:
       - uses: actions/checkout@v4
 
+      # Job outputs containing connection strings are treated as secrets by
+      # GitHub and are not reliably forwarded between jobs. Resolve the
+      # already-created branch again in this job so its pooled URL is available
+      # to the migration, seed, and Playwright steps without crossing a job
+      # boundary.
+      - name: Resolve Neon branch connection
+        id: resolve_neon_branch
+        uses: neondatabase/create-branch-action@v6
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch_name: preview/pr-${{ github.event.number }}-${{ needs.setup.outputs.branch }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          role: neondb_owner
+          database: neondb
+          ssl: require
+          suspend_timeout: 0
+
+      - name: Export Neon database URL
+        run: echo "DATABASE_URL=${{ steps.resolve_neon_branch.outputs.db_url_pooled }}" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: yarn
 
       - run: yarn install --frozen-lockfile
@@ -103,7 +128,7 @@ jobs:
   # You may want to do something with the new branch, such as run migrations, run tests
   # on it, or send the connection details to a hosting platform environment.
   # The branch DATABASE_URL is available to you via:
-  # "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}".
+  # "${{ steps.create_neon_branch.outputs.db_url_pooled }}".
   # It's important you don't log the DATABASE_URL as output as it contains a username and
   # password for your database.
   # For example, you can uncomment the lines below to run a database migration command:
@@ -111,7 +136,7 @@ jobs:
   #        run: npm run db:migrate
   #        env:
   #          # to use pooled connection
-  #          DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}"
+  #          DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url_pooled }}"
   #          # OR to use unpooled connection
   #          # DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url }}"
 

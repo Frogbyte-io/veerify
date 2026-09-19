@@ -28,8 +28,10 @@ export default defineNuxtRouteMiddleware(async (to) => {
       '/onboarding',
       '/submissions',
       '/get-started',
+      '/support',
     ]
-    if (appRoutes.some((r) => to.path.startsWith(r))) {
+    const isAppRoute = (route: string) => to.path === route || to.path.startsWith(`${route}/`)
+    if (appRoutes.some(isAppRoute)) {
       return navigateTo('/')
     }
     return
@@ -45,6 +47,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     '/products',
     '/onboarding',
     '/submissions',
+    '/support',
   ]
 
   // Auth routes that should redirect to dashboard if user is already logged in
@@ -52,9 +55,10 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   // Token-based feedback edit page is public even though /feedback is a protected prefix
   const isFeedbackEditPage = /^\/feedback\/[^/]+\/edit$/.test(to.path)
-  const isProtectedRoute = !isFeedbackEditPage && protectedRoutes.some((route) => to.path.startsWith(route))
+  const isProtectedRoute =
+    !isFeedbackEditPage && protectedRoutes.some((route) => to.path === route || to.path.startsWith(`${route}/`))
 
-  const isAuthRoute = authRoutes.some((route) => to.path.startsWith(route))
+  const isAuthRoute = authRoutes.some((route) => to.path === route || to.path.startsWith(`${route}/`))
 
   try {
     if (isProtectedRoute) {

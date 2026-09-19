@@ -16,7 +16,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: yarn
 
       - run: yarn install --frozen-lockfile
@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: yarn
 
       - run: yarn install --frozen-lockfile
@@ -53,7 +53,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: yarn
 
       - run: yarn install --frozen-lockfile
@@ -69,15 +69,12 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: yarn
 
       - run: yarn install --frozen-lockfile
 
-        # Run nuxt build directly (not `yarn build`) to skip the
-        # postbuild lifecycle hook, which runs db migrations and
-        # requires a live PostgreSQL connection.
-      - run: npx nuxt build
+      - run: yarn build
 
   e2e:
     name: E2E (Playwright)
@@ -108,13 +105,19 @@ jobs:
       PGPASSWORD: veerifypassword
       PGDATABASE: veerifydb
       BETTER_AUTH_URL: http://localhost:4173
+      UPLOAD_TOKEN_SECRET: playwright-e2e-upload-secret
+      # The OAuth test only validates the generated GitHub authorization URL;
+      # these placeholder credentials keep the provider enabled without using
+      # a real GitHub application or secret in CI.
+      GITHUB_CLIENT_ID: playwright-e2e-github-client
+      GITHUB_CLIENT_SECRET: playwright-e2e-github-secret
       PLAYWRIGHT_SKIP_IS_FAILURE: '1'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: yarn
 
       - run: yarn install --frozen-lockfile
@@ -123,7 +126,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run migrations
-        run: yarn db:migrate
+        run: yarn db:migrate:deploy
 
       - name: Seed test data
         run: yarn db:seed:e2e

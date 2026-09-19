@@ -1,0 +1,175 @@
+# Support Platform — Plan Index
+
+**Goal:** Build a Zendesk/Freshdesk-class support platform into Veerify, presented in a Chatwoot-style
+conversation UI, so that support and product feedback live on one platform.
+
+**Created:** August 11, 2026
+
+**Read `design.md` first.** It holds the architecture, data model, and the reasoning behind decisions
+that individual stage docs assume without re-arguing. Then read `deltas.md` — it records what the plan
+got wrong once implementation started, and several entries contradict the original stage docs.
+
+**Before starting Stage 05a, also read `stage-05-decisions.md`.** Stage 05 was re-cut for a 1-3 agent
+MVP on August 30, 2026 and most of its original scope was deliberately removed. That file records what
+was cut and why, so the cuts are not "completed" back in by a later agent.
+
+---
+
+## Current state — updated September 3, 2026
+
+**Integration branch: `support-platform`.** Not `main`. See delta D-17. Every stage validates here
+until the program is deliberately integrated into `main`.
+
+|                       |                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stage 00              | **Complete** — 10/10 items                                                                                                                                                                        |
+| Stage 01              | **Complete** — contact identity, integrity, timeline, and UI                                                                                                                                      |
+| Stage 02              | **Complete** — inbox and conversation core                                                                                                                                                        |
+| Stage 03              | **Complete** — inbound email                                                                                                                                                                      |
+| Stage 04              | **Complete** — 11/11 items                                                                                                                                                                        |
+| Stage 01-04 hardening | **Complete** — 16/16 tasks, review gate passed — [design](stage-01-04-hardening-design.md) · [execution plan](stage-01-04-hardening-implementation.md) · [handoff](stage-01-04-review-handoff.md) |
+| Stage 05              | **Re-cut for MVP** Aug 30, 2026 — split into 05a/05b, delta D-36                                                                                                                                  |
+| Open cross-cutting    | E2E gate collection semantics (follow-up noted under SUP-X-5)                                                                                                                                     |
+
+**Verification is recorded in two separate places, on purpose.** Automated results live in
+[`stage-01-04-review-handoff.md`](stage-01-04-review-handoff.md). Anything that can only be checked
+against a real provider lives in
+[`stage-01-04-provider-checklist.md`](stage-01-04-provider-checklist.md), and **every row there is
+still `pending` or `unavailable`** — no Postmark/Mailgun credentials, no Gmail/Outlook mailboxes, and
+no real S3 on the machine that built these stages. Read the two together before treating email
+delivery as validated; the automated counts prove the code matches our assumptions, not that the
+providers do.
+
+**Support observability.** `server/utils/support-observability.ts` is the only sanctioned way to emit
+a support metric. The metric names are a closed set and the fields are an allowlist of identifiers,
+statuses, and counts — support payloads carry customer message bodies, filenames, storage keys, and
+provider credentials, and logs are retained longer and read more widely than the database. Add a name
+or a field there and nowhere else; `support.delivery.uncorrelated` is an alert, not a statistic, and
+`reason` is a closed vocabulary because a permitted key with free-text values leaks just as easily.
+
+**Realtime had never worked before September 3, 2026.** `server/routes/_ws.ts` authenticated with a
+bearer token that Better Auth was not configured to accept, so every WebSocket closed with 4001 and
+`NotificationBell`'s polling fallback masked it. It is now fixed and proven by
+`tests/integration/realtime-two-process.test.ts` against a shared Redis. **The session token is not an
+API credential:** `_ws.ts` resolves it directly against the `session` row, because the client puts
+that token in a WebSocket URL query string and proxies log query strings. Do not reintroduce a global
+`bearer` plugin to solve this. Any behaviour that was only ever validated at unit level across that
+seam should be treated as unproven until re-checked against a real socket.
+
+**Related branches.** `sleekplan-export` holds an unrelated changelog + Sleekplan/CSV import feature
+that was recovered from the working tree. Both branches define a migration `0019`, so merging them
+requires regenerating one side's migration. Keep them apart unless you deliberately reconcile that.
+
+**Before starting, verify your base** — several dispatched agents have silently begun on a stale commit:
+
+```
+git branch --show-current          # expect: support-platform
+ls docs/plans/2026-08-11-support-platform/
+ls server/services/realtime/
+ls server/api/support/contacts/
+```
+
+---
+
+## Stage map
+
+| Stage                               | Title                     | Depends on | Status  |
+| ----------------------------------- | ------------------------- | ---------- | ------- |
+| [00](stage-00-foundations.md)       | Foundations               | —          | DONE    |
+| [01](stage-01-contacts.md)          | Contact identity          | 00         | ACTIVE  |
+| [02](stage-02-conversation-core.md) | Inbox + conversation core | 00, 01     | Next    |
+| [03](stage-03-inbound-email.md)     | Inbound email             | 02         | Blocked |
+| [04](stage-04-outbound-replies.md)  | Outbound replies          | 03         | Blocked |
+| [05a](stage-05a-agent-speed.md)     | Agent speed (MVP)         | 02, 04     | Next    |
+| [05b](stage-05b-feedback-bridge.md) | Feedback bridge           | 05a        | DONE    |
+| [06](stage-06-sla.md)               | Business hours + SLA      | 02, 04     | DONE    |
+| [07](stage-07-automation.md)        | Automation rules          | 02, 04     | DONE    |
+| [08](stage-08-csat.md)              | CSAT                      | 04         | DONE    |
+| [09](stage-09-reporting.md)         | Reporting                 | 02, 06     | ACTIVE  |
+| [09b](stage-09b-home.md)            | Home (cross-team)         | 02         | Future  |
+| [10](stage-10-customer-portal.md)   | Customer portal           | 02         | Blocked |
+| [11](stage-11-live-chat.md)         | Live chat                 | 00, 02     | Blocked |
+| [12](stage-12-social-channels.md)   | Social channels           | 03, 11     | Blocked |
+| [13](stage-13-importers.md)         | Migration importers       | 02         | Blocked |
+
+**Deferred, not planned:** Knowledge base / help center. Dropped from this program on August 11, 2026.
+Stage 10 (customer portal) ships its ticket list and submit form without KB integration; wire the two
+together if and when the KB is revived.
+
+**Recorded but not scheduled:** Stage 09b (Home), added August 14, 2026. It is a future task with an
+outline-level doc only. Per the dispatch protocol it has **not** been added to `TODO.md` — stages enter
+the board when they become unblocked, not before. It also renames `/dashboard` to `/home`, so it touches
+the post-login landing route; schedule it when that churn is acceptable.
+
+## Dependency graph
+
+```
+00 Foundations
+ └─→ 01 Contacts
+      └─→ 02 Conversation core ──┬─→ 03 Inbound email ─→ 04 Outbound replies ─┬─→ 05a Agent speed ─→ 05b Bridge
+                                 │                                            ├─→ 06 SLA ─→ 09 Reporting
+                                 │                                            ├─→ 07 Automation
+                                 │                                            └─→ 08 CSAT
+                                 ├─→ 09b Home (cross-team)
+                                 ├─→ 10 Customer portal
+                                 ├─→ 13 Importers
+                                 └─→ 11 Live chat ─→ 12 Social channels
+                                                       ↑
+                                                    also needs 03
+```
+
+**Stage 00 is a hard barrier** — every later stage touches the realtime adapter or the schema split.
+Nothing else starts until it is merged and verified on `main`.
+
+**What can run in parallel:**
+
+- 00 → 01 → 02 is a strict chain. There is no parallelism available until Stage 02 lands.
+- After 02: stages 10, 13, and 11 are all independent of the 03→04 email chain and of each other.
+- After 04: stages 05a, 06, 07, and 08 are mutually independent. This is the widest fan-out in the
+  program — up to four agents. **But the deliberate order is 05a, then 05b, then 06/07/08** (August 30,
+  2026). 05a is the MVP inbox; 05b is the feedback bridge, which is the only capability here that a
+  Chatwoot install cannot match. Stages 06 (SLA), 07 (automation), and 08 (CSAT) are scale/parity
+  features that the 1-3 agent target team needs less than the macros already cut from 05a — scheduling
+  them ahead of the bridge would defer the differentiator indefinitely.
+- Stage 09 needs 06. Stage 12 needs both 03 and 11.
+- Stage 09b (Home) needs only 02, despite its number — it is a personal cross-team view, not an
+  org-stats page, so it needs no rollups. It sits at 09b at the requester's direction and can be pulled
+  forward into the post-02 parallel group whenever wanted.
+
+**First usable product is Stage 04.** At that point a team can run real email support end to end.
+**The MVP is Stage 05a** — the point at which a 1-3 agent team can comfortably live in the inbox all day,
+validated by dogfooding Veerify's own support on it for two weeks. **05b is the differentiator.**
+Stages 06–07 make it competitive with Freshdesk. 08–10 close the gap. 11–13 are expansion.
+
+## Dispatch protocol
+
+This program uses the existing harness in `.agents/skills/todo-harness-workflow/SKILL.md`. No GitHub
+Issues, no new tooling.
+
+1. **One stage at a time enters `TODO.md`.** When a stage becomes unblocked, the orchestrator appends
+   that stage's `## TODO items` block to `TODO.md` as `- [ ]` lines. Do not front-load all stages —
+   it produces an unreadable backlog and invites agents to pick up blocked work.
+2. Each item is dispatched to one subagent on `agent/<ITEM-ID>-<slug>` **cut explicitly from
+   `support-platform`** — never `main`, and never whatever the worktree happens to default to.
+   Every agent dispatched so far that was not given an explicit base ref started on a stale commit
+   and could not read its own spec (deltas D-08, D-11).
+3. Subagents never edit `TODO.md`, and never push to `main` or `support-platform`.
+4. The orchestrator merges sequentially, running `yarn harness:verify` after each merge.
+5. Items are checked off only after merge + verification on `support-platform`.
+
+**Before reusing an item id**, delete any abandoned `agent/*` branch and prune dead worktrees —
+a stale branch name silently forces the replacement agent onto a different one (delta D-11).
+
+**Stage exit criteria.** A stage is done when all its items are checked off, its acceptance criteria in
+the stage doc are demonstrated, `docs/qa/manual-feature-checklist.md` has been updated, and
+`yarn harness:verify` is green on `support-platform`.
+
+## Conventions for every stage
+
+- Options API only. No `<script setup>`, no Composition API. See `.agents/CLAUDE.md`.
+- `createError()` for all server errors.
+- Schema changes go through `yarn db:generate`. Never hand-write a migration.
+- New protected routes must be registered in `middleware/auth.global.ts`.
+- New env vars must be added to `.env.example`.
+- Skeleton loaders while fetching, real error states with retry. No placeholder data.
+- New support endpoints must use `server/utils/support-access.ts`, never a bare id check.

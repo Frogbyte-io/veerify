@@ -15,7 +15,10 @@ const PUBLIC_AUTH_HANDOFF_TTL_MS = 90 * 1000
 
 const publicAuthHandoffSchema = z.object({
   sessionToken: z.string().min(1),
-  targetHost: z.string().min(1).transform((value) => normalizeHostname(value)),
+  targetHost: z
+    .string()
+    .min(1)
+    .transform((value) => normalizeHostname(value)),
   dontRememberMe: z.boolean().default(false),
   expiresAt: z.number().int().positive(),
 })

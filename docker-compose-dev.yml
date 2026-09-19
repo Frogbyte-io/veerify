@@ -17,6 +17,13 @@ services:
     ports:
       - '1025:1025'
       - '8025:8025'
+  valkey:
+    container_name: veerify-valkey
+    image: valkey/valkey:9
+    ports:
+      - '6379:6379'
+    volumes:
+      - valkey_data:/data
   minio:
     container_name: veerify-minio
     image: minio/minio:latest
@@ -46,4 +53,5 @@ services:
 
 volumes:
   db_data:
+  valkey_data:
   minio_data:

@@ -1,0 +1,49 @@
+/**
+ * @openapi
+ * /api/support/contacts/{id}:
+ *   get:
+ *     tags: [Support]
+ *     summary: Get a contact with its identities and company
+ *     operationId: getSupportContact
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Contact detail }
+ *       403: { description: Not a member of the contact's team }
+ *       404: { description: Contact not found }
+ */
+import { and, asc, eq } from 'drizzle-orm'
+import { createSuccessResponse } from '~/server/utils/response'
+import { requireAuth } from '~/server/utils/auth-middleware'
+import { requireContactAccess } from '~/server/utils/support-access'
+import { db } from '~/server/database/drizzle'
+import { contactIdentity, contactLink, supportCompany } from '~/server/database/schema/support'
+
+export default defineEventHandler(async (event) => {
+  const session = await requireAuth(event)
+  const contactId = getRouterParam(event, 'id') as string
+
+  const row = await requireContactAccess(contactId, session.user.id)
+
+  const identities = await db.select().from(contactIdentity).where(eq(contactIdentity.contactId, contactId))
+  const links = await db
+    .select()
+    .from(contactLink)
+    .where(eq(contactLink.contactId, contactId))
+    .orderBy(asc(contactLink.createdAt), asc(contactLink.id))
+
+  const company = row.companyId
+    ? ((
+        await db
+          .select()
+          .from(supportCompany)
+          .where(and(eq(supportCompany.id, row.companyId), eq(supportCompany.teamId, row.teamId)))
+          .limit(1)
+      )[0] ?? null)
+    : null
+
+  return createSuccessResponse({ contact: row, identities, company, links })
+})

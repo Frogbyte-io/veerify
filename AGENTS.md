@@ -25,6 +25,8 @@ Run these after every change:
 - `yarn test`
 - `yarn lint`
 - `yarn test:e2e:if-available`
+- `yarn test:integration:if-available`
+- `yarn test:integration:postgres:if-available`
 
 Or run the harness command:
 
@@ -45,6 +47,26 @@ Or run the harness command:
 
 - `yarn test:e2e:if-available` must run Playwright only when environment is cloud/CI or `PLAYWRIGHT_FORCE=1`, and a database is configured and reachable.
 - If the guarded Playwright command skips, report the skip reason in updates/final output.
+
+## Redis Integration Guard
+
+- `yarn test:integration:if-available` runs the real Redis driver and rate-limit suite when a local Redis/Valkey
+  endpoint is reachable at `REDIS_URL` (defaults to `redis://localhost:6379`), or when a remote endpoint is
+  explicitly marked dedicated with `REDIS_INTEGRATION_DEDICATED=1`. Start local coverage with
+  `docker compose -f docker-compose-dev.yml up -d valkey`.
+- Unlike the Playwright guard, this one is not restricted to cloud/CI — it runs locally by default
+  whenever the local/dedicated Redis endpoint is up. Shared or production endpoints are rejected because
+  the reconnect test uses `CLIENT KILL TYPE pubsub`.
+- If it skips, report the skip reason in updates/final output.
+
+## Postgres Integration Guard
+
+- `yarn test:integration:postgres:if-available` runs concurrency tests that need a real database (e.g.
+  the `displayId` allocation test) only when Postgres is reachable via `PG*`/`DATABASE_URL`. Start it with
+  `docker compose -f docker-compose-dev.yml up -d db`, then `yarn db:migrate`.
+- Guarded separately from the Redis suite, not bundled — a machine with one dependency but not the other
+  still gets partial coverage instead of an all-or-nothing skip.
+- If it skips, report the skip reason in updates/final output.
 
 ## UI Change Rule
 

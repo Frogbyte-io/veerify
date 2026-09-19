@@ -10,6 +10,7 @@ import { sendStatusChangeNotificationEmail } from '~/lib/email'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 import { createLogger } from '~/server/utils/logger'
 import { notifyProjectTeam, notifyFeedbackSubscribers } from '~/server/utils/notifications'
+import { notifyLinkedFeedbackContacts } from '~/server/utils/feedback-support-notifications'
 
 const logger = createLogger('feedback')
 
@@ -69,6 +70,7 @@ export default defineEventHandler(async (event) => {
 
   // Notify about the status change
   if (updated.status !== fb.status) {
+    const subscribedEmails = new Set<string>()
     const notifParams = {
       type: 'status_change' as const,
       title: `Status changed to "${updated.status}"`,
@@ -109,13 +111,33 @@ export default defineEventHandler(async (event) => {
       )
 
       for (const [index, result] of notificationResults.entries()) {
-        if (result.status === 'rejected') {
-          logger.error('Failed to send status notification', { feedbackId: id, email: emailRecipients[index]?.email, error: result.reason instanceof Error ? result.reason.message : result.reason })
+        if (result.status === 'fulfilled') {
+          const email = emailRecipients[index]?.email
+          if (email) subscribedEmails.add(email.trim().toLowerCase())
+        } else {
+          logger.error('Failed to send status notification', {
+            feedbackId: id,
+            email: emailRecipients[index]?.email,
+            error: result.reason instanceof Error ? result.reason.message : result.reason,
+          })
         }
       }
     } catch (err) {
-      logger.error('Failed to fetch subscribers for status notification', { feedbackId: id, error: err instanceof Error ? err.message : err })
+      logger.error('Failed to fetch subscribers for status notification', {
+        feedbackId: id,
+        error: err instanceof Error ? err.message : err,
+      })
     }
+
+    await notifyLinkedFeedbackContacts({
+      feedbackId: id,
+      feedbackTitle: updated.title,
+      projectId: fb.projectId,
+      status: updated.status,
+      subscribedEmails,
+      actorUserId: session.user.id,
+      actorName: session.user.name,
+    })
   }
 
   return createSuccessResponse(updated)

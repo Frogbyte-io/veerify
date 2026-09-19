@@ -24,7 +24,10 @@ const pool = new Pool(poolConfig)
 
 pool.on('error', (err: Error & { code?: string }) => {
   if (err.code === 'ECONNREFUSED') {
-    log.error('Could not connect to PostgreSQL. Make sure the database is running: docker compose -f docker-compose-dev.yml up -d', { code: err.code })
+    log.error(
+      'Could not connect to PostgreSQL. Make sure the database is running: docker compose -f docker-compose-dev.yml up -d',
+      { code: err.code }
+    )
   } else {
     log.error('PostgreSQL pool error', { error: err.message, code: err.code })
   }

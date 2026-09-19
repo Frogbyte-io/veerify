@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Page } from '@playwright/test'
-import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
+import { isBetterAuthCookie, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 import { selectors } from './helpers/selectors'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
@@ -10,6 +10,7 @@ const ONE_BY_ONE_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=',
   'base64'
 )
+const UI_WORKFLOW_TIMEOUT = 120_000
 
 test.setTimeout(60_000)
 
@@ -114,10 +115,11 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('UI: feedback page loads, add and delete feedback', async ({ request, page }) => {
+    test.setTimeout(UI_WORKFLOW_TIMEOUT)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
     // Transfer auth cookies to browser context
-    const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+    const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
@@ -129,13 +131,43 @@ test.describe('Admin feedback workflow', () => {
       data: { teamId },
     })
     expect(setActiveTeamResponse.ok()).toBeTruthy()
+    await expect
+      .poll(
+        async () => {
+          const activeTeamResponse = await page.request.get('/api/teams/active')
+          if (!activeTeamResponse.ok()) return false
+          const activeTeamPayload = await activeTeamResponse.json()
+          if (activeTeamPayload?.data?.id !== teamId) return false
+
+          const projectsResponse = await page.request.get(`/api/teams/${teamId}/projects`)
+          if (!projectsResponse.ok()) return false
+          const payload = await projectsResponse.json()
+          return (payload?.data || []).some((project: { id?: string }) => project.id === projectId)
+        },
+        { timeout: 20_000, intervals: [500, 1_000, 2_000] }
+      )
+      .toBe(true)
 
     // Verify product cards navigate to their settings page.
+    const browserProjectsResponsePromise = page.waitForResponse(
+      (response) => {
+        if (response.request().method() !== 'GET' || !response.url().includes(`/api/teams/${teamId}/projects`))
+          return false
+        return true
+      },
+      { timeout: 60_000 }
+    )
     await gotoWithRetry(page, '/products')
+    const browserProjectsResponse = await browserProjectsResponsePromise
+    expect(browserProjectsResponse.ok()).toBeTruthy()
+    const browserProjectsPayload = await browserProjectsResponse.json()
+    expect(
+      (browserProjectsPayload?.data || []).some((project: { id?: string }) => project.id === projectId)
+    ).toBeTruthy()
     await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
     const productCard = page.getByRole('link', { name: new RegExp(`E2E Feedback ${slug}`) }).first()
-    await expect(productCard).toBeVisible({ timeout: 20_000 })
-    await productCard.hover()
+    await expect(productCard).toBeVisible({ timeout: 30_000 })
+    await expect(productCard).toHaveAttribute('href', `/products/${slug}`)
     await productCard.click()
     await expect(page).toHaveURL(new RegExp(`/products/${slug}$`))
 
@@ -255,8 +287,9 @@ test.describe('Admin feedback workflow', () => {
   })
 
   test('UI: feedback detail page supports edit, comment moderation, and admin controls', async ({ request, page }) => {
+    test.setTimeout(UI_WORKFLOW_TIMEOUT)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+    const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
@@ -321,13 +354,16 @@ test.describe('Admin feedback workflow', () => {
       await expect(page.getByText(commentBody)).toBeVisible({ timeout: 15_000 })
 
       const commentCard = page.locator('[data-testid^="feedback-detail-comment-"]', { hasText: commentBody }).first()
+      const commentCardTestId = await commentCard.getAttribute('data-testid')
+      expect(commentCardTestId).toBeTruthy()
       await commentCard.locator('[data-testid^="comment-edit-btn-"]').click()
-      await commentCard.locator('textarea').fill(editedCommentBody)
-      await commentCard.getByRole('button', { name: 'Save comment' }).click()
+      const editingCommentCard = page.locator(`[data-testid="${commentCardTestId}"]`)
+      await editingCommentCard.locator('textarea').fill(editedCommentBody)
+      await editingCommentCard.getByRole('button', { name: 'Save comment' }).click()
       await expect(page.getByText(editedCommentBody)).toBeVisible({ timeout: 15_000 })
 
       page.once('dialog', (dialog) => dialog.accept())
-      await commentCard.locator('[data-testid^="comment-delete-btn-"]').click()
+      await editingCommentCard.locator('[data-testid^="comment-delete-btn-"]').click()
       await expect(page.getByText(editedCommentBody)).not.toBeVisible({ timeout: 15_000 })
     } finally {
       await deleteTestProject(request, sessionCookie, teamId, projectId)
@@ -380,6 +416,7 @@ test.describe('Admin feedback workflow', () => {
     const teamId = await getActiveTeamId(request, sessionCookie)
 
     const unauthorizedPresign = await request.post('/api/projects/demo/assets/presign', {
+      headers: { cookie: '' },
       data: {
         kind: 'logo',
         filename: 'logo.png',
@@ -506,7 +543,7 @@ test.describe('Admin feedback workflow', () => {
     const projectIdB = await createTestProject(request, sessionCookie, teamId, slugB)
 
     // Transfer auth cookies to browser context
-    const authCookies = (await request.storageState()).cookies.filter((c) => c.name.startsWith('better-auth'))
+    const authCookies = (await request.storageState()).cookies.filter((c) => isBetterAuthCookie(c.name))
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
@@ -556,15 +593,16 @@ test.describe('Admin feedback workflow', () => {
       await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
 
       // Back button is visible since we came from multi-product step 1
-      await expect(page.locator('button:has-text("Back")')).toBeVisible()
+      const backButton = page.getByRole('button', { name: 'Back', exact: true })
+      await expect(backButton).toBeVisible()
 
       // Back from form returns to type picker.
-      await page.locator('button:has-text("Back")').click()
+      await backButton.click()
       await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible()
       await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
 
       // Back from type picker returns to product picker.
-      await page.locator('button:has-text("Back")').click()
+      await page.getByRole('button', { name: 'Back', exact: true }).click()
       await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible()
       await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
 
@@ -589,8 +627,9 @@ test.describe('Admin feedback workflow', () => {
       await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
 
       // Back button should return to type picker in single-product mode.
-      await expect(page.locator('button:has-text("Back")')).toBeVisible()
-      await page.locator('button:has-text("Back")').click()
+      const singleProductBackButton = page.getByRole('button', { name: 'Back', exact: true })
+      await expect(singleProductBackButton).toBeVisible()
+      await singleProductBackButton.click()
       await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible()
 
       await page.getByRole('button', { name: 'Cancel' }).click()
