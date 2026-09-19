@@ -139,10 +139,7 @@ export async function expectRedirectToLogin(page: Page, protectedPath: string) {
 export async function loginViaUi(page: Page, credentials: LoginCredentials) {
   await gotoWithRetry(page, '/login')
   await expect(page.locator(selectors.loginEmail)).toBeVisible()
-  await page.waitForFunction(() => {
-    const form = document.querySelector('form') as any
-    return Boolean(form?.__vueParentComponent)
-  })
+  await expect(page.locator(selectors.loginEmail)).toBeEnabled()
 
   await page.locator(selectors.loginEmail).fill(credentials.email)
   await page.locator(selectors.loginPassword).fill(credentials.password)
