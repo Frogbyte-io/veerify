@@ -59,6 +59,11 @@ jobs:
     env:
       BETTER_AUTH_URL: http://localhost:4173
       UPLOAD_TOKEN_SECRET: playwright-e2e-upload-secret
+      # The OAuth test only validates the generated GitHub authorization URL;
+      # these placeholder credentials keep the provider enabled without using
+      # a real GitHub application or secret in CI.
+      GITHUB_CLIENT_ID: playwright-e2e-github-client
+      GITHUB_CLIENT_SECRET: playwright-e2e-github-secret
     steps:
       - uses: actions/checkout@v4
 
