@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
-import { getPlaywrightBaseURL, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
+import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 import {
   cannedResponse,
   contact,
@@ -33,14 +33,6 @@ async function activeTeamAndUser(request: Parameters<typeof signInAndGetSessionC
 
 async function loginAndActivateTeam(page: import('@playwright/test').Page, teamId: string) {
   const sessionCookie = await signInAndGetSessionCookie(page.request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const separator = sessionCookie.indexOf('=')
-  await page.context().addCookies([
-    {
-      name: sessionCookie.slice(0, separator),
-      value: sessionCookie.slice(separator + 1),
-      url: getPlaywrightBaseURL(),
-    },
-  ])
   const activeTeamResponse = await page.request.post('/api/teams/active', {
     headers: withAuthHeaders(sessionCookie, '/support'),
     data: { teamId },
