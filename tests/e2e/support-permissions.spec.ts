@@ -223,12 +223,11 @@ test.describe.serial('support permission-aware navigation', () => {
     await page.getByTestId(`support-conversation-${conversationId}`).click()
     const claimButton = page.getByTestId('support-thread-claim')
     await expect(claimButton).toBeVisible()
-    const dialog = page.waitForEvent('dialog')
-    await claimButton.click()
-
-    const lostClaimDialog = await dialog
-    expect(lostClaimDialog.message()).toBe('This conversation was claimed by another agent.')
-    await lostClaimDialog.accept()
+    const dialogHandled = page.waitForEvent('dialog').then(async (lostClaimDialog) => {
+      expect(lostClaimDialog.message()).toBe('This conversation was claimed by another agent.')
+      await lostClaimDialog.accept()
+    })
+    await Promise.all([claimButton.click(), dialogHandled])
     expect(claimMethod).toBe('POST')
     await expect(page.getByTestId('support-thread-assignee')).toHaveValue(fixture.users.supervisor.userId)
     await expect(claimButton).toHaveCount(0)
