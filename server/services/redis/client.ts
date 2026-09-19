@@ -53,7 +53,13 @@ const sharedClients = new Map<string, Redis>()
 export function getSharedRedisClient(url: string): Redis {
   let client = sharedClients.get(url)
   if (!client) {
-    client = createRedisConnection(url, 'shared')
+    // Regular commands are best-effort in this application. Do not retain a
+    // rate-limit EVAL in ioredis' offline queue after its caller has timed out;
+    // the realtime publisher already treats broker errors as non-fatal too.
+    client = createRedisConnection(url, 'shared', {
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 1,
+    })
     sharedClients.set(url, client)
   }
   return client

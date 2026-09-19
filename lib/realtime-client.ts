@@ -267,6 +267,13 @@ export class RealtimeClient {
     if (this.idleDisconnected) {
       this.idleDisconnected = false
       this.reconnectAttempts = 0
+      // The idle close event can arrive after visibility returns. Detach the
+      // closing socket now so its late event cannot consume this reconnect.
+      if (this.socket) {
+        this.socket = null
+        this.connecting = false
+        this.stopPing()
+      }
       this.connect()
     }
   }
@@ -322,7 +329,9 @@ export class RealtimeClient {
     }
 
     if (this.destroyed || this.authFailed || generation !== this.connectionGeneration) {
-      this.connecting = false
+      // A superseded token request must not clear the connecting flag owned by
+      // the newer generation that replaced it.
+      if (generation === this.connectionGeneration) this.connecting = false
       return
     }
 

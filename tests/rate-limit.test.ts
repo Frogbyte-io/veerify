@@ -108,6 +108,29 @@ describe('redis rate limit store', () => {
 
     await expect(store.consume('k', 60_000, 5)).resolves.toBe(true)
   })
+
+  it('fails open on an EVAL timeout without disconnecting the shared client', async () => {
+    vi.useFakeTimers()
+    try {
+      const disconnect = vi.fn()
+      const connect = vi.fn()
+      const client = {
+        eval: vi.fn(() => new Promise<never>(() => {})),
+        disconnect,
+        connect,
+      } as unknown as Redis
+      const store = createRedisStore(client)
+
+      const pending = store.consume('k', 60_000, 5)
+      await vi.advanceTimersByTimeAsync(1_000)
+
+      await expect(pending).resolves.toBe(true)
+      expect(disconnect).not.toHaveBeenCalled()
+      expect(connect).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('checkRateLimit / requireRateLimit call-site contract', () => {

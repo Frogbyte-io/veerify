@@ -76,24 +76,15 @@ export function createRedisStore(client: Redis): RateLimitStore {
       try {
         if (!(await waitForRedisReady(client, 1_000))) return true
         let timeoutId: ReturnType<typeof setTimeout> | undefined
-        try {
-          const result = await Promise.race([
-            client.eval(SLIDING_WINDOW_SCRIPT, 1, key, String(now), String(windowMs), String(maxRequests), member),
-            new Promise<never>((_, reject) => {
-              timeoutId = setTimeout(() => reject(new Error('Redis rate-limit request timed out')), 1_000)
-            }),
-          ])
-          return result === 1
-        } catch (error) {
-          if (error instanceof Error && error.message === 'Redis rate-limit request timed out') {
-            const resettable = client as Redis & { disconnect?: () => void; connect?: () => void }
-            resettable.disconnect?.()
-            resettable.connect?.()
-          }
-          throw error
-        } finally {
+        const result = await Promise.race([
+          client.eval(SLIDING_WINDOW_SCRIPT, 1, key, String(now), String(windowMs), String(maxRequests), member),
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('Redis rate-limit request timed out')), 1_000)
+          }),
+        ]).finally(() => {
           if (timeoutId) clearTimeout(timeoutId)
-        }
+        })
+        return result === 1
       } catch (error) {
         // Fail open: a Redis outage must not take down the public API this
         // limiter protects. Denying by default here would turn a Redis blip

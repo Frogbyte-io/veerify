@@ -90,6 +90,33 @@ afterEach(() => {
 })
 
 describe('RealtimeClient — connection and dispatch', () => {
+  it('does not let a stale token resolution clear a newer connection attempt', async () => {
+    const tokenResolvers: Array<(token: string | null) => void> = []
+    const getToken = vi.fn(
+      () =>
+        new Promise<string | null>((resolve) => {
+          tokenResolvers.push(resolve)
+        })
+    )
+    const client = makeClient({ getToken })
+
+    client.connect()
+    client.resetAuth()
+    expect(getToken).toHaveBeenCalledTimes(2)
+
+    // The first request belongs to the pre-reset generation. Its completion
+    // must not make the current generation look idle and allow a duplicate
+    // token request.
+    tokenResolvers[0]('old-token')
+    await Promise.resolve()
+    client.connect()
+    expect(getToken).toHaveBeenCalledTimes(2)
+
+    tokenResolvers[1]('new-token')
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
+    expect(latestSocket().url).toBe('wss://example.test/_ws?token=new-token')
+  })
+
   it('connects using the resolved token and configured URL builder', async () => {
     const client = makeClient()
     client.connect()
@@ -310,6 +337,32 @@ describe('RealtimeClient — auth failure (4001)', () => {
 })
 
 describe('RealtimeClient — idle disconnect', () => {
+  it('reconnects when visibility returns while the idle close event is still pending', async () => {
+    const client = makeClient({ idleTimeoutMs: 1_000, createSocket: (url) => new DeferredCloseSocket(url) })
+    client.connect()
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
+    const first = latestSocket()
+    first.open()
+
+    client.notifyHidden()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(first.readyState).toBe(3)
+
+    // A browser can report visibility before the asynchronous WebSocket close
+    // event has been delivered. The close event must not consume the resume.
+    client.notifyVisible()
+    expect(FakeSocket.instances).toHaveLength(1)
+    first.onclose?.({ code: 1000, reason: 'idle' })
+
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(2))
+    const resumed = latestSocket()
+    resumed.open()
+    resumed.drop()
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(3))
+  })
+
   it('clears the pagehide close intent before reconnecting after a BFCache resume', async () => {
     const client = makeClient({ createSocket: (url) => new DeferredCloseSocket(url) })
     client.connect()

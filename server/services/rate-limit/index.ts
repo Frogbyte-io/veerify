@@ -1,4 +1,4 @@
-import { createRedisConnection } from '~/server/services/redis/client'
+import { getSharedRedisClient } from '~/server/services/redis/client'
 import { createLogger } from '~/server/utils/logger'
 import { createMemoryStore } from './stores/memory'
 import { createRedisStore } from './stores/redis'
@@ -34,12 +34,7 @@ function createStore(): RateLimitStore {
       return createMemoryStore()
     }
     logger.info('Rate limit store: redis')
-    return createRedisStore(
-      createRedisConnection(url, 'rate-limit', {
-        enableOfflineQueue: false,
-        maxRetriesPerRequest: 1,
-      })
-    )
+    return createRedisStore(getSharedRedisClient(url))
   }
 
   logger.info('Rate limit store: memory (single instance only)')
