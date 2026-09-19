@@ -62,10 +62,12 @@ function formatReportingDate(instant: Date, format: Intl.DateTimeFormat): string
   return date
 }
 
+// The parameter name in the function-type return annotation is required by
+// TypeScript syntax but is not a runtime binding.
 // eslint-disable-next-line no-unused-vars
 export function createReportingDateFormatter(timezone: string): (instant: Date) => string {
   const format = formatter(timezone)
-  return (instant) => formatReportingDate(instant, format)
+  return (instant: Date) => formatReportingDate(instant, format)
 }
 
 export function reportingDateAt(instant: Date, timezone: string): string {

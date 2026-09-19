@@ -77,7 +77,7 @@ jobs:
         uses: neondatabase/create-branch-action@v6
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
-          branch_name: preview/pr-${{ github.event.number }}-${{ needs.setup.outputs.current_branch }}
+          branch_name: preview/pr-${{ github.event.number }}-${{ needs.setup.outputs.branch }}
           api_key: ${{ secrets.NEON_API_KEY }}
           role: neondb_owner
           database: neondb
@@ -128,7 +128,7 @@ jobs:
   # You may want to do something with the new branch, such as run migrations, run tests
   # on it, or send the connection details to a hosting platform environment.
   # The branch DATABASE_URL is available to you via:
-  # "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}".
+  # "${{ steps.create_neon_branch.outputs.db_url_pooled }}".
   # It's important you don't log the DATABASE_URL as output as it contains a username and
   # password for your database.
   # For example, you can uncomment the lines below to run a database migration command:
@@ -136,7 +136,7 @@ jobs:
   #        run: npm run db:migrate
   #        env:
   #          # to use pooled connection
-  #          DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url_with_pooler }}"
+  #          DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url_pooled }}"
   #          # OR to use unpooled connection
   #          # DATABASE_URL: "${{ steps.create_neon_branch.outputs.db_url }}"
 

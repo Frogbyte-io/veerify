@@ -32,6 +32,12 @@ const querySchema = z.object({
   teamId: z.string().min(1),
 })
 
+function redactChannelConfig<T extends { channelConfig?: unknown }>(inbox: T) {
+  const safeInbox = { ...inbox }
+  Reflect.deleteProperty(safeInbox, 'channelConfig')
+  return safeInbox
+}
+
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const query = validateQuery(event, querySchema)
@@ -50,7 +56,7 @@ export default defineEventHandler(async (event) => {
 
     return createSuccessResponse({
       inboxes: inboxes.map((inbox) => ({
-        ...inbox,
+        ...redactChannelConfig(inbox),
         effectiveRole: 'admin' as SupportInboxRole,
         isTeamAdmin: true,
         capabilities: capabilitiesForRole('admin', true),
@@ -74,7 +80,7 @@ export default defineEventHandler(async (event) => {
         return null
       }
       return {
-        ...inbox,
+        ...redactChannelConfig(inbox),
         effectiveRole,
         isTeamAdmin: false,
         capabilities: capabilitiesForRole(effectiveRole, false),

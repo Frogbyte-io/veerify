@@ -23,7 +23,10 @@ export async function notifyLinkedFeedbackContacts(params: {
   actorUserId: string | null
   actorName: string | null
 }) {
-  if (params.status !== 'completed') return
+  // Projects may replace the built-in status values with custom terminal
+  // labels such as "Shipped". Only the known active states are non-terminal;
+  // every other accepted status should notify linked support contacts.
+  if (['open', 'in_progress', 'planned'].includes(params.status)) return
 
   try {
     const links = await db

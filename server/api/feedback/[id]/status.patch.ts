@@ -94,7 +94,6 @@ export default defineEventHandler(async (event) => {
     try {
       const subscribers = await db.select().from(feedbackSubscription).where(eq(feedbackSubscription.feedbackId, id))
       const emailRecipients = subscribers.filter((s) => s.notifyChannel === 'email' || s.notifyChannel === 'both')
-      for (const recipient of emailRecipients) subscribedEmails.add(recipient.email.trim().toLowerCase())
 
       const baseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
       const notificationResults = await Promise.allSettled(
@@ -112,7 +111,10 @@ export default defineEventHandler(async (event) => {
       )
 
       for (const [index, result] of notificationResults.entries()) {
-        if (result.status === 'rejected') {
+        if (result.status === 'fulfilled') {
+          const email = emailRecipients[index]?.email
+          if (email) subscribedEmails.add(email.trim().toLowerCase())
+        } else {
           logger.error('Failed to send status notification', {
             feedbackId: id,
             email: emailRecipients[index]?.email,

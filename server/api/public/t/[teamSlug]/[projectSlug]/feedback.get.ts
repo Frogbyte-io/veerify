@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
     // listing free of the original ticket body and author identity.
     // `metadata` is intentionally not returned by this public endpoint.
     id: item.feedback.id,
-    title: item.feedback.title,
+    title: item.feedback.metadata?.source === 'support_conversation' ? 'Support request' : item.feedback.title,
     body: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.body,
     status: item.feedback.status,
     tag: item.feedback.metadata?.feedbackType || null,

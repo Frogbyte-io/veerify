@@ -141,6 +141,8 @@ test('converts a support conversation and keeps ticket content private on the pu
     const publicDetailResponse = await request.get(`/api/feedback/${feedbackId}`)
     expect(publicDetailResponse.ok()).toBeTruthy()
     const publicDetail = (await publicDetailResponse.json()).data
+    expect(publicDetail.title).toBe('Support request')
+    expect(publicDetail.title).not.toContain('Please add CSV exports')
     expect(publicDetail.body).toBeNull()
     expect(publicDetail.author).toBeNull()
     expect(publicDetail.authorEmail).toBeNull()
@@ -150,7 +152,15 @@ test('converts a support conversation and keeps ticket content private on the pu
     const boardItem = (await publicBoardResponse.json()).data.items.find(
       (item: { id: string }) => item.id === feedbackId
     )
-    expect(boardItem).toMatchObject({ id: feedbackId, body: null, authorName: null })
+    expect(boardItem).toMatchObject({ id: feedbackId, title: 'Support request', body: null, authorName: null })
+
+    const roadmapResponse = await request.get(`/api/public/t/${teamRow.slug}/${publicProject.slug}/roadmap`)
+    expect(roadmapResponse.ok()).toBeTruthy()
+    const roadmapColumns = (await roadmapResponse.json()).data.columns
+    const roadmapItem = roadmapColumns
+      .flatMap((column: { items: Array<{ id: string }> }) => column.items)
+      .find((item: { id: string }) => item.id === feedbackId)
+    expect(roadmapItem).toMatchObject({ id: feedbackId, title: 'Support request', body: null, authorName: null })
   } finally {
     if (feedbackId) await db.delete(feedback).where(eq(feedback.id, feedbackId))
     if (conversationId) await db.delete(conversation).where(eq(conversation.id, conversationId))

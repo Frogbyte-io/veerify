@@ -26,6 +26,8 @@ export default defineEventHandler(async (event) => {
   // The centralized helper both authorizes the request and attaches the
   // effective role/capability payload used by the client.
   const inbox = await requireInboxAccess(inboxId, session.user.id)
+  const safeInbox = { ...inbox }
+  Reflect.deleteProperty(safeInbox, 'channelConfig')
 
-  return createSuccessResponse({ inbox })
+  return createSuccessResponse({ inbox: safeInbox })
 })

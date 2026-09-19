@@ -130,6 +130,7 @@ export default defineEventHandler(async (event) => {
     !isTeamMember && item.feedback.metadata?.source === 'support_conversation'
       ? {
           ...item.feedback,
+          title: 'Support request',
           body: null,
           authorName: null,
           authorEmail: null,

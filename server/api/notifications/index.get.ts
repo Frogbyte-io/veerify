@@ -6,6 +6,19 @@ import { db } from '~/server/database/drizzle'
 import { notification } from '~/server/database/schema/notifications'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 
+function decodeNotificationCursor(value: string) {
+  try {
+    return decodeListCursor(value, 'notification')
+  } catch (error) {
+    // Older app instances emitted the timestamp itself as the cursor. Accept
+    // that shape during rolling deploys so a user's existing bell can still
+    // page backwards while all new responses use the opaque v1 cursor.
+    const createdAt = new Date(value)
+    if (!Number.isNaN(createdAt.getTime())) return { createdAt, id: '' }
+    throw error
+  }
+}
+
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.string().optional(),
@@ -26,7 +39,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (query.cursor) {
-    const cursor = decodeListCursor(query.cursor, 'notification')
+    const cursor = decodeNotificationCursor(query.cursor)
     conditions.push(
       or(
         lt(notification.createdAt, cursor.createdAt),

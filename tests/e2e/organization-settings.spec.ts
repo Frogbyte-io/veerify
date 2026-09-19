@@ -85,7 +85,7 @@ test('owner can view, update, and delete organization from settings tab', async 
     )
     .toBe(200)
 
-  await page.goto('/settings#organization')
+  await page.goto('/settings')
   await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
   await expect(page.locator(selectors.settingsTabOrganization)).toBeVisible({ timeout: 20_000 })
 

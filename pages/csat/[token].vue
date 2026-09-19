@@ -178,6 +178,7 @@ async function loadSurvey() {
     const requestedRating = route.query.rating
     const parsedRating = typeof requestedRating === 'string' ? Number(requestedRating) : NaN
     if (
+      import.meta.client &&
       response.value?.status === 'pending_rating' &&
       Number.isInteger(parsedRating) &&
       ratings.value.includes(parsedRating)

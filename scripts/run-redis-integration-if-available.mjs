@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import Redis from 'ioredis'
+import 'dotenv/config'
 
 /**
  * Guarded runner for the Redis/rate-limit integration suite (delta D-15).
@@ -24,6 +25,15 @@ const failOnPreflightSkip =
 // valkey` is running, rather than needing to opt in with an env var.
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
 const connectTimeoutMs = Number(process.env.REDIS_INTEGRATION_CONNECT_TIMEOUT_MS) || 2_000
+
+function isLocalRedisUrl(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase()
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === 'valkey'
+  } catch {
+    return false
+  }
+}
 
 async function verifyRedisAvailable() {
   const client = new Redis(redisUrl, {
@@ -50,12 +60,19 @@ async function verifyRedisAvailable() {
   }
 }
 
-const redisAvailable = await verifyRedisAvailable()
+// The reconnect test uses CLIENT KILL TYPE pubsub, which is intentionally
+// destructive to every realtime subscriber on the target server. Only run it
+// against a local container or an endpoint explicitly declared dedicated to
+// this suite; never point it at a shared/production Redis by accident.
+const dedicatedRedis = isLocalRedisUrl(redisUrl) || process.env.REDIS_INTEGRATION_DEDICATED === '1'
+const redisAvailable = dedicatedRedis ? await verifyRedisAvailable() : false
 
 if (!redisAvailable) {
   // Do not echo redisUrl: REDIS_URL may contain a username and password, and
   // CI logs are not a safe place to disclose credentials.
-  const reason = 'Redis is not reachable'
+  const reason = dedicatedRedis
+    ? 'Redis is not reachable'
+    : 'REDIS_URL is not local or explicitly marked as a dedicated integration endpoint'
 
   if (failOnPreflightSkip) {
     console.error(`[redis-integration] Preflight failed: ${reason}.`)

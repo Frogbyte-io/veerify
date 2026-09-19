@@ -147,12 +147,14 @@ export async function resolvePostAuthRedirectTarget(rawRedirect: unknown, fallba
   const currentHost = normalizeHostname(window.location.hostname)
 
   if (
-    isAppHostedRedirectHost({
-      redirectHost,
-      currentHost,
-      appDomain,
-      dashboardDomain,
-    })
+    redirectHost === currentHost ||
+    (supportsCrossSubdomainAuth(appDomain) &&
+      isAppHostedRedirectHost({
+        redirectHost,
+        currentHost,
+        appDomain,
+        dashboardDomain,
+      }))
   ) {
     return parsed.toString()
   }

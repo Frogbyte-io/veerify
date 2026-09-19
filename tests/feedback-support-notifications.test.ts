@@ -43,7 +43,7 @@ describe('linked feedback contact notifications', () => {
     expect(notifyUser).not.toHaveBeenCalled()
   })
 
-  it('deduplicates contact links while delivering email and in-app notification', async () => {
+  it('treats custom terminal statuses as shippable and deduplicates notifications', async () => {
     state.links = [
       { contactId: 'contact-1', email: 'one@example.com', userId: 'user-1' },
       { contactId: 'contact-1', email: 'one@example.com', userId: 'user-1' },
@@ -54,13 +54,13 @@ describe('linked feedback contact notifications', () => {
       feedbackId: 'feedback-1',
       feedbackTitle: 'CSV export',
       projectId: 'project-1',
-      status: 'completed',
+      status: 'shipped',
       actorUserId: 'agent-1',
       actorName: 'Agent',
     })
 
     expect(sendEmail).toHaveBeenCalledTimes(2)
-    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'one@example.com', newStatus: 'completed' }))
+    expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'one@example.com', newStatus: 'shipped' }))
     expect(sendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: 'two@example.com' }))
     expect(notifyUser).toHaveBeenCalledTimes(1)
     expect(notifyUser).toHaveBeenCalledWith(

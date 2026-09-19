@@ -111,8 +111,10 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
   await expect(page.locator(selectors.settingsTabProfile)).toBeVisible({ timeout: 20_000 })
 
-  await page.locator(selectors.settingsTabProfile).click()
-  await expect(page).toHaveURL(/#profile/)
+  await expect(async () => {
+    await page.locator(selectors.settingsTabProfile).click()
+    await expect(page).toHaveURL(/#profile/)
+  }).toPass({ timeout: 10_000 })
   await expect(page.getByRole('heading', { name: 'Profile Information' })).toBeVisible()
 
   await page.locator(selectors.settingsTabSecurity).click()
