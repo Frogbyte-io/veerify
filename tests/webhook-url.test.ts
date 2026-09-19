@@ -73,4 +73,13 @@ describe('webhook URL security', () => {
     expect(lookupMock).toHaveBeenCalledTimes(1)
     expect(pinnedAddress).toEqual({ address: '203.0.113.10', family: 4 })
   })
+
+  it('rejects private DNS answers before opening the delivery request', async () => {
+    lookupMock.mockResolvedValue([{ address: '192.168.1.10', family: 4 }])
+
+    await expect(postWebhookJson('https://hooks.example.test/hook', { ok: true })).rejects.toThrow(
+      'Webhook URL must not resolve to a private or local address'
+    )
+    expect(requestMock).not.toHaveBeenCalled()
+  })
 })

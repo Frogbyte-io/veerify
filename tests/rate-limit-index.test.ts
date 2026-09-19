@@ -25,7 +25,7 @@ describe('rate-limit Redis client selection', () => {
     createRedisConnection.mockClear()
   })
 
-  it('uses the cached shared connection for Redis rate limiting', () => {
+  it('delegates Redis connection creation to the shared client', () => {
     process.env.REDIS_URL = 'redis://rate-limit.test'
     process.env.RATE_LIMIT_STORE = 'redis'
 

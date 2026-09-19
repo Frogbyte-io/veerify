@@ -50,11 +50,13 @@ Or run the harness command:
 
 ## Redis Integration Guard
 
-- `yarn test:integration:if-available` runs the real Redis driver and rate-limit suite only when Redis is
-  reachable at `REDIS_URL` (defaults to `redis://localhost:6379`). Start it with
+- `yarn test:integration:if-available` runs the real Redis driver and rate-limit suite when a local Redis/Valkey
+  endpoint is reachable at `REDIS_URL` (defaults to `redis://localhost:6379`), or when a remote endpoint is
+  explicitly marked dedicated with `REDIS_INTEGRATION_DEDICATED=1`. Start local coverage with
   `docker compose -f docker-compose-dev.yml up -d valkey`.
 - Unlike the Playwright guard, this one is not restricted to cloud/CI — it runs locally by default
-  whenever Redis is up.
+  whenever the local/dedicated Redis endpoint is up. Shared or production endpoints are rejected because
+  the reconnect test uses `CLIENT KILL TYPE pubsub`.
 - If it skips, report the skip reason in updates/final output.
 
 ## Postgres Integration Guard

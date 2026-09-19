@@ -12,6 +12,7 @@ class FakeSocket implements RealtimeSocketLike {
 
   url: string
   readyState = 0 // CONNECTING
+  closeCalls = 0
   sent: string[] = []
   onopen: ((_event: unknown) => void) | null = null
   onclose: ((_event: { code: number; reason?: string }) => void) | null = null
@@ -28,6 +29,7 @@ class FakeSocket implements RealtimeSocketLike {
   }
 
   close(code = 1000, reason = '') {
+    this.closeCalls += 1
     if (this.readyState === 3) return
     this.readyState = 3
     this.onclose?.({ code, reason })
@@ -52,6 +54,7 @@ class FakeSocket implements RealtimeSocketLike {
 
 class DeferredCloseSocket extends FakeSocket {
   override close(code = 1000, reason = '') {
+    this.closeCalls += 1
     this.readyState = 3
     void code
     void reason
@@ -352,6 +355,7 @@ describe('RealtimeClient — idle disconnect', () => {
     // event has been delivered. The close event must not consume the resume.
     client.notifyVisible()
     expect(FakeSocket.instances).toHaveLength(1)
+    expect(first.closeCalls).toBe(2)
     first.onclose?.({ code: 1000, reason: 'idle' })
 
     await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(2))

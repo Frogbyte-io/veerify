@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import Redis from 'ioredis'
 import 'dotenv/config'
+import { isDedicatedRedisUrl } from './redis-integration-policy.mjs'
 
 /**
  * Guarded runner for the Redis/rate-limit integration suite (delta D-15).
@@ -8,8 +9,7 @@ import 'dotenv/config'
  * Mirrors `run-playwright-if-available.mjs`: skip cleanly with a clear reason
  * when the dependency isn't reachable, so `yarn harness:verify` stays green on
  * a machine with no Redis running, while still exercising the real driver
- * wherever one is available (locally via `docker compose -f
- * docker-compose-dev.yml up -d valkey`, or in CI/cloud).
+ * against local Valkey or an explicitly dedicated remote integration endpoint.
  */
 
 const isCloudEnvironment = Boolean(
@@ -20,20 +20,11 @@ const failOnPreflightSkip =
   (isCloudEnvironment && process.env.REDIS_INTEGRATION_SKIP_IS_FAILURE !== '0')
 
 // Unlike the Playwright guard (which requires cloud/CI or an explicit force
-// flag), this one runs by default whenever Redis is reachable. Local
-// contributors get real coverage for free the moment `docker compose up -d
-// valkey` is running, rather than needing to opt in with an env var.
+// flag), this one runs by default whenever a local or explicitly dedicated
+// Redis endpoint is reachable. Shared/production endpoints are rejected
+// because the reconnect test intentionally kills every pub/sub connection.
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379'
 const connectTimeoutMs = Number(process.env.REDIS_INTEGRATION_CONNECT_TIMEOUT_MS) || 2_000
-
-function isLocalRedisUrl(value) {
-  try {
-    const hostname = new URL(value).hostname.toLowerCase()
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === 'valkey'
-  } catch {
-    return false
-  }
-}
 
 async function verifyRedisAvailable() {
   const client = new Redis(redisUrl, {
@@ -64,7 +55,7 @@ async function verifyRedisAvailable() {
 // destructive to every realtime subscriber on the target server. Only run it
 // against a local container or an endpoint explicitly declared dedicated to
 // this suite; never point it at a shared/production Redis by accident.
-const dedicatedRedis = isLocalRedisUrl(redisUrl) || process.env.REDIS_INTEGRATION_DEDICATED === '1'
+const dedicatedRedis = isDedicatedRedisUrl(redisUrl)
 const redisAvailable = dedicatedRedis ? await verifyRedisAvailable() : false
 
 if (!redisAvailable) {

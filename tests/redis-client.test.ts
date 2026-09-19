@@ -30,4 +30,19 @@ describe('shared Redis client', () => {
       })
     )
   })
+
+  it('reuses one client per URL and recreates it after reset', () => {
+    const first = getSharedRedisClient('redis://shared.test')
+    const second = getSharedRedisClient('redis://shared.test')
+
+    expect(second).toBe(first)
+    expect(Redis).toHaveBeenCalledTimes(1)
+
+    resetSharedRedisClients()
+    const replacement = getSharedRedisClient('redis://shared.test')
+
+    expect(replacement).not.toBe(first)
+    expect(first.disconnect).toHaveBeenCalledTimes(1)
+    expect(Redis).toHaveBeenCalledTimes(2)
+  })
 })

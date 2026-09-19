@@ -269,10 +269,12 @@ export class RealtimeClient {
       this.reconnectAttempts = 0
       // The idle close event can arrive after visibility returns. Detach the
       // closing socket now so its late event cannot consume this reconnect.
-      if (this.socket) {
+      const closingSocket = this.socket
+      if (closingSocket) {
         this.socket = null
         this.connecting = false
         this.stopPing()
+        closingSocket.close(1000, 'idle resume')
       }
       this.connect()
     }
@@ -338,6 +340,14 @@ export class RealtimeClient {
     if (!token) {
       this.connecting = false
       this.scheduleReconnect()
+      return
+    }
+
+    // An idle timeout can fire while the token request is still pending. Do
+    // not open a socket after the tab stayed hidden; visibility resumption
+    // will start a fresh attempt instead.
+    if (this.idleDisconnected) {
+      this.connecting = false
       return
     }
 
