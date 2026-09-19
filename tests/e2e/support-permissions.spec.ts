@@ -531,7 +531,7 @@ test.describe.serial('support permission-aware navigation', () => {
     const newInboxId = 'delayed-new-team-inbox'
     const oldInboxName = `Old delayed inbox ${Date.now()}`
     const newInboxName = `New delayed inbox ${Date.now()}`
-    let activeTeamCalls = 0
+    let activeTeamTransition = 0
     let inboxListCalls = 0
     let releaseOldList!: () => void
     let oldListStarted!: () => void
@@ -543,13 +543,14 @@ test.describe.serial('support permission-aware navigation', () => {
     })
 
     await page.route('**/api/teams/active', async (route) => {
-      activeTeamCalls += 1
+      const activeTeamId =
+        activeTeamTransition === 0 ? fixture.teamId : activeTeamTransition === 1 ? 'old-team' : 'new-team'
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { id: activeTeamCalls === 1 ? fixture.teamId : activeTeamCalls === 2 ? 'old-team' : 'new-team' },
+          data: { id: activeTeamId },
         }),
       })
     })
@@ -607,8 +608,10 @@ test.describe.serial('support permission-aware navigation', () => {
 
     await page.goto('/support', { waitUntil: 'domcontentloaded' })
     await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
+    activeTeamTransition = 1
     await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
     await oldListReady
+    activeTeamTransition = 2
     await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
     await expect(page.getByText(newInboxName)).toBeVisible()
     releaseOldList()
