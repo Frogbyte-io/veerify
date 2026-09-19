@@ -547,6 +547,15 @@ test.describe.serial('outbound attachment contract', () => {
       const directCompletionOrder: string[] = []
       let messageBody: Record<string, unknown> | undefined
       let deliveryRetryCount = 0
+      let proxyUploadCount = 0
+      let resolveFirstProxyUploadStarted: (() => void) | undefined
+      let releaseFirstProxyUpload: (() => void) | undefined
+      const firstProxyUploadStarted = new Promise<void>((resolve) => {
+        resolveFirstProxyUploadStarted = resolve
+      })
+      const firstProxyUploadRelease = new Promise<void>((resolve) => {
+        releaseFirstProxyUpload = resolve
+      })
       const canonicalMessage = {
         id: 'ui-message-1',
         conversationId,
@@ -595,7 +604,15 @@ test.describe.serial('outbound attachment contract', () => {
         })
       })
       await page.route('**/api/support/attachments/upload/**', async (route) => {
-        await new Promise((resolve) => setTimeout(resolve, 250))
+        proxyUploadCount += 1
+        if (proxyUploadCount === 1) {
+          resolveFirstProxyUploadStarted?.()
+          await firstProxyUploadRelease
+        } else {
+          // The expiry fixture is intentionally shorter than this delay so the
+          // client observes the expired state before the proxy upload returns.
+          await new Promise((resolve) => setTimeout(resolve, 250))
+        }
         await route.continue()
       })
       await page.route('https://uploads.test/blob-*', async (route) => {
@@ -648,9 +665,14 @@ test.describe.serial('outbound attachment contract', () => {
       await expect(composer).toBeVisible({ timeout: 30_000 })
       const input = page.locator('[data-testid="support-composer-file-input"]')
       await input.setInputFiles({ name: 'contract.txt', mimeType: 'text/plain', buffer: Buffer.from('proxy bytes') })
-      await expect(
-        page.locator('[data-testid^="support-composer-attachment-"][data-phase="uploading"]').first()
-      ).toBeVisible()
+      await firstProxyUploadStarted
+      try {
+        await expect(
+          page.locator('[data-testid^="support-composer-attachment-"][data-phase="uploading"]').first()
+        ).toBeVisible()
+      } finally {
+        releaseFirstProxyUpload?.()
+      }
       await expect(
         page.locator('[data-testid^="support-composer-attachment-"][data-phase="ready"]').first()
       ).toBeVisible({ timeout: 10_000 })
