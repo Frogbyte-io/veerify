@@ -386,7 +386,7 @@ const visibleFeedbackItems = computed(() =>
       data-testid="app-sidebar-resize-handle"
       type="button"
       aria-label="Resize sidebar"
-      class="absolute inset-y-0 hidden w-3 md:block group-data-[collapsible=icon]:hidden"
+      class="absolute inset-y-0 z-30 hidden w-3 md:block group-data-[collapsible=icon]:hidden"
       :class="props.side === 'right' ? 'left-0 cursor-col-resize' : 'right-0 cursor-col-resize'"
       @click.stop="handleResizeHandleClick"
       @pointerdown.prevent="startSidebarResize"
