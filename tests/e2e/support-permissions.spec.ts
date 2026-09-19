@@ -137,6 +137,9 @@ test.describe.serial('support permission-aware navigation', () => {
   })
 
   test('agent sees the winning owner when an explicit claim loses a race', async ({ browser }) => {
+    // The isolated role fixture and Neon-backed navigation can consume most of
+    // the default 60-second test budget before the claim dialog is exercised.
+    test.setTimeout(120_000)
     const page = await openAs(browser, 'agent', '/support')
     const conversationId = 'claim-ui-conversation'
     const contactId = 'claim-ui-contact'
