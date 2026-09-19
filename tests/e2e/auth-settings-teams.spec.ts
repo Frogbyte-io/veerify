@@ -46,6 +46,10 @@ test('onboarding slug mirrors the full workspace name while typing', async ({ pa
 
   await page.goto('/onboarding')
   await expect(page.getByRole('heading', { name: 'Create your workspace' })).toBeVisible()
+  await page.waitForFunction(() => {
+    const form = document.querySelector('form') as any
+    return Boolean(form?.__vueParentComponent)
+  })
 
   const workspaceNameInput = page.getByLabel('Workspace name')
   const workspaceSlugInput = page.getByLabel('URL')
