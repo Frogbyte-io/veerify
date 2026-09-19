@@ -17,4 +17,9 @@ describe('Redis integration endpoint policy', () => {
     expect(isDedicatedRedisUrl(url, {})).toBe(false)
     expect(isDedicatedRedisUrl(url, { REDIS_INTEGRATION_DEDICATED: '1' })).toBe(true)
   })
+
+  it.each(['http://localhost:6379', 'https://127.0.0.1:6379'])('rejects non-Redis schemes: %s', (url) => {
+    expect(isLocalRedisUrl(url)).toBe(false)
+    expect(isDedicatedRedisUrl(url, {})).toBe(false)
+  })
 })
