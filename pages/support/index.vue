@@ -205,6 +205,7 @@ import {
 } from '~/lib/support-keyboard-shortcuts'
 
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+const SUPPORT_DRAFT_STATE_CHANGED_EVENT = 'veerify:support-draft-state-changed'
 const SUPPORT_VIEWS = ['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'all']
 const CSAT_FILTERS = ['all', 'rated', 'unrated']
 const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
@@ -312,7 +313,10 @@ export default {
   },
 
   async mounted() {
-    if (import.meta.client) window.addEventListener('keydown', this.handleKeyboardShortcut)
+    if (import.meta.client) {
+      window.addEventListener('keydown', this.handleKeyboardShortcut)
+      window.addEventListener(SUPPORT_DRAFT_STATE_CHANGED_EVENT, this.handleDraftStateWindowEvent)
+    }
     await this.initTeamContext()
 
     if (import.meta.client) {
@@ -325,6 +329,7 @@ export default {
     if (import.meta.client) {
       window.removeEventListener('keydown', this.handleKeyboardShortcut)
       window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+      window.removeEventListener(SUPPORT_DRAFT_STATE_CHANGED_EVENT, this.handleDraftStateWindowEvent)
     }
     if (this.unregisterReconnectHook) this.unregisterReconnectHook()
     if (this.unsubscribeInboxChannel) this.unsubscribeInboxChannel()
@@ -819,6 +824,12 @@ export default {
 
     handleDraftStateChanged({ conversationId, hasDraft }) {
       this.setConversationDraftIndicator(conversationId, Boolean(hasDraft))
+    },
+
+    handleDraftStateWindowEvent(event) {
+      const detail = event?.detail
+      if (!detail || typeof detail.conversationId !== 'string') return
+      this.setConversationDraftIndicator(detail.conversationId, Boolean(detail.hasDraft))
     },
 
     async ensureContactsLoaded(

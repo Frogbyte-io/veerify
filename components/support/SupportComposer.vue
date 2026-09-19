@@ -232,6 +232,7 @@ const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const DRAFT_STORAGE_PREFIX = 'veerify:support:draft'
 const DRAFT_MODES = ['reply', 'note']
+const SUPPORT_DRAFT_STATE_CHANGED_EVENT = 'veerify:support-draft-state-changed'
 const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -462,10 +463,14 @@ export default {
 
     emitDraftState(conversationId = this.conversationId) {
       if (!conversationId) return
-      this.$emit('draft-state-changed', {
+      const detail = {
         conversationId,
         hasDraft: this.hasAnyDraft(conversationId),
-      })
+      }
+      this.$emit('draft-state-changed', detail)
+      if (import.meta.client) {
+        window.dispatchEvent(new CustomEvent(SUPPORT_DRAFT_STATE_CHANGED_EVENT, { detail }))
+      }
     },
 
     saveCurrentDraft() {
