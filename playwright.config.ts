@@ -30,7 +30,9 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: `yarn dev --host localhost --port ${PORT}`,
+        command: process.env.CI
+          ? `yarn build && yarn preview --host localhost --port ${PORT}`
+          : `yarn dev --host localhost --port ${PORT}`,
         url: `${baseURL}/login`,
         timeout: 120_000,
         reuseExistingServer: !process.env.CI,
