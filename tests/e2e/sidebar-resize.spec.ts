@@ -7,8 +7,14 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 test.describe('Sidebar resizing', () => {
   test('dragging the resize handle updates sidebar width', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await page.addInitScript(() => window.localStorage.removeItem('veerify_sidebar_width'))
+    const activeTeamResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/teams/active' && response.request().method() === 'GET',
+      { timeout: 20_000 }
+    )
     await page.goto('/feedback')
     await expect(page).toHaveURL(/\/feedback/)
+    await activeTeamResponse
 
     const sidebar = page.locator('[data-testid="app-sidebar"]')
     const handle = page.locator('[data-testid="app-sidebar-resize-handle"]')
@@ -34,8 +40,7 @@ test.describe('Sidebar resizing', () => {
     await page.mouse.move(dragStartX + 96, dragY)
     await page.mouse.up()
 
-    const resizedWidth = await getSidebarWidth()
-    expect(resizedWidth).toBeGreaterThan(initialWidth)
+    await expect.poll(getSidebarWidth, { timeout: 5_000 }).toBeGreaterThan(initialWidth)
   })
 
   test('sidebar links navigate to expected routes', async ({ page }) => {
