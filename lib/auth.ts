@@ -16,6 +16,7 @@ const logger = createConsola().withTag('veerify').withTag('auth')
 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
 const defaultAppBaseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+const supportsCrossSubdomainCookies = appDomain !== 'localhost' && appDomain !== '127.0.0.1' && appDomain !== '[::1]'
 // Pinned rather than left to Better Auth's per-request protocol sniffing. Route-issued
 // cookies see the proxied request protocol while programmatic `auth.api.getSession()`
 // calls have no request to sniff, so the two disagree on the `__Secure-` prefix whenever
@@ -84,7 +85,9 @@ export const auth = betterAuth({
   advanced: {
     useSecureCookies,
     crossSubDomainCookies: {
-      enabled: true,
+      // Browsers reject a Domain=.localhost cookie for sibling localhost hosts.
+      // Local public boards use the auth handoff flow instead of a shared cookie.
+      enabled: supportsCrossSubdomainCookies,
       domain: '.' + appDomain,
     },
   },

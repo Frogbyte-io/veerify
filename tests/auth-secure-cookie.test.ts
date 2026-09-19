@@ -9,6 +9,12 @@ async function resolveSessionCookieName(): Promise<string> {
   return context.authCookies.sessionToken.name
 }
 
+async function resolveSessionCookieDomain(): Promise<string | undefined> {
+  const { auth } = await import('../lib/auth')
+  const context = await auth.$context
+  return context.authCookies.sessionToken.attributes.domain
+}
+
 describe('Better Auth secure-cookie configuration', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
@@ -30,6 +36,23 @@ describe('Better Auth secure-cookie configuration', () => {
     vi.stubEnv('APP_DOMAIN', 'localhost')
 
     await expect(resolveSessionCookieName()).resolves.toBe(PLAIN_NAME)
+  })
+
+  it('uses host-only cookies for localhost subdomains', async () => {
+    vi.stubEnv('NODE_ENV', 'development')
+    vi.stubEnv('BETTER_AUTH_URL', 'http://localhost:3000')
+    vi.stubEnv('BETTER_AUTH_SECRET', 'secure-cookie-test-secret-0123456789')
+    vi.stubEnv('APP_DOMAIN', 'localhost')
+
+    await expect(resolveSessionCookieDomain()).resolves.toBeUndefined()
+  })
+
+  it('shares cookies across configured production subdomains', async () => {
+    vi.stubEnv('BETTER_AUTH_URL', 'https://dev.example.test')
+    vi.stubEnv('BETTER_AUTH_SECRET', 'secure-cookie-test-secret-0123456789')
+    vi.stubEnv('APP_DOMAIN', 'dev.example.test')
+
+    await expect(resolveSessionCookieDomain()).resolves.toBe('.dev.example.test')
   })
 
   // Pinning `useSecureCookies` replaced a Better Auth default that fell back to
