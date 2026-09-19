@@ -29,6 +29,10 @@ async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie
  */
 test.describe.serial('support conversation flow', () => {
   test('create, reply, note, assign, status change, and activity message', async ({ page, request }) => {
+    // This scenario provisions users, inbox membership, contacts, and a
+    // conversation before exercising the UI; Neon-backed CI can spend most
+    // of the default test budget on those setup requests alone.
+    test.setTimeout(120_000)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie, '/support')
     const teamId = await activeTeamId(request, sessionCookie)
