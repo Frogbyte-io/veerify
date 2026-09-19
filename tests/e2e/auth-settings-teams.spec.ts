@@ -93,6 +93,12 @@ test('product creation slug mirrors the full product name while typing', async (
 
   await page.goto('/products')
   await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
+  await page.waitForFunction(() => {
+    const button = Array.from(document.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes('New Product')
+    ) as any
+    return Boolean(button?.__vueParentComponent)
+  })
 
   await page.getByRole('button', { name: 'New Product' }).click()
 
