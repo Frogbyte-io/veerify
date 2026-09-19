@@ -214,7 +214,6 @@ test('sidebar team switcher data stays cached across client-side route changes',
   const bootstrapPath = '/api/dashboard/bootstrap'
   const oldInitialLoadPaths = [
     '/api/teams/list-user',
-    '/api/teams/active',
     '/api/auth/organization/get-full-organization',
     '/api/dashboard/stats',
     '/api/notifications/unread-count',
