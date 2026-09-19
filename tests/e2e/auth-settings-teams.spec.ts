@@ -148,9 +148,8 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await expect(page).toHaveURL(/#team/)
   await expect(page.locator(selectors.teamTitle)).toBeVisible()
 
-  await page.locator(selectors.settingsTabBilling).click()
-  await expect(page).toHaveURL(/#billing/)
-  await expect(page.locator(selectors.settingsBillingPanel)).toBeVisible()
+  // Billing is intentionally hidden during the beta period.
+  await expect(page.locator(selectors.settingsTabBilling)).toHaveCount(0)
 
   await page.locator(selectors.settingsTabAppearance).click()
   await expect(page).toHaveURL(/#appearance/)
