@@ -548,11 +548,7 @@ test.describe.serial('outbound attachment contract', () => {
       let messageBody: Record<string, unknown> | undefined
       let deliveryRetryCount = 0
       let proxyUploadCount = 0
-      let resolveFirstProxyUploadStarted: (() => void) | undefined
       let releaseFirstProxyUpload: (() => void) | undefined
-      const firstProxyUploadStarted = new Promise<void>((resolve) => {
-        resolveFirstProxyUploadStarted = resolve
-      })
       const firstProxyUploadRelease = new Promise<void>((resolve) => {
         releaseFirstProxyUpload = resolve
       })
@@ -606,7 +602,6 @@ test.describe.serial('outbound attachment contract', () => {
       await page.route('**/api/support/attachments/upload/**', async (route) => {
         proxyUploadCount += 1
         if (proxyUploadCount === 1) {
-          resolveFirstProxyUploadStarted?.()
           await firstProxyUploadRelease
         } else {
           // The expiry fixture is intentionally shorter than this delay so the
@@ -665,7 +660,7 @@ test.describe.serial('outbound attachment contract', () => {
       await expect(composer).toBeVisible({ timeout: 30_000 })
       const input = page.locator('[data-testid="support-composer-file-input"]')
       await input.setInputFiles({ name: 'contract.txt', mimeType: 'text/plain', buffer: Buffer.from('proxy bytes') })
-      await firstProxyUploadStarted
+      await expect.poll(() => proxyUploadCount, { timeout: 10_000 }).toBe(1)
       try {
         await expect(
           page.locator('[data-testid^="support-composer-attachment-"][data-phase="uploading"]').first()
