@@ -114,10 +114,7 @@ export async function createTeamFromSettings(page: Page, teamName: string): Prom
   await ensureTeamAndOrganizationContext(page.request)
 
   await page.goto('/settings#team')
-  await page.waitForFunction(() => {
-    const tab = document.querySelector('[data-testid="settings-tab-team"]') as any
-    return Boolean(tab?.__vueParentComponent)
-  })
+  await expect(page.locator(selectors.settingsTabTeam)).toBeVisible({ timeout: 20_000 })
 
   // Resolve team context server-side and reload so settings/team observers hydrate with stable session state.
   await expect
@@ -131,10 +128,7 @@ export async function createTeamFromSettings(page: Page, teamName: string): Prom
     .toBe(200)
 
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await page.waitForFunction(() => {
-    const tab = document.querySelector('[data-testid="settings-tab-team"]') as any
-    return Boolean(tab?.__vueParentComponent)
-  })
+  await expect(page.locator(selectors.settingsTabTeam)).toBeVisible({ timeout: 20_000 })
 
   await expect(page.locator(selectors.teamTitle)).toBeVisible()
   await expect(page.locator(selectors.teamOpenCreateDialog)).toBeVisible({ timeout: 20_000 })

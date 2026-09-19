@@ -1,7 +1,6 @@
 import { expect, request as createRequest, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray, ne } from 'drizzle-orm'
-import type { Router } from 'vue-router'
 import { db } from './helpers/db'
 import { feedback, project } from '../../server/database/schema/feedback'
 import { contact, contactLink, supportTeamSettings } from '../../server/database/schema/support'
@@ -11,37 +10,17 @@ import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, w
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-type VueMountedForm = HTMLFormElement & {
-  __vueParentComponent?: {
-    appContext?: {
-      config?: {
-        globalProperties?: {
-          $router?: Router
-        }
-      }
-    }
-  }
-}
-
 async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
   const response = await request.get('/api/teams/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
   return (await response.json()).data.id as string
 }
 
-async function navigateViaClientRouter(page: Page, path: string) {
+async function navigateToAuthenticatedPage(page: Page, path: string) {
   await page.goto('/login?addAccount=true', { waitUntil: 'domcontentloaded', timeout: 30_000 })
-  await page.waitForFunction(() => {
-    const form = document.querySelector('form') as VueMountedForm | null
-    return Boolean(form?.__vueParentComponent?.appContext?.config?.globalProperties?.$router)
-  })
-  await page.evaluate((target) => {
-    const form = document.querySelector('form') as VueMountedForm | null
-    const router = form?.__vueParentComponent?.appContext?.config?.globalProperties?.$router
-    if (!router) throw new Error('Nuxt router was not available from the mounted login form')
-    return router.push(target)
-  }, path)
-  await page.waitForURL(`**${path}`)
+  await expect(page.locator('[data-testid="login-email"]')).toBeEnabled()
+  await page.goto(path, { waitUntil: 'domcontentloaded' })
+  await expect(page).toHaveURL(new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
 }
 
 test.describe.serial('support contact timeline', () => {
@@ -403,7 +382,7 @@ test.describe.serial('support contact timeline', () => {
       expect(probableIds).not.toContain(feedbackIds[2])
 
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      await navigateViaClientRouter(page, `/support/contacts/${contactId}`)
+      await navigateToAuthenticatedPage(page, `/support/contacts/${contactId}`)
       await expect(page.getByText('Automatically linked')).toBeVisible()
       await page.getByRole('button', { name: 'Remove automatic link' }).click()
       await expect(page.getByText('Automatically linked')).toHaveCount(0)
@@ -612,7 +591,7 @@ test.describe.serial('support contact timeline', () => {
       })
 
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      await navigateViaClientRouter(page, `/support/contacts/${contactId}`)
+      await navigateToAuthenticatedPage(page, `/support/contacts/${contactId}`)
       await expect(page.getByTestId('linked-timeline-row')).toHaveCount(25)
       await expect(page.getByTestId('probable-timeline-row')).toHaveCount(25)
 

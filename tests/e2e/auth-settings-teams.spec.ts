@@ -46,13 +46,10 @@ test('onboarding slug mirrors the full workspace name while typing', async ({ pa
 
   await page.goto('/onboarding')
   await expect(page.getByRole('heading', { name: 'Create your workspace' })).toBeVisible()
-  await page.waitForFunction(() => {
-    const form = document.querySelector('form') as any
-    return Boolean(form?.__vueParentComponent)
-  })
 
   const workspaceNameInput = page.getByLabel('Workspace name')
   const workspaceSlugInput = page.getByLabel('URL')
+  await expect(workspaceNameInput).toBeEnabled()
 
   await workspaceNameInput.click()
   await workspaceNameInput.type('Frogbyte', { delay: 40 })
@@ -67,11 +64,6 @@ test('team creation slug mirrors the full team name while typing', async ({ page
   await ensureTeamAndOrganizationContext(page.request)
 
   await page.goto('/settings#team')
-  await page.waitForFunction(() => {
-    const tab = document.querySelector('[data-testid="settings-tab-team"]') as any
-    return Boolean(tab?.__vueParentComponent)
-  })
-
   await expect(page.locator(selectors.teamOpenCreateDialog)).toBeVisible({ timeout: 20_000 })
   await page.locator(selectors.teamOpenCreateDialog).click()
 
@@ -93,16 +85,14 @@ test('product creation slug mirrors the full product name while typing', async (
 
   await page.goto('/products')
   await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
-  await page.waitForFunction(() => {
-    const button = Array.from(document.querySelectorAll('button')).find((candidate) =>
-      candidate.textContent?.includes('New Product')
-    ) as any
-    return Boolean(button?.__vueParentComponent)
-  })
-
-  await page.getByRole('button', { name: 'New Product' }).click()
-
+  const newProductButton = page.getByRole('button', { name: 'New Product' })
   const createDialog = page.getByRole('dialog', { name: 'Create New Product' })
+  await expect(newProductButton).toBeVisible()
+  await expect(async () => {
+    if (!(await createDialog.isVisible())) await newProductButton.click()
+    await expect(createDialog).toBeVisible()
+  }).toPass({ timeout: 20_000 })
+
   const productNameInput = createDialog.getByLabel('Product Name')
   const productSlugInput = createDialog.getByLabel('URL Slug')
 
@@ -118,10 +108,7 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   await page.goto('/settings')
-  await page.waitForFunction(() => {
-    const tab = document.querySelector('[data-testid="settings-tab-profile"]') as any
-    return Boolean(tab?.__vueParentComponent)
-  })
+  await expect(page.locator(selectors.settingsTabProfile)).toBeVisible({ timeout: 20_000 })
 
   await page.locator(selectors.settingsTabProfile).click()
   await expect(page).toHaveURL(/#profile/)
