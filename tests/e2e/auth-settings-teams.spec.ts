@@ -106,6 +106,7 @@ test('product creation slug mirrors the full product name while typing', async (
 
 test('settings navigation tabs render expected sections', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
 
   await page.goto('/settings')
   await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
