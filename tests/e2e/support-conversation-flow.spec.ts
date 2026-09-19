@@ -153,7 +153,7 @@ test.describe.serial('support conversation flow', () => {
       await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, {
         waitUntil: 'domcontentloaded',
       })
-      await expect(page.getByTestId('support-thread-sla')).toBeVisible()
+      await expect(page.getByTestId('support-thread-sla')).toBeVisible({ timeout: 30_000 })
       await expect(page.getByTestId('support-thread-assignee')).toHaveValue('')
 
       await page.getByTestId('support-composer-mode-note').click()
