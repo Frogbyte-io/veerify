@@ -1,6 +1,6 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6">
+    <div data-testid="products-page" :data-hydrated="isHydrated ? 'true' : 'false'" class="p-6">
       <div class="mb-6">
         <div class="flex items-center justify-between">
           <div>
@@ -291,6 +291,7 @@ export default {
   data() {
     return {
       products: [],
+      isHydrated: false,
       isLoading: true,
       error: null,
       showCreateDialog: false,
@@ -323,6 +324,7 @@ export default {
   },
 
   async mounted() {
+    this.isHydrated = true
     await this.initTeamContext()
 
     if (import.meta.client) {

@@ -85,13 +85,12 @@ test('product creation slug mirrors the full product name while typing', async (
 
   await page.goto('/products')
   await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
+  await expect(page.getByTestId('products-page')).toHaveAttribute('data-hydrated', 'true')
   const newProductButton = page.getByRole('button', { name: 'New Product' })
   const createDialog = page.getByRole('dialog', { name: 'Create New Product' })
   await expect(newProductButton).toBeVisible()
-  await expect(async () => {
-    if (!(await createDialog.isVisible())) await newProductButton.click()
-    await expect(createDialog).toBeVisible()
-  }).toPass({ timeout: 20_000 })
+  await newProductButton.click()
+  await expect(createDialog).toBeVisible()
 
   const productNameInput = createDialog.getByLabel('Product Name')
   const productSlugInput = createDialog.getByLabel('URL Slug')
