@@ -137,7 +137,8 @@ test('owner can view, update, and delete organization from settings tab', async 
 
   await page.locator(selectors.organizationNameInput).fill(originalName)
   await page.locator(selectors.organizationSlugInput).fill(baseSlug)
-  await page.locator(selectors.organizationLogoInput).fill('')
+  await expect(page.locator(selectors.organizationLogoRemove)).toBeVisible()
+  await page.locator(selectors.organizationLogoRemove).click()
   await page.locator(selectors.organizationSave).click()
 
   await expect
