@@ -15,7 +15,9 @@ test.describe('API docs', () => {
       expect.objectContaining({
         in: 'query',
         name: 'view',
-        schema: expect.objectContaining({ enum: ['unassigned', 'assigned-to-me', 'resolved', 'all'] }),
+        schema: expect.objectContaining({
+          enum: ['unassigned', 'assigned-to-me', 'resolved', 'breaching-soon', 'all'],
+        }),
       })
     )
 
