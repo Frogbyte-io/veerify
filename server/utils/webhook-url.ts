@@ -5,8 +5,50 @@ import https from 'node:https'
 
 const PRIVATE_IPV4 = [/^10\./, /^127\./, /^169\.254\./, /^192\.168\./, /^172\.(1[6-9]|2\d|3[01])\./]
 
+function parseIPv6Words(address: string): number[] | null {
+  let normalized = address.toLowerCase()
+  const dottedTail = normalized.includes('.')
+
+  if (dottedTail) {
+    const separator = normalized.lastIndexOf(':')
+    if (separator < 0) return null
+    const octets = normalized.slice(separator + 1).split('.')
+    if (octets.length !== 4 || octets.some((octet) => !/^\d{1,3}$/.test(octet) || Number(octet) > 255)) return null
+    const first = (Number(octets[0]) << 8) | Number(octets[1])
+    const second = (Number(octets[2]) << 8) | Number(octets[3])
+    normalized = `${normalized.slice(0, separator)}${first.toString(16)}:${second.toString(16)}`
+  }
+
+  const sections = normalized.split('::')
+  if (sections.length > 2) return null
+
+  const parseSection = (section: string): number[] | null => {
+    if (!section) return []
+    const words = section.split(':')
+    if (words.some((word) => !/^[\da-f]{1,4}$/.test(word))) return null
+    return words.map((word) => Number.parseInt(word, 16))
+  }
+
+  const left = parseSection(sections[0] || '')
+  const right = sections.length === 2 ? parseSection(sections[1] || '') : []
+  if (!left || !right) return null
+  if (left.length + right.length > 8 || (sections.length === 1 && left.length !== 8)) return null
+
+  const zeroes = sections.length === 2 ? 8 - left.length - right.length : 0
+  if (sections.length === 2 && zeroes < 1) return null
+  return [...left, ...Array.from({ length: zeroes }, () => 0), ...right]
+}
+
+function mappedIPv4Address(address: string): string | null {
+  const words = parseIPv6Words(address)
+  if (!words || words.length !== 8 || !words.slice(0, 5).every((word) => word === 0) || words[5] !== 0xffff) {
+    return null
+  }
+  return [words[6] >> 8, words[6] & 0xff, words[7] >> 8, words[7] & 0xff].join('.')
+}
+
 function isPrivateAddress(address: string): boolean {
-  const mappedIpv4 = address.toLowerCase().match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1]
+  const mappedIpv4 = mappedIPv4Address(address)
   if (mappedIpv4) return isPrivateAddress(mappedIpv4)
   if (isIP(address) === 4) return PRIVATE_IPV4.some((pattern) => pattern.test(address)) || address === '0.0.0.0'
   if (isIP(address) === 6) {

@@ -126,7 +126,7 @@ export async function findPublicProjectByDomain(hostname: string) {
   if (!normalizedHostname) return null
 
   const [result] = await db
-    .select({ project, team })
+    .select({ project, team, domainStatus: projectDomain.status })
     .from(projectDomain)
     .innerJoin(project, eq(projectDomain.projectId, project.id))
     .innerJoin(team, eq(project.teamId, team.id))

@@ -63,7 +63,17 @@ export default defineEventHandler(async (event) => {
   const appDomain = String(process.env.APP_DOMAIN || config.public.appDomain || '')
     .trim()
     .toLowerCase()
-  const dashboardDomain = String(process.env.APP_DASHBOARD_DOMAIN || config.public.dashboardDomain || '')
+  const runtimeAppDomain = String(process.env.APP_DOMAIN || '')
+    .trim()
+    .toLowerCase()
+  const dashboardDomain = String(
+    process.env.APP_DASHBOARD_DOMAIN ||
+      (runtimeAppDomain
+        ? runtimeAppDomain === 'localhost'
+          ? 'localhost'
+          : `app.${runtimeAppDomain}`
+        : config.public.dashboardDomain || '')
+  )
     .trim()
     .toLowerCase()
 
@@ -92,7 +102,7 @@ export default defineEventHandler(async (event) => {
   // 3. A project custom domain, which must also be public — a private project's
   //    domain should not get a certificate it cannot serve anything from.
   const resolved = await findPublicProjectByDomain(hostname)
-  if (resolved) {
+  if (resolved?.domainStatus === 'active') {
     return { allowed: true }
   }
 
