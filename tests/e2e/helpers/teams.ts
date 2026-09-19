@@ -114,6 +114,7 @@ export async function createTeamFromSettings(page: Page, teamName: string): Prom
   await ensureTeamAndOrganizationContext(page.request)
 
   await page.goto('/settings#team')
+  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
   await expect(page.locator(selectors.settingsTabTeam)).toBeVisible({ timeout: 20_000 })
 
   // Resolve team context server-side and reload so settings/team observers hydrate with stable session state.
@@ -128,6 +129,7 @@ export async function createTeamFromSettings(page: Page, teamName: string): Prom
     .toBe(200)
 
   await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
   await expect(page.locator(selectors.settingsTabTeam)).toBeVisible({ timeout: 20_000 })
 
   await expect(page.locator(selectors.teamTitle)).toBeVisible()

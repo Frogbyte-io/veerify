@@ -86,6 +86,7 @@ test('owner can view, update, and delete organization from settings tab', async 
     .toBe(200)
 
   await page.goto('/settings#organization')
+  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
   await expect(page.locator(selectors.settingsTabOrganization)).toBeVisible({ timeout: 20_000 })
 
   await page.locator(selectors.settingsTabOrganization).click()
@@ -200,6 +201,7 @@ test('owner can add billing contact emails for receipt copy', async ({ page }) =
 
     if (deploymentMode === 'self-hosted') {
       await page.goto('/settings#status')
+      await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
       await expect(page.locator(selectors.settingsTabStatus)).toBeVisible({ timeout: 20_000 })
 
       await page.locator(selectors.settingsTabStatus).click()
@@ -210,6 +212,7 @@ test('owner can add billing contact emails for receipt copy', async ({ page }) =
       await expect(page.locator(selectors.statusServiceEmail)).toBeVisible()
     } else {
       await page.goto('/settings#billing')
+      await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
       await expect(page.locator(selectors.settingsTabBilling)).toBeVisible({ timeout: 20_000 })
 
       await page.locator(selectors.settingsTabBilling).click()

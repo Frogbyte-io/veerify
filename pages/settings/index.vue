@@ -1,6 +1,6 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6">
+    <div data-testid="settings-page" :data-hydrated="isHydrated ? 'true' : 'false'" class="p-6">
       <div class="mb-6">
         <h1 class="text-3xl font-bold">Settings</h1>
         <p class="text-muted-foreground">Manage your account and application preferences</p>
@@ -90,6 +90,7 @@ export default {
 
     return {
       activeTab: 'profile',
+      isHydrated: false,
       currentOrgRole: null,
       hasOrganization: hasActiveOrganization.value === true,
       deploymentMode: 'cloud',
@@ -126,6 +127,7 @@ export default {
     },
   },
   async mounted() {
+    this.isHydrated = true
     const config = useRuntimeConfig()
     this.deploymentMode = config.public.deploymentMode || 'cloud'
 

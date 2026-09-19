@@ -108,6 +108,7 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   await page.goto('/settings')
+  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
   await expect(page.locator(selectors.settingsTabProfile)).toBeVisible({ timeout: 20_000 })
 
   await page.locator(selectors.settingsTabProfile).click()
@@ -359,6 +360,7 @@ test('non-admins can view but cannot change team module settings', async ({ page
   })
 
   await page.goto('/settings#tools')
+  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
   await expect(page.locator('[data-testid="settings-tools-read-only"]')).toBeVisible()
 
   const supportSwitch = page.locator('[data-testid="settings-tools-supportEnabled"] [role="switch"]')
