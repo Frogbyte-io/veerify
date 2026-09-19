@@ -34,7 +34,7 @@ export default defineConfig({
           ? `yarn build && yarn preview --host localhost --port ${PORT}`
           : `yarn dev --host localhost --port ${PORT}`,
         url: `${baseURL}/login`,
-        timeout: 120_000,
+        timeout: 300_000,
         reuseExistingServer: !process.env.CI,
         env: {
           ...process.env,
