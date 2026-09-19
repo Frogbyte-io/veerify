@@ -171,5 +171,6 @@ test('product settings tabs warm shared data and avoid repeated fetches on revis
 
   await page.goto(`/products/${projectSlug}#categories`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
   await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#categories$`))
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 180_000 })
   await expect(page.getByRole('heading', { name: 'Feedback Categories' })).toBeVisible()
 })
