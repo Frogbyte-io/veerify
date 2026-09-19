@@ -10,7 +10,7 @@ import {
   supportInbox,
   supportOutboundDelivery,
 } from '../../server/database/schema/support'
-import { getPlaywrightBaseURL, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
+import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
 import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
@@ -640,14 +640,7 @@ test.describe.serial('outbound attachment contract', () => {
         })
       })
 
-      const [sessionCookieName, ...sessionCookieValueParts] = sessionCookie.split('=')
-      await page.context().addCookies([
-        {
-          name: sessionCookieName,
-          value: sessionCookieValueParts.join('='),
-          url: getPlaywrightBaseURL(),
-        },
-      ])
+      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
       const browserSession = await page.request.get('/api/auth/session')
       expect(browserSession.ok()).toBeTruthy()
       await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
