@@ -5,7 +5,13 @@ import { db } from './helpers/db'
 import { feedback, project } from '../../server/database/schema/feedback'
 import { contact, contactLink, supportTeamSettings } from '../../server/database/schema/support'
 import { team, teamMember, user } from '../../server/database/schema/auth'
-import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
+import {
+  getPlaywrightBaseURL,
+  loginViaProgrammaticPage,
+  signInAndGetSessionCookie,
+  withAuthHeaders,
+  withOriginHeaders,
+} from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -305,7 +311,7 @@ test.describe.serial('support contact timeline', () => {
     let roleChanged = false
     let projectChanged = false
     const anonymousRequest = await createRequest.newContext({
-      baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:4913',
+      baseURL: getPlaywrightBaseURL(),
     })
 
     try {
