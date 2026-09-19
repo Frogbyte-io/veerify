@@ -153,6 +153,18 @@ test('owner can view, update, and delete organization from settings tab', async 
     )
     .toBe(baseSlug)
 
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/orgs/${baseSlug}`)
+        if (!response.ok()) return null
+        const payload = await response.json()
+        return payload?.data?.logo ?? null
+      },
+      { timeout: 20_000 }
+    )
+    .toBeNull()
+
   await page.locator(selectors.organizationOpenDeleteDialog).click()
   await expect(page.locator(selectors.organizationDeleteConfirmInput)).toBeVisible()
   await page.locator(selectors.organizationDeleteConfirmInput).fill(baseSlug)
