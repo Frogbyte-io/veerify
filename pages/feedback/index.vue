@@ -212,7 +212,9 @@
               class="relative flex-1 sm:w-[180px]"
               :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }"
             >
+              <label for="feedback-status-filter" class="sr-only">Filter feedback by status</label>
               <select
+                id="feedback-status-filter"
                 v-model="statusFilter"
                 data-testid="feedback-status-filter"
                 class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
@@ -235,7 +237,9 @@
               class="relative flex-1 sm:w-[180px]"
               :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }"
             >
+              <label for="feedback-sort-filter" class="sr-only">Sort feedback</label>
               <select
+                id="feedback-sort-filter"
                 v-model="sortBy"
                 data-testid="feedback-sort-filter"
                 class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"

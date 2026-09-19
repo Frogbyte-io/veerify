@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
 vi.stubGlobal('getRouterParam', () => 'team-1')
 vi.stubGlobal('getQuery', () => state.query)
-vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string }) =>
+vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string; data?: unknown }) =>
   Object.assign(new Error(input.statusMessage), input)
 )
 
@@ -31,6 +31,8 @@ vi.mock('~/server/utils/validation', () => ({
 
 vi.mock('~/server/utils/response', () => ({
   createSuccessResponse: (data: unknown) => ({ success: true, data }),
+  createErrorResponse: (code: string, message: string) => ({ success: false, error: { code, message } }),
+  ErrorCode: { VALIDATION_ERROR: 'VALIDATION_ERROR' },
 }))
 
 vi.mock('~/server/database/drizzle', () => ({
@@ -75,6 +77,25 @@ describe('CSAT summary route query scope', () => {
     expect(state.selectedFields?.scale).toBe(csatResponse.scale)
   })
 
+  it('uses a 30-day inclusive default reporting window', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-19T12:00:00.000Z'))
+
+    try {
+      const response = await handler({} as never)
+
+      expect(response).toMatchObject({
+        success: true,
+        data: {
+          from: new Date('2026-08-21T00:00:00.000Z'),
+          to: new Date('2026-09-20T00:00:00.000Z'),
+        },
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('returns a bad-request error for a skipped local reporting date', async () => {
     state.query = {
       from: new Date('2011-12-30T00:00:00.000Z'),
@@ -85,6 +106,13 @@ describe('CSAT summary route query scope', () => {
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 400,
       statusMessage: 'Invalid reporting date range',
+      data: {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid reporting date range',
+        },
+      },
     })
   })
 
@@ -97,6 +125,13 @@ describe('CSAT summary route query scope', () => {
     await expect(handler({} as never)).rejects.toMatchObject({
       statusCode: 400,
       statusMessage: 'Invalid reporting date range',
+      data: {
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid reporting date range',
+        },
+      },
     })
   })
 })

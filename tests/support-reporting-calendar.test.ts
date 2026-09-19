@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  createReportingDateFormatter,
   isValidReportingTimezone,
   reportingDateAt,
   reportingDayBounds,
@@ -9,6 +10,13 @@ import {
 describe('support reporting calendar', () => {
   it('formats instants as a UTC reporting date', () => {
     expect(reportingDateAt(new Date('2026-01-02T00:30:00.000Z'), 'UTC')).toBe('2026-01-02')
+  })
+
+  it('creates a reusable formatter for a reporting timezone', () => {
+    const formatDate = createReportingDateFormatter('UTC')
+
+    expect(formatDate(new Date('2026-01-02T00:30:00.000Z'))).toBe('2026-01-02')
+    expect(formatDate(new Date('2026-01-03T00:30:00.000Z'))).toBe('2026-01-03')
   })
 
   it('uses the local date for UTC+13', () => {

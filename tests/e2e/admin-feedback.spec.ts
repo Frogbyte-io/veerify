@@ -168,6 +168,8 @@ test.describe('Admin feedback workflow', () => {
     const productCard = page.getByRole('link', { name: new RegExp(`E2E Feedback ${slug}`) }).first()
     await expect(productCard).toBeVisible({ timeout: 30_000 })
     await expect(productCard).toHaveAttribute('href', `/products/${slug}`)
+    await productCard.click()
+    await expect(page).toHaveURL(new RegExp(`/products/${slug}$`))
 
     // Navigate to feedback page with explicit project preselected
     await gotoWithRetry(page, `/feedback?projectId=${projectId}`)

@@ -25,7 +25,7 @@
  */
 import { and, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm'
 import { z } from 'zod'
-import { createSuccessResponse } from '~/server/utils/response'
+import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxAccess, requireSupportTeamRole } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
@@ -80,13 +80,17 @@ export default defineEventHandler(async (event) => {
   try {
     const fromDate = query.from
       ? query.from.toISOString().slice(0, 10)
-      : reportingDateAt(new Date(Date.now() - 30 * 24 * 60 * 60_000), reportingTimezone)
+      : reportingDateAt(new Date(Date.now() - 29 * 24 * 60 * 60_000), reportingTimezone)
     const toDate = query.to ? query.to.toISOString().slice(0, 10) : reportingDateAt(new Date(), reportingTimezone)
     from = reportingDayBounds(fromDate, reportingTimezone).start
     to = reportingDayBounds(toDate, reportingTimezone).end
   } catch (error) {
     if (error instanceof RangeError) {
-      throw createError({ statusCode: 400, statusMessage: 'Invalid reporting date range' })
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Invalid reporting date range',
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Invalid reporting date range'),
+      })
     }
     throw error
   }

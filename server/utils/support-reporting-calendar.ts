@@ -55,11 +55,22 @@ function validateDate(date: string): void {
   }
 }
 
-export function reportingDateAt(instant: Date, timezone: string): string {
+function formatReportingDate(instant: Date, format: Intl.DateTimeFormat): string {
   if (!(instant instanceof Date) || Number.isNaN(instant.getTime())) throw new RangeError('Invalid instant')
-  const date = formatDate(instant, formatter(timezone))
+  const date = formatDate(instant, format)
   validateDate(date)
   return date
+}
+
+// eslint-disable-next-line no-unused-vars
+export function createReportingDateFormatter(timezone: string): (instant: Date) => string {
+  const format = formatter(timezone)
+  return (instant) => formatReportingDate(instant, format)
+}
+
+export function reportingDateAt(instant: Date, timezone: string): string {
+  if (!(instant instanceof Date) || Number.isNaN(instant.getTime())) throw new RangeError('Invalid instant')
+  return formatReportingDate(instant, formatter(timezone))
 }
 
 export function reportingDayBounds(date: string, timezone: string): { start: Date; end: Date } {
