@@ -138,7 +138,8 @@ test('converts a support conversation and keeps ticket content private on the pu
       true
     )
 
-    const publicDetailResponse = await request.get(`/api/feedback/${feedbackId}`)
+    const publicHeaders = { cookie: '' }
+    const publicDetailResponse = await request.get(`/api/feedback/${feedbackId}`, { headers: publicHeaders })
     expect(publicDetailResponse.ok()).toBeTruthy()
     const publicDetail = (await publicDetailResponse.json()).data
     expect(publicDetail.title).toBe('Support request')
@@ -147,14 +148,18 @@ test('converts a support conversation and keeps ticket content private on the pu
     expect(publicDetail.author).toBeNull()
     expect(publicDetail.authorEmail).toBeNull()
 
-    const publicBoardResponse = await request.get(`/api/public/t/${teamRow.slug}/${publicProject.slug}/feedback`)
+    const publicBoardResponse = await request.get(`/api/public/t/${teamRow.slug}/${publicProject.slug}/feedback`, {
+      headers: publicHeaders,
+    })
     expect(publicBoardResponse.ok()).toBeTruthy()
     const boardItem = (await publicBoardResponse.json()).data.items.find(
       (item: { id: string }) => item.id === feedbackId
     )
     expect(boardItem).toMatchObject({ id: feedbackId, title: 'Support request', body: null, authorName: null })
 
-    const roadmapResponse = await request.get(`/api/public/t/${teamRow.slug}/${publicProject.slug}/roadmap`)
+    const roadmapResponse = await request.get(`/api/public/t/${teamRow.slug}/${publicProject.slug}/roadmap`, {
+      headers: publicHeaders,
+    })
     expect(roadmapResponse.ok()).toBeTruthy()
     const roadmapColumns = (await roadmapResponse.json()).data.columns
     const roadmapItem = roadmapColumns
