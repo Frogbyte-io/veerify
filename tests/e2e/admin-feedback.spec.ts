@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext, Page } from '@playwright/test'
-import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
+import { isBetterAuthCookie, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 import { selectors } from './helpers/selectors'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
@@ -119,7 +119,7 @@ test.describe('Admin feedback workflow', () => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
     // Transfer auth cookies to browser context
-    const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+    const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
@@ -287,7 +287,7 @@ test.describe('Admin feedback workflow', () => {
   test('UI: feedback detail page supports edit, comment moderation, and admin controls', async ({ request, page }) => {
     test.setTimeout(UI_WORKFLOW_TIMEOUT)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+    const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
@@ -541,7 +541,7 @@ test.describe('Admin feedback workflow', () => {
     const projectIdB = await createTestProject(request, sessionCookie, teamId, slugB)
 
     // Transfer auth cookies to browser context
-    const authCookies = (await request.storageState()).cookies.filter((c) => c.name.startsWith('better-auth'))
+    const authCookies = (await request.storageState()).cookies.filter((c) => isBetterAuthCookie(c.name))
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 

@@ -34,6 +34,10 @@ export function withOriginHeaders(refererPath = '/') {
   }
 }
 
+export function isBetterAuthCookie(cookieName: string): boolean {
+  return cookieName.startsWith('better-auth') || cookieName.startsWith('__Secure-better-auth')
+}
+
 /**
  * Build request headers for authenticated API calls in tests that use the
  * raw cookie / withAuthHeaders pattern (API-only tests, no browser page).
@@ -86,7 +90,7 @@ export async function signInAndGetSessionCookie(
  * ```ts
  * await loginViaProgrammatic(request, credentials)
  * const { cookies } = await request.storageState()
- * await page.context().addCookies(cookies.filter(c => c.name.startsWith('better-auth')))
+ * await page.context().addCookies(cookies.filter(c => isBetterAuthCookie(c.name)))
  * ```
  *
  * For tests that need both API and page authentication, prefer `loginViaProgrammaticPage`.

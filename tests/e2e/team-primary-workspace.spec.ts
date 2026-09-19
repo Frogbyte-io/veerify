@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { loginViaProgrammatic, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
+import { isBetterAuthCookie, loginViaProgrammatic, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -82,7 +82,7 @@ test('team-primary API flow persists custom domains and enforces URL conflicts',
 
 test('authenticated user can access products UI workflow', async ({ request, page }) => {
   await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
@@ -109,7 +109,7 @@ test('new project statuses tab shows the default starting workflow without decli
 }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
@@ -167,7 +167,7 @@ test('product categories tab reorders categories through drag and drop and persi
 }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
@@ -239,7 +239,7 @@ test('product categories tab reorders categories through drag and drop and persi
 test('custom domain dns setup hides duplicate cname targets for the same host', async ({ request, page }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
@@ -312,7 +312,7 @@ test('custom domain status downgrades from stored verified state after a failed 
 }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
