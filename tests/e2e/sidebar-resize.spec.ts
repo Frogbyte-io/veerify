@@ -7,7 +7,7 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 test.describe('Sidebar resizing', () => {
   test('dragging the resize handle updates sidebar width', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.addInitScript(() => window.localStorage.removeItem('veerify_sidebar_width'))
+    await page.addInitScript(() => window.localStorage.setItem('veerify_sidebar_width', '256'))
     const activeTeamResponse = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/teams/active' && response.request().method() === 'GET',
       { timeout: 20_000 }
@@ -28,6 +28,7 @@ test.describe('Sidebar resizing', () => {
         return Number.parseFloat(widthValue)
       })
 
+    await expect.poll(getSidebarWidth, { timeout: 5_000 }).toBe(256)
     const initialWidth = await getSidebarWidth()
     const handleBox = await handle.boundingBox()
     expect(handleBox).not.toBeNull()
