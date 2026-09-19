@@ -38,7 +38,12 @@
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form class="space-y-4" @submit.prevent="createWorkspace">
+            <form
+              data-testid="onboarding-form"
+              :data-hydrated="isHydrated ? 'true' : 'false'"
+              class="space-y-4"
+              @submit.prevent="createWorkspace"
+            >
               <div class="space-y-2">
                 <Label for="org-name">Workspace name</Label>
                 <Input id="org-name" v-model="orgName" placeholder="Acme Inc." :disabled="isCreatingOrg" />
@@ -231,6 +236,7 @@ export default {
       // Step 1: Create workspace
       orgName: '',
       orgSlug: '',
+      isHydrated: false,
       isCreatingOrg: false,
       createOrgError: '',
       createdOrgId: null,
@@ -242,6 +248,10 @@ export default {
       inviteError: '',
       inviteSuccess: '',
     }
+  },
+
+  mounted() {
+    this.isHydrated = true
   },
 
   computed: {
