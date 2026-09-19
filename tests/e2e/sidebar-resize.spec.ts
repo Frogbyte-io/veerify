@@ -33,12 +33,22 @@ test.describe('Sidebar resizing', () => {
     const handleBox = await handle.boundingBox()
     expect(handleBox).not.toBeNull()
 
+    await expect
+      .poll(
+        async () => {
+          await handle.click()
+          return page.evaluate(() => window.localStorage.getItem('veerify_sidebar_width'))
+        },
+        { timeout: 10_000 }
+      )
+      .toBe(String(initialWidth))
+
     const dragStartX = (handleBox?.x || 0) + (handleBox?.width || 0) / 2
     const dragY = (handleBox?.y || 0) + (handleBox?.height || 0) / 2
 
     await page.mouse.move(dragStartX, dragY)
     await page.mouse.down()
-    await page.mouse.move(dragStartX + 96, dragY)
+    await page.mouse.move(dragStartX + 96, dragY, { steps: 8 })
     await page.mouse.up()
 
     await expect.poll(getSidebarWidth, { timeout: 5_000 }).toBeGreaterThan(initialWidth)
