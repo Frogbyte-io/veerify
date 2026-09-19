@@ -482,6 +482,7 @@ export default {
       }
 
       await this.syncActiveTeamContext()
+      this.activeOrganization = await this.fetchActiveOrganization()
       this.allTeams = await this.fetchAllTeams()
       await Promise.all([this.loadTeamMembers(), this.loadPendingInvitations()])
     },
