@@ -1,24 +1,13 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
-import { Pool, type PoolConfig } from 'pg'
+import { Pool } from 'pg'
 import * as schema from './schema/index'
+import { createDatabaseConnectionConfig } from './connection-config'
 import { createLogger } from '../utils/logger'
 import 'dotenv/config'
 
 const log = createLogger('db')
 
-const poolConfig: PoolConfig = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    }
-  : {
-      host: process.env.PGHOST || 'localhost',
-      port: Number(process.env.PGPORT) || 5432,
-      user: process.env.PGUSER || 'veerify',
-      password: process.env.PGPASSWORD || 'veerifypassword',
-      database: process.env.PGDATABASE || 'veerifydb',
-      ssl: false,
-    }
+const poolConfig = createDatabaseConnectionConfig()
 
 const pool = new Pool(poolConfig)
 

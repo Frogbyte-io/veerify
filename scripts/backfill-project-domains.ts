@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { Client, type ClientConfig } from 'pg'
+import { Client } from 'pg'
+import { createDatabaseConnectionConfig } from '../server/database/connection-config'
 import 'dotenv/config'
 
 type LegacyProjectDomain = {
@@ -14,24 +15,6 @@ type DnsRecord = {
   type: string
   name: string
   value: string
-}
-
-function createClientConfig(): ClientConfig {
-  if (process.env.DATABASE_URL) {
-    return {
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    }
-  }
-
-  return {
-    host: process.env.PGHOST || 'localhost',
-    port: Number(process.env.PGPORT) || 5432,
-    user: process.env.PGUSER || 'veerify',
-    password: process.env.PGPASSWORD || 'veerifypassword',
-    database: process.env.PGDATABASE || 'veerifydb',
-    ssl: false,
-  }
 }
 
 function readString(settings: Record<string, unknown> | null, key: string) {
@@ -58,7 +41,7 @@ function domainId(projectId: string, hostname: string) {
 }
 
 async function main() {
-  const client = new Client(createClientConfig())
+  const client = new Client(createDatabaseConnectionConfig())
   await client.connect()
 
   try {

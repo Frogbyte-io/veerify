@@ -1,20 +1,20 @@
 import type { Config } from 'drizzle-kit'
+import { createDatabaseConnectionConfig } from './server/database/connection-config'
+
+const connection = createDatabaseConnectionConfig()
 
 export default {
   schema: './server/database/schema/index.ts',
   out: './server/database/migrations',
   dialect: 'postgresql',
-  dbCredentials: process.env.DATABASE_URL
-    ? {
-        url: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-      }
+  dbCredentials: connection.connectionString
+    ? { url: connection.connectionString, ssl: connection.ssl }
     : {
-        host: process.env.PGHOST || 'localhost',
-        port: Number(process.env.PGPORT) || 5432,
-        user: process.env.PGUSER || 'veerify',
-        password: process.env.PGPASSWORD || 'veerifypassword',
-        database: process.env.PGDATABASE || 'veerifydb',
-        ssl: false,
+        host: connection.host || 'localhost',
+        port: connection.port || 5432,
+        user: connection.user || 'veerify',
+        password: connection.password || 'veerifypassword',
+        database: connection.database || 'veerifydb',
+        ssl: connection.ssl,
       },
 } satisfies Config

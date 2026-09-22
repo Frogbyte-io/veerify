@@ -34,6 +34,7 @@ COPY --from=build /app/.output ./.output
 COPY --from=build /app/drizzle.config.ts ./drizzle.config.ts
 COPY --from=build /app/server/database/migrations ./server/database/migrations
 COPY --from=build /app/server/database/schema ./server/database/schema
+COPY --from=build /app/server/database/connection-config.ts ./server/database/connection-config.ts
 COPY --from=build /app/scripts/backfill-project-domains.ts ./scripts/backfill-project-domains.ts
 COPY --from=build /app/package.json ./package.json
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
