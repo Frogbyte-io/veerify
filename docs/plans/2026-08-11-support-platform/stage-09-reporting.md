@@ -8,6 +8,10 @@ carrying it, and are we hitting our commitments.
 Implementation started with the [reporting foundation](stage-09-foundation.md).
 The review below identifies prerequisites for the remaining reporting work.
 
+The [delivery plan](stage-09-delivery-plan.md) now defines metric semantics, ownership, and delivery
+gates. The [first-wave implementation plan](stage-09-wave-1-implementation.md) dispatches calendar
+range validation and daily volume services; it does not claim the dashboard or full stage is complete.
+
 ## Plan verification, 2026-09-18
 
 - Daily bucket identity must enforce uniqueness even when agent attribution is null. Store the

@@ -15,7 +15,7 @@ was cut and why, so the cuts are not "completed" back in by a later agent.
 
 ---
 
-## Current state — updated September 3, 2026
+## Current state — updated September 21, 2026
 
 **Integration branch: `support-platform`.** Not `main`. See delta D-17. Every stage validates here
 until the program is deliberately integrated into `main`.
@@ -28,8 +28,14 @@ until the program is deliberately integrated into `main`.
 | Stage 03              | **Complete** — inbound email                                                                                                                                                                      |
 | Stage 04              | **Complete** — 11/11 items                                                                                                                                                                        |
 | Stage 01-04 hardening | **Complete** — 16/16 tasks, review gate passed — [design](stage-01-04-hardening-design.md) · [execution plan](stage-01-04-hardening-implementation.md) · [handoff](stage-01-04-review-handoff.md) |
-| Stage 05              | **Re-cut for MVP** Aug 30, 2026 — split into 05a/05b, delta D-36                                                                                                                                  |
-| Open cross-cutting    | E2E gate collection semantics (follow-up noted under SUP-X-5)                                                                                                                                     |
+| Stage 05A/05B         | **Implemented** — agent-speed MVP and feedback bridge; Stage 05A evidence is in `TODO.md`                                                                                                         |
+| Stages 06–08          | **Implemented** — SLA, automation, CSAT; real-provider validation remains separate                                                                                                                |
+| Stage 09              | **Active** — foundations implemented; [delivery plan](stage-09-delivery-plan.md) and [first wave](stage-09-wave-1-implementation.md) define the next work                                         |
+| Deployment            | [Coolify staging/cutover plan](../2026-09-21-coolify-deployment.md) prepared; no live migration performed                                                                                         |
+
+PR #47's baseline `41587d1` passed hosted CI and Neon E2E (117 passed, 4 skipped).
+Local guarded Playwright skips are not equivalent to that hosted run. Vercel's deployment status
+fails on Hobby subdaily cron restrictions; changing critical support workers to daily is not the fix.
 
 **Verification is recorded in two separate places, on purpose.** Automated results live in
 [`stage-01-04-review-handoff.md`](stage-01-04-review-handoff.md). Anything that can only be checked
@@ -73,24 +79,24 @@ ls server/api/support/contacts/
 
 ## Stage map
 
-| Stage                               | Title                     | Depends on | Status  |
-| ----------------------------------- | ------------------------- | ---------- | ------- |
-| [00](stage-00-foundations.md)       | Foundations               | —          | DONE    |
-| [01](stage-01-contacts.md)          | Contact identity          | 00         | ACTIVE  |
-| [02](stage-02-conversation-core.md) | Inbox + conversation core | 00, 01     | Next    |
-| [03](stage-03-inbound-email.md)     | Inbound email             | 02         | Blocked |
-| [04](stage-04-outbound-replies.md)  | Outbound replies          | 03         | Blocked |
-| [05a](stage-05a-agent-speed.md)     | Agent speed (MVP)         | 02, 04     | Next    |
-| [05b](stage-05b-feedback-bridge.md) | Feedback bridge           | 05a        | DONE    |
-| [06](stage-06-sla.md)               | Business hours + SLA      | 02, 04     | DONE    |
-| [07](stage-07-automation.md)        | Automation rules          | 02, 04     | DONE    |
-| [08](stage-08-csat.md)              | CSAT                      | 04         | DONE    |
-| [09](stage-09-reporting.md)         | Reporting                 | 02, 06     | ACTIVE  |
-| [09b](stage-09b-home.md)            | Home (cross-team)         | 02         | Future  |
-| [10](stage-10-customer-portal.md)   | Customer portal           | 02         | Blocked |
-| [11](stage-11-live-chat.md)         | Live chat                 | 00, 02     | Blocked |
-| [12](stage-12-social-channels.md)   | Social channels           | 03, 11     | Blocked |
-| [13](stage-13-importers.md)         | Migration importers       | 02         | Blocked |
+| Stage                               | Title                     | Depends on   | Status                   |
+| ----------------------------------- | ------------------------- | ------------ | ------------------------ |
+| [00](stage-00-foundations.md)       | Foundations               | —            | DONE                     |
+| [01](stage-01-contacts.md)          | Contact identity          | 00           | DONE                     |
+| [02](stage-02-conversation-core.md) | Inbox + conversation core | 00, 01       | DONE                     |
+| [03](stage-03-inbound-email.md)     | Inbound email             | 02           | DONE                     |
+| [04](stage-04-outbound-replies.md)  | Outbound replies          | 03           | DONE                     |
+| [05a](stage-05a-agent-speed.md)     | Agent speed (MVP)         | 02, 04       | DONE                     |
+| [05b](stage-05b-feedback-bridge.md) | Feedback bridge           | 05a          | DONE                     |
+| [06](stage-06-sla.md)               | Business hours + SLA      | 02, 04       | DONE                     |
+| [07](stage-07-automation.md)        | Automation rules          | 02, 04       | DONE                     |
+| [08](stage-08-csat.md)              | CSAT                      | 04           | DONE                     |
+| [09](stage-09-reporting.md)         | Reporting                 | 02, 06       | ACTIVE                   |
+| [09b](stage-09b-home.md)            | Home (cross-team)         | 02           | Future                   |
+| [10](stage-10-customer-portal.md)   | Customer portal           | 02           | Needs refinement         |
+| [11](stage-11-live-chat.md)         | Live chat                 | 00, 02, 04   | Needs transport decision |
+| [12](stage-12-social-channels.md)   | Social channels           | 03, 11       | Blocked                  |
+| [13](stage-13-importers.md)         | Migration importers       | 02, 09 facts | Needs framework          |
 
 **Deferred, not planned:** Knowledge base / help center. Dropped from this program on August 11, 2026.
 Stage 10 (customer portal) ships its ticket list and submit form without KB integration; wire the two
@@ -112,19 +118,20 @@ the post-login landing route; schedule it when that churn is acceptable.
                                  │                                            └─→ 08 CSAT
                                  ├─→ 09b Home (cross-team)
                                  ├─→ 10 Customer portal
-                                 ├─→ 13 Importers
-                                 └─→ 11 Live chat ─→ 12 Social channels
+                                 ├─→ 13 Importers (also needs 09 facts + import framework)
+                                 └─→ 11 Live chat (also needs 04) ─→ 12 Social channels
                                                        ↑
                                                     also needs 03
 ```
 
 **Stage 00 is a hard barrier** — every later stage touches the realtime adapter or the schema split.
-Nothing else starts until it is merged and verified on `main`.
+It was integrated before later work; subsequent stages use `support-platform` under delta D-17.
 
 **What can run in parallel:**
 
 - 00 → 01 → 02 is a strict chain. There is no parallelism available until Stage 02 lands.
-- After 02: stages 10, 13, and 11 are all independent of the 03→04 email chain and of each other.
+- After 02: Stage 10 can be refined. Stage 11 additionally needs 04 for transcript/fallback delivery;
+  Stage 13 needs the Stage 09 status-event foundation and its missing import framework.
 - After 04: stages 05a, 06, 07, and 08 are mutually independent. This is the widest fan-out in the
   program — up to four agents. **But the deliberate order is 05a, then 05b, then 06/07/08** (August 30,
   2026). 05a is the MVP inbox; 05b is the feedback bridge, which is the only capability here that a

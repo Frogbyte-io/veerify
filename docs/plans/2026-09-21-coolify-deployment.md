@@ -1,0 +1,139 @@
+# Coolify staging and cutover plan
+
+Status: planned, not deployed. Audited against `support-platform` at `41587d1` on 2026-09-21.
+This is a runtime migration first; database and object-storage relocation are separate projects.
+
+## Target and decisions
+
+- Deploy the existing `Dockerfile` as a Coolify application listening on port 3000. Set
+  `APP_DEPLOYMENT_MODE=self-hosted` for build and runtime; use Nitro's Node server output.
+- Retain managed PostgreSQL, S3-compatible storage, and initially managed Redis. Staging uses
+  separate credentials/database/bucket and a test mail destination. Never point a staging worker
+  at production support queues. A scrubbed snapshot is optional; empty seeded staging data is enough.
+- Start with exactly one app process and stop-before-start deployment. Nitro registers scheduled
+  tasks in every process. Outbound claim locks do not make every automation action globally safe.
+  Multiple replicas/rolling overlap require a scheduler-disable flag and a dedicated scheduler or
+  leader election before rollout. Do not add duplicate Coolify scheduled tasks on top of Nitro.
+- Keep outbound every minute; cleanup, SLA, automation, and CSAT every five minutes. Daily reporting
+  rollups will have their own catch-up scheduling. No Vercel Hobby restriction applies to Nitro.
+- Keep the existing GitHub CI and Neon PR test workflow. Runtime relocation does not require moving
+  CI databases or disabling tests. Retire the Vercel deployment integration only after successful
+  cutover; leaving it enabled will keep creating the existing failed deployment status.
+
+Coolify supports [Dockerfile/Compose deployments](https://coolify.io/docs/applications/builds/docker-compose)
+and [scheduled container commands](https://coolify.io/docs/services/operations/scheduled-tasks).
+The latter is an alternative scheduler, not needed for this initial single-process setup.
+
+## Compatibility gaps to close before staging
+
+1. **Proxy:** do not deploy production `docker-compose.yml` unchanged. Its Caddy binds 80/443 and
+   would conflict with Coolify's proxy; it also hardcodes local database/MinIO services. Use a
+   Dockerfile application with managed services, not a second reverse proxy on those host ports.
+2. **Domains:** configure dashboard, root/public board, and a team subdomain in Coolify. A wildcard
+   DNS record alone does not install wildcard routing or a certificate; configure and test both.
+   If wildcard TLS is chosen, supply the DNS challenge configuration appropriate to the DNS provider.
+3. **Customer domains:** `static-cname` verifies DNS but does not provision Coolify routes. The
+   existing Caddy `on_demand_tls` + `/api/system/tls-ask` mechanism will not run behind a normal
+   Coolify proxy. For staging, register one test customer hostname manually in Coolify and verify it
+   through the app. Before production, inventory every existing customer hostname and provision
+   its route/certificate. Automated onboarding needs a separate reviewed Coolify domain adapter,
+   or a dedicated ingress design preserving Caddy's strict issuance gate. Do not mark automatic
+   customer-domain onboarding ready just because a manually registered hostname works.
+4. **Runtime config:** set Nuxt's `NUXT_PUBLIC_APP_DOMAIN`, `NUXT_PUBLIC_DASHBOARD_DOMAIN`, and
+   `NUXT_PUBLIC_CNAME_TARGET` alongside their APP/CNAME counterparts. Some consumers use runtime
+   config and others process environment. Verify compiled/browser config has staging hosts, not
+   Docker build defaults. Set `NUXT_DOMAIN_PROVIDER=static-cname` as well as `DOMAIN_PROVIDER`.
+   Storage and mail also require the runtime overrides below; unprefixed variables referenced in
+   `nuxt.config.ts` are build-time defaults, not automatic production runtime overrides. Do not bake
+   credentials into the image to work around this.
+5. **Migrations:** image startup does not migrate. Invoke the same image with argument `migrate`
+   as a one-off release operation with database access, and require success before starting traffic.
+   This runs Drizzle migrations and the idempotent domain backfill. Do not run seed/reset commands.
+   Test the actual Coolify release-hook/container mechanism before relying on it.
+6. **Storage privacy:** the existing Compose bootstrap grants public access to the whole MinIO
+   bucket. Do not copy that policy. All `support/` objects (attachments/raw inbound payloads) must
+   be private, including when the object key is known. Public branding objects need narrowly scoped
+   prefix policies or a separate public storage path; verify the prefixes used by the actual upload
+   routes. Preserve app-authorized support downloads and temporary-upload expiry policies.
+7. **Database TLS:** `server/database/drizzle.ts` and `drizzle.config.ts` currently disable certificate
+   verification for production DATABASE_URL connections. Before production on the new host, add
+   and test an explicit trusted-CA/verification configuration for runtime and migration clients;
+   reject an untrusted certificate. Do not assume encryption alone verifies the server identity.
+
+See [Coolify domain configuration](https://coolify.io/docs/core/networking/domains) for domain-to-port
+routing. The public URL uses HTTPS normally; the configured port selects the container's port 3000.
+
+## Environment inventory
+
+Secrets belong in Coolify environment settings, never the repository or deployment logs.
+
+| Area     | Required settings and checks                                                                                                                                                                                                                                 |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runtime  | APP_DEPLOYMENT_MODE=self-hosted, NODE_ENV=production, HOST=0.0.0.0, PORT=3000; build must use Node server preset, not a Vercel preset                                                                                                                        |
+| Database | DATABASE_URL for isolated managed staging DB; same target for app/migrator; SSL trust configured and tested                                                                                                                                                  |
+| Auth     | BETTER_AUTH_URL, BETTER_AUTH_SECRET; optional previous secret; staging-specific GitHub OAuth callback/credentials                                                                                                                                            |
+| Domains  | APP_DOMAIN, APP_DASHBOARD_DOMAIN, CNAME_TARGET, DOMAIN_PROVIDER=static-cname; matching NUXT runtime overrides above                                                                                                                                          |
+| Links    | APP_URL as an absolute reachable HTTPS origin for CSAT links                                                                                                                                                                                                 |
+| Redis    | REDIS_URL, REALTIME_DRIVER=redis, RATE_LIMIT_STORE=redis; TLS/credentials per managed provider                                                                                                                                                               |
+| Storage  | `NUXT_STORAGE_DRIVER=s3`, `NUXT_STORAGE_BUCKET`, `NUXT_STORAGE_REGION`, `NUXT_STORAGE_ENDPOINT`, `NUXT_STORAGE_ACCESS_KEY_ID`, `NUXT_STORAGE_SECRET_ACCESS_KEY`, `NUXT_STORAGE_FORCE_PATH_STYLE`, `NUXT_STORAGE_PUBLIC_BASE_URL`, `NUXT_UPLOAD_TOKEN_SECRET` |
+| Mail     | `NUXT_NODEMAILER` JSON object containing `host`, numeric `port`, boolean `secure`, `from`, and `auth: {user, pass}` when authentication is needed; staging sink or allowlisted recipients                                                                    |
+| Support  | `SUPPORT_CHANNEL_PROVIDER` and selected provider's `SUPPORT_POSTMARK_*` or `SUPPORT_MAILGUN_*` credentials, with staging webhook URL                                                                                                                         |
+
+Use `.env.example` for local/build variables and direct process-environment consumers; this plan
+documents the production Nuxt runtime mappings. `NUXT_STORAGE_DIRECT_UPLOAD_CONSTRAINTS` defaults to
+`proxy-required`; retain that unless the chosen S3 provider's constraint enforcement is verified.
+The parent `NUXT_NODEMAILER` JSON override supplies keys even when a secret-free build omitted
+`auth` or undefined SMTP defaults. Nested overrides alone cannot introduce absent keys. Use a full
+mailbox string such as `Veerify <noreply@example.com>` for `from`; `MAIL_FROM_NAME` is not mapped by
+the current app. Verify effective settings without printing credentials.
+
+An APP_DEPLOYMENT_MODE of cloud selects the Vercel
+backend; do not use it to disable scheduling in a self-hosted replica. The dedicated scheduler switch
+does not exist yet. External cron HTTP calls additionally need `CRON_SECRET`; Nitro itself does not.
+
+## Staging execution and evidence
+
+- [ ] Record Coolify version, server/IP, region, chosen image commit, resource name, and staging hosts.
+- [ ] Configure isolated services, private support storage policy, lifecycle/versioning, and secrets.
+- [ ] Verify a managed DB backup and restore into a disposable database before release migration.
+- [ ] Build the image without database mutation; run the explicit migration operation once.
+- [ ] Build without storage/SMTP/upload secrets, supply runtime settings only, and verify resolved
+      domains, S3 driver/bucket, upload signing, SMTP authentication, and sender identity in staging.
+- [ ] Deploy one app container through Coolify and verify health plus root/dashboard/team HTTPS.
+- [ ] Verify login, verification/reset mail, OAuth callback if enabled, and correct secure cookies.
+- [ ] Verify branding upload URLs and authenticated support attachment download. Try an unauthorized
+      download and an anonymous direct S3 request for the same support object: both must be denied.
+- [ ] Send real provider test mail, reply, verify threading and delivery webhook correlation using
+      `docs/plans/2026-08-11-support-platform/stage-01-04-provider-checklist.md`. Record observed results.
+- [ ] Verify WebSocket upgrade through the proxy, two browser sessions receiving updates, and
+      reconnect after restart. Do not rely on notification polling as proof that sockets work.
+- [ ] Observe actual outbound retry, due SLA breach, automation, CSAT, and cleanup effects over
+      multiple scheduler ticks; record IDs/counts, never message bodies or secrets. Repeat a restart.
+- [ ] Verify a manually provisioned customer hostname and denial for an unknown hostname.
+- [ ] Exercise deployment failure and return to the previous image; prove scheduler ownership is
+      singular before, during, and after the switch. Accept a brief maintenance window initially.
+- [ ] Run required harness and affected deployment/behavior tests before opening a deployment PR.
+
+## Production cutover and rollback
+
+Production cutover is a later authorized operation after staging evidence exists. Retain the production
+database and object store during this move. Inventory existing domains, callbacks, webhooks, secrets,
+storage policies, and schedulers. Record the old image, DNS records/TTL, and a recoverable DB backup.
+
+Pause/disable old scheduled invocations and prevent the old app from accepting writes before enabling
+the new production scheduler. Switch traffic/webhooks in the maintenance window, verify delivery and
+login, and leave only one scheduler owner. Preserve existing auth/upload secrets at production cutover
+so sessions/tokens are not invalidated unintentionally. Staging secrets remain separate.
+
+Rollback first stops the new app/scheduler, then restores routing and the compatible previous image
+and scheduler. Database migrations are forward-only: image rollback is safe only if the old image
+supports the current schema. A database restore can lose post-backup writes and therefore requires a
+separate recovery decision, not an automatic deployment hook. S3 objects need their own backup or
+versioning; a database dump does not include them.
+
+## Implementation ownership
+
+One deployment task owns Docker/Coolify packaging and runtime config; one later task owns verified
+database TLS configuration. Domain automation and multi-replica scheduler ownership each require
+their own design and tests. These tasks are planned here, not executed by the Stage 09 worker wave.
+No server credentials or live infrastructure changes are required to complete this planning step.

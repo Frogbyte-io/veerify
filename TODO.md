@@ -401,6 +401,23 @@ separate: the **agent workspace** (`/support`, team-scoped, this stage) and the 
   - **The spec is written but could not be executed**, because of a pre-existing blocker (delta D-33, queued as SUP-X-5): any Playwright spec importing `db` dies at collection on a `consola`/`createConsola` export-condition mismatch. Stage 01's `support-contact-timeline.spec.ts` fails identically, so this is not new. **Every assertion in the spec was instead verified by hand against a live dev server and database** — create, reply, note, status change, activity body text, sender kind, and the no-op guard all confirmed, then the test data removed. So the behaviour is verified; the automated spec is not yet proven runnable.
   - **Not covered:** acceptance criterion 1's realtime half — two agents in two browsers on two app instances, one replying and the other seeing it without a refresh. That needs two app instances and a shared broker, which this suite cannot stand up. Left explicitly open rather than pretended.
 
+## Support Platform — Stage 09: Reporting execution
+
+Plan: `docs/plans/2026-08-11-support-platform/stage-09-delivery-plan.md`.
+Existing schema/calendar/status-event/CSAT foundations are implemented. The full reporting stage
+remains incomplete. The first wave is integrated and verified; later waves follow its gates.
+
+- [x] **SUP-09-1** Add strict local-calendar reporting range validation, with DST, skipped dates, defaults, and bounded ranges
+- [x] **SUP-09-2** Add tenant-scoped daily created/resolved/reopened volume reads and transactional recomputation, with real-Postgres concurrency coverage
+
+Wave 1 evidence (2026-09-22): commits `7da2e12` and `8612896`, independent spec/quality reviews,
+and sequential integration harness passes. Combined result: 701 unit, 6 Redis, 133 Postgres tests
+passed; Playwright skipped by local-environment guard and the two-process realtime test skipped
+without `DATABASE_URL`. No reports API, UI, scheduler, or historical-coverage claims are added yet.
+
+Coolify staging/cutover planning: `docs/plans/2026-09-21-coolify-deployment.md`. Deployment execution
+is separate from this reporting wave; live migration and production cutover have not occurred.
+
 ## Support Platform — Stage 05A: Agent speed (MVP)
 
 Plan: `docs/plans/2026-08-11-support-platform/stage-05a-agent-speed.md`. Read

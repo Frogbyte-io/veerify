@@ -63,13 +63,14 @@ helpers under `server/utils/imports/`. Follow that adapter shape; do not build a
 
 ## TODO items
 
-- [ ] Add `inboxId` and `targetType` to `importRun`; generate migration; keep existing project imports working unchanged
+- [ ] Build the missing `importRun` / `importRunIssue` framework, progress flow, and project import UI before adding adapters
+- [ ] Add inbox and project target scope plus durable source-identity claims; generate migrations; keep project imports working unchanged
 - [ ] Implement the Zendesk source adapter: credential validation, analysis pass, paged import
 - [ ] Implement the Freshdesk source adapter
 - [ ] Implement the Intercom source adapter
 - [ ] Implement the Chatwoot source adapter
 - [ ] Implement entity mapping with agent matching by email and an unmatched-agent resolution step
-- [ ] Implement idempotent resumable import keyed on source ids recorded in `metadata`
+- [ ] Implement idempotent resumable import using unique `(connection, entityType, sourceId)` claims written atomically with target rows; metadata is supplemental provenance only
 - [ ] Implement attachment migration with per-file failure recorded as `importRunIssue`
 - [ ] Implement source API rate limiting honouring `Retry-After`
 - [ ] Extend the import UI to target inboxes and show the conversation mapping preview
@@ -82,7 +83,7 @@ helpers under `server/utils/imports/`. Follow that adapter shape; do not build a
   in Stage 10 is enabled. Check this specifically.
 - **Duplicate imports.** Long-running imports get interrupted. Idempotency is a requirement, not a
   refinement.
-- **Building a second import system.** The framework exists. Extend it.
+- **Building a second import system.** Establish the missing shared framework first, then extend it for each source.
 - **Identity drift or duplicate retries.** Source ids are scoped to a provider account, not globally.
   Store the connection identity with each claim and make the unique key cover `(connection, entityType,
 sourceId)`. The claim and target-row write must be atomic so two workers cannot create duplicates.
