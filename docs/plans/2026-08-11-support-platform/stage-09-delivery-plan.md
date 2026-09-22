@@ -62,6 +62,10 @@ and integration. Luna workers use `high` reasoning, isolated worktrees based on 
 
 ### Wave 2 contracts
 
+The [Wave 2 design](stage-09-wave-2-design.md) specifies persistent state, concurrency,
+coverage semantics, and recovery. Its architectural approach is approved; written-spec review
+and the executable implementation plan remain before dispatch.
+
 Before API exposure, review the volume query's source indexes (including conversation team/date
 filtering), generate any required migration under single-owner schema control, and record
 `EXPLAIN (ANALYZE, BUFFERS)` on representative seeded volumes. Wave 1 proves counting correctness,
