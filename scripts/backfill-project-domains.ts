@@ -41,7 +41,9 @@ function domainId(projectId: string, hostname: string) {
 }
 
 async function main() {
-  const client = new Client(createDatabaseConnectionConfig())
+  const clientConfig = { ...createDatabaseConnectionConfig() }
+  delete clientConfig.connectionString
+  const client = new Client(clientConfig)
   await client.connect()
 
   try {

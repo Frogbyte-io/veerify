@@ -7,14 +7,12 @@ export default {
   schema: './server/database/schema/index.ts',
   out: './server/database/migrations',
   dialect: 'postgresql',
-  dbCredentials: connection.connectionString
-    ? { url: connection.connectionString, ssl: connection.ssl }
-    : {
-        host: connection.host || 'localhost',
-        port: connection.port || 5432,
-        user: connection.user || 'veerify',
-        password: connection.password || 'veerifypassword',
-        database: connection.database || 'veerifydb',
-        ssl: connection.ssl,
-      },
+  dbCredentials: {
+    host: connection.host || 'localhost',
+    port: connection.port ?? 5432,
+    user: connection.user || (connection.connectionString ? undefined : 'veerify'),
+    password: connection.password || (connection.connectionString ? undefined : 'veerifypassword'),
+    database: connection.database || 'veerifydb',
+    ssl: connection.ssl,
+  },
 } satisfies Config

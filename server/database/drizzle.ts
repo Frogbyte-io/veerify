@@ -7,7 +7,8 @@ import 'dotenv/config'
 
 const log = createLogger('db')
 
-const poolConfig = createDatabaseConnectionConfig()
+const poolConfig = { ...createDatabaseConnectionConfig() }
+delete poolConfig.connectionString
 
 const pool = new Pool(poolConfig)
 

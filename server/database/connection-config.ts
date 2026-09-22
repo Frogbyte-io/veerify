@@ -18,14 +18,16 @@ export type DatabaseConnectionConfig = {
 }
 
 const SSL_QUERY_PARAMETERS = ['ssl', 'sslcert', 'sslkey', 'sslmode', 'sslpassword', 'sslrootcert', 'uselibpqcompat']
+const IDENTITY_QUERY_PARAMETERS = ['host', 'port', 'user', 'password']
+const ALLOWED_QUERY_PARAMETERS = new Set([...SSL_QUERY_PARAMETERS, ...IDENTITY_QUERY_PARAMETERS])
 
 function hasValue(value: string | undefined): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
 function normalizeConnectionString(connectionString: string) {
-  // PostgreSQL also accepts Unix-socket connection strings. They cannot contain
-  // URL query options, so preserve them as-is for node-postgres to parse.
+  // PostgreSQL also accepts Unix-socket connection strings, so preserve those
+  // as-is while normalizing URL-form SSL options below.
   if (connectionString.startsWith('/')) return connectionString
 
   try {
@@ -39,6 +41,60 @@ function normalizeConnectionString(connectionString: string) {
     // Do not forward malformed or non-PostgreSQL URLs to node-postgres: its
     // parser accepts more forms and could reapply an unsafe SSL query option.
     throw new Error('DATABASE_URL must be a valid PostgreSQL URL or Unix socket path')
+  }
+}
+
+function decodeUrlPart(value: string, decode: typeof decodeURIComponent = decodeURIComponent) {
+  try {
+    return decode(value)
+  } catch {
+    throw new Error('DATABASE_URL must be a valid PostgreSQL URL or Unix socket path')
+  }
+}
+
+function parseUrlCredentials(connectionString: string, env: DatabaseEnvironment) {
+  if (connectionString.startsWith('/')) {
+    const [host, database] = connectionString.split(' ', 2)
+    return {
+      host,
+      port: Number(env.PGPORT) || 5432,
+      user: env.PGUSER || 'veerify',
+      password: env.PGPASSWORD,
+      database: database || env.PGDATABASE || 'veerifydb',
+    }
+  }
+
+  const url = new URL(connectionString)
+  for (const [key] of url.searchParams) {
+    if (!ALLOWED_QUERY_PARAMETERS.has(key)) {
+      throw new Error('DATABASE_URL contains an unsupported query parameter')
+    }
+  }
+  const lastQueryValue = (key: string) => {
+    const values = url.searchParams.getAll(key)
+    return values.at(-1) ?? null
+  }
+  const queryHost = lastQueryValue('host')
+  const queryPort = lastQueryValue('port')
+  const queryUser = lastQueryValue('user')
+  const queryPassword = lastQueryValue('password')
+  const user = queryUser || decodeUrlPart(url.username)
+  const password = queryPassword || decodeUrlPart(url.password)
+  const host = (queryHost || url.hostname).replace(/^\[|\]$/g, '')
+  const portValue = queryPort || url.port || env.PGPORT || '5432'
+  const port = Number.parseInt(portValue, 10)
+  if (!Number.isFinite(port)) throw new Error('DATABASE_URL must be a valid PostgreSQL URL or Unix socket path')
+
+  const databasePath = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname
+  const database =
+    decodeUrlPart(databasePath, decodeURI) || env.PGDATABASE || user || env.PGUSER || env.USER || 'veerifydb'
+
+  return {
+    host: host || env.PGHOST || 'localhost',
+    port,
+    user: user || env.PGUSER || env.USER || 'veerify',
+    password: password || env.PGPASSWORD,
+    database,
   }
 }
 
@@ -71,6 +127,7 @@ export function createDatabaseConnectionConfig(env: DatabaseEnvironment = proces
   if (databaseUrl) {
     return {
       connectionString: normalizeConnectionString(databaseUrl),
+      ...parseUrlCredentials(databaseUrl, env),
       ssl,
     }
   }
