@@ -15,7 +15,11 @@ was cut and why, so the cuts are not "completed" back in by a later agent.
 
 ---
 
-## Current state — updated September 21, 2026
+## Current state — updated September 22, 2026
+
+MVP scope decision: Stage 09 foundations and Wave 1 are retained, but remaining reporting work
+is deferred. Do not dispatch the durable reporting subsystem or treat it as a launch prerequisite.
+Prioritize verifying the core support workflow and deployment readiness instead.
 
 **Integration branch: `support-platform`.** Not `main`. See delta D-17. Every stage validates here
 until the program is deliberately integrated into `main`.
@@ -30,7 +34,7 @@ until the program is deliberately integrated into `main`.
 | Stage 01-04 hardening | **Complete** — 16/16 tasks, review gate passed — [design](stage-01-04-hardening-design.md) · [execution plan](stage-01-04-hardening-implementation.md) · [handoff](stage-01-04-review-handoff.md) |
 | Stage 05A/05B         | **Implemented** — agent-speed MVP and feedback bridge; Stage 05A evidence is in `TODO.md`                                                                                                         |
 | Stages 06–08          | **Implemented** — SLA, automation, CSAT; real-provider validation remains separate                                                                                                                |
-| Stage 09              | **Active** — foundations implemented; [delivery plan](stage-09-delivery-plan.md) and [first wave](stage-09-wave-1-implementation.md) define the next work                                         |
+| Stage 09              | **Deferred after Wave 1** — tested foundations retained; [remaining reporting](stage-09-delivery-plan.md) is outside MVP                                                                          |
 | Deployment            | [Coolify staging/cutover plan](../2026-09-21-coolify-deployment.md) prepared; no live migration performed                                                                                         |
 
 PR #47's baseline `41587d1` passed hosted CI and Neon E2E (117 passed, 4 skipped).
@@ -91,7 +95,7 @@ ls server/api/support/contacts/
 | [06](stage-06-sla.md)               | Business hours + SLA      | 02, 04       | DONE                     |
 | [07](stage-07-automation.md)        | Automation rules          | 02, 04       | DONE                     |
 | [08](stage-08-csat.md)              | CSAT                      | 04           | DONE                     |
-| [09](stage-09-reporting.md)         | Reporting                 | 02, 06       | ACTIVE                   |
+| [09](stage-09-reporting.md)         | Reporting                 | 02, 06       | Deferred after Wave 1    |
 | [09b](stage-09b-home.md)            | Home (cross-team)         | 02           | Future                   |
 | [10](stage-10-customer-portal.md)   | Customer portal           | 02           | Needs refinement         |
 | [11](stage-11-live-chat.md)         | Live chat                 | 00, 02, 04   | Needs transport decision |

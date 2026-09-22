@@ -405,7 +405,8 @@ separate: the **agent workspace** (`/support`, team-scoped, this stage) and the 
 
 Plan: `docs/plans/2026-08-11-support-platform/stage-09-delivery-plan.md`.
 Existing schema/calendar/status-event/CSAT foundations are implemented. The full reporting stage
-remains incomplete. The first wave is integrated and verified; later waves follow its gates.
+remains incomplete. The first wave is integrated and verified. Remaining reporting waves are
+deferred out of MVP by user direction, not launch blockers; do not dispatch their workers.
 
 - [x] **SUP-09-1** Add strict local-calendar reporting range validation, with DST, skipped dates, defaults, and bounded ranges
 - [x] **SUP-09-2** Add tenant-scoped daily created/resolved/reopened volume reads and transactional recomputation, with real-Postgres concurrency coverage

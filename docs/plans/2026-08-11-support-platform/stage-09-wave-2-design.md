@@ -1,9 +1,15 @@
 # Stage 09 Wave 2 — Reliable volume reporting
 
-Status: written specification for review; implementation has not started.
-Base: `024cf4d` on `support-platform`. The user approved the architectural approach:
+Status: deferred out of MVP by user direction. Implementation has not started; do not dispatch.
+Retained as a future design reference, not an approved implementation requirement or launch gate.
+
+The MVP does not need a durable reporting queue, source-write invalidation, calendar generations,
+or cross-writer reporting locks. Revisit only after actual reporting demand and query-performance
+evidence justify them. Keep existing tested foundations; do not build a replacement dashboard now.
+
+Original base: `024cf4d` on `support-platform`. The user previously approved the architectural approach:
 PostgreSQL day records, atomic invalidation, authorized reads, and resumable scheduled work.
-This document makes that approach precise for the subsequent Luna implementation plan.
+That approval is superseded by the MVP deferral above. This is a retained design reference only.
 
 ## Outcome and boundaries
 

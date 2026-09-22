@@ -2,6 +2,12 @@
 
 **Depends on:** Stages 02, 06 (and 08 for CSAT metrics). **Blocks:** nothing.
 
+**MVP decision:** retain implemented foundations; defer the remaining reporting subsystem.
+No new rollup scheduler, recompute queue, invalidation hooks, or reporting dashboard is required
+for MVP launch. The architecture and unchecked criteria below describe future full reporting,
+not launch blockers. Reassess a small authorized live volume query before committing to rollups;
+use observed query performance rather than assuming all live aggregation is unsuitable.
+
 **Goal:** Answer the questions a support lead actually asks: how much volume, how fast, who is
 carrying it, and are we hitting our commitments.
 

@@ -5,10 +5,12 @@ Date: 2026-09-21. Base: `41587d1` on `support-platform`.
 ## Scope and execution order
 
 The reporting foundation, status events, reporting timezone, and CSAT scale snapshot are implemented.
-The dashboard is not. This plan preserves the complete Stage 09 scope while breaking delivery into
-reviewable slices. Only wave 1 below is dispatched now; subsequent waves depend on its reviewed
-interfaces and the historical-facts gate. Stage 09 remains incomplete until all acceptance criteria
-in `stage-09-reporting.md` pass.
+The dashboard is not. Wave 1 is implemented; the remaining reporting work is deferred out of MVP
+by user direction. Do not dispatch waves 2–5 or treat their completion as a launch gate. The full
+Stage 09 scope below is retained as a future reference, not the current implementation queue.
+If basic volume reporting becomes necessary, first assess a small authorized, date-bounded query
+over conversations/status events, with honest history labels and measured query plans. Do not
+assume a materialized reporting subsystem is required before measuring that simpler option.
 
 The coordinator owns this document, `TODO.md`, shared schema/migrations, scheduler configuration,
 and integration. Luna workers use `high` reasoning, isolated worktrees based on an explicit
@@ -63,8 +65,7 @@ and integration. Luna workers use `high` reasoning, isolated worktrees based on 
 ### Wave 2 contracts
 
 The [Wave 2 design](stage-09-wave-2-design.md) specifies persistent state, concurrency,
-coverage semantics, and recovery. Its architectural approach is approved; written-spec review
-and the executable implementation plan remain before dispatch.
+coverage semantics, and recovery. It is deferred out of MVP and is not authorized for dispatch.
 
 Before API exposure, review the volume query's source indexes (including conversation team/date
 filtering), generate any required migration under single-owner schema control, and record
