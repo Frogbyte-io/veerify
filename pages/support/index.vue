@@ -1,6 +1,10 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="h-[calc(100vh-6rem)] min-h-[560px]">
+    <div
+      class="h-[calc(100vh-6rem)] min-h-[560px]"
+      data-testid="support-inbox-page"
+      :data-active-team-listener-ready="activeTeamListenerReady ? 'true' : 'false'"
+    >
       <!-- Loading team context -->
       <div v-if="isLoadingTeam" class="h-full flex items-center justify-center">
         <div class="space-y-3 w-full max-w-md">
@@ -220,6 +224,7 @@ export default {
       currentUserId: '',
       currentUserName: '',
       contextGeneration: 0,
+      activeTeamListenerReady: false,
       isLoadingTeam: true,
       teamError: null,
 
@@ -321,6 +326,7 @@ export default {
 
     if (import.meta.client) {
       window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+      this.activeTeamListenerReady = true
       this.unregisterReconnectHook = this.$realtime.onReconnect(this.handleRealtimeReconnect)
     }
   },

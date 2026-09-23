@@ -605,7 +605,7 @@ test.describe.serial('support permission-aware navigation', () => {
     )
 
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByTestId('support-inbox-list-loading')).toHaveCount(0)
+    await expect(page.getByTestId('support-inbox-page')).toHaveAttribute('data-active-team-listener-ready', 'true')
     await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
     activeTeamTransition = 1
     await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
