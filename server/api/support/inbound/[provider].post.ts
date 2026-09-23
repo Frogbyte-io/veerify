@@ -564,7 +564,7 @@ export default defineEventHandler(async (event) => {
                 deliveryStatus: 'pending',
                 // Not a substantive agent response - deliberately does not
                 // touch firstResponseAt/lastAgentReplyAt (Stage 06 territory;
-                // flagged in parallel-agents.md for whoever builds SLA to
+                // flagged for the SLA implementation to
                 // confirm this reading rather than assume it).
                 metadata: { isAutoReply: true },
                 createdAt: new Date(),

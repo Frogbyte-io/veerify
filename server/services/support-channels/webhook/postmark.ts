@@ -313,7 +313,7 @@ export class PostmarkChannelDriver implements ChannelDriver {
     // Only Bounce records carry a dedicated event id. Delivery/Open/Click/
     // SpamComplaint do not document one, so a composite of everything that
     // identifies this specific event stands in - matching the reasoning
-    // question 1 in parallel-agents.md settled for the table's key shape.
+    // initial schema decision settled the table's key shape.
     //
     // `typed.ID` is already a JS number by the time it reaches here (parsed
     // upstream by `readBody`/`JSON.parse`), so a bounce id beyond

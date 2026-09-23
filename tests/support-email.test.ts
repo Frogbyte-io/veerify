@@ -14,7 +14,7 @@ describe('generateMessageId', () => {
   })
 
   /**
-   * Pins the convention `parallel-agents.md` calls the stage's most likely
+   * Pins the convention identified as the stage's most likely
    * silent bug: Stage 03 stores `InboundMessage.messageId` with angle
    * brackets stripped (`normalizeMessageId` in
    * `server/services/support-channels/types.ts`). If this ever returned a

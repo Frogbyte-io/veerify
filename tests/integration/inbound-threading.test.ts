@@ -30,7 +30,7 @@ describe('resolveThread (real Postgres)', () => {
 
   /**
    * `resolveThread` takes a `tx` because the endpoint resolves inside its own
-   * insert transaction (the signature pinned in `parallel-agents.md`). Call it
+   * insert transaction (the normalized inbound contract). Call it
    * the same way here rather than passing `db`, so the test exercises the real
    * contract.
    */

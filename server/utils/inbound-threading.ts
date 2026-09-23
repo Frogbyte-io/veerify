@@ -6,8 +6,9 @@ import { conversation, conversationMessage } from '~/server/database/schema/supp
  * Threading resolution for inbound mail — deciding whether a message continues
  * an existing conversation or starts a new one.
  *
- * `stage-03-inbound-email.md` calls this "the classic source of duplicate
- * tickets", and the failure is asymmetric: a missed match splits one
+ * A missed match splits one conversation into two, which an agent can merge,
+ * while a wrong match shows one customer another customer's correspondence.
+ * The failure is asymmetric: a missed match splits one
  * conversation into two, which an agent can merge, while a wrong match shows
  * one customer another customer's correspondence. So header matching (strong,
  * exact) is tried before the subject heuristic (weak, bounded), and the
@@ -22,7 +23,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
  * **Deliberately structural rather than importing `InboundMessage`** from
  * `server/services/support-channels/types.ts` (Agent 1's file). An
  * `InboundMessage` satisfies this shape, so the call site in
- * `parallel-agents.md` compiles unchanged — but `server/utils/` does not take a
+ * The inbound adapter satisfies this shape — but `server/utils/` does not take a
  * dependency on `server/services/support-channels/`, and these tests need only
  * four fields rather than a whole normalized message. Flagged to Agent 1 rather
  * than changed silently.

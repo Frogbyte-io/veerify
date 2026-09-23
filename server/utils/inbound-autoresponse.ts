@@ -1,12 +1,10 @@
 /**
  * Auto-response detection for inbound mail.
  *
- * Two failure modes this prevents, both from `stage-03-inbound-email.md`:
- * an out-of-office reply reopening a resolved ticket, and — once Stage 04 can
- * send — an auto-reply meeting an auto-reply and generating unbounded traffic.
- *
- * Ships in Stage 03 even though auto-reply *sending* is Stage 04, because the
- * detection has to exist before anything can be sent.
+ * Two failure modes this prevents: an out-of-office reply reopening a resolved
+ * ticket, and — once outbound replies are enabled — an auto-reply meeting an
+ * auto-reply and generating unbounded traffic. The detector ships before
+ * auto-reply sending because it must guard that path.
  *
  * **Bias: false negatives over false positives.** A missed auto-reply creates
  * one junk message an agent can see and delete. A false positive silently

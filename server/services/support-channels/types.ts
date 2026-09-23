@@ -7,10 +7,9 @@
  * just another driver (delta D-29 dropped it as a polling channel, not as a
  * shape).
  *
- * `InboundMessage` is pinned by the Stage 03 agent contract in
- * `docs/plans/2026-08-11-support-platform/parallel-agents.md`: the threading,
- * quote-stripping, sanitization, and auto-response modules all consume it.
- * Changing a field here is a cross-agent change, not a local one.
+ * `InboundMessage` is the normalized provider boundary consumed by threading,
+ * quote-stripping, sanitization, and auto-response modules. Changing a field
+ * here affects all of those consumers.
  */
 
 export interface InboundAddress {
@@ -174,7 +173,7 @@ export interface ChannelDriver {
    * keyed one row per *email* (a provider retry must not become a second
    * ticket), but one outbound message legitimately produces several delivery
    * events (Delivery, then Open, then possibly Bounce) - see "the delivery
-   * webhook gets its own table" in `parallel-agents.md`. Falls back to a
+   * webhook gets its own table. Falls back to a
    * composite of record type + message id + recipient when the provider
    * supplies no event id of its own (Postmark's Delivery payload may not).
    */

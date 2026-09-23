@@ -1,7 +1,7 @@
 import { buildOutgoingReply, type OutgoingReplyInput, type OutgoingReplyResult } from '~/server/utils/outbound-reply'
 
 /**
- * Auto-reply composition (SUP-04-8, stage-04-outbound-replies.md §6).
+ * Auto-reply composition (SUP-04-8).
  *
  * Four guards, all required before this ever runs:
  *

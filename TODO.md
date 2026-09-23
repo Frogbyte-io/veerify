@@ -187,8 +187,8 @@ MVP
 
 ## Support Platform — Stage 00: Foundations
 
-Plan: `docs/plans/2026-08-11-support-platform/stage-00-foundations.md`. Read `design.md` in the same
-directory first. Infrastructure only — no support tables, endpoints, or UI in this stage.
+Completed stage; see `docs/plans/2026-08-11-support-platform/README.md` and `design.md` for retained
+architecture notes. Infrastructure only — no support tables, endpoints, or UI in this stage.
 
 - [x] **SUP-00-1** Split `server/database/schema/feedback.ts` into `feedback.ts`, `notifications.ts`, `imports.ts`, `changelog.ts`; add empty `support.ts`; re-export from `index.ts`; verify `yarn db:generate` emits no migration
   - `bd31097`: `notification` extracted to `notifications.ts`, empty `support.ts` added, `yarn db:generate` confirmed to emit no migration.
@@ -221,8 +221,8 @@ directory first. Infrastructure only — no support tables, endpoints, or UI in 
 
 ## Support Platform — Stage 01: Contact identity
 
-Plan: `docs/plans/2026-08-11-support-platform/stage-01-contacts.md`. Read `design.md` and `deltas.md`
-first. Integration branch is **`support-platform`**, not `main` (delta D-17).
+Completed stage; see `docs/plans/2026-08-11-support-platform/README.md`, `design.md`, and `deltas.md`.
+Integration branch is **`support-platform`**, not `main` (delta D-17).
 
 **Hard constraint:** `server/database/schema/feedback.ts` gets no `contactId`, no backfill, and no data
 migration. The single permitted change is an index on `authorEmail`. See "Why contacts and feedback stay
@@ -267,13 +267,10 @@ separate" in `design.md`.
 
 ## Support Platform — Stage 04: Outbound replies
 
-Plan: `docs/plans/2026-08-11-support-platform/stage-04-outbound-replies.md`. Read `design.md` and
-`deltas.md` first, then `parallel-agents.md` for the two-agent split and the agreed module signatures.
+Completed stage; see `docs/plans/2026-08-11-support-platform/README.md`, `design.md`, and `deltas.md`.
 
-**The split is PROPOSED, not agreed.** Agent 1 drafted it because no Stage 04 contract and no `SUP-04-*`
-ids existed when the stage opened; Agent 2 wrote the Stage 03 one. **Agent 2 should ratify or amend
-`parallel-agents.md`** — but the three questions it originally left open are now **answered against the
-code**, so the stage is not blocked on them.
+**Historical note:** the two-agent split was initially proposed, not agreed. Its open questions were
+resolved during implementation; see the retained design notes for the resulting decisions.
 
 **One migration expected: `0025`**, belonging to SUP-04-3, creating **two** tables:
 `supportOutboundDelivery` (specified in `design.md`, never created; the schema is at `0024`) and
@@ -281,7 +278,7 @@ code**, so the stage is not blocked on them.
 table. Its key is one row per _email_, deliberately collapsing retries, whereas one outbound message
 produces many delivery events (Delivery, Open, Bounce). Sharing it would swallow every event after the
 first, **including the hard bounce**, which is exactly the silent failure acceptance criterion 6 exists to
-catch. Reasoning in full in `parallel-agents.md`.
+catch. See `design.md` and `deltas.md` for retained design rationale.
 
 **Narrowed by Stage 02, before anyone starts:** `firstResponseAt` stamping and the immediate realtime
 publish — acceptance criteria 7 and 8 — already ship in `messages/index.post.ts:83-96`. SUP-04-4 must
@@ -303,13 +300,12 @@ preserve them, not build them.
 
 ## Support Platform — Stage 03: Inbound email
 
-Plan: `docs/plans/2026-08-11-support-platform/stage-03-inbound-email.md`. Read `design.md` and
-`deltas.md` first, then `parallel-agents.md` for the two-agent split and the agreed module signatures.
+Completed stage; see `docs/plans/2026-08-11-support-platform/README.md`, `design.md`, and `deltas.md`.
 
 **Webhook only** — the IMAP driver was dropped (delta D-29). Inbound is Postmark/Mailgun webhooks.
 
 - [x] **SUP-03-1** Add `server/services/support-channels/` with `types.ts` and normalized `InboundMessage`; driver selection from `SUPPORT_CHANNEL_PROVIDER`
-  - `3f65831` (agent 1), merged in `b5e8e80`. `InboundMessage` matches the contract pinned in `parallel-agents.md` exactly. `rawHeaders` keys are lowercased by the drivers, which `isAutoResponse` also does defensively — harmless overlap.
+  - `3f65831` (agent 1), merged in `b5e8e80`. `InboundMessage` matches the agreed normalized-message contract. `rawHeaders` keys are lowercased by the drivers, which `isAutoResponse` also does defensively — harmless overlap.
   - A **compile-time assertion** now lives in `tests/inbound-threading.test.ts` proving `InboundMessage` satisfies the structural `ThreadableMessage` that `resolveThread` takes. Nothing calls `resolveThread` with one until SUP-03-4, so without it the seam between the two agents would go unchecked until integration — the exact way Stage 02's deep-link bug got in.
 - [x] **SUP-03-2** Implement the Postmark webhook driver with signature verification and payload normalization; unit tests against captured fixtures
   - `3f65831` (agent 1).
@@ -350,7 +346,7 @@ Plan: `docs/plans/2026-08-11-support-platform/stage-03-inbound-email.md`. Read `
 
 ## Support Platform — Stage 02: Inbox + conversation core
 
-Plan: `docs/plans/2026-08-11-support-platform/stage-02-conversation-core.md`. Read `design.md` and
+Completed stage; see `docs/plans/2026-08-11-support-platform/README.md`, `design.md`, and
 `deltas.md` first. Integration branch is **`support-platform`**.
 
 UI and configuration model settled 2026-08-14 (deltas D-26, D-27, D-28). Two surfaces, deliberately
@@ -388,7 +384,7 @@ separate: the **agent workspace** (`/support`, team-scoped, this stage) and the 
   - `feedbackEnabled` defaults **true** so existing teams see no change on deploy; `supportEnabled` defaults **false**, so the Support group SUP-02-11 added is now opt-in. Updated the E2E spec that asserted Roadmap/Changelog render as visible disabled buttons, and added one covering the Support group's default-off state.
 - [x] **SUP-02-13** Implement module disable semantics: hide nav and stop inbound processing while preserving conversations and contacts
   - **Split — everything buildable in Stage 02 is done; the rest moved to Stage 03 (delta D-32).** Hiding the nav shipped with SUP-02-12: the sidebar reads `teamModuleSettings` and the Support group disappears when `supportEnabled` is false. Preserving data needed no work — the disable path is a boolean on a settings row and touches no conversation tables.
-  - **"Stop inbound processing" was not buildable here:** there is no inbound processing until Stage 03. A guard written now would sit against a code path nothing exercises and could not be tested until that stage — the same way `isUniqueViolation()` was silently wrong for weeks (delta D-24). It is now an explicit item in `stage-03-inbound-email.md` with its own acceptance criterion: record the event, return 200, create no conversation, and never 404 (a mail provider would retry forever).
+  - **"Stop inbound processing" was not buildable here:** there is no inbound processing until Stage 03. A guard written now would sit against a code path nothing exercises and could not be tested until that stage — the same way `isUniqueViolation()` was silently wrong for weeks (delta D-24). It was carried into inbound implementation with its own acceptance criterion: record the event, return 200, create no conversation, and never 404 (a mail provider would retry forever).
 - [x] **SUP-02-14** Build `/support/settings` with inbox name, signature, agent membership, and the receiving-address list with product mapping
   - `bbc2b7d` (agent 1), merged in `7ffa2fb`.
 - [x] **SUP-02-15** Add `conversation_assigned` and `conversation_mention` notification types and preference toggles
@@ -436,10 +432,9 @@ is separate from this reporting wave; live migration and production cutover have
 
 ## Support Platform — Stage 05A: Agent speed (MVP)
 
-Plan: `docs/plans/2026-08-11-support-platform/stage-05a-agent-speed.md`. Read
-`stage-05-decisions.md`, `design.md`, and `deltas.md` in the same directory first. Integration branch is
-**`support-platform`**, not `main`. Scope is fixed for a 1–3 agent team; do not restore deferred Stage 05
-features.
+Completed stage; see `docs/plans/2026-08-11-support-platform/README.md`, `design.md`, and `deltas.md`.
+Integration branch is **`support-platform`**, not `main`. Scope is fixed for a 1–3 agent team; do not
+restore deferred Stage 05 features.
 
 - [x] **SUP-05A-1** Implement claim, auto-claim on first `outgoing` reply (notes excluded), unassign, and assign-to-another-agent, each writing an `activity` message; reopen preserves assignee
   - `20df161`, `b94c2e7`, merged in `c02e2d2`. Explicit Claim uses a conditional transaction so concurrent claimers cannot overwrite the winner and only one assignment activity is written. Outgoing replies auto-claim unassigned conversations in their message transaction; notes never claim, existing owners are never stolen, and inbound reopen preserves the assignee. The header supports Claim, handoff, and release, with real-Postgres concurrency coverage and forced Playwright coverage for composer auto-claim plus dropdown handoff/release.

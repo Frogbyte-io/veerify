@@ -36,7 +36,7 @@ export interface OutgoingReplyInput {
   } | null
   /** Seed for `generateMessageId` - the new `conversationMessage.id`. */
   newMessageId: string
-  /** Domain for the generated Message-ID - inbox domain, falling back to MAIL_FROM's (parallel-agents.md, answered question 2). */
+  /** Domain for the generated Message-ID - inbox domain, falling back to MAIL_FROM's. */
   domain: string
   attachments: OutboundAttachment[]
 }

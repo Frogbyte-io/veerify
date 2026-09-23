@@ -373,7 +373,7 @@ export class MailgunChannelDriver implements ChannelDriver {
   extractDeliveryEventId(payload: unknown): string | null {
     const typed = payload as MailgunEventPayload | null
     // Unlike inbound routes, Mailgun's Events API gives every event its own
-    // id - parallel-agents.md's answered question 1 confirmed this is the
+    // id - the normalized webhook contract confirms this is the
     // right key, no fallback composite needed.
     const id = typed?.['event-data']?.id
     return typeof id === 'string' && id.trim().length > 0 ? id.trim() : null

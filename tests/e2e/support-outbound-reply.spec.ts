@@ -23,7 +23,7 @@ const WEBHOOK_PASSWORD = process.env.SUPPORT_POSTMARK_WEBHOOK_PASSWORD || ''
  * Stage 04 acceptance: the full round trip. An agent reply to an inbound
  * ticket carries real threading headers, and the customer's reply to it
  * lands on the same conversation rather than opening a new ticket - the
- * stage's headline risk (parallel-agents.md: a bracketed `channelMessageId`
+ * stage's headline risk (a bracketed `channelMessageId`
  * would make every customer reply open a new ticket).
  *
  * Guarded like `support-inbound-email.spec.ts`: skips when the Postmark
@@ -208,7 +208,7 @@ test.describe.serial('outbound reply round trip', () => {
       expect(legacyAttachment.status()).toBe(400)
 
       // A note must never carry attachments - SUP-04-4's .superRefine rejects
-      // it outright rather than silently dropping them (parallel-agents.md).
+      // it outright rather than silently dropping them.
       const noteWithAttachment = await request.post(`/api/support/conversations/${conversationId}/messages`, {
         headers,
         data: {
