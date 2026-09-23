@@ -26,9 +26,8 @@ function resolveWithPg(config: ConstructorParameters<typeof Client>[0]): Resolve
 describe('database connection TLS configuration', () => {
   it('requires verified TLS for the Neon pull-request test database', () => {
     const workflow = readFileSync(new URL('../.github/workflows/neon.yml', import.meta.url), 'utf8')
-    const playwrightJob = workflow.split('  playwright_e2e:')[1]?.split('\n  delete_neon_branch:')[0]
 
-    expect(playwrightJob).toMatch(/^\s+DATABASE_SSL_MODE:\s*verify-full\s*$/m)
+    expect(workflow).toMatch(/^\s+DATABASE_SSL_MODE:\s*verify-full\s*$/m)
   })
 
   it('gives Drizzle Kit decoded host credentials instead of URL credentials', async () => {
@@ -121,6 +120,27 @@ describe('database connection TLS configuration', () => {
 
     expect(ipv6.host).toBe('::1')
     expect(resolveParametersWithPg(ipv6).host).toBe('::1')
+  })
+
+  it('rejects malformed and out-of-range query ports', () => {
+    for (const port of ['5432oops', '0', '65536']) {
+      expect(() =>
+        createDatabaseConnectionConfig({
+          DATABASE_URL: `postgresql://user:password@db.example.test/app?port=${port}`,
+          NODE_ENV: 'production',
+        })
+      ).toThrow(/DATABASE_URL/)
+    }
+  })
+
+  it('decodes reserved characters in the isolated database path', () => {
+    const config = createDatabaseConnectionConfig({
+      DATABASE_URL: 'postgresql://user:password@db.example.test/app%2Fdata%20store',
+      NODE_ENV: 'production',
+    })
+
+    expect(config.database).toBe('app/data store')
+    expect(resolveParametersWithPg(config).database).toBe('app/data store')
   })
 
   it('keeps explicit PG fallback identity when a URL omits user and database', () => {

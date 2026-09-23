@@ -13,7 +13,7 @@ import { readSupportVolumeDay, recomputeSupportVolumeDay } from '../../server/ut
 
 const randomUuidMock = vi.hoisted(() => {
   const generate = () => globalThis.crypto.randomUUID()
-  return { fn: vi.fn(generate), generate }
+  return { fn: vi.fn(generate) }
 })
 
 vi.mock('node:crypto', async () => ({
@@ -386,9 +386,8 @@ describe('support reporting volume (real Postgres)', () => {
       .from(supportMetricDaily)
       .where(eq(supportMetricDaily.teamId, ids.team))
       .orderBy(asc(supportMetricDaily.id))
-    randomUuidMock.fn.mockReturnValue(`unrelated_${suffix}`)
+    randomUuidMock.fn.mockImplementationOnce(() => `unrelated_${suffix}`)
     await expect(recomputeSupportVolumeDay({ teamId: ids.team, date, timezone })).rejects.toThrow()
-    randomUuidMock.fn.mockImplementation(randomUuidMock.generate)
     expect(
       await db
         .select()

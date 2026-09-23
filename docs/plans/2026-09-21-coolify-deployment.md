@@ -68,27 +68,31 @@ routing. The public URL uses HTTPS normally; the configured port selects the con
 
 Secrets belong in Coolify environment settings, never the repository or deployment logs.
 
-| Area     | Required settings and checks                                                                                                                                                                                                                                 |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Runtime  | APP_DEPLOYMENT_MODE=self-hosted, NODE_ENV=production, HOST=0.0.0.0, PORT=3000; build must use Node server preset, not a Vercel preset                                                                                                                        |
-| Database | DATABASE_URL for isolated managed staging DB; same target for app/migrator; SSL trust configured and tested                                                                                                                                                  |
-| Auth     | BETTER_AUTH_URL, BETTER_AUTH_SECRET; optional previous secret; staging-specific GitHub OAuth callback/credentials                                                                                                                                            |
-| Domains  | APP_DOMAIN, APP_DASHBOARD_DOMAIN, CNAME_TARGET, DOMAIN_PROVIDER=static-cname; matching NUXT runtime overrides above                                                                                                                                          |
-| Links    | APP_URL as an absolute reachable HTTPS origin for CSAT links                                                                                                                                                                                                 |
-| Redis    | REDIS_URL, REALTIME_DRIVER=redis, RATE_LIMIT_STORE=redis; TLS/credentials per managed provider                                                                                                                                                               |
-| Storage  | `NUXT_STORAGE_DRIVER=s3`, `NUXT_STORAGE_BUCKET`, `NUXT_STORAGE_REGION`, `NUXT_STORAGE_ENDPOINT`, `NUXT_STORAGE_ACCESS_KEY_ID`, `NUXT_STORAGE_SECRET_ACCESS_KEY`, `NUXT_STORAGE_FORCE_PATH_STYLE`, `NUXT_STORAGE_PUBLIC_BASE_URL`, `NUXT_UPLOAD_TOKEN_SECRET` |
-| Mail     | `NUXT_NODEMAILER` JSON object containing `host`, numeric `port`, boolean `secure`, `from`, and `auth: {user, pass}` when authentication is needed; staging sink or allowlisted recipients                                                                    |
-| Support  | `SUPPORT_CHANNEL_PROVIDER` and selected provider's `SUPPORT_POSTMARK_*` or `SUPPORT_MAILGUN_*` credentials, with staging webhook URL                                                                                                                         |
+| Area     | Required settings and checks                                                                                                                                                                                                                                  |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime  | APP_DEPLOYMENT_MODE=self-hosted, NODE_ENV=production, HOST=0.0.0.0, PORT=3000; build must use Node server preset, not a Vercel preset                                                                                                                         |
+| Database | DATABASE_URL for isolated managed staging DB; same target for app/migrator; SSL trust configured and tested                                                                                                                                                   |
+| Auth     | BETTER_AUTH_URL, BETTER_AUTH_SECRET; optional previous secret; staging-specific GitHub OAuth callback/credentials                                                                                                                                             |
+| Domains  | APP_DOMAIN, APP_DASHBOARD_DOMAIN, CNAME_TARGET, DOMAIN_PROVIDER=static-cname; matching NUXT runtime overrides above                                                                                                                                           |
+| Links    | APP_URL as an absolute reachable HTTPS origin for CSAT links                                                                                                                                                                                                  |
+| Redis    | REDIS_URL, REALTIME_DRIVER=redis, RATE_LIMIT_STORE=redis; TLS/credentials per managed provider                                                                                                                                                                |
+| Storage  | `NUXT_STORAGE_DRIVER=s3`, `NUXT_STORAGE_BUCKET`, `NUXT_STORAGE_REGION`, `NUXT_STORAGE_ENDPOINT`, `NUXT_STORAGE_ACCESS_KEY_ID`, `NUXT_STORAGE_SECRET_ACCESS_KEY`, `NUXT_STORAGE_FORCE_PATH_STYLE`, `NUXT_STORAGE_PUBLIC_BASE_URL`, `NUXT_UPLOAD_TOKEN_SECRET`  |
+| Mail     | Runtime `NUXT_NODEMAILER_HOST`, `_PORT`, `_SECURE`, `_FROM`; authenticated SMTP also needs `_AUTH_USER` and `_AUTH_PASS` when the built config contains `auth`; set direct `MAIL_FROM` for support fallbacks and use a staging sink or allowlisted recipients |
+| Support  | `SUPPORT_CHANNEL_PROVIDER` and selected provider's `SUPPORT_POSTMARK_*` or `SUPPORT_MAILGUN_*` credentials, with staging webhook URL                                                                                                                          |
 
 Use `.env.example` for local/build variables and direct process-environment consumers; this plan
 documents the production Nuxt runtime mappings. `NUXT_STORAGE_DIRECT_UPLOAD_CONSTRAINTS` defaults to
 `proxy-required`; retain that unless the chosen S3 provider's constraint enforcement is verified.
-The parent `NUXT_NODEMAILER` JSON override supplies keys even when a secret-free build omitted
-`auth` or undefined SMTP defaults. Nested overrides alone cannot introduce absent keys. Use a full
-mailbox string such as `Veerify <noreply@example.com>` for `from`; `MAIL_FROM_NAME` is not mapped by
-the current app. Verify effective settings without printing credentials.
-Also set direct `MAIL_FROM` to the same sender mailbox: support message fallbacks read it outside
-Nuxt's Nodemailer runtime configuration.
+`NUXT_NODEMAILER` is not a JSON override: the Nodemailer module maps individual
+`NUXT_NODEMAILER_<OPTION>` variables onto options already present in the built config. The app always
+defines `host`, `port`, `secure`, and `from`; it only defines `auth` when both `SMTP_USER` and
+`SMTP_PASS` are non-empty during the image build. For authenticated runtime SMTP without build-time
+secrets, provide non-secret placeholder values for those two variables during the build so the
+`auth` keys exist, then set the real `NUXT_NODEMAILER_AUTH_USER` and `NUXT_NODEMAILER_AUTH_PASS` at
+runtime. Set the other `NUXT_NODEMAILER_*` overrides at runtime too. Use a full mailbox string such
+as `Veerify <noreply@example.com>` for `from`; `MAIL_FROM_NAME` is not mapped by the current app.
+Verify effective settings without printing credentials. Also set direct `MAIL_FROM` to the same
+sender mailbox: support message fallbacks read it outside Nuxt's Nodemailer runtime configuration.
 
 An APP_DEPLOYMENT_MODE of cloud selects the Vercel
 backend; do not use it to disable scheduling in a self-hosted replica. The dedicated scheduler switch

@@ -1,6 +1,8 @@
 # Stage 09 first-wave implementation plan
 
-> **For agentic workers:** Use the TODO harness workflow for parallel isolated implementation and sequential review/integration. The user selected Luna workers at high reasoning.
+> **Status: COMPLETE.** The reporting-range service shipped in `7da2e12` and the daily-volume
+> service shipped in `8612896`. This is a historical execution plan; do not dispatch its unchecked
+> task lists again. Wave 2 remains deferred as recorded in the Stage 09 delivery plan.
 
 **Goal:** Establish tested date-range and daily-volume services for the reporting API's next slice.
 

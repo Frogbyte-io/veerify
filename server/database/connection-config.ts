@@ -82,12 +82,13 @@ function parseUrlCredentials(connectionString: string, env: DatabaseEnvironment)
   const password = queryPassword || decodeUrlPart(url.password)
   const host = (queryHost || url.hostname).replace(/^\[|\]$/g, '')
   const portValue = queryPort || url.port || env.PGPORT || '5432'
-  const port = Number.parseInt(portValue, 10)
-  if (!Number.isFinite(port)) throw new Error('DATABASE_URL must be a valid PostgreSQL URL or Unix socket path')
+  const port = Number(portValue)
+  if (!/^\d+$/.test(portValue) || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('DATABASE_URL must be a valid PostgreSQL URL or Unix socket path')
+  }
 
   const databasePath = url.pathname.startsWith('/') ? url.pathname.slice(1) : url.pathname
-  const database =
-    decodeUrlPart(databasePath, decodeURI) || env.PGDATABASE || user || env.PGUSER || env.USER || 'veerifydb'
+  const database = decodeUrlPart(databasePath) || env.PGDATABASE || user || env.PGUSER || env.USER || 'veerifydb'
 
   return {
     host: host || env.PGHOST || 'localhost',
