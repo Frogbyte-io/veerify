@@ -528,6 +528,7 @@ test.describe.serial('support permission-aware navigation', () => {
 
   test('index ignores an old team inbox response after switching teams', async ({ browser }) => {
     const page = await openAs(browser, 'agent', '/support')
+    await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
     const newInboxId = 'delayed-new-team-inbox'
     const oldInboxName = `Old delayed inbox ${Date.now()}`
     const newInboxName = `New delayed inbox ${Date.now()}`
@@ -556,8 +557,7 @@ test.describe.serial('support permission-aware navigation', () => {
     })
     await page.route('**/api/support/inboxes?*', async (route) => {
       inboxListCalls += 1
-      if (inboxListCalls === 1) return route.continue()
-      if (inboxListCalls === 2) {
+      if (inboxListCalls === 1) {
         oldListStarted()
         await oldListRelease
         await route.fulfill({
@@ -606,8 +606,6 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     )
 
-    await page.goto('/support', { waitUntil: 'domcontentloaded' })
-    await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
     activeTeamTransition = 1
     await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
     await oldListReady
