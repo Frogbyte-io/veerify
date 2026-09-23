@@ -57,8 +57,9 @@ The latter is an alternative scheduler, not needed for this initial single-proce
    routes. Preserve app-authorized support downloads and temporary-upload expiry policies.
 7. **Database TLS:** verify certificate trust consistently for the runtime, migrator, and domain
    backfill. MVP-DEP-1 implements the shared [verified TLS policy](../deployment-database-tls.md)
-   with migration-path regression coverage. Hosted-provider acceptance and rejection of an untrusted
-   certificate remain staging gates. Do not assume encryption alone verifies identity.
+   with migration-path regression coverage; a temporary local Postgres handshake accepted the
+   configured CA and rejected the same certificate without it. Hosted-provider trust remains a
+   staging gate. Do not assume encryption alone verifies identity.
 
 See [Coolify domain configuration](https://coolify.io/docs/core/networking/domains) for domain-to-port
 routing. The public URL uses HTTPS normally; the configured port selects the container's port 3000.
@@ -99,6 +100,17 @@ does not exist yet. External cron HTTP calls additionally need `CRON_SECRET`; Ni
 - [ ] Configure isolated services, private support storage policy, lifecycle/versioning, and secrets.
 - [ ] Verify a managed DB backup and restore into a disposable database before release migration.
 - [ ] Build the image without database mutation; run the explicit migration operation once.
+- Local packaging evidence: image build for `c73effb` succeeded without database access; the 436 MB
+  runtime image uses non-root `nuxt`, exposes port 3000, and contains the TLS helper, Drizzle config,
+  backfill script, and 45 SQL migrations. The explicit migration operation was smoke-tested against
+  a disposable database; it still needs one controlled run against staging after backup/restore.
+- Local migration evidence: the image's `migrate` command first rejected a temporary self-signed
+  certificate without its CA, then applied all migrations and completed the domain backfill against
+  a disposable Postgres 17.5 database when given that CA. This does not verify managed database
+  trust roots or replace the staging backup/restore and one-run migration checks.
+- Local runtime smoke: after the explicit migration operation, the same image started as its
+  non-root user and served `/login` with HTTP 200 against that TLS database. Storage used the
+  app's local driver; this does not verify Coolify routing, managed storage, or live email settings.
 - [ ] Build without storage/SMTP/upload secrets, supply runtime settings only, and verify resolved
       domains, S3 driver/bucket, upload signing, SMTP authentication, and sender identity in staging.
 - [ ] Deploy one app container through Coolify and verify health plus root/dashboard/team HTTPS.
