@@ -401,6 +401,21 @@ separate: the **agent workspace** (`/support`, team-scoped, this stage) and the 
   - **The spec is written but could not be executed**, because of a pre-existing blocker (delta D-33, queued as SUP-X-5): any Playwright spec importing `db` dies at collection on a `consola`/`createConsola` export-condition mismatch. Stage 01's `support-contact-timeline.spec.ts` fails identically, so this is not new. **Every assertion in the spec was instead verified by hand against a live dev server and database** — create, reply, note, status change, activity body text, sender kind, and the no-op guard all confirmed, then the test data removed. So the behaviour is verified; the automated spec is not yet proven runnable.
   - **Not covered:** acceptance criterion 1's realtime half — two agents in two browsers on two app instances, one replying and the other seeing it without a refresh. That needs two app instances and a shared broker, which this suite cannot stand up. Left explicitly open rather than pretended.
 
+## Support Platform — MVP deployment readiness
+
+Current priority: verify and deploy the implemented support workflow; advanced reporting is deferred.
+Plan: `docs/plans/2026-09-21-coolify-deployment.md`. No production cutover is implied by local work.
+
+- [x] **MVP-DEP-1** Implement and test a shared verified database TLS policy for runtime, migrations, and domain backfill while retaining explicit local non-TLS setup
+  - Shared verified TLS policy implemented in `dc104fb` / `ab39787`; independent Luna review passed, including the Drizzle Kit host-credentials fix. Integrated harness: 713 unit, 6 Redis, 133 Postgres tests passed. Live trusted/untrusted certificate handshake checks remain a staging gate, not locally proven.
+- [x] **MVP-DEP-2** Audit container/runtime readiness and record a minimal actionable launch checklist
+  - Static audit: no additional Docker packaging defect identified; an actual image/runtime staging test is still required. Set paired Nuxt runtime overrides and direct `MAIL_FROM` used by support fallbacks.
+- [ ] **MVP-DEP-3** Verify real inbound/reply/delivery-webhook flow and private attachments in isolated staging
+  - Needs: isolated staging services and test provider access; never substitute mocked tests for real-provider evidence.
+- [x] **MVP-DEP-4** Remove or clearly disable sample analytics on `/reports` before launch, without building new reporting features; verify with Playwright
+  - Replaced fabricated data and inert controls with an unavailable notice, preserving login protection. Commit `3154f6e`; independent review passed, focused production-preview Playwright 2/2, integrated harness passed.
+  - Combined TLS/UI production-preview rerun passed 2/2; reports notice visually inspected. General E2E harness guard skipped (not cloud/CI, force unset, configured DB absent); existing two-process realtime integration skipped without `DATABASE_URL`.
+
 ## Support Platform — Stage 09: Reporting execution
 
 Plan: `docs/plans/2026-08-11-support-platform/stage-09-delivery-plan.md`.

@@ -15,7 +15,7 @@ This is a runtime migration first; database and object-storage relocation are se
   Multiple replicas/rolling overlap require a scheduler-disable flag and a dedicated scheduler or
   leader election before rollout. Do not add duplicate Coolify scheduled tasks on top of Nitro.
 - Keep outbound every minute; cleanup, SLA, automation, and CSAT every five minutes. Daily reporting
-  rollups will have their own catch-up scheduling. No Vercel Hobby restriction applies to Nitro.
+  rollups are deferred out of MVP; do not add reporting jobs now. No Vercel Hobby restriction applies to Nitro.
 - Keep the existing GitHub CI and Neon PR test workflow. Runtime relocation does not require moving
   CI databases or disabling tests. Retire the Vercel deployment integration only after successful
   cutover; leaving it enabled will keep creating the existing failed deployment status.
@@ -55,10 +55,10 @@ The latter is an alternative scheduler, not needed for this initial single-proce
    be private, including when the object key is known. Public branding objects need narrowly scoped
    prefix policies or a separate public storage path; verify the prefixes used by the actual upload
    routes. Preserve app-authorized support downloads and temporary-upload expiry policies.
-7. **Database TLS:** `server/database/drizzle.ts` and `drizzle.config.ts` currently disable certificate
-   verification for production DATABASE_URL connections. Before production on the new host, add
-   and test an explicit trusted-CA/verification configuration for runtime and migration clients;
-   reject an untrusted certificate. Do not assume encryption alone verifies the server identity.
+7. **Database TLS:** verify certificate trust consistently for the runtime, migrator, and domain
+   backfill. MVP-DEP-1 implements the shared [verified TLS policy](../deployment-database-tls.md)
+   with migration-path regression coverage. Hosted-provider acceptance and rejection of an untrusted
+   certificate remain staging gates. Do not assume encryption alone verifies identity.
 
 See [Coolify domain configuration](https://coolify.io/docs/core/networking/domains) for domain-to-port
 routing. The public URL uses HTTPS normally; the configured port selects the container's port 3000.
@@ -86,6 +86,8 @@ The parent `NUXT_NODEMAILER` JSON override supplies keys even when a secret-free
 `auth` or undefined SMTP defaults. Nested overrides alone cannot introduce absent keys. Use a full
 mailbox string such as `Veerify <noreply@example.com>` for `from`; `MAIL_FROM_NAME` is not mapped by
 the current app. Verify effective settings without printing credentials.
+Also set direct `MAIL_FROM` to the same sender mailbox: support message fallbacks read it outside
+Nuxt's Nodemailer runtime configuration.
 
 An APP_DEPLOYMENT_MODE of cloud selects the Vercel
 backend; do not use it to disable scheduling in a self-hosted replica. The dedicated scheduler switch
@@ -133,7 +135,8 @@ versioning; a database dump does not include them.
 
 ## Implementation ownership
 
-One deployment task owns Docker/Coolify packaging and runtime config; one later task owns verified
-database TLS configuration. Domain automation and multi-replica scheduler ownership each require
-their own design and tests. These tasks are planned here, not executed by the Stage 09 worker wave.
-No server credentials or live infrastructure changes are required to complete this planning step.
+MVP-DEP-1 owns the shared database TLS policy; MVP-DEP-2 records the static runtime/container audit.
+MVP-DEP-4 removes fabricated analytics while reporting remains deferred. MVP-DEP-3 and the staging
+checklist above still require isolated services and real-provider evidence. Domain automation and
+multi-replica scheduler ownership each require their own design and tests; neither is needed for the
+initial single-container MVP. No live infrastructure changes have been performed by these local tasks.
