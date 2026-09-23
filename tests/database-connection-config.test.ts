@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { Client, Pool } from 'pg'
 import { describe, expect, it, vi } from 'vitest'
 import { createDatabaseConnectionConfig } from '../server/database/connection-config'
@@ -23,6 +24,13 @@ function resolveWithPg(config: ConstructorParameters<typeof Client>[0]): Resolve
 }
 
 describe('database connection TLS configuration', () => {
+  it('requires verified TLS for the Neon pull-request test database', () => {
+    const workflow = readFileSync(new URL('../.github/workflows/neon.yml', import.meta.url), 'utf8')
+    const playwrightJob = workflow.split('  playwright_e2e:')[1]?.split('\n  delete_neon_branch:')[0]
+
+    expect(playwrightJob).toMatch(/^\s+DATABASE_SSL_MODE:\s*verify-full\s*$/m)
+  })
+
   it('gives Drizzle Kit decoded host credentials instead of URL credentials', async () => {
     const previousEnvironment = {
       DATABASE_URL: process.env.DATABASE_URL,

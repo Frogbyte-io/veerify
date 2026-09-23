@@ -58,6 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BETTER_AUTH_URL: http://localhost:4173
+      DATABASE_SSL_MODE: verify-full
       UPLOAD_TOKEN_SECRET: playwright-e2e-upload-secret
       # The OAuth test only validates the generated GitHub authorization URL;
       # these placeholder credentials keep the provider enabled without using
