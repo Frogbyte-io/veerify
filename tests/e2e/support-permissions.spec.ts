@@ -541,21 +541,6 @@ test.describe.serial('support permission-aware navigation', () => {
       releaseOldList = resolve
     })
 
-    await page.addInitScript(() => {
-      const addEventListener = EventTarget.prototype.addEventListener
-      EventTarget.prototype.addEventListener = function (type, listener, options) {
-        const result = addEventListener.call(this, type, listener, options)
-        if (
-          this === window &&
-          type === 'veerify:active-team-changed' &&
-          typeof listener === 'function' &&
-          listener.name.includes('handleActiveTeamChanged')
-        ) {
-          document.documentElement.dataset.supportActiveTeamListenerReady = 'true'
-        }
-        return result
-      }
-    })
     await page.route('**/api/teams/active', async (route) => {
       const activeTeamId =
         activeTeamTransition === 0 ? fixture.teamId : activeTeamTransition === 1 ? 'old-team' : 'new-team'
@@ -620,7 +605,7 @@ test.describe.serial('support permission-aware navigation', () => {
     )
 
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await page.waitForFunction(() => document.documentElement.dataset.supportActiveTeamListenerReady === 'true')
+    await expect(page.getByTestId('support-inbox-list-loading')).toHaveCount(0)
     await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
     activeTeamTransition = 1
     await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))

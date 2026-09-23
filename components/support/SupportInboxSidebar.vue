@@ -6,7 +6,7 @@
 
     <!-- Inbox switcher -->
     <div class="flex-1 overflow-y-auto px-2 py-2 space-y-1">
-      <div v-if="isLoading" class="space-y-2 px-1">
+      <div v-if="isLoading" data-testid="support-inbox-list-loading" class="space-y-2 px-1">
         <Skeleton v-for="n in 3" :key="n" class="h-9 w-full" />
       </div>
 
