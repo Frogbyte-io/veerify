@@ -545,7 +545,12 @@ test.describe.serial('support permission-aware navigation', () => {
       const addEventListener = EventTarget.prototype.addEventListener
       EventTarget.prototype.addEventListener = function (type, listener, options) {
         const result = addEventListener.call(this, type, listener, options)
-        if (this === window && type === 'veerify:active-team-changed') {
+        if (
+          this === window &&
+          type === 'veerify:active-team-changed' &&
+          typeof listener === 'function' &&
+          listener.name.includes('handleActiveTeamChanged')
+        ) {
           document.documentElement.dataset.supportActiveTeamListenerReady = 'true'
         }
         return result
