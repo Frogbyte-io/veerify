@@ -528,12 +528,10 @@ test.describe.serial('support permission-aware navigation', () => {
 
   test('index ignores an old team inbox response after switching teams', async ({ browser }) => {
     const page = await openAs(browser, 'agent', '/support')
-    await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
     const newInboxId = 'delayed-new-team-inbox'
     const oldInboxName = `Old delayed inbox ${Date.now()}`
     const newInboxName = `New delayed inbox ${Date.now()}`
     let activeTeamTransition = 0
-    let inboxListCalls = 0
     let releaseOldList!: () => void
     let oldListStarted!: () => void
     const oldListReady = new Promise<void>((resolve) => {
@@ -543,6 +541,16 @@ test.describe.serial('support permission-aware navigation', () => {
       releaseOldList = resolve
     })
 
+    await page.addInitScript(() => {
+      const addEventListener = EventTarget.prototype.addEventListener
+      EventTarget.prototype.addEventListener = function (type, listener, options) {
+        const result = addEventListener.call(this, type, listener, options)
+        if (this === window && type === 'veerify:active-team-changed') {
+          document.documentElement.dataset.supportActiveTeamListenerReady = 'true'
+        }
+        return result
+      }
+    })
     await page.route('**/api/teams/active', async (route) => {
       const activeTeamId =
         activeTeamTransition === 0 ? fixture.teamId : activeTeamTransition === 1 ? 'old-team' : 'new-team'
@@ -556,8 +564,8 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     })
     await page.route('**/api/support/inboxes?*', async (route) => {
-      inboxListCalls += 1
-      if (inboxListCalls === 1) {
+      if (activeTeamTransition === 0) return route.continue()
+      if (activeTeamTransition === 1) {
         oldListStarted()
         await oldListRelease
         await route.fulfill({
@@ -606,6 +614,9 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     )
 
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForFunction(() => document.documentElement.dataset.supportActiveTeamListenerReady === 'true')
+    await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
     activeTeamTransition = 1
     await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
     await oldListReady
