@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EventHandler } from 'h3'
 
+const inboundRequest = vi.hoisted(() => ({
+  provider: 'postmark',
+  headers: { authorization: 'Basic valid' } as Record<string, string>,
+  rawBody: JSON.stringify({ MessageID: 'provider-1' }) as string | Buffer,
+  multipart: undefined as { name?: string; filename?: string; type?: string; data: Buffer }[] | undefined,
+}))
+const inboundDriver = vi.hoisted(() => ({ current: null as null | Record<string, unknown> }))
+
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
 vi.stubGlobal('createError', (input: Record<string, unknown>) =>
   Object.assign(new Error(String(input.statusMessage)), input)
@@ -15,32 +23,34 @@ const checkRateLimit = vi.fn(async () => true)
 
 vi.mock('h3', () => ({
   createError: (input: Record<string, unknown>) => Object.assign(new Error(String(input.statusMessage)), input),
-  getHeaders: () => ({ authorization: 'Basic valid' }),
-  getRouterParam: () => 'postmark',
-  readRawBody: async () => JSON.stringify({ MessageID: 'provider-1' }),
+  getHeaders: () => inboundRequest.headers,
+  getRouterParam: () => inboundRequest.provider,
+  readRawBody: async () => inboundRequest.rawBody,
+  readMultipartFormData: async () => inboundRequest.multipart,
   setResponseStatus: vi.fn(),
 }))
 vi.mock('~/server/services/support-channels', () => ({
   emailDomain: () => 'example.com',
-  getChannelDriver: () => ({
-    name: 'postmark',
-    verifySignature: () => true,
-    extractEventId: () => 'provider-1',
-    parse: () => ({
-      messageId: 'message-1',
-      inReplyTo: null,
-      references: [],
-      from: { address: 'customer@example.com', name: null },
-      to: [{ address: 'support@example.com', name: null }],
-      cc: [],
-      subject: 'Subject',
-      text: 'Body',
-      html: '<p>Body</p>',
-      rawHeaders: {},
-      attachments: [],
-      receivedAt: new Date(),
-    }),
-  }),
+  getChannelDriver: () =>
+    inboundDriver.current ?? {
+      name: 'postmark',
+      verifySignature: () => true,
+      extractEventId: () => 'provider-1',
+      parse: () => ({
+        messageId: 'message-1',
+        inReplyTo: null,
+        references: [],
+        from: { address: 'customer@example.com', name: null },
+        to: [{ address: 'support@example.com', name: null }],
+        cc: [],
+        subject: 'Subject',
+        text: 'Body',
+        html: '<p>Body</p>',
+        rawHeaders: {},
+        attachments: [],
+        receivedAt: new Date(),
+      }),
+    },
 }))
 vi.mock('~/server/utils/inbound-events', () => ({
   attachInboundEventInbox,
@@ -101,6 +111,11 @@ const handler = (await import('../server/api/support/inbound/[provider].post')).
 
 describe('inbound route claim-loss control', () => {
   beforeEach(() => {
+    inboundRequest.provider = 'postmark'
+    inboundRequest.headers = { authorization: 'Basic valid' }
+    inboundRequest.rawBody = JSON.stringify({ MessageID: 'provider-1' })
+    inboundRequest.multipart = undefined
+    inboundDriver.current = null
     attachInboundEventInbox.mockClear()
     rejectInboundEvent.mockClear()
     failInboundEvent.mockClear()
@@ -116,6 +131,51 @@ describe('inbound route claim-loss control', () => {
       {},
       expect.objectContaining({ identifier: 'support-inbound-edge', maxRequests: 5_000, windowSeconds: 60 })
     )
+  })
+
+  it('passes Mailgun multipart forward fields and binary attachments to signature verification', async () => {
+    inboundRequest.provider = 'mailgun'
+    inboundRequest.headers = { 'content-type': 'multipart/form-data; boundary=mailgun-boundary' }
+    inboundRequest.rawBody = Buffer.from('raw multipart body')
+    inboundRequest.multipart = [
+      { name: 'timestamp', data: Buffer.from('1780000000') },
+      { name: 'token', data: Buffer.from('mailgun-token') },
+      { name: 'signature', data: Buffer.from('mailgun-signature') },
+      { name: 'sender', data: Buffer.from('ada@example.com') },
+      { name: 'attachment-count', data: Buffer.from('1') },
+      { name: 'content-id-map', data: Buffer.from('{"logo@acme.com":"logo.png"}') },
+      { name: 'attachment-1', filename: 'logo.png', type: 'image/png', data: Buffer.from('binary image') },
+    ]
+    const verifySignature = vi.fn(() => true)
+    inboundDriver.current = {
+      name: 'mailgun',
+      verifySignature,
+      extractEventId: () => null,
+      parse: vi.fn(),
+    }
+
+    await expect(handler({} as Parameters<Handler>[0])).resolves.toMatchObject({
+      data: { reason: 'missing-event-id' },
+    })
+
+    expect(verifySignature).toHaveBeenCalledWith({
+      rawBody: 'raw multipart body',
+      headers: inboundRequest.headers,
+      authorization: undefined,
+      payload: {
+        timestamp: '1780000000',
+        token: 'mailgun-token',
+        signature: 'mailgun-signature',
+        sender: 'ada@example.com',
+        'attachment-count': '1',
+        'content-id-map': '{"logo@acme.com":"logo.png"}',
+        'attachment-1': {
+          filename: 'logo.png',
+          type: 'image/png',
+          data: Buffer.from('binary image'),
+        },
+      },
+    })
   })
 
   it('returns retryable 500 when attaching the inbox loses ownership', async () => {

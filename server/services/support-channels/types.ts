@@ -63,6 +63,8 @@ export interface InboundVerificationInput {
   rawBody: string
   /** Header names lowercased by the caller. */
   headers: Record<string, string>
+  /** Parsed form fields, supplied for multipart providers whose body contains binary parts. */
+  payload?: unknown
   /** Present only when the provider authenticates via HTTP Basic rather than a signature. */
   authorization?: string
 }

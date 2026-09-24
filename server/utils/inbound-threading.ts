@@ -6,13 +6,9 @@ import { conversation, conversationMessage } from '~/server/database/schema/supp
  * Threading resolution for inbound mail — deciding whether a message continues
  * an existing conversation or starts a new one.
  *
- * A missed match splits one conversation into two, which an agent can merge,
- * while a wrong match shows one customer another customer's correspondence.
- * The failure is asymmetric: a missed match splits one
- * conversation into two, which an agent can merge, while a wrong match shows
- * one customer another customer's correspondence. So header matching (strong,
- * exact) is tried before the subject heuristic (weak, bounded), and the
- * heuristic never crosses contacts.
+ * A missed match splits a conversation, while a wrong match risks exposing
+ * another customer's correspondence. Exact header matching therefore precedes
+ * the weaker subject heuristic, which never crosses contacts.
  */
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -20,13 +16,8 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 /**
  * The subset of `InboundMessage` threading actually reads.
  *
- * **Deliberately structural rather than importing `InboundMessage`** from
- * `server/services/support-channels/types.ts` (Agent 1's file). An
- * `InboundMessage` satisfies this shape, so the call site in
- * The inbound adapter satisfies this shape — but `server/utils/` does not take a
- * dependency on `server/services/support-channels/`, and these tests need only
- * four fields rather than a whole normalized message. Flagged to Agent 1 rather
- * than changed silently.
+ * Kept structural so threading does not depend on the channel adapter's
+ * normalized message type. The inbound adapter satisfies these four fields.
  */
 export interface ThreadableMessage {
   messageId: string | null

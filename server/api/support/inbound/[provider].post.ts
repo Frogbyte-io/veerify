@@ -25,7 +25,7 @@
  *       500: { description: Recorded processing failure; retry requested }
  */
 import { randomUUID } from 'node:crypto'
-import { createError, getHeaders, getRouterParam, readRawBody, setResponseStatus } from 'h3'
+import { createError, getHeaders, getRouterParam, readMultipartFormData, readRawBody, setResponseStatus } from 'h3'
 import { eq } from 'drizzle-orm'
 import { createLogger } from '~/server/utils/logger'
 import { createSuccessResponse } from '~/server/utils/response'
@@ -90,6 +90,33 @@ function accepted(reason: string) {
   return createSuccessResponse({ accepted: true, reason })
 }
 
+function mailgunPayloadFromMultipart(parts: Awaited<ReturnType<typeof readMultipartFormData>>) {
+  const payload: Record<string, unknown> = {}
+  for (const part of parts ?? []) {
+    if (!part.name) continue
+
+    if (part.filename) {
+      payload[part.name] = { filename: part.filename, type: part.type, data: part.data }
+      continue
+    }
+
+    const value = part.data.toString('utf8')
+    if (part.name === 'body-html' && payload[part.name] !== undefined) {
+      const prior = payload[part.name]
+      payload[part.name] = Array.isArray(prior) ? [...prior, value] : [prior, value]
+    } else {
+      payload[part.name] = value
+    }
+  }
+  return payload
+}
+
+function mailgunPayloadFromUrlEncoded(rawBody: string) {
+  const payload: Record<string, string> = {}
+  for (const [name, value] of new URLSearchParams(rawBody)) payload[name] = value
+  return payload
+}
+
 export default defineEventHandler(async (event) => {
   const providerName = getRouterParam(event, 'provider') as string
 
@@ -104,20 +131,41 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 429, statusMessage: 'Too Many Requests' })
   }
 
-  const rawBody = (await readRawBody(event, 'utf8')) ?? ''
   const headers = getHeaders(event) as Record<string, string>
+  const rawBodyBuffer = (await readRawBody(event, false)) ?? Buffer.alloc(0)
+  // H3's multipart reader calls readRawBody again. Cache the first read on the
+  // event so adapters that supplied a one-shot request stream remain readable.
+  event._requestBody = rawBodyBuffer
+  const rawBody = rawBodyBuffer.toString('utf8')
+  const contentType = String(headers['content-type'] ?? '').toLowerCase()
+  let mailgunPayload: Record<string, unknown> | undefined
+
+  if (driver.name === 'mailgun') {
+    if (contentType.startsWith('multipart/form-data')) {
+      mailgunPayload = mailgunPayloadFromMultipart(await readMultipartFormData(event))
+    } else if (contentType.startsWith('application/x-www-form-urlencoded')) {
+      mailgunPayload = mailgunPayloadFromUrlEncoded(rawBody)
+    }
+  }
 
   // ---- 1. Signature -------------------------------------------------------
   // Before anything is read or written. Everything below this line trusts that
   // the payload came from the provider.
-  if (!driver.verifySignature({ rawBody, headers, authorization: headers.authorization })) {
+  if (
+    !driver.verifySignature({
+      rawBody,
+      headers,
+      authorization: headers.authorization,
+      ...(mailgunPayload ? { payload: mailgunPayload } : {}),
+    })
+  ) {
     logger.warn('Rejected inbound delivery with an invalid signature', { provider: driver.name })
     throw createError({ statusCode: 401, statusMessage: 'Invalid signature' })
   }
 
   let payload: unknown
   try {
-    payload = JSON.parse(rawBody)
+    payload = mailgunPayload ?? JSON.parse(rawBody)
   } catch {
     // Signature-valid but unreadable. No event id can be extracted, so there
     // is nothing to key an event row on; 200 so it is not retried forever.
@@ -149,12 +197,17 @@ export default defineEventHandler(async (event) => {
   try {
     // ---- 3. Archive raw, before parsing ----------------------------------
     // So a parse failure is debuggable and replayable rather than lost.
-    const rawStorageKey = `support/inbound/${driver.name}/${new Date().toISOString().slice(0, 10)}/${eventId}.json`
+    const rawExtension = contentType.startsWith('multipart/form-data')
+      ? 'multipart'
+      : contentType.startsWith('application/x-www-form-urlencoded')
+        ? 'form'
+        : 'json'
+    const rawStorageKey = `support/inbound/${driver.name}/${new Date().toISOString().slice(0, 10)}/${eventId}.${rawExtension}`
     try {
       await getStorageProvider().putObject({
         key: rawStorageKey,
-        buffer: Buffer.from(rawBody, 'utf8'),
-        contentType: 'application/json',
+        buffer: rawBodyBuffer,
+        contentType: headers['content-type'] || 'application/json',
       })
       await recordInboundRawKey(claimToken, rawStorageKey)
     } catch (storageError) {

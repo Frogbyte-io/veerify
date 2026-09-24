@@ -285,8 +285,8 @@ export async function claimNextOutboundDelivery(options: { now?: Date } = {}): P
  * SUP-04-10 note: before this, nothing ever updated `conversationMessage.
  * deliveryStatus` past its initial insert-time value - `completeOutboundDelivery`
  * and `failOutboundDelivery` only touched the outbox row. A message would sit
- * at `'pending'` forever regardless of whether it actually sent. See the
- * initial implementation rationale is retained in the support platform design notes.
+ * at `'pending'` forever regardless of whether it actually sent. The original
+ * implementation rationale is retained in the support platform design notes.
  */
 async function applyDeliveryOutcome(input: {
   deliveryId: string

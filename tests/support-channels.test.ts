@@ -164,6 +164,41 @@ describe('MailgunChannelDriver', () => {
     expect(driver.verifySignature({ rawBody: JSON.stringify(payload), headers: {} })).toBe(true)
   })
 
+  it('accepts a correctly signed application/x-www-form-urlencoded forward payload', () => {
+    const payload = mailgunFixture({
+      'message-headers': JSON.stringify([
+        ['Message-Id', '<mg-1@acme.com>'],
+        ['To', 'support@acme.com'],
+      ]),
+    })
+    const rawBody = new URLSearchParams(Object.entries(payload).map(([key, value]) => [key, String(value)])).toString()
+
+    expect(
+      driver.verifySignature({
+        rawBody,
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      })
+    ).toBe(true)
+  })
+
+  it('verifies Mailgun multipart fields without decoding binary file bytes as text', () => {
+    expect(
+      driver.verifySignature({
+        rawBody: 'binary multipart body',
+        headers: { 'content-type': 'multipart/form-data; boundary=mailgun-boundary' },
+        payload: {
+          ...mailgunFixture(),
+          'attachment-count': '1',
+          'attachment-1': {
+            filename: 'logo.png',
+            type: 'image/png',
+            data: Buffer.from([0xff, 0xd8, 0x00]),
+          },
+        },
+      })
+    ).toBe(true)
+  })
+
   it('rejects a tampered signature', () => {
     const payload = mailgunFixture({ signature: 'a'.repeat(64) })
     expect(driver.verifySignature({ rawBody: JSON.stringify(payload), headers: {} })).toBe(false)
@@ -215,6 +250,30 @@ describe('MailgunChannelDriver', () => {
     expect(message.to).toEqual([{ address: 'support@acme.com', name: 'Acme Support' }, { address: 'ops@acme.com' }])
     expect(message.cc).toEqual([{ address: 'billing@acme.com' }])
     expect(message.text).toBe('I cannot sign in.')
+  })
+
+  it('normalizes multipart forward attachment fields and their content-id map', () => {
+    const message = driver.parse({
+      ...mailgunFixture(),
+      'content-id-map': JSON.stringify({ 'logo@acme.com': 'logo.png' }),
+      'attachment-count': '1',
+      'attachment-1': {
+        filename: 'logo.png',
+        type: 'image/png',
+        data: Buffer.from('provider attachment bytes'),
+      },
+    })
+
+    expect(message.attachments).toEqual([
+      {
+        fileName: 'logo.png',
+        contentType: 'image/png',
+        content: Buffer.from('provider attachment bytes'),
+        size: 25,
+        contentId: 'logo@acme.com',
+        isInline: true,
+      },
+    ])
   })
 
   it('hands over the full body rather than the provider stripped version', () => {

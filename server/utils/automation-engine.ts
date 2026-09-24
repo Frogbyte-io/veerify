@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, or } from 'drizzle-orm'
 import {
   automationRule,
   automationRuleRun,
@@ -363,6 +363,35 @@ export async function runAutomationRules(input: AutomationRunInput): Promise<Aut
         cascadeTruncated: false,
       })
       continue
+    }
+
+    if (input.trigger === 'time_based') {
+      // A threshold remains true on every scheduler tick. Execute it once per
+      // conversation activity cycle so notes and webhooks do not repeat until
+      // a later conversation activity gives the rule a new reason to run.
+      const [previousAttempt] = await db
+        .select({ id: automationRuleRun.id })
+        .from(automationRuleRun)
+        .where(
+          and(
+            eq(automationRuleRun.ruleId, rule.id),
+            eq(automationRuleRun.conversationId, state.id),
+            state.lastActivityAt ? gte(automationRuleRun.createdAt, state.lastActivityAt) : undefined
+          )
+        )
+        .limit(1)
+      if (previousAttempt) {
+        result.evaluations.push({
+          ruleId: rule.id,
+          ruleName: rule.name,
+          status: 'skipped',
+          matched: true,
+          actions: [],
+          errors: [],
+          cascadeTruncated: false,
+        })
+        continue
+      }
     }
 
     const executions = await executeAutomationActions(

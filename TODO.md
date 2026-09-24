@@ -272,17 +272,17 @@ Completed stage; see `docs/plans/2026-08-11-support-platform/README.md`, `design
 **Historical note:** the two-agent split was initially proposed, not agreed. Its open questions were
 resolved during implementation; see the retained design notes for the resulting decisions.
 
-**One migration expected: `0025`**, belonging to SUP-04-3, creating **two** tables:
-`supportOutboundDelivery` (specified in `design.md`, never created; the schema is at `0024`) and
+**Migration `0025`** belongs to SUP-04-3 and created **two** tables:
+`supportOutboundDelivery` and
 `supportDeliveryEvent`. It does **not** alter `supportEmailEvent` — delivery webhooks must not share that
 table. Its key is one row per _email_, deliberately collapsing retries, whereas one outbound message
 produces many delivery events (Delivery, Open, Bounce). Sharing it would swallow every event after the
 first, **including the hard bounce**, which is exactly the silent failure acceptance criterion 6 exists to
 catch. See `design.md` and `deltas.md` for retained design rationale.
 
-**Narrowed by Stage 02, before anyone starts:** `firstResponseAt` stamping and the immediate realtime
-publish — acceptance criteria 7 and 8 — already ship in `messages/index.post.ts:83-96`. SUP-04-4 must
-preserve them, not build them.
+**Narrowed by Stage 02:** `firstResponseAt` stamping and the immediate realtime
+publish — acceptance criteria 7 and 8 — already shipped in `messages/index.post.ts`. SUP-04-4
+preserved them.
 
 - [x] **SUP-04-1** (agent 1) Extend `lib/email.ts` with an optional options bag (from, replyTo, cc, headers, attachments); confirm all existing call sites are unaffected. All 10 are inside `lib/email.ts` itself and pass exactly `{ to, subject, html, text }`, so the blast radius is contained. Also adds the outbound surface to `ChannelDriver`, which has none today — SUP-04-6 has nothing to call without it
 - [x] **SUP-04-2** (agent 2) Add `lib/support-email.ts`: Message-ID generation, References chain assembly with trimming, quoted-history block, signature appending; unit tests for chain assembly
@@ -347,7 +347,7 @@ Completed stage; see `docs/plans/2026-08-11-support-platform/README.md`, `design
 ## Support Platform — Stage 02: Inbox + conversation core
 
 Completed stage; see `docs/plans/2026-08-11-support-platform/README.md`, `design.md`, and
-`deltas.md` first. Integration branch is **`support-platform`**.
+`deltas.md`. Integration branch is **`support-platform`**.
 
 UI and configuration model settled 2026-08-14 (deltas D-26, D-27, D-28). Two surfaces, deliberately
 separate: the **agent workspace** (`/support`, team-scoped, this stage) and the **customer entry point**

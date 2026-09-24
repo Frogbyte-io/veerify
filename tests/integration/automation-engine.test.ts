@@ -9,6 +9,7 @@ import {
   automationRuleRun,
   contact,
   conversation,
+  conversationMessage,
   conversationTag,
   supportCompany,
   supportInbox,
@@ -30,6 +31,7 @@ const ids = {
   loopRule: `automation_engine_loop_rule_${randomUUID()}`,
   failureRule: `automation_engine_failure_rule_${randomUUID()}`,
   timeRule: `automation_engine_time_rule_${randomUUID()}`,
+  repeatRule: `automation_engine_repeat_rule_${randomUUID()}`,
 }
 
 const now = new Date()
@@ -250,5 +252,29 @@ describe('automation engine (real Postgres)', () => {
     expect(result.scanned).toBeGreaterThanOrEqual(1)
     expect(result.evaluations).toBeGreaterThanOrEqual(1)
     expect(updated?.priority).toBe('urgent')
+  })
+
+  it('does not repeat a time-based private note while conversation activity is unchanged', async () => {
+    const note = `Escalation reminder ${randomUUID()}`
+    await db.insert(automationRule).values({
+      id: ids.repeatRule,
+      teamId: ids.team,
+      inboxId: ids.inbox,
+      name: 'Time-based reminder',
+      trigger: 'time_based',
+      conditions: { all: [{ field: 'hours_since_last_activity', operator: 'greater_than_or_equal', value: 0 }] },
+      actions: [{ type: 'add_private_note', body: note }],
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    await runTimeBasedAutomationSweep()
+    await runTimeBasedAutomationSweep()
+
+    const notes = await db
+      .select({ body: conversationMessage.body })
+      .from(conversationMessage)
+      .where(eq(conversationMessage.conversationId, ids.conversation))
+    expect(notes.filter((message) => message.body === note)).toHaveLength(1)
   })
 })

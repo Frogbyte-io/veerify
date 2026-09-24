@@ -60,12 +60,21 @@ interface MailgunInboundPayload {
   Cc?: string
   subject?: string
   'body-plain'?: string
-  'body-html'?: string
+  'body-html'?: string | string[]
   'stripped-text'?: string
   'message-headers'?: [string, string][] | string
   timestamp?: string | number
   token?: string
   attachments?: MailgunAttachment[] | string
+  'content-id-map'?: string | Record<string, string>
+  'attachment-count'?: string | number
+  [key: `attachment-${number}`]: MailgunMultipartFile | undefined
+}
+
+interface MailgunMultipartFile {
+  filename?: string
+  type?: string
+  data?: Buffer
 }
 
 /**
@@ -164,6 +173,47 @@ function toAttachments(value: MailgunInboundPayload['attachments']): InboundAtta
       isInline: Boolean(contentId),
     }
   })
+}
+
+function multipartAttachments(payload: MailgunInboundPayload): InboundAttachment[] {
+  let contentIds: Record<string, string> = {}
+  const contentIdMap = payload['content-id-map']
+  if (typeof contentIdMap === 'string') {
+    try {
+      const parsed = JSON.parse(contentIdMap)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) contentIds = parsed
+    } catch {
+      contentIds = {}
+    }
+  } else if (contentIdMap && typeof contentIdMap === 'object') {
+    contentIds = contentIdMap
+  }
+
+  const attachments: InboundAttachment[] = []
+  const fields = Object.keys(payload)
+    .filter((name) => /^attachment-\d+$/.test(name))
+    .sort((a, b) => {
+      return Number(a.slice('attachment-'.length)) - Number(b.slice('attachment-'.length))
+    })
+
+  for (const field of fields) {
+    const file = payload[field as `attachment-${number}`]
+    if (!file || typeof file !== 'object') continue
+    const fileName = file.filename?.split(/[/\\]/).pop() || 'attachment'
+    const content = file.data ?? Buffer.alloc(0)
+    const contentIdEntry = Object.entries(contentIds).find(([, name]) => name === file.filename || name === fileName)
+    const contentId = normalizeMessageId(contentIdEntry?.[0])
+    attachments.push({
+      fileName,
+      contentType: file.type?.trim() || null,
+      content,
+      size: content.byteLength,
+      contentId,
+      isInline: Boolean(contentId),
+    })
+  }
+
+  return attachments
 }
 
 /**
@@ -291,7 +341,13 @@ export class MailgunChannelDriver implements ChannelDriver {
 
     let payload: MailgunInboundPayload | null = null
     try {
-      payload = JSON.parse(input.rawBody) as MailgunInboundPayload
+      if (input.payload && typeof input.payload === 'object') {
+        payload = input.payload as MailgunInboundPayload
+      } else if (input.headers['content-type']?.toLowerCase().startsWith('application/x-www-form-urlencoded')) {
+        payload = Object.fromEntries(new URLSearchParams(input.rawBody)) as MailgunInboundPayload
+      } else {
+        payload = JSON.parse(input.rawBody) as MailgunInboundPayload
+      }
     } catch {
       return false
     }
@@ -342,7 +398,7 @@ export class MailgunChannelDriver implements ChannelDriver {
       throw new Error('Mailgun payload has no From address')
     }
 
-    const to = parseAddressList(typed.To ?? typed.recipient ?? headers.to)
+    const to = parseAddressList(typed.To ?? headers.to ?? typed.recipient)
     const cc = parseAddressList(typed.Cc ?? headers.cc)
 
     const headerDate = headers.date ? new Date(headers.date) : null
@@ -363,8 +419,8 @@ export class MailgunChannelDriver implements ChannelDriver {
       // used: quote stripping is SUP-03-6's job and must behave identically
       // for every provider, so the driver hands over the full body.
       text: typed['body-plain'] ?? null,
-      html: typed['body-html'] ?? null,
-      attachments: toAttachments(typed.attachments),
+      html: Array.isArray(typed['body-html']) ? typed['body-html'].join('\n') || null : (typed['body-html'] ?? null),
+      attachments: [...toAttachments(typed.attachments), ...multipartAttachments(typed)],
       receivedAt,
       rawHeaders: headers,
     }

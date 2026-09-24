@@ -31,6 +31,9 @@ const state = vi.hoisted(() => ({
   insertedValues: undefined as Record<string, unknown> | undefined,
   update: vi.fn(),
   select: vi.fn(),
+  transaction: vi.fn(async (fn: (tx: any) => unknown) =>
+    fn({ insert: state.insert, update: state.update, select: state.select })
+  ),
   conversationError: null as Error | null,
 }))
 
@@ -53,8 +56,7 @@ vi.mock('~/server/database/drizzle', () => ({
     insert: (...args: unknown[]) => state.insert(...args),
     update: (...args: unknown[]) => state.update(...args),
     select: (...args: unknown[]) => state.select(...args),
-    transaction: async (fn: (tx: any) => unknown) =>
-      fn({ insert: state.insert, update: state.update, select: state.select }),
+    transaction: (fn: (tx: any) => unknown) => state.transaction(fn),
   },
 }))
 
@@ -98,6 +100,7 @@ beforeEach(() => {
   state.provider.driver = 'local'
   state.provider.directUploadConstraints = 'proxy-required'
   state.row.status = 'pending'
+  state.row.tempStorageKey = 'support/attachments/uploads/upload-1/file.txt'
   state.row.objectVersion = undefined
   state.row.uploadedAt = undefined
   state.row.userId = 'user-1'
@@ -106,6 +109,9 @@ beforeEach(() => {
   state.insertedValues = undefined
   state.update.mockReturnValue(chain([state.row]))
   state.select.mockReturnValue(chain([state.row]))
+  state.transaction.mockImplementation(async (fn: (tx: any) => unknown) =>
+    fn({ insert: state.insert, update: state.update, select: state.select })
+  )
   state.provider.putObject.mockReset().mockResolvedValue(undefined)
   state.provider.deleteObject.mockReset().mockResolvedValue(undefined)
   state.provider.headObject
@@ -191,7 +197,10 @@ describe('bounded proxy upload route', () => {
 
     await expect(upload(event)).resolves.toMatchObject({ data: { uploaded: true, uploadId: 'upload-1', sizeBytes: 5 } })
     expect(state.provider.putObject).toHaveBeenCalledWith(
-      expect.objectContaining({ key: state.row.tempStorageKey, contentType: 'text/plain' })
+      expect.objectContaining({
+        key: expect.stringMatching(/^support\/attachments\/uploads\/upload-1\/file\.txt\./),
+        contentType: 'text/plain',
+      })
     )
   })
 
@@ -237,6 +246,74 @@ describe('bounded proxy upload route', () => {
     })
     await expect(upload(event)).rejects.toMatchObject({ statusCode: 409 })
     expect(state.provider.putObject).not.toHaveBeenCalled()
+  })
+
+  it('keeps the winning object when two requests use the same pending token concurrently', async () => {
+    const objects = new Map<string, Buffer>()
+    let heads = 0
+    let releaseHeads!: () => void
+    const bothObjectsWritten = new Promise<void>((resolve) => {
+      releaseHeads = resolve
+    })
+    state.provider.putObject.mockImplementation(async ({ key, buffer }: { key: string; buffer: Buffer }) => {
+      objects.set(key, Buffer.from(buffer))
+    })
+    state.provider.headObject.mockImplementation(async (key: string) => {
+      heads += 1
+      if (heads === 2) releaseHeads()
+      await bothObjectsWritten
+      return { sizeBytes: 5, contentType: 'text/plain', objectVersion: `version:${key}` }
+    })
+    state.provider.deleteObject.mockImplementation(async (key: string) => {
+      objects.delete(key)
+    })
+
+    let transactionQueue = Promise.resolve()
+    const lockedTx = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            for: () => ({
+              limit: async () => [state.row],
+            }),
+          }),
+        }),
+      }),
+      update: () => ({
+        set: (values: Record<string, unknown>) => ({
+          where: async () => Object.assign(state.row, values),
+        }),
+      }),
+    }
+    state.transaction.mockImplementation((fn: (tx: any) => unknown) => {
+      const run = transactionQueue.then(() => fn(lockedTx))
+      transactionQueue = run.then(
+        () => undefined,
+        () => undefined
+      )
+      return run
+    })
+
+    const tokenModule = await import('../server/utils/support-attachments')
+    vi.spyOn(tokenModule, 'verifySupportUploadToken').mockReturnValue({
+      uploadId: 'upload-1',
+      expiresAt: state.row.expiresAt,
+    })
+    const makeEvent = (body: string) =>
+      ({
+        node: { req: Readable.from([Buffer.from(body)]) },
+        context: {},
+        params: { token: 'opaque-token' },
+      }) as never
+
+    const results = await Promise.allSettled([upload(makeEvent('first')), upload(makeEvent('other'))])
+    const winner = results.find((result) => result.status === 'fulfilled')
+    const loser = results.find((result) => result.status === 'rejected') as PromiseRejectedResult | undefined
+
+    expect(winner).toBeDefined()
+    expect(loser?.reason).toMatchObject({ statusCode: 409 })
+    expect(objects.get(state.row.tempStorageKey)).toBeDefined()
+    expect(state.row.status).toBe('uploaded')
   })
 
   it('rejects an expired session before consuming its body', async () => {
@@ -287,7 +364,7 @@ describe('bounded proxy upload route', () => {
 
     await expect(upload(event)).rejects.toMatchObject({ statusCode: 400 })
     expect(state.provider.putObject).toHaveBeenCalledOnce()
-    expect(state.provider.deleteObject).toHaveBeenCalledWith(state.row.tempStorageKey)
+    expect(state.provider.deleteObject).toHaveBeenCalledWith(state.provider.putObject.mock.calls[0][0].key)
     expect(state.update).not.toHaveBeenCalled()
   })
 

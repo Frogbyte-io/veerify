@@ -837,9 +837,8 @@ export const supportOutboundDelivery = pgTable(
 // several delivery events (Delivery, then Open, then possibly Bounce or
 // SpamComplaint). Sharing the key would silently swallow every event after
 // the first - including the hard bounce that acceptance criterion 6 exists
-// to catch. The delivery webhook gets its own
-// table", and delta D-35 for why `messageId` below is nullable for the same
-// reason `supportEmailEvent.inboxId` is.
+// to catch. The delivery webhook gets its own table. See delta D-35 for why
+// `messageId` below is nullable for the same reason `supportEmailEvent.inboxId` is.
 export const supportDeliveryEvent = pgTable(
   'support_delivery_event',
   {

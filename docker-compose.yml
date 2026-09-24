@@ -67,7 +67,8 @@ services:
         sleep 1;
       done;
       mc mb --ignore-existing local/\"$$STORAGE_BUCKET\";
-      mc anonymous set download local/\"$$STORAGE_BUCKET\";
+      mc anonymous set none local/\"$$STORAGE_BUCKET\";
+      mc anonymous set download local/\"$$STORAGE_BUCKET\"/projects;
       "
 
   # Run schema migrations and the legacy custom-domain backfill once per

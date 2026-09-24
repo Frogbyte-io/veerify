@@ -24,6 +24,7 @@ import { finished } from 'node:stream/promises'
 import { once } from 'node:events'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -109,11 +110,15 @@ export default defineEventHandler(async (event) => {
 
   const { filePath, directory, sizeBytes } = await streamBoundedBody(event)
   const storage = getStorageProvider()
+  // A pending token can be submitted more than once before the final status
+  // transaction serializes the requests. Keep their objects separate so a
+  // losing request can clean up its own bytes without deleting the winner's.
+  const tempStorageKey = `${preflight.tempStorageKey}.${randomUUID()}`
   let stored = false
   try {
-    await storage.putObject({ key: preflight.tempStorageKey, buffer: await readFile(filePath), contentType })
+    await storage.putObject({ key: tempStorageKey, buffer: await readFile(filePath), contentType })
     stored = true
-    const metadata = await storage.headObject(preflight.tempStorageKey)
+    const metadata = await storage.headObject(tempStorageKey)
     if (metadata.sizeBytes !== preflight.requestedSizeBytes || metadata.sizeBytes !== sizeBytes) {
       uploadError(400, 'Uploaded size does not match the presigned size')
     }
@@ -141,6 +146,7 @@ export default defineEventHandler(async (event) => {
       await tx
         .update(supportAttachmentUpload)
         .set({
+          tempStorageKey,
           storedContentType: contentType,
           actualSizeBytes: metadata.sizeBytes,
           objectVersion: metadata.objectVersion,
@@ -153,14 +159,14 @@ export default defineEventHandler(async (event) => {
     })
 
     if (!committed) {
-      // The object is orphaned by definition: no row now references it.
-      await storage.deleteObject(preflight.tempStorageKey).catch(() => undefined)
+      // This request's isolated object is orphaned; the row points at the winner.
+      await storage.deleteObject(tempStorageKey).catch(() => undefined)
       uploadError(409, 'Upload session has already been used')
     }
 
     return createSuccessResponse({ uploaded: true, uploadId: preflight.id, sizeBytes: metadata.sizeBytes })
   } catch (error) {
-    if (stored) await storage.deleteObject(preflight.tempStorageKey).catch(() => undefined)
+    if (stored) await storage.deleteObject(tempStorageKey).catch(() => undefined)
     throw error
   } finally {
     await rm(directory, { recursive: true, force: true }).catch(() => undefined)

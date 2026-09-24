@@ -281,8 +281,10 @@ credentials — there is no separate MinIO admin password to set.
 docker compose up -d --build
 ```
 
-This builds the app image, starts Postgres/Valkey/MinIO, creates and publishes the MinIO bucket, runs the
-single migration/backfill service before the app begins serving, and brings Caddy up in front of everything.
+This builds the app image, starts Postgres/Valkey/MinIO, creates the MinIO bucket, clears bucket-wide anonymous
+access, and allows anonymous downloads only under `projects/` for public branding assets. Support mail and
+attachment objects remain private even though the MinIO endpoint is reachable through Caddy. It then runs the
+single migration/backfill service before the app begins serving and brings Caddy up in front of everything.
 `docker compose logs -f migrate` shows migration output; `docker compose logs -f app` shows server startup.
 
 #### Custom domains (`project.customDomain`)

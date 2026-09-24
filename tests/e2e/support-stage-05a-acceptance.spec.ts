@@ -196,6 +196,20 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
         }))
       )
 
+      let releaseContactHistory: () => void = () => {}
+      let contactHistoryRequested: () => void = () => {}
+      const contactHistoryGate = new Promise<void>((resolve) => {
+        releaseContactHistory = resolve
+      })
+      const contactHistoryStarted = new Promise<void>((resolve) => {
+        contactHistoryRequested = resolve
+      })
+      await page.route(/\/api\/support\/conversations\?.*contactId=/, async (route) => {
+        contactHistoryRequested()
+        await contactHistoryGate
+        await route.continue()
+      })
+
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
       await page.goto(`/support?inboxId=${inboxId}&view=all&conversationId=${conversationIds[0]}`, {
         waitUntil: 'domcontentloaded',
@@ -204,9 +218,14 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
       const primaryRow = page.getByTestId(`support-conversation-${conversationIds[0]}`)
       const otherRow = page.getByTestId(`support-conversation-${conversationIds[1]}`)
       const composer = page.getByTestId('support-composer-input')
-      await expect(primaryRow).toBeVisible()
-      await expect(otherRow).toBeVisible()
-      await expect(page.getByTestId('support-composer-reply')).toBeVisible()
+      try {
+        await contactHistoryStarted
+        await expect(primaryRow).toBeVisible()
+        await expect(otherRow).toBeVisible()
+        await expect(page.getByTestId('support-composer-reply')).toBeVisible()
+      } finally {
+        releaseContactHistory()
+      }
 
       await composer.fill('Reply draft for the customer.')
       await page.getByTestId('support-composer-mode-note').click()

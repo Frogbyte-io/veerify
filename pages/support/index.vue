@@ -985,7 +985,13 @@ export default {
         this.conversationContact = response?.data?.contact || null
 
         if (this.conversationContact?.id) {
-          await this.loadContactPanel({ generation, teamId, inboxId, conversationId })
+          // The contact sidebar is secondary; a slow history request must not
+          // keep the conversation and composer behind the detail skeleton.
+          void this.loadContactPanel({ generation, teamId, inboxId, conversationId }).catch(() => {
+            if (!this.isCurrentConversation(generation, teamId, inboxId, conversationId)) return
+            this.contactPanelError = 'Failed to load contact details. Please try again.'
+            this.contactPanelLoading = false
+          })
         }
       } catch (error) {
         if (this.isForbiddenError(error)) {
