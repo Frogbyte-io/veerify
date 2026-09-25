@@ -120,6 +120,9 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
     await page.keyboard.press('c')
     expect((await claimResponse).ok()).toBeTruthy()
     await expect(page.getByTestId('support-thread-assignee')).toHaveValue(userId)
+    // Claim also refreshes the thread and list before another update is
+    // accepted. Waiting for the control avoids dropping the next shortcut.
+    await expect(page.getByTestId('support-thread-status')).toBeEnabled()
 
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
     const resolveResponse = page.waitForResponse(
