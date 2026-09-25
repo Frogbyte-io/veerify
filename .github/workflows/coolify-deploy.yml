@@ -1,0 +1,117 @@
+name: Deploy to Coolify
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Coolify deployment target
+        type: choice
+        required: true
+        options:
+          - preview
+          - production
+      pull_request_id:
+        description: Open PR number (required for preview)
+        type: string
+        required: false
+      production_migration_completed:
+        description: Confirm the reviewed backup and release migration completed (production only)
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  id-token: write
+
+concurrency:
+  group: coolify-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ inputs.target == 'production' && 'Production' || 'Coolify Preview' }}
+    steps:
+      - name: Require trusted default branch workflow
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Dispatch this workflow from the protected main branch."
+            exit 1
+          fi
+
+      - name: Require reviewed production migration
+        if: inputs.target == 'production'
+        env:
+          MIGRATION_COMPLETED: ${{ inputs.production_migration_completed }}
+        run: |
+          if [[ "$MIGRATION_COMPLETED" != "true" ]]; then
+            echo "Production release stopped: take and verify the database backup, then run the reviewed release migration before deploying."
+            exit 1
+          fi
+
+      - name: Validate preview pull request
+        if: inputs.target == 'preview'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PULL_REQUEST_ID: ${{ inputs.pull_request_id }}
+        run: |
+          if [[ ! "$PULL_REQUEST_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "A positive pull request number is required for preview deployments."
+            exit 1
+          fi
+
+          pr=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST_ID}")
+          state=$(jq -r '.state' <<<"$pr")
+          base=$(jq -r '.base.ref' <<<"$pr")
+          head_repo=$(jq -r '.head.repo.full_name // empty' <<<"$pr")
+          author_association=$(jq -r '.author_association' <<<"$pr")
+
+          if [[ "$state" != "open" || "$base" != "main" || "$head_repo" != "$GITHUB_REPOSITORY" ]]; then
+            echo "Preview deployments require an open, same-repository PR targeting main."
+            exit 1
+          fi
+
+          case "$author_association" in
+            OWNER|MEMBER|COLLABORATOR) ;;
+            *) echo "Preview deployments are limited to repository collaborators."; exit 1 ;;
+          esac
+
+      - name: Join the tailnet
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci-coolify-deploy
+          ping: ${{ vars.COOLIFY_TAILSCALE_HOST }}
+
+      - name: Request Coolify deployment
+        env:
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_APPLICATION_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          TARGET: ${{ inputs.target }}
+          PULL_REQUEST_ID: ${{ inputs.pull_request_id }}
+        run: |
+          if [[ -z "$COOLIFY_API_URL" || -z "$COOLIFY_APPLICATION_UUID" || -z "$COOLIFY_API_TOKEN" ]]; then
+            echo "Configure the Coolify API URL, application UUID, and API token in this GitHub environment."
+            exit 1
+          fi
+
+          if [[ ! "$COOLIFY_APPLICATION_UUID" =~ ^[A-Za-z0-9-]+$ ]]; then
+            echo "The Coolify application UUID contains unsupported characters."
+            exit 1
+          fi
+
+          deploy_url="${COOLIFY_API_URL%/}/deploy?uuid=${COOLIFY_APPLICATION_UUID}"
+          if [[ "$TARGET" == "preview" ]]; then
+            deploy_url+="&pr=${PULL_REQUEST_ID}"
+          fi
+
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 \
+            --request POST \
+            --header "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
+            "$deploy_url"

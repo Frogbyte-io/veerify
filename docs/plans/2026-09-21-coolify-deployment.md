@@ -1,7 +1,57 @@
 # Coolify staging and cutover plan
 
-Status: planned, not deployed. Audited against `support-platform` at `41587d1` on 2026-09-21.
+Status: deployment wiring prepared; production and staging infrastructure are not yet provisioned.
+Refreshed against `support-platform` at `c6220ac` on 2026-09-25.
 This is a runtime migration first; database and object-storage relocation are separate projects.
+
+## Current state (2026-09-25)
+
+- Coolify is reachable only over the tailnet. The inspected instance had no Veerify application,
+  database, service, or GitHub webhook. The existing `Production` GitHub environment has no
+  deployment protection rules. No production domain or public ingress target has been confirmed.
+- PR [#47](https://github.com/Frogbyte-io/veerify/pull/47) is still open from `support-platform`
+  (`c6220ac`) to `main` (`3529445`). Its CI checks pass, but the Vercel status still fails.
+- Do not run the support-platform migrations against a database that has applied `main`'s
+  `0019_supreme_groot` yet. The new `0019`–`0027` timestamps precede the main journal's `0019`,
+  so Drizzle's timestamp-based migrator can skip them; `0040_thankful_triathlon.sql` is identical
+  to main's `0019_supreme_groot.sql` and can then collide with existing tables. Test and correct
+  this migration history before selecting a production database or deploying this PR.
+- Coolify's API token shared during setup is considered exposed. Rotate it before adding a token to
+  GitHub or performing Coolify writes; do not reuse the old value.
+
+### Guarded GitHub deployment workflow
+
+`.github/workflows/coolify-deploy.yml` provides manual production and preview deploy requests. It
+must run from `main`, uses an ephemeral GitHub-hosted Tailscale node with workload identity
+federation, validates that preview PRs are open and from a repository collaborator, and sends the
+deploy request to the environment's Coolify application UUID. It does not check out or execute PR
+code in the GitHub runner. Coolify does build the selected PR code, so its preview environment must
+remain isolated from production services and secrets.
+
+Before enabling the workflow:
+
+1. Add required reviewers and a `main`-only deployment branch rule to the GitHub `Production`
+   environment. Create a separate `Coolify Preview` environment with its own required reviewers.
+2. Create a Tailscale workload identity federation client for this repository and `tag:ci-coolify-deploy`.
+   Its tag ACL must allow access only to the Coolify host on TCP 8000. Add repository secrets
+   `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`.
+3. In each GitHub environment, configure variables `COOLIFY_API_URL` (Coolify base plus `/api/v1`),
+   `COOLIFY_APPLICATION_UUID`, and `COOLIFY_TAILSCALE_HOST`; add a freshly rotated
+   `COOLIFY_API_TOKEN` as an environment secret. Use separate production and preview app UUIDs.
+4. Configure the Coolify production app from `main` and a separate preview app from `main`. Use the
+   repository Dockerfile, port 3000, one runtime process, and separate environment values and
+   service credentials. Disable public fork previews. Keep production and preview databases,
+   Redis, S3 buckets, mail destinations, auth secrets, and provider webhooks separate.
+5. Dispatch the workflow manually from `main`. Production additionally requires the operator to
+   confirm that the reviewed backup and release migration have completed. That checkbox is an
+   attestation; it does not run or verify the migration. The API response only confirms that Coolify
+   accepted a deployment request. Verify the Coolify deployment log and app routes separately.
+
+The workflow deliberately does not deploy automatically on `push` or `pull_request`. Automatic
+production deployment waits for protected GitHub environment approvals and a verified release
+migration path. Automatic preview cleanup also needs a trusted GitHub close-event route because the
+Coolify server cannot receive public GitHub webhooks; until then, delete completed previews in
+Coolify after their PR is closed.
 
 ## Target and decisions
 
@@ -134,7 +184,7 @@ does not exist yet. External cron HTTP calls additionally need `CRON_SECRET`; Ni
 
 ## Production cutover and rollback
 
-Production cutover is a later authorized operation after staging evidence exists. Retain the production
+Production traffic cutover follows staging evidence and a confirmed public DNS/ingress design. Retain the production
 database and object store during this move. Inventory existing domains, callbacks, webhooks, secrets,
 storage policies, and schedulers. Record the old image, DNS records/TTL, and a recoverable DB backup.
 
