@@ -7,8 +7,10 @@ This is a runtime migration first; database and object-storage relocation are se
 ## Current state (2026-09-25)
 
 - Coolify is reachable only over the tailnet. The inspected instance had no Veerify application,
-  database, service, or GitHub webhook. The existing `Production` GitHub environment has no
-  deployment protection rules. No production domain or public ingress target has been confirmed.
+  database, service, or GitHub webhook. The user confirmed production should use `veerify.io`
+  domains with direct public ports 80/443; the public ingress IP/forwarding target is not recorded.
+  Both GitHub deployment environments are now restricted to the `main` branch, but `Production`
+  still has no required reviewer rule.
 - PR [#47](https://github.com/Frogbyte-io/veerify/pull/47) remains open from `support-platform` to
   `main`. Its CI and Neon PR E2E checks pass, but the Vercel status still fails.
 - The application config uses `veerify.io` for team subdomains, defaults the dashboard to
@@ -36,8 +38,9 @@ remain isolated from production services and secrets.
 
 Before enabling the workflow:
 
-1. Add required reviewers and a `main`-only deployment branch rule to the GitHub `Production`
-   environment. Create a separate `Coolify Preview` environment with its own required reviewers.
+1. Add required reviewers to the GitHub `Production` environment. `Production` and `Coolify Preview`
+   now have branch policies restricted to `main`; add required reviewers to the preview environment
+   as well if it will contain sensitive staging data.
 2. Create a Tailscale workload identity federation client for this repository and `tag:ci-coolify-deploy`.
    Its tag ACL must allow access only to the Coolify host on TCP 8000. The port 8000 management UI
    must remain tailnet-only; public 80/443 should reach only the Coolify proxy. Add repository secrets
