@@ -19,9 +19,11 @@ This is a runtime migration first; database and object-storage relocation are se
 - The application config uses `veerify.io` for team subdomains, defaults the dashboard to
   `app.veerify.io`, and points custom-domain CNAMEs at `cname.veerify.io`. Current public DNS for
   `veerify.io`, `www`, `app`, `cname`, and a wildcard probe resolves to Vercel. No DNS records have
-  been changed. Replace these with the Coolify host's public ingress only after wildcard routing,
-  HTTPS, and existing customer-domain behavior are verified. Never publish the server's Tailscale
-  `100.x` address in public DNS.
+  been changed. The authoritative name servers are Vercel DNS; they can remain in place during the
+  initial runtime migration, with only the necessary A/AAAA records changed after Coolify is
+  verified. Replace these with the Coolify host's public ingress only after wildcard routing, HTTPS,
+  and existing customer-domain behavior are verified. Never publish the server's Tailscale `100.x`
+  address in public DNS.
 - Do not run the support-platform migrations against a database that has applied `main`'s
   `0019_supreme_groot` yet. The new `0019`–`0027` timestamps precede the main journal's `0019`,
   so Drizzle's timestamp-based migrator can skip them; `0040_thankful_triathlon.sql` is identical
