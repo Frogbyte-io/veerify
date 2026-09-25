@@ -1,7 +1,7 @@
 # Coolify staging and cutover plan
 
 Status: deployment wiring prepared; production and staging infrastructure are not yet provisioned.
-Refreshed against `support-platform` at `c6220ac` on 2026-09-25.
+Refreshed against the active `support-platform` PR on 2026-09-25.
 This is a runtime migration first; database and object-storage relocation are separate projects.
 
 ## Current state (2026-09-25)
@@ -11,6 +11,9 @@ This is a runtime migration first; database and object-storage relocation are se
   domains with direct public ports 80/443; the public ingress IP/forwarding target is not recorded.
   Both GitHub deployment environments are now restricted to the `main` branch, but `Production`
   still has no required reviewer rule.
+- The `Production` and `Coolify Preview` GitHub environments now have nonsecret Coolify API and
+  tailnet-host variables. They still need Coolify application UUIDs, a fresh Coolify API token,
+  Tailscale workload identity secrets, and production reviewer approval.
 - PR [#47](https://github.com/Frogbyte-io/veerify/pull/47) remains open from `support-platform` to
   `main`. Its CI and Neon PR E2E checks pass, but the Vercel status still fails.
 - The application config uses `veerify.io` for team subdomains, defaults the dashboard to
