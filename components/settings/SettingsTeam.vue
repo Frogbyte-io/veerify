@@ -355,6 +355,7 @@ export default {
       teamMembers: [],
       pendingInvitations: [],
       isLoading: true,
+      pendingActiveTeamRefresh: false,
       isLoadingMembers: false,
       isLoadingInvitations: false,
       isSavingTeam: false,
@@ -403,10 +404,17 @@ export default {
   },
 
   async mounted() {
+    if (import.meta.client) {
+      // Register before the initial async load so a sidebar switch cannot be
+      // missed while this panel is still hydrating.
+      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    }
+
     await this.initialize()
 
-    if (import.meta.client) {
-      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+    if (this.pendingActiveTeamRefresh) {
+      this.pendingActiveTeamRefresh = false
+      await this.handleActiveTeamChanged()
     }
   },
 
@@ -468,7 +476,13 @@ export default {
     },
 
     async handleActiveTeamChanged() {
+      if (this.isLoading) {
+        this.pendingActiveTeamRefresh = true
+        return
+      }
+
       await this.syncActiveTeamContext()
+      this.activeOrganization = await this.fetchActiveOrganization()
       this.allTeams = await this.fetchAllTeams()
       await Promise.all([this.loadTeamMembers(), this.loadPendingInvitations()])
     },

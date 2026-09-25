@@ -28,6 +28,7 @@ const PNG_TWO_BY_TWO = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8z8Dwn4EIwESMolGF1FMIAGUQAhI3GfQAAAAASUVORK5CYII=',
   'base64'
 )
+let feedbackSubmitSequence = 0
 
 test.setTimeout(60_000)
 
@@ -64,6 +65,10 @@ async function openSubmitDialog(page: Page) {
 }
 
 async function fillAndSubmitFeedback(page: Page, opts: { title: string; body: string; name: string; email?: string }) {
+  // The public endpoint intentionally limits each client to five submissions per minute.
+  // Give each test a separate synthetic client address so the suite does not share one runner IP.
+  const clientAddress = `198.51.100.${(feedbackSubmitSequence++ % 250) + 1}`
+  await page.setExtraHTTPHeaders({ 'x-forwarded-for': clientAddress })
   await openSubmitDialog(page)
 
   await page.locator('#fb-title').fill(opts.title)
@@ -104,20 +109,18 @@ async function sortFeedbackByNewest(page: Page) {
 }
 
 async function signInOnPublicHost(page: Page, opts: { email: string; password: string }) {
-  const result = await page.evaluate(
-    async ({ email, password }) => {
-      const response = await fetch('/api/auth/sign-in/email', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      const body = await response.text().catch(() => '')
-      return { ok: response.ok, status: response.status, body }
+  const publicOrigin = new URL(PUBLIC_PAGE).origin
+  const response = await page.request.post(`${publicOrigin}/api/auth/sign-in/email`, {
+    headers: {
+      'content-type': 'application/json',
+      origin: publicOrigin,
+      referer: `${publicOrigin}/login`,
     },
-    { email: opts.email, password: opts.password }
-  )
+    data: { email: opts.email, password: opts.password },
+  })
+  const body = await response.text().catch(() => '')
 
-  expect(result.ok, `Public-host sign-in failed (${result.status}): ${result.body}`).toBe(true)
+  expect(response.ok(), `Public-host sign-in failed (${response.status()}): ${body}`).toBe(true)
 }
 
 // ---------------------------------------------------------------------------
@@ -254,25 +257,45 @@ test.describe('Anonymous feedback sessions', () => {
     }
   })
 
-  test('public board navigation switches between feedback and roadmap pages', async ({ page }) => {
-    await gotoPublicPage(page)
+  test('public board navigation switches between feedback and roadmap pages', async ({ page, request }) => {
+    await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const projectResponse = await request.get(`/api/projects/${PROJECT_SLUG}`)
+    expect(projectResponse.ok()).toBe(true)
+    const projectPayload = await projectResponse.json()
+    const originalSettings = projectPayload?.data?.settings ?? null
+    const roadmapSettings = { ...(originalSettings || {}), roadmapEnabled: true }
+    const updateResponse = await request.put(`/api/projects/${PROJECT_SLUG}`, {
+      data: { settings: roadmapSettings },
+      headers: { 'content-type': 'application/json' },
+    })
+    expect(updateResponse.ok()).toBe(true)
 
-    const roadmapTab = page.getByRole('link', { name: 'Roadmap' })
-    await expect(roadmapTab).toBeVisible()
-    await roadmapTab.hover()
-    await roadmapTab.click()
+    try {
+      await gotoPublicPage(page)
 
-    await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}/roadmap`)
-    await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
+      const roadmapTab = page.getByRole('link', { name: 'Roadmap' })
+      await expect(roadmapTab).toBeVisible()
+      await roadmapTab.hover()
+      await roadmapTab.click()
 
-    const feedbackTab = page.getByRole('link', { name: 'Feedback' }).first()
-    await expect(feedbackTab).toBeVisible()
-    await feedbackTab.hover()
-    await feedbackTab.click()
+      await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}/roadmap`)
+      await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible()
 
-    await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}`)
-    await expect.poll(() => page.url()).not.toContain('/roadmap')
-    await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
+      const feedbackTab = page.getByRole('link', { name: 'Feedback' }).first()
+      await expect(feedbackTab).toBeVisible()
+      await feedbackTab.hover()
+      await feedbackTab.click()
+
+      await expect.poll(() => page.url()).toContain(`/${PROJECT_SLUG}`)
+      await expect.poll(() => page.url()).not.toContain('/roadmap')
+      await expect(page.getByRole('button', { name: 'Submit Feedback' }).first()).toBeVisible()
+    } finally {
+      const resetResponse = await request.put(`/api/projects/${PROJECT_SLUG}`, {
+        data: { settings: originalSettings },
+        headers: { 'content-type': 'application/json' },
+      })
+      expect(resetResponse.ok()).toBe(true)
+    }
   })
 
   test('public board auth CTA includes dashboard redirect target', async ({ page }) => {
@@ -395,7 +418,9 @@ test.describe('Anonymous feedback sessions', () => {
     const voteButton = feedbackCard.locator('button').first()
 
     // Get initial vote count text
-    const voteCountEl = voteButton.locator('span.text-sm.font-semibold').first()
+    const voteCountEl = voteButton.locator(
+      'xpath=following-sibling::span[contains(@class, "text-sm") and contains(@class, "font-semibold")]'
+    )
     const initialCount = parseInt((await voteCountEl.textContent()) || '0', 10)
 
     expect(initialCount).toBeGreaterThan(0)
@@ -490,7 +515,9 @@ test.describe('Anonymous feedback sessions', () => {
 
     const feedbackCard = page.locator('.space-y-3 > div', { hasText: title }).first()
     const voteButton = feedbackCard.locator('button').first()
-    const voteCountEl = voteButton.locator('span.text-sm.font-semibold').first()
+    const voteCountEl = voteButton.locator(
+      'xpath=following-sibling::span[contains(@class, "text-sm") and contains(@class, "font-semibold")]'
+    )
 
     const initialCount = parseInt((await voteCountEl.textContent()) || '0', 10)
 

@@ -46,13 +46,13 @@ export default defineEventHandler(async (event) => {
     sortOrder: status.sortOrder,
     items: (grouped[status.value] || []).map((item) => ({
       id: item.feedback.id,
-      title: item.feedback.title,
-      body: item.feedback.body,
+      title: item.feedback.metadata?.source === 'support_conversation' ? 'Support request' : item.feedback.title,
+      body: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.body,
       status: item.feedback.status,
       tag: item.feedback.metadata?.feedbackType || null,
       voteCount: item.feedback.voteCount,
       commentCount: item.feedback.commentCount,
-      authorName: item.feedback.authorName,
+      authorName: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.authorName,
       isPinned: item.feedback.isPinned,
       createdAt: item.feedback.createdAt,
       category: item.category

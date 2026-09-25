@@ -16,8 +16,31 @@ const logger = createConsola().withTag('veerify').withTag('auth')
 
 const appDomain = process.env.APP_DOMAIN || 'localhost'
 const defaultAppBaseUrl = process.env.BETTER_AUTH_URL || 'http://localhost:3000'
+const supportsCrossSubdomainCookies = appDomain !== 'localhost' && appDomain !== '127.0.0.1' && appDomain !== '[::1]'
+// Pinned rather than left to Better Auth's per-request protocol sniffing. Route-issued
+// cookies see the proxied request protocol while programmatic `auth.api.getSession()`
+// calls have no request to sniff, so the two disagree on the `__Secure-` prefix whenever
+// local development is fronted by an HTTPS reverse proxy (for example, Tailscale Serve).
+// Production stays fail-safe: secure cookies are forced regardless of how the base URL
+// is configured, matching the default this replaces.
+const useSecureCookies = defaultAppBaseUrl.startsWith('https://') || process.env.NODE_ENV === 'production'
 const betterAuthSecret =
   process.env.BETTER_AUTH_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'veerify-dev-auth-secret-v1')
+
+// Pinning `useSecureCookies` removed Better Auth's per-request protocol sniff,
+// which would previously have noticed HTTPS on its own. A deployment served over
+// TLS but started without `NODE_ENV=production` and without an HTTPS
+// BETTER_AUTH_URL now issues cookies with no `Secure` attribute, so a single
+// downgraded request would expose the session. That combination is always a
+// misconfiguration; say so loudly at startup rather than failing silently.
+// (The shipped Dockerfile sets NODE_ENV=production, so this targets the
+// hand-rolled `node .output/server/index.mjs` shape.)
+if (!useSecureCookies && process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
+  logger.warn(
+    'Session cookies will be issued without the Secure attribute. Set BETTER_AUTH_URL to your public https:// origin (or NODE_ENV=production) before serving over TLS.',
+    { betterAuthUrl: defaultAppBaseUrl, nodeEnv: process.env.NODE_ENV ?? 'unset' }
+  )
+}
 
 if (!betterAuthSecret) {
   throw new Error('BETTER_AUTH_SECRET is required in production')
@@ -60,8 +83,11 @@ export const auth = betterAuth({
         return []
       },
   advanced: {
+    useSecureCookies,
     crossSubDomainCookies: {
-      enabled: true,
+      // Browsers reject a Domain=.localhost cookie for sibling localhost hosts.
+      // Local public boards use the auth handoff flow instead of a shared cookie.
+      enabled: supportsCrossSubdomainCookies,
       domain: '.' + appDomain,
     },
   },
@@ -109,7 +135,10 @@ export const auth = betterAuth({
         name: user.name || user.email.split('@')[0],
         verificationUrl: url,
       }).catch((error) => {
-        logger.error('Failed to send verification email', { userId: user.id, error: error instanceof Error ? error.message : error })
+        logger.error('Failed to send verification email', {
+          userId: user.id,
+          error: error instanceof Error ? error.message : error,
+        })
       })
     },
     sendOnSignUp: true,
@@ -227,7 +256,10 @@ export const auth = betterAuth({
               })
             }
           } catch (error) {
-            logger.error('afterAcceptInvitation: failed to add user to default team', { userId: user.id, error: error instanceof Error ? error.message : error })
+            logger.error('afterAcceptInvitation: failed to add user to default team', {
+              userId: user.id,
+              error: error instanceof Error ? error.message : error,
+            })
           }
         },
       },

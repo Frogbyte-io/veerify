@@ -8,9 +8,7 @@
               <Icon name="lucide:circle-dot" class="h-5 w-5" />
               Feedback Statuses
             </CardTitle>
-            <CardDescription>
-              Customize the workflow statuses available for feedback items. Drag to reorder.
-            </CardDescription>
+            <CardDescription>{{ statusCardDescription }}</CardDescription>
           </div>
           <Button size="sm" @click="openCreateDialog">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -37,7 +35,7 @@
         <div v-else-if="isUsingDefaults" class="space-y-4">
           <div class="rounded-md bg-muted p-3 text-sm text-muted-foreground">
             <Icon name="lucide:info" class="w-4 h-4 inline mr-1.5 align-text-bottom" />
-            Using default system statuses. Add a custom status to start customizing your workflow.
+            Using the default starting workflow. Add a custom status to replace it with your own workflow.
           </div>
           <div class="space-y-2">
             <div
@@ -259,6 +257,17 @@ export default {
     }
   },
   computed: {
+    statusCardDescription() {
+      if (this.isUsingDefaults) {
+        return 'Review the default starting workflow for feedback items. Add a custom status to start customizing it.'
+      }
+
+      if (this.localStatuses.length <= 1) {
+        return 'Customize the workflow statuses available for feedback items. Add another status to enable reordering.'
+      }
+
+      return 'Customize the workflow statuses available for feedback items. Drag to reorder.'
+    },
     isLoading() {
       return ['idle', 'loading'].includes(this.resourceState?.status) && this.localStatuses.length === 0
     },

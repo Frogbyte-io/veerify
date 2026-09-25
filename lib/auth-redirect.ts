@@ -13,6 +13,10 @@ export function isLocalHostname(hostname: string): boolean {
   return hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1' || hostname === '::1'
 }
 
+export function supportsCrossSubdomainAuth(appDomain: string): boolean {
+  return !isLocalHostname(normalizeHostname(appDomain))
+}
+
 export function isAllowedRedirectProtocol(protocol: string, hostname: string): boolean {
   return protocol === 'https:' || (protocol === 'http:' && isLocalHostname(hostname))
 }
@@ -93,12 +97,14 @@ export async function resolveSafeRedirectTarget(rawRedirect: unknown, fallback =
   const currentHost = normalizeHostname(window.location.hostname)
 
   if (
-    isAppHostedRedirectHost({
-      redirectHost,
-      currentHost,
-      appDomain,
-      dashboardDomain,
-    })
+    redirectHost === currentHost ||
+    (supportsCrossSubdomainAuth(appDomain) &&
+      isAppHostedRedirectHost({
+        redirectHost,
+        currentHost,
+        appDomain,
+        dashboardDomain,
+      }))
   ) {
     return parsed.toString()
   }
@@ -141,12 +147,14 @@ export async function resolvePostAuthRedirectTarget(rawRedirect: unknown, fallba
   const currentHost = normalizeHostname(window.location.hostname)
 
   if (
-    isAppHostedRedirectHost({
-      redirectHost,
-      currentHost,
-      appDomain,
-      dashboardDomain,
-    })
+    redirectHost === currentHost ||
+    (supportsCrossSubdomainAuth(appDomain) &&
+      isAppHostedRedirectHost({
+        redirectHost,
+        currentHost,
+        appDomain,
+        dashboardDomain,
+      }))
   ) {
     return parsed.toString()
   }
