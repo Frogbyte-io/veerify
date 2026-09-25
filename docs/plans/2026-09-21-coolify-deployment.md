@@ -9,8 +9,14 @@ This is a runtime migration first; database and object-storage relocation are se
 - Coolify is reachable only over the tailnet. The inspected instance had no Veerify application,
   database, service, or GitHub webhook. The existing `Production` GitHub environment has no
   deployment protection rules. No production domain or public ingress target has been confirmed.
-- PR [#47](https://github.com/Frogbyte-io/veerify/pull/47) is still open from `support-platform`
-  (`c6220ac`) to `main` (`3529445`). Its CI checks pass, but the Vercel status still fails.
+- PR [#47](https://github.com/Frogbyte-io/veerify/pull/47) remains open from `support-platform` to
+  `main`. Its CI and Neon PR E2E checks pass, but the Vercel status still fails.
+- The application config uses `veerify.io` for team subdomains, defaults the dashboard to
+  `app.veerify.io`, and points custom-domain CNAMEs at `cname.veerify.io`. Current public DNS for
+  `veerify.io`, `www`, `app`, `cname`, and a wildcard probe resolves to Vercel. No DNS records have
+  been changed. Replace these with the Coolify host's public ingress only after wildcard routing,
+  HTTPS, and existing customer-domain behavior are verified. Never publish the server's Tailscale
+  `100.x` address in public DNS.
 - Do not run the support-platform migrations against a database that has applied `main`'s
   `0019_supreme_groot` yet. The new `0019`–`0027` timestamps precede the main journal's `0019`,
   so Drizzle's timestamp-based migrator can skip them; `0040_thankful_triathlon.sql` is identical
@@ -33,7 +39,8 @@ Before enabling the workflow:
 1. Add required reviewers and a `main`-only deployment branch rule to the GitHub `Production`
    environment. Create a separate `Coolify Preview` environment with its own required reviewers.
 2. Create a Tailscale workload identity federation client for this repository and `tag:ci-coolify-deploy`.
-   Its tag ACL must allow access only to the Coolify host on TCP 8000. Add repository secrets
+   Its tag ACL must allow access only to the Coolify host on TCP 8000. The port 8000 management UI
+   must remain tailnet-only; public 80/443 should reach only the Coolify proxy. Add repository secrets
    `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`.
 3. In each GitHub environment, configure variables `COOLIFY_API_URL` (Coolify base plus `/api/v1`),
    `COOLIFY_APPLICATION_UUID`, and `COOLIFY_TAILSCALE_HOST`; add a freshly rotated
