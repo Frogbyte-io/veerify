@@ -4,14 +4,14 @@
 # preview/backups-disabled mode the runner marks itself successful at startup
 # so the healthcheck stays green.
 set -u
-case "${BACKUP_ENABLED:-}" in
-  true) ;;
-  false)
+case "${BACKUP_REQUIRED:-}:${BACKUP_ENABLED:-}" in
+  true:true) ;;
+  false:false)
     echo "backup disabled for Preview"
     exit 0
     ;;
   *)
-    echo "BACKUP_ENABLED must be explicitly true or false"
+    echo "BACKUP_REQUIRED and BACKUP_ENABLED must both be true for Production or false for Preview"
     exit 1
     ;;
 esac

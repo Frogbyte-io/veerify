@@ -12,9 +12,13 @@
 #      volume and its own password is sufficient), stop the valkey service,
 #      place the verified file at /data/dump.rdb, and start it again — Valkey
 #      loads dump.rdb automatically.
-#   4. Verify authenticated connectivity and expected key counts:
-#        valkey-cli -a '<password>' dbsize
-#        valkey-cli -a '<password>' --scan | head
+#   4. Verify authenticated connectivity and expected key counts. Load the
+#      password into REDISCLI_AUTH from a secret store or secure prompt; do not
+#      put it in shell history or a command argument:
+#        read -rsp 'Valkey password: ' REDISCLI_AUTH; printf '\n'; export REDISCLI_AUTH
+#        valkey-cli --no-auth-warning dbsize
+#        valkey-cli --no-auth-warning --scan | head
+#        unset REDISCLI_AUTH
 #   5. Only after verification, point the app's REDIS_URL at the restored
 #      stack. Production REDIS_URL is never changed by this script; the
 #      switch is a reviewed manual step.

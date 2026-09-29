@@ -124,11 +124,16 @@ jobs:
         env:
           COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_REDIS_HOST: ${{ vars.COOLIFY_REDIS_HOST }}
           RESOURCE_UUID: ${{ steps.resource.outputs.uuid }}
           TARGET: ${{ inputs.target }}
         run: |
-          if [[ -z "$COOLIFY_API_URL" || -z "$COOLIFY_API_TOKEN" ]]; then
-            echo "Configure the Coolify API URL and API token in this GitHub environment."
+          if [[ -z "$COOLIFY_API_URL" || -z "$COOLIFY_API_TOKEN" || -z "$COOLIFY_REDIS_HOST" ]]; then
+            echo "Configure the Coolify API URL, API token, and expected Redis host in this GitHub environment."
+            exit 1
+          fi
+          if [[ ! "$COOLIFY_REDIS_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+            echo "The expected Redis host contains unsupported characters."
             exit 1
           fi
 
@@ -143,18 +148,61 @@ jobs:
             --connect-timeout 10 --max-time 60 \
             --header "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
             "$api/applications/$RESOURCE_UUID/envs" \
-            | jq -e --arg target "$TARGET" '
+            | jq -e --arg target "$TARGET" --arg expected_host "$COOLIFY_REDIS_HOST" '
                 if type != "array" then false else
                   map(select(.is_runtime == true and
                     (if $target == "production" then .is_preview != true else .is_preview == true end))) as $envs |
                   (["REDIS_URL", "REALTIME_DRIVER", "RATE_LIMIT_STORE"] - [$envs[].key] | length == 0) and
                   any($envs[]; .key == "REDIS_URL" and
-                    (((.value // "") | length) > 0 or ((.real_value // "") | length) > 0)) and
+                    any([.value, .real_value][];
+                      type == "string" and startswith("redis://:") and
+                      (split("@")[0] | length) > ("redis://:" | length) and
+                      (split("@") | length) == 2 and
+                      (split("@")[ -1 ] == ($expected_host + ":6379")))) and
                   ([ $envs[] | select(.key == "REALTIME_DRIVER" or .key == "RATE_LIMIT_STORE") ] as $drivers |
                     ($drivers | length) == 2 and all($drivers[]; .value == "redis"))
                 end
               ' >/dev/null; then
             echo "$TARGET Coolify app environment must have nonempty runtime REDIS_URL and both Redis drivers enabled."
+            exit 1
+          fi
+
+      - name: Preflight Redis stack backup mode
+        if: inputs.resource == 'redis-stack'
+        env:
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          RESOURCE_UUID: ${{ steps.resource.outputs.uuid }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [[ -z "$COOLIFY_API_URL" || -z "$COOLIFY_API_TOKEN" || -z "$RESOURCE_UUID" ]]; then
+            echo "Configure the Coolify API URL, Redis stack UUID, and API token in this GitHub environment."
+            exit 1
+          fi
+
+          expected_backup=true
+          if [[ "$TARGET" == "preview" ]]; then
+            expected_backup=false
+          fi
+
+          api="${COOLIFY_API_URL%/}"
+          if [[ "$api" != */api/v1 ]]; then
+            api+="/api/v1"
+          fi
+          # Check the actual Coolify Compose resource settings against the
+          # selected GitHub environment; never print or store env values.
+          if ! curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 \
+            --header "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
+            "$api/applications/$RESOURCE_UUID/envs" \
+            | jq -e --arg expected_backup "$expected_backup" '
+                if type != "array" then false else
+                  map(select(.key == "BACKUP_REQUIRED" or .key == "BACKUP_ENABLED")) as $flags |
+                  ([$flags[].key] | sort) == ["BACKUP_ENABLED", "BACKUP_REQUIRED"] and
+                  all($flags[]; any([.value, .real_value][]; . == $expected_backup))
+                end
+              ' >/dev/null; then
+            echo "$TARGET Coolify Redis stack must have both backup flags set to $expected_backup."
             exit 1
           fi
 

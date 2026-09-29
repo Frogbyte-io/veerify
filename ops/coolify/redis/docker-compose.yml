@@ -9,7 +9,7 @@ services:
     # Keep a stable, environment-specific DNS name when this stack joins
     # Coolify's shared network. Production and Preview must use distinct names.
     container_name: ${VALKEY_CONTAINER_NAME:?Set a unique Coolify network name per environment}
-    image: valkey/valkey:9.1-alpine
+    image: valkey/valkey:9.1.2-alpine3.24
     restart: always
     # No host-published ports: the broker stays on the container networks.
     # Coolify's "Connect To Predefined Network" exposes this service to the
@@ -31,12 +31,15 @@ services:
       - '10000'
       - '--maxmemory-policy'
       - 'noeviction'
+      - '--maxmemory'
+      - '${VALKEY_MAXMEMORY:?Set a Valkey memory budget below its container limit}'
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set a strong unique REDIS_PASSWORD in Coolify}
+    mem_limit: ${VALKEY_MEMORY_LIMIT:?Set a per-environment Valkey container memory limit}
     volumes:
       - valkey_data:/data
     healthcheck:
-      test: ['CMD-SHELL', 'valkey-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" valkey-cli --no-auth-warning ping | grep PONG']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -50,6 +53,7 @@ services:
       valkey:
         condition: service_healthy
     environment:
+      BACKUP_REQUIRED: ${BACKUP_REQUIRED:?Set true for Production or false for Preview}
       BACKUP_ENABLED: ${BACKUP_ENABLED:?Set BACKUP_ENABLED=true for Production or false for Preview}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set a strong unique REDIS_PASSWORD in Coolify}
       BACKUP_BUCKET: ${BACKUP_BUCKET:-}

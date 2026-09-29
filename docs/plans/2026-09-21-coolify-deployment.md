@@ -51,7 +51,8 @@ Before enabling the workflow:
    must remain tailnet-only; public 80/443 should reach only the Coolify proxy. Add repository secrets
    `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`.
 3. In each GitHub environment, configure variables `COOLIFY_API_URL` (Coolify base plus `/api/v1`),
-   `COOLIFY_APPLICATION_UUID`, and `COOLIFY_TAILSCALE_HOST`; add a freshly rotated
+   `COOLIFY_APPLICATION_UUID`, `COOLIFY_TAILSCALE_HOST`, and `COOLIFY_REDIS_HOST` (the exact
+   environment-specific Redis DNS name); add a freshly rotated
    `COOLIFY_API_TOKEN` as an environment secret. Use separate production and preview app UUIDs.
 4. Configure the Coolify production app from `main` and a separate preview app from `main`. Use the
    repository Dockerfile, port 3000, one runtime process, and separate environment values and
@@ -73,12 +74,11 @@ Coolify after their PR is closed.
 - Deploy the existing `Dockerfile` as a Coolify application listening on port 3000. Set
   `APP_DEPLOYMENT_MODE=self-hosted` for build and runtime; use Nitro's Node server output.
 - Use the existing PostgreSQL and S3-compatible providers only after confirming ownership, access,
-  backups, and migration compatibility. Redis is **not confirmed to exist**: Vercel production has
-  no Redis environment variables and Coolify has no Veerify Redis service. A single app instance can
-  start with the in-memory realtime and rate-limit drivers, but production needs Redis before
-  horizontal scaling or reliable cross-instance realtime/rate limiting. Choose and provision a
-  managed or Coolify-hosted Redis-compatible service before enabling those requirements. Staging
-  uses separate credentials/database/bucket/Redis and a test mail destination. Never point a
+  backups, and migration compatibility. Redis was not configured when this plan was written. A
+  separate Coolify Valkey Compose stack with off-host S3 backups is now implemented in the
+  support-platform deployment PR, but it still needs Production and Preview resources, credentials,
+  backup buckets, and restore verification before either app environment switches to Redis.
+  Staging uses separate credentials/database/bucket/Redis and a test mail destination. Never point a
   staging worker at production support queues. A scrubbed snapshot is optional; empty seeded staging
   data is enough.
 - Start with exactly one app process and stop-before-start deployment. Nitro registers scheduled

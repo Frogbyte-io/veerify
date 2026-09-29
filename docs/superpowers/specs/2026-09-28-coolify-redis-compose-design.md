@@ -35,27 +35,32 @@ keys such as rate-limit state, not in-flight pub/sub messages or durable busines
 - Add a dedicated Git-based Coolify Compose application/resource for the Redis stack, separate from
   the Veerify web application. Keep its source in `ops/coolify/redis/` so Compose, backup scripts,
   and container build configuration are versioned together.
-- Use a pinned, tested Valkey 9 image, compatible with the application's `ioredis` wire-protocol
-  clients. Enable AOF and RDB persistence on the persistent `/data` volume. Do not use a floating
-  `latest` tag.
+- Use the patch-pinned `valkey/valkey:9.1.2-alpine3.24` image, compatible with the application's
+  `ioredis` wire-protocol clients. Enable AOF and RDB persistence on the persistent `/data` volume.
+  Do not use a floating tag.
 - Define separate production and preview Compose resources, each with its own password and persistent
   `/data` volume. Do not share a volume or credentials between environments. Provisioning and stack
   redeployment must be explicit; ordinary web-app deploys must not recreate either Redis stack.
 - Give each resource a unique `VALKEY_CONTAINER_NAME` so the app can resolve the correct Valkey
   container after Coolify attaches the stack to the shared network. Verify that name in Coolify's
-  deployable Compose view before setting the app's `REDIS_URL`.
+  deployable Compose view before setting the app's `REDIS_URL`. Set the same host in the matching
+  GitHub environment's `COOLIFY_REDIS_HOST`; deployment preflight rejects cross-environment hosts.
+- Require explicit `VALKEY_MAXMEMORY` and `VALKEY_MEMORY_LIMIT` settings on each Compose resource.
+  Keep maxmemory below the container limit with measured headroom for allocator overhead, client
+  buffers, and AOF/RDB copy-on-write during persistence operations.
 - Keep port 6379 private. Enable Coolify's **Connect To Predefined Network** on each stack so the
   separately deployed web app can reach it over the server's `coolify` network. Set each app's
   `REDIS_URL` in that app's Coolify runtime environment; never echo the URL in GitHub Actions logs.
 - Configure both `REALTIME_DRIVER=redis` and `RATE_LIMIT_STORE=redis` explicitly in app runtime
   settings. Before deploying an app, the workflow reads its Coolify environment-variable metadata
-  and checks only that the required keys exist, are runtime variables, and have nonempty values. It
+  and checks only that the required keys exist, are runtime variables, and have valid values. It
   also checks the correct deployment scope: production variables for Production, preview variables
-  for Preview. It must never print or store their values in GitHub Actions. This avoids copying the
-  Redis URL into a second secret store while preventing a deployment with missing Redis
-  configuration.
+  for Preview. The Redis URL must use the corresponding environment's configured host. It must
+  never print or store the URL or password in GitHub Actions. This avoids copying the Redis URL into
+  a second secret store while preventing missing or cross-environment Redis configuration.
 - The preview stack is isolated and may be reset without impacting production. Its backup runner is
-  disabled; only production sends snapshots to the backup bucket.
+  disabled; both `BACKUP_REQUIRED=false` and `BACKUP_ENABLED=false` are required. Production
+  requires both flags to be `true`, and its backup runner rejects any disabled/mismatched setting.
 
 Coolify Services are Docker Compose stacks and support persistent volumes. A Compose stack uses its
 own resource network by default; connecting it to another Coolify resource requires enabling its
@@ -103,6 +108,9 @@ limits](https://coolify.io/docs/databases/backups) and [persistent storage](http
 - A Preview app deploy continues to require a validated PR number and adds the Coolify `pr` query
   only for the app resource. A preview Redis-stack redeploy targets the stable preview stack and
   must not create a per-PR Redis instance.
+- Before a Redis-stack deploy, read that Coolify service's environment variables and require both
+  `BACKUP_REQUIRED` and `BACKUP_ENABLED` to match the selected environment (`true` for Production,
+  `false` for Preview). Do not log or store their values.
 - Continue requiring dispatch from `main`, protected GitHub environments, Tailscale access, and
   environment-scoped Coolify credentials. Never deploy infrastructure automatically for untrusted
   fork code.
