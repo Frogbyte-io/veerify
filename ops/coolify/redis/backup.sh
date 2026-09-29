@@ -6,7 +6,7 @@
 #
 # Required environment:
 #   REDIS_PASSWORD           Valkey auth password
-#   BACKUP_ENABLED           "true" in production, "false" (or unset) in preview
+#   BACKUP_ENABLED           Explicitly "true" in production or "false" in preview
 # Production-only:
 #   BACKUP_BUCKET            private S3 bucket name
 #   BACKUP_ENDPOINT          S3-compatible endpoint URL
@@ -95,11 +95,18 @@ sleep_until_next_backup() {
 # Preview (BACKUP_ENABLED != true): run once, report, and idle so the
 # container stays healthy-bounded. Re-run an occasional no-op snapshot is
 # unnecessary; just sleep.
-if [ "$BACKUP_ENABLED" != "true" ]; then
-  log "backup disabled (preview or unset); runner idle"
-  record_success
-  while :; do sleep 3600; done
-fi
+case "$BACKUP_ENABLED" in
+  true) ;;
+  false)
+    log "backup disabled (preview); runner idle"
+    record_success
+    while :; do sleep 3600; done
+    ;;
+  *)
+    log "BACKUP_ENABLED must be explicitly true or false; exiting"
+    exit 1
+    ;;
+esac
 
 for var in BACKUP_BUCKET BACKUP_ENDPOINT BACKUP_ACCESS_KEY_ID BACKUP_SECRET_ACCESS_KEY; do
   if [ -z "$(eval "printenv $var")" ]; then

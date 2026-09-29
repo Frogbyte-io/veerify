@@ -18,7 +18,7 @@ services:
     command:
       - 'valkey-server'
       - '--requirepass'
-      - '${REDIS_PASSWORD}'
+      - '${REDIS_PASSWORD:?Set a strong unique REDIS_PASSWORD in Coolify}'
       - '--appendonly'
       - 'yes'
       - '--appendfsync'
@@ -32,7 +32,7 @@ services:
       - '--maxmemory-policy'
       - 'noeviction'
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set a strong unique REDIS_PASSWORD in Coolify}
     volumes:
       - valkey_data:/data
     healthcheck:
@@ -50,8 +50,8 @@ services:
       valkey:
         condition: service_healthy
     environment:
-      BACKUP_ENABLED: ${BACKUP_ENABLED:-false}
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      BACKUP_ENABLED: ${BACKUP_ENABLED:?Set BACKUP_ENABLED=true for Production or false for Preview}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set a strong unique REDIS_PASSWORD in Coolify}
       BACKUP_BUCKET: ${BACKUP_BUCKET:-}
       BACKUP_ENDPOINT: ${BACKUP_ENDPOINT:-}
       BACKUP_REGION: ${BACKUP_REGION:-us-east-1}

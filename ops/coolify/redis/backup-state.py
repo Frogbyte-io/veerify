@@ -29,14 +29,14 @@ def upload(src: str) -> None:
     client.upload_file(src, bucket, key)
 
 
-def last_success_age_hours(state_file: str) -> float:
+def last_success_age_seconds(state_file: str) -> int:
     try:
         with open(state_file, encoding="ascii") as handle:
             stamp = handle.read().strip()
         parsed = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
     except (OSError, ValueError):
-        return float("inf")
-    return (datetime.now(timezone.utc) - parsed).total_seconds() / 3600
+        return 2**63 - 1
+    return int((datetime.now(timezone.utc) - parsed).total_seconds())
 
 
 if __name__ == "__main__":
@@ -44,8 +44,8 @@ if __name__ == "__main__":
     if command == "upload":
         src = os.environ["SRC"]
         upload(src)
-    elif command == "age":
-        print(last_success_age_hours(sys.argv[2]))
+    elif command == "age-seconds":
+        print(last_success_age_seconds(sys.argv[2]))
     else:
         print(f"unknown command: {command!r}", file=sys.stderr)
         sys.exit(2)

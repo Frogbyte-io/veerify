@@ -10,14 +10,14 @@ directory is the only stack definition intended for the Coolify Redis resource.
 
 ## Contents
 
-| File                 | Purpose                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------- |
-| `docker-compose.yml` | Valkey 9 (pinned, password-protected, private port) + backup-runner service           |
-| `Dockerfile`         | Backup-runner image (Valkey CLI, `boto3`, scripts)                                    |
-| `backup.sh`          | Daily RDB snapshot, verification, and private-bucket upload loop                      |
-| `backup-state.py`    | S3 upload + success-age helper (secrets stay in environment)                          |
-| `backup-health`      | Runner health check: fails on a failed attempt or when success is older than 36 hours |
-| `restore-note.sh`    | Manual restore procedure stub (verify → isolated stack → switch `REDIS_URL`)          |
+| File                 | Purpose                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| `docker-compose.yml` | Valkey 9 (pinned, password-protected, private port) + backup-runner service                         |
+| `Dockerfile`         | Backup-runner image (Valkey CLI, `boto3`, scripts)                                                  |
+| `backup.sh`          | Daily RDB snapshot, verification, and private-bucket upload loop                                    |
+| `backup-state.py`    | S3 upload + success-age helper (secrets stay in environment)                                        |
+| `backup-health`      | Production fails on a failed attempt or stale success; explicit Preview-disabled mode stays healthy |
+| `restore-note.sh`    | Manual restore procedure stub (verify → isolated stack → switch `REDIS_URL`)                        |
 
 ## Provisioning (once per environment)
 
@@ -29,13 +29,14 @@ directory is the only stack definition intended for the Coolify Redis resource.
      `REDIS_URL`.
    - `VALKEY_CONTAINER_NAME` — unique Docker DNS name on the shared Coolify
      network, such as `veerify-production-redis` or `veerify-preview-redis`.
-   - Production only: `BACKUP_ENABLED=true`, `BACKUP_BUCKET`, `BACKUP_ENDPOINT`,
+   - `BACKUP_ENABLED` is required: set `true` for Production and `false` for
+     Preview. Production also requires `BACKUP_BUCKET`, `BACKUP_ENDPOINT`,
      `BACKUP_REGION`, `BACKUP_ACCESS_KEY_ID`, `BACKUP_SECRET_ACCESS_KEY`
      (limit the credential to `PutObject`, `AbortMultipartUpload`, and
      `ListMultipartUploadParts` on this bucket's objects; do not grant
      `ListBucket` or delete access; apply a 30-day provider lifecycle rule).
-   - Preview: leave `BACKUP_ENABLED` unset (or `false`) and omit backup
-     variables; the runner idles and no snapshot is uploaded.
+   - Preview: set `BACKUP_ENABLED=false` and omit backup credentials; the
+     runner idles and no snapshot is uploaded.
 4. Record the resource UUID in the matching GitHub environment for deploys.
 5. In the web app's Coolify runtime environment set the matching
    `REDIS_URL=redis://:<REDIS_PASSWORD>@<VALKEY_CONTAINER_NAME>:6379` plus
