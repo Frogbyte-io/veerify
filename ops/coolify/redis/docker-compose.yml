@@ -1,0 +1,73 @@
+# Coolify Redis/Valkey stack for production and preview. Provisioned once per
+# environment as a separate Coolify Compose resource; ordinary web-app deploys
+# must not recreate this stack. Design: docs/superpowers/specs/2026-09-28-coolify-redis-compose-design.md
+#
+# Secrets (REDIS_PASSWORD, BACKUP_* variables) are configured per environment
+# in Coolify environment settings — never committed here.
+services:
+  valkey:
+    # Keep a stable, environment-specific DNS name when this stack joins
+    # Coolify's shared network. Production and Preview must use distinct names.
+    container_name: ${VALKEY_CONTAINER_NAME:?Set a unique Coolify network name per environment}
+    image: valkey/valkey:9.1-alpine
+    restart: always
+    # No host-published ports: the broker stays on the container networks.
+    # Coolify's "Connect To Predefined Network" exposes this service to the
+    # web-app container over the server's coolify network; REDIS_URL lives in
+    # the web app's runtime environment, not in this stack.
+    command:
+      - 'valkey-server'
+      - '--requirepass'
+      - '${REDIS_PASSWORD}'
+      - '--appendonly'
+      - 'yes'
+      - '--appendfsync'
+      - 'everysec'
+      - '--save'
+      - '300'
+      - '10'
+      - '--save'
+      - '60'
+      - '10000'
+      - '--maxmemory-policy'
+      - 'noeviction'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'valkey-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      valkey:
+        condition: service_healthy
+    environment:
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-false}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:-}
+      BACKUP_ENDPOINT: ${BACKUP_ENDPOINT:-}
+      BACKUP_REGION: ${BACKUP_REGION:-us-east-1}
+      BACKUP_ACCESS_KEY_ID: ${BACKUP_ACCESS_KEY_ID:-}
+      BACKUP_SECRET_ACCESS_KEY: ${BACKUP_SECRET_ACCESS_KEY:-}
+    volumes:
+      # Read-only view of Valkey's persistent volume for copying the snapshot.
+      - valkey_data:/data:ro
+      - runner_state:/var/lib/veerify-redis-backup
+    healthcheck:
+      test: ['CMD', '/usr/local/bin/backup-health']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+volumes:
+  valkey_data:
+  runner_state:

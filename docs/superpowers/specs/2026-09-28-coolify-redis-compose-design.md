@@ -1,6 +1,8 @@
 # Coolify Redis-compatible Compose stack
 
-**Status:** Awaiting user review before implementation planning.
+**Status:** Implemented for review. Stack definition lives in `ops/coolify/redis/`; deploy workflow
+preflight in `.github/workflows/coolify-deploy.yml`. Not yet provisioned in Coolify; live acceptance
+evidence (criteria 1-7) still requires the prerequisites below and staging verification.
 
 **Date:** 2026-09-28
 
@@ -39,6 +41,9 @@ keys such as rate-limit state, not in-flight pub/sub messages or durable busines
 - Define separate production and preview Compose resources, each with its own password and persistent
   `/data` volume. Do not share a volume or credentials between environments. Provisioning and stack
   redeployment must be explicit; ordinary web-app deploys must not recreate either Redis stack.
+- Give each resource a unique `VALKEY_CONTAINER_NAME` so the app can resolve the correct Valkey
+  container after Coolify attaches the stack to the shared network. Verify that name in Coolify's
+  deployable Compose view before setting the app's `REDIS_URL`.
 - Keep port 6379 private. Enable Coolify's **Connect To Predefined Network** on each stack so the
   separately deployed web app can reach it over the server's `coolify` network. Set each app's
   `REDIS_URL` in that app's Coolify runtime environment; never echo the URL in GitHub Actions logs.
@@ -64,14 +69,17 @@ predefined network. [Coolify services](https://coolify.io/docs/services), [netwo
   runner disabled in Preview.
   The runner requests a background snapshot, waits for it to complete, reads `/data/dump.rdb` through
   a read-only mount of Valkey's persistent volume, verifies the RDB file, and uploads it to a
-  dedicated private S3-compatible backup bucket. Each run exits nonzero on failure.
+  dedicated private S3-compatible backup bucket. A failed snapshot or upload marks the runner
+  unhealthy; it retries at the next scheduled time.
 - Use separate, least-privilege backup credentials scoped to that bucket/prefix. Do not reuse the
-  app's general storage credentials. Apply a 30-day object lifecycle expiration at the storage
-  provider; use a provider-side lifecycle rule so the upload credential does not need delete access.
+  app's general storage credentials. The Boto3 uploader uses multipart transfer for large snapshots,
+  so scope `PutObject`, `AbortMultipartUpload`, and `ListMultipartUploadParts` to this bucket's
+  objects; do not grant `ListBucket` or delete access. Apply a 30-day object lifecycle expiration at
+  the storage provider.
 - Keep successful-run metadata locally in the runner container and expose a health check that fails
-  when no backup completed in the previous 36 hours. Coolify health and container logs provide the
-  first operational signal; external alert delivery is outside this change because no monitoring
-  destination has been selected.
+  immediately after any failed backup attempt or when no backup completed in the previous 36 hours.
+  Coolify health and container logs provide the first operational signal; external alert delivery is
+  outside this change because no monitoring destination has been selected.
 - Document a manual restore procedure: fetch a snapshot using a separate restore-capable credential,
   verify it with `valkey-check-rdb`, restore to an isolated replacement/test stack, then verify
   authenticated connectivity and expected key counts before switching the app's `REDIS_URL`.
@@ -115,7 +123,7 @@ limits](https://coolify.io/docs/databases/backups) and [persistent storage](http
   production because the Redis volume is persistent state.
 - If Redis is unhealthy, Coolify must show the service as unhealthy and the web process must report
   connection errors rather than claiming Redis-backed guarantees while silently using memory.
-- If a backup fails, the runner health check must become unhealthy within 36 hours, and the failed
+- If a backup fails, the runner health check must become unhealthy on its next check, and the failed
   command/status must be visible in container logs. App deploys and backups must not print secrets.
 - A single Coolify server remains a Redis availability boundary. This design provides persistence
   and off-server recovery, not Redis clustering or zero-downtime failover. Revisit managed/replicated
@@ -130,8 +138,8 @@ limits](https://coolify.io/docs/databases/backups) and [persistent storage](http
 3. A PR preview app deploy cannot create or deploy a PR-specific Redis stack.
 4. Production creates one timestamped RDB object per successful daily backup in a private bucket with
    30-day provider lifecycle expiration; Preview creates none.
-5. A failed snapshot or upload produces a failing job status, and a missed backup causes the runner
-   health check to fail within 36 hours.
+5. A failed snapshot or upload makes the runner unhealthy at its next health check, and no successful
+   backup causes the health check to fail within 36 hours.
 6. The documented restore procedure verifies a snapshot and restores it into an isolated stack
    without changing production `REDIS_URL`; the initial drill records measured restore time.
 7. Normal web-app deploy requests cannot create, reset, or remove Redis volumes.
