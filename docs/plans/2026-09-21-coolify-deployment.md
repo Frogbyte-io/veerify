@@ -51,7 +51,8 @@ Before enabling the workflow:
    must remain tailnet-only; public 80/443 should reach only the Coolify proxy. Add repository secrets
    `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE`.
 3. In each GitHub environment, configure variables `COOLIFY_API_URL` (Coolify base plus `/api/v1`),
-   `COOLIFY_APPLICATION_UUID`, and `COOLIFY_TAILSCALE_HOST`; add a freshly rotated
+   `COOLIFY_APPLICATION_UUID`, `COOLIFY_TAILSCALE_HOST`, and `COOLIFY_REDIS_HOST` (the exact
+   environment-specific Redis DNS name); add a freshly rotated
    `COOLIFY_API_TOKEN` as an environment secret. Use separate production and preview app UUIDs.
 4. Configure the Coolify production app from `main` and a separate preview app from `main`. Use the
    repository Dockerfile, port 3000, one runtime process, and separate environment values and
@@ -73,12 +74,11 @@ Coolify after their PR is closed.
 - Deploy the existing `Dockerfile` as a Coolify application listening on port 3000. Set
   `APP_DEPLOYMENT_MODE=self-hosted` for build and runtime; use Nitro's Node server output.
 - Use the existing PostgreSQL and S3-compatible providers only after confirming ownership, access,
-  backups, and migration compatibility. Redis is **not confirmed to exist**: Vercel production has
-  no Redis environment variables and Coolify has no Veerify Redis service. A single app instance can
-  start with the in-memory realtime and rate-limit drivers, but production needs Redis before
-  horizontal scaling or reliable cross-instance realtime/rate limiting. Choose and provision a
-  managed or Coolify-hosted Redis-compatible service before enabling those requirements. Staging
-  uses separate credentials/database/bucket/Redis and a test mail destination. Never point a
+  backups, and migration compatibility. Redis was not configured when this plan was written. A
+  separate Coolify Valkey Compose stack with off-host S3 backups is now implemented in the
+  support-platform deployment PR, but it still needs Production and Preview resources, credentials,
+  backup buckets, and restore verification before either app environment switches to Redis.
+  Staging uses separate credentials/database/bucket/Redis and a test mail destination. Never point a
   staging worker at production support queues. A scrubbed snapshot is optional; empty seeded staging
   data is enough.
 - Start with exactly one app process and stop-before-start deployment. Nitro registers scheduled
@@ -139,17 +139,17 @@ routing. The public URL uses HTTPS normally; the configured port selects the con
 
 Secrets belong in Coolify environment settings, never the repository or deployment logs.
 
-| Area     | Required settings and checks                                                                                                                                                                                                                                  |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime  | APP_DEPLOYMENT_MODE=self-hosted, NODE_ENV=production, HOST=0.0.0.0, PORT=3000; build must use Node server preset, not a Vercel preset                                                                                                                         |
-| Database | DATABASE_URL for isolated managed staging DB; same target for app/migrator; SSL trust configured and tested                                                                                                                                                   |
-| Auth     | BETTER_AUTH_URL, BETTER_AUTH_SECRET; optional previous secret; staging-specific GitHub OAuth callback/credentials                                                                                                                                             |
-| Domains  | APP_DOMAIN, APP_DASHBOARD_DOMAIN, CNAME_TARGET, DOMAIN_PROVIDER=static-cname; matching NUXT runtime overrides above                                                                                                                                           |
-| Links    | APP_URL as an absolute reachable HTTPS origin for CSAT links                                                                                                                                                                                                  |
-| Redis    | Not configured/verified. In-memory defaults are single-instance only; before scaling, provision a Redis-compatible broker and set REDIS_URL (both drivers infer Redis from it, or explicitly set REALTIME_DRIVER=redis and RATE_LIMIT_STORE=redis). Use separate staging credentials. |
-| Storage  | `NUXT_STORAGE_DRIVER=s3`, `NUXT_STORAGE_BUCKET`, `NUXT_STORAGE_REGION`, `NUXT_STORAGE_ENDPOINT`, `NUXT_STORAGE_ACCESS_KEY_ID`, `NUXT_STORAGE_SECRET_ACCESS_KEY`, `NUXT_STORAGE_FORCE_PATH_STYLE`, `NUXT_STORAGE_PUBLIC_BASE_URL`, `NUXT_UPLOAD_TOKEN_SECRET`  |
-| Mail     | Runtime `NUXT_NODEMAILER_HOST`, `_PORT`, `_SECURE`, `_FROM`; authenticated SMTP also needs `_AUTH_USER` and `_AUTH_PASS` when the built config contains `auth`; set direct `MAIL_FROM` for support fallbacks and use a staging sink or allowlisted recipients |
-| Support  | `SUPPORT_CHANNEL_PROVIDER` and selected provider's `SUPPORT_POSTMARK_*` or `SUPPORT_MAILGUN_*` credentials, with staging webhook URL                                                                                                                          |
+| Area     | Required settings and checks                                                                                                                                                                                                                                                                                                                                          |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime  | APP_DEPLOYMENT_MODE=self-hosted, NODE_ENV=production, HOST=0.0.0.0, PORT=3000; build must use Node server preset, not a Vercel preset                                                                                                                                                                                                                                 |
+| Database | DATABASE_URL for isolated managed staging DB; same target for app/migrator; SSL trust configured and tested                                                                                                                                                                                                                                                           |
+| Auth     | BETTER_AUTH_URL, BETTER_AUTH_SECRET; optional previous secret; staging-specific GitHub OAuth callback/credentials                                                                                                                                                                                                                                                     |
+| Domains  | APP_DOMAIN, APP_DASHBOARD_DOMAIN, CNAME_TARGET, DOMAIN_PROVIDER=static-cname; matching NUXT runtime overrides above                                                                                                                                                                                                                                                   |
+| Links    | APP_URL as an absolute reachable HTTPS origin for CSAT links                                                                                                                                                                                                                                                                                                          |
+| Redis    | Self-hosted Valkey stack is implemented in `ops/coolify/redis/` but not provisioned. Configure unique Production/Preview names and credentials, set runtime `REDIS_URL` and both Redis drivers, and verify the daily off-server backup/restore path before production. See the [Redis stack design](../superpowers/specs/2026-09-28-coolify-redis-compose-design.md). |
+| Storage  | `NUXT_STORAGE_DRIVER=s3`, `NUXT_STORAGE_BUCKET`, `NUXT_STORAGE_REGION`, `NUXT_STORAGE_ENDPOINT`, `NUXT_STORAGE_ACCESS_KEY_ID`, `NUXT_STORAGE_SECRET_ACCESS_KEY`, `NUXT_STORAGE_FORCE_PATH_STYLE`, `NUXT_STORAGE_PUBLIC_BASE_URL`, `NUXT_UPLOAD_TOKEN_SECRET`                                                                                                          |
+| Mail     | Runtime `NUXT_NODEMAILER_HOST`, `_PORT`, `_SECURE`, `_FROM`; authenticated SMTP also needs `_AUTH_USER` and `_AUTH_PASS` when the built config contains `auth`; set direct `MAIL_FROM` for support fallbacks and use a staging sink or allowlisted recipients                                                                                                         |
+| Support  | `SUPPORT_CHANNEL_PROVIDER` and selected provider's `SUPPORT_POSTMARK_*` or `SUPPORT_MAILGUN_*` credentials, with staging webhook URL                                                                                                                                                                                                                                  |
 
 Use `.env.example` for local/build variables and direct process-environment consumers; this plan
 documents the production Nuxt runtime mappings. `NUXT_STORAGE_DIRECT_UPLOAD_CONSTRAINTS` defaults to

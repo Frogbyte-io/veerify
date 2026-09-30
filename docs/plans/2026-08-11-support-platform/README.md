@@ -12,6 +12,8 @@ Detailed plans for completed stages and speculative future stages were removed a
   deferred and is not an MVP launch prerequisite; see [remaining reporting](stage-09-delivery-plan.md)
   and [reporting scope](stage-09-reporting.md).
 - Deployment readiness is tracked in the [Coolify staging/cutover plan](../2026-09-21-coolify-deployment.md).
+  A versioned Valkey Compose stack and production backup runner are implemented but not provisioned:
+  [Redis stack design](../../superpowers/specs/2026-09-28-coolify-redis-compose-design.md).
   No live migration or production cutover has occurred.
 - Real-provider email/storage validation is still pending. Use the
   [provider checklist](stage-01-04-provider-checklist.md); automated tests do not prove provider

@@ -1,0 +1,77 @@
+# Coolify Redis/Valkey stack for production and preview. Provisioned once per
+# environment as a separate Coolify Compose resource; ordinary web-app deploys
+# must not recreate this stack. Design: docs/superpowers/specs/2026-09-28-coolify-redis-compose-design.md
+#
+# Secrets (REDIS_PASSWORD, BACKUP_* variables) are configured per environment
+# in Coolify environment settings — never committed here.
+services:
+  valkey:
+    # Keep a stable, environment-specific DNS name when this stack joins
+    # Coolify's shared network. Production and Preview must use distinct names.
+    container_name: ${VALKEY_CONTAINER_NAME:?Set a unique Coolify network name per environment}
+    image: valkey/valkey:9.1.2-alpine3.24
+    restart: always
+    # No host-published ports: the broker stays on the container networks.
+    # Coolify's "Connect To Predefined Network" exposes this service to the
+    # web-app container over the server's coolify network; REDIS_URL lives in
+    # the web app's runtime environment, not in this stack.
+    command:
+      - 'valkey-server'
+      - '--requirepass'
+      - '${REDIS_PASSWORD:?Set a strong unique REDIS_PASSWORD in Coolify}'
+      - '--appendonly'
+      - 'yes'
+      - '--appendfsync'
+      - 'everysec'
+      - '--save'
+      - '300'
+      - '10'
+      - '--save'
+      - '60'
+      - '10000'
+      - '--maxmemory-policy'
+      - 'noeviction'
+      - '--maxmemory'
+      - '${VALKEY_MAXMEMORY:?Set a Valkey memory budget below its container limit}'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set a strong unique REDIS_PASSWORD in Coolify}
+    mem_limit: ${VALKEY_MEMORY_LIMIT:?Set a per-environment Valkey container memory limit}
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$REDIS_PASSWORD" valkey-cli --no-auth-warning ping | grep PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      valkey:
+        condition: service_healthy
+    environment:
+      BACKUP_REQUIRED: ${BACKUP_REQUIRED:?Set true for Production or false for Preview}
+      BACKUP_ENABLED: ${BACKUP_ENABLED:?Set BACKUP_ENABLED=true for Production or false for Preview}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set a strong unique REDIS_PASSWORD in Coolify}
+      BACKUP_BUCKET: ${BACKUP_BUCKET:-}
+      BACKUP_ENDPOINT: ${BACKUP_ENDPOINT:-}
+      BACKUP_REGION: ${BACKUP_REGION:-us-east-1}
+      BACKUP_ACCESS_KEY_ID: ${BACKUP_ACCESS_KEY_ID:-}
+      BACKUP_SECRET_ACCESS_KEY: ${BACKUP_SECRET_ACCESS_KEY:-}
+    volumes:
+      # Read-only view of Valkey's persistent volume for copying the snapshot.
+      - valkey_data:/data:ro
+      - runner_state:/var/lib/veerify-redis-backup
+    healthcheck:
+      test: ['CMD', '/usr/local/bin/backup-health']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+volumes:
+  valkey_data:
+  runner_state:

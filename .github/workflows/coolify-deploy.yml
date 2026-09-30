@@ -10,6 +10,14 @@ on:
         options:
           - preview
           - production
+      resource:
+        description: Which Coolify resource to deploy
+        type: choice
+        required: true
+        default: web-app
+        options:
+          - web-app
+          - redis-stack
       pull_request_id:
         description: Open PR number (required for preview)
         type: string
@@ -26,7 +34,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: coolify-${{ inputs.target }}
+  group: coolify-${{ inputs.target }}-${{ inputs.resource }}
   cancel-in-progress: false
 
 jobs:
@@ -43,7 +51,7 @@ jobs:
           fi
 
       - name: Require reviewed production migration
-        if: inputs.target == 'production'
+        if: inputs.target == 'production' && inputs.resource == 'web-app'
         env:
           MIGRATION_COMPLETED: ${{ inputs.production_migration_completed }}
         run: |
@@ -53,7 +61,7 @@ jobs:
           fi
 
       - name: Validate preview pull request
-        if: inputs.target == 'preview'
+        if: inputs.target == 'preview' && inputs.resource == 'web-app'
         env:
           GH_TOKEN: ${{ github.token }}
           PULL_REQUEST_ID: ${{ inputs.pull_request_id }}
@@ -80,6 +88,7 @@ jobs:
           esac
 
       - name: Join the tailnet
+        if: inputs.resource == 'web-app' || vars.COOLIFY_REDIS_STACK_UUID != ''
         uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
@@ -87,26 +96,136 @@ jobs:
           tags: tag:ci-coolify-deploy
           ping: ${{ vars.COOLIFY_TAILSCALE_HOST }}
 
+      - name: Resolve Coolify resource UUID
+        id: resource
+        env:
+          RESOURCE: ${{ inputs.resource }}
+          WEB_APP_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
+          REDIS_STACK_UUID: ${{ vars.COOLIFY_REDIS_STACK_UUID }}
+        run: |
+          set -u
+          case "$RESOURCE" in
+            web-app) uuid="$WEB_APP_UUID" ;;
+            redis-stack) uuid="$REDIS_STACK_UUID" ;;
+            *) echo "Unknown resource $RESOURCE"; exit 1 ;;
+          esac
+          if [[ -z "$uuid" ]]; then
+            echo "Configure the Coolify $RESOURCE UUID in this GitHub environment."
+            exit 1
+          fi
+          if [[ ! "$uuid" =~ ^[A-Za-z0-9-]+$ ]]; then
+            echo "The Coolify $RESOURCE UUID contains unsupported characters."
+            exit 1
+          fi
+          echo "uuid=$uuid" >>"$GITHUB_OUTPUT"
+
+      - name: Preflight Redis runtime configuration
+        if: inputs.resource == 'web-app'
+        env:
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_REDIS_HOST: ${{ vars.COOLIFY_REDIS_HOST }}
+          RESOURCE_UUID: ${{ steps.resource.outputs.uuid }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [[ -z "$COOLIFY_API_URL" || -z "$COOLIFY_API_TOKEN" || -z "$COOLIFY_REDIS_HOST" ]]; then
+            echo "Configure the Coolify API URL, API token, and expected Redis host in this GitHub environment."
+            exit 1
+          fi
+          if [[ ! "$COOLIFY_REDIS_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+            echo "The expected Redis host contains unsupported characters."
+            exit 1
+          fi
+
+          api="${COOLIFY_API_URL%/}"
+          if [[ "$api" != */api/v1 ]]; then
+            api+="/api/v1"
+          fi
+          # Pipe the API response directly to jq. It checks the values in memory
+          # but emits only a boolean; secrets are never printed or saved to a
+          # GitHub output/artifact.
+          if ! curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 \
+            --header "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
+            "$api/applications/$RESOURCE_UUID/envs" \
+            | jq -e --arg target "$TARGET" --arg expected_host "$COOLIFY_REDIS_HOST" '
+                if type != "array" then false else
+                  map(select(.is_runtime == true and
+                    (if $target == "production" then .is_preview != true else .is_preview == true end))) as $envs |
+                  (["REDIS_URL", "REALTIME_DRIVER", "RATE_LIMIT_STORE"] - [$envs[].key] | length == 0) and
+                  any($envs[]; .key == "REDIS_URL" and
+                    any([.value, .real_value][];
+                      type == "string" and startswith("redis://:") and
+                      (split("@")[0] | length) > ("redis://:" | length) and
+                      (split("@") | length) == 2 and
+                      (split("@")[ -1 ] == ($expected_host + ":6379")))) and
+                  ([ $envs[] | select(.key == "REALTIME_DRIVER" or .key == "RATE_LIMIT_STORE") ] as $drivers |
+                    ($drivers | length) == 2 and all($drivers[]; .value == "redis"))
+                end
+              ' >/dev/null; then
+            echo "$TARGET Coolify app environment must have nonempty runtime REDIS_URL and both Redis drivers enabled."
+            exit 1
+          fi
+
+      - name: Preflight Redis stack backup mode
+        if: inputs.resource == 'redis-stack'
+        env:
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          RESOURCE_UUID: ${{ steps.resource.outputs.uuid }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          if [[ -z "$COOLIFY_API_URL" || -z "$COOLIFY_API_TOKEN" || -z "$RESOURCE_UUID" ]]; then
+            echo "Configure the Coolify API URL, Redis stack UUID, and API token in this GitHub environment."
+            exit 1
+          fi
+
+          expected_backup=true
+          if [[ "$TARGET" == "preview" ]]; then
+            expected_backup=false
+          fi
+
+          api="${COOLIFY_API_URL%/}"
+          if [[ "$api" != */api/v1 ]]; then
+            api+="/api/v1"
+          fi
+          # Check the actual Coolify Compose resource settings against the
+          # selected GitHub environment; never print or store env values.
+          if ! curl --fail-with-body --silent --show-error \
+            --connect-timeout 10 --max-time 60 \
+            --header "Authorization: Bearer ${COOLIFY_API_TOKEN}" \
+            "$api/applications/$RESOURCE_UUID/envs" \
+            | jq -e --arg expected_backup "$expected_backup" '
+                if type != "array" then false else
+                  map(select(.key == "BACKUP_REQUIRED" or .key == "BACKUP_ENABLED")) as $flags |
+                  ([$flags[].key] | sort) == ["BACKUP_ENABLED", "BACKUP_REQUIRED"] and
+                  all($flags[]; any([.value, .real_value][]; . == $expected_backup))
+                end
+              ' >/dev/null; then
+            echo "$TARGET Coolify Redis stack must have both backup flags set to $expected_backup."
+            exit 1
+          fi
+
       - name: Request Coolify deployment
         env:
           COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
-          COOLIFY_APPLICATION_UUID: ${{ vars.COOLIFY_APPLICATION_UUID }}
           COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          RESOURCE_UUID: ${{ steps.resource.outputs.uuid }}
           TARGET: ${{ inputs.target }}
           PULL_REQUEST_ID: ${{ inputs.pull_request_id }}
+          RESOURCE: ${{ inputs.resource }}
         run: |
-          if [[ -z "$COOLIFY_API_URL" || -z "$COOLIFY_APPLICATION_UUID" || -z "$COOLIFY_API_TOKEN" ]]; then
-            echo "Configure the Coolify API URL, application UUID, and API token in this GitHub environment."
+          if [[ -z "$COOLIFY_API_URL" || -z "$RESOURCE_UUID" || -z "$COOLIFY_API_TOKEN" ]]; then
+            echo "Configure the Coolify API URL, resource UUID, and API token in this GitHub environment."
             exit 1
           fi
 
-          if [[ ! "$COOLIFY_APPLICATION_UUID" =~ ^[A-Za-z0-9-]+$ ]]; then
-            echo "The Coolify application UUID contains unsupported characters."
-            exit 1
+          api="${COOLIFY_API_URL%/}"
+          if [[ "$api" != */api/v1 ]]; then
+            api+="/api/v1"
           fi
-
-          deploy_url="${COOLIFY_API_URL%/}/deploy?uuid=${COOLIFY_APPLICATION_UUID}"
-          if [[ "$TARGET" == "preview" ]]; then
+          deploy_url="$api/deploy?uuid=${RESOURCE_UUID}"
+          if [[ "$RESOURCE" == "web-app" && "$TARGET" == "preview" ]]; then
             deploy_url+="&pr=${PULL_REQUEST_ID}"
           fi
 
