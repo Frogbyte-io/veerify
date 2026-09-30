@@ -7,8 +7,14 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 test.describe('Sidebar resizing', () => {
   test('dragging the resize handle updates sidebar width', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    await page.addInitScript(() => window.localStorage.setItem('veerify_sidebar_width', '256'))
+    const activeTeamResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/teams/active' && response.request().method() === 'GET',
+      { timeout: 20_000 }
+    )
     await page.goto('/feedback')
     await expect(page).toHaveURL(/\/feedback/)
+    await activeTeamResponse
 
     const sidebar = page.locator('[data-testid="app-sidebar"]')
     const handle = page.locator('[data-testid="app-sidebar-resize-handle"]')
@@ -22,20 +28,30 @@ test.describe('Sidebar resizing', () => {
         return Number.parseFloat(widthValue)
       })
 
+    await expect.poll(getSidebarWidth, { timeout: 5_000 }).toBe(256)
     const initialWidth = await getSidebarWidth()
     const handleBox = await handle.boundingBox()
     expect(handleBox).not.toBeNull()
+
+    await expect
+      .poll(
+        async () => {
+          await handle.click()
+          return page.evaluate(() => window.localStorage.getItem('veerify_sidebar_width'))
+        },
+        { timeout: 10_000 }
+      )
+      .toBe(String(initialWidth))
 
     const dragStartX = (handleBox?.x || 0) + (handleBox?.width || 0) / 2
     const dragY = (handleBox?.y || 0) + (handleBox?.height || 0) / 2
 
     await page.mouse.move(dragStartX, dragY)
     await page.mouse.down()
-    await page.mouse.move(dragStartX + 96, dragY)
+    await page.mouse.move(dragStartX + 96, dragY, { steps: 8 })
     await page.mouse.up()
 
-    const resizedWidth = await getSidebarWidth()
-    expect(resizedWidth).toBeGreaterThan(initialWidth)
+    await expect.poll(getSidebarWidth, { timeout: 5_000 }).toBeGreaterThan(initialWidth)
   })
 
   test('sidebar links navigate to expected routes', async ({ page }) => {

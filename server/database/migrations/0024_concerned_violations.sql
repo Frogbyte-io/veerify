@@ -1,0 +1,1 @@
+ALTER TABLE "support_email_event" ALTER COLUMN "inbox_id" DROP NOT NULL;

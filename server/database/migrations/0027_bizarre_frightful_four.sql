@@ -1,0 +1,1 @@
+ALTER TABLE "support_inbox_member" ADD CONSTRAINT "support_inbox_member_role_check" CHECK ("support_inbox_member"."role" in ('agent','supervisor','admin'));

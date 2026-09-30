@@ -8,6 +8,40 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#x27;')
 }
 
+interface CsatSurveyTemplateOptions {
+  question: string
+  followUpQuestion?: string | null
+  contactName?: string | null
+  ratingLinks: Array<{ label: string; url: string }>
+}
+
+export function getCsatSurveyTemplate({
+  question,
+  followUpQuestion,
+  contactName,
+  ratingLinks,
+}: CsatSurveyTemplateOptions) {
+  const greeting = contactName ? `Hi ${contactName},` : 'Hi,'
+  const safeGreeting = escapeHtml(greeting)
+  const safeQuestion = escapeHtml(question)
+  const safeFollowUpQuestion = followUpQuestion ? escapeHtml(followUpQuestion) : ''
+  const htmlLinks = ratingLinks
+    .map(
+      ({ label, url }) =>
+        `<a href="${escapeHtml(url)}" style="display:inline-block;margin:4px;padding:10px 14px;border:1px solid #d0d7de;border-radius:6px;color:#17202a;text-decoration:none">${escapeHtml(label)}</a>`
+    )
+    .join('')
+  const textLinks = ratingLinks.map(({ label, url }) => `${label}: ${url}`).join('\n')
+
+  return {
+    subject: 'How did we do?',
+    html: `<p>${safeGreeting}</p><p>${safeQuestion}</p><p>${htmlLinks}</p>${
+      safeFollowUpQuestion ? `<p>${safeFollowUpQuestion}</p>` : ''
+    }<p>Thanks for helping us improve.</p>`,
+    text: `${greeting}\n\n${question}\n\n${textLinks}\n\n${followUpQuestion ?? ''}\nThanks for helping us improve.`,
+  }
+}
+
 interface FeedbackConfirmationOptions {
   authorName: string
   feedbackTitle: string
@@ -395,7 +429,7 @@ interface StatusChangeNotificationOptions {
   feedbackTitle: string
   newStatus: string
   boardUrl: string
-  unsubscribeUrl: string
+  unsubscribeUrl: string | null
 }
 
 export function getStatusChangeNotificationTemplate({
@@ -408,7 +442,7 @@ export function getStatusChangeNotificationTemplate({
   const safeTitle = escapeHtml(feedbackTitle)
   const safeStatus = escapeHtml(newStatus)
   const safeBoardUrl = escapeHtml(boardUrl)
-  const safeUnsubUrl = escapeHtml(unsubscribeUrl)
+  const safeUnsubUrl = unsubscribeUrl ? escapeHtml(unsubscribeUrl) : null
 
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
@@ -421,16 +455,14 @@ export function getStatusChangeNotificationTemplate({
       <p><a href="${safeBoardUrl}" style="color:#6366f1">View on the feedback board</a></p>
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
       <p style="color:#999;font-size:12px">
-        <a href="${safeUnsubUrl}" style="color:#999">Unsubscribe from this feedback</a> &middot; Powered by Veerify
+        ${safeUnsubUrl ? `<a href="${safeUnsubUrl}" style="color:#999">Unsubscribe from this feedback</a> &middot; ` : ''}Powered by Veerify
       </p>
     </div>
   `
 
   const text = `Feedback status updated: "${feedbackTitle}" is now ${newStatus}.
 
-View on the board: ${boardUrl}
-
-To unsubscribe: ${unsubscribeUrl}
+View on the board: ${boardUrl}${unsubscribeUrl ? `\n\nTo unsubscribe: ${unsubscribeUrl}` : ''}
 `
 
   return { subject, html, text }

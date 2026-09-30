@@ -258,9 +258,10 @@ export default {
     async fetchAndCacheTeamContext(options = {}) {
       if (!teamSwitcherCache.pendingRequest) {
         const { preferBootstrap = true } = options
-        teamSwitcherCache.pendingRequest = (preferBootstrap
-          ? this.fetchTeamContextFromBootstrap().then((context) => context || this.fetchTeamContext())
-          : this.fetchTeamContext()
+        teamSwitcherCache.pendingRequest = (
+          preferBootstrap
+            ? this.fetchTeamContextFromBootstrap().then((context) => context || this.fetchTeamContext())
+            : this.fetchTeamContext()
         )
           .then((context) => {
             teamSwitcherCache.activeTeam = context.activeTeam

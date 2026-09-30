@@ -85,11 +85,9 @@ test('owner can view, update, and delete organization from settings tab', async 
     )
     .toBe(200)
 
-  await page.goto('/settings#organization')
-  await page.waitForFunction(() => {
-    const tab = document.querySelector('[data-testid="settings-tab-organization"]') as any
-    return Boolean(tab?.__vueParentComponent)
-  })
+  await page.goto('/settings')
+  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
+  await expect(page.locator(selectors.settingsTabOrganization)).toBeVisible({ timeout: 20_000 })
 
   await page.locator(selectors.settingsTabOrganization).click()
   await expect(page).toHaveURL(/#organization/)
@@ -139,7 +137,8 @@ test('owner can view, update, and delete organization from settings tab', async 
 
   await page.locator(selectors.organizationNameInput).fill(originalName)
   await page.locator(selectors.organizationSlugInput).fill(baseSlug)
-  await page.locator(selectors.organizationLogoInput).fill('')
+  await expect(page.locator(selectors.organizationLogoRemove)).toBeVisible()
+  await page.locator(selectors.organizationLogoRemove).click()
   await page.locator(selectors.organizationSave).click()
 
   await expect
@@ -153,6 +152,18 @@ test('owner can view, update, and delete organization from settings tab', async 
       { timeout: 20_000 }
     )
     .toBe(baseSlug)
+
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/orgs/${baseSlug}`)
+        if (!response.ok()) return null
+        const payload = await response.json()
+        return payload?.data?.logo ?? null
+      },
+      { timeout: 20_000 }
+    )
+    .toBeNull()
 
   await page.locator(selectors.organizationOpenDeleteDialog).click()
   await expect(page.locator(selectors.organizationDeleteConfirmInput)).toBeVisible()
@@ -203,10 +214,8 @@ test('owner can add billing contact emails for receipt copy', async ({ page }) =
 
     if (deploymentMode === 'self-hosted') {
       await page.goto('/settings#status')
-      await page.waitForFunction(() => {
-        const tab = document.querySelector('[data-testid="settings-tab-status"]') as any
-        return Boolean(tab?.__vueParentComponent)
-      })
+      await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
+      await expect(page.locator(selectors.settingsTabStatus)).toBeVisible({ timeout: 20_000 })
 
       await page.locator(selectors.settingsTabStatus).click()
       await expect(page).toHaveURL(/#status/)
@@ -216,10 +225,8 @@ test('owner can add billing contact emails for receipt copy', async ({ page }) =
       await expect(page.locator(selectors.statusServiceEmail)).toBeVisible()
     } else {
       await page.goto('/settings#billing')
-      await page.waitForFunction(() => {
-        const tab = document.querySelector('[data-testid="settings-tab-billing"]') as any
-        return Boolean(tab?.__vueParentComponent)
-      })
+      await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
+      await expect(page.locator(selectors.settingsTabBilling)).toBeVisible({ timeout: 20_000 })
 
       await page.locator(selectors.settingsTabBilling).click()
       await expect(page).toHaveURL(/#billing/)

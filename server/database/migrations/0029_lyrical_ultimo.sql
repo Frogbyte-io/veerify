@@ -1,0 +1,2 @@
+DROP INDEX "support_delivery_event_provider_event_id_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "support_delivery_event_provider_event_id_idx" ON "support_delivery_event" USING btree ("provider","provider_account_key","provider_event_id");

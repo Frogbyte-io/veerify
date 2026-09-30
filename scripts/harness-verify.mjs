@@ -5,10 +5,23 @@ const yarnCommand = 'yarn'
 
 const steps = [
   { label: 'Agent docs map', command: 'node', args: ['scripts/harness-docs-check.mjs'], shell: false },
+  { label: 'Format check', command: yarnCommand, args: ['format:check'], shell: isWindows },
   { label: 'Typecheck', command: yarnCommand, args: ['typecheck'], shell: isWindows },
   { label: 'Unit tests', command: yarnCommand, args: ['test'], shell: isWindows },
   { label: 'Lint', command: yarnCommand, args: ['lint'], shell: isWindows },
   { label: 'E2E (guarded)', command: yarnCommand, args: ['test:e2e:if-available'], shell: isWindows },
+  {
+    label: 'Redis integration (guarded)',
+    command: yarnCommand,
+    args: ['test:integration:if-available'],
+    shell: isWindows,
+  },
+  {
+    label: 'Postgres integration (guarded)',
+    command: yarnCommand,
+    args: ['test:integration:postgres:if-available'],
+    shell: isWindows,
+  },
 ]
 
 const timings = []

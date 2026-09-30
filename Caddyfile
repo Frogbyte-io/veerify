@@ -1,0 +1,49 @@
+{
+	on_demand_tls {
+		ask      http://app:3000/api/system/tls-ask
+		interval 2m
+		burst    5
+	}
+}
+
+# First-class hosts get normal automatic HTTPS (ACME HTTP-01). These are
+# explicit, operator-controlled hostnames, so they are never routed through
+# the on-demand `ask` gate below.
+{$APP_DASHBOARD_DOMAIN} {
+	reverse_proxy app:3000
+}
+
+{$APP_DOMAIN} {
+	reverse_proxy app:3000
+}
+
+# Public MinIO/S3 endpoint used for direct browser uploads (see
+# STORAGE_ENDPOINT / STORAGE_PUBLIC_BASE_URL). Presigned upload URLs embed
+# this host, so it must be reachable from the browser, not just from `app`.
+{$STORAGE_DOMAIN} {
+	reverse_proxy minio:9000
+}
+
+# Everything else: team public-board subdomains (<team>.{$APP_DOMAIN}) and
+# customer-owned custom domains (project.customDomain, see server/utils/
+# project-access.ts:findPublicProjectByDomain). Caddy requests a certificate
+# for each distinct Host on first request via on-demand TLS.
+#
+# IMPORTANT — this must stay gated by `ask` above. Without it, this block is
+# an open certificate-issuance relay: anyone can point a domain's A record at
+# this server and force us to request a cert for it, which is both an abuse
+# vector and a fast way to hit Let's Encrypt's rate limits. The ask endpoint
+# is expected to return 200 only when the host matches a `*.{$APP_DOMAIN}`
+# team subdomain or a project's verified `customDomain` — see D-07 and
+# SUP-00-7 in docs/plans/2026-08-11-support-platform/.
+#
+# `/api/system/tls-ask` does not exist yet as of SUP-00-7 (Dockerfile/compose
+# only). Whoever implements the endpoint should reuse
+# `findPublicProjectByDomain()` from server/utils/project-access.ts and
+# additionally allow `*.{$APP_DOMAIN}` hosts for team public boards.
+https:// {
+	tls {
+		on_demand
+	}
+	reverse_proxy app:3000
+}

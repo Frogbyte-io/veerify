@@ -31,10 +31,10 @@
                       type="email"
                       placeholder="m@example.com"
                       required
-                      :disabled="isLoading"
+                      :disabled="isLoading || !isHydrated"
                     />
                   </div>
-                  <Button type="submit" class="w-full" :disabled="isLoading">
+                  <Button type="submit" class="w-full" :disabled="isLoading || !isHydrated">
                     {{ isLoading ? 'Sending...' : 'Send reset link' }}
                   </Button>
                 </div>
@@ -79,7 +79,14 @@ export default {
       isLoading: false,
       error: '',
       success: '',
+      // See the note in pages/login/index.vue: a click before hydration
+      // triggers a native form submit that silently reloads the page and
+      // discards what was typed.
+      isHydrated: false,
     }
+  },
+  mounted() {
+    this.isHydrated = true
   },
   methods: {
     async handleSubmit() {

@@ -1,4 +1,30 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["fra1"]
+  "regions": ["fra1"],
+  "crons": [
+    {
+      "path": "/api/cron/example-ping",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/support-outbound-delivery",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/support-attachment-cleanup",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/support-sla-breach",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/support-automation-rules",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/support-csat-dispatch",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

@@ -46,6 +46,7 @@ test('onboarding slug mirrors the full workspace name while typing', async ({ pa
 
   await page.goto('/onboarding')
   await expect(page.getByRole('heading', { name: 'Create your workspace' })).toBeVisible()
+  await expect(page.getByTestId('onboarding-form')).toHaveAttribute('data-hydrated', 'true')
 
   const workspaceNameInput = page.getByLabel('Workspace name')
   const workspaceSlugInput = page.getByLabel('URL')
@@ -63,11 +64,6 @@ test('team creation slug mirrors the full team name while typing', async ({ page
   await ensureTeamAndOrganizationContext(page.request)
 
   await page.goto('/settings#team')
-  await page.waitForFunction(() => {
-    const tab = document.querySelector('[data-testid="settings-tab-team"]') as any
-    return Boolean(tab?.__vueParentComponent)
-  })
-
   await expect(page.locator(selectors.teamOpenCreateDialog)).toBeVisible({ timeout: 20_000 })
   await page.locator(selectors.teamOpenCreateDialog).click()
 
@@ -89,10 +85,14 @@ test('product creation slug mirrors the full product name while typing', async (
 
   await page.goto('/products')
   await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
+  await expect(page.getByTestId('products-page')).toHaveAttribute('data-hydrated', 'true')
+  const newProductButton = page.getByRole('button', { name: 'New Product' })
+  const createDialog = page.getByRole('dialog')
+  await expect(newProductButton).toBeVisible()
+  await newProductButton.click()
+  await expect(createDialog).toBeVisible()
+  await expect(createDialog.getByRole('heading', { name: 'Create New Product' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'New Product' }).click()
-
-  const createDialog = page.getByRole('dialog', { name: 'Create New Product' })
   const productNameInput = createDialog.getByLabel('Product Name')
   const productSlugInput = createDialog.getByLabel('URL Slug')
 
@@ -106,15 +106,16 @@ test('product creation slug mirrors the full product name while typing', async (
 
 test('settings navigation tabs render expected sections', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
 
   await page.goto('/settings')
-  await page.waitForFunction(() => {
-    const tab = document.querySelector('[data-testid="settings-tab-profile"]') as any
-    return Boolean(tab?.__vueParentComponent)
-  })
+  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
+  await expect(page.locator(selectors.settingsTabProfile)).toBeVisible({ timeout: 20_000 })
 
-  await page.locator(selectors.settingsTabProfile).click()
-  await expect(page).toHaveURL(/#profile/)
+  await expect(async () => {
+    await page.locator(selectors.settingsTabProfile).click()
+    await expect(page).toHaveURL(/#profile/)
+  }).toPass({ timeout: 10_000 })
   await expect(page.getByRole('heading', { name: 'Profile Information' })).toBeVisible()
 
   await page.locator(selectors.settingsTabSecurity).click()
@@ -147,9 +148,8 @@ test('settings navigation tabs render expected sections', async ({ page }) => {
   await expect(page).toHaveURL(/#team/)
   await expect(page.locator(selectors.teamTitle)).toBeVisible()
 
-  await page.locator(selectors.settingsTabBilling).click()
-  await expect(page).toHaveURL(/#billing/)
-  await expect(page.locator(selectors.settingsBillingPanel)).toBeVisible()
+  // Billing is intentionally hidden during the beta period.
+  await expect(page.locator(selectors.settingsTabBilling)).toHaveCount(0)
 
   await page.locator(selectors.settingsTabAppearance).click()
   await expect(page).toHaveURL(/#appearance/)
@@ -214,7 +214,6 @@ test('sidebar team switcher data stays cached across client-side route changes',
   const bootstrapPath = '/api/dashboard/bootstrap'
   const oldInitialLoadPaths = [
     '/api/teams/list-user',
-    '/api/teams/active',
     '/api/auth/organization/get-full-organization',
     '/api/dashboard/stats',
     '/api/notifications/unread-count',
@@ -306,18 +305,69 @@ test('sidebar user section stays hydrated across client-side route changes', asy
   await expect(page.locator(selectors.navUserLoading)).toHaveCount(0)
 })
 
-test('roadmap and changelog sidebar buttons are disabled', async ({ page }) => {
+test('roadmap and changelog are hidden until their team module is enabled', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
   await page.goto('/dashboard')
 
   const sidebar = page.locator('[data-testid="app-sidebar"]')
-  const roadmapButton = sidebar.getByRole('button', { name: 'Roadmap' })
-  const changelogButton = sidebar.getByRole('button', { name: 'Changelog' })
 
-  await expect(roadmapButton).toBeDisabled()
-  await expect(changelogButton).toBeDisabled()
+  // Both modules default to off (SUP-02-12, delta D-31), so neither entry
+  // renders at all for a team that has not enabled them.
+  await expect(sidebar.getByRole('button', { name: 'Roadmap' })).toHaveCount(0)
+  await expect(sidebar.getByRole('button', { name: 'Changelog' })).toHaveCount(0)
+
+  // Whether shown or hidden, neither ever renders as a working link: the
+  // dashboard pages do not exist yet, so the entries stay disabled
+  // placeholders even once the module is on. See Technical Debt #11.
   await expect(sidebar.locator('a[href="/roadmap"]')).toHaveCount(0)
   await expect(sidebar.locator('a[href="/changelog"]')).toHaveCount(0)
+})
+
+test('support nav is hidden until the support module is enabled', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await page.goto('/dashboard')
+
+  const sidebar = page.locator('[data-testid="app-sidebar"]')
+
+  // supportEnabled defaults to false, so the whole Support group is absent.
+  await expect(sidebar.locator('a[href="/support"]')).toHaveCount(0)
+  await expect(sidebar.locator('a[href="/support/contacts"]')).toHaveCount(0)
+})
+
+test('non-admins can view but cannot change team module settings', async ({ page }) => {
+  await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
+  await ensureTeamAndOrganizationContext(page.request)
+
+  let putRequests = 0
+  await page.route('**/api/teams/*/modules', async (route) => {
+    if (route.request().method() === 'PUT') {
+      putRequests += 1
+      await route.abort()
+      return
+    }
+
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({
+      response,
+      json: {
+        ...payload,
+        data: {
+          ...payload.data,
+          canManage: false,
+        },
+      },
+    })
+  })
+
+  await page.goto('/settings#tools')
+  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
+  await expect(page.locator('[data-testid="settings-tools-read-only"]')).toBeVisible()
+
+  const supportSwitch = page.locator('[data-testid="settings-tools-supportEnabled"] [role="switch"]')
+  await expect(supportSwitch).toBeDisabled()
+  await supportSwitch.click({ force: true })
+  expect(putRequests).toBe(0)
 })
 
 test('settings team panel tracks active team selected in sidebar', async ({ page }) => {

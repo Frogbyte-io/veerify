@@ -89,7 +89,20 @@ export default defineEventHandler(async (event) => {
     .where(whereClause)
     .orderBy(desc(feedback.isPinned), orderFn(sortColumn))
 
-  const headers = ['Title', 'Status', 'Category', 'Product', 'Votes', 'Comments', 'Author', 'Author Email', 'Pinned', 'GitHub Issue', 'Created', 'Updated']
+  const headers = [
+    'Title',
+    'Status',
+    'Category',
+    'Product',
+    'Votes',
+    'Comments',
+    'Author',
+    'Author Email',
+    'Pinned',
+    'GitHub Issue',
+    'Created',
+    'Updated',
+  ]
   const rows = items.map((item) => [
     escapeCsvField(item.feedback.title),
     escapeCsvField(item.feedback.status),

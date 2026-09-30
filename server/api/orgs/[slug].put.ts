@@ -125,7 +125,9 @@ export default defineEventHandler(async (event) => {
     })
 
     storage.deleteObject(uploadPayload.tempKey).catch((err) => {
-      logger.error('Failed to delete temporary uploaded organization logo', { error: err instanceof Error ? err.message : err })
+      logger.error('Failed to delete temporary uploaded organization logo', {
+        error: err instanceof Error ? err.message : err,
+      })
     })
 
     nextLogo = storage.getPublicUrl(finalAssetKey)
@@ -160,7 +162,10 @@ export default defineEventHandler(async (event) => {
     const storage = getStorageProvider()
     for (const key of pendingDeletes) {
       storage.deleteObject(key).catch((err) => {
-        logger.error('Failed to delete replaced organization logo', { key, error: err instanceof Error ? err.message : err })
+        logger.error('Failed to delete replaced organization logo', {
+          key,
+          error: err instanceof Error ? err.message : err,
+        })
       })
     }
   }

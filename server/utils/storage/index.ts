@@ -40,6 +40,10 @@ export function getStorageProvider(): StorageProvider {
       secretAccessKey: config.storageSecretAccessKey,
       forcePathStyle: config.storageForcePathStyle === true,
       publicBaseUrl: config.storagePublicBaseUrl || undefined,
+      directUploadConstraints:
+        config.storageDirectUploadConstraints === 'content-length-enforced'
+          ? 'content-length-enforced'
+          : 'proxy-required',
     })
   }
 

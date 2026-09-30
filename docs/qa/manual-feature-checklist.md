@@ -70,6 +70,14 @@ This is a practical inventory of implemented features you can test right now.
 - Transactional mail pipeline (verification, password reset, feedback/domain notifications)
 - Multi-tenant access control on feedback/project APIs
 
+### Support SLA
+
+- Business-hours editor supports timezone, weekday windows, and holiday exclusions
+- Default SLA targets and breach escalation settings can be saved by team admins
+- Conversations show live first/next-response or resolution countdowns
+- Pending conversations show a paused SLA badge and customer replies resume the timer
+- Breaching-soon view filters active conversations with an overdue or near-term SLA deadline
+
 ### Placeholder pages currently present
 
 - Reports/Analytics page (mostly static placeholder data)

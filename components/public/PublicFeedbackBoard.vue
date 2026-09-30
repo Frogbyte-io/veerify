@@ -422,6 +422,8 @@
 
         <Dialog :open="showDetailsDialog" @update:open="handleDetailsDialogChange">
           <DialogContent class="sm:max-w-[900px] p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col">
+            <DialogTitle class="sr-only">Feedback details</DialogTitle>
+
             <!-- Loading -->
             <div v-if="detailsLoading" class="p-6 space-y-4">
               <Skeleton class="h-7 w-3/4" />

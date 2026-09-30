@@ -1,7 +1,8 @@
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { organization, team, teamMember } from '~/server/database/schema/auth'
-import { feedback, notification, project } from '~/server/database/schema/feedback'
+import { feedback, project } from '~/server/database/schema/feedback'
+import { notification } from '~/server/database/schema/notifications'
 import type { AuthSession } from '~/server/utils/auth-middleware'
 import { resolveActiveTeamForSession } from '~/server/utils/team-context'
 

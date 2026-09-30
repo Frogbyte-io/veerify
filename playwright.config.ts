@@ -15,7 +15,9 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   maxFailures: process.env.CI ? 1 : undefined,
   timeout: process.env.CI ? 60_000 : 90_000,
-  globalTimeout: process.env.CI ? 20 * 60_000 : undefined,
+  // The Neon-backed suite runs serially and now covers 121 workflows; leave a
+  // small buffer below the CI job's 25-minute timeout for artifact upload.
+  globalTimeout: process.env.CI ? 24 * 60_000 : undefined,
   expect: {
     timeout: process.env.CI ? 10_000 : 15_000,
   },
@@ -30,15 +32,18 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: `yarn dev --host localhost --port ${PORT}`,
+        command: process.env.CI
+          ? `yarn build && yarn preview --host localhost --port ${PORT}`
+          : `yarn dev --host localhost --port ${PORT}`,
         url: `${baseURL}/login`,
-        timeout: 120_000,
+        timeout: 300_000,
         reuseExistingServer: !process.env.CI,
         env: {
           ...process.env,
           BETTER_AUTH_SECRET: betterAuthSecret,
           BETTER_AUTH_URL: baseURL,
           BETTER_AUTH_TRUSTED_ORIGINS: trustedOrigins.join(','),
+          NUXT_DEVTOOLS_ENABLED: 'false',
         },
       },
   projects: [

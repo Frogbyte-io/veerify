@@ -108,11 +108,24 @@ function handleResizeHandleClick() {
 
 onMounted(() => {
   restoreSidebarWidth()
+  void loadTeamModules()
+
+  if (import.meta.client) {
+    // Module settings are per team, so both a team switch and a Tools-tab
+    // toggle change what this sidebar should render.
+    window.addEventListener('veerify:active-team-changed', loadTeamModules)
+    window.addEventListener('veerify:team-modules-changed', loadTeamModules)
+  }
 })
 
 onBeforeUnmount(() => {
   persistSidebarWidth(sidebarWidth.value)
   stopSidebarResize()
+
+  if (import.meta.client) {
+    window.removeEventListener('veerify:active-team-changed', loadTeamModules)
+    window.removeEventListener('veerify:team-modules-changed', loadTeamModules)
+  }
 })
 
 // Shared state set by TeamSwitcher — null = loading, true = has org, false = personal account
@@ -176,13 +189,66 @@ const managementItems: SidebarNavItem[] = [
   },
 ]
 
-const supportItems: SidebarNavItem[] = [
+const systemItems: SidebarNavItem[] = [
   {
     title: 'Settings',
     url: '/settings',
     icon: 'lucide:settings',
   },
 ]
+
+const supportModuleItems: SidebarNavItem[] = [
+  {
+    title: 'Inbox',
+    url: '/support',
+    icon: 'lucide:inbox',
+  },
+  {
+    title: 'Contacts',
+    url: '/support/contacts',
+    icon: 'lucide:contact',
+  },
+]
+
+// Per-team module enablement (delta D-31). Defaults match the table's column
+// defaults, so the sidebar renders correctly for a team that has never opened
+// the Tools tab and therefore has no row.
+const teamModules = ref({
+  feedbackEnabled: true,
+  roadmapEnabled: false,
+  changelogEnabled: false,
+  supportEnabled: false,
+})
+
+async function loadTeamModules() {
+  if (!import.meta.client) return
+  try {
+    const activeTeam = await $fetch<{ data?: { id?: string } }>('/api/teams/active')
+    const teamId = activeTeam?.data?.id
+    if (!teamId) return
+
+    const response = await $fetch<{ data?: { modules?: Record<string, boolean> } }>(`/api/teams/${teamId}/modules`)
+    if (response?.data?.modules) {
+      teamModules.value = { ...teamModules.value, ...response.data.modules }
+    }
+  } catch {
+    // Keep defaults — a failed lookup should not blank the navigation.
+  }
+}
+
+// `Roadmap` and `Changelog` remain `disabled` even when their module is on:
+// the dashboard pages genuinely do not exist yet (`pages/roadmap`,
+// `pages/changelog` are absent), so enabling the toggle must not produce a
+// link to a 404. The toggle controls whether the placeholder is advertised at
+// all. See Technical Debt #11.
+const visibleFeedbackItems = computed(() =>
+  feedbackItems.filter((item) => {
+    if (item.title === 'Feedback') return teamModules.value.feedbackEnabled
+    if (item.title === 'Roadmap') return teamModules.value.roadmapEnabled
+    if (item.title === 'Changelog') return teamModules.value.changelogEnabled
+    return true
+  })
+)
 </script>
 
 <template>
@@ -216,11 +282,11 @@ const supportItems: SidebarNavItem[] = [
       <!-- Workspace sections (only when org is active) -->
       <template v-if="hasActiveOrganization === true">
         <!-- Feedback Section -->
-        <SidebarGroup>
+        <SidebarGroup v-if="visibleFeedbackItems.length > 0">
           <SidebarGroupLabel>Feedback</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              <SidebarMenuItem v-for="item in feedbackItems" :key="item.title">
+              <SidebarMenuItem v-for="item in visibleFeedbackItems" :key="item.title">
                 <SidebarMenuButton
                   v-if="item.disabled"
                   :tooltip="item.title"
@@ -267,14 +333,35 @@ const supportItems: SidebarNavItem[] = [
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        <!-- Support Section — off by default; enabled per team in Settings → Tools -->
+        <SidebarGroup v-if="teamModules.supportEnabled">
+          <SidebarGroupLabel>Support</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem v-for="item in supportModuleItems" :key="item.title">
+                <SidebarMenuButton
+                  as-child
+                  :tooltip="item.title"
+                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                >
+                  <NuxtLink :to="item.url" prefetch-on="interaction">
+                    <Icon :name="item.icon" class="!size-5 shrink-0" />
+                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
+                  </NuxtLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </template>
 
-      <!-- Support Section (always visible) -->
+      <!-- System Section (always visible) -->
       <SidebarGroup>
-        <SidebarGroupLabel>Support</SidebarGroupLabel>
+        <SidebarGroupLabel>System</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            <SidebarMenuItem v-for="item in supportItems" :key="item.title">
+            <SidebarMenuItem v-for="item in systemItems" :key="item.title">
               <SidebarMenuButton
                 as-child
                 :tooltip="item.title"
@@ -299,7 +386,7 @@ const supportItems: SidebarNavItem[] = [
       data-testid="app-sidebar-resize-handle"
       type="button"
       aria-label="Resize sidebar"
-      class="absolute inset-y-0 hidden w-3 md:block group-data-[collapsible=icon]:hidden"
+      class="absolute inset-y-0 z-30 hidden w-3 md:block group-data-[collapsible=icon]:hidden"
       :class="props.side === 'right' ? 'left-0 cursor-col-resize' : 'right-0 cursor-col-resize'"
       @click.stop="handleResizeHandleClick"
       @pointerdown.prevent="startSidebarResize"

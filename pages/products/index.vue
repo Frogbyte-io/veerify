@@ -1,6 +1,6 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6">
+    <div data-testid="products-page" :data-hydrated="isHydrated ? 'true' : 'false'" class="p-6">
       <div class="mb-6">
         <div class="flex items-center justify-between">
           <div>
@@ -152,12 +152,7 @@
             <div class="space-y-4">
               <div class="space-y-2">
                 <Label for="name">Product Name</Label>
-                <Input
-                  id="name"
-                  v-model="form.name"
-                  placeholder="My Awesome App"
-                  @update:model-value="generateSlug"
-                />
+                <Input id="name" v-model="form.name" placeholder="My Awesome App" @update:model-value="generateSlug" />
               </div>
               <div class="space-y-2">
                 <Label for="slug">URL Slug</Label>
@@ -296,6 +291,7 @@ export default {
   data() {
     return {
       products: [],
+      isHydrated: false,
       isLoading: true,
       error: null,
       showCreateDialog: false,
@@ -328,6 +324,7 @@ export default {
   },
 
   async mounted() {
+    this.isHydrated = true
     await this.initTeamContext()
 
     if (import.meta.client) {

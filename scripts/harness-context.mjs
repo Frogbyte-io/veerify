@@ -24,6 +24,7 @@ const requiredScripts = [
   'typecheck',
   'test',
   'lint',
+  'format:check',
   'test:e2e:if-available',
 ]
 

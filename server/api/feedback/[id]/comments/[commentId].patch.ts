@@ -39,7 +39,11 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const [fb] = await db.select({ projectId: feedback.projectId }).from(feedback).where(eq(feedback.id, feedbackId)).limit(1)
+  const [fb] = await db
+    .select({ projectId: feedback.projectId })
+    .from(feedback)
+    .where(eq(feedback.id, feedbackId))
+    .limit(1)
   if (!fb) {
     throw createError({
       statusCode: 404,
