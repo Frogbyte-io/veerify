@@ -8,7 +8,10 @@ opportunities, and growth features built on feedback, changelog and support data
 - **M0 (module registry) is implemented.** Module definitions live in `lib/modules.ts`. The team
   modules API, the Tools tab, the product Features tab and the sidebar read from it. Adding a module
   is now one registry entry plus a schema column.
-- M1+ are proposed and wait on the open questions in [design.md](design.md#open-questions).
+- Decided October 9, 2026: teams bring their own LLM keys; Claude and OpenAI at launch; the module
+  must work fully on self-hosted installs.
+- M1+ are proposed. M2 waits on cloud crawl limits, and M4 on Reddit's API terms
+  ([open questions](design.md#open-questions)).
 
 ## Durable references
 
@@ -21,4 +24,7 @@ opportunities, and growth features built on feedback, changelog and support data
 - Never crawl or monitor a site until the team has verified it owns that site.
 - Outbound fetches go through the private-address checks in `server/utils/webhook-url.ts`.
 - Every LLM call and crawled page is metered per team per month.
+- Team API keys are encrypted at rest, admin-only, and never returned by the API or logged.
+- No feature may depend on a Veerify-operated service; a missing optional key disables one capability
+  and says so, never the whole module.
 - Do not send support conversations or feedback text to an LLM provider without an explicit team opt-in.

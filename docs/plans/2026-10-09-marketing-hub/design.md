@@ -1,7 +1,8 @@
 # Marketing Hub — Design
 
 **Created:** October 9, 2026
-**Status:** Proposed. Stage M0 is implemented; M1+ need sign-off on the open questions below.
+**Status:** Proposed. Stage M0 is implemented. LLM keys, launch providers and self-hosting were decided
+on October 9, 2026 (see [Resolved decisions](#resolved-decisions)); M1+ wait on the remaining open questions.
 **Builds on:** `support-platform` (team module enablement, scheduler, domains, email delivery)
 
 **Goal:** A marketing tool inside Veerify that helps a team get its product found: by search engines, by
@@ -29,20 +30,22 @@ make the team act on something? A dashboard of numbers alone is not enough.
 
 ## Scope decisions
 
-| Decision                   | Choice                                                                                                         |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Placement in hierarchy     | **Product-scoped.** A marketing site belongs to one `project`; the switch is per team + per product            |
-| Module enablement          | `marketingEnabled` on `team_module_settings` **and** in `project.settings` (same rule as D-31)                 |
-| Module definitions         | **One registry**, `lib/modules.ts` (Stage M0). No new hand-copied module lists                                 |
-| Site ownership             | **Must be verified** before any crawl, audit or monitoring runs (DNS TXT, meta tag, or file)                   |
-| Crawling runtime           | **Resumable crawl frontier in Postgres**, advanced in small batches by a scheduled task. No new worker process |
-| Outbound HTTP safety       | Reuse `server/utils/webhook-url.ts` checks for private addresses. Re-check after every redirect                |
-| LLM access                 | **Provider adapter** in `server/services/llm/`, platform-owned keys first, bring-your-own key later            |
-| AI visibility sampling     | **Several samples per prompt per provider**, reported as a mention _rate_, never a single yes/no               |
-| Mentions sources (first)   | **Hacker News, Reddit, Bluesky.** X is deferred (API cost)                                                     |
-| Mentions ingestion         | **Shared with support Stage 12 (social)**: one ingestion layer, two consumers                                  |
-| Automated posting/outreach | **Out of scope.** Veerify drafts; a human posts                                                                |
-| Cost control               | **Usage metering from M1.** Every LLM call and crawled page is counted per team per month                      |
+| Decision                   | Choice                                                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Placement in hierarchy     | **Product-scoped.** A marketing site belongs to one `project`; the switch is per team + per product                              |
+| Module enablement          | `marketingEnabled` on `team_module_settings` **and** in `project.settings` (same rule as D-31)                                   |
+| Module definitions         | **One registry**, `lib/modules.ts` (Stage M0). No new hand-copied module lists                                                   |
+| Site ownership             | **Must be verified** before any crawl, audit or monitoring runs (DNS TXT, meta tag, or file)                                     |
+| Crawling runtime           | **Resumable crawl frontier in Postgres**, advanced in small batches by a scheduled task. No new worker process                   |
+| Outbound HTTP safety       | Reuse `server/utils/webhook-url.ts` checks for private addresses. Re-check after every redirect                                  |
+| LLM access                 | **Bring your own key.** Each team adds its own API key; a provider adapter lives in `server/services/llm/`                       |
+| LLM providers at launch    | **Anthropic (Claude) and OpenAI.** Perplexity and Gemini later                                                                   |
+| Self-hosting               | **Fully supported.** Every feature runs on a self-hosted install; missing optional keys disable one capability, never the module |
+| AI visibility sampling     | **Several samples per prompt per provider**, reported as a mention _rate_, never a single yes/no                                 |
+| Mentions sources (first)   | **Hacker News, Reddit, Bluesky.** X is deferred (API cost)                                                                       |
+| Mentions ingestion         | **Shared with support Stage 12 (social)**: one ingestion layer, two consumers                                                    |
+| Automated posting/outreach | **Out of scope.** Veerify drafts; a human posts                                                                                  |
+| Cost control               | **Usage metering from M1.** Every LLM call and crawled page is counted per team per month; teams can set an LLM budget cap       |
 
 ### Why product-scoped
 
@@ -51,8 +54,8 @@ match its brand name. In Veerify a site maps to a product (`project`), not to a 
 two products markets them separately. This matches how domains already work (`project.customDomain`,
 `projectDomain`).
 
-The team-level `marketingEnabled` switch still exists. It controls the sidebar group and the overall
-cost exposure. Both switches must be on, as D-31 requires for the other modules.
+The team-level `marketingEnabled` switch still exists. It controls the sidebar group. Both switches
+must be on, as D-31 requires for the other modules.
 
 ### Why verification is required
 
@@ -86,10 +89,60 @@ LLM answers vary from run to run, and the provider APIs are not the consumer app
 use. A single "ChatGPT mentioned you" result would be both noisy and misleading. The tool therefore:
 
 - runs each prompt N times per provider (default 3) and reports the share of runs that mention the brand;
-- uses each provider's web-search or grounded mode where it exists (Anthropic web search, OpenAI web
-  search, Perplexity Sonar, Gemini grounding), because that is closest to what end users see;
+- uses each provider's web-search mode (Anthropic web search tool, OpenAI web search), because that is
+  closest to what end users see;
 - states clearly in the UI that results come from the API and approximate the consumer apps, rather
   than claiming they are identical.
+
+### Why bring your own key
+
+With team-owned keys, the LLM cost of AI visibility sits with the team that chose to run it, so
+Veerify needs no billing before M3 ships. A self-hosted install works the same way as the cloud.
+And the team sees the real usage on its own provider dashboard, which builds trust in the numbers.
+
+What this requires:
+
+- **Storage.** A `teamApiCredential` table (teamId, provider, encryptedKey, keyHint, createdBy,
+  lastValidatedAt, lastError), unique on teamId + provider. Keys are encrypted at rest with
+  AES-256-GCM, using a new instance secret `SECRETS_ENCRYPTION_KEY` (added to `.env.example` in M1).
+  Veerify has no encryption helper yet, so M1 adds `server/utils/secrets.ts`.
+- **Access.** Only team admins can add, replace or remove a key. The API never returns a key, only its
+  hint (last four characters) and validation status. Keys are never logged, and the observability
+  allowlist rule from support applies here too.
+- **Validation.** Saving a key makes one cheap call to the provider (list models). If a scheduled run
+  later gets a 401 or 403, the key is marked invalid, runs for that provider pause, and team admins get
+  one email. The runs do not keep failing silently.
+- **Budget.** Metering still counts tokens per team per month. The team can set an optional monthly
+  cap per provider; Veerify estimates cost from token counts and stops runs at the cap. The estimate is
+  labelled as an estimate, because the provider's invoice is the real figure.
+- **Model choice.** The answers use each provider's current general model with web search. The
+  extraction step (rank, sentiment, citations) uses the same team's key with that provider's smallest
+  model. Default model IDs live in one config file and can be changed per team.
+
+Without any key, AI visibility shows a setup screen. The site audit, including the `robots.txt`
+AI-crawler checks and `llms.txt` validation, still works because it needs no LLM.
+
+### How self-hosting works
+
+Self-hosted installs get the whole module. Every external dependency is either a team key, an optional
+instance setting, or not needed at all:
+
+| Capability                | Needs                                                                       | When it is missing                |
+| ------------------------- | --------------------------------------------------------------------------- | --------------------------------- |
+| Site audit (crawl, rules) | Outbound internet access only                                               | —                                 |
+| Core Web Vitals           | PageSpeed Insights key: a team key, or `PAGESPEED_API_KEY` for the instance | Section shows "not configured"    |
+| AI visibility             | Team's Anthropic and/or OpenAI key                                          | Setup screen                      |
+| Mentions: HN, Bluesky     | Nothing                                                                     | —                                 |
+| Mentions: Reddit          | Instance OAuth app (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`)             | Reddit listed as unavailable      |
+| Search Console (M5)       | Instance Google OAuth app                                                   | Integration listed as unavailable |
+| Scheduled work            | Nitro scheduled tasks (already used by support)                             | —                                 |
+
+- The marketing settings page has an **integration status** panel listing each capability as ready,
+  not configured, or failing, with what to set. A missing key must never surface as a silent empty chart.
+- The crawler user agent points at the install's own URL: `VeerifyBot/1.0 (+${BETTER_AUTH_URL}/bot)`.
+- Crawl limits are instance settings with generous self-host defaults (`MARKETING_MAX_AUDIT_PAGES`,
+  `MARKETING_AUDIT_BATCH_SIZE`). The cloud sets tighter values.
+- No feature depends on a Veerify-operated service. Self-hosters never send data to veerify.com.
 
 ### Why mentions are shared with support Stage 12
 
@@ -127,12 +180,12 @@ it for _conversations_. A mention can be escalated into a support conversation, 
 - **Setup:** brand terms (name and aliases), competitors (name and aliases), and prompts. A short
   wizard suggests starter prompts from the product description, feedback categories and support
   topics. Example: "What's the best tool for collecting user feedback for a small SaaS?"
-- **Runs:** weekly by default. Each prompt goes to each enabled provider N times, and the
-  answers are stored.
+- **Runs:** weekly by default. Each prompt goes to each provider the team has a valid key for (Claude,
+  OpenAI) N times, and the answers are stored.
 - **Analysis**, in two steps:
   1. Deterministic matching of brand and competitor terms. This step is cheap and needs no LLM.
   2. Extraction with a small model and structured output: position in the list, sentiment, and the
-     cited URLs and domains.
+     cited URLs and domains. This step runs on the team's own key with the provider's smallest model.
 - **Reports:**
   - mention rate per prompt and per provider, and the trend over time
   - "share of voice" against competitors
@@ -171,7 +224,8 @@ it for _conversations_. A mention can be escalated into a support conversation, 
   submission status.
 - Competitor change tracking: pricing and changelog pages. Only public pages, fetched at a low rate,
   and only after a separate review of the abuse question above.
-- Bring-your-own LLM keys; more providers.
+- More providers: Perplexity (Sonar), Gemini (grounding).
+- Optional Veerify-provided keys on the cloud, as a paid add-on, if billing exists by then.
 
 ---
 
@@ -189,6 +243,7 @@ organization → team ── team_module_settings.marketingEnabled
                                │      └── aiVisibilityAnswer (run, provider, model, sample, analysis)
                                └── mention (source, externalId, matchedTerm, kind, status)
 
+team → teamApiCredential (provider, encryptedKey)    ← bring-your-own LLM / PageSpeed keys
 team → marketingUsage (period, metric, units)        ← metering for LLM calls, pages, sources
 ```
 
@@ -205,6 +260,7 @@ team → marketingUsage (period, metric, units)        ← metering for LLM call
 | `aiVisibilityRun`    | id, siteId, trigger, status, startedAt, finishedAt                                                                                                          |
 | `aiVisibilityAnswer` | id, runId, promptId, provider, model, sample, answer, brandMentioned, brandRank, competitorsMentioned (jsonb), citations (jsonb), inputTokens, outputTokens |
 | `mention`            | id, siteId, source, externalId (unique per source), url, author, excerpt, publishedAt, termId, kind, status                                                 |
+| `teamApiCredential`  | id, teamId, provider (`anthropic`/`openai`/`pagespeed`), encryptedKey, keyHint, createdBy, lastValidatedAt, lastError (unique on teamId+provider)           |
 | `marketingUsage`     | teamId, period (`YYYY-MM`), metric, units (unique on teamId+period+metric)                                                                                  |
 
 The rule definitions, provider list and source list are code, not tables, for the same reason the
@@ -213,9 +269,12 @@ conversation statuses are fixed (design.md of support): reports must mean the sa
 ### Services and routes
 
 - `server/services/llm/`: a `LlmProvider` interface (`complete`, `completeWithSearch`,
-  `extractStructured`) with Anthropic, OpenAI, Google and Perplexity adapters. Default model IDs live
-  in one config file, so upgrading a model is a one-line change. Every call goes through
-  `recordUsage()`.
+  `extractStructured`, `validateKey`) with Anthropic and OpenAI adapters. Each call takes the team's
+  decrypted key; the key is never stored on the adapter. Default model IDs live in one config file, so
+  upgrading a model is a one-line change. Every call goes through `recordUsage()`, which also enforces
+  the team's budget cap.
+- `server/utils/secrets.ts`: AES-256-GCM encrypt/decrypt with `SECRETS_ENCRYPTION_KEY`, versioned
+  so the key can be rotated.
 - `server/services/marketing/`: crawler (fetch → parse → frontier), audit rules, visibility analysis.
 - `server/services/social-sources/`: shared with support Stage 12.
 - Scheduler tasks (`server/services/scheduler/tasks/`): `marketing-audit-advance`,
@@ -236,6 +295,8 @@ conversation statuses are fixed (design.md of support): reports must mean the sa
 - LLM prompts carry product facts and user-written prompts only. Support conversations and feedback
   text are **never** sent to an LLM provider without a separate, explicit team opt-in.
   The "customer language" feature in M5 needs that opt-in.
+- API keys: encrypted at rest, admin-only, never returned or logged (see "Why bring your own key").
+  Deleting a team deletes its keys (cascade).
 - Mention excerpts are public content, but they are still stored with retention limits (default 180 days)
   and are deletable.
 
@@ -243,32 +304,35 @@ conversation statuses are fixed (design.md of support): reports must mean the sa
 
 ## Stages
 
-| Stage | Scope                                                                                                                                         | Depends on                           |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| M0    | One module registry in `lib/modules.ts`; team API, Tools tab, product Features tab and sidebar read from it. No behaviour change              | —                                    |
-| M1    | Foundation: `marketingEnabled` (team + product), `marketingSite` with verification, `/marketing` overview, LLM provider layer, usage metering | M0                                   |
-| M2    | Site audit: crawler, rules, `robots.txt` / `llms.txt` / AI-crawler checks, PageSpeed, score trend                                             | M1                                   |
-| M3    | AI visibility: terms, prompts, scheduled sampled runs, analysis, share of voice, `llms.txt` generator                                         | M1 (LLM layer), M2 helpful           |
-| M4    | Mentions: HN, Reddit, Bluesky ingestion (shared layer), triage, digest                                                                        | M1; coordinate with support Stage 12 |
-| M5    | Growth features: changelog → drafts, review/testimonial requests, customer language, Search Console                                           | Changelog module; M3                 |
-| M6+   | Launch kit, competitor change tracking, bring-your-own LLM keys                                                                               | —                                    |
+| Stage | Scope                                                                                                                                                                                                                  | Depends on                           |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| M0    | One module registry in `lib/modules.ts`; team API, Tools tab, product Features tab and sidebar read from it. No behaviour change                                                                                       | —                                    |
+| M1    | Foundation: `marketingEnabled` (team + product), `marketingSite` with verification, `/marketing` overview, encrypted team API keys, Claude + OpenAI adapters, usage metering and budget caps, integration status panel | M0                                   |
+| M2    | Site audit: crawler, rules, `robots.txt` / `llms.txt` / AI-crawler checks, PageSpeed, score trend                                                                                                                      | M1                                   |
+| M3    | AI visibility: terms, prompts, scheduled sampled runs, analysis, share of voice, `llms.txt` generator                                                                                                                  | M1 (LLM layer), M2 helpful           |
+| M4    | Mentions: HN, Reddit, Bluesky ingestion (shared layer), triage, digest                                                                                                                                                 | M1; coordinate with support Stage 12 |
+| M5    | Growth features: changelog → drafts, review/testimonial requests, customer language, Search Console                                                                                                                    | Changelog module; M3                 |
+| M6+   | Launch kit, competitor change tracking, Perplexity and Gemini, optional Veerify-provided keys                                                                                                                          | —                                    |
 
 M2 and M3 can be built in parallel after M1.
 
 ---
 
+## Resolved decisions
+
+Decided October 9, 2026:
+
+1. **LLM keys: bring your own.** Teams add their own provider keys; Veerify pays for no LLM usage.
+   See "Why bring your own key".
+2. **Launch providers: Claude and OpenAI.** Perplexity and Gemini move to M6+.
+3. **Self-hosting: supported.** Every marketing feature works on a self-hosted install. See "How
+   self-hosting works".
+
 ## Open questions
 
-1. **Pricing and limits.** Veerify has no billing yet. Metering ships in M1 regardless, but someone has to
-   choose the free-tier caps (pages per audit, prompts × providers × samples per month) before M3
-   ships, because every run costs real money.
-2. **LLM keys.** Platform-owned keys mean Veerify carries the cost and must enforce caps. Bring-your-own
-   moves the cost to the user but adds key storage (encrypted) and support burden. Proposal: platform keys
-   with caps for MVP, bring-your-own as a paid-tier option later.
-3. **Which providers at launch?** Proposal: Anthropic + OpenAI + Perplexity for M3. Add Gemini when the
-   grounding API cost per run is known.
-4. **Reddit commercial terms.** Confirm that Reddit's data API terms allow this use at our scale
-   before M4. If not, launch M4 with HN and Bluesky only.
-5. **Self-hosted installs.** Do marketing features ship for self-hosters? They need their own API keys
-   (PageSpeed, LLMs, Reddit), and the module should show clearly which keys are missing instead of failing
-   silently.
+1. **Cloud crawl limits and pricing.** Bring your own key removes the LLM cost, but crawling, storage and
+   PageSpeed calls still cost the cloud something. Choose the cloud page cap per audit and audit
+   frequency before M2 ships, and decide whether marketing is free or a paid tier.
+2. **Reddit commercial terms.** Confirm that Reddit's data API terms allow this use at our scale
+   before M4. If not, launch M4 with HN and Bluesky only. On self-hosted installs, each operator
+   registers their own Reddit app and is bound by those terms directly.
