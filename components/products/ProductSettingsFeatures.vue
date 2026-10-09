@@ -8,82 +8,29 @@
       </p>
     </div>
     <div class="p-6 space-y-3">
-      <!-- Feedback -->
       <div
+        v-for="feature in features"
+        :key="feature.key"
         class="flex items-start justify-between rounded-lg border p-4 transition-colors"
-        :class="localFeatures.feedbackEnabled ? 'border-border' : 'opacity-60'"
+        :class="localFeatures[feature.key] ? 'border-border' : 'opacity-60'"
       >
         <div class="flex items-start gap-3 flex-1 min-w-0">
           <div
             class="w-9 h-9 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-            :class="localFeatures.feedbackEnabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
+            :class="localFeatures[feature.key] ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
           >
-            <Icon name="lucide:message-square" class="w-4 h-4" />
+            <Icon :name="feature.icon" class="w-4 h-4" />
           </div>
           <div class="min-w-0">
-            <p class="text-sm font-medium">Feedback Board</p>
-            <p class="text-xs text-muted-foreground mt-0.5">
-              Allow users to submit, vote, and discuss feedback for your product
-            </p>
+            <p class="text-sm font-medium">{{ feature.product.label }}</p>
+            <p class="text-xs text-muted-foreground mt-0.5">{{ feature.product.description }}</p>
           </div>
         </div>
         <Switch
-          :model-value="localFeatures.feedbackEnabled"
-          :disabled="savingFeature === 'feedbackEnabled'"
+          :model-value="localFeatures[feature.key]"
+          :disabled="savingFeature === feature.key"
           class="shrink-0 ml-4 mt-0.5"
-          @update:model-value="toggleFeature('feedbackEnabled', $event)"
-        />
-      </div>
-
-      <!-- Roadmap -->
-      <div
-        class="flex items-start justify-between rounded-lg border p-4 transition-colors"
-        :class="localFeatures.roadmapEnabled ? 'border-border' : 'opacity-60'"
-      >
-        <div class="flex items-start gap-3 flex-1 min-w-0">
-          <div
-            class="w-9 h-9 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-            :class="localFeatures.roadmapEnabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
-          >
-            <Icon name="lucide:map" class="w-4 h-4" />
-          </div>
-          <div class="min-w-0">
-            <p class="text-sm font-medium">Roadmap</p>
-            <p class="text-xs text-muted-foreground mt-0.5">
-              Share your planned features and priorities publicly as a kanban-style roadmap
-            </p>
-          </div>
-        </div>
-        <Switch
-          :model-value="localFeatures.roadmapEnabled"
-          :disabled="savingFeature === 'roadmapEnabled'"
-          class="shrink-0 ml-4 mt-0.5"
-          @update:model-value="toggleFeature('roadmapEnabled', $event)"
-        />
-      </div>
-
-      <!-- Changelog -->
-      <div
-        class="flex items-start justify-between rounded-lg border p-4 transition-colors"
-        :class="localFeatures.changelogEnabled ? 'border-border' : 'opacity-60'"
-      >
-        <div class="flex items-start gap-3 flex-1 min-w-0">
-          <div
-            class="w-9 h-9 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-            :class="localFeatures.changelogEnabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
-          >
-            <Icon name="lucide:newspaper" class="w-4 h-4" />
-          </div>
-          <div class="min-w-0">
-            <p class="text-sm font-medium">Changelog</p>
-            <p class="text-xs text-muted-foreground mt-0.5">Publish release notes and product updates for your users</p>
-          </div>
-        </div>
-        <Switch
-          :model-value="localFeatures.changelogEnabled"
-          :disabled="savingFeature === 'changelogEnabled'"
-          class="shrink-0 ml-4 mt-0.5"
-          @update:model-value="toggleFeature('changelogEnabled', $event)"
+          @update:model-value="toggleFeature(feature.key, $event)"
         />
       </div>
     </div>
@@ -109,12 +56,7 @@
 
 <script>
 import { toast } from 'vue-sonner'
-
-const FEATURE_LABELS = {
-  feedbackEnabled: { label: 'Feedback Board', dataLabel: 'feedback data' },
-  roadmapEnabled: { label: 'Roadmap', dataLabel: 'roadmap data' },
-  changelogEnabled: { label: 'Changelog', dataLabel: 'changelog entries' },
-}
+import { PRODUCT_MODULES, resolveProductModules } from '~/lib/modules'
 
 export default {
   name: 'ProductSettingsFeatures',
@@ -130,33 +72,29 @@ export default {
 
   data() {
     return {
+      features: PRODUCT_MODULES,
       savingFeature: null,
       showDisableDialog: false,
       pendingDisableFeature: null,
-      localFeatures: {
-        feedbackEnabled: this.project?.settings?.feedbackEnabled !== false,
-        roadmapEnabled: this.project?.settings?.roadmapEnabled === true,
-        changelogEnabled: this.project?.settings?.changelogEnabled === true,
-      },
+      localFeatures: resolveProductModules(this.project?.settings),
     }
   },
 
   computed: {
+    pendingDisableModule() {
+      return PRODUCT_MODULES.find((module) => module.key === this.pendingDisableFeature) || null
+    },
     disableFeatureLabel() {
-      return FEATURE_LABELS[this.pendingDisableFeature]?.label || ''
+      return this.pendingDisableModule?.product.label || ''
     },
     disableFeatureDataLabel() {
-      return FEATURE_LABELS[this.pendingDisableFeature]?.dataLabel || ''
+      return this.pendingDisableModule?.product.dataLabel || ''
     },
   },
 
   watch: {
     project(newProject) {
-      this.localFeatures = {
-        feedbackEnabled: newProject?.settings?.feedbackEnabled !== false,
-        roadmapEnabled: newProject?.settings?.roadmapEnabled === true,
-        changelogEnabled: newProject?.settings?.changelogEnabled === true,
-      }
+      this.localFeatures = resolveProductModules(newProject?.settings)
     },
   },
 
@@ -192,9 +130,7 @@ export default {
           body: {
             settings: {
               ...this.project.settings,
-              feedbackEnabled: this.localFeatures.feedbackEnabled,
-              roadmapEnabled: this.localFeatures.roadmapEnabled,
-              changelogEnabled: this.localFeatures.changelogEnabled,
+              ...this.localFeatures,
             },
           },
         })

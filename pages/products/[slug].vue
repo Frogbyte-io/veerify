@@ -130,6 +130,7 @@ import ProductSettingsEmbed from '~/components/products/ProductSettingsEmbed.vue
 import ProductSettingsDanger from '~/components/products/ProductSettingsDanger.vue'
 import ProductSettingsFeedback from '~/components/products/ProductSettingsFeedback.vue'
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
+import { resolveProductModules } from '~/lib/modules'
 
 const DEFAULT_FEEDBACK_QUERY = {
   page: 1,
@@ -187,12 +188,7 @@ export default {
   },
   computed: {
     enabledFeatures() {
-      const settings = this.projectData?.settings || {}
-      return {
-        feedbackEnabled: settings.feedbackEnabled !== false,
-        roadmapEnabled: settings.roadmapEnabled === true,
-        changelogEnabled: settings.changelogEnabled === true,
-      }
+      return resolveProductModules(this.projectData?.settings)
     },
     tabs() {
       const all = [

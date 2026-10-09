@@ -2,6 +2,7 @@
 import TeamSwitcher from './TeamSwitcher.vue'
 import NavUser from './NavUser.vue'
 import { useSidebar } from '~/components/ui/sidebar'
+import { DEFAULT_TEAM_MODULES, type ModuleKey } from '~/lib/modules'
 
 interface SidebarProps {
   side?: 'left' | 'right'
@@ -15,6 +16,8 @@ interface SidebarNavItem {
   url: string
   icon: string
   disabled?: boolean
+  /** Hidden unless this module is enabled for the active team */
+  module?: ModuleKey
 }
 
 const props = withDefaults(defineProps<SidebarProps>(), {
@@ -161,18 +164,21 @@ const feedbackItems: SidebarNavItem[] = [
     title: 'Feedback',
     url: '/feedback',
     icon: 'lucide:message-square',
+    module: 'feedbackEnabled',
   },
   {
     title: 'Roadmap',
     url: '/roadmap',
     icon: 'lucide:map',
     disabled: true,
+    module: 'roadmapEnabled',
   },
   {
     title: 'Changelog',
     url: '/changelog',
     icon: 'lucide:scroll-text',
     disabled: true,
+    module: 'changelogEnabled',
   },
 ]
 
@@ -213,12 +219,7 @@ const supportModuleItems: SidebarNavItem[] = [
 // Per-team module enablement (delta D-31). Defaults match the table's column
 // defaults, so the sidebar renders correctly for a team that has never opened
 // the Tools tab and therefore has no row.
-const teamModules = ref({
-  feedbackEnabled: true,
-  roadmapEnabled: false,
-  changelogEnabled: false,
-  supportEnabled: false,
-})
+const teamModules = ref({ ...DEFAULT_TEAM_MODULES })
 
 async function loadTeamModules() {
   if (!import.meta.client) return
@@ -242,12 +243,7 @@ async function loadTeamModules() {
 // link to a 404. The toggle controls whether the placeholder is advertised at
 // all. See Technical Debt #11.
 const visibleFeedbackItems = computed(() =>
-  feedbackItems.filter((item) => {
-    if (item.title === 'Feedback') return teamModules.value.feedbackEnabled
-    if (item.title === 'Roadmap') return teamModules.value.roadmapEnabled
-    if (item.title === 'Changelog') return teamModules.value.changelogEnabled
-    return true
-  })
+  feedbackItems.filter((item) => !item.module || teamModules.value[item.module])
 )
 </script>
 

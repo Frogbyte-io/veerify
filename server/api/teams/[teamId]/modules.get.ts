@@ -20,18 +20,7 @@ import { teamMember } from '~/server/database/schema/auth'
 import { teamModuleSettings } from '~/server/database/schema/teams'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-
-/**
- * Defaults for a team with no row yet. Must match the column defaults in
- * `teams.ts` — a team that has never opened the Tools tab has no row, and it
- * must read identically to one that has (delta D-31).
- */
-export const DEFAULT_TEAM_MODULES = {
-  feedbackEnabled: true,
-  roadmapEnabled: false,
-  changelogEnabled: false,
-  supportEnabled: false,
-}
+import { DEFAULT_TEAM_MODULES, pickTeamModules } from '~/lib/modules'
 
 export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)
@@ -63,13 +52,7 @@ export default defineEventHandler(async (event) => {
 
   return createSuccessResponse({
     canManage: membership.role === 'admin',
-    modules: row
-      ? {
-          feedbackEnabled: row.feedbackEnabled,
-          roadmapEnabled: row.roadmapEnabled,
-          changelogEnabled: row.changelogEnabled,
-          supportEnabled: row.supportEnabled,
-        }
-      : { ...DEFAULT_TEAM_MODULES },
+    // A team with no row reads as the column defaults (delta D-31).
+    modules: row ? pickTeamModules(row) : { ...DEFAULT_TEAM_MODULES },
   })
 })
