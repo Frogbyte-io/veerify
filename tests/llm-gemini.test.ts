@@ -72,6 +72,7 @@ describe('gemini', () => {
     expect(call.body).toEqual({
       contents: [{ role: 'user', parts: [{ text: 'best tool?' }] }],
       tools: [{ google_search: {} }],
+      generationConfig: { maxOutputTokens: 4096 },
     })
     expect(res).toEqual({
       text: 'Acme rocks.',
@@ -120,7 +121,7 @@ describe('gemini', () => {
     expect(call.body).toEqual({
       systemInstruction: { parts: [{ text: 'sys' }] },
       contents: [{ role: 'user', parts: [{ text: 'in' }] }],
-      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema },
+      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, maxOutputTokens: 2048 },
     })
     expect(res).toEqual({
       data: { a: 'x' },
@@ -149,6 +150,7 @@ describe('gemini', () => {
     fetchMock.mockResolvedValueOnce(new Response(`API key not valid ${KEY}`, { status: 400 }))
     const bad = await p.validateKey(KEY)
     expect(bad.ok).toBe(false)
+    expect(bad).toMatchObject({ kind: 'auth' })
     expect(bad.message).not.toContain(KEY)
     fetchMock.mockResolvedValueOnce(new Response('denied', { status: 403 }))
     await expect(p.validateKey(KEY)).resolves.toMatchObject({ ok: false, kind: 'auth' })
@@ -180,6 +182,24 @@ describe('gemini error mapping', () => {
     expect(err.provider).toBe('gemini')
     expect(err.message).not.toContain(KEY)
     expect(err.message.length).toBeLessThan(400)
+  })
+
+  it('maps HTTP 400 API_KEY_INVALID to auth but leaves other 400s as bad_request', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' },
+        },
+        400
+      )
+    )
+    expect((await call().catch((e) => e)).kind).toBe('auth')
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: { code: 400, details: [{ reason: 'API_KEY_INVALID' }] } }, 400)
+    )
+    expect((await call().catch((e) => e)).kind).toBe('auth')
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: { code: 400, message: 'Bad schema' } }, 400))
+    expect((await call().catch((e) => e)).kind).toBe('bad_request')
   })
 
   it('maps exhausted quota to quota', async () => {

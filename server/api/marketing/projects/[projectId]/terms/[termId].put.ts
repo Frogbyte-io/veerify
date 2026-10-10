@@ -3,7 +3,7 @@
  * /api/marketing/projects/{projectId}/terms/{termId}:
  *   put:
  *     tags: [Marketing]
- *     summary: Update a term's name, aliases or competitor domain
+ *     summary: Update a term's name, aliases or competitor domain (changing it on a term with watches needs a marketing admin)
  *     operationId: updateMarketingTerm
  *     parameters:
  *       - in: path
@@ -28,14 +28,14 @@
  *     responses:
  *       200: { description: Term updated }
  *       400: { description: Validation failed }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: Not a team member, Marketing is off, or the competitor domain of a term with watched pages is changed by a non-admin }
  *       404: { description: Term or site not found }
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { marketingTerm } from '~/server/database/schema/marketing'
+import { competitorWatch, marketingTerm } from '~/server/database/schema/marketing'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
-import { requireMarketingAccess } from '~/server/utils/marketing-access'
+import { requireMarketingAccess, requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
 import { requireRouteParam } from '~/server/utils/marketing-site'
@@ -73,6 +73,15 @@ export default defineEventHandler(async (event) => {
     body.competitorDomain === undefined
       ? current.competitorDomain
       : resolveCompetitorDomain(current.kind, body.competitorDomain)
+
+  // Watches are tied to the competitor's domain, so changing or clearing it (which pauses them) is an admin action.
+  if (competitorDomain !== current.competitorDomain) {
+    const [watched] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(competitorWatch)
+      .where(eq(competitorWatch.termId, current.id))
+    if ((watched?.count ?? 0) > 0) await requireMarketingAdmin(projectId, session.user.id)
+  }
 
   const [row] = await db
     .update(marketingTerm)

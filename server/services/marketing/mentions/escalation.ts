@@ -127,6 +127,25 @@ export async function pickEscalationInbox(teamId: string, projectId: string, use
   return null
 }
 
+/** Whether the user can open this inbox (inbox member or team admin). Never throws for a denied or missing inbox. */
+export async function canAccessInbox(inboxId: string, userId: string): Promise<boolean> {
+  try {
+    await requireInboxAccess(inboxId, userId)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The subset of `inboxIds` the user can open. Used to keep conversation ids away from people who cannot reach them. */
+export async function accessibleInboxIds(inboxIds: Iterable<string>, userId: string): Promise<Set<string>> {
+  const out = new Set<string>()
+  for (const id of new Set(inboxIds)) {
+    if (await canAccessInbox(id, userId)) out.add(id)
+  }
+  return out
+}
+
 /** Whether the user may escalate: support is on and they can work in at least one inbox. */
 export async function canEscalateMentions(teamId: string, projectId: string, userId: string): Promise<boolean> {
   if (!(await isSupportEnabled(teamId))) return false

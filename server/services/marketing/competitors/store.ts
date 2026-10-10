@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, eq, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 import {
@@ -20,6 +20,8 @@ export interface WatchContext {
   projectName: string
   projectSettings: Record<string, unknown> | null
   termLabel: string
+  /** The competitor term's current domain; null when it was cleared. */
+  competitorDomain: string | null
   url: string
   kind: CompetitorWatchKind
   status: CompetitorWatchStatus
@@ -57,8 +59,11 @@ export interface ChangeSummary {
 export interface CompetitorStore {
   /** Active, verified, marketing-on watches not checked since `cutoff`, oldest first. */
   loadDue(cutoff: Date, limit: number): Promise<WatchContext[]>
-  /** Marks the watch as picked up by this run; false when another run took it first. */
-  claim(id: string, cutoff: Date, now: Date): Promise<boolean>
+  /**
+   * Marks the watch as picked up by this run; false when another run (cron or manual) took it first.
+   * `anyStatus` lets a manual check claim a blocked/errored watch to re-test it (never a paused one).
+   */
+  claim(id: string, cutoff: Date, now: Date, opts?: { anyStatus?: boolean }): Promise<boolean>
   save(id: string, patch: WatchPatch): Promise<void>
   insertChange(row: ChangeInsert): Promise<string>
   saveSummary(changeId: string, summary: ChangeSummary): Promise<void>
@@ -72,6 +77,7 @@ const contextColumns = {
   projectName: project.name,
   projectSettings: project.settings,
   termLabel: marketingTerm.label,
+  competitorDomain: marketingTerm.competitorDomain,
   url: competitorWatch.url,
   kind: competitorWatch.kind,
   status: competitorWatch.status,
@@ -123,14 +129,14 @@ export const dbCompetitorStore: CompetitorStore = {
     return rows.map(toContext)
   },
 
-  async claim(id, cutoff, now) {
+  async claim(id, cutoff, now, opts) {
     const rows = await db
       .update(competitorWatch)
       .set({ lastCheckedAt: now, updatedAt: now })
       .where(
         and(
           eq(competitorWatch.id, id),
-          eq(competitorWatch.status, 'active'),
+          opts?.anyStatus ? ne(competitorWatch.status, 'paused') : eq(competitorWatch.status, 'active'),
           or(isNull(competitorWatch.lastCheckedAt), lt(competitorWatch.lastCheckedAt, cutoff))
         )
       )

@@ -20,12 +20,17 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: Conversation id and inbox id }
+ *       200: { description: "escalated: true. Conversation id, inbox id and display id are included only when the caller can open that inbox" }
  *       403: { description: Not a team member, Marketing is off, or no access to a support inbox }
  *       404: { description: Mention not found for this product }
  *       409: { description: Support is not enabled for this team }
  */
-import { escalateMention, isSupportEnabled, pickEscalationInbox } from '~/server/services/marketing/mentions/escalation'
+import {
+  canAccessInbox,
+  escalateMention,
+  isSupportEnabled,
+  pickEscalationInbox,
+} from '~/server/services/marketing/mentions/escalation'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { requireMarketingSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -68,7 +73,13 @@ export default defineEventHandler(async (event) => {
     inbox,
   })
 
+  // An already-escalated mention may sit in an inbox this user cannot open: confirm it without leaking ids.
+  if (result.alreadyEscalated && !(await canAccessInbox(result.inboxId, session.user.id))) {
+    return createSuccessResponse({ escalated: true, alreadyEscalated: true })
+  }
+
   return createSuccessResponse({
+    escalated: true,
     conversationId: result.conversationId,
     inboxId: result.inboxId,
     displayId: result.displayId,

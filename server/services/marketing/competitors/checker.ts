@@ -4,6 +4,7 @@ import { createLogger } from '~/server/utils/logger'
 import { marketingConfig } from '~/server/utils/marketing-config'
 import { recordUsage } from '~/server/utils/marketing-usage'
 import { safeFetchText, type SafeFetchResult } from '~/server/utils/safe-fetch'
+import { bareHost, canonicalHost, hostMatchesDomain } from './hosts'
 import { diffLines, hashText, isNoise, normalizeHtml } from './normalize'
 import { dbCompetitorStore, type CompetitorStore, type WatchContext } from './store'
 
@@ -68,21 +69,63 @@ function describeError(error: unknown): string {
   return message.replace(/\s+/g, ' ').slice(0, 200)
 }
 
-/** robots.txt of the host: text, or null when there is none (4xx means no restrictions). */
-function loadRobots(origin: string, ctx: RunContext, deps: CheckerDeps): Promise<string | null> {
-  let cached = ctx.robots.get(origin)
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+export const MAX_REDIRECT_HOPS = 5
+
+/**
+ * 401/403 on robots.txt: RFC 9309 says "unavailable" (4xx) means no restrictions, but a host that
+ * actively refuses our request for its robots file clearly does not want crawlers, so we play safe
+ * and treat it as "disallow all". 404/410 is the normal "no robots.txt" case and allows everything.
+ */
+export const DISALLOW_ALL_ROBOTS = 'User-agent: *\nDisallow: /'
+
+function redirectTarget(response: SafeFetchResult, from: string): URL | null {
+  if (!REDIRECT_STATUSES.has(response.status)) return null
+  const location = response.headers?.location
+  if (typeof location !== 'string' || !location) return null
+  try {
+    return new URL(location, from)
+  } catch {
+    throw new Error('Redirect to an invalid URL')
+  }
+}
+
+async function fetchRobots(host: string, deps: CheckerDeps): Promise<string | null> {
+  let url = `https://${host}/robots.txt`
+  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+    const response = await deps.fetchText(url, {
+      userAgent: marketingConfig.botUserAgent,
+      timeoutMs: 10_000,
+      maxBytes: 500_000,
+      accept: 'text/plain',
+      maxRedirects: 0,
+      manualRedirects: true,
+    })
+    const next = redirectTarget(response, url)
+    if (next) {
+      // Same-host redirects only (e.g. /robots.txt -> /robots-v2.txt); another host's rules are not this host's.
+      if (next.protocol !== 'https:' || canonicalHost(next.hostname) !== host) {
+        throw new RobotsUnavailableError('robots.txt redirected to another host')
+      }
+      url = next.toString()
+      continue
+    }
+    if (response.status === 401 || response.status === 403) return DISALLOW_ALL_ROBOTS
+    if (response.status === 404 || response.status === 410) return null
+    if (response.status >= 500 || response.status === 429 || REDIRECT_STATUSES.has(response.status)) {
+      throw new RobotsUnavailableError(`robots.txt returned HTTP ${response.status}`)
+    }
+    return response.status >= 400 ? null : response.body
+  }
+  throw new RobotsUnavailableError('robots.txt redirected too many times')
+}
+
+/** robots.txt of the host: text, or null when there is none. Cached per host for the run. */
+function loadRobots(host: string, ctx: RunContext, deps: CheckerDeps): Promise<string | null> {
+  let cached = ctx.robots.get(host)
   if (!cached) {
-    cached = (async () => {
-      const response = await deps.fetchText(`${origin}/robots.txt`, {
-        userAgent: marketingConfig.botUserAgent,
-        timeoutMs: 10_000,
-        maxBytes: 500_000,
-        accept: 'text/plain',
-      })
-      if (response.status >= 500) throw new RobotsUnavailableError(`robots.txt returned HTTP ${response.status}`)
-      return response.status >= 400 ? null : response.body
-    })()
-    ctx.robots.set(origin, cached)
+    cached = fetchRobots(host, deps)
+    ctx.robots.set(host, cached)
   }
   return cached
 }
@@ -93,7 +136,8 @@ function pathOf(url: URL): string {
 
 /**
  * Checks one watch: robots.txt first (a blocked page is never fetched), then one
- * page fetch, then baseline / diff. Persists the outcome. Never throws.
+ * page fetch, then baseline / diff. Redirects are followed by hand, at most 5 hops, each on the
+ * same host as the watch, each robots-checked and spaced. Persists the outcome. Never throws.
  */
 export async function checkWatch(watch: WatchContext, ctx: RunContext, deps: CheckerDeps): Promise<CheckOutcome> {
   const now = deps.now()
@@ -122,33 +166,57 @@ export async function checkWatch(watch: WatchContext, ctx: RunContext, deps: Che
   } catch {
     return fail('Invalid URL')
   }
+  const host = canonicalHost(target.hostname)
+
+  // The competitor's domain may have changed or been cleared since the watch was created.
+  if (!hostMatchesDomain(host, watch.competitorDomain)) {
+    await deps.store.save(watch.id, {
+      status: 'error',
+      lastCheckedAt: now,
+      lastError: watch.competitorDomain
+        ? `This page is no longer on the competitor's domain (${bareHost(watch.competitorDomain)}). Remove it or fix the domain`
+        : "The competitor's domain is not set. Set it in Marketing settings to resume checks",
+    })
+    return 'error'
+  }
 
   try {
-    const robots = await loadRobots(target.origin, ctx, deps)
-    if (robots !== null && !isAllowed(robots, BOT_TOKEN, pathOf(target))) return block()
+    let current = target
+    let response: SafeFetchResult | null = null
+    for (let hop = 0; ; hop++) {
+      const currentHost = canonicalHost(current.hostname)
+      if (current.protocol !== 'https:') return fail('Redirected to a page that is not https')
+      if (currentHost !== host) return fail(`Redirected to another host (${currentHost})`)
 
-    // One page request per host every 10 seconds within a run.
-    const last = ctx.lastPageRequestAt.get(target.host)
-    if (last !== undefined) {
-      const wait = last + HOST_SPACING_MS - deps.now().getTime()
-      if (wait > 0) {
-        if (deps.now().getTime() + wait > ctx.deadline) return 'skipped'
-        await deps.sleep(wait)
+      const robots = await loadRobots(host, ctx, deps)
+      if (robots !== null && !isAllowed(robots, BOT_TOKEN, pathOf(current))) return block()
+
+      // One page request per host every 10 seconds within a run.
+      const last = ctx.lastPageRequestAt.get(host)
+      if (last !== undefined) {
+        const wait = last + HOST_SPACING_MS - deps.now().getTime()
+        if (wait > 0) {
+          if (deps.now().getTime() + wait > ctx.deadline) return 'skipped'
+          await deps.sleep(wait)
+        }
       }
+      ctx.lastPageRequestAt.set(host, deps.now().getTime())
+
+      response = await deps.fetchText(current.toString(), {
+        userAgent: marketingConfig.botUserAgent,
+        timeoutMs: 15_000,
+        maxBytes: 2_000_000,
+        accept: 'text/html',
+        maxRedirects: 0,
+        manualRedirects: true,
+      })
+      await deps.recordUsage(watch.teamId, 'competitors:fetches', 1).catch(() => undefined)
+
+      const next = redirectTarget(response, current.toString())
+      if (!next) break
+      if (hop >= MAX_REDIRECT_HOPS) return fail('Too many redirects')
+      current = next
     }
-    ctx.lastPageRequestAt.set(target.host, deps.now().getTime())
-
-    const response = await deps.fetchText(watch.url, {
-      userAgent: marketingConfig.botUserAgent,
-      timeoutMs: 15_000,
-      maxBytes: 2_000_000,
-      accept: 'text/html',
-    })
-    await deps.recordUsage(watch.teamId, 'competitors:fetches', 1).catch(() => undefined)
-
-    const finalUrl = new URL(response.finalUrl)
-    if (finalUrl.host !== target.host) return fail(`Redirected to another host (${finalUrl.host})`)
-    if (robots !== null && !isAllowed(robots, BOT_TOKEN, pathOf(finalUrl))) return block()
     if (response.status < 200 || response.status >= 300) return fail(`The page returned HTTP ${response.status}`)
     if (response.contentType && !/html|xml/i.test(response.contentType)) return fail('The page is not HTML')
 
@@ -258,7 +326,7 @@ export function interleaveByHost(watches: WatchContext[]): WatchContext[] {
   for (const watch of watches) {
     let host = watch.url
     try {
-      host = new URL(watch.url).host
+      host = canonicalHost(new URL(watch.url).hostname)
     } catch {
       // keep the raw url as its own group
     }
@@ -272,10 +340,32 @@ export function interleaveByHost(watches: WatchContext[]): WatchContext[] {
   return out
 }
 
-/** One immediate check of a single watch (manual "check now"). */
-export async function checkWatchNow(watch: WatchContext, partial: Partial<CheckerDeps> = {}): Promise<CheckOutcome> {
+/** A manual check is refused when the watch was checked (cron or manual) this recently. */
+export const MANUAL_CHECK_MIN_INTERVAL_MS = 60 * 60 * 1000
+
+/** Per-host spacing shared by all manual checks in this process (robots.txt is still fetched fresh per check). */
+const manualSpacing = new Map<string, number>()
+
+/**
+ * One immediate check of a single watch (manual "check now"). Takes the same atomic claim as the
+ * cron (so the two can never check the same watch at once and write duplicate change rows) and
+ * returns 'busy' when the watch was checked within the last hour or another run holds it.
+ */
+export async function checkWatchNow(
+  watch: WatchContext,
+  partial: Partial<CheckerDeps> = {}
+): Promise<CheckOutcome | 'busy'> {
   const deps = { ...defaultDeps, ...partial }
-  return checkWatch(watch, newRunContext(deps.now().getTime() + 30_000), deps)
+  const now = deps.now()
+  const cutoff = new Date(now.getTime() - MANUAL_CHECK_MIN_INTERVAL_MS)
+  if (!(await deps.store.claim(watch.id, cutoff, now, { anyStatus: true }))) return 'busy'
+  const ctx: RunContext = { robots: new Map(), lastPageRequestAt: manualSpacing, deadline: now.getTime() + 30_000 }
+  const outcome = await checkWatch(watch, ctx, deps)
+  if (outcome === 'skipped') {
+    // Not fetched: release the claim.
+    await deps.store.save(watch.id, { lastCheckedAt: watch.lastCheckedAt })
+  }
+  return outcome
 }
 
 export async function checkCompetitorWatches(

@@ -40,6 +40,10 @@ import {
 
 const BASE_URL = 'https://api.perplexity.ai'
 
+/** Agent API `max_output_tokens` (int, min 1; confirmed in the /v1/agent request reference). */
+export const PERPLEXITY_ANSWER_MAX_OUTPUT_TOKENS = 2048
+export const PERPLEXITY_EXTRACT_MAX_OUTPUT_TOKENS = 1024
+
 interface PerplexityOutputItem {
   type: string
   results?: { url?: string; title?: string }[]
@@ -144,7 +148,12 @@ export const perplexityProvider: LlmProvider = {
     const model = input.model ?? LLM_MODELS.perplexity.answer
     const res = await createResponse(
       input.apiKey,
-      { model, input: input.prompt, tools: [{ type: 'web_search' }] },
+      {
+        model,
+        input: input.prompt,
+        tools: [{ type: 'web_search' }],
+        max_output_tokens: PERPLEXITY_ANSWER_MAX_OUTPUT_TOKENS,
+      },
       ANSWER_TIMEOUT_MS,
       input.signal
     )
@@ -167,6 +176,7 @@ export const perplexityProvider: LlmProvider = {
         model,
         instructions: input.system,
         input: input.input,
+        max_output_tokens: PERPLEXITY_EXTRACT_MAX_OUTPUT_TOKENS,
         response_format: { type: 'json_schema', json_schema: { name: input.schemaName, schema: input.schema } },
       },
       // the first use of a new schema can take 10-30s to prepare

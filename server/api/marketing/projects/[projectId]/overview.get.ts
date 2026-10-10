@@ -20,7 +20,7 @@
  *       403: { description: Not a team member, or Marketing is off for the team or product }
  *       404: { description: Product not found }
  */
-import { and, asc, count, desc, eq, gte, isNotNull, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import {
   aiVisibilityAnswer,
@@ -292,12 +292,22 @@ async function loadCompetitors(siteId: string | null) {
   }
 }
 
-/** Launch kit progress against the built-in catalog (custom directories count as extra). */
+/** Launch kit progress against the built-in catalog. */
 async function loadLaunchKit(projectId: string) {
+  // Only catalog directories count, so the numerator can never exceed catalogSize
+  // (custom `custom:` entries and ids that left the catalog are excluded).
   const rows = await db
     .select({ status: launchKitItem.status, total: count() })
     .from(launchKitItem)
-    .where(eq(launchKitItem.projectId, projectId))
+    .where(
+      and(
+        eq(launchKitItem.projectId, projectId),
+        inArray(
+          launchKitItem.directoryId,
+          LAUNCH_DIRECTORIES.map((directory) => directory.id)
+        )
+      )
+    )
     .groupBy(launchKitItem.status)
   const byStatus = Object.fromEntries(rows.map((row) => [row.status, row.total])) as Record<string, number>
   return {

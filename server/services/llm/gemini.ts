@@ -13,6 +13,11 @@
  *   (never the `?key=` query, which would end up in URLs and logs);
  *   key validation `GET /v1beta/models?pageSize=1` (https://ai.google.dev/api/models).
  *
+ * Output caps: `generationConfig.maxOutputTokens` (confirmed in the generateContent reference). A
+ * thinking level/budget is not set: the thinking guide documents `thinking_level` for the newer
+ * Interactions API and the generateContent field name could not be confirmed, so the cap alone bounds
+ * thinking + answer.
+ *
  * Caveat: the current guides document the newer Interactions API; the camelCase
  * generateContent fields used here (`generationConfig.responseMimeType`,
  * `responseJsonSchema`, `candidates[].groundingMetadata.groundingChunks[].web`,
@@ -63,6 +68,29 @@ function headers(apiKey: string) {
   return { 'x-goog-api-key': apiKey }
 }
 
+/** Output caps. maxOutputTokens counts thinking tokens too, so the caps leave room for them. */
+export const GEMINI_ANSWER_MAX_OUTPUT_TOKENS = 4096
+export const GEMINI_EXTRACT_MAX_OUTPUT_TOKENS = 2048
+
+/**
+ * Google answers a bad key with HTTP 400 (`API key not valid`, reason `API_KEY_INVALID`) instead of
+ * 401/403, so the generic status mapping calls it `bad_request`. It is an `auth` problem.
+ */
+async function requestGemini(req: Parameters<typeof requestJson>[0]): Promise<unknown> {
+  try {
+    return await requestJson(req)
+  } catch (err) {
+    if (
+      err instanceof LlmProviderError &&
+      err.status === 400 &&
+      /API key not valid|API_KEY_INVALID/i.test(err.message)
+    ) {
+      throw new LlmProviderError('gemini', 'auth', err.message, err.status)
+    }
+    throw err
+  }
+}
+
 async function generate(
   apiKey: string,
   model: string,
@@ -70,7 +98,7 @@ async function generate(
   timeoutMs: number,
   signal?: AbortSignal
 ): Promise<GeminiResponse> {
-  const res = (await requestJson({
+  const res = (await requestGemini({
     provider: 'gemini',
     url: `${BASE_URL}/models/${encodeURIComponent(model)}:generateContent`,
     method: 'POST',
@@ -109,7 +137,7 @@ export const geminiProvider: LlmProvider = {
 
   async validateKey(apiKey, signal) {
     try {
-      await requestJson({
+      await requestGemini({
         provider: 'gemini',
         url: `${BASE_URL}/models?pageSize=1`,
         method: 'GET',
@@ -129,7 +157,11 @@ export const geminiProvider: LlmProvider = {
     const res = await generate(
       input.apiKey,
       model,
-      { contents: [{ role: 'user', parts: [{ text: input.prompt }] }], tools: [{ google_search: {} }] },
+      {
+        contents: [{ role: 'user', parts: [{ text: input.prompt }] }],
+        tools: [{ google_search: {} }],
+        generationConfig: { maxOutputTokens: GEMINI_ANSWER_MAX_OUTPUT_TOKENS },
+      },
       ANSWER_TIMEOUT_MS,
       input.signal
     )
@@ -159,7 +191,11 @@ export const geminiProvider: LlmProvider = {
       {
         systemInstruction: { parts: [{ text: input.system }] },
         contents: [{ role: 'user', parts: [{ text: input.input }] }],
-        generationConfig: { responseMimeType: 'application/json', responseJsonSchema: input.schema },
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseJsonSchema: input.schema,
+          maxOutputTokens: GEMINI_EXTRACT_MAX_OUTPUT_TOKENS,
+        },
       },
       EXTRACT_TIMEOUT_MS,
       input.signal

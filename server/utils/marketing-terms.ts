@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { findMarketingSite, type MarketingSiteRow } from '~/server/utils/marketing-site'
+import { isPublicSuffixOnly } from '~/server/services/marketing/competitors/hosts'
 import type { marketingTerm } from '~/server/database/schema/marketing'
 
 export const MAX_TERMS_PER_SITE = 50
@@ -50,10 +51,14 @@ export function normalizeCompetitorDomain(input: string): string {
     .toLowerCase()
     .replace(/^[a-z][a-z\d+.-]*:\/\//, '')
     .split(/[/?#]/)[0]
-    .replace(/^www\./, '')
     .replace(/:\d+$/, '')
+    .replace(/\.+$/, '')
+    .replace(/^www\./, '')
   if (!/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/.test(host)) {
     validationError('Competitor domain must be a domain name such as rival.com')
+  }
+  if (isPublicSuffixOnly(host)) {
+    validationError("Enter the competitor's own domain, not a shared one such as github.io or vercel.app")
   }
   return host
 }
