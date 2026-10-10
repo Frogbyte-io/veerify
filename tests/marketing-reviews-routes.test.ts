@@ -473,6 +473,15 @@ describe('moderation routes', () => {
     await expect(requestsGet({} as never)).rejects.toMatchObject({ statusCode: 403 })
   })
 
+  it('requires a marketing admin to moderate or delete, but not to list', async () => {
+    state.admin = 'forbidden'
+    state.body = { status: 'approved' }
+    await expect(patchHandler({} as never)).rejects.toMatchObject({ statusCode: 403 })
+    await expect(deleteHandler({} as never)).rejects.toMatchObject({ statusCode: 403 })
+    state.selectQueue = [[], []]
+    await expect(testimonialsGet({} as never)).resolves.toBeTruthy()
+  })
+
   it('scopes the testimonial list to the product', async () => {
     state.selectQueue = [[], []]
     await testimonialsGet({} as never)

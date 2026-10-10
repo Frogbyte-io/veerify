@@ -37,7 +37,7 @@ import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { testimonial } from '~/server/database/schema/marketing'
-import { requireMarketingAccess } from '~/server/utils/marketing-access'
+import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { requireRouterParam } from '~/server/utils/marketing-mentions'
 import { notFound, validationError } from '~/server/utils/marketing-reviews'
 import { createSuccessResponse } from '~/server/utils/response'
@@ -57,7 +57,7 @@ export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   const id = requireRouterParam(event, 'id', 'Testimonial ID')
-  await requireMarketingAccess(projectId, session.user.id)
+  await requireMarketingAdmin(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   // Scoped by projectId so a member of one product cannot touch another's testimonials.
