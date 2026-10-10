@@ -10,8 +10,9 @@ opportunities, and growth features built on feedback, changelog and support data
   is now one registry entry plus a schema column.
 - Decided October 9, 2026: teams bring their own LLM keys; Claude and OpenAI at launch; the module
   must work fully on self-hosted installs.
-- M1+ are proposed. M2 waits on cloud crawl limits, and M4 on Reddit's API terms
-  ([open questions](design.md#open-questions)).
+- Decided October 10, 2026: crawling goes through a crawl service (Firecrawl, bring your own key, basic
+  mode without one), 50 pages per audit by default; Reddit is a launch source.
+- M1–M4 are in progress.
 
 ## Durable references
 

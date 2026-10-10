@@ -30,22 +30,23 @@ make the team act on something? A dashboard of numbers alone is not enough.
 
 ## Scope decisions
 
-| Decision                   | Choice                                                                                                                           |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Placement in hierarchy     | **Product-scoped.** A marketing site belongs to one `project`; the switch is per team + per product                              |
-| Module enablement          | `marketingEnabled` on `team_module_settings` **and** in `project.settings` (same rule as D-31)                                   |
-| Module definitions         | **One registry**, `lib/modules.ts` (Stage M0). No new hand-copied module lists                                                   |
-| Site ownership             | **Must be verified** before any crawl, audit or monitoring runs (DNS TXT, meta tag, or file)                                     |
-| Crawling runtime           | **Resumable crawl frontier in Postgres**, advanced in small batches by a scheduled task. No new worker process                   |
-| Outbound HTTP safety       | Reuse `server/utils/webhook-url.ts` checks for private addresses. Re-check after every redirect                                  |
-| LLM access                 | **Bring your own key.** Each team adds its own API key; a provider adapter lives in `server/services/llm/`                       |
-| LLM providers at launch    | **Anthropic (Claude) and OpenAI.** Perplexity and Gemini later                                                                   |
-| Self-hosting               | **Fully supported.** Every feature runs on a self-hosted install; missing optional keys disable one capability, never the module |
-| AI visibility sampling     | **Several samples per prompt per provider**, reported as a mention _rate_, never a single yes/no                                 |
-| Mentions sources (first)   | **Hacker News, Reddit, Bluesky.** X is deferred (API cost)                                                                       |
-| Mentions ingestion         | **Shared with support Stage 12 (social)**: one ingestion layer, two consumers                                                    |
-| Automated posting/outreach | **Out of scope.** Veerify drafts; a human posts                                                                                  |
-| Cost control               | **Usage metering from M1.** Every LLM call and crawled page is counted per team per month; teams can set an LLM budget cap       |
+| Decision                   | Choice                                                                                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Placement in hierarchy     | **Product-scoped.** A marketing site belongs to one `project`; the switch is per team + per product                                                                 |
+| Module enablement          | `marketingEnabled` on `team_module_settings` **and** in `project.settings` (same rule as D-31)                                                                      |
+| Module definitions         | **One registry**, `lib/modules.ts` (Stage M0). No new hand-copied module lists                                                                                      |
+| Site ownership             | **Must be verified** before any crawl, audit or monitoring runs (DNS TXT, meta tag, or file)                                                                        |
+| Crawling runtime           | **Crawl service, not our own crawler.** Firecrawl adapter (hosted or self-hosted Firecrawl); Veerify only fetches a handful of site files itself                    |
+| Crawl limits               | **50 pages per audit** by default (`MARKETING_MAX_AUDIT_PAGES`, hard cap 500), one running audit per site, 3 manual audits per site per day, weekly scheduled audit |
+| Outbound HTTP safety       | Reuse `server/utils/webhook-url.ts` checks for private addresses. Re-check after every redirect                                                                     |
+| LLM access                 | **Bring your own key.** Each team adds its own API key; a provider adapter lives in `server/services/llm/`                                                          |
+| LLM providers at launch    | **Anthropic (Claude) and OpenAI.** Perplexity and Gemini later                                                                                                      |
+| Self-hosting               | **Fully supported.** Every feature runs on a self-hosted install; missing optional keys disable one capability, never the module                                    |
+| AI visibility sampling     | **Several samples per prompt per provider**, reported as a mention _rate_, never a single yes/no                                                                    |
+| Mentions sources (first)   | **Hacker News, Reddit, Bluesky.** X is deferred (API cost)                                                                                                          |
+| Mentions ingestion         | **Shared with support Stage 12 (social)**: one ingestion layer, two consumers                                                                                       |
+| Automated posting/outreach | **Out of scope.** Veerify drafts; a human posts                                                                                                                     |
+| Cost control               | **Usage metering from M1.** Every LLM call and crawled page is counted per team per month; teams can set an LLM budget cap                                          |
 
 ### Why product-scoped
 
@@ -69,19 +70,25 @@ verified automatically. Otherwise the user adds a DNS TXT record, a `<meta>` tag
 Competitors are a separate concept (see M3/M6). Veerify only ever records _whether a competitor is
 named_ in an LLM answer or a public post. It never crawls a competitor's site.
 
-### Why no new worker process
+### Why a crawl service instead of our own crawler
 
-Support handled heavy outbound work with a database table as the queue (`supportOutboundDelivery`) and a
-cron task. Crawling fits the same pattern if the crawl can be resumed:
+Decided October 10, 2026. A crawler that is polite, robust and fast (robots.txt, JavaScript rendering,
+retries, redirect handling, rate limiting) is a product of its own. Veerify uses a crawl service behind a
+`CrawlProvider` interface (`server/services/crawl/`) and keeps only the analysis.
 
-- Each audit stores its frontier as rows (`seoAuditPage`, `status = pending | fetched | failed | skipped`).
-- Each scheduler tick claims a few pages (`FOR UPDATE SKIP LOCKED`) and fetches them within a time
-  budget (e.g. 20s). It records the results and the newly discovered same-origin links, then stops.
-- When no `pending` rows remain, the tick computes the audit score and marks the audit `done`.
-
-This runs the same way on Vercel cron and on self-hosted Nitro tasks. It needs no new infrastructure,
-and a crash loses at most one batch. A dedicated worker becomes worth it only once audits move beyond
-a few hundred pages, which is a later pricing tier, not the MVP.
+- **Firecrawl first.** It has a hosted API and is open source, so self-hosters can run their own
+  instance. The key is a team key (bring your own, like LLM keys) or an instance key
+  (`FIRECRAWL_API_KEY`), and the endpoint is configurable (`FIRECRAWL_API_URL`) for a self-hosted
+  Firecrawl.
+- **Flow.** Starting an audit starts a crawl job at the provider (`limit` = page cap, same origin only).
+  A scheduled task (`marketing:audit-advance`, every minute) polls running jobs, stores the returned
+  pages as `seoAuditPage` rows, and when the job completes runs the rules and computes the score. No
+  long-running request and no worker process, on Vercel cron and Nitro alike.
+- **Without a crawl key** the audit still runs in **basic mode**: Veerify itself fetches only
+  `robots.txt`, `llms.txt`, `sitemap.xml` and the home page (SSRF-checked, size and time capped) and
+  runs the site-level and home-page rules. The UI says which mode ran and how to unlock the full crawl.
+- **Limits.** 50 pages per audit by default, configurable per install up to a hard cap of 500. One
+  running audit per site, 3 manual audits per site per day, plus the weekly scheduled audit.
 
 ### Why sampling for AI visibility
 
@@ -127,15 +134,16 @@ AI-crawler checks and `llms.txt` validation, still works because it needs no LLM
 Self-hosted installs get the whole module. Every external dependency is either a team key, an optional
 instance setting, or not needed at all:
 
-| Capability                | Needs                                                                       | When it is missing                |
-| ------------------------- | --------------------------------------------------------------------------- | --------------------------------- |
-| Site audit (crawl, rules) | Outbound internet access only                                               | —                                 |
-| Core Web Vitals           | PageSpeed Insights key: a team key, or `PAGESPEED_API_KEY` for the instance | Section shows "not configured"    |
-| AI visibility             | Team's Anthropic and/or OpenAI key                                          | Setup screen                      |
-| Mentions: HN, Bluesky     | Nothing                                                                     | —                                 |
-| Mentions: Reddit          | Instance OAuth app (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`)             | Reddit listed as unavailable      |
-| Search Console (M5)       | Instance Google OAuth app                                                   | Integration listed as unavailable |
-| Scheduled work            | Nitro scheduled tasks (already used by support)                             | —                                 |
+| Capability             | Needs                                                                                                   | When it is missing                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Site audit, basic mode | Outbound internet access only                                                                           | —                                 |
+| Site audit, full crawl | Firecrawl key (team key or `FIRECRAWL_API_KEY`), optional `FIRECRAWL_API_URL` for self-hosted Firecrawl | Basic mode, with a note           |
+| Core Web Vitals        | PageSpeed Insights key: a team key, or `PAGESPEED_API_KEY` for the instance                             | Section shows "not configured"    |
+| AI visibility          | Team's Anthropic and/or OpenAI key                                                                      | Setup screen                      |
+| Mentions: HN, Bluesky  | Nothing                                                                                                 | —                                 |
+| Mentions: Reddit       | Instance OAuth app (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`)                                         | Reddit listed as unavailable      |
+| Search Console (M5)    | Instance Google OAuth app                                                                               | Integration listed as unavailable |
+| Scheduled work         | Nitro scheduled tasks (already used by support)                                                         | —                                 |
 
 - The marketing settings page has an **integration status** panel listing each capability as ready,
   not configured, or failing, with what to set. A missing key must never surface as a silent empty chart.
@@ -158,8 +166,8 @@ it for _conversations_. A mention can be escalated into a support conversation, 
 
 ### 1. Site audit (Stage M2)
 
-- Crawls the verified site, staying on the same origin and respecting `robots.txt`. The user agent is
-  `VeerifyBot/1.0 (+https://veerify.com/bot)`. Page caps depend on the plan (MVP: 100 pages).
+- Crawls the verified site through the crawl provider (Firecrawl), same origin only, up to the page cap
+  (default 50). Without a crawl key, runs in basic mode (site files and home page only).
 - Each fetched page is checked against rules defined in code (`server/services/marketing/audit-rules/`). Each
   rule has an id, a severity, a check function and fix guidance:
   - titles and meta descriptions: missing, duplicate, too long or too short
@@ -249,19 +257,19 @@ team → marketingUsage (period, metric, units)        ← metering for LLM call
 
 ### Data model sketch (`server/database/schema/marketing.ts`)
 
-| Table                | Key columns                                                                                                                                                 |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `marketingSite`      | id, projectId (unique), teamId, origin, verificationMethod, verificationToken, verifiedAt                                                                   |
-| `seoAudit`           | id, siteId, trigger (`auto`/`schedule`/`manual`), status, pageLimit, pagesFetched, score, startedAt, finishedAt                                             |
-| `seoAuditPage`       | id, auditId, url (unique per audit), depth, status, httpStatus, fetchedAt, facts (jsonb: title, meta, canonical, …)                                         |
-| `seoIssue`           | id, auditId, pageId (nullable for site-level), ruleId, severity, details (jsonb)                                                                            |
-| `marketingTerm`      | id, siteId, kind (`brand`/`competitor`/`keyword`), label, aliases (text[]), competitorDomain                                                                |
-| `aiVisibilityPrompt` | id, siteId, text, locale, active, source (`user`/`suggested`)                                                                                               |
-| `aiVisibilityRun`    | id, siteId, trigger, status, startedAt, finishedAt                                                                                                          |
-| `aiVisibilityAnswer` | id, runId, promptId, provider, model, sample, answer, brandMentioned, brandRank, competitorsMentioned (jsonb), citations (jsonb), inputTokens, outputTokens |
-| `mention`            | id, siteId, source, externalId (unique per source), url, author, excerpt, publishedAt, termId, kind, status                                                 |
-| `teamApiCredential`  | id, teamId, provider (`anthropic`/`openai`/`pagespeed`), encryptedKey, keyHint, createdBy, lastValidatedAt, lastError (unique on teamId+provider)           |
-| `marketingUsage`     | teamId, period (`YYYY-MM`), metric, units (unique on teamId+period+metric)                                                                                  |
+| Table                | Key columns                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `marketingSite`      | id, projectId (unique), teamId, origin, verificationMethod, verificationToken, verifiedAt                                                                     |
+| `seoAudit`           | id, siteId, trigger (`auto`/`schedule`/`manual`), status, pageLimit, pagesFetched, score, startedAt, finishedAt                                               |
+| `seoAuditPage`       | id, auditId, url (unique per audit), depth, status, httpStatus, fetchedAt, facts (jsonb: title, meta, canonical, …)                                           |
+| `seoIssue`           | id, auditId, pageId (nullable for site-level), ruleId, severity, details (jsonb)                                                                              |
+| `marketingTerm`      | id, siteId, kind (`brand`/`competitor`/`keyword`), label, aliases (text[]), competitorDomain                                                                  |
+| `aiVisibilityPrompt` | id, siteId, text, locale, active, source (`user`/`suggested`)                                                                                                 |
+| `aiVisibilityRun`    | id, siteId, trigger, status, startedAt, finishedAt                                                                                                            |
+| `aiVisibilityAnswer` | id, runId, promptId, provider, model, sample, answer, brandMentioned, brandRank, competitorsMentioned (jsonb), citations (jsonb), inputTokens, outputTokens   |
+| `mention`            | id, siteId, source, externalId (unique per source), url, author, excerpt, publishedAt, termId, kind, status                                                   |
+| `teamApiCredential`  | id, teamId, provider (`anthropic`/`openai`/`firecrawl`/`pagespeed`), encryptedKey, keyHint, createdBy, lastValidatedAt, lastError (unique on teamId+provider) |
+| `marketingUsage`     | teamId, period (`YYYY-MM`), metric, units (unique on teamId+period+metric)                                                                                    |
 
 The rule definitions, provider list and source list are code, not tables, for the same reason the
 conversation statuses are fixed (design.md of support): reports must mean the same thing across teams.
@@ -320,7 +328,7 @@ M2 and M3 can be built in parallel after M1.
 
 ## Resolved decisions
 
-Decided October 9, 2026:
+Decided October 9–10, 2026:
 
 1. **LLM keys: bring your own.** Teams add their own provider keys; Veerify pays for no LLM usage.
    See "Why bring your own key".
@@ -328,11 +336,11 @@ Decided October 9, 2026:
 3. **Self-hosting: supported.** Every marketing feature works on a self-hosted install. See "How
    self-hosting works".
 
+4. **Crawling: use a service.** Firecrawl behind a provider interface, with basic mode when no key is
+   set. 50 pages per audit by default (decided October 10, 2026).
+5. **Reddit: approved** as a launch source for M4 (October 10, 2026).
+
 ## Open questions
 
-1. **Cloud crawl limits and pricing.** Bring your own key removes the LLM cost, but crawling, storage and
-   PageSpeed calls still cost the cloud something. Choose the cloud page cap per audit and audit
-   frequency before M2 ships, and decide whether marketing is free or a paid tier.
-2. **Reddit commercial terms.** Confirm that Reddit's data API terms allow this use at our scale
-   before M4. If not, launch M4 with HN and Bluesky only. On self-hosted installs, each operator
-   registers their own Reddit app and is bound by those terms directly.
+1. **Paid tier.** Whether marketing is free or part of a paid plan on the cloud. Not blocking: with
+   bring-your-own keys for LLMs and crawling, the cloud's own cost per team is small.
