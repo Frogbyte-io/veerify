@@ -1697,7 +1697,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List mentions for a product",
-      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured.\n",
+      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured. `canEscalate` is true when Support is on and the caller can work in a support inbox; escalated items carry `conversationId` and `conversationInboxId`.\n",
       "operationId": "listMarketingMentions",
       "parameters": [
         {
@@ -1838,6 +1838,50 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Mention not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions/{mentionId}/escalate": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Escalate a mention to a support conversation",
+      "description": "Creates a conversation in the team's support inbox whose first message is an internal note (never sent to anyone) describing the mention, and marks the mention escalated. Idempotent: escalating again returns the existing conversation. Requires the Support module and access to a support inbox.\n",
+      "operationId": "escalateMarketingMention",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "mentionId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Conversation id and inbox id"
+        },
+        "403": {
+          "description": "Not a team member",
+          "Marketing is off": null,
+          "or no access to a support inbox": null
+        },
+        "404": {
+          "description": "Mention not found for this product"
+        },
+        "409": {
+          "description": "Support is not enabled for this team"
         }
       }
     }
