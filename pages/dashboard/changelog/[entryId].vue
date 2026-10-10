@@ -49,11 +49,18 @@ export default {
       return String(this.$route.query.product || '')
     },
     backLink() {
-      return this.productSlug ? `/changelog?product=${encodeURIComponent(this.productSlug)}` : '/changelog'
+      return this.productSlug
+        ? `/dashboard/changelog?product=${encodeURIComponent(this.productSlug)}`
+        : '/dashboard/changelog'
     },
   },
 
   async mounted() {
+    // Without ?product= there is nothing to load: go back to the list, which has the picker
+    if (!this.productSlug) {
+      await navigateTo('/dashboard/changelog', { replace: true })
+      return
+    }
     await this.loadProduct()
   },
 

@@ -4265,7 +4265,8 @@ export const openapiPaths = {
           "description": "Product is not public"
         },
         "404": {
-          "description": "Team or product not found"
+          "description": "Team or product not found",
+          "or Marketing is off": null
         }
       }
     }

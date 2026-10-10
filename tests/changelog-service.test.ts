@@ -23,8 +23,25 @@ function chain(): unknown {
   return proxy
 }
 
-vi.mock('~/server/database/drizzle', () => ({
-  db: { select: () => chain(), insert: () => chain(), update: () => chain(), delete: () => chain() },
+const txCalls = vi.hoisted(() => ({ count: 0, failWith: null as Error | null }))
+vi.mock('~/server/database/drizzle', () => {
+  const db: Record<string, unknown> = {
+    select: () => chain(),
+    insert: () => chain(),
+    update: () => chain(),
+    delete: () => chain(),
+    // The transaction runs against the same (mockable) db; a thrown error models a rollback
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+      txCalls.count++
+      return fn(db)
+    },
+  }
+  return { db }
+})
+
+const teamModule = vi.hoisted(() => ({ enabled: true }))
+vi.mock('~/server/utils/public-modules', () => ({
+  isTeamModuleEnabled: vi.fn(async () => teamModule.enabled),
 }))
 
 vi.mock('h3', () => ({
@@ -72,6 +89,8 @@ const draft = {
 beforeEach(() => {
   state.rows = []
   state.ops = []
+  txCalls.count = 0
+  teamModule.enabled = true
   loggerError.mockClear()
   clearChangelogPublishedHooks()
   publicProject.value = { team: { id: 't1' }, project: { id: 'p1', settings: { changelogEnabled: true } } }
@@ -115,6 +134,21 @@ describe('slug generation', () => {
     expect(inserts).toBe(2)
     expect(row.slug).toBe('hello-3')
     ;(db as any).insert = realInsert
+  })
+})
+
+describe('transactions', () => {
+  it('createEntry writes the entry and its feedback links in one transaction', async () => {
+    state.rows = [[{ id: 'f1' }], [], [draft]]
+    await createEntry('p1', 'u1', { title: 'Hello', feedbackIds: ['f1'] })
+    expect(txCalls.count).toBe(1)
+    expect(state.ops.filter((o) => o.op === 'values')).toHaveLength(2)
+  })
+
+  it('updateEntry replaces linked feedback inside a transaction', async () => {
+    state.rows = [[draft], [{ id: 'f1' }], [draft]]
+    await updateEntry('p1', 'e1', { feedbackIds: ['f1'] })
+    expect(txCalls.count).toBe(1)
   })
 })
 
@@ -199,6 +233,19 @@ describe('publish / unpublish', () => {
     expect(hook).not.toHaveBeenCalled()
   })
 
+  it('does not run hooks when a concurrent publish won the conditional update', async () => {
+    const published = { ...draft, status: 'published', publishedAt: new Date() }
+    // find (draft), conditional update matches nothing, re-find (published)
+    state.rows = [[draft], [], [published]]
+    const hook = vi.fn()
+    registerChangelogPublishedHook(hook)
+    const row = await publishEntry('p1', 'e1')
+    expect(row.status).toBe('published')
+    expect(hook).not.toHaveBeenCalled()
+    const where = state.ops.filter((o) => o.op === 'where').map((o) => sqlOf(o.args[0]))
+    expect(where.some((q) => q.params.includes('draft'))).toBe(true)
+  })
+
   it('refuses to publish an empty entry', async () => {
     state.rows = [[{ ...draft, body: '  ', summary: null }]]
     await expect(publishEntry('p1', 'e1')).rejects.toMatchObject({ statusCode: 400 })
@@ -226,6 +273,11 @@ describe('public access', () => {
     publicProject.value = { team: {}, project: { id: 'p1', settings: { changelogEnabled: false } } }
     await expect(resolvePublicChangelogProject('t', 'p')).rejects.toMatchObject({ statusCode: 404 })
     publicProject.value = { team: {}, project: { id: 'p1', settings: null } }
+    await expect(resolvePublicChangelogProject('t', 'p')).rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  it('404s when the team-level changelog module is off', async () => {
+    teamModule.enabled = false
     await expect(resolvePublicChangelogProject('t', 'p')).rejects.toMatchObject({ statusCode: 404 })
   })
 

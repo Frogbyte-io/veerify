@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildRssFeed, decodeBasicEntities, escapeXml } from '~/server/services/changelog/rss'
+import { buildRssFeed, escapeXml, rssDescription } from '~/server/services/changelog/rss'
 
 describe('escapeXml', () => {
   it('escapes the five XML special characters and strips illegal control chars', () => {
@@ -9,9 +9,25 @@ describe('escapeXml', () => {
   })
 })
 
-describe('decodeBasicEntities', () => {
-  it('decodes entities left by markdownToPlainText', () => {
-    expect(decodeBasicEntities('Fish &amp; chips &lt;3 &quot;x&quot; &#39;y&#39;')).toBe(`Fish & chips <3 "x" 'y'`)
+describe('rssDescription', () => {
+  it('keeps markup in code blocks inert (never decodes entities)', () => {
+    const description = rssDescription('Fix:\n\n```\n<img src=x onerror=alert(1)>\n```', null)
+    expect(description).not.toContain('<img')
+    expect(description).toContain('&lt;img')
+    const feed = buildRssFeed({
+      title: 't',
+      link: 'https://x.test',
+      description: 'd',
+      selfUrl: 'https://x.test/rss',
+      items: [{ title: 'a', link: 'https://x.test/a', guid: '1', pubDate: new Date(0), description, categories: [] }],
+    })
+    // Escaped once for XML on top of the HTML escaping: a reader decodes to inert text
+    expect(feed).not.toContain('<img')
+    expect(feed).toContain('&amp;lt;img')
+  })
+
+  it('escapes the raw summary fallback', () => {
+    expect(rssDescription('', '<b onmouseover=x>hi</b> & co')).toBe('&lt;b onmouseover=x&gt;hi&lt;/b&gt; &amp; co')
   })
 })
 

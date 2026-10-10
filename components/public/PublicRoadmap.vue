@@ -153,6 +153,14 @@
             <Icon name="lucide:newspaper" class="w-4 h-4 inline mr-1.5" />
             Changelog
           </NuxtLink>
+          <NuxtLink
+            v-if="hasTestimonials"
+            :to="testimonialsPath"
+            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
+          >
+            <Icon name="lucide:message-square-quote" class="w-4 h-4 inline mr-1.5" />
+            Testimonials
+          </NuxtLink>
         </div>
 
         <!-- Roadmap summary -->
@@ -422,6 +430,15 @@ export default {
     changelogEnabled() {
       return this.projectData?.project?.settings?.changelogEnabled === true
     },
+    hasTestimonials() {
+      return this.projectData?.hasTestimonials === true
+    },
+    testimonialsPath() {
+      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
+        return '/testimonials'
+      }
+      return `/${this.projectSlug}/testimonials`
+    },
     authRedirectTarget() {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}/roadmap`)
       return encodeURIComponent(window.location.href)
@@ -487,7 +504,7 @@ export default {
     const cached = import.meta.client ? useState(roadmapCacheKey).value : null
     if (cached && Date.now() - cached.cachedAt < 60_000 && cached.response?.data) {
       const data = cached.response.data
-      this.projectData = { project: data.project, team: data.team }
+      this.projectData = { project: data.project, team: data.team, hasTestimonials: data.hasTestimonials === true }
       this.columns = data.columns || []
       this.isLoading = false
       this.columnsLoading = false
@@ -499,7 +516,7 @@ export default {
     try {
       const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`)
       const data = response?.data
-      this.projectData = { project: data.project, team: data.team }
+      this.projectData = { project: data.project, team: data.team, hasTestimonials: data.hasTestimonials === true }
       this.columns = data.columns || []
       this.applyTheme(this.projectData.project.settings?.themeMode || 'system')
       this.warmFeedbackBoardData()

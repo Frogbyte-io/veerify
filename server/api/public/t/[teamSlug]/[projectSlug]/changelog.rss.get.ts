@@ -20,9 +20,8 @@
  *       404: { description: Not found or Changelog disabled }
  */
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
-import { markdownToPlainText } from '~/server/utils/markdown'
 import { listPublishedEntries, resolvePublicChangelogProject, RSS_ITEM_LIMIT } from '~/server/services/changelog/public'
-import { buildRssFeed, decodeBasicEntities } from '~/server/services/changelog/rss'
+import { buildRssFeed, rssDescription } from '~/server/services/changelog/rss'
 
 export default defineEventHandler(async (event) => {
   const teamSlug = getRouterParam(event, 'teamSlug')
@@ -51,7 +50,7 @@ export default defineEventHandler(async (event) => {
       link: `${boardUrl}/changelog/${row.slug}`,
       guid: row.id,
       pubDate: row.publishedAt ?? row.createdAt,
-      description: decodeBasicEntities(markdownToPlainText(row.body, 1000) || row.summary || ''),
+      description: rssDescription(row.body, row.summary),
       categories: row.labels,
     })),
   })

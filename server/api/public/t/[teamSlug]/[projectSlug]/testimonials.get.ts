@@ -20,20 +20,30 @@
  *     responses:
  *       200: { description: Testimonials }
  *       403: { description: Product is not public }
- *       404: { description: Team or product not found }
+ *       404: { description: Team or product not found, or Marketing is off }
  */
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { testimonial } from '~/server/database/schema/marketing'
 import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
-import { createSuccessResponse } from '~/server/utils/response'
+import { isModuleEnabledForProject } from '~/server/utils/public-modules'
+import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 
 const MAX_PUBLIC_TESTIMONIALS = 100
 
 export default defineEventHandler(async (event) => {
   const teamSlug = getRouterParam(event, 'teamSlug')
   const projectSlug = getRouterParam(event, 'projectSlug')
-  const { project: proj } = await resolvePublicProjectByTeam(teamSlug!, projectSlug!)
+  const { team: t, project: proj } = await resolvePublicProjectByTeam(teamSlug!, projectSlug!)
+
+  // Marketing must be on for the team and the product; otherwise indistinguishable from none
+  if (!(await isModuleEnabledForProject(t.id, proj.settings as Record<string, unknown> | null, 'marketingEnabled'))) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Testimonials are not available for this product'),
+    })
+  }
 
   // Never select authorEmail or moderation fields: this endpoint is anonymous.
   const items = await db

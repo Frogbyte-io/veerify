@@ -127,6 +127,7 @@
 
 <script>
 import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+import { isModuleOffMessage } from '~/lib/changelog-editor'
 
 export default {
   name: 'ChangelogPage',
@@ -147,13 +148,13 @@ export default {
 
   computed: {
     newEntryLink() {
-      return `/changelog/new?product=${encodeURIComponent(this.product.slug)}`
+      return `/dashboard/changelog/new?product=${encodeURIComponent(this.product.slug)}`
     },
   },
 
   methods: {
     entryLink(entry) {
-      return `/changelog/${entry.id}?product=${encodeURIComponent(this.product.slug)}`
+      return `/dashboard/changelog/${entry.id}?product=${encodeURIComponent(this.product.slug)}`
     },
 
     formatDate(value) {
@@ -184,8 +185,13 @@ export default {
         this.nextCursor = response?.data?.nextCursor || null
       } catch (err) {
         if (this.product?.id !== productId) return
-        if (apiErrorStatus(err) === 403) {
-          this.disabledMessage = apiErrorMessage(err, '')
+        const message = apiErrorMessage(err, '')
+        // 403 means either "module switched off" (explained below) or "not a
+        // member of this team": only the first one gets the enable-it card.
+        if (apiErrorStatus(err) === 403 && isModuleOffMessage(message)) {
+          this.disabledMessage = message
+        } else if (apiErrorStatus(err) === 403) {
+          this.error = message || 'You do not have access to this product'
         } else {
           this.error = apiErrorMessage(err, 'Failed to load the changelog')
         }

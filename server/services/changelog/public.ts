@@ -4,6 +4,7 @@ import { db } from '~/server/database/drizzle'
 import { changelogEntry, changelogEntryFeedback } from '~/server/database/schema/changelog'
 import { feedback } from '~/server/database/schema/feedback'
 import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
+import { isTeamModuleEnabled } from '~/server/utils/public-modules'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { renderMarkdown } from '~/server/utils/markdown'
@@ -13,13 +14,14 @@ export const PUBLIC_PAGE_SIZE = 20
 export const RSS_ITEM_LIMIT = 30
 
 /**
- * Resolves a public product and requires the product-level `changelogEnabled`
- * toggle. A disabled changelog answers 404 (indistinguishable from none).
+ * Resolves a public product and requires the changelog module on for both the
+ * product (`changelogEnabled`) and the team. A disabled changelog answers 404
+ * (indistinguishable from none).
  */
 export async function resolvePublicChangelogProject(teamSlug: string, projectSlug: string) {
   const resolved = await resolvePublicProjectByTeam(teamSlug, projectSlug)
   const settings = resolved.project.settings as Record<string, unknown> | null
-  if (settings?.changelogEnabled !== true) {
+  if (settings?.changelogEnabled !== true || !(await isTeamModuleEnabled(resolved.team.id, 'changelogEnabled'))) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Not Found',

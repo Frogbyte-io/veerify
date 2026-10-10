@@ -47,7 +47,7 @@
           product, then publish an entry.
         </p>
         <Button as-child variant="outline" class="mt-4">
-          <NuxtLink to="/changelog">
+          <NuxtLink to="/dashboard/changelog">
             <Icon name="lucide:newspaper" class="mr-2 h-4 w-4" />
             Go to the changelog
           </NuxtLink>
@@ -64,7 +64,7 @@
           Publish a changelog entry and it shows up here, ready for announcement drafts.
         </p>
         <Button as-child variant="outline" class="mt-4">
-          <NuxtLink to="/changelog">
+          <NuxtLink to="/dashboard/changelog">
             <Icon name="lucide:newspaper" class="mr-2 h-4 w-4" />
             Go to the changelog
           </NuxtLink>

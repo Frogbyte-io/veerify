@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
   admin: 'ok' as 'ok' | 'forbidden',
   rateLimitKeys: [] as string[],
   enqueue: [] as unknown[],
+  marketingOn: true,
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
@@ -60,6 +61,10 @@ vi.mock('~/server/utils/rate-limit', () => ({
 
 vi.mock('~/server/utils/project-access', () => ({
   resolvePublicProjectByTeam: vi.fn(async () => ({ team: { id: 't1' }, project: { id: 'p1' } })),
+}))
+
+vi.mock('~/server/utils/public-modules', () => ({
+  isModuleEnabledForProject: vi.fn(async () => state.marketingOn),
 }))
 
 vi.mock('~/server/services/marketing/reviews/service', () => ({
@@ -174,6 +179,7 @@ beforeEach(() => {
   state.redirect = null
   state.headers = {}
   state.access = 'ok'
+  state.marketingOn = true
   state.admin = 'ok'
   state.rateLimitKeys = []
   state.enqueue = []
@@ -357,6 +363,15 @@ describe('GET public testimonial wall', () => {
       ['authorCompany', 'authorName', 'authorTitle', 'createdAt', 'id', 'quote', 'rating'].sort()
     )
     expect(fields).not.toContain('authorEmail')
+  })
+})
+
+describe('GET public testimonial wall: Marketing toggle', () => {
+  it('404s without reading testimonials when Marketing is off for the team or product', async () => {
+    state.marketingOn = false
+    state.selectQueue = [[{ id: 't1', authorName: 'Jane' }]]
+    await expect(publicWall({} as never)).rejects.toMatchObject({ statusCode: 404 })
+    expect(state.wheres).toHaveLength(0)
   })
 })
 

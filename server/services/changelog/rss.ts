@@ -1,4 +1,5 @@
 /** RSS 2.0 builder for the public changelog. Pure: no I/O. */
+import { markdownToPlainText } from '~/server/utils/markdown'
 
 export interface RssItem {
   title: string
@@ -32,17 +33,14 @@ export function escapeXml(value: string): string {
 }
 
 /**
- * `markdownToPlainText` strips tags from sanitised HTML but leaves entities
- * (`&amp;`) encoded. Decode them so escaping once yields correct feed text
- * rather than a double-escaped `&amp;amp;`.
+ * Feed `<description>` text. Feed readers render it as HTML, so it must stay
+ * HTML-escaped: `markdownToPlainText` strips tags but keeps entities encoded
+ * (so a code block containing `<img onerror>` stays `&lt;img onerror&gt;`), and
+ * the raw summary is escaped here. `buildRssFeed` then escapes once for XML.
+ * Never decode entities in between.
  */
-export function decodeBasicEntities(value: string): string {
-  return value
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;|&apos;/g, "'")
-    .replace(/&amp;/g, '&')
+export function rssDescription(body: string, summary: string | null | undefined): string {
+  return markdownToPlainText(body, 1000) || escapeXml(summary || '')
 }
 
 export function buildRssFeed(channel: RssChannel): string {

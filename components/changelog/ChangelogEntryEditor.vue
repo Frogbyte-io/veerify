@@ -210,6 +210,9 @@
 import { toast } from 'vue-sonner'
 import { apiErrorMessage } from '~/lib/api-error'
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
+import { hasUnsavedChanges, resolveLinkedFeedback, snapshotPayload } from '~/lib/changelog-editor'
+
+const LEAVE_MESSAGE = 'You have unsaved changes. Leave without saving?'
 
 export default {
   name: 'ChangelogEntryEditor',
@@ -250,6 +253,8 @@ export default {
       searchError: null,
       searchTimer: null,
       searchSeq: 0,
+      savedSnapshot: null,
+      removeRouteGuard: null,
     }
   },
 
@@ -259,6 +264,9 @@ export default {
     },
     isPublished() {
       return this.status === 'published'
+    },
+    isDirty() {
+      return hasUnsavedChanges(this.payload(), this.savedSnapshot)
     },
     isBusy() {
       return this.isSaving || this.isPublishing || this.isDeleting
@@ -290,11 +298,19 @@ export default {
   },
 
   async mounted() {
+    // Router guard (this component is not a route component, so no beforeRouteLeave)
+    this.removeRouteGuard = this.$router.beforeEach((to, from) => {
+      if (to.path === from.path || !this.isDirty || this.isDeleting) return true
+      return window.confirm(LEAVE_MESSAGE)
+    })
+    window.addEventListener('beforeunload', this.onBeforeUnload)
     await this.load()
   },
 
   beforeUnmount() {
     clearTimeout(this.searchTimer)
+    if (this.removeRouteGuard) this.removeRouteGuard()
+    window.removeEventListener('beforeunload', this.onBeforeUnload)
   },
 
   methods: {
@@ -306,12 +322,27 @@ export default {
       this.summary = entry.summary || ''
       this.body = entry.body || ''
       this.labels = [...(entry.labels || [])]
-      this.linkedFeedback = entry.feedback || []
+      this.linkedFeedback = resolveLinkedFeedback(this.linkedFeedback, entry)
+      this.savedSnapshot = snapshotPayload(this.payload())
+    },
+
+    onBeforeUnload(event) {
+      if (!this.isDirty) return
+      event.preventDefault()
+      event.returnValue = ''
     },
 
     async load() {
       this.loadError = null
       if (this.entryId === 'new') {
+        this.slug = ''
+        this.status = 'draft'
+        this.title = ''
+        this.summary = ''
+        this.body = ''
+        this.labels = []
+        this.linkedFeedback = []
+        this.savedSnapshot = snapshotPayload(this.payload())
         this.isLoading = false
         return
       }
@@ -349,7 +380,7 @@ export default {
           const response = await $fetch(`${this.base}/entries`, { method: 'POST', body: this.payload() })
           this.applyEntry(response.data)
           // Move to the saved entry's URL without remounting the editor
-          this.$router.replace({ path: `/changelog/${this.id}`, query: this.$route.query })
+          this.$router.replace({ path: `/dashboard/changelog/${this.id}`, query: this.$route.query })
         } else {
           const response = await $fetch(`${this.base}/entries/${this.id}`, { method: 'PUT', body: this.payload() })
           this.applyEntry(response.data)
@@ -398,7 +429,7 @@ export default {
         await $fetch(`${this.base}/entries/${this.id}`, { method: 'DELETE' })
         toast.success('Entry deleted')
         this.showDelete = false
-        await navigateTo({ path: '/changelog', query: { product: this.project.slug } })
+        await navigateTo({ path: '/dashboard/changelog', query: { product: this.project.slug } })
       } catch (err) {
         this.showDelete = false
         this.actionError = apiErrorMessage(err, 'Failed to delete the entry')

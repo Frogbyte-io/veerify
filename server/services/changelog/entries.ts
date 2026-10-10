@@ -105,10 +105,12 @@ export async function assertFeedbackInProject(projectId: string, feedbackIds: st
   }
 }
 
-async function replaceLinkedFeedback(entryId: string, feedbackIds: string[]) {
-  await db.delete(changelogEntryFeedback).where(eq(changelogEntryFeedback.entryId, entryId))
+type Executor = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>
+
+async function replaceLinkedFeedback(executor: Executor, entryId: string, feedbackIds: string[]) {
+  await executor.delete(changelogEntryFeedback).where(eq(changelogEntryFeedback.entryId, entryId))
   if (feedbackIds.length > 0) {
-    await db
+    await executor
       .insert(changelogEntryFeedback)
       .values([...new Set(feedbackIds)].map((feedbackId) => ({ entryId, feedbackId })))
   }
@@ -137,24 +139,27 @@ export async function createEntry(projectId: string, authorUserId: string, input
     const slug = await generateUniqueSlug(projectId, input.title)
     const now = new Date()
     try {
-      const [row] = await db
-        .insert(changelogEntry)
-        .values({
-          id: randomUUID(),
-          projectId,
-          title: input.title,
-          slug,
-          summary: input.summary ?? null,
-          body: input.body ?? '',
-          labels: input.labels ?? [],
-          status: 'draft',
-          authorUserId,
-          createdAt: now,
-          updatedAt: now,
-        })
-        .returning()
-      if (input.feedbackIds?.length) await replaceLinkedFeedback(row.id, input.feedbackIds)
-      return row
+      // Entry and its feedback links commit together (or not at all)
+      return await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(changelogEntry)
+          .values({
+            id: randomUUID(),
+            projectId,
+            title: input.title,
+            slug,
+            summary: input.summary ?? null,
+            body: input.body ?? '',
+            labels: input.labels ?? [],
+            status: 'draft',
+            authorUserId,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning()
+        if (input.feedbackIds?.length) await replaceLinkedFeedback(tx, row.id, input.feedbackIds)
+        return row
+      })
     } catch (error) {
       // Concurrent create took the slug between lookup and insert: retry
       if (!isUniqueViolation(error)) throw error
@@ -173,14 +178,16 @@ export async function updateEntry(projectId: string, entryId: string, input: Par
   if (input.body !== undefined) patch.body = input.body
   if (input.labels !== undefined) patch.labels = input.labels
 
-  const [row] = await db
-    .update(changelogEntry)
-    .set(patch)
-    .where(and(eq(changelogEntry.id, entryId), eq(changelogEntry.projectId, projectId)))
-    .returning()
-  if (!row) notFound()
-  if (input.feedbackIds !== undefined) await replaceLinkedFeedback(entryId, input.feedbackIds)
-  return row
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(changelogEntry)
+      .set(patch)
+      .where(and(eq(changelogEntry.id, entryId), eq(changelogEntry.projectId, projectId)))
+      .returning()
+    if (!row) notFound()
+    if (input.feedbackIds !== undefined) await replaceLinkedFeedback(tx, entryId, input.feedbackIds)
+    return row
+  })
 }
 
 export async function deleteEntry(projectId: string, entryId: string) {
@@ -190,7 +197,9 @@ export async function deleteEntry(projectId: string, entryId: string) {
 
 /**
  * Publishes a draft. Already-published entries are returned unchanged and do
- * not re-run hooks (so repeated clicks never double-trigger review requests).
+ * not re-run hooks (so repeated clicks or concurrent requests never
+ * double-trigger review requests): the draft to published transition is a single
+ * conditional UPDATE, and only the request that wins it runs the hooks.
  */
 export async function publishEntry(projectId: string, entryId: string) {
   const existing = await findEntry(projectId, entryId)
@@ -204,9 +213,12 @@ export async function publishEntry(projectId: string, entryId: string) {
   const [row] = await db
     .update(changelogEntry)
     .set({ status: 'published', publishedAt: now, updatedAt: now })
-    .where(and(eq(changelogEntry.id, entryId), eq(changelogEntry.projectId, projectId)))
+    .where(
+      and(eq(changelogEntry.id, entryId), eq(changelogEntry.projectId, projectId), eq(changelogEntry.status, 'draft'))
+    )
     .returning()
-  if (!row) notFound()
+  // Lost the race to a concurrent publish: return the current entry, no hooks
+  if (!row) return findEntry(projectId, entryId)
 
   await runChangelogPublishedHooks(row)
   return row

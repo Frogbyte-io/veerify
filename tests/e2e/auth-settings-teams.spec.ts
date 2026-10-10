@@ -320,7 +320,7 @@ test('roadmap and changelog are hidden until their team module is enabled', asyn
   // dashboard pages do not exist yet, so the entries stay disabled
   // placeholders even once the module is on. See Technical Debt #11.
   await expect(sidebar.locator('a[href="/roadmap"]')).toHaveCount(0)
-  await expect(sidebar.locator('a[href="/changelog"]')).toHaveCount(0)
+  await expect(sidebar.locator('a[href="/dashboard/changelog"]')).toHaveCount(0)
 })
 
 test('support nav is hidden until the support module is enabled', async ({ page }) => {

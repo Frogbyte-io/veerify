@@ -175,7 +175,7 @@ const feedbackItems: SidebarNavItem[] = [
   },
   {
     title: 'Changelog',
-    url: '/changelog',
+    url: '/dashboard/changelog',
     icon: 'lucide:scroll-text',
     module: 'changelogEnabled',
   },

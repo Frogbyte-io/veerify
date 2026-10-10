@@ -34,7 +34,7 @@ import { requireChangelogAccess } from '~/server/utils/changelog-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
 import { requireRouteParam } from '~/server/utils/marketing-site'
-import { createEntry, serializeEntry } from '~/server/services/changelog/entries'
+import { createEntry, getLinkedFeedback, serializeEntry } from '~/server/services/changelog/entries'
 import { createEntrySchema } from '~/server/services/changelog/schemas'
 
 export default defineEventHandler(async (event) => {
@@ -44,5 +44,7 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, createEntrySchema)
 
   const row = await createEntry(projectId, session.user.id, body)
-  return createSuccessResponse({ ...serializeEntry(row), feedback: [] })
+  // Same shape as GET .../entries/{entryId}
+  const linked = await getLinkedFeedback(row.id)
+  return createSuccessResponse({ ...serializeEntry(row), feedback: linked })
 })
