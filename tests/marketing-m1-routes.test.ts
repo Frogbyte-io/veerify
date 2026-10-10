@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   params: { projectId: 'p1', teamId: 't1', provider: 'anthropic', termId: 'term1' } as Record<string, string>,
   role: 'member' as 'member' | 'admin',
   marketingOn: true,
+  projectSettings: null as Record<string, unknown> | null,
   secretsConfigured: true,
   rows: [] as unknown[][],
   ops: [] as Array<{ op: string; args: unknown[] }>,
@@ -51,7 +52,7 @@ vi.mock('~/server/utils/team-context', () => ({
 vi.mock('~/server/utils/marketing-access', () => ({
   requireMarketingAccess: vi.fn(async () => {
     if (!state.marketingOn) throw httpError(403, 'Marketing is not enabled for this team')
-    return { project: { id: 'p1', teamId: 't1' }, teamId: 't1' }
+    return { project: { id: 'p1', teamId: 't1', settings: state.projectSettings }, teamId: 't1' }
   }),
   requireMarketingAdmin: vi.fn(async () => {
     if (!state.marketingOn) throw httpError(403, 'Marketing is not enabled for this team')
@@ -572,6 +573,11 @@ describe('overview route', () => {
     expect(res.data.setup.hasLlmKey).toBe(true) // anthropic key from the mocked credential list
     expect(res.data.latestAudit).toBeNull()
     expect(res.data.newMentions).toBe(0)
+    expect(res.data.search).toMatchObject({ connected: false, totals: null })
+    expect(res.data.reviews).toMatchObject({ enabled: false, requestsSent: 0, pendingTestimonials: 0 })
+    expect(res.data.announcements).toEqual({ changelogEnabled: false, withoutDrafts: 0 })
+    expect(res.data.language).toEqual({ consented: false, lastRunAt: null })
+    expect(res.data.changelog).toEqual({ enabled: false, latest: null })
   })
 
   it('computes the mention rate from answers with a brand verdict', async () => {
@@ -592,5 +598,44 @@ describe('overview route', () => {
     expect(res.data.latestVisibilityRun).toMatchObject({ id: 'r1', mentionRate: 0.75 })
     expect(res.data.newMentions).toBe(4)
     expect(res.data.usage).toEqual({ 'crawl:pages': 12 })
+  })
+
+  it('summarises search, reviews, announcements, language and the changelog', async () => {
+    vi.doMock('~/server/utils/marketing-usage', () => ({
+      getUsage: async () => ({ 'llm:anthropic:cost_usd_micros': 1_500_000 }),
+    }))
+    vi.resetModules()
+    state.projectSettings = { marketingEnabled: true, changelogEnabled: true }
+    const day = (date: string, clicks: number) => ({ date, clicks, impressions: clicks * 10, ctr: 0.1, position: 5 })
+    const latestEntry = { id: 'e1', title: 'Dark mode', slug: 'dark-mode', publishedAt: new Date('2026-10-05') }
+    const lastRun = new Date('2026-10-03')
+    state.rows = [
+      [existingSite],
+      [{ total: 0 }], // brand terms
+      [], // audits
+      [], // runs
+      [{ total: 0 }], // mentions
+      [{ status: 'active' }], // gsc connection
+      [{ date: '2026-10-08' }], // latest synced day
+      [day('2026-08-20', 4), day('2026-09-20', 6), day('2026-10-08', 4)], // previous + current period
+      [{ enabled: true }], // review settings
+      [{ total: 7 }], // requests sent
+      [{ total: 2 }], // pending testimonials
+      [{ total: 3 }], // published entries without drafts
+      [{ feedback: true, support: false }], // consent
+      [{ createdAt: lastRun }], // latest language insight
+      [latestEntry], // latest published entry
+    ]
+    const handler = await load('~/server/api/marketing/projects/[projectId]/overview.get')
+    const res = await run(handler)
+    state.projectSettings = null
+    expect(res.data.search).toMatchObject({ connected: true, status: 'active' })
+    expect(res.data.search.totals.current).toMatchObject({ clicks: 10, impressions: 100 })
+    expect(res.data.search.totals.previous).toMatchObject({ clicks: 4 })
+    expect(res.data.reviews).toEqual({ enabled: true, requestsSent: 7, sinceDays: 30, pendingTestimonials: 2 })
+    expect(res.data.announcements).toEqual({ changelogEnabled: true, withoutDrafts: 3 })
+    expect(res.data.language).toEqual({ consented: true, lastRunAt: lastRun })
+    expect(res.data.changelog).toEqual({ enabled: true, latest: latestEntry })
+    expect(res.data.usage).toEqual({ 'llm:anthropic:cost_usd_micros': 1_500_000 })
   })
 })

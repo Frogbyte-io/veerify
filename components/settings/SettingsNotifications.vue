@@ -97,6 +97,22 @@
             @update:model-value="updatePreference('conversationMentions', $event)"
           />
         </div>
+
+        <SidebarSeparator />
+
+        <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Marketing</p>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-medium">Marketing digest</h3>
+            <p class="text-sm text-muted-foreground">Daily email with new mentions of your products</p>
+          </div>
+          <Switch
+            :model-value="preferences.marketingDigest"
+            data-testid="pref-marketing-digest"
+            @update:model-value="updatePreference('marketingDigest', $event)"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -118,6 +134,7 @@ export default {
         newComments: true,
         conversationAssigned: true,
         conversationMentions: true,
+        marketingDigest: true,
       },
     }
   },
