@@ -12,7 +12,22 @@ opportunities, and growth features built on feedback, changelog and support data
   must work fully on self-hosted installs.
 - Decided October 10, 2026: crawling goes through a crawl service (Firecrawl, bring your own key, basic
   mode without one), 50 pages per audit by default; Reddit is a launch source.
-- M1–M4 are in progress.
+- **M1–M4 are implemented** (October 10, 2026): settings (site verification, encrypted team keys,
+  terms, integration status), site audit, AI visibility and mentions. Migrations `0044` and `0045`.
+  Verified with unit tests, a production build, and a live smoke test against a scratch database
+  (basic audit, Hacker News ingestion, credential validation against the real Anthropic API, every
+  page rendered). Not yet exercised live: full Firecrawl crawls, PageSpeed, Reddit, Bluesky, and AI
+  visibility runs with real Claude/OpenAI keys.
+- M5 (growth features) waits on the Changelog module; M6+ not started.
+
+## Known gaps
+
+- Mentions can't yet be escalated into a support conversation (the `escalated` status exists, no action).
+- No realtime push for new mentions; the page and the daily digest are the only surfaces.
+- Budget caps are estimates (tokens × list price + web-search fees) and can overshoot by the answers
+  already in flight.
+- The rate-limit store is in-memory unless `RATE_LIMIT_STORE=redis`, so limits are per instance on
+  serverless.
 
 ## Durable references
 
