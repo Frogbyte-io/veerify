@@ -98,6 +98,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/marketing-search-sync": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Sync Google Search Console data for marketing sites",
+      "operationId": "cronMarketingSearchSync",
+      "responses": {
+        "200": {
+          "description": "Search Console sync executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/support-attachment-cleanup": {
     "get": {
       "tags": [
@@ -576,6 +593,44 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/google/callback": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Google OAuth callback for Search Console",
+      "description": "Registered as the redirect URI in the Google OAuth app. Requires the session of the user who started the flow. Stores the encrypted refresh token and redirects to the Search page with `connected=1` or `error=<code>`. Tokens never appear in a URL or response.\n",
+      "operationId": "googleSearchCallback",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "code",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "state",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "error",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "302": {
+          "description": "Redirect to the Search page"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/audits": {
     "get": {
       "tags": [
@@ -1043,6 +1098,215 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/connect": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Start the Google Search Console connection",
+      "description": "Team admins only. Returns the Google consent URL, carrying a signed state that binds the flow to this site and user. The site must be verified. Returns 503 when the server has no Google OAuth app or no secrets encryption key.\n",
+      "operationId": "getSearchConnectUrl",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ url }` to send the browser to"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "409": {
+          "description": "The site is not set up or not verified"
+        },
+        "503": {
+          "description": "Search Console is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/connection": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Disconnect Google Search Console",
+      "description": "Team admins only. Revokes the Google token (best effort) and deletes the connection and its stored metrics.\n",
+      "operationId": "deleteSearchConnection",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Disconnected"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Search Console is not connected"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/properties": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List the Search Console properties the connected Google account can read",
+      "description": "Team admins only. Properties where the account is only an unverified user are left out.",
+      "operationId": "listSearchProperties",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ properties: [{ siteUrl, permissionLevel }], selected }`"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Search Console is not connected"
+        },
+        "409": {
+          "description": "Google access was revoked; reconnect"
+        },
+        "502": {
+          "description": "Google request failed"
+        },
+        "503": {
+          "description": "Search Console is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/property": {
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Choose the Search Console property to read",
+      "description": "Team admins only. The property must be one the connected Google account can read. Changing the property clears stored metrics and queues a fresh sync.\n",
+      "operationId": "putSearchProperty",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "propertyUrl"
+              ],
+              "properties": {
+                "propertyUrl": {
+                  "type": "string",
+                  "example": "sc-domain:example.com"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Property saved; status is now connected"
+        },
+        "400": {
+          "description": "Not one of the account's properties"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Search Console is not connected"
+        },
+        "409": {
+          "description": "Google access was revoked; reconnect"
+        },
+        "502": {
+          "description": "Google request failed"
+        },
+        "503": {
+          "description": "Search Console is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/summary": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Search Console clicks, impressions, CTR, position and top queries",
+      "description": "Totals cover the last `days` ending at the latest synced date and the same number of days before it (`previous` is null when there is no earlier data). CTR is clicks divided by impressions and position is weighted by impressions. `topQueries` is the latest 28-day snapshot, top 50 by clicks. Stored history is about 90 days, so `days` is capped at 45.\n",
+      "operationId": "getSearchSummary",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "days",
+          "schema": {
+            "type": "integer",
+            "minimum": 7,
+            "maximum": 45,
+            "default": 28
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Summary; `connection` is null when Search Console is not connected"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
         }
       }
     }

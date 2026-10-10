@@ -1,6 +1,7 @@
 import { marketingConfig } from '~/server/utils/marketing-config'
 import { listTeamCredentials, type TeamCredentialSummary } from '~/server/utils/team-credentials'
 import { isSecretsConfigured } from '~/server/utils/secrets'
+import { getGoogleOAuthConfig } from '~/server/services/google/search-console'
 import { SOCIAL_SOURCES } from '~/server/services/social-sources'
 
 export type IntegrationId =
@@ -12,6 +13,7 @@ export type IntegrationId =
   | 'hackernews'
   | 'reddit'
   | 'bluesky'
+  | 'google'
 
 export type IntegrationState = 'ready' | 'not_configured' | 'failing'
 
@@ -121,6 +123,18 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
       detail: configured ? 'Available' : (SOCIAL_HINTS[source.id] ?? 'Not configured on this server.'),
     })
   }
+
+  const googleConfig = getGoogleOAuthConfig()
+  result.push({
+    id: 'google',
+    label: 'Search Console',
+    capability: 'Search clicks, impressions and queries',
+    state: googleConfig ? 'ready' : 'not_configured',
+    source: googleConfig ? 'instance' : null,
+    detail: googleConfig
+      ? `Available. Your Google OAuth app must allow the redirect URI ${googleConfig.redirectUri}`
+      : 'Create a Google OAuth app (Web application) with the Search Console API enabled, set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server, and add {BETTER_AUTH_URL}/api/marketing/google/callback as an authorized redirect URI.',
+  })
 
   return result
 }
