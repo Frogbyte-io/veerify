@@ -284,19 +284,31 @@ team → marketingUsage (period, metric, units)        ← metering for LLM call
 
 ### Data model sketch (`server/database/schema/marketing.ts`)
 
-| Table                | Key columns                                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `marketingSite`      | id, projectId (unique), teamId, origin, verificationMethod, verificationToken, verifiedAt                                                                     |
-| `seoAudit`           | id, siteId, trigger (`auto`/`schedule`/`manual`), status, pageLimit, pagesFetched, score, startedAt, finishedAt                                               |
-| `seoAuditPage`       | id, auditId, url (unique per audit), depth, status, httpStatus, fetchedAt, facts (jsonb: title, meta, canonical, …)                                           |
-| `seoIssue`           | id, auditId, pageId (nullable for site-level), ruleId, severity, details (jsonb)                                                                              |
-| `marketingTerm`      | id, siteId, kind (`brand`/`competitor`/`keyword`), label, aliases (text[]), competitorDomain                                                                  |
-| `aiVisibilityPrompt` | id, siteId, text, locale, active, source (`user`/`suggested`)                                                                                                 |
-| `aiVisibilityRun`    | id, siteId, trigger, status, startedAt, finishedAt                                                                                                            |
-| `aiVisibilityAnswer` | id, runId, promptId, provider, model, sample, answer, brandMentioned, brandRank, competitorsMentioned (jsonb), citations (jsonb), inputTokens, outputTokens   |
-| `mention`            | id, siteId, source, externalId (unique per source), url, author, excerpt, publishedAt, termId, kind, status                                                   |
-| `teamApiCredential`  | id, teamId, provider (`anthropic`/`openai`/`firecrawl`/`pagespeed`), encryptedKey, keyHint, createdBy, lastValidatedAt, lastError (unique on teamId+provider) |
-| `marketingUsage`     | teamId, period (`YYYY-MM`), metric, units (unique on teamId+period+metric)                                                                                    |
+| Table                        | Key columns                                                                                                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `marketingSite`              | id, projectId (unique), teamId, origin, verificationMethod, verificationToken, verifiedAt                                                                                                                |
+| `seoAudit`                   | id, siteId, trigger (`auto`/`schedule`/`manual`), status, pageLimit, pagesFetched, score, startedAt, finishedAt                                                                                          |
+| `seoAuditPage`               | id, auditId, url (unique per audit), depth, status, httpStatus, fetchedAt, facts (jsonb: title, meta, canonical, …)                                                                                      |
+| `seoIssue`                   | id, auditId, pageId (nullable for site-level), ruleId, severity, details (jsonb)                                                                                                                         |
+| `marketingTerm`              | id, siteId, kind (`brand`/`competitor`/`keyword`), label, aliases (text[]), competitorDomain                                                                                                             |
+| `aiVisibilityPrompt`         | id, siteId, text, locale, active, source (`user`/`suggested`)                                                                                                                                            |
+| `aiVisibilityRun`            | id, siteId, trigger, status, startedAt, finishedAt                                                                                                                                                       |
+| `aiVisibilityAnswer`         | id, runId, promptId, provider, model, sample, answer, brandMentioned, brandRank, competitorsMentioned (jsonb), citations (jsonb), inputTokens, outputTokens                                              |
+| `mention`                    | id, siteId, source, externalId (unique per source), url, author, excerpt, publishedAt, termId, kind, status                                                                                              |
+| `teamApiCredential`          | id, teamId, provider (`anthropic`/`openai`/`firecrawl`/`pagespeed`), encryptedKey, keyHint, createdBy, lastValidatedAt, lastError (unique on teamId+provider)                                            |
+| `marketingUsage`             | teamId, period (`YYYY-MM`), metric, units (unique on teamId+period+metric)                                                                                                                               |
+| `changelogEntry`             | (`schema/changelog.ts`) id, projectId, title, slug (unique per project), summary, body (markdown), status (`draft`/`published`), labels (text[]), publishedAt, authorUserId                              |
+| `changelogEntryFeedback`     | (`schema/changelog.ts`) entryId, feedbackId (PK on both), createdAt                                                                                                                                      |
+| `marketingAnnouncementDraft` | id, entryId, projectId, channel (`x`/`linkedin`/`bluesky`/`newsletter`), content, provider, model, edited (unique on entryId+channel)                                                                    |
+| `reviewRequestSettings`      | projectId (PK), enabled, platforms (jsonb), askForTestimonial, csatTrigger, csatMinRating, shippedTrigger, shippedStatusValues, cooldownDays                                                             |
+| `reviewRequest`              | id, projectId, teamId, email, trigger (`csat`/`shipped`/`manual`), sourceId, token (unique), status (`queued`/`sent`/`skipped`/`failed`), sentAt, clickedAt (unique on projectId+trigger+sourceId+email) |
+| `marketingEmailSuppression`  | teamId, email, reason (`unsubscribed`/`bounced`/`complaint`) (PK on teamId+email)                                                                                                                        |
+| `testimonial`                | id, projectId, reviewRequestId, authorName, authorEmail (private), quote, rating, consentPublic, status (`pending`/`approved`/`rejected`), featured, moderatedAt                                         |
+| `marketingDataConsent`       | teamId (PK), allowFeedbackText, allowSupportText, consentedByUserId, consentedAt                                                                                                                         |
+| `customerLanguageInsight`    | id, siteId, provider, model, itemCount, sources, phrases, suggestedTerms, suggestedPrompts (jsonb), inputTokens, outputTokens                                                                            |
+| `gscConnection`              | siteId (PK), encryptedRefreshToken, googleAccountEmail, propertyUrl, status (`connected`/`needs_property`/`error`), lastSyncAt, lastError                                                                |
+| `gscDailyMetric`             | siteId, date, clicks, impressions, ctr, position (PK on siteId+date)                                                                                                                                     |
+| `gscQueryStat`               | siteId, periodEnd, query, clicks, impressions, ctr, position (PK on siteId+periodEnd+query)                                                                                                              |
 
 The rule definitions, provider list and source list are code, not tables, for the same reason the
 conversation statuses are fixed (design.md of support): reports must mean the same thing across teams.
