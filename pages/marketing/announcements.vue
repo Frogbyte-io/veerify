@@ -91,7 +91,8 @@
         >
           <p class="font-medium">Add an AI key to generate drafts</p>
           <p class="mt-1 text-muted-foreground">
-            Drafts are written with your own Anthropic or OpenAI key, so the cost stays on your account. Add one in
+            Drafts are written with your own Anthropic, OpenAI, Gemini or Perplexity key, so the cost stays on your
+            account. Add one in
             <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
             . You can still write and save drafts by hand.
           </p>

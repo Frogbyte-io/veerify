@@ -29,8 +29,8 @@
         </li>
         <li>
           <span class="font-medium text-foreground">Who receives it:</span>
-          your own Anthropic key (or OpenAI if you have no valid Anthropic key), so the text goes to that provider under
-          your account and terms. Veerify does not use any other AI service for this.
+          your own Anthropic key (or another provider key you added, if there is no valid Anthropic key), so the text
+          goes to that provider under your account and terms. Veerify does not use any other AI service for this.
         </li>
       </ul>
 
@@ -78,8 +78,8 @@
           <DialogTitle>Send {{ pendingLabel }} to your AI provider?</DialogTitle>
           <DialogDescription>
             When you run an analysis, {{ pendingLabel }} from the last 90 days (up to 300 items, with emails, links and
-            phone numbers removed) is sent to your own Anthropic or OpenAI account. You can switch this off at any time
-            and it takes effect immediately.
+            phone numbers removed) is sent to your own Anthropic, OpenAI, Gemini or Perplexity account. You can switch
+            this off at any time and it takes effect immediately.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

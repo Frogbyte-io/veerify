@@ -89,7 +89,10 @@ export async function languageBlockReason(input: {
   }
   const credentials = await listTeamCredentials(input.teamId)
   if (!pickSuggestionProvider(credentials)) {
-    return { reason: 'no_key', message: 'Add a valid Anthropic or OpenAI API key in Marketing settings' }
+    return {
+      reason: 'no_key',
+      message: 'Add a valid Anthropic, OpenAI, Gemini or Perplexity API key in Marketing settings',
+    }
   }
   if ((await countRecentRuns(input.siteId)) >= MAX_RUNS_PER_DAY) {
     return { reason: 'daily_limit', message: `At most ${MAX_RUNS_PER_DAY} analyses per product per day` }
@@ -202,7 +205,7 @@ export interface LanguageRunInput {
   productName?: string
 }
 
-const NO_KEY_MESSAGE = 'Add a valid Anthropic or OpenAI API key to run an analysis'
+const NO_KEY_MESSAGE = 'Add a valid Anthropic, OpenAI, Gemini or Perplexity API key to run an analysis'
 
 function limitReached(): never {
   fail(

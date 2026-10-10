@@ -16,10 +16,21 @@ import type { LlmProviderId } from './types'
  *   Astra and Luna list Web search in their supported tools. The page does not
  *   say which model ChatGPT uses; switch `answer` to `gpt-6.1-sol` to sample
  *   more cheaply.
+ * - Perplexity (checked 2026-10-10): Sonar Chat Completions support ended
+ *   2026-09-27; the Agent API (POST /v1/agent) replaces it
+ *   (https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview.md).
+ *   Model IDs are `creator/name` (https://docs.perplexity.ai/docs/agent-api/models.md);
+ *   `perplexity/sonar` is Perplexity's own search model, used for answers and extraction.
+ * - Gemini (checked 2026-10-10): https://ai.google.dev/gemini-api/docs/models lists
+ *   gemini-3.8-flash as the stable flagship and gemini-3.1-flash-lite /
+ *   gemini-3.5-flash-lite as the budget stable models (Pro is still preview).
+ *   Extraction uses the cheaper one per the pricing page, gemini-3.1-flash-lite.
  */
 export const LLM_MODELS: Record<LlmProviderId, { answer: string; extract: string }> = {
   anthropic: { answer: 'claude-sonnet-5-5', extract: 'claude-haiku-4-5' },
   openai: { answer: 'gpt-6-astra', extract: 'gpt-6-luna' },
+  perplexity: { answer: 'perplexity/sonar', extract: 'perplexity/sonar' },
+  gemini: { answer: 'gemini-3.8-flash', extract: 'gemini-3.1-flash-lite' },
 }
 
 /** Anthropic web search tool version, kept here so bumps are one line. */
@@ -37,6 +48,13 @@ export const ANTHROPIC_WEB_SEARCH_TOOL_TYPE = 'web_search_20260209'
  * - OpenAI: https://developers.openai.com/api/docs/pricing
  *   (gpt-6-astra $10/$50, gpt-6.1-sol $2/$10, gpt-6-luna $0.10/$0.50);
  *   web search tool calls $10 per 1,000 calls
+ * - Perplexity: https://docs.perplexity.ai/docs/agent-api/models.md (perplexity/sonar
+ *   $0.25/$2.50, low tier) and https://docs.perplexity.ai/docs/getting-started/pricing.md
+ *   (Agent API web search $0.0025 per invocation)
+ * - Gemini: https://ai.google.dev/gemini-api/docs/pricing (gemini-3.8-flash $0.75/$3.75,
+ *   gemini-3.1-flash-lite $0.25/$1.50; Grounding with Google Search $14 per 1,000
+ *   search queries on Gemini 3+; the 5,000 free monthly searches are ignored, so the
+ *   estimate is conservative)
  */
 export const LLM_PRICING: Record<LlmProviderId, Record<string, { input: number; output: number }>> = {
   anthropic: {
@@ -48,12 +66,21 @@ export const LLM_PRICING: Record<LlmProviderId, Record<string, { input: number; 
     'gpt-6.1-sol': { input: 2, output: 10 },
     'gpt-6-luna': { input: 0.1, output: 0.5 },
   },
+  perplexity: {
+    'perplexity/sonar': { input: 0.25, output: 2.5 },
+  },
+  gemini: {
+    'gemini-3.8-flash': { input: 0.75, output: 3.75 },
+    'gemini-3.1-flash-lite': { input: 0.25, output: 1.5 },
+  },
 }
 
-/** Micro-USD per web search call ($10 per 1,000). */
+/** Micro-USD per web search call (Anthropic/OpenAI $10 per 1,000, Perplexity $2.50, Gemini $14). */
 export const LLM_WEB_SEARCH_FEE_MICROS: Record<LlmProviderId, number> = {
   anthropic: 10_000,
   openai: 10_000,
+  perplexity: 2_500,
+  gemini: 14_000,
 }
 
 /**

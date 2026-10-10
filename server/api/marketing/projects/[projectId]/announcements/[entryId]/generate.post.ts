@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Generate announcement drafts for a published changelog entry
  *     description: >
- *       Uses the team's own LLM key (Anthropic first, else OpenAI). Regenerating overwrites
+ *       Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Regenerating overwrites
  *       existing drafts, hand edits included. Nothing is ever posted.
  *     operationId: generateMarketingAnnouncements
  *     parameters:

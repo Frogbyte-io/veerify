@@ -187,7 +187,7 @@ export default {
       const issues = []
       if (!s.hasSite || !s.siteVerified) issues.push('Verify your site')
       if (s.brandTermCount === 0) issues.push('Add at least one brand term')
-      if (!s.hasUsableKey) issues.push('Add a valid Anthropic or OpenAI API key')
+      if (!s.hasUsableKey) issues.push('Add a valid Anthropic, OpenAI, Gemini or Perplexity API key')
       if (s.hasSite && s.activePromptCount === 0) issues.push('Add at least one active prompt below')
       return issues
     },

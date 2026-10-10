@@ -354,7 +354,7 @@ describe('credentials routes', () => {
 
   it('PUT rejects an unknown provider', async () => {
     state.role = 'admin'
-    state.params.provider = 'gemini'
+    state.params.provider = 'mistral'
     state.body = { apiKey: KEY }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
@@ -381,6 +381,17 @@ describe('credentials routes', () => {
     )
     expect(JSON.stringify(res)).not.toContain(KEY)
     expect(res.data.credential.keyHint).toBe('1234')
+  })
+
+  it.each(['gemini', 'perplexity'])('PUT validates and saves a %s key with a budget', async (provider) => {
+    state.role = 'admin'
+    state.params.provider = provider
+    state.body = { apiKey: KEY, monthlyBudgetCents: 500 }
+    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    await run(handler)
+    expect(teamCredentials.saveTeamCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ provider, status: 'valid', monthlyBudgetCents: 500 })
+    )
   })
 
   it('PUT saves unchecked with the error on network or server failures', async () => {

@@ -9,8 +9,8 @@
     <template v-else>
       <p class="text-xs text-muted-foreground" data-testid="visibility-approximation-note">
         Results come from the providers' APIs with web search enabled. They approximate, but do not replicate, what the
-        consumer apps (ChatGPT, Claude) show, and each prompt is sampled several times because answers vary. Run
-        finished {{ formatDateTime(data.run.finishedAt || data.run.createdAt)
+        consumer apps (ChatGPT, Claude, Gemini, Perplexity) show, and each prompt is sampled several times because
+        answers vary. Run finished {{ formatDateTime(data.run.finishedAt || data.run.createdAt)
         }}<span v-if="data.run.status === 'partial'"> (partial: some answers failed)</span>.
       </p>
 
@@ -147,7 +147,7 @@
 </template>
 
 <script>
-const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'OpenAI' }
+const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'OpenAI', gemini: 'Google Gemini', perplexity: 'Perplexity' }
 
 export default {
   name: 'VisibilityResults',

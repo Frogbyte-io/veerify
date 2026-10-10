@@ -17,12 +17,19 @@ const logger = createLogger('marketing:credentials')
 export const API_CREDENTIAL_PROVIDERS: readonly ApiCredentialProvider[] = [
   'anthropic',
   'openai',
+  'perplexity',
+  'gemini',
   'firecrawl',
   'pagespeed',
 ]
 
 /** Providers whose usage is metered in tokens and can carry a monthly budget */
-export const LLM_CREDENTIAL_PROVIDERS: readonly ApiCredentialProvider[] = ['anthropic', 'openai']
+export const LLM_CREDENTIAL_PROVIDERS: readonly ApiCredentialProvider[] = [
+  'anthropic',
+  'openai',
+  'perplexity',
+  'gemini',
+]
 
 export function isApiCredentialProvider(value: unknown): value is ApiCredentialProvider {
   return typeof value === 'string' && (API_CREDENTIAL_PROVIDERS as readonly string[]).includes(value)

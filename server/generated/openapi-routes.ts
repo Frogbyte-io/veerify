@@ -1248,7 +1248,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Generate announcement drafts for a published changelog entry",
-      "description": "Uses the team's own LLM key (Anthropic first, else OpenAI). Regenerating overwrites existing drafts, hand edits included. Nothing is ever posted.\n",
+      "description": "Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Regenerating overwrites existing drafts, hand edits included. Nothing is ever posted.\n",
       "operationId": "generateMarketingAnnouncements",
       "parameters": [
         {
@@ -3112,7 +3112,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Suggest AI visibility prompts (not saved)",
-      "description": "Uses the team's own LLM key (Anthropic first, else OpenAI). Only the product name, description and feedback category names are sent to the provider.\n",
+      "description": "Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Only the product name, description and feedback category names are sent to the provider.\n",
       "operationId": "suggestVisibilityPrompts",
       "parameters": [
         {
@@ -3620,6 +3620,8 @@ export const openapiPaths = {
             "enum": [
               "anthropic",
               "openai",
+              "perplexity",
+              "gemini",
               "firecrawl",
               "pagespeed"
             ]
@@ -3643,7 +3645,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Set or clear the monthly budget of an LLM key",
-      "description": "Team admins only. Applies to anthropic and openai keys. Null removes the cap.",
+      "description": "Team admins only. Applies to LLM provider keys (anthropic, openai, perplexity, gemini). Null removes the cap.",
       "operationId": "patchMarketingCredential",
       "parameters": [
         {
@@ -3662,7 +3664,9 @@ export const openapiPaths = {
             "type": "string",
             "enum": [
               "anthropic",
-              "openai"
+              "openai",
+              "perplexity",
+              "gemini"
             ]
           }
         }
@@ -3726,6 +3730,8 @@ export const openapiPaths = {
             "enum": [
               "anthropic",
               "openai",
+              "perplexity",
+              "gemini",
               "firecrawl",
               "pagespeed"
             ]

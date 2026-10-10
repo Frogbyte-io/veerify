@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Suggest AI visibility prompts (not saved)
  *     description: >
- *       Uses the team's own LLM key (Anthropic first, else OpenAI). Only the product
+ *       Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Only the product
  *       name, description and feedback category names are sent to the provider.
  *     operationId: suggestVisibilityPrompts
  *     parameters:
