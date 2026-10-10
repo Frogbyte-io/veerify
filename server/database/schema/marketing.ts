@@ -26,10 +26,11 @@ import { sql } from 'drizzle-orm'
 import { user, team } from './auth'
 import { project } from './feedback'
 import { changelogEntry } from './changelog'
+import { conversation } from './support'
 import type { PageFacts } from '../../services/marketing/audit/types'
 
 export type MarketingVerificationMethod = 'dns' | 'meta' | 'file' | 'domain'
-export type ApiCredentialProvider = 'anthropic' | 'openai' | 'firecrawl' | 'pagespeed'
+export type ApiCredentialProvider = 'anthropic' | 'openai' | 'perplexity' | 'gemini' | 'firecrawl' | 'pagespeed'
 export type ApiCredentialStatus = 'valid' | 'invalid' | 'unchecked'
 export type SeoAuditTrigger = 'auto' | 'schedule' | 'manual'
 export type SeoAuditMode = 'basic' | 'full'
@@ -337,6 +338,9 @@ export const mention = pgTable(
     kind: text('kind').$type<MentionKind>().default('mention').notNull(),
     status: text('status').$type<MentionStatus>().default('new').notNull(),
     publishedAt: timestamp('published_at').notNull(),
+    // Support conversation created when the mention was escalated (M6)
+    conversationId: text('conversation_id').references(() => conversation.id, { onDelete: 'set null' }),
+    escalatedAt: timestamp('escalated_at'),
     createdAt: createdAtColumn(),
   },
   (table) => ({
@@ -605,5 +609,96 @@ export const gscQueryStat = pgTable(
   (table) => ({
     pk: primaryKey({ columns: [table.siteId, table.periodEnd, table.query] }),
     sitePeriodIdx: index('gsc_query_stat_site_period_idx').on(table.siteId, table.periodEnd),
+  })
+)
+
+// --- Stage M6 -------------------------------------------------------------
+
+export type LaunchKitStatus = 'todo' | 'in_progress' | 'submitted' | 'live' | 'rejected' | 'skipped'
+export type CompetitorWatchKind = 'pricing' | 'changelog' | 'homepage' | 'other'
+export type CompetitorWatchStatus = 'active' | 'paused' | 'error' | 'blocked_by_robots'
+
+// Launch kit progress per product. `directoryId` refers to the directory
+// catalog in code (`server/services/marketing/launch-kit/directories.ts`), or
+// `custom:<uuid>` for a directory the team added itself (then `name` is set).
+export const launchKitItem = pgTable(
+  'launch_kit_item',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    directoryId: text('directory_id').notNull(),
+    name: text('name'),
+    url: text('url'),
+    status: text('status').$type<LaunchKitStatus>().default('todo').notNull(),
+    notes: text('notes'),
+    submittedAt: timestamp('submitted_at'),
+    liveAt: timestamp('live_at'),
+    updatedByUserId: text('updated_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => ({
+    uniqueDirectory: uniqueIndex('launch_kit_item_project_directory_idx').on(table.projectId, table.directoryId),
+  })
+)
+
+// A public competitor page watched for changes (pricing, changelog, home).
+// Fetched at most daily through safe-fetch, respecting robots.txt. Only the
+// normalised text is kept, capped, to diff against the next fetch.
+export const competitorWatch = pgTable(
+  'competitor_watch',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => marketingSite.id, { onDelete: 'cascade' }),
+    termId: text('term_id')
+      .notNull()
+      .references(() => marketingTerm.id, { onDelete: 'cascade' }),
+    url: text('url').notNull(),
+    kind: text('kind').$type<CompetitorWatchKind>().default('other').notNull(),
+    status: text('status').$type<CompetitorWatchStatus>().default('active').notNull(),
+    lastCheckedAt: timestamp('last_checked_at'),
+    lastChangedAt: timestamp('last_changed_at'),
+    lastContentHash: text('last_content_hash'),
+    lastText: text('last_text'),
+    lastError: text('last_error'),
+    consecutiveFailures: integer('consecutive_failures').default(0).notNull(),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => ({
+    uniqueUrl: uniqueIndex('competitor_watch_site_url_idx').on(table.siteId, table.url),
+    dueIdx: index('competitor_watch_status_checked_idx').on(table.status, table.lastCheckedAt),
+  })
+)
+
+// One detected change on a watched page. `addedText` / `removedText` are
+// capped excerpts of the line diff; `summary` is an optional LLM summary made
+// with the team's own key.
+export const competitorChange = pgTable(
+  'competitor_change',
+  {
+    id: text('id').primaryKey(),
+    watchId: text('watch_id')
+      .notNull()
+      .references(() => competitorWatch.id, { onDelete: 'cascade' }),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => marketingSite.id, { onDelete: 'cascade' }),
+    detectedAt: timestamp('detected_at').notNull(),
+    addedText: text('added_text').default('').notNull(),
+    removedText: text('removed_text').default('').notNull(),
+    summary: text('summary'),
+    provider: text('provider'),
+    model: text('model'),
+    seenAt: timestamp('seen_at'),
+    createdAt: createdAtColumn(),
+  },
+  (table) => ({
+    siteDetectedIdx: index('competitor_change_site_detected_idx').on(table.siteId, table.detectedAt),
   })
 )
