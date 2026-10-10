@@ -19,6 +19,9 @@ const ENV_KEYS = [
   'REDDIT_CLIENT_SECRET',
   'BLUESKY_IDENTIFIER',
   'BLUESKY_APP_PASSWORD',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET',
+  'BETTER_AUTH_URL',
 ]
 beforeEach(() => {
   for (const key of ENV_KEYS) vi.stubEnv(key, '')
@@ -51,6 +54,7 @@ describe('getIntegrationStatus', () => {
       'hackernews',
       'reddit',
       'bluesky',
+      'google',
     ])
     expect(all.every((i) => i.capability.length > 0)).toBe(true)
     expect(all.find((i) => i.id === 'firecrawl')?.capability).toBe('Full site crawl')
@@ -74,6 +78,19 @@ describe('getIntegrationStatus', () => {
     expect(i.reddit.state).toBe('not_configured')
     expect(i.reddit.detail).toContain('REDDIT_CLIENT_ID')
     expect(i.bluesky.state).toBe('not_configured')
+  })
+
+  it('reports Search Console readiness from the Google OAuth app', async () => {
+    const bare = await byId()
+    expect(bare.google).toMatchObject({ label: 'Search Console', state: 'not_configured' })
+    expect(bare.google.detail).toContain('GOOGLE_CLIENT_ID')
+    vi.stubEnv('GOOGLE_CLIENT_ID', 'id')
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', 'secret')
+    vi.stubEnv('BETTER_AUTH_URL', 'https://app.example.com')
+    const ready = await byId()
+    expect(ready.google).toMatchObject({ state: 'ready', source: 'instance' })
+    expect(ready.google.detail).toContain('https://app.example.com/api/marketing/google/callback')
+    expect(ready.google.detail).not.toContain('secret')
   })
 
   it('falls back to instance keys for Firecrawl and PageSpeed', async () => {
