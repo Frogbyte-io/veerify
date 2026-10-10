@@ -117,8 +117,9 @@
                   >
                     <Icon
                       name="lucide:star"
+                      mode="svg"
                       class="h-6 w-6"
-                      :class="n <= (form.rating || 0) ? 'fill-amber-400 text-amber-500' : 'text-muted-foreground'"
+                      :class="n <= (form.rating || 0) ? 'text-amber-500 [&_path]:fill-amber-400' : 'text-muted-foreground'"
                     />
                   </button>
                 </div>

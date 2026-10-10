@@ -57,7 +57,13 @@
             <span class="text-sm font-medium">{{ item.authorName }}</span>
             <span v-if="subtitle(item)" class="text-xs text-muted-foreground">{{ subtitle(item) }}</span>
             <span v-if="item.rating" class="inline-flex items-center gap-0.5" :aria-label="`${item.rating} out of 5`">
-              <Icon v-for="n in item.rating" :key="n" name="lucide:star" class="h-3.5 w-3.5 text-amber-500" />
+              <Icon
+                v-for="n in item.rating"
+                :key="n"
+                name="lucide:star"
+                mode="svg"
+                class="h-3.5 w-3.5 text-amber-500 [&_path]:fill-amber-400"
+              />
             </span>
             <Badge :variant="item.consentPublic ? 'default' : 'outline'" data-testid="testimonial-consent">
               {{ item.consentPublic ? 'Public OK' : 'Private only' }}

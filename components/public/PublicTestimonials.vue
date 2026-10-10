@@ -36,7 +36,13 @@
           data-testid="public-testimonial-card"
         >
           <div v-if="item.rating" class="mb-2 flex gap-0.5" :aria-label="`${item.rating} out of 5`">
-            <Icon v-for="n in item.rating" :key="n" name="lucide:star" class="h-4 w-4 fill-amber-400 text-amber-500" />
+            <Icon
+              v-for="n in item.rating"
+              :key="n"
+              name="lucide:star"
+              mode="svg"
+              class="h-4 w-4 text-amber-500 [&_path]:fill-amber-400"
+            />
           </div>
           <!-- Plain text only: testimonial text is user submitted -->
           <blockquote class="flex-1 whitespace-pre-wrap break-words text-sm text-foreground">
