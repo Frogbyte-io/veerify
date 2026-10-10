@@ -576,6 +576,248 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/announcements": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Published changelog entries with their announcement drafts",
+      "description": "Published entries of the product, newest first, each with its drafts per channel (entries without drafts included). Also reports whether the changelog is on and whether the team has a usable LLM key.\n",
+      "operationId": "listMarketingAnnouncements",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entries with drafts and a next cursor"
+        },
+        "400": {
+          "description": "Invalid cursor"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/announcements/{entryId}/{channel}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete an announcement draft",
+      "operationId": "deleteMarketingAnnouncement",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "channel",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "x",
+              "linkedin",
+              "bluesky",
+              "newsletter"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Draft deleted (also when none existed)"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Entry or channel not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Save an edited announcement draft",
+      "description": "Content is trimmed and limited to 1.5 times the channel limit (x 280, bluesky 300, linkedin 1300, newsletter 2000). Marks the draft as edited.",
+      "operationId": "updateMarketingAnnouncement",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "channel",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "x",
+              "linkedin",
+              "bluesky",
+              "newsletter"
+            ]
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "content"
+              ],
+              "properties": {
+                "content": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "The saved draft"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Entry or channel not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/announcements/{entryId}/generate": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Generate announcement drafts for a published changelog entry",
+      "description": "Uses the team's own LLM key (Anthropic first, else OpenAI). Regenerating overwrites existing drafts, hand edits included. Nothing is ever posted.\n",
+      "operationId": "generateMarketingAnnouncements",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "channels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "x",
+                      "linkedin",
+                      "bluesky",
+                      "newsletter"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "The generated drafts"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Entry not found for this product"
+        },
+        "409": {
+          "description": "Entry unpublished",
+          "no usable LLM key": null,
+          "budget reached": null,
+          "quota or key rejected": null
+        },
+        "429": {
+          "description": "Rate limit (20 per hour per product) or provider rate limit"
+        },
+        "502": {
+          "description": "Provider error or unusable model output"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/audits": {
     "get": {
       "tags": [
