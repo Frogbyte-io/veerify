@@ -3,10 +3,13 @@ import { z } from 'zod'
 import { createError } from 'h3'
 import type { competitorChange, competitorWatch } from '~/server/database/schema/marketing'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
+import { bareHost, hostMatchesDomain } from '~/server/services/marketing/competitors/hosts'
 
 export const MAX_WATCHES_PER_COMPETITOR = 3
 export const MAX_WATCHES_PER_SITE = 15
 export const MANUAL_CHECKS_PER_DAY = 3
+export const WATCH_CREATIONS_PER_DAY = 20
+export const COMPETITOR_DOMAIN_REQUIRED_MESSAGE = "Set the competitor's domain in Marketing settings first"
 export const RECENT_CHANGES_LIMIT = 50
 
 export const WATCH_KINDS = ['pricing', 'changelog', 'homepage', 'other'] as const
@@ -36,12 +39,11 @@ export function badRequest(message: string): never {
   })
 }
 
-const bareHost = (host: string) => host.toLowerCase().replace(/^www\./, '')
-
 /**
- * Validates a page URL for a watch and returns its normalised form (no fragment).
- * Public https pages only, never the site's own host, and inside the competitor's
- * domain when the term has one (the domain itself or a subdomain).
+ * Validates a page URL for a watch and returns its normalised form (no fragment,
+ * no trailing-dot host). Public https pages only, never the site's own host, and
+ * inside the competitor's domain (the domain itself or a subdomain). A domain that
+ * is a bare public suffix (github.io, vercel.app) never matches.
  */
 export function validateWatchUrl(
   input: string,
@@ -71,13 +73,15 @@ export function validateWatchUrl(
   }
   if (own && host === own) badRequest('That is your own website. Watch a competitor page instead')
 
-  if (competitorDomain) {
-    const domain = bareHost(competitorDomain)
-    if (host !== domain && !host.endsWith(`.${domain}`)) {
-      badRequest(`The page must be on ${domain} (or a subdomain), the domain set for this competitor`)
-    }
+  if (!hostMatchesDomain(host, competitorDomain)) {
+    badRequest(
+      competitorDomain
+        ? `The page must be on ${bareHost(competitorDomain)} (or a subdomain), the domain set for this competitor`
+        : COMPETITOR_DOMAIN_REQUIRED_MESSAGE
+    )
   }
 
+  url.hostname = url.hostname.replace(/\.+$/, '')
   url.hash = ''
   return url.toString()
 }

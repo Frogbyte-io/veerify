@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   selectWhere: [] as unknown[],
   published: [] as unknown[],
   settingsRow: null as { supportEnabled: boolean } | null,
+  deniedInboxes: [] as string[],
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
@@ -46,10 +47,13 @@ vi.mock('~/server/utils/marketing-mentions', async (importOriginal) => {
 
 vi.mock('~/server/utils/support-access', () => ({
   SUPPORT_INBOX_FORBIDDEN_MESSAGE: 'You do not have access to this support inbox',
-  requireInboxAccess: vi.fn(async (inboxId: string) => ({
-    id: inboxId,
-    capabilities: { canWorkConversations: true },
-  })),
+  requireInboxAccess: vi.fn(async (inboxId: string) => {
+    if (state.deniedInboxes.includes(inboxId)) throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
+    return {
+      id: inboxId,
+      capabilities: { canWorkConversations: true },
+    }
+  }),
 }))
 
 vi.mock('~/server/utils/support-counter', () => ({ allocateConversationDisplayId: vi.fn(async () => 42) }))
@@ -143,6 +147,7 @@ beforeEach(() => {
   state.updates = []
   state.selectWhere = []
   state.published = []
+  state.deniedInboxes = []
 })
 
 describe('POST escalate gating', () => {
@@ -238,6 +243,27 @@ describe('POST escalate creation', () => {
     expect(state.inserts).toHaveLength(0)
     expect(state.updates).toHaveLength(0)
     expect(state.published).toHaveLength(0)
+  })
+})
+
+describe('id exposure', () => {
+  it('returns ids for a new escalation, with escalated: true', async () => {
+    const result = await handler({})
+    expect(result.data).toMatchObject({ escalated: true, conversationId: expect.any(String), inboxId: 'inbox-1' })
+  })
+
+  it('confirms an existing escalation without ids when the caller cannot open its inbox', async () => {
+    state.mentionRow = { ...baseMention, conversationId: 'conv-1' }
+    state.existingConversation = { id: 'conv-1', inboxId: 'inbox-9', displayId: 7 }
+    state.deniedInboxes = ['inbox-9']
+    const result = await handler({})
+    expect(result.data).toEqual({ escalated: true, alreadyEscalated: true })
+  })
+
+  it('accessibleInboxIds keeps only the inboxes the user can open', async () => {
+    const { accessibleInboxIds } = await import('~/server/services/marketing/mentions/escalation')
+    state.deniedInboxes = ['b']
+    expect([...(await accessibleInboxIds(['a', 'b', 'a'], 'u1'))]).toEqual(['a'])
   })
 })
 

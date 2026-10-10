@@ -68,6 +68,7 @@ describe('perplexity', () => {
       model: LLM_MODELS.perplexity.answer,
       input: 'best tool?',
       tools: [{ type: 'web_search' }],
+      max_output_tokens: 2048,
     })
     expect(res).toEqual({
       text: 'Acme is good.',
@@ -126,6 +127,7 @@ describe('perplexity', () => {
       model: LLM_MODELS.perplexity.extract,
       instructions: 'sys',
       input: 'in',
+      max_output_tokens: 1024,
       response_format: { type: 'json_schema', json_schema: { name: 'thing', schema } },
     })
     expect(res).toEqual({ data: { a: 'x' }, usage: { inputTokens: 3, outputTokens: 2 }, model: 'perplexity/sonar' })

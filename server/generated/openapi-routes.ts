@@ -1662,7 +1662,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Watch a public competitor page for changes",
-      "description": "Marketing admin only. https pages only; the host cannot be the product's own site and must match the competitor's domain when one is set. At most 3 pages per competitor and 15 per site. The page is fetched at most once a day as VeerifyBot, and robots.txt is respected.\n",
+      "description": "Marketing admin only. https pages only; the competitor must have a domain set (a bare public suffix such as github.io does not count), the host cannot be the product's own site and must be on that domain. At most 3 pages per competitor, 15 per site and 20 new watches per day per site. The page is fetched at most once a day as VeerifyBot, and robots.txt is respected.\n",
       "operationId": "createMarketingCompetitorWatch",
       "parameters": [
         {
@@ -1721,7 +1721,11 @@ export const openapiPaths = {
           "description": "Site or competitor not found"
         },
         "409": {
-          "description": "This page is already watched"
+          "description": "This page is already watched",
+          "or the competitor has no domain set": null
+        },
+        "429": {
+          "description": "Too many watches created today"
         }
       }
     }
@@ -1841,7 +1845,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Check a watched page now",
-      "description": "Marketing admin only, at most 3 manual checks per watch per day. Uses the same robots.txt and SSRF-safe fetch path as the scheduled check. The first check of a page records its baseline.\n",
+      "description": "Marketing admin only, and the site must be verified. Refused when the watch was checked in the last hour; also at most 3 manual checks per day per site and competitor host (so deleting and re-creating a watch does not reset the limit). Takes the same claim as the scheduled check and uses the same robots.txt, per-host spacing and SSRF-safe fetch path. The first check of a page records its baseline.\n",
       "operationId": "checkMarketingCompetitorWatch",
       "parameters": [
         {
@@ -1867,13 +1871,15 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Not a marketing admin",
-          "or Marketing is off": null
+          "Marketing is off": null,
+          "or the site is not verified": null
         },
         "404": {
           "description": "Watch not found for this product"
         },
         "429": {
-          "description": "Daily manual check limit reached for this watch"
+          "description": "Checked within the last hour",
+          "or the daily manual check limit is reached": null
         }
       }
     }
@@ -2276,7 +2282,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List mentions for a product",
-      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured. `canEscalate` is true when Support is on and the caller can work in a support inbox; escalated items carry `conversationId` and `conversationInboxId`.\n",
+      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured. `canEscalate` is true when Support is on and the caller can work in a support inbox; escalated items carry `conversationId` and `conversationInboxId` only when the caller can open that inbox (otherwise both are null).\n",
       "operationId": "listMarketingMentions",
       "parameters": [
         {
@@ -2449,7 +2455,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Conversation id and inbox id"
+          "description": "escalated: true. Conversation id, inbox id and display id are included only when the caller can open that inbox"
         },
         "403": {
           "description": "Not a team member",
@@ -3338,7 +3344,7 @@ export const openapiPaths = {
       "tags": [
         "Marketing"
       ],
-      "summary": "Update a term's name, aliases or competitor domain",
+      "summary": "Update a term's name, aliases or competitor domain (changing it on a term with watches needs a marketing admin)",
       "operationId": "updateMarketingTerm",
       "parameters": [
         {
@@ -3398,7 +3404,8 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Not a team member",
-          "or Marketing is off": null
+          "Marketing is off": null,
+          "or the competitor domain of a term with watched pages is changed by a non-admin": null
         },
         "404": {
           "description": "Term or site not found"

@@ -9,7 +9,7 @@
  *       (with the kind and source filters applied) and whether the site is
  *       verified and has terms configured. `canEscalate` is true when Support is on and the
  *       caller can work in a support inbox; escalated items carry `conversationId` and
- *       `conversationInboxId`.
+ *       `conversationInboxId` only when the caller can open that inbox (otherwise both are null).
  *     operationId: listMarketingMentions
  *     parameters:
  *       - in: path
@@ -42,7 +42,7 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { conversation } from '~/server/database/schema/support'
 import { marketingTerm, mention } from '~/server/database/schema/marketing'
-import { canEscalateMentions } from '~/server/services/marketing/mentions/escalation'
+import { accessibleInboxIds, canEscalateMentions } from '~/server/services/marketing/mentions/escalation'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { findMarketingSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
@@ -133,8 +133,18 @@ export default defineEventHandler(async (event) => {
   const items = hasMore ? rows.slice(0, query.limit) : rows
   const last = items[items.length - 1]
 
+  const reachable = await accessibleInboxIds(
+    items.flatMap((row) => (row.conversationInboxId ? [row.conversationInboxId] : [])),
+    session.user.id
+  )
+  const visibleItems = items.map((row) =>
+    row.conversationInboxId && reachable.has(row.conversationInboxId)
+      ? row
+      : { ...row, conversationId: null, conversationInboxId: null }
+  )
+
   return createSuccessResponse({
-    items,
+    items: visibleItems,
     nextCursor: hasMore && last ? encodeListCursor({ createdAt: last.publishedAt, id: last.id }) : null,
     counts,
     canEscalate,

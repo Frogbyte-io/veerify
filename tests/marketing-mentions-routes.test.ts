@@ -11,6 +11,8 @@ const state = vi.hoisted(() => ({
   updateSet: null as unknown,
   access: 'ok' as 'ok' | 'forbidden',
   canEscalate: false,
+  selectQueue: [] as unknown[][],
+  reachableInboxes: [] as string[],
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
@@ -48,10 +50,20 @@ vi.mock('~/server/utils/marketing-mentions', async (importOriginal) => {
 
 vi.mock('~/server/services/marketing/mentions/escalation', () => ({
   canEscalateMentions: vi.fn(async () => state.canEscalate),
+  accessibleInboxIds: vi.fn(
+    async (ids: Iterable<string>) => new Set([...ids].filter((id) => state.reachableInboxes.includes(id)))
+  ),
 }))
 
 vi.mock('~/server/database/drizzle', () => ({
   db: {
+    select: vi.fn(() => {
+      const chain: Record<string, unknown> = {}
+      for (const name of ['from', 'leftJoin', 'where', 'orderBy', 'limit', 'groupBy']) chain[name] = () => chain
+      chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+        Promise.resolve(state.selectQueue.shift() ?? []).then(resolve, reject)
+      return chain
+    }),
     update: vi.fn(() => ({
       set: (values: unknown) => {
         state.updateSet = values
@@ -81,6 +93,8 @@ beforeEach(() => {
   state.updateWhere = null
   state.access = 'ok'
   state.canEscalate = false
+  state.selectQueue = []
+  state.reachableInboxes = []
 })
 
 describe('PATCH mention', () => {
@@ -152,6 +166,23 @@ describe('GET mentions', () => {
     await expect(listHandler({} as never)).resolves.toMatchObject({ data: { canEscalate: true } })
     state.canEscalate = false
     await expect(listHandler({} as never)).resolves.toMatchObject({ data: { canEscalate: false } })
+  })
+
+  it('hides conversation and inbox ids for inboxes the caller cannot open', async () => {
+    const row = (id: string, inbox: string | null) => ({
+      id,
+      status: inbox ? 'escalated' : 'new',
+      publishedAt: new Date(),
+      conversationId: inbox ? `conv-${id}` : null,
+      conversationInboxId: inbox,
+    })
+    state.reachableInboxes = ['inbox-ok']
+    state.selectQueue = [[row('a', 'inbox-ok'), row('b', 'inbox-secret'), row('c', null)], [], [{ total: 0 }]]
+    const res = (await listHandler({} as never)) as { data: { items: Array<Record<string, unknown>> } }
+    const [a, b, c] = res.data.items
+    expect(a).toMatchObject({ conversationId: 'conv-a', conversationInboxId: 'inbox-ok' })
+    expect(b).toMatchObject({ status: 'escalated', conversationId: null, conversationInboxId: null })
+    expect(c).toMatchObject({ conversationId: null, conversationInboxId: null })
   })
 
   it('rejects an invalid cursor', async () => {

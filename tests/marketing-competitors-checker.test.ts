@@ -8,7 +8,7 @@ vi.mock('~/server/utils/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
-const { checkCompetitorWatches, checkWatch, newRunContext, summarizeChange, interleaveByHost } =
+const { checkCompetitorWatches, checkWatch, checkWatchNow, newRunContext, summarizeChange, interleaveByHost } =
   await import('~/server/services/marketing/competitors/checker')
 const { callTeamLlm } = await import('~/server/services/marketing/llm-call')
 const { hashText, normalizeHtml } = await import('~/server/services/marketing/competitors/normalize')
@@ -18,6 +18,7 @@ type Patch = import('~/server/services/marketing/competitors/store').WatchPatch
 type ChangeRow = import('~/server/services/marketing/competitors/store').ChangeInsert
 
 function makeWatch(overrides: Partial<Watch> = {}): Watch {
+  const url = overrides.url ?? 'https://rival.com/pricing'
   return {
     id: 'w1',
     siteId: 's1',
@@ -26,7 +27,8 @@ function makeWatch(overrides: Partial<Watch> = {}): Watch {
     projectName: 'Prod',
     projectSettings: null,
     termLabel: 'Rival',
-    url: 'https://rival.com/pricing',
+    competitorDomain: new URL(url).hostname.replace(/^www\./, '').replace(/\.$/, ''),
+    url,
     kind: 'pricing',
     status: 'active',
     lastCheckedAt: null,
@@ -37,12 +39,19 @@ function makeWatch(overrides: Partial<Watch> = {}): Watch {
   }
 }
 
+const redirect = (location: string, status = 301) => res(status, '', '', 'text/html', { location })
 const page = (body: string) => `<html><body>${body}</body></html>`
-const res = (status: number, body: string, finalUrl = '', contentType = 'text/html') => ({
+const res = (
+  status: number,
+  body: string,
+  finalUrl = '',
+  contentType = 'text/html',
+  headers: Record<string, string> = {}
+) => ({
   status,
   body,
   finalUrl,
-  headers: {},
+  headers,
   truncated: false,
   contentType,
 })
@@ -169,12 +178,115 @@ describe('checkWatch', () => {
     expect(t.saves[1].patch).toMatchObject({ consecutiveFailures: 5, status: 'error' })
   })
 
-  it('rejects a redirect to another host', async () => {
+  it('follows same-host redirects by hand, robots-checking and spacing every hop', async () => {
     const t = setup({
       'https://rival.com/robots.txt': res(404, ''),
-      'https://rival.com/pricing': res(200, page('<p>x</p>'), 'https://other.com/'),
+      'https://rival.com/pricing': redirect('/plans'),
+      'https://rival.com/plans': res(200, page('<p>Pro</p>')),
+    })
+    expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), t.deps)).toBe('baseline')
+    expect(t.requested).toEqual([
+      'https://rival.com/robots.txt',
+      'https://rival.com/pricing',
+      'https://rival.com/plans',
+    ])
+    expect(t.sleeps).toEqual([10_000])
+    for (const call of t.deps.fetchText.mock.calls as unknown as Array<[string, Record<string, unknown>]>) {
+      expect(call[1]).toMatchObject({ maxRedirects: 0, manualRedirects: true })
+    }
+  })
+
+  it('blocks when a redirect hop lands on a robots-disallowed path, without requesting it', async () => {
+    const t = setup({
+      'https://rival.com/robots.txt': res(200, 'User-agent: *\nDisallow: /private'),
+      'https://rival.com/pricing': redirect('/private/plans'),
+      'https://rival.com/private/plans': res(200, page('<p>x</p>')),
+    })
+    expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), t.deps)).toBe('blocked')
+    expect(t.requested).not.toContain('https://rival.com/private/plans')
+    expect(t.saves[0].patch).toMatchObject({ status: 'blocked_by_robots' })
+  })
+
+  it('rejects a redirect to another host before requesting it', async () => {
+    const t = setup({
+      'https://rival.com/robots.txt': res(404, ''),
+      'https://rival.com/pricing': redirect('https://other.com/'),
+      'https://other.com/': res(200, page('<p>x</p>')),
     })
     expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), t.deps)).toBe('error')
+    expect(t.requested).toEqual(['https://rival.com/robots.txt', 'https://rival.com/pricing'])
+    expect(t.saves[0].patch.lastError).toContain('other.com')
+  })
+
+  it('treats a trailing-dot host as the same host, and a redirect to it as same-host', async () => {
+    const t = setup({
+      'https://rival.com/robots.txt': res(404, ''),
+      'https://rival.com/pricing': redirect('https://rival.com./plans'),
+      'https://rival.com./plans': res(200, page('<p>Pro</p>')),
+    })
+    expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), t.deps)).toBe('baseline')
+    expect(t.requested.filter((u) => u.endsWith('/robots.txt'))).toHaveLength(1)
+  })
+
+  it('gives up after 5 redirect hops', async () => {
+    const pages: Record<string, ReturnType<typeof res>> = { 'https://rival.com/robots.txt': res(404, '') }
+    for (let i = 0; i < 10; i++) pages[`https://rival.com/${i === 0 ? 'pricing' : `h${i}`}`] = redirect(`/h${i + 1}`)
+    const t = setup(pages)
+    expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), t.deps)).toBe('error')
+    expect(t.saves[0].patch.lastError).toBe('Too many redirects')
+    expect(t.requested.filter((u) => !u.endsWith('robots.txt'))).toHaveLength(6)
+  })
+
+  it('follows same-host robots.txt redirects only', async () => {
+    const ok = setup({
+      'https://rival.com/robots.txt': redirect('/robots-v2.txt'),
+      'https://rival.com/robots-v2.txt': res(200, 'User-agent: *\nDisallow: /pricing'),
+    })
+    expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), ok.deps)).toBe('blocked')
+
+    const cross = setup({
+      'https://rival.com/robots.txt': redirect('https://cdn.other.com/robots.txt'),
+      'https://cdn.other.com/robots.txt': res(200, ''),
+    })
+    expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), cross.deps)).toBe('error')
+    expect(cross.requested).toEqual(['https://rival.com/robots.txt'])
+  })
+
+  it('treats robots.txt 401/403 as disallow all, 404/410 as allow all, 5xx as a failure', async () => {
+    for (const status of [401, 403]) {
+      const t = setup({
+        'https://rival.com/robots.txt': res(status, ''),
+        'https://rival.com/pricing': res(200, page('x')),
+      })
+      expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), t.deps)).toBe('blocked')
+      expect(t.requested).toEqual(['https://rival.com/robots.txt'])
+    }
+    for (const status of [404, 410]) {
+      const t = setup({
+        'https://rival.com/robots.txt': res(status, ''),
+        'https://rival.com/pricing': res(200, page('<p>x</p>')),
+      })
+      expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), t.deps)).toBe('baseline')
+    }
+    const t = setup({ 'https://rival.com/robots.txt': res(502, '') })
+    expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), t.deps)).toBe('error')
+    const net = setup({ 'https://rival.com/robots.txt': new Error('network') })
+    expect(await checkWatch(makeWatch(), newRunContext(Date.now() + 1e9), net.deps)).toBe('error')
+    expect(net.requested).toEqual(['https://rival.com/robots.txt'])
+  })
+
+  it('pauses a watch whose page no longer matches the competitor domain, without fetching', async () => {
+    for (const competitorDomain of ['other.com', null, 'github.io']) {
+      const t = setup({ 'https://rival.com/robots.txt': res(404, '') })
+      const watch = makeWatch({
+        competitorDomain,
+        url: competitorDomain === 'github.io' ? 'https://rival.github.io/p' : 'https://rival.com/pricing',
+      })
+      expect(await checkWatch(watch, newRunContext(Date.now() + 1e9), t.deps)).toBe('error')
+      expect(t.requested).toEqual([])
+      expect(t.saves[0].patch).toMatchObject({ status: 'error' })
+      expect(t.saves[0].patch.lastError).toBeTruthy()
+    }
   })
 
   it('summarises a change only when the product setting is on, and ignores summary failures', async () => {
@@ -294,5 +406,22 @@ describe('checkCompetitorWatches', () => {
     const summary = await checkCompetitorWatches({}, t.deps)
     expect(summary.checked).toBe(0)
     expect(t.requested).toEqual([])
+  })
+})
+
+describe('checkWatchNow', () => {
+  it('takes the same atomic claim as the cron and reports busy when it is lost', async () => {
+    const t = setup({
+      'https://rival.com/robots.txt': res(404, ''),
+      'https://rival.com/pricing': res(200, page('<p>Pro</p>')),
+    })
+    t.store.claim.mockResolvedValueOnce(false)
+    expect(await checkWatchNow(makeWatch(), t.deps)).toBe('busy')
+    expect(t.requested).toEqual([])
+
+    const [, cutoff, now, opts] = [...(t.store.claim.mock.calls[0] as unknown as [string, Date, Date, object])]
+    expect(now.getTime() - cutoff.getTime()).toBe(60 * 60 * 1000)
+    expect(opts).toMatchObject({ anyStatus: true })
+    expect(await checkWatchNow(makeWatch(), t.deps)).toBe('baseline')
   })
 })

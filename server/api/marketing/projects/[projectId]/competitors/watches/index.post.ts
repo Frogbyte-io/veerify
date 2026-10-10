@@ -5,9 +5,9 @@
  *     tags: [Marketing]
  *     summary: Watch a public competitor page for changes
  *     description: >
- *       Marketing admin only. https pages only; the host cannot be the product's own site and
- *       must match the competitor's domain when one is set. At most 3 pages per competitor and
- *       15 per site. The page is fetched at most once a day as VeerifyBot, and robots.txt is respected.
+ *       Marketing admin only. https pages only; the competitor must have a domain set (a bare public
+ *       suffix such as github.io does not count), the host cannot be the product's own site and must
+ *       be on that domain. At most 3 pages per competitor, 15 per site and 20 new watches per day per site. The page is fetched at most once a day as VeerifyBot, and robots.txt is respected.
  *     operationId: createMarketingCompetitorWatch
  *     parameters:
  *       - in: path
@@ -30,7 +30,8 @@
  *       400: { description: Validation failed or a limit is reached }
  *       403: { description: Not a marketing admin, or Marketing is off }
  *       404: { description: Site or competitor not found }
- *       409: { description: This page is already watched }
+ *       409: { description: This page is already watched, or the competitor has no domain set }
+ *       429: { description: Too many watches created today }
  */
 import { randomUUID } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
@@ -39,12 +40,15 @@ import { competitorWatch, marketingTerm } from '~/server/database/schema/marketi
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import {
   badRequest,
+  COMPETITOR_DOMAIN_REQUIRED_MESSAGE,
   createWatchSchema,
   MAX_WATCHES_PER_COMPETITOR,
   MAX_WATCHES_PER_SITE,
   serializeWatch,
+  WATCH_CREATIONS_PER_DAY,
   validateWatchUrl,
 } from '~/server/utils/marketing-competitors'
+import { requireRateLimit } from '~/server/utils/rate-limit'
 import { requireRouteParam } from '~/server/utils/marketing-site'
 import { requireMarketingSite } from '~/server/utils/marketing-terms'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -74,37 +78,56 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  if (!term.competitorDomain) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: createErrorResponse(ErrorCode.CONFLICT, COMPETITOR_DOMAIN_REQUIRED_MESSAGE),
+    })
+  }
   const url = validateWatchUrl(body.url, site.origin, term.competitorDomain)
 
-  const [counts] = await db
-    .select({
-      site: sql<number>`count(*)::int`,
-      term: sql<number>`count(*) filter (where ${competitorWatch.termId} = ${term.id})::int`,
-    })
-    .from(competitorWatch)
-    .where(eq(competitorWatch.siteId, site.id))
-  if ((counts?.term ?? 0) >= MAX_WATCHES_PER_COMPETITOR) {
-    badRequest(`A competitor can have at most ${MAX_WATCHES_PER_COMPETITOR} watched pages`)
-  }
-  if ((counts?.site ?? 0) >= MAX_WATCHES_PER_SITE) {
-    badRequest(`A product can have at most ${MAX_WATCHES_PER_SITE} watched pages`)
-  }
+  // Keyed on the site, not on a watch, so delete and re-create cannot reset it.
+  await requireRateLimit(event, {
+    identifier: 'marketing-competitor-watch-create',
+    subject: site.id,
+    maxRequests: WATCH_CREATIONS_PER_DAY,
+    windowSeconds: 24 * 60 * 60,
+  })
 
-  const now = new Date()
-  const inserted = await db
-    .insert(competitorWatch)
-    .values({
-      id: randomUUID(),
-      siteId: site.id,
-      termId: term.id,
-      url,
-      kind: body.kind,
-      createdByUserId: session.user.id,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .onConflictDoNothing()
-    .returning()
+  // Count and insert under a per-site lock so concurrent requests cannot both slip under the caps.
+  const inserted = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`competitor_watches:${site.id}`}, 0))`)
+    const [counts] = await tx
+      .select({
+        site: sql<number>`count(*)::int`,
+        term: sql<number>`count(*) filter (where ${competitorWatch.termId} = ${term.id})::int`,
+      })
+      .from(competitorWatch)
+      .where(eq(competitorWatch.siteId, site.id))
+    if ((counts?.term ?? 0) >= MAX_WATCHES_PER_COMPETITOR) {
+      badRequest(`A competitor can have at most ${MAX_WATCHES_PER_COMPETITOR} watched pages`)
+    }
+    if ((counts?.site ?? 0) >= MAX_WATCHES_PER_SITE) {
+      badRequest(`A product can have at most ${MAX_WATCHES_PER_SITE} watched pages`)
+    }
+
+    const now = new Date()
+    return await tx
+      .insert(competitorWatch)
+      .values({
+        id: randomUUID(),
+        siteId: site.id,
+        termId: term.id,
+        url,
+        kind: body.kind,
+        createdByUserId: session.user.id,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .returning()
+  })
   if (inserted.length === 0) {
     throw createError({
       statusCode: 409,

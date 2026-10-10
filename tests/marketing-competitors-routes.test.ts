@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
   updateReturns: true,
   body: {} as unknown,
   selects: 0,
+  rateLimited: false,
+  transactions: 0,
+  locks: 0,
 }))
 
 const httpError = (statusCode: number) => Object.assign(new Error(String(statusCode)), { statusCode })
@@ -39,6 +42,11 @@ vi.mock('~/server/utils/marketing-site', () => ({
 vi.mock('~/server/utils/marketing-terms', () => ({
   requireMarketingSite: vi.fn(async () => ({ id: 'site-1', origin: 'https://example.com' })),
 }))
+vi.mock('~/server/utils/rate-limit', () => ({
+  requireRateLimit: vi.fn(async () => {
+    if (state.rateLimited) throw httpError(429)
+  }),
+}))
 vi.mock('~/server/utils/validation', async () => {
   const { z } = await import('zod')
   return {
@@ -54,8 +62,8 @@ vi.mock('~/server/utils/response', () => ({
   createErrorResponse: (code: string, message: string) => ({ error: { code, message } }),
   ErrorCode: { NOT_FOUND: 'NOT_FOUND', CONFLICT: 'CONFLICT', VALIDATION_ERROR: 'VALIDATION_ERROR' },
 }))
-vi.mock('~/server/database/drizzle', () => ({
-  db: {
+vi.mock('~/server/database/drizzle', () => {
+  const db: Record<string, unknown> = {
     select: vi.fn(() => {
       const n = state.selects++
       const chain: Record<string, unknown> = {}
@@ -89,8 +97,16 @@ vi.mock('~/server/database/drizzle', () => ({
         },
       }),
     })),
-  },
-}))
+  }
+  db.execute = vi.fn(async () => {
+    state.locks++
+  })
+  db.transaction = vi.fn(async (fn: (tx: unknown) => unknown) => {
+    state.transactions++
+    return fn(db)
+  })
+  return { db }
+})
 
 const post = (await import('~/server/api/marketing/projects/[projectId]/competitors/watches/index.post')).default as (
   e: unknown
@@ -107,6 +123,9 @@ beforeEach(() => {
   state.insertReturns = true
   state.updateReturns = true
   state.selects = 0
+  state.rateLimited = false
+  state.transactions = 0
+  state.locks = 0
   state.body = { termId: 'term-1', url: 'https://rival.com/pricing', kind: 'pricing' }
 })
 
@@ -119,8 +138,21 @@ describe('validateWatchUrl', () => {
     )
     expect(validateWatchUrl('https://www.rival.com/', own, 'rival.com')).toBe('https://www.rival.com/')
   })
-  it('accepts any public host when the competitor has no domain', () => {
-    expect(validateWatchUrl('https://anything.io/p', own, null)).toBe('https://anything.io/p')
+  it('requires a competitor domain', () => {
+    expect(() => validateWatchUrl('https://anything.io/p', own, null)).toThrow()
+  })
+  it('rejects public-suffix-only domains such as github.io and vercel.app', () => {
+    expect(() => validateWatchUrl('https://someone.github.io/p', own, 'github.io')).toThrow()
+    expect(() => validateWatchUrl('https://app.vercel.app/p', own, 'vercel.app')).toThrow()
+    expect(() => validateWatchUrl('https://a.co.uk/p', own, 'co.uk')).toThrow()
+    // a registrable domain under a private suffix is fine
+    expect(validateWatchUrl('https://app.vercel.app/p', own, 'app.vercel.app')).toBe('https://app.vercel.app/p')
+  })
+  it('normalises a trailing-dot host and does not let it dodge the own-host or domain checks', () => {
+    expect(validateWatchUrl('https://rival.com./pricing', own, 'rival.com')).toBe('https://rival.com/pricing')
+    expect(() => validateWatchUrl('https://example.com./pricing', own, 'rival.com')).toThrow()
+    expect(() => validateWatchUrl('https://example.com./pricing', own, 'example.com')).toThrow()
+    expect(validateWatchUrl('https://rival.com/p', own, 'rival.com.')).toBe('https://rival.com/p')
   })
   it('rejects http, credentials, ports and IPs', () => {
     for (const url of [
@@ -149,6 +181,27 @@ describe('POST watches', () => {
     const result = await post({})
     expect(result.data.watch.url).toBe('https://rival.com/pricing')
     expect(state.inserted).toHaveLength(1)
+  })
+
+  it('counts and inserts inside a transaction holding the per-site advisory lock', async () => {
+    await post({})
+    expect(state.transactions).toBe(1)
+    expect(state.locks).toBe(1)
+  })
+
+  it('needs the competitor to have a domain (409)', async () => {
+    state.term = { id: 'term-1', siteId: 'site-1', kind: 'competitor', competitorDomain: null }
+    await expect(post({})).rejects.toMatchObject({
+      statusCode: 409,
+      data: { error: { message: "Set the competitor's domain in Marketing settings first" } },
+    })
+    expect(state.inserted).toHaveLength(0)
+  })
+
+  it('limits watch creation per site per day', async () => {
+    state.rateLimited = true
+    await expect(post({})).rejects.toMatchObject({ statusCode: 429 })
+    expect(state.inserted).toHaveLength(0)
   })
 
   it('is admin only', async () => {
