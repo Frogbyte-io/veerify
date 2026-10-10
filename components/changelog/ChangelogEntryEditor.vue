@@ -33,6 +33,15 @@
             <Icon name="lucide:external-link" class="w-4 h-4" />
             View public page
           </a>
+          <NuxtLink
+            v-if="isPublished && !isNew"
+            :to="{ path: '/marketing/announcements', query: { product: project.slug, entry: entryId } }"
+            class="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            data-testid="changelog-announcements-link"
+          >
+            <Icon name="lucide:send" class="w-4 h-4" />
+            Draft announcements
+          </NuxtLink>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <Button

@@ -113,17 +113,15 @@ export async function applyLanguageSuggestions(siteId: string, input: ApplyInput
     )
   }
   if (plan.promptsToAdd.length > 0) {
-    await db
-      .insert(aiVisibilityPrompt)
-      .values(
-        plan.promptsToAdd.map((text) => ({
-          id: randomUUID(),
-          siteId,
-          text,
-          active: true,
-          source: 'suggested' as const,
-        }))
-      )
+    await db.insert(aiVisibilityPrompt).values(
+      plan.promptsToAdd.map((text) => ({
+        id: randomUUID(),
+        siteId,
+        text,
+        active: true,
+        source: 'suggested' as const,
+      }))
+    )
   }
 
   return {
