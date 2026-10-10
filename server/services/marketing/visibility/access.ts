@@ -63,11 +63,27 @@ export async function requireVisibilityRequest(event: H3Event) {
   return { ...access, userId: session.user.id, projectId }
 }
 
+type DbExecutor = Pick<typeof db, 'select'>
+
+/**
+ * Runs `fn` in a transaction holding a per-site advisory lock, so prompt cap
+ * checks and the following insert/update cannot race with concurrent requests.
+ */
+export async function withPromptCapLock<T>(
+  siteId: string,
+  fn: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<T>
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`marketing_prompts:${siteId}`}, 0))`)
+    return fn(tx)
+  })
+}
+
 /** Throws 409 when activating another prompt would exceed the per-site cap. */
-export async function assertPromptCapacity(siteId: string, excludePromptId?: string) {
+export async function assertPromptCapacity(siteId: string, excludePromptId?: string, executor: DbExecutor = db) {
   const conditions = [eq(aiVisibilityPrompt.siteId, siteId), eq(aiVisibilityPrompt.active, true)]
   if (excludePromptId) conditions.push(ne(aiVisibilityPrompt.id, excludePromptId))
-  const [row] = await db
+  const [row] = await executor
     .select({ n: sql<number>`count(*)`.mapWith(Number) })
     .from(aiVisibilityPrompt)
     .where(and(...conditions))
@@ -81,8 +97,8 @@ export async function assertPromptCapacity(siteId: string, excludePromptId?: str
 }
 
 /** Throws 409 when the site already holds the maximum number of prompts (active or not). */
-export async function assertTotalPromptCapacity(siteId: string) {
-  const [row] = await db
+export async function assertTotalPromptCapacity(siteId: string, executor: DbExecutor = db) {
+  const [row] = await executor
     .select({ n: sql<number>`count(*)`.mapWith(Number) })
     .from(aiVisibilityPrompt)
     .where(eq(aiVisibilityPrompt.siteId, siteId))

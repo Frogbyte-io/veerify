@@ -210,55 +210,31 @@
                 />
               </div>
 
-              <!-- Changelog -->
+              <!-- Module toggles (from the module registry) -->
               <div
+                v-for="module in featureModules"
+                :key="module.key"
                 class="flex items-start justify-between rounded-lg border p-4 cursor-pointer transition-colors hover:bg-muted/50"
-                :class="form.changelogEnabled ? 'border-primary/50 bg-primary/5' : ''"
-                @click="form.changelogEnabled = !form.changelogEnabled"
+                :class="form.modules[module.key] ? 'border-primary/50 bg-primary/5' : ''"
+                :data-testid="`create-module-${module.key}`"
+                @click="toggleModule(module.key)"
               >
                 <div class="flex items-start gap-3 flex-1 min-w-0">
                   <div
                     class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-                    :class="form.changelogEnabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
+                    :class="form.modules[module.key] ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
                   >
-                    <Icon name="lucide:newspaper" class="w-4 h-4" />
+                    <Icon :name="module.icon" class="w-4 h-4" />
                   </div>
                   <div class="min-w-0">
-                    <p class="text-sm font-medium">Changelog</p>
-                    <p class="text-xs text-muted-foreground mt-0.5">Publish release notes and product updates</p>
+                    <p class="text-sm font-medium">{{ module.product.label }}</p>
+                    <p class="text-xs text-muted-foreground mt-0.5">{{ module.product.description }}</p>
                   </div>
                 </div>
                 <Switch
-                  :model-value="form.changelogEnabled"
+                  :model-value="form.modules[module.key]"
                   class="shrink-0 ml-3 mt-0.5"
-                  @click.stop="form.changelogEnabled = !form.changelogEnabled"
-                />
-              </div>
-
-              <!-- Public Roadmap -->
-              <div
-                class="flex items-start justify-between rounded-lg border p-4 cursor-pointer transition-colors hover:bg-muted/50"
-                :class="form.roadmapEnabled ? 'border-primary/50 bg-primary/5' : ''"
-                @click="form.roadmapEnabled = !form.roadmapEnabled"
-              >
-                <div class="flex items-start gap-3 flex-1 min-w-0">
-                  <div
-                    class="w-8 h-8 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-                    :class="form.roadmapEnabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'"
-                  >
-                    <Icon name="lucide:map" class="w-4 h-4" />
-                  </div>
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium">Public Roadmap</p>
-                    <p class="text-xs text-muted-foreground mt-0.5">
-                      Share your planned features and priorities publicly
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  :model-value="form.roadmapEnabled"
-                  class="shrink-0 ml-3 mt-0.5"
-                  @click.stop="form.roadmapEnabled = !form.roadmapEnabled"
+                  @click.stop="toggleModule(module.key)"
                 />
               </div>
             </div>
@@ -282,6 +258,12 @@
 <script>
 import { toast } from 'vue-sonner'
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
+import { PRODUCT_MODULES } from '~/lib/modules'
+
+// Feedback is always on for a new product; every other product module is
+// offered as a toggle, off by default.
+const FEATURE_MODULES = PRODUCT_MODULES.filter((module) => module.key !== 'feedbackEnabled')
+const emptyModules = () => Object.fromEntries(FEATURE_MODULES.map((module) => [module.key, false]))
 
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 
@@ -305,13 +287,16 @@ export default {
         slug: '',
         description: '',
         isPublic: true,
-        changelogEnabled: false,
-        roadmapEnabled: false,
+        modules: emptyModules(),
       },
     }
   },
 
   computed: {
+    featureModules() {
+      return FEATURE_MODULES
+    },
+
     publicUrlPreview() {
       if (!import.meta.client) return ''
       const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
@@ -405,6 +390,10 @@ export default {
       this.form.slug = this.slugify(value)
     },
 
+    toggleModule(key) {
+      this.form.modules[key] = !this.form.modules[key]
+    },
+
     handleDialogOpenChange(open) {
       this.showCreateDialog = open
       if (!open) {
@@ -414,8 +403,7 @@ export default {
           slug: '',
           description: '',
           isPublic: true,
-          changelogEnabled: false,
-          roadmapEnabled: false,
+          modules: emptyModules(),
         }
       }
     },
@@ -433,10 +421,7 @@ export default {
             slug: this.form.slug,
             description: this.form.description || null,
             isPublic: this.form.isPublic,
-            settings: {
-              changelogEnabled: this.form.changelogEnabled,
-              roadmapEnabled: this.form.roadmapEnabled,
-            },
+            settings: { ...this.form.modules },
           },
         })
 

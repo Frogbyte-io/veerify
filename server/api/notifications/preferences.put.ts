@@ -18,6 +18,7 @@ const preferencesSchema = z.object({
   newComments: z.boolean().optional(),
   conversationAssigned: z.boolean().optional(),
   conversationMentions: z.boolean().optional(),
+  marketingDigest: z.boolean().optional(),
 })
 
 export default defineEventHandler(async (event) => {

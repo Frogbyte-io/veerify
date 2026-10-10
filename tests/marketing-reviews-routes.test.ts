@@ -2,6 +2,7 @@ import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
+  userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/126.0 Safari/537.36' as string | undefined,
   params: {} as Record<string, string>,
   query: {} as Record<string, unknown>,
   body: {} as unknown,
@@ -27,6 +28,7 @@ const state = vi.hoisted(() => ({
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
 vi.stubGlobal('getRouterParam', (_e: unknown, name: string) => state.params[name])
 vi.stubGlobal('getQuery', () => state.query)
+vi.stubGlobal('getRequestHeader', () => state.userAgent)
 vi.stubGlobal('readBody', async () => state.body)
 vi.stubGlobal('setHeader', (_e: unknown, name: string, value: string) => void (state.headers[name] = value))
 vi.stubGlobal('sendRedirect', (_e: unknown, url: string, code: number) => {
@@ -201,6 +203,7 @@ const submitRow = (overrides: Record<string, unknown> = {}) => ({
 })
 
 beforeEach(() => {
+  state.userAgent = 'Mozilla/5.0 (X11; Linux x86_64) Chrome/126.0 Safari/537.36'
   state.params = { token: TOKEN, projectId: 'p1', id: 't1', teamSlug: 'acme', projectSlug: 'app' }
   state.query = {}
   state.body = {}
@@ -253,6 +256,26 @@ describe('GET /api/marketing/r/[token]/go (open redirect protection)', () => {
     expect(state.redirect).toEqual({ url: 'https://www.g2.com/products/acme/reviews', code: 302 })
     expect(state.updates).toHaveLength(1)
     expect((state.updates[0].set as { clickedAt: Date }).clickedAt).toBeInstanceOf(Date)
+  })
+
+  it.each([['Microsoft Office SafeLinks Protection'], [undefined], ['Slackbot-LinkExpanding 1.0']])(
+    'redirects but does not record a click from scanner user agent %s',
+    async (userAgent) => {
+      state.userAgent = userAgent
+      state.query = { p: 'g2' }
+      state.selectQueue = [[requestRow()]]
+      await goHandler({} as never)
+      expect(state.redirect?.code).toBe(302)
+      expect(state.updates).toHaveLength(0)
+    }
+  )
+
+  it('does not record a click from a HEAD request', async () => {
+    state.query = { p: 'g2' }
+    state.selectQueue = [[requestRow()]]
+    await goHandler({ method: 'HEAD' } as never)
+    expect(state.redirect?.code).toBe(302)
+    expect(state.updates).toHaveLength(0)
   })
 
   it('does not rewrite clickedAt on repeat clicks', async () => {

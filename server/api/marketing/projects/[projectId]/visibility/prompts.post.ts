@@ -26,6 +26,7 @@ import {
   assertPromptCapacity,
   assertTotalPromptCapacity,
   requireVisibilityRequest,
+  withPromptCapLock,
 } from '~/server/services/marketing/visibility/access'
 import { promptTextSchema } from '~/server/services/marketing/visibility/prompts'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -57,13 +58,15 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  await assertTotalPromptCapacity(site.id)
-  if (active) await assertPromptCapacity(site.id)
-
-  const [prompt] = await db
-    .insert(aiVisibilityPrompt)
-    .values({ id: randomUUID(), siteId: site.id, text: body.text, active, source: body.source ?? 'user' })
-    .returning()
+  const prompt = await withPromptCapLock(site.id, async (tx) => {
+    await assertTotalPromptCapacity(site.id, tx)
+    if (active) await assertPromptCapacity(site.id, undefined, tx)
+    const [inserted] = await tx
+      .insert(aiVisibilityPrompt)
+      .values({ id: randomUUID(), siteId: site.id, text: body.text, active, source: body.source ?? 'user' })
+      .returning()
+    return inserted
+  })
 
   return createSuccessResponse({ prompt })
 })

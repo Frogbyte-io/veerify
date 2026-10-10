@@ -5,7 +5,8 @@
  *     tags: [Marketing]
  *     summary: Choose the Search Console property to read
  *     description: >
- *       Team admins only. The property must be one the connected Google account can read. Changing
+ *       Team admins only. The property must be one the connected Google account can read and must match the site
+ *       (its URL-prefix property, or the sc-domain property for its registrable domain). Changing
  *       the property clears stored metrics and queues a fresh sync.
  *     operationId: putSearchProperty
  *     parameters:
@@ -32,7 +33,7 @@
  *       503: { description: Search Console is not configured on this server }
  */
 import { z } from 'zod'
-import { listSites } from '~/server/services/google/search-console'
+import { isPropertySelectableForOrigin, listSites } from '~/server/services/google/search-console'
 import {
   getAccessTokenFor,
   requireGscConfig,
@@ -73,6 +74,17 @@ export default defineEventHandler(async (event) => {
       .map((s) => s.siteUrl)
   } catch (error) {
     return toGoogleHttpError(site.id, error)
+  }
+
+  if (!isPropertySelectableForOrigin(site.origin, body.propertyUrl)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(
+        ErrorCode.VALIDATION_ERROR,
+        `That property does not match this product's site. Choose the property for ${new URL(site.origin).host}`
+      ),
+    })
   }
 
   if (!allowed.includes(body.propertyUrl)) {

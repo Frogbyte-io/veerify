@@ -17,7 +17,7 @@ export const REVIEW_BATCH_SIZE = 50
 /** A `sending` claim older than this is considered abandoned (crashed worker) and swept back to `queued`. */
 export const CLAIM_STALE_MINUTES = 10
 /** Send attempts before a request is marked `failed`. */
-export const MAX_SEND_ATTEMPTS = 3
+export const MAX_SEND_ATTEMPTS = 4
 /** Delay before the next try, indexed by failed attempts so far minus one. */
 export const RETRY_BACKOFF_MS = [15 * MINUTE_MS, 60 * MINUTE_MS, 6 * 60 * MINUTE_MS]
 

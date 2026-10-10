@@ -78,13 +78,21 @@ async function loadDigestContent(siteId: string, since: Date): Promise<DigestCon
   }
 }
 
-async function loadAdminEmails(teamId: string): Promise<string[]> {
+export async function loadAdminEmails(teamId: string): Promise<string[]> {
   const rows = await db
-    .select({ email: user.email })
+    .select({ email: user.email, settings: user.settings })
     .from(teamMember)
     .innerJoin(user, eq(user.id, teamMember.userId))
     .where(and(eq(teamMember.teamId, teamId), eq(teamMember.role, 'admin')))
-  return [...new Set(rows.map((row) => row.email).filter(Boolean))]
+  // Admins opt out with the `marketingDigest` notification preference (default on)
+  return [
+    ...new Set(
+      rows
+        .filter((row) => row.settings?.notificationPreferences?.marketingDigest !== false)
+        .map((row) => row.email)
+        .filter(Boolean)
+    ),
+  ]
 }
 
 /** Emails each product's team admins the mentions that arrived in the last 24 hours. */
