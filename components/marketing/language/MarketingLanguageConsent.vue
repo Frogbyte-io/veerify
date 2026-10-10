@@ -15,7 +15,9 @@
         <li>
           <span class="font-medium text-foreground">What:</span>
           feedback titles, descriptions and public comments, and the text of incoming customer support messages for this
-          product. Internal notes and agent replies are never used.
+          product. Hidden feedback, internal notes and agent replies are never used. Feedback created from a support
+          conversation counts as support text. Titles of feedback linked to changelog entries are also included in
+          announcement drafts when feedback text is on.
         </li>
         <li>
           <span class="font-medium text-foreground">When:</span>
@@ -36,7 +38,7 @@
         <div class="flex items-center justify-between gap-4 rounded-md border p-3">
           <div>
             <Label for="language-consent-feedback" class="font-medium">Feedback text</Label>
-            <p class="text-xs text-muted-foreground">Feedback posts and public comments</p>
+            <p class="text-xs text-muted-foreground">Visible feedback posts and public comments</p>
           </div>
           <Switch
             id="language-consent-feedback"

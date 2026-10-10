@@ -85,6 +85,7 @@
             :insight="insight"
             :applying="applying"
             :apply-error="applyError"
+            :selection-reset-key="selectionResetKey"
             @apply="apply"
           />
           <div v-else class="rounded-lg border border-border bg-card p-6" data-testid="language-empty">
@@ -132,6 +133,7 @@ export default {
       runError: null,
       applying: false,
       applyError: null,
+      selectionResetKey: 0,
     }
   },
 
@@ -177,6 +179,8 @@ export default {
       this.runError = null
       this.applyError = null
       this.insight = null
+      this.running = false
+      this.applying = false
       if (product) await this.load()
     },
 
@@ -214,7 +218,11 @@ export default {
       }
     },
 
-    /** Reload without skeletons, e.g. after a consent change */
+    /**
+     * Reload without skeletons, e.g. after a consent change or a run. A failure
+     * keeps the page as it is and tells the user with a toast; a 403 means
+     * marketing was switched off in the meantime.
+     */
     async refresh() {
       if (!this.product) return
       const productId = this.product.id
@@ -222,39 +230,54 @@ export default {
         const response = await $fetch(`${this.base(productId)}/latest`)
         if (this.product?.id === productId) this.applyLatest(response.data)
       } catch (err) {
-        if (this.product?.id === productId) this.error = apiErrorMessage(err, 'Failed to load customer language')
+        if (this.product?.id !== productId) return
+        if (apiErrorStatus(err) === 403) {
+          this.marketingOff = true
+          this.disabledMessage = apiErrorMessage(err, '')
+        } else {
+          toast.error(apiErrorMessage(err, 'Could not refresh customer language'))
+        }
       }
     },
 
     async run() {
+      if (!this.product) return
+      const productId = this.product.id
       this.running = true
       this.runError = null
       try {
-        await $fetch(`${this.base()}/runs`, { method: 'POST' })
-        toast.success('Analysis complete')
+        await $fetch(`${this.base(productId)}/runs`, { method: 'POST' })
+        if (this.product?.id === productId) toast.success('Analysis complete')
       } catch (err) {
-        this.runError = apiErrorMessage(err, 'The analysis could not be run')
+        if (this.product?.id === productId) this.runError = apiErrorMessage(err, 'The analysis could not be run')
       } finally {
-        this.running = false
-        await this.refresh()
+        if (this.product?.id === productId) {
+          this.running = false
+          await this.refresh()
+        }
       }
     },
 
     async apply(selection) {
+      if (!this.product) return
+      const productId = this.product.id
       this.applying = true
       this.applyError = null
       try {
-        const response = await $fetch(`${this.base()}/apply`, { method: 'POST', body: selection })
+        const response = await $fetch(`${this.base(productId)}/apply`, { method: 'POST', body: selection })
+        if (this.product?.id !== productId) return
         const { terms, prompts } = response.data
         const added = terms.added.length + prompts.added.length
         const skipped = terms.skipped.length + prompts.skipped.length
         const text = `Added ${added}${skipped ? `, skipped ${skipped} (duplicates, invalid or over the limit)` : ''}`
         if (added > 0) toast.success(text)
         else toast.error(`Nothing added. ${skipped} skipped (duplicates, invalid or over the limit)`)
+        this.selectionResetKey += 1
+        await this.refresh()
       } catch (err) {
-        this.applyError = apiErrorMessage(err, 'Could not add the selection')
+        if (this.product?.id === productId) this.applyError = apiErrorMessage(err, 'Could not add the selection')
       } finally {
-        this.applying = false
+        if (this.product?.id === productId) this.applying = false
       }
     },
   },

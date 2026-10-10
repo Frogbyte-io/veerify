@@ -82,6 +82,41 @@ describe('collectFeedbackItems', () => {
   })
 })
 
+describe('collectFeedbackItems privacy filters', () => {
+  const since = new Date('2026-07-12T00:00:00Z')
+
+  it('excludes hidden feedback and support-derived feedback (and their comments) by default', async () => {
+    state.queue = [[], []]
+    await collectFeedbackItems('proj-1', since)
+    expect(state.wheres).toHaveLength(2)
+    for (const where of state.wheres) {
+      const q = sqlOf(where)
+      expect(q.sql).toContain('"is_hidden"')
+      expect(q.params).toContain(false)
+      expect(q.sql).toContain("->>'source'")
+      expect(q.sql).toContain('not ')
+      expect(q.params).toContain('support_conversation')
+    }
+  })
+
+  it('keeps hidden feedback out even with support consent, and labels support-derived rows as support', async () => {
+    state.queue = [
+      [
+        { title: 'From chat', body: null, createdAt: new Date(), supportDerived: true },
+        { title: 'Public post', body: null, createdAt: new Date(), supportDerived: false },
+      ],
+      [{ body: 'comment on chat feedback', createdAt: new Date(), supportDerived: true }],
+    ]
+    const items = await collectFeedbackItems('proj-1', since, { includeSupportDerived: true })
+    expect(items.map((i) => i.source)).toEqual(['support', 'feedback', 'support'])
+    for (const where of state.wheres) {
+      const q = sqlOf(where)
+      expect(q.sql).toContain('"is_hidden"')
+      expect(q.sql).not.toContain('not coalesce')
+    }
+  })
+})
+
 describe('languageWindowStart', () => {
   it('is 90 days back', () => {
     const now = new Date('2026-10-10T00:00:00Z')

@@ -250,7 +250,8 @@ it for _conversations_. A mention can be escalated into a support conversation, 
   added with one click.
 - **Google Search Console** uses the install's own Google OAuth app (`GOOGLE_CLIENT_ID` and
   `GOOGLE_CLIENT_SECRET`). The refresh token is stored encrypted for each marketing site. A daily sync
-  stores clicks, impressions, CTR and position, plus the top queries for the last 28 days. Without an
+  stores clicks, impressions, CTR and position, plus the top queries for the last 28 days. The 12 most
+  recent query snapshots are kept, which is about 12 days of history with a daily sync. Without an
   OAuth app the integration shows as not configured.
 
 ### 5. Later (M6+)

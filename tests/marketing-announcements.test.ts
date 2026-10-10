@@ -1,3 +1,4 @@
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Draft = Record<string, any>
@@ -14,6 +15,7 @@ const state = vi.hoisted(() => ({
   llm: vi.fn(),
   llmInputs: [] as string[],
   rateLimits: [] as unknown[],
+  wheres: [] as unknown[],
 }))
 
 const httpError = (statusCode: number, message = String(statusCode)) =>
@@ -90,7 +92,11 @@ vi.mock('~/server/utils/team-credentials', () => ({
 vi.mock('~/server/database/drizzle', () => {
   const chain = () => {
     const c: Record<string, unknown> = {}
-    for (const m of ['from', 'innerJoin', 'where', 'orderBy', 'limit']) c[m] = () => c
+    for (const m of ['from', 'innerJoin', 'orderBy', 'limit']) c[m] = () => c
+    c.where = (cond: unknown) => {
+      state.wheres.push(cond)
+      return c
+    }
     c.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
       Promise.resolve(state.queue.shift() ?? []).then(resolve, reject)
     return c
@@ -166,6 +172,7 @@ beforeEach(() => {
   state.drafts = new Map()
   state.deleted = []
   state.rateLimits = []
+  state.wheres = []
   state.llmInputs = []
   state.llm.mockReset().mockImplementation(async (_team: string, request: { input: string }) => {
     state.llmInputs.push(request.input)
@@ -173,9 +180,14 @@ beforeEach(() => {
   })
 })
 
-// Queue order for a generate call: entry, [owner], [linked feedback]
-const queueGenerate = (e: Record<string, unknown> | null = entry()) => {
-  state.queue = [e ? [e] : [], [{ slug: 'acme-team' }], [{ title: 'Please add dark mode' }]]
+// Queue order for a generate call: entry, [owner], [consent], [linked feedback]
+const queueGenerate = (e: Record<string, unknown> | null = entry(), allowFeedbackText = true) => {
+  state.queue = [
+    e ? [e] : [],
+    [{ slug: 'acme-team' }],
+    [{ allowFeedbackText, allowSupportText: false }],
+    [{ title: 'Please add dark mode' }],
+  ]
 }
 
 describe('announcement routes authorization', () => {
@@ -240,6 +252,28 @@ describe('generate', () => {
     expect(state.llmInputs[0]).not.toContain('**')
     expect(state.llmInputs[0]).toContain('Please add dark mode')
     expect(state.llmInputs[0]).toContain('Acme')
+  })
+
+  it('sends linked feedback titles only with feedback consent, PII-stripped and without hidden or support items', async () => {
+    queueGenerate()
+    state.queue[3] = [{ title: 'Mail me at jane@example.com about https://x.test/a dark mode' }]
+    await call(generatePost)
+    expect(state.llmInputs[0]).toContain('Mail me at [email] about [url] dark mode')
+    expect(state.llmInputs[0]).not.toContain('jane@example.com')
+
+    const q = new PgDialect().sqlToQuery(state.wheres[state.wheres.length - 1] as never)
+    expect(q.sql).toContain('"is_hidden"')
+    expect(q.sql).toContain("->>'source'")
+    expect(q.params).toEqual(expect.arrayContaining(['e1', false, 'support_conversation']))
+  })
+
+  it('never reads or sends linked feedback titles without consent', async () => {
+    queueGenerate(entry(), false)
+    await call(generatePost)
+    expect(state.llmInputs[0]).not.toContain('Please add dark mode')
+    expect(state.llmInputs[0]).not.toContain('Linked Feedback')
+    // the linked feedback query never ran: its queued rows are untouched
+    expect(state.queue).toHaveLength(1)
   })
 
   it('only writes the requested channels', async () => {
@@ -398,6 +432,17 @@ describe('list', () => {
     const { data } = await call(listGet)
     expect(data.entries).toHaveLength(20)
     expect(data.nextCursor).toBe(`${new Date('2026-10-01T00:00:00Z').getTime()}_e19`)
+  })
+
+  it('compares the cursor as an ISO timestamp string cast to timestamp, not a raw Date', async () => {
+    const at = new Date('2026-10-01T00:00:00Z')
+    state.query = { cursor: `${at.getTime()}_e5` }
+    state.queue = [[{ changelogEnabled: true }], [], []]
+    await call(listGet)
+    const q = new PgDialect().sqlToQuery(state.wheres[state.wheres.length - 1] as never)
+    expect(q.params).toContain(at.toISOString())
+    expect(q.params.some((p) => p instanceof Date)).toBe(false)
+    expect(q.sql).toContain('::timestamp')
   })
 
   it('rejects a malformed cursor', async () => {

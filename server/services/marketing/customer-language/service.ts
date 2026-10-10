@@ -6,29 +6,29 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { and, count, desc, eq, gte, notInArray } from 'drizzle-orm'
+import { and, count, desc, eq, gt, gte, lt, notInArray, or, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
+import { customerLanguageInsight, marketingTerm } from '~/server/database/schema/marketing'
+import type { LlmProviderId } from '~/server/services/llm'
 import {
-  customerLanguageInsight,
-  marketingDataConsent,
-  marketingTerm,
-  type ApiCredentialProvider,
-} from '~/server/database/schema/marketing'
-import {
-  getLlmProvider,
-  LlmProviderError,
-  LLM_MODELS,
-  type LlmProvider,
-  type LlmProviderId,
-} from '~/server/services/llm'
-import { estimateCostUsdMicros } from '~/server/services/llm/models'
+  callTeamLlm,
+  failedBeforeProviderCall,
+  type TeamLlmMessages,
+  type TeamLlmRequest,
+  type TeamLlmResult,
+} from '~/server/services/marketing/llm-call'
 import { pickSuggestionProvider } from '~/server/services/marketing/visibility/prompts'
-import { budgetExhausted, notifyCredentialInvalid } from '~/server/services/marketing/visibility/runner'
-import { getTeamApiKey, listTeamCredentials, markCredentialInvalid } from '~/server/utils/team-credentials'
-import { getUsage, recordUsage } from '~/server/utils/marketing-usage'
+import { listTeamCredentials } from '~/server/utils/team-credentials'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
-import { collectFeedbackItems, collectSupportItems, languageWindowStart, type DatedItem } from './collect'
+import {
+  collectFeedbackItems,
+  collectSupportItems,
+  languageWindowStart,
+  type CollectFeedbackOptions,
+  type DatedItem,
+} from './collect'
+import { readConsent, type DataConsent } from './consent'
 import {
   buildLanguageSystemPrompt,
   GenerationOutputError,
@@ -42,13 +42,10 @@ export const MIN_LANGUAGE_ITEMS = 10
 export const MAX_RUNS_PER_DAY = 5
 export const KEEP_INSIGHTS = 10
 
+export { readConsent, type DataConsent }
+
 export type LanguageSource = 'feedback' | 'support'
 export type LanguageBlockReason = 'no_consent' | 'no_key' | 'daily_limit'
-
-export interface DataConsent {
-  allowFeedbackText: boolean
-  allowSupportText: boolean
-}
 
 function fail(statusCode: number, statusMessage: string, code: string, message: string, reason?: string): never {
   throw createError({
@@ -65,18 +62,10 @@ export function consentedSources(consent: DataConsent): LanguageSource[] {
   return sources
 }
 
-export async function readConsent(teamId: string): Promise<DataConsent> {
-  const [row] = await db
-    .select({
-      allowFeedbackText: marketingDataConsent.allowFeedbackText,
-      allowSupportText: marketingDataConsent.allowSupportText,
-    })
-    .from(marketingDataConsent)
-    .where(eq(marketingDataConsent.teamId, teamId))
-    .limit(1)
-  return { allowFeedbackText: row?.allowFeedbackText === true, allowSupportText: row?.allowSupportText === true }
-}
-
+/**
+ * Runs in the last 24 hours. Includes reservations (itemCount 0) of runs whose
+ * provider call failed, because the provider was contacted.
+ */
 export async function countRecentRuns(siteId: string, now: Date = new Date()): Promise<number> {
   const since = new Date(now.getTime() - 24 * 60 * 60 * 1000)
   const [row] = await db
@@ -110,31 +99,30 @@ export async function languageBlockReason(input: {
 
 export interface LanguageRunDeps {
   readConsent(teamId: string): Promise<DataConsent>
-  collectFeedback(projectId: string, since: Date): Promise<DatedItem[]>
+  collectFeedback(projectId: string, since: Date, options?: CollectFeedbackOptions): Promise<DatedItem[]>
   collectSupport(teamId: string, projectId: string, since: Date): Promise<DatedItem[]>
   listCredentials(teamId: string): Promise<{ provider: string; status: string }[]>
-  getKey(
-    teamId: string,
-    provider: ApiCredentialProvider
-  ): Promise<{ apiKey: string; keyHint: string; monthlyBudgetCents: number | null } | null>
-  getUsage(teamId: string): Promise<Record<string, number>>
   countRecentRuns(siteId: string): Promise<number>
   termLabels(siteId: string): Promise<string[]>
-  getProvider(id: LlmProviderId): LlmProvider
-  record(teamId: string, metric: string, units: number): Promise<void>
-  saveInsight(row: typeof customerLanguageInsight.$inferInsert): Promise<void>
-  markInvalid(teamId: string, provider: LlmProviderId, keyHint: string): Promise<boolean>
-  notifyInvalid(teamId: string, provider: LlmProviderId): Promise<void>
+  callLlm(teamId: string, request: TeamLlmRequest, messages: TeamLlmMessages): Promise<TeamLlmResult<unknown>>
+  /**
+   * Atomically checks the daily limit and reserves a run (a placeholder row with
+   * itemCount 0). Returns the run id, or null when the limit is reached.
+   */
+  claimRun(siteId: string, userId: string, now: Date): Promise<string | null>
+  /** Gives the reservation back; used when the provider was never contacted */
+  releaseRun(id: string): Promise<void>
+  completeRun(id: string, row: typeof customerLanguageInsight.$inferInsert, now: Date): Promise<void>
   now(): Date
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000
 
 const defaultDeps: LanguageRunDeps = {
   readConsent,
   collectFeedback: collectFeedbackItems,
   collectSupport: collectSupportItems,
   listCredentials: listTeamCredentials,
-  getKey: getTeamApiKey,
-  getUsage,
   countRecentRuns,
   async termLabels(siteId) {
     const rows = await db
@@ -143,30 +131,65 @@ const defaultDeps: LanguageRunDeps = {
       .where(eq(marketingTerm.siteId, siteId))
     return rows.map((r) => r.label)
   },
-  getProvider: getLlmProvider,
-  record: recordUsage,
-  async saveInsight(row) {
-    await db.insert(customerLanguageInsight).values(row)
-    // Keep the newest KEEP_INSIGHTS per site
+  callLlm: callTeamLlm,
+  async claimRun(siteId, userId, now) {
+    return db.transaction(async (tx) => {
+      // Serialises concurrent runs for this site: the check and the insert are atomic
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`customer_language:${siteId}`}, 0))`)
+      const since = new Date(now.getTime() - DAY_MS)
+      const [row] = await tx
+        .select({ n: count() })
+        .from(customerLanguageInsight)
+        .where(and(eq(customerLanguageInsight.siteId, siteId), gte(customerLanguageInsight.createdAt, since)))
+      if (Number(row?.n ?? 0) >= MAX_RUNS_PER_DAY) return null
+      const id = randomUUID()
+      await tx.insert(customerLanguageInsight).values({
+        id,
+        siteId,
+        provider: 'pending',
+        model: '',
+        itemCount: 0,
+        createdByUserId: userId,
+        createdAt: now,
+      })
+      return id
+    })
+  },
+  async releaseRun(id) {
+    await db.delete(customerLanguageInsight).where(eq(customerLanguageInsight.id, id))
+  },
+  async completeRun(id, row, now) {
+    await db
+      .update(customerLanguageInsight)
+      .set({ ...row, id: undefined, createdAt: now })
+      .where(eq(customerLanguageInsight.id, id))
+    // Keep the newest KEEP_INSIGHTS finished runs per site. Reservations of failed
+    // provider calls stay for 24 hours so they keep counting toward the daily limit.
     const keep = await db
       .select({ id: customerLanguageInsight.id })
       .from(customerLanguageInsight)
-      .where(eq(customerLanguageInsight.siteId, row.siteId))
+      .where(and(eq(customerLanguageInsight.siteId, row.siteId), gt(customerLanguageInsight.itemCount, 0)))
       .orderBy(desc(customerLanguageInsight.createdAt))
       .limit(KEEP_INSIGHTS)
     await db.delete(customerLanguageInsight).where(
       and(
         eq(customerLanguageInsight.siteId, row.siteId),
-        notInArray(
-          customerLanguageInsight.id,
-          keep.map((k) => k.id)
+        or(
+          and(
+            gt(customerLanguageInsight.itemCount, 0),
+            notInArray(
+              customerLanguageInsight.id,
+              keep.map((k) => k.id)
+            )
+          ),
+          and(
+            eq(customerLanguageInsight.itemCount, 0),
+            lt(customerLanguageInsight.createdAt, new Date(now.getTime() - DAY_MS))
+          )
         )
       )
     )
   },
-  markInvalid: (teamId, provider, keyHint) =>
-    markCredentialInvalid(teamId, provider, 'The provider rejected the API key', keyHint),
-  notifyInvalid: notifyCredentialInvalid,
   now: () => new Date(),
 }
 
@@ -177,6 +200,18 @@ export interface LanguageRunInput {
   userId: string
   /** Used only to tell the model not to echo the product name; no customer data */
   productName?: string
+}
+
+const NO_KEY_MESSAGE = 'Add a valid Anthropic or OpenAI API key to run an analysis'
+
+function limitReached(): never {
+  fail(
+    429,
+    'Too Many Requests',
+    ErrorCode.RATE_LIMITED,
+    `You can run at most ${MAX_RUNS_PER_DAY} analyses per product per day`,
+    'daily_limit'
+  )
 }
 
 export async function runCustomerLanguage(
@@ -196,44 +231,21 @@ export async function runCustomerLanguage(
     )
   }
 
-  // 2. Cheap guards before reading any customer text
+  // 2. Cheap guards before reading any customer text (key and budget are enforced again by callTeamLlm)
   const credentials = await deps.listCredentials(input.teamId)
-  const providerId = pickSuggestionProvider(credentials)
-  if (!providerId) {
-    fail(409, 'Conflict', ErrorCode.CONFLICT, 'Add a valid Anthropic or OpenAI API key to run an analysis', 'no_key')
-  }
-  const key = await deps.getKey(input.teamId, providerId)
-  if (!key)
-    fail(409, 'Conflict', ErrorCode.CONFLICT, 'Add a valid Anthropic or OpenAI API key to run an analysis', 'no_key')
+  if (!pickSuggestionProvider(credentials)) fail(409, 'Conflict', ErrorCode.CONFLICT, NO_KEY_MESSAGE, 'no_key')
+  if ((await deps.countRecentRuns(input.siteId)) >= MAX_RUNS_PER_DAY) limitReached()
 
-  if (key.monthlyBudgetCents != null) {
-    const usage = await deps.getUsage(input.teamId)
-    if (budgetExhausted(usage, providerId, key.monthlyBudgetCents)) {
-      fail(
-        409,
-        'Conflict',
-        ErrorCode.CONFLICT,
-        'The monthly budget for this provider is reached. Raise it in Marketing settings',
-        'budget'
-      )
-    }
-  }
-
-  if ((await deps.countRecentRuns(input.siteId)) >= MAX_RUNS_PER_DAY) {
-    fail(
-      429,
-      'Too Many Requests',
-      ErrorCode.RATE_LIMITED,
-      `You can run at most ${MAX_RUNS_PER_DAY} analyses per product per day`,
-      'daily_limit'
-    )
-  }
-
-  // 3. Collect from consented sources only, for this product, in the window
+  // 3. Collect from consented sources only, for this product, in the window.
+  // Support-derived feedback is only read (and labelled support) with support consent.
   const now = deps.now()
   const since = languageWindowStart(now)
   const collected: DatedItem[] = []
-  if (consent.allowFeedbackText) collected.push(...(await deps.collectFeedback(input.projectId, since)))
+  if (consent.allowFeedbackText) {
+    collected.push(
+      ...(await deps.collectFeedback(input.projectId, since, { includeSupportDerived: consent.allowSupportText }))
+    )
+  }
   if (consent.allowSupportText) collected.push(...(await deps.collectSupport(input.teamId, input.projectId, since)))
 
   const items = collected
@@ -254,56 +266,28 @@ export async function runCustomerLanguage(
 
   const existingLabels = await deps.termLabels(input.siteId)
 
-  // 4. Call the provider with the team's own key
-  const model = LLM_MODELS[providerId].extract
-  let result
+  // 4. Reserve a run atomically (race-safe daily limit), then call the provider with the team's own key
+  const runId = await deps.claimRun(input.siteId, input.userId, now)
+  if (!runId) limitReached()
+
+  let result: TeamLlmResult<unknown>
   try {
-    result = await deps.getProvider(providerId).extractStructured<unknown>({
-      apiKey: key.apiKey,
-      system: buildLanguageSystemPrompt(input.productName ?? 'this product'),
-      input: prepared.text,
-      schema: LANGUAGE_SCHEMA,
-      schemaName: 'customer_language',
-      model,
-    })
+    result = await deps.callLlm(
+      input.teamId,
+      {
+        system: buildLanguageSystemPrompt(input.productName ?? 'this product'),
+        input: prepared.text,
+        schema: LANGUAGE_SCHEMA,
+        schemaName: 'customer_language',
+        extraUsageMetrics: { 'language:runs': 1 },
+      },
+      { noKey: NO_KEY_MESSAGE, upstream: 'The AI provider could not analyze the text. Try again' }
+    )
   } catch (err) {
-    if (err instanceof LlmProviderError) {
-      if (err.kind === 'auth') {
-        const transitioned = await deps.markInvalid(input.teamId, providerId, key.keyHint)
-        if (transitioned) await deps.notifyInvalid(input.teamId, providerId).catch(() => undefined)
-        fail(409, 'Conflict', ErrorCode.CONFLICT, 'The provider rejected your API key. Update it in Marketing settings')
-      }
-      if (err.kind === 'quota') {
-        fail(
-          409,
-          'Conflict',
-          ErrorCode.CONFLICT,
-          'The provider account is out of credit or quota. Add credit and try again'
-        )
-      }
-      if (err.kind === 'rate_limit') {
-        fail(
-          429,
-          'Too Many Requests',
-          ErrorCode.RATE_LIMITED,
-          'The provider is rate limiting requests. Try again shortly'
-        )
-      }
-      fail(502, 'Bad Gateway', 'UPSTREAM_ERROR', 'The AI provider could not analyze the text. Try again')
-    }
+    // A run only counts toward the limit when the provider was actually contacted
+    if (failedBeforeProviderCall(err)) await deps.releaseRun(runId).catch(() => undefined)
     throw err
   }
-
-  await Promise.all([
-    deps.record(input.teamId, `llm:${providerId}:input_tokens`, result.usage.inputTokens),
-    deps.record(input.teamId, `llm:${providerId}:output_tokens`, result.usage.outputTokens),
-    deps.record(
-      input.teamId,
-      `llm:${providerId}:cost_usd_micros`,
-      estimateCostUsdMicros(providerId, model, result.model, result.usage)
-    ),
-    deps.record(input.teamId, 'language:runs', 1),
-  ])
 
   let parsed: LanguageResult
   try {
@@ -316,21 +300,24 @@ export async function runCustomerLanguage(
   }
 
   const usedSources = sources.filter((s) => items.some((i) => i.source === s))
-  const id = randomUUID()
-  await deps.saveInsight({
-    id,
-    siteId: input.siteId,
-    provider: providerId,
-    model: result.model || model,
-    itemCount: prepared.itemCount,
-    sources: usedSources,
-    phrases: parsed.phrases,
-    suggestedTerms: parsed.suggestedTerms,
-    suggestedPrompts: parsed.suggestedPrompts,
-    inputTokens: result.usage.inputTokens,
-    outputTokens: result.usage.outputTokens,
-    createdByUserId: input.userId,
-  })
+  await deps.completeRun(
+    runId,
+    {
+      id: runId,
+      siteId: input.siteId,
+      provider: result.provider,
+      model: result.model,
+      itemCount: prepared.itemCount,
+      sources: usedSources,
+      phrases: parsed.phrases,
+      suggestedTerms: parsed.suggestedTerms,
+      suggestedPrompts: parsed.suggestedPrompts,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      createdByUserId: input.userId,
+    },
+    deps.now()
+  )
 
-  return { id, provider: providerId, itemCount: prepared.itemCount, sources: usedSources, ...parsed }
+  return { id: runId, provider: result.provider, itemCount: prepared.itemCount, sources: usedSources, ...parsed }
 }

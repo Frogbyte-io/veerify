@@ -18,11 +18,8 @@
  *       403: { description: Team admin required, or Marketing is off }
  *       404: { description: Search Console is not connected }
  */
-import { eq } from 'drizzle-orm'
-import { db } from '~/server/database/drizzle'
-import { gscConnection } from '~/server/database/schema/marketing'
 import { revokeToken } from '~/server/services/google/search-console'
-import { deleteGscMetrics, gscAad, requireGscConnection } from '~/server/services/marketing/search/connection'
+import { gscAad, removeGscConnection, requireGscConnection } from '~/server/services/marketing/search/connection'
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { findMarketingSite, requireRouteParam } from '~/server/utils/marketing-site'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -50,7 +47,6 @@ export default defineEventHandler(async (event) => {
     // Best effort: an undecryptable or already revoked token must not block disconnecting.
   }
 
-  await deleteGscMetrics(site.id)
-  await db.delete(gscConnection).where(eq(gscConnection.siteId, site.id))
+  await removeGscConnection(site.id)
   return createSuccessResponse({ disconnected: true })
 })

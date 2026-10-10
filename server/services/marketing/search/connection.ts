@@ -74,10 +74,68 @@ export async function markConnectionError(siteId: string, message: string) {
     .where(eq(gscConnection.siteId, siteId))
 }
 
+export type DbExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>
+
 /** Metrics belong to one property; drop them when the connection or property changes. */
-export async function deleteGscMetrics(siteId: string) {
-  await db.delete(gscDailyMetric).where(eq(gscDailyMetric.siteId, siteId))
-  await db.delete(gscQueryStat).where(eq(gscQueryStat.siteId, siteId))
+export async function deleteGscMetrics(siteId: string, executor: DbExecutor = db) {
+  await executor.delete(gscDailyMetric).where(eq(gscDailyMetric.siteId, siteId))
+  await executor.delete(gscQueryStat).where(eq(gscQueryStat.siteId, siteId))
+}
+
+/**
+ * Locks the connection row for the rest of the transaction. The sync takes the
+ * same lock before writing, so a property change or reconnect and a running
+ * sync never interleave: the sync either writes first (and the change then
+ * deletes its rows) or sees the new property and skips its write.
+ */
+async function lockGscConnection(tx: DbExecutor, siteId: string): Promise<GscConnectionRow | null> {
+  const [row] = await tx.select().from(gscConnection).where(eq(gscConnection.siteId, siteId)).for('update').limit(1)
+  return row ?? null
+}
+
+/** Connects (or reconnects) a site. A different property drops the old property's metrics, atomically. */
+export async function saveGscConnection(
+  siteId: string,
+  values: Omit<typeof gscConnection.$inferInsert, 'siteId' | 'createdAt'>,
+  now: Date
+) {
+  await db.transaction(async (tx) => {
+    const existing = await lockGscConnection(tx, siteId)
+    // A different account or property must not mix into old numbers
+    if (existing && existing.propertyUrl !== (values.propertyUrl ?? null)) await deleteGscMetrics(siteId, tx)
+    await tx
+      .insert(gscConnection)
+      .values({ siteId, ...values, createdAt: now })
+      .onConflictDoUpdate({ target: gscConnection.siteId, set: values })
+  })
+}
+
+/** Selects the property of an existing connection; a changed property drops the old metrics, atomically. */
+export async function setGscProperty(siteId: string, propertyUrl: string) {
+  await db.transaction(async (tx) => {
+    const existing = await lockGscConnection(tx, siteId)
+    if (existing && existing.propertyUrl !== propertyUrl) await deleteGscMetrics(siteId, tx)
+    await tx
+      .update(gscConnection)
+      .set({
+        propertyUrl,
+        status: 'connected',
+        lastError: null,
+        // Null lastSyncAt queues an immediate sync for the next task tick
+        lastSyncAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(gscConnection.siteId, siteId))
+  })
+}
+
+/** Disconnects: metrics and connection go together, serialised with a running sync. */
+export async function removeGscConnection(siteId: string) {
+  await db.transaction(async (tx) => {
+    await lockGscConnection(tx, siteId)
+    await deleteGscMetrics(siteId, tx)
+    await tx.delete(gscConnection).where(eq(gscConnection.siteId, siteId))
+  })
 }
 
 /**

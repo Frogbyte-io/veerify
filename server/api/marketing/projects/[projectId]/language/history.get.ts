@@ -15,7 +15,7 @@
  *       403: { description: Marketing is not enabled or no team access }
  *       404: { description: No marketing site is set up }
  */
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, gt } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { customerLanguageInsight } from '~/server/database/schema/marketing'
 import { requireVisibilityRequest } from '~/server/services/marketing/visibility/access'
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
       createdAt: customerLanguageInsight.createdAt,
     })
     .from(customerLanguageInsight)
-    .where(eq(customerLanguageInsight.siteId, site.id))
+    .where(and(eq(customerLanguageInsight.siteId, site.id), gt(customerLanguageInsight.itemCount, 0)))
     .orderBy(desc(customerLanguageInsight.createdAt))
     .limit(10)
 

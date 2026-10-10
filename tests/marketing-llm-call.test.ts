@@ -33,7 +33,10 @@ vi.mock('~/server/utils/marketing-usage', () => ({
 }))
 
 vi.mock('~/server/utils/response', () => ({
-  createErrorResponse: (code: string, message: string) => ({ success: false, error: { code, message } }),
+  createErrorResponse: (code: string, message: string, details?: unknown) => ({
+    success: false,
+    error: { code, message, ...(details ? { details } : {}) },
+  }),
   ErrorCode: { CONFLICT: 'CONFLICT', RATE_LIMITED: 'RATE_LIMITED' },
 }))
 
@@ -161,5 +164,34 @@ describe('callTeamLlm', () => {
   it('rethrows unknown errors', async () => {
     state.extract.mockRejectedValue(new TypeError('boom'))
     await expect(callTeamLlm('t1', request, messages)).rejects.toThrow('boom')
+  })
+
+  it('records extra usage metrics only after a successful call', async () => {
+    await callTeamLlm('t1', { ...request, extraUsageMetrics: { 'language:runs': 1 } }, messages)
+    expect(state.recorded.map(([, metric, units]) => [metric, units])).toContainEqual(['language:runs', 1])
+
+    state.recorded = []
+    state.extract.mockRejectedValue(new LlmProviderError('anthropic', 'server', 'x'))
+    await callTeamLlm('t1', { ...request, extraUsageMetrics: { 'language:runs': 1 } }, messages).catch(() => undefined)
+    expect(state.recorded).toEqual([])
+  })
+
+  it('tags 409 failures with a machine-readable reason', async () => {
+    const reasonOf = async () => (await callTeamLlm('t1', request, messages).catch((e) => e)).data.error.details?.reason
+
+    state.credentials = []
+    expect(await reasonOf()).toBe('no_key')
+
+    state.credentials = [{ provider: 'anthropic', status: 'valid' }]
+    state.keys.anthropic = key('abcd', 100)
+    state.usage = { 'llm:anthropic:cost_usd_micros': 1_000_000 }
+    expect(await reasonOf()).toBe('budget')
+
+    state.keys.anthropic = key()
+    state.usage = {}
+    state.extract.mockRejectedValue(new LlmProviderError('anthropic', 'auth', 'x', 401))
+    expect(await reasonOf()).toBe('auth')
+    state.extract.mockRejectedValue(new LlmProviderError('anthropic', 'quota', 'x'))
+    expect(await reasonOf()).toBe('quota')
   })
 })

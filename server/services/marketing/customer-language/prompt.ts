@@ -138,7 +138,7 @@ const PII_PATTERNS = [
 /**
  * Strip PII (emails, URLs, phone numbers) from text.
  */
-function stripPii(text: string): string {
+export function stripPii(text: string): string {
   let result = text
   for (const { regex, replacement } of PII_PATTERNS) {
     result = result.replace(regex, replacement)

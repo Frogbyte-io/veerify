@@ -106,6 +106,8 @@ export default {
     insight: { type: Object, required: true },
     applying: { type: Boolean, default: false },
     applyError: { type: String, default: null },
+    /** Changing this value clears the picked terms and prompts, e.g. after they were added */
+    selectionResetKey: { type: Number, default: 0 },
   },
 
   emits: ['apply'],
@@ -137,6 +139,9 @@ export default {
 
   watch: {
     'insight.id'() {
+      this.clearSelection()
+    },
+    selectionResetKey() {
       this.clearSelection()
     },
   },

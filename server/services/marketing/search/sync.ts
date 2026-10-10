@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
+import { DEFAULT_TEAM_MODULES } from '~/lib/modules'
 import { project } from '~/server/database/schema/feedback'
 import { gscConnection, gscDailyMetric, gscQueryStat, marketingSite } from '~/server/database/schema/marketing'
 import { teamModuleSettings } from '~/server/database/schema/teams'
@@ -20,12 +21,17 @@ import { isSecretsConfigured } from '~/server/utils/secrets'
 
 const logger = createLogger('marketing-search-sync')
 
-export const SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000
+/**
+ * A connection is due once its last sync is older than this. Slightly under a
+ * day so an hourly tick does not push a daily sync out to 25 hours.
+ */
+export const SYNC_DUE_AFTER_MS = 23 * 60 * 60 * 1000
 export const DAILY_LOOKBACK_DAYS = 90
 export const QUERY_WINDOW_DAYS = 28
 /** Search Console's final data lags by about three days */
 export const QUERY_END_LAG_DAYS = 3
 export const QUERY_ROW_LIMIT = 1000
+/** With one sync per day this is about 12 days of query history. */
 export const SNAPSHOTS_TO_KEEP = 12
 export const MAX_SITES_PER_TICK = 20
 export const TIME_BUDGET_MS = 45_000
@@ -57,13 +63,26 @@ export interface QueryStatInsert {
   position: number
 }
 
+export interface SyncWrite {
+  siteId: string
+  /** The property the data was fetched for; the write is skipped if the connection moved on */
+  propertyUrl: string
+  at: Date
+  daily: DailyMetricInsert[]
+  periodEnd: string
+  queryRows: QueryStatInsert[]
+  keep: number
+}
+
 /** Persistence seam so the sync can be tested without a database. */
 export interface SearchSyncStore {
   loadDue(now: Date): Promise<SyncCandidate[]>
-  upsertDaily(rows: DailyMetricInsert[]): Promise<void>
-  /** Replaces the snapshot for `periodEnd` and prunes to the most recent `keep` snapshots */
-  replaceQuerySnapshot(siteId: string, periodEnd: string, rows: QueryStatInsert[], keep: number): Promise<void>
-  markSynced(siteId: string, at: Date): Promise<void>
+  /**
+   * Writes daily metrics, replaces the query snapshot (pruned to the most recent
+   * `keep`) and marks the site synced, all in one transaction. Returns false and
+   * writes nothing when the connection no longer points at `propertyUrl`.
+   */
+  commitSync(write: SyncWrite): Promise<boolean>
   markFailed(siteId: string, at: Date, message: string, revoked: boolean): Promise<void>
 }
 
@@ -91,9 +110,13 @@ function chunks<T>(items: T[], size: number): T[][] {
   return result
 }
 
+/** `coalesce(team switch, default)`; the registry default for both switches is off. */
+const teamMarketingOn = sql`coalesce(${teamModuleSettings.marketingEnabled}, ${DEFAULT_TEAM_MODULES.marketingEnabled})`
+const productMarketingOn = sql`coalesce(${project.settings}->'marketingEnabled' = 'true'::jsonb, false)`
+
 export const dbSearchSyncStore: SearchSyncStore = {
   async loadDue(now) {
-    const cutoff = new Date(now.getTime() - SYNC_INTERVAL_MS)
+    const cutoff = new Date(now.getTime() - SYNC_DUE_AFTER_MS)
     const rows = await db
       .select({
         siteId: marketingSite.id,
@@ -116,6 +139,9 @@ export const dbSearchSyncStore: SearchSyncStore = {
           eq(gscConnection.status, 'connected'),
           isNotNull(gscConnection.propertyUrl),
           isNotNull(marketingSite.verifiedAt),
+          // Module switches are part of the query so sites with marketing off cannot fill the LIMIT
+          teamMarketingOn,
+          productMarketingOn,
           or(sql`${gscConnection.lastSyncAt} is null`, lt(gscConnection.lastSyncAt, cutoff))
         )
       )
@@ -130,47 +156,55 @@ export const dbSearchSyncStore: SearchSyncStore = {
     }))
   },
 
-  async upsertDaily(rows) {
-    for (const part of chunks(rows, INSERT_CHUNK)) {
-      await db
-        .insert(gscDailyMetric)
-        .values(part)
-        .onConflictDoUpdate({
-          target: [gscDailyMetric.siteId, gscDailyMetric.date],
-          set: {
-            clicks: sql`excluded.clicks`,
-            impressions: sql`excluded.impressions`,
-            ctr: sql`excluded.ctr`,
-            position: sql`excluded.position`,
-          },
-        })
-    }
-  },
+  async commitSync(write) {
+    return db.transaction(async (tx) => {
+      // Same row lock as property changes, reconnects and disconnects (connection.ts)
+      const [conn] = await tx
+        .select({ propertyUrl: gscConnection.propertyUrl, status: gscConnection.status })
+        .from(gscConnection)
+        .where(eq(gscConnection.siteId, write.siteId))
+        .for('update')
+        .limit(1)
+      if (!conn || conn.status !== 'connected' || conn.propertyUrl !== write.propertyUrl) return false
 
-  async replaceQuerySnapshot(siteId, periodEnd, rows, keep) {
-    await db.transaction(async (tx) => {
-      await tx.delete(gscQueryStat).where(and(eq(gscQueryStat.siteId, siteId), eq(gscQueryStat.periodEnd, periodEnd)))
-      for (const part of chunks(rows, INSERT_CHUNK)) await tx.insert(gscQueryStat).values(part)
+      for (const part of chunks(write.daily, INSERT_CHUNK)) {
+        await tx
+          .insert(gscDailyMetric)
+          .values(part)
+          .onConflictDoUpdate({
+            target: [gscDailyMetric.siteId, gscDailyMetric.date],
+            set: {
+              clicks: sql`excluded.clicks`,
+              impressions: sql`excluded.impressions`,
+              ctr: sql`excluded.ctr`,
+              position: sql`excluded.position`,
+            },
+          })
+      }
+
+      await tx
+        .delete(gscQueryStat)
+        .where(and(eq(gscQueryStat.siteId, write.siteId), eq(gscQueryStat.periodEnd, write.periodEnd)))
+      for (const part of chunks(write.queryRows, INSERT_CHUNK)) await tx.insert(gscQueryStat).values(part)
 
       const snapshots = await tx
         .selectDistinct({ periodEnd: gscQueryStat.periodEnd })
         .from(gscQueryStat)
-        .where(eq(gscQueryStat.siteId, siteId))
+        .where(eq(gscQueryStat.siteId, write.siteId))
         .orderBy(desc(gscQueryStat.periodEnd))
-      const stale = snapshots.slice(keep).map((s) => s.periodEnd)
+      const stale = snapshots.slice(write.keep).map((snapshot) => snapshot.periodEnd)
       if (stale.length > 0) {
         await tx
           .delete(gscQueryStat)
-          .where(and(eq(gscQueryStat.siteId, siteId), inArray(gscQueryStat.periodEnd, stale)))
+          .where(and(eq(gscQueryStat.siteId, write.siteId), inArray(gscQueryStat.periodEnd, stale)))
       }
-    })
-  },
 
-  async markSynced(siteId, at) {
-    await db
-      .update(gscConnection)
-      .set({ lastSyncAt: at, lastError: null, updatedAt: at })
-      .where(eq(gscConnection.siteId, siteId))
+      await tx
+        .update(gscConnection)
+        .set({ lastSyncAt: write.at, lastError: null, updatedAt: write.at })
+        .where(eq(gscConnection.siteId, write.siteId))
+      return true
+    })
   },
 
   async markFailed(siteId, at, message, revoked) {
@@ -213,7 +247,7 @@ async function syncOne(
   store: SearchSyncStore,
   getAccessToken: NonNullable<SyncDeps['getAccessToken']>,
   query: NonNullable<SyncDeps['query']>
-) {
+): Promise<boolean> {
   const accessToken = await getAccessToken(candidate, config)
   const today = isoDate(now)
 
@@ -248,10 +282,17 @@ async function syncOne(
     if (stat && !byQuery.has(stat.query)) byQuery.set(stat.query, stat)
   }
 
-  // Write only after both fetches succeed, so a failure never leaves a half-updated site.
-  if (daily.length > 0) await store.upsertDaily(daily)
-  await store.replaceQuerySnapshot(candidate.siteId, periodEnd, [...byQuery.values()], SNAPSHOTS_TO_KEEP)
-  await store.markSynced(candidate.siteId, now)
+  // Write only after both fetches succeed, in one transaction, so a failure never leaves a half-updated
+  // site and a property change that happened meanwhile is not overwritten with the old property's data.
+  return store.commitSync({
+    siteId: candidate.siteId,
+    propertyUrl: candidate.propertyUrl,
+    at: now,
+    daily,
+    periodEnd,
+    queryRows: [...byQuery.values()],
+    keep: SNAPSHOTS_TO_KEEP,
+  })
 }
 
 export async function syncSearchConsole(
@@ -279,8 +320,9 @@ export async function syncSearchConsole(
   for (const candidate of due) {
     if (Date.now() - started >= budget) break
     try {
-      await syncOne(candidate, now, config, store, getAccessToken, query)
-      summary.sitesSynced += 1
+      const written = await syncOne(candidate, now, config, store, getAccessToken, query)
+      if (written) summary.sitesSynced += 1
+      else logger.info('Search Console sync skipped, the connection changed meanwhile', { siteId: candidate.siteId })
     } catch (error) {
       summary.sitesFailed += 1
       const revoked = error instanceof GoogleAuthError

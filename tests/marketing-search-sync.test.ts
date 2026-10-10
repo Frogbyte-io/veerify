@@ -13,6 +13,13 @@ const dbState = vi.hoisted(() => ({
   deleted: [] as unknown[],
   inserted: [] as unknown[],
   snapshots: [] as Array<{ periodEnd: string }>,
+  connection: { propertyUrl: 'sc-domain:acme.com', status: 'connected' } as {
+    propertyUrl: string | null
+    status: string
+  } | null,
+  updated: [] as unknown[],
+  inTransaction: false,
+  wroteOutsideTransaction: false,
 }))
 
 vi.mock('~/server/database/drizzle', () => {
@@ -23,10 +30,28 @@ vi.mock('~/server/database/drizzle', () => {
       },
     }),
     insert: () => ({
-      values: async (rows: unknown) => {
+      values: (rows: unknown) => {
         dbState.inserted.push(rows)
+        const result = Promise.resolve() as Promise<void> & { onConflictDoUpdate: () => Promise<void> }
+        result.onConflictDoUpdate = async () => undefined
+        return result
       },
     }),
+    update: () => ({
+      set: (values: unknown) => ({
+        where: async () => {
+          dbState.updated.push(values)
+        },
+      }),
+    }),
+    select: () => {
+      const chain: Record<string, unknown> = {}
+      chain.from = () => chain
+      chain.where = () => chain
+      chain.for = () => chain
+      chain.limit = async () => (dbState.connection ? [dbState.connection] : [])
+      return chain
+    },
     selectDistinct: () => ({
       from: () => ({ where: () => ({ orderBy: async () => dbState.snapshots }) }),
     }),
@@ -69,23 +94,23 @@ function candidate(overrides: Partial<SyncCandidate> = {}): SyncCandidate {
   }
 }
 
-function makeStore(candidates: SyncCandidate[]) {
+function makeStore(candidates: SyncCandidate[], commitResult = true) {
   const calls = {
-    daily: [] as DailyMetricInsert[][],
-    snapshots: [] as Array<{ siteId: string; periodEnd: string; rows: QueryStatInsert[]; keep: number }>,
-    synced: [] as string[],
+    writes: [] as Array<{
+      siteId: string
+      propertyUrl: string
+      daily: DailyMetricInsert[]
+      periodEnd: string
+      queryRows: QueryStatInsert[]
+      keep: number
+    }>,
     failed: [] as Array<{ siteId: string; message: string; revoked: boolean }>,
   }
   const store: SearchSyncStore = {
     loadDue: async () => candidates,
-    upsertDaily: async (rows) => {
-      calls.daily.push(rows)
-    },
-    replaceQuerySnapshot: async (siteId, periodEnd, rows, keep) => {
-      calls.snapshots.push({ siteId, periodEnd, rows, keep })
-    },
-    markSynced: async (siteId) => {
-      calls.synced.push(siteId)
+    commitSync: async (write) => {
+      calls.writes.push(write)
+      return commitResult
     },
     markFailed: async (siteId, _at, message, revoked) => {
       calls.failed.push({ siteId, message, revoked })
@@ -122,12 +147,16 @@ describe('syncSearchConsole', () => {
     const summary = await syncSearchConsole({ now: NOW }, deps(store))
 
     expect(summary).toEqual({ sitesSynced: 1, sitesFailed: 0, skipped: false })
-    expect(calls.daily[0].map((r) => r.date)).toEqual(['2026-10-07', '2026-10-08'])
-    expect(calls.snapshots).toHaveLength(1)
-    expect(calls.snapshots[0]).toMatchObject({ siteId: 's1', periodEnd: '2026-10-07', keep: 12 })
+    expect(calls.writes).toHaveLength(1)
+    expect(calls.writes[0].daily.map((r) => r.date)).toEqual(['2026-10-07', '2026-10-08'])
+    expect(calls.writes[0]).toMatchObject({
+      siteId: 's1',
+      propertyUrl: 'sc-domain:acme.com',
+      periodEnd: '2026-10-07',
+      keep: 12,
+    })
     // Distinct queries kept (case-sensitive), the empty key dropped
-    expect(calls.snapshots[0].rows.map((r) => r.query)).toEqual(['feedback tool', 'Feedback Tool'])
-    expect(calls.synced).toEqual(['s1'])
+    expect(calls.writes[0].queryRows.map((r) => r.query)).toEqual(['feedback tool', 'Feedback Tool'])
   })
 
   it('requests 90 days of final daily data and 28 days of queries ending 3 days ago', async () => {
@@ -163,8 +192,7 @@ describe('syncSearchConsole', () => {
 
     expect(summary.sitesFailed).toBe(1)
     expect(calls.failed).toEqual([{ siteId: 's1', message: 'Google access was revoked — reconnect', revoked: true }])
-    expect(calls.daily).toHaveLength(0)
-    expect(calls.synced).toHaveLength(0)
+    expect(calls.writes).toHaveLength(0)
   })
 
   it('records other errors without revoking and writes nothing', async () => {
@@ -177,8 +205,7 @@ describe('syncSearchConsole', () => {
 
     expect(calls.failed[0]).toMatchObject({ siteId: 's1', revoked: false })
     expect(calls.failed[0].message).toContain('HTTP 503')
-    expect(calls.daily).toHaveLength(0)
-    expect(calls.snapshots).toHaveLength(0)
+    expect(calls.writes).toHaveLength(0)
   })
 
   it('skips sites where marketing is off', async () => {
@@ -188,7 +215,7 @@ describe('syncSearchConsole', () => {
       candidate({ siteId: 'on' }),
     ])
     await syncSearchConsole({ now: NOW }, deps(store))
-    expect(calls.synced).toEqual(['on'])
+    expect(calls.writes.map((w) => w.siteId)).toEqual(['on'])
   })
 
   it('does nothing when the Google app or secrets are not configured', async () => {
@@ -197,19 +224,26 @@ describe('syncSearchConsole', () => {
     expect(await syncSearchConsole({ now: NOW }, deps(store, { secretsConfigured: false }))).toMatchObject({
       skipped: true,
     })
-    expect(calls.synced).toHaveLength(0)
+    expect(calls.writes).toHaveLength(0)
   })
 
   it('caps the sites per tick', async () => {
     const { store, calls } = makeStore(Array.from({ length: 5 }, (_, i) => candidate({ siteId: `s${i}` })))
     await syncSearchConsole({ now: NOW, maxSites: 2 }, deps(store))
-    expect(calls.synced).toEqual(['s0', 's1'])
+    expect(calls.writes.map((w) => w.siteId)).toEqual(['s0', 's1'])
   })
 
   it('stops when the time budget is spent', async () => {
     const { store, calls } = makeStore([candidate({ siteId: 'a' }), candidate({ siteId: 'b' })])
     await syncSearchConsole({ now: NOW, timeBudgetMs: 0 }, deps(store))
-    expect(calls.synced).toHaveLength(0)
+    expect(calls.writes).toHaveLength(0)
+  })
+
+  it('does not count a site as synced when the connection changed during the sync', async () => {
+    const { store, calls } = makeStore([candidate()], false)
+    const summary = await syncSearchConsole({ now: NOW }, deps(store))
+    expect(summary).toEqual({ sitesSynced: 0, sitesFailed: 0, skipped: false })
+    expect(calls.failed).toHaveLength(0)
   })
 
   it('keeps going after one site fails', async () => {
@@ -220,7 +254,7 @@ describe('syncSearchConsole', () => {
     }
     const summary = await syncSearchConsole({ now: NOW }, deps(store, { getAccessToken }))
     expect(summary).toMatchObject({ sitesSynced: 1, sitesFailed: 1 })
-    expect(calls.synced).toEqual(['good'])
+    expect(calls.writes.map((w) => w.siteId)).toEqual(['good'])
   })
 })
 
@@ -235,35 +269,64 @@ describe('toQueryStat', () => {
 describe('dbSearchSyncStore', () => {
   const sqlOf = (condition: unknown) => new PgDialect().sqlToQuery(condition as never)
 
-  it('loads only connected, verified connections that are new or older than 24 hours', async () => {
+  it('loads only due, connected, verified connections with marketing on, all in the WHERE before the LIMIT', async () => {
     await dbSearchSyncStore.loadDue(NOW)
     const { sql, params } = sqlOf(dbState.where)
     expect(sql).toContain('"gsc_connection"."status" = $1')
     expect(sql).toContain('"gsc_connection"."property_url" is not null')
     expect(sql).toContain('"marketing_site"."verified_at" is not null')
+    expect(sql).toContain('"team_module_settings"."marketing_enabled"')
+    expect(sql).toContain("'marketingEnabled'")
     expect(sql).toContain('"gsc_connection"."last_sync_at" is null')
     expect(sql).toContain('"gsc_connection"."last_sync_at" < $')
     expect(params).toContain('connected')
-    expect(params.map(String).some((p) => p.startsWith('2026-10-09T12:00:00'))).toBe(true)
+    // 23 hours back, not 24
+    expect(params.map(String).some((p) => p.startsWith('2026-10-09T13:00:00'))).toBe(true)
   })
 
-  it('replaces the snapshot and keeps only the 12 most recent', async () => {
+  const write = (overrides: Record<string, unknown> = {}) => ({
+    siteId: 's1',
+    propertyUrl: 'sc-domain:acme.com',
+    at: NOW,
+    daily: [{ siteId: 's1', date: '2026-10-19', clicks: 1, impressions: 1, ctr: 1, position: 1 }],
+    periodEnd: '2026-10-20',
+    queryRows: [{ siteId: 's1', periodEnd: '2026-10-20', query: 'q', clicks: 1, impressions: 1, ctr: 1, position: 1 }],
+    keep: 12,
+    ...overrides,
+  })
+
+  function reset() {
     dbState.deleted = []
     dbState.inserted = []
+    dbState.updated = []
+    dbState.connection = { propertyUrl: 'sc-domain:acme.com', status: 'connected' }
     dbState.snapshots = Array.from({ length: 14 }, (_, i) => ({
       periodEnd: `2026-10-${String(20 - i).padStart(2, '0')}`,
     }))
-    await dbSearchSyncStore.replaceQuerySnapshot(
-      's1',
-      '2026-10-20',
-      [{ siteId: 's1', periodEnd: '2026-10-20', query: 'q', clicks: 1, impressions: 1, ctr: 1, position: 1 }],
-      12
-    )
+  }
+
+  it('replaces the snapshot, keeps only the 12 most recent and marks the site synced in one transaction', async () => {
+    reset()
+    await expect(dbSearchSyncStore.commitSync(write())).resolves.toBe(true)
     // 1) delete same-period rows, then insert, then 2) delete the two stale snapshots
     expect(dbState.deleted).toHaveLength(2)
-    expect(dbState.inserted).toHaveLength(1)
+    expect(dbState.inserted).toHaveLength(2) // daily rows + query rows
     const stale = sqlOf(dbState.deleted[1])
     expect(stale.params).toEqual(expect.arrayContaining(['2026-10-08', '2026-10-07']))
     expect(stale.params).not.toContain('2026-10-09')
+    expect(dbState.updated).toEqual([expect.objectContaining({ lastSyncAt: NOW, lastError: null })])
+  })
+
+  it.each([
+    ['the property changed', { propertyUrl: 'sc-domain:other.com', status: 'connected' }],
+    ['the connection needs attention', { propertyUrl: 'sc-domain:acme.com', status: 'error' }],
+    ['the connection was removed', null],
+  ])('writes nothing when %s while the sync was running', async (_name, connection) => {
+    reset()
+    dbState.connection = connection
+    await expect(dbSearchSyncStore.commitSync(write())).resolves.toBe(false)
+    expect(dbState.deleted).toHaveLength(0)
+    expect(dbState.inserted).toHaveLength(0)
+    expect(dbState.updated).toHaveLength(0)
   })
 })

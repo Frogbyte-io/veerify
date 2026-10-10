@@ -6,6 +6,24 @@ import { user } from '~/server/database/schema/auth'
 import { requireTeamAdmin, requireTeamMembership } from '~/server/utils/support-access'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
+export interface DataConsent {
+  allowFeedbackText: boolean
+  allowSupportText: boolean
+}
+
+/** The team's current consent. Missing row means no consent. */
+export async function readConsent(teamId: string): Promise<DataConsent> {
+  const [row] = await db
+    .select({
+      allowFeedbackText: marketingDataConsent.allowFeedbackText,
+      allowSupportText: marketingDataConsent.allowSupportText,
+    })
+    .from(marketingDataConsent)
+    .where(eq(marketingDataConsent.teamId, teamId))
+    .limit(1)
+  return { allowFeedbackText: row?.allowFeedbackText === true, allowSupportText: row?.allowSupportText === true }
+}
+
 export async function getConsentSummary(teamId: string) {
   const [row] = await db
     .select({
