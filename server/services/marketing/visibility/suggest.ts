@@ -12,7 +12,7 @@ import { feedbackCategory } from '~/server/database/schema/feedback'
 import { getLlmProvider, LlmProviderError, LLM_MODELS } from '~/server/services/llm'
 import { estimateCostUsdMicros } from '~/server/services/llm/models'
 import { getTeamApiKey, listTeamCredentials, markCredentialInvalid } from '~/server/utils/team-credentials'
-import { recordUsage } from '~/server/utils/marketing-usage'
+import { getUsage, recordUsage } from '~/server/utils/marketing-usage'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import {
   buildSuggestionInput,
@@ -21,7 +21,7 @@ import {
   pickSuggestionProvider,
   SUGGESTION_SCHEMA,
 } from './prompts'
-import { notifyCredentialInvalid } from './runner'
+import { budgetExhausted, notifyCredentialInvalid } from './runner'
 
 function fail(statusCode: number, statusMessage: string, code: string, message: string): never {
   throw createError({ statusCode, statusMessage, data: createErrorResponse(code, message) })
@@ -39,6 +39,19 @@ export async function suggestPrompts(input: {
   }
   const key = await getTeamApiKey(input.teamId, providerId as ApiCredentialProvider)
   if (!key) fail(409, 'Conflict', ErrorCode.CONFLICT, 'Add a valid Anthropic or OpenAI API key to get suggestions')
+
+  // Same monthly budget guard as the runner
+  if (key.monthlyBudgetCents != null) {
+    const usage = await getUsage(input.teamId)
+    if (budgetExhausted(usage, providerId, key.monthlyBudgetCents)) {
+      fail(
+        409,
+        'Conflict',
+        ErrorCode.CONFLICT,
+        'The monthly budget for this provider is reached. Raise it in Marketing settings'
+      )
+    }
+  }
 
   const [categories, existing] = await Promise.all([
     db
@@ -71,7 +84,7 @@ export async function suggestPrompts(input: {
       recordUsage(
         input.teamId,
         `llm:${providerId}:cost_usd_micros`,
-        estimateCostUsdMicros(providerId, result.model, result.usage)
+        estimateCostUsdMicros(providerId, LLM_MODELS[providerId].extract, result.model, result.usage)
       ),
     ])
 
@@ -86,9 +99,22 @@ export async function suggestPrompts(input: {
   } catch (err) {
     if (err instanceof LlmProviderError) {
       if (err.kind === 'auth') {
-        const transitioned = await markCredentialInvalid(input.teamId, providerId, 'The provider rejected the API key')
+        const transitioned = await markCredentialInvalid(
+          input.teamId,
+          providerId,
+          'The provider rejected the API key',
+          key.keyHint
+        )
         if (transitioned) await notifyCredentialInvalid(input.teamId, providerId).catch(() => undefined)
         fail(409, 'Conflict', ErrorCode.CONFLICT, 'The provider rejected your API key. Update it in Marketing settings')
+      }
+      if (err.kind === 'quota') {
+        fail(
+          409,
+          'Conflict',
+          ErrorCode.CONFLICT,
+          'The provider account is out of credit or quota. Add credit and try again'
+        )
       }
       if (err.kind === 'rate_limit') {
         fail(

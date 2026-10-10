@@ -36,6 +36,8 @@ import {
 } from './types'
 
 const BASE_URL = 'https://api.openai.com'
+/** Cost control: Responses API `max_tool_calls` caps built-in tool calls (searches are billed per call) */
+const WEB_SEARCH_MAX_CALLS = 5
 
 interface OpenAiContentPart {
   type: string
@@ -88,6 +90,10 @@ function usageOf(res: OpenAiResponse) {
   return { inputTokens: res.usage?.input_tokens ?? 0, outputTokens: res.usage?.output_tokens ?? 0 }
 }
 
+function searchCalls(res: OpenAiResponse): number {
+  return (res.output ?? []).filter((o) => o.type === 'web_search_call').length
+}
+
 export const openaiProvider: LlmProvider = {
   id: 'openai',
   label: 'OpenAI',
@@ -116,10 +122,18 @@ export const openaiProvider: LlmProvider = {
 
     const res = await createResponse(
       input.apiKey,
-      { model, input: input.prompt, tools: [tool] },
+      { model, input: input.prompt, tools: [tool], max_tool_calls: WEB_SEARCH_MAX_CALLS },
       ANSWER_TIMEOUT_MS,
       input.signal
     )
+
+    if (res.status === 'incomplete') {
+      throw new LlmProviderError(
+        'openai',
+        'bad_request',
+        `Answer was truncated (${res.incomplete_details?.reason ?? 'incomplete'})`
+      )
+    }
 
     let text = ''
     const citations: LlmCitation[] = []
@@ -134,7 +148,12 @@ export const openaiProvider: LlmProvider = {
         throw new LlmProviderError('openai', 'bad_request', 'openai declined to answer (refusal)')
       }
     }
-    return { text, citations, usage: usageOf(res), model: res.model ?? model }
+    return {
+      text,
+      citations,
+      usage: { ...usageOf(res), webSearchRequests: searchCalls(res) },
+      model: res.model ?? model,
+    }
   },
 
   /**

@@ -9,8 +9,8 @@
  *   `allowed_callers: ['direct']` so no code-execution/dynamic filtering is used.
  *   Citations: text blocks carry `citations[]` of `web_search_result_location`.
  *   `pause_turn` is continued by resending the assistant turn. Usage also reports
- *   `server_tool_use.web_search_requests`, which does not fit LlmUsage (tokens
- *   only), so it is not reported.
+ *   `server_tool_use.web_search_requests` (billed at $10/1k), reported as
+ *   `webSearchRequests`. `max_uses` caps searches per request.
  * - Structured outputs (GA, no beta header):
  *   https://platform.claude.com/docs/en/build-with-claude/structured-outputs
  *   `output_config.format = { type: 'json_schema', schema }`; JSON comes back as
@@ -43,6 +43,8 @@ const ANSWER_MAX_TOKENS = 4096
 const EXTRACT_MAX_TOKENS = 4096
 /** Max times a `pause_turn` is continued before giving up */
 const MAX_PAUSE_CONTINUATIONS = 4
+/** Cost control: searches per request (each is billed) */
+const WEB_SEARCH_MAX_USES = 5
 
 interface AnthropicBlock {
   type: string
@@ -55,7 +57,11 @@ interface AnthropicResponse {
   model?: string
   content?: AnthropicBlock[]
   stop_reason?: string
-  usage?: { input_tokens?: number; output_tokens?: number }
+  usage?: {
+    input_tokens?: number
+    output_tokens?: number
+    server_tool_use?: { web_search_requests?: number } | null
+  }
 }
 
 function headers(apiKey: string) {
@@ -102,6 +108,7 @@ export const anthropicProvider: LlmProvider = {
       type: ANTHROPIC_WEB_SEARCH_TOOL_TYPE,
       name: 'web_search',
       allowed_callers: ['direct'],
+      max_uses: WEB_SEARCH_MAX_USES,
     }
     if (input.country) tool.user_location = { type: 'approximate', country: input.country }
 
@@ -109,7 +116,7 @@ export const anthropicProvider: LlmProvider = {
     let text = ''
     const citations: LlmCitation[] = []
     const seen = new Set<string>()
-    const usage = { inputTokens: 0, outputTokens: 0 }
+    const usage = { inputTokens: 0, outputTokens: 0, webSearchRequests: 0 }
     let reportedModel = model
 
     for (let i = 0; i <= MAX_PAUSE_CONTINUATIONS; i++) {
@@ -122,6 +129,7 @@ export const anthropicProvider: LlmProvider = {
       const content = Array.isArray(res.content) ? res.content : []
       usage.inputTokens += res.usage?.input_tokens ?? 0
       usage.outputTokens += res.usage?.output_tokens ?? 0
+      usage.webSearchRequests += res.usage?.server_tool_use?.web_search_requests ?? 0
       if (res.model) reportedModel = res.model
 
       for (const block of content) {

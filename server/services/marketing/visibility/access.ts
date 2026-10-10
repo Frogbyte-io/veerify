@@ -3,7 +3,7 @@ import { createError, getRouterParam, type H3Event } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { aiVisibilityPrompt, aiVisibilityRun, marketingSite } from '~/server/database/schema/marketing'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { MAX_ACTIVE_PROMPTS } from './prompts'
+import { MAX_ACTIVE_PROMPTS, MAX_TOTAL_PROMPTS } from './prompts'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
@@ -76,6 +76,24 @@ export async function assertPromptCapacity(siteId: string, excludePromptId?: str
       statusCode: 409,
       statusMessage: 'Conflict',
       data: createErrorResponse(ErrorCode.CONFLICT, `You can have at most ${MAX_ACTIVE_PROMPTS} active prompts`),
+    })
+  }
+}
+
+/** Throws 409 when the site already holds the maximum number of prompts (active or not). */
+export async function assertTotalPromptCapacity(siteId: string) {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)`.mapWith(Number) })
+    .from(aiVisibilityPrompt)
+    .where(eq(aiVisibilityPrompt.siteId, siteId))
+  if ((row?.n ?? 0) >= MAX_TOTAL_PROMPTS) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: createErrorResponse(
+        ErrorCode.CONFLICT,
+        `You can have at most ${MAX_TOTAL_PROMPTS} prompts. Delete some first`
+      ),
     })
   }
 }

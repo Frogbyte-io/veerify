@@ -1,5 +1,6 @@
 /** AI visibility analysis: deterministic term matching and structured extraction. */
 
+import { z } from 'zod'
 import type { LlmCitation } from '~/server/services/llm/types'
 import type { MarketingTermInput, TermMention, AnswerExtraction, AnswerAnalysis } from './types'
 
@@ -100,6 +101,38 @@ export const EXTRACTION_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 }
 
+const extractionSchema = z.object({
+  recommended: z.array(z.string().trim().min(1).max(100)).max(30),
+  brandSentiment: z.enum(['positive', 'neutral', 'negative']).nullable(),
+})
+
+/** Validates untrusted model output; anything malformed is treated as no extraction. */
+export function parseExtraction(raw: unknown): AnswerExtraction | null {
+  const parsed = extractionSchema.safeParse(raw)
+  return parsed.success ? parsed.data : null
+}
+
+const MIN_RECOMMENDED_LENGTH = 2
+const MIN_ALIAS_LENGTH = 3
+
+/**
+ * Whether a recommended name from the extraction refers to a term. Exact match
+ * on the label or an alias (aliases of 3+ chars); substring containment only
+ * when the shorter side is at least 3 chars, so tiny names never match by accident.
+ */
+function recommendedMatchesTerm(recommended: string, term: MarketingTermInput): boolean {
+  const rec = recommended.toLowerCase().trim()
+  if (rec.length < MIN_RECOMMENDED_LENGTH) return false
+  const candidates = [term.label, ...term.aliases.filter((a) => a.trim().length >= MIN_ALIAS_LENGTH)]
+  return candidates.some((c) => {
+    const name = c.toLowerCase().trim()
+    if (!name) return false
+    if (rec === name) return true
+    const shorter = Math.min(rec.length, name.length)
+    return shorter >= MIN_ALIAS_LENGTH && (name.includes(rec) || rec.includes(name))
+  })
+}
+
 /**
  * Build system prompt instructions for the LLM extraction step.
  * Instructs the model to list recommended products and give brand sentiment.
@@ -127,8 +160,9 @@ export function buildAnalysis(
   text: string,
   citations: LlmCitation[],
   terms: MarketingTermInput[],
-  extraction: AnswerExtraction | null
+  rawExtraction: AnswerExtraction | null | unknown
 ): AnswerAnalysis {
+  const extraction = rawExtraction == null ? null : parseExtraction(rawExtraction)
   // Find all term mentions in the text
   const mentions = findTermMentions(text, terms)
 
@@ -146,25 +180,10 @@ export function buildAnalysis(
   if (extraction?.recommended && brandMentioned) {
     // Try to find brand in recommended list
     for (let i = 0; i < extraction.recommended.length; i++) {
-      const recommended = extraction.recommended[i].toLowerCase().trim()
-      for (const brandTerm of brandTerms) {
-        const labelMatch =
-          recommended === brandTerm.label.toLowerCase() ||
-          brandTerm.label.toLowerCase().includes(recommended) ||
-          recommended.includes(brandTerm.label.toLowerCase())
-        const aliasMatch = brandTerm.aliases.some(
-          (alias) =>
-            recommended === alias.toLowerCase() ||
-            alias.toLowerCase().includes(recommended) ||
-            recommended.includes(alias.toLowerCase())
-        )
-
-        if (labelMatch || aliasMatch) {
-          brandRank = i + 1
-          break
-        }
+      if (brandTerms.some((t) => recommendedMatchesTerm(extraction.recommended[i], t))) {
+        brandRank = i + 1
+        break
       }
-      if (brandRank !== null) break
     }
   }
 
@@ -188,19 +207,7 @@ export function buildAnalysis(
     if (extraction?.recommended) {
       // Try to find competitor in recommended list
       for (let i = 0; i < extraction.recommended.length; i++) {
-        const recommended = extraction.recommended[i].toLowerCase().trim()
-        const labelMatch =
-          recommended === compTerm.label.toLowerCase() ||
-          compTerm.label.toLowerCase().includes(recommended) ||
-          recommended.includes(compTerm.label.toLowerCase())
-        const aliasMatch = compTerm.aliases.some(
-          (alias) =>
-            recommended === alias.toLowerCase() ||
-            alias.toLowerCase().includes(recommended) ||
-            recommended.includes(alias.toLowerCase())
-        )
-
-        if (labelMatch || aliasMatch) {
+        if (recommendedMatchesTerm(extraction.recommended[i], compTerm)) {
           compRank = i + 1
           break
         }

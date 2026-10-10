@@ -69,6 +69,8 @@ export interface TeamApiKey {
   apiKey: string
   status: 'valid' | 'invalid' | 'unchecked'
   monthlyBudgetCents: number | null
+  /** Hint of the stored key; pass back to markCredential* so a replaced key is not touched */
+  keyHint: string
 }
 
 /**
@@ -81,6 +83,7 @@ export async function getTeamApiKey(teamId: string, provider: ApiCredentialProvi
   const [row] = await db
     .select({
       encryptedKey: teamApiCredential.encryptedKey,
+      keyHint: teamApiCredential.keyHint,
       status: teamApiCredential.status,
       monthlyBudgetCents: teamApiCredential.monthlyBudgetCents,
     })
@@ -95,6 +98,7 @@ export async function getTeamApiKey(teamId: string, provider: ApiCredentialProvi
       apiKey: decryptSecret(row.encryptedKey, associatedData(teamId, provider)),
       status: row.status,
       monthlyBudgetCents: row.monthlyBudgetCents,
+      keyHint: row.keyHint,
     }
   } catch (err) {
     logger.warn('Stored team API key could not be decrypted', {
@@ -190,34 +194,54 @@ export async function deleteTeamCredential(teamId: string, provider: ApiCredenti
 /**
  * Called when a provider rejects the key (401/403) during scheduled work.
  * Returns true only on the transition into `invalid`, so callers notify team
- * admins once instead of on every failing run.
+ * admins once instead of on every failing run. `expectedKeyHint` guards against
+ * marking a key the team replaced while the call was in flight: when given and
+ * the stored hint differs, nothing changes and false is returned.
  */
 export async function markCredentialInvalid(
   teamId: string,
   provider: ApiCredentialProvider,
-  message: string
+  message: string,
+  expectedKeyHint?: string
 ): Promise<boolean> {
   const now = new Date()
   const current = await db
-    .select({ status: teamApiCredential.status })
+    .select({ status: teamApiCredential.status, keyHint: teamApiCredential.keyHint })
     .from(teamApiCredential)
     .where(and(eq(teamApiCredential.teamId, teamId), eq(teamApiCredential.provider, provider)))
     .limit(1)
 
   if (current.length === 0) return false
+  if (expectedKeyHint !== undefined && current[0].keyHint !== expectedKeyHint) return false
 
   await db
     .update(teamApiCredential)
     .set({ status: 'invalid', lastError: truncateError(message), lastValidatedAt: now, updatedAt: now })
-    .where(and(eq(teamApiCredential.teamId, teamId), eq(teamApiCredential.provider, provider)))
+    .where(
+      and(
+        eq(teamApiCredential.teamId, teamId),
+        eq(teamApiCredential.provider, provider),
+        ...(expectedKeyHint !== undefined ? [eq(teamApiCredential.keyHint, expectedKeyHint)] : [])
+      )
+    )
 
   return current[0].status !== 'invalid'
 }
 
-export async function markCredentialValid(teamId: string, provider: ApiCredentialProvider): Promise<void> {
+export async function markCredentialValid(
+  teamId: string,
+  provider: ApiCredentialProvider,
+  expectedKeyHint?: string
+): Promise<void> {
   const now = new Date()
   await db
     .update(teamApiCredential)
     .set({ status: 'valid', lastError: null, lastValidatedAt: now, updatedAt: now })
-    .where(and(eq(teamApiCredential.teamId, teamId), eq(teamApiCredential.provider, provider)))
+    .where(
+      and(
+        eq(teamApiCredential.teamId, teamId),
+        eq(teamApiCredential.provider, provider),
+        ...(expectedKeyHint !== undefined ? [eq(teamApiCredential.keyHint, expectedKeyHint)] : [])
+      )
+    )
 }

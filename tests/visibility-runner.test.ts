@@ -6,11 +6,13 @@ const state = vi.hoisted(() => ({
   insertedRun: null as Record<string, unknown> | null,
   credentials: [] as Array<{ provider: string; status: string }>,
   updates: [] as Array<Record<string, unknown>>,
+  executed: 0,
+  txError: null as unknown,
 }))
 
 function chain() {
   const c: Record<string, unknown> = {}
-  for (const m of ['from', 'where', 'limit', 'orderBy', 'innerJoin', 'groupBy']) c[m] = () => c
+  for (const m of ['from', 'where', 'limit', 'orderBy', 'innerJoin', 'leftJoin', 'groupBy']) c[m] = () => c
   c.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
     Promise.resolve(state.selectQueue.shift() ?? []).then(resolve, reject)
   return c
@@ -19,6 +21,11 @@ function chain() {
 vi.mock('~/server/database/drizzle', () => ({
   db: {
     select: () => chain(),
+    selectDistinct: () => chain(),
+    execute: async () => {
+      state.executed++
+      return { rows: [] }
+    },
     update: () => ({
       set: (values: Record<string, unknown>) => ({
         where: () => {
@@ -27,8 +34,9 @@ vi.mock('~/server/database/drizzle', () => ({
         },
       }),
     }),
-    transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
-      fn({
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+      if (state.txError) throw state.txError
+      return fn({
         insert: () => ({
           values: (values: unknown) => {
             if (Array.isArray(values)) {
@@ -39,7 +47,8 @@ vi.mock('~/server/database/drizzle', () => ({
             return { returning: () => Promise.resolve([values]) }
           },
         }),
-      }),
+      })
+    },
   },
 }))
 
@@ -63,6 +72,7 @@ describe('createRun', () => {
     state.selectQueue = []
     state.insertedAnswers = []
     state.insertedRun = null
+    state.txError = null
     state.credentials = [
       { provider: 'anthropic', status: 'valid' },
       { provider: 'openai', status: 'unchecked' },
@@ -101,6 +111,21 @@ describe('createRun', () => {
     const err = await createRun({ siteId: 's1', trigger: 'manual' }).catch((e) => e)
     expect(err).toBeInstanceOf(VisibilityRunError)
     expect(err.code).toBe('already_running')
+  })
+
+  it.each([
+    [Object.assign(new Error('dup'), { code: '23505' }), 'already_running'],
+    [new Error('failed', { cause: { code: '23505' } }), 'already_running'],
+  ])('maps a unique violation (23505) on insert to already_running', async (txError, code) => {
+    state.selectQueue = [site, [{ id: 'b1' }], [{ id: 'p1' }], []]
+    state.txError = txError
+    await expect(createRun({ siteId: 's1', trigger: 'manual' })).rejects.toMatchObject({ code })
+  })
+
+  it('rethrows other insert errors', async () => {
+    state.selectQueue = [site, [{ id: 'b1' }], [{ id: 'p1' }], []]
+    state.txError = new Error('other')
+    await expect(createRun({ siteId: 's1', trigger: 'manual' })).rejects.toThrow('other')
   })
 
   it('fans out one pending answer per prompt x provider x sample', async () => {
@@ -228,6 +253,7 @@ function makeHarness(
     saveAnswer: vi.fn(async (id: string, data: Record<string, unknown>) => {
       saved.set(id, data)
       claimed.delete(id)
+      return true
     }),
     finalizeRuns: calls.finalize,
     getProvider: (id: 'anthropic' | 'openai') => ({ ...okLlm, ...(options.llm?.[id] ?? {}) }),
@@ -293,7 +319,7 @@ describe('advanceVisibilityRuns', () => {
   it('marks an unchecked key valid after a success', async () => {
     const h = makeHarness([mk('a1')], { key: { apiKey: 'k', status: 'unchecked', monthlyBudgetCents: null } })
     await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
-    expect(h.calls.markValid).toHaveBeenCalledWith('t1', 'anthropic')
+    expect(h.calls.markValid).toHaveBeenCalledWith('t1', 'anthropic', undefined)
   })
 
   it('stops a provider at its monthly budget without calling it', async () => {
@@ -387,6 +413,93 @@ describe('advanceVisibilityRuns', () => {
   })
 })
 
+describe('advanceVisibilityRuns hardening', () => {
+  it('runs the stuck-run sweep at the start of every tick, even with nothing to claim', async () => {
+    const h = makeHarness([])
+    const sweep = vi.fn(async () => undefined)
+    ;(h.raw as Record<string, unknown>).sweepStuckRuns = sweep
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    expect(sweep).toHaveBeenCalledTimes(1)
+  })
+
+  it('on quota fails that provider pending answers without marking the key invalid', async () => {
+    const quota = {
+      answerWithSearch: async () => {
+        throw new LlmProviderError('openai', 'quota', 'insufficient_quota', 429)
+      },
+    }
+    const h = makeHarness([mk('o1', 'openai'), mk('o2', 'openai'), mk('a1')], { llm: { openai: quota } })
+    const result = await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 1 }, h.deps)
+    expect(h.state.failed.get('o1')).toMatch(/out of credit or quota/)
+    expect(h.state.failed.get('o2')).toMatch(/out of credit or quota/)
+    expect(h.state.saved.has('a1')).toBe(true)
+    expect(h.calls.markInvalid).not.toHaveBeenCalled()
+    expect(h.calls.notifyInvalid).not.toHaveBeenCalled()
+    expect(result.done).toBe(1)
+  })
+
+  it('does not call providers when marketing is off or the site is unverified', async () => {
+    for (const reason of ['Marketing is turned off for this product', 'Site is no longer verified']) {
+      const h = makeHarness([mk('a1'), mk('a2')])
+      ;(h.raw as { loadContext: unknown }).loadContext = vi.fn(async () => ({
+        teamId: 't1',
+        promptText: 'q',
+        brandLabel: 'Veerify',
+        terms: [],
+        blockedReason: reason,
+      }))
+      await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+      expect(h.calls.answerWithSearch).not.toHaveBeenCalled()
+      expect(h.state.failed.get('a1')).toBe(reason)
+      expect(h.state.failed.get('a2')).toBe(reason)
+    }
+  })
+
+  it('prices by the requested model and counts web search fees', async () => {
+    const h = makeHarness([mk('a1')], {
+      llm: {
+        anthropic: {
+          answerWithSearch: async (input: { model?: string }) => {
+            expect(input.model).toBe('claude-sonnet-5-5')
+            return {
+              text: 'Veerify',
+              citations: [],
+              usage: { inputTokens: 1000, outputTokens: 0, webSearchRequests: 2 },
+              model: 'some-unlisted-snapshot',
+            }
+          },
+        },
+      },
+    })
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    const metrics = Object.fromEntries(h.calls.recordUsage.mock.calls.map((c: unknown[]) => [c[1], c[2]]))
+    // sonnet 1000*2 + 2 searches * 10_000, + haiku extraction 200*1 + 50*5
+    expect(metrics['llm:anthropic:cost_usd_micros']).toBe(2000 + 20_000 + 450)
+  })
+
+  it('ignores an answer another worker already settled (no done count, no key update)', async () => {
+    const h = makeHarness([mk('a1')], { key: { apiKey: 'k', status: 'unchecked', monthlyBudgetCents: null } })
+    ;(h.raw as { saveAnswer: unknown }).saveAnswer = vi.fn(async () => false)
+    const result = await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    expect(result.done).toBe(0)
+    expect(h.calls.markValid).not.toHaveBeenCalled()
+  })
+
+  it('passes the used key hint so a replaced key is not marked', async () => {
+    const authFail = {
+      answerWithSearch: async () => {
+        throw new LlmProviderError('anthropic', 'auth', 'bad key', 401)
+      },
+    }
+    const h = makeHarness([mk('a1')], {
+      key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: null, keyHint: '...abcd' },
+      llm: { anthropic: authFail },
+    })
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    expect(h.calls.markInvalid).toHaveBeenCalledWith('t1', 'anthropic', expect.any(String), '...abcd')
+  })
+})
+
 describe('finalizeVisibilityRuns', () => {
   beforeEach(() => {
     state.selectQueue = []
@@ -411,5 +524,19 @@ describe('finalizeVisibilityRuns', () => {
     expect(state.updates).toHaveLength(1)
     expect(state.updates[0].status).toBe(expected)
     expect(state.updates[0].finishedAt).toBeInstanceOf(Date)
+  })
+
+  it('fails a run that has no answers at all, with an explanation', async () => {
+    state.selectQueue = [[]]
+    await finalizeVisibilityRuns(['r-empty'])
+    expect(state.updates).toHaveLength(1)
+    expect(state.updates[0]).toMatchObject({ status: 'failed', error: expect.stringMatching(/no answers/) })
+  })
+
+  it('applies retention after finishing runs', async () => {
+    state.executed = 0
+    state.selectQueue = [[row(0, 6, 0)], [{ siteId: 's1' }]]
+    await finalizeVisibilityRuns(['r1'])
+    expect(state.executed).toBe(1)
   })
 })

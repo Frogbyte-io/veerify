@@ -85,6 +85,7 @@ describe('anthropic', () => {
       type: 'web_search_20260209',
       name: 'web_search',
       allowed_callers: ['direct'],
+      max_uses: 5,
       user_location: { type: 'approximate', country: 'US' },
     })
     expect(out.text).toBe('Let me search. Acme is good. Yes.')
@@ -92,7 +93,7 @@ describe('anthropic', () => {
       { url: 'https://a.com', title: 'A' },
       { url: 'https://b.com', title: 'B' },
     ])
-    expect(out.usage).toEqual({ inputTokens: 10, outputTokens: 5 })
+    expect(out.usage).toEqual({ inputTokens: 10, outputTokens: 5, webSearchRequests: 1 })
     expect(out.model).toBe('claude-sonnet-5-5')
   })
 
@@ -114,7 +115,7 @@ describe('anthropic', () => {
       )
     const out = await p.answerWithSearch({ apiKey: KEY, prompt: 'q' })
     expect(out.text).toBe('ab')
-    expect(out.usage).toEqual({ inputTokens: 4, outputTokens: 6 })
+    expect(out.usage).toEqual({ inputTokens: 4, outputTokens: 6, webSearchRequests: 0 })
     expect(lastCall().body.messages).toHaveLength(2)
   })
 
@@ -197,6 +198,7 @@ describe('openai', () => {
       model: 'gpt-6-astra',
       input: 'q',
       store: false,
+      max_tool_calls: 5,
       tools: [{ type: 'web_search', user_location: { type: 'approximate', country: 'GB' } }],
     })
     expect(out.text).toBe('Acme wins.')
@@ -204,7 +206,7 @@ describe('openai', () => {
       { url: 'https://a.com', title: 'A' },
       { url: 'https://b.com', title: 'B' },
     ])
-    expect(out.usage).toEqual({ inputTokens: 11, outputTokens: 6 })
+    expect(out.usage).toEqual({ inputTokens: 11, outputTokens: 6, webSearchRequests: 1 })
     expect(out.model).toBe('gpt-6-astra-2026')
   })
 
@@ -310,5 +312,73 @@ describe.each(['anthropic', 'openai'] as const)('%s error mapping', (id) => {
     expect(timeoutSpy).toHaveBeenCalledWith(90_000)
     expect(err.kind).toBe('timeout')
     timeoutSpy.mockRestore()
+  })
+})
+
+describe('quota errors', () => {
+  const openai = getLlmProvider('openai')
+  const anthropic = getLlmProvider('anthropic')
+
+  it('maps OpenAI 429 insufficient_quota to quota (not rate_limit)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          error: { message: 'You exceeded your current quota', type: 'insufficient_quota', code: 'insufficient_quota' },
+        },
+        429
+      )
+    )
+    const err = await openai.answerWithSearch({ apiKey: KEY, prompt: 'q' }).catch((e) => e)
+    expect(err.kind).toBe('quota')
+  })
+
+  it('keeps a plain OpenAI 429 as rate_limit', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: { message: 'Rate limit reached', type: 'requests', code: 'rate_limit_exceeded' } }, 429)
+    )
+    const err = await openai.answerWithSearch({ apiKey: KEY, prompt: 'q' }).catch((e) => e)
+    expect(err.kind).toBe('rate_limit')
+  })
+
+  it('maps Anthropic low credit balance (400) to quota', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(
+        {
+          type: 'error',
+          error: {
+            type: 'invalid_request_error',
+            message: 'Your credit balance is too low to access the Anthropic API.',
+          },
+        },
+        400
+      )
+    )
+    const err = await anthropic.answerWithSearch({ apiKey: KEY, prompt: 'q' }).catch((e) => e)
+    expect(err.kind).toBe('quota')
+  })
+
+  it('keeps other Anthropic 400s as bad_request', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ type: 'error', error: { type: 'invalid_request_error', message: 'max_tokens too large' } }, 400)
+    )
+    const err = await anthropic.answerWithSearch({ apiKey: KEY, prompt: 'q' }).catch((e) => e)
+    expect(err.kind).toBe('bad_request')
+  })
+})
+
+describe('openai incomplete answers', () => {
+  it('throws bad_request instead of storing truncated text', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'incomplete',
+        incomplete_details: { reason: 'max_output_tokens' },
+        output: [{ type: 'message', content: [{ type: 'output_text', text: 'half an ans' }] }],
+      })
+    )
+    const err = await getLlmProvider('openai')
+      .answerWithSearch({ apiKey: KEY, prompt: 'q' })
+      .catch((e) => e)
+    expect(err.kind).toBe('bad_request')
+    expect(err.message).toMatch(/truncated/)
   })
 })
