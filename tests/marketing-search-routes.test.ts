@@ -23,6 +23,8 @@ const state = vi.hoisted(() => ({
   updateSet: null as Record<string, unknown> | null,
   deletes: 0,
   deletedMetrics: 0,
+  deletedQueryStats: 0,
+  transactions: 0,
   revoked: [] as string[],
   exchangeError: false,
   slug: 'acme' as string | null,
@@ -66,7 +68,8 @@ vi.mock('~/server/utils/marketing-site', async (importOriginal) => ({
   isTeamAdminOf: vi.fn(async () => state.role === 'admin'),
 }))
 
-vi.mock('~/server/database/drizzle', () => {
+vi.mock('~/server/database/drizzle', async () => {
+  const schema = await import('~/server/database/schema/marketing')
   const select = () => {
     const result = state.selects.shift() ?? []
     const chain: Record<string, unknown> = {}
@@ -74,30 +77,47 @@ vi.mock('~/server/database/drizzle', () => {
     chain.then = (resolve: (v: unknown) => unknown) => resolve(result)
     return chain
   }
+  const writes = {
+    insert: () => ({
+      values: (values: Record<string, unknown>) => {
+        state.insertValues = values
+        return {
+          onConflictDoUpdate: async ({ set }: { set: Record<string, unknown> }) => {
+            state.conflictSet = set
+          },
+        }
+      },
+    }),
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        state.updateSet = values
+        return { where: async () => undefined }
+      },
+    }),
+    delete: (table: unknown) => ({
+      where: async () => {
+        if (table === schema.gscDailyMetric) state.deletedMetrics += 1
+        else if (table === schema.gscQueryStat) state.deletedQueryStats += 1
+        else state.deletes += 1
+      },
+    }),
+  }
+  // Inside a transaction the connection row is read with `select ... for update`
+  const lockingSelect = () => {
+    const chain: Record<string, unknown> = {}
+    for (const name of ['from', 'where', 'for']) chain[name] = () => chain
+    chain.limit = async () => (state.conn ? [state.conn] : [])
+    return chain
+  }
+  const tx = { ...writes, select: lockingSelect }
   return {
     db: {
       select,
-      insert: () => ({
-        values: (values: Record<string, unknown>) => {
-          state.insertValues = values
-          return {
-            onConflictDoUpdate: async ({ set }: { set: Record<string, unknown> }) => {
-              state.conflictSet = set
-            },
-          }
-        },
-      }),
-      update: () => ({
-        set: (values: Record<string, unknown>) => {
-          state.updateSet = values
-          return { where: async () => undefined }
-        },
-      }),
-      delete: () => ({
-        where: async () => {
-          state.deletes += 1
-        },
-      }),
+      ...writes,
+      transaction: async (fn: (t: unknown) => unknown) => {
+        state.transactions += 1
+        return fn(tx)
+      },
     },
   }
 })
@@ -112,9 +132,6 @@ vi.mock('~/server/services/marketing/search/connection', async (importOriginal) 
       return state.conn
     }),
     getAccessTokenFor: vi.fn(async () => 'access-token'),
-    deleteGscMetrics: vi.fn(async () => {
-      state.deletedMetrics += 1
-    }),
   }
 })
 
@@ -175,6 +192,8 @@ beforeEach(() => {
   state.updateSet = null
   state.deletes = 0
   state.deletedMetrics = 0
+  state.deletedQueryStats = 0
+  state.transactions = 0
   state.revoked = []
   state.exchangeError = false
   state.slug = 'acme'
@@ -369,6 +388,9 @@ describe('PUT search/property', () => {
   it('clears metrics only when the property changes', async () => {
     await run(putProperty)
     expect(state.deletedMetrics).toBe(1)
+    expect(state.deletedQueryStats).toBe(1)
+    // metric deletion and the property update share one transaction
+    expect(state.transactions).toBe(1)
     state.deletedMetrics = 0
     state.conn = { siteId: 'site-1', propertyUrl: 'sc-domain:acme.com', encryptedRefreshToken: 'x' }
     await run(putProperty)

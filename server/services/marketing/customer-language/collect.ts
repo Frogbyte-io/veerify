@@ -4,7 +4,7 @@
  * consent before calling (service.ts does, at run time).
  */
 
-import { and, desc, eq, gte } from 'drizzle-orm'
+import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment } from '~/server/database/schema/feedback'
 import { conversation, conversationMessage } from '~/server/database/schema/support'
@@ -22,22 +22,56 @@ export function languageWindowStart(now: Date = new Date()): Date {
   return new Date(now.getTime() - LANGUAGE_WINDOW_DAYS * 24 * 60 * 60 * 1000)
 }
 
-/** Feedback title + body, and public (non-internal) comments, for the product, newest first. */
-export async function collectFeedbackItems(projectId: string, since: Date): Promise<DatedItem[]> {
+/** Feedback created from a support conversation carries this marker in `metadata.source`. */
+export const SUPPORT_FEEDBACK_SOURCE = 'support_conversation'
+
+const isSupportDerived = sql`coalesce(${feedback.metadata}->>'source', '') = ${SUPPORT_FEEDBACK_SOURCE}`
+
+export interface CollectFeedbackOptions {
+  /**
+   * Include feedback derived from support conversations (and its comments),
+   * labelled as support text. Only true when the team consented to support text.
+   */
+  includeSupportDerived?: boolean
+}
+
+/**
+ * Feedback title + body, and public (non-internal) comments, for the product,
+ * newest first. Hidden feedback is never read. Support-derived feedback is
+ * excluded unless `includeSupportDerived`, in which case it counts as support.
+ */
+export async function collectFeedbackItems(
+  projectId: string,
+  since: Date,
+  options: CollectFeedbackOptions = {}
+): Promise<DatedItem[]> {
+  const origin = options.includeSupportDerived ? undefined : sql`not ${isSupportDerived}`
+
   const posts = await db
-    .select({ title: feedback.title, body: feedback.body, createdAt: feedback.createdAt })
+    .select({
+      title: feedback.title,
+      body: feedback.body,
+      createdAt: feedback.createdAt,
+      supportDerived: isSupportDerived.mapWith(Boolean),
+    })
     .from(feedback)
-    .where(and(eq(feedback.projectId, projectId), gte(feedback.createdAt, since)))
+    .where(and(eq(feedback.projectId, projectId), eq(feedback.isHidden, false), origin, gte(feedback.createdAt, since)))
     .orderBy(desc(feedback.createdAt))
     .limit(SOURCE_LIMIT)
 
   const comments = await db
-    .select({ body: feedbackComment.body, createdAt: feedbackComment.createdAt })
+    .select({
+      body: feedbackComment.body,
+      createdAt: feedbackComment.createdAt,
+      supportDerived: isSupportDerived.mapWith(Boolean),
+    })
     .from(feedbackComment)
     .innerJoin(feedback, eq(feedback.id, feedbackComment.feedbackId))
     .where(
       and(
         eq(feedback.projectId, projectId),
+        eq(feedback.isHidden, false),
+        origin,
         eq(feedbackComment.isInternal, false),
         gte(feedbackComment.createdAt, since)
       )
@@ -45,13 +79,14 @@ export async function collectFeedbackItems(projectId: string, since: Date): Prom
     .orderBy(desc(feedbackComment.createdAt))
     .limit(SOURCE_LIMIT)
 
+  const sourceOf = (supportDerived: boolean) => (supportDerived ? ('support' as const) : ('feedback' as const))
   return [
     ...posts.map((p) => ({
-      source: 'feedback' as const,
+      source: sourceOf(p.supportDerived),
       text: p.body ? `${p.title}. ${p.body}` : p.title,
       createdAt: p.createdAt,
     })),
-    ...comments.map((c) => ({ source: 'feedback' as const, text: c.body, createdAt: c.createdAt })),
+    ...comments.map((c) => ({ source: sourceOf(c.supportDerived), text: c.body, createdAt: c.createdAt })),
   ]
 }
 

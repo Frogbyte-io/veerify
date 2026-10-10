@@ -5,11 +5,23 @@
         <div>
           <h1 class="text-3xl font-bold text-foreground">Announcements</h1>
           <p class="mt-1 text-sm text-muted-foreground">
-            Draft posts for X, LinkedIn, Bluesky and your newsletter from each published changelog entry.
+            Draft posts for X, LinkedIn, Bluesky and your newsletter from each published changelog entry. Titles of
+            feedback linked to an entry are included only with your team's data consent for feedback text, and never for
+            hidden or support-derived items.
           </p>
         </div>
         <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
       </div>
+
+      <p
+        v-if="targetMissing"
+        class="flex items-center gap-2 rounded-lg border border-border bg-card p-3 text-sm text-muted-foreground"
+        role="status"
+        data-testid="announcements-entry-not-found"
+      >
+        <Icon name="lucide:info" class="h-4 w-4 shrink-0" />
+        Entry not found or not published yet
+      </p>
 
       <div v-if="!pickerSettled" class="space-y-4">
         <Skeleton class="h-48 w-full" />
@@ -133,6 +145,7 @@ export default {
       loadingMore: false,
       loadMoreError: null,
       highlightId: null,
+      targetMissing: false,
     }
   },
 
@@ -158,6 +171,7 @@ export default {
       this.nextCursor = null
       this.loadMoreError = null
       this.highlightId = null
+      this.targetMissing = false
       if (product) await this.load()
     },
 
@@ -172,6 +186,7 @@ export default {
       this.isLoading = true
       this.error = null
       this.marketingOff = false
+      this.targetMissing = false
       try {
         const data = await this.fetchPage(productId)
         if (this.product?.id !== productId) return
@@ -226,10 +241,12 @@ export default {
           }
           return
         }
-        if (!this.nextCursor) return
+        if (!this.nextCursor) break
         await this.loadMore()
+        // A failed page shows its own retry; the entry may still be further down
         if (this.loadMoreError) return
       }
+      if (this.product?.id === productId) this.targetMissing = true
     },
   },
 }

@@ -19,7 +19,6 @@
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
-import { gscConnection } from '~/server/database/schema/marketing'
 import { OAuthStateError, verifyOAuthState, type OAuthStatePayload } from '~/server/services/google/oauth-state'
 import {
   exchangeCode,
@@ -29,7 +28,7 @@ import {
   matchPropertyForOrigin,
   type GscSite,
 } from '~/server/services/google/search-console'
-import { deleteGscMetrics, findGscConnection, gscAad } from '~/server/services/marketing/search/connection'
+import { gscAad, saveGscConnection } from '~/server/services/marketing/search/connection'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { findMarketingSite } from '~/server/utils/marketing-site'
@@ -120,13 +119,8 @@ export default defineEventHandler(async (event) => {
     connectedByUserId: session.user.id,
     updatedAt: now,
   }
-  const existing = await findGscConnection(site.id)
-  // Metrics belong to one property; a different account or property must not mix into old numbers
-  if (existing && existing.propertyUrl !== values.propertyUrl) await deleteGscMetrics(site.id)
-  await db
-    .insert(gscConnection)
-    .values({ siteId: site.id, ...values, createdAt: now })
-    .onConflictDoUpdate({ target: gscConnection.siteId, set: values })
+  // Drops the old property's metrics in the same transaction when the property differs
+  await saveGscConnection(site.id, values, now)
 
   return back(event, { connected: '1' }, slug)
 })

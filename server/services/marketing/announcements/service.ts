@@ -18,6 +18,9 @@ import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { listTeamCredentials } from '~/server/utils/team-credentials'
 import { ErrorCode } from '~/server/utils/response'
 import { callTeamLlm, failWith } from '~/server/services/marketing/llm-call'
+import { readConsent } from '~/server/services/marketing/customer-language/consent'
+import { SUPPORT_FEEDBACK_SOURCE } from '~/server/services/marketing/customer-language/collect'
+import { stripPii } from '~/server/services/marketing/customer-language/prompt'
 import { pickSuggestionProvider } from '~/server/services/marketing/visibility/prompts'
 import {
   ANNOUNCEMENT_CHANNELS,
@@ -130,7 +133,10 @@ export async function listAnnouncements(
   }
   if (decoded) {
     conditions.push(
-      or(lt(sortKey, decoded.at), and(sql`${sortKey} = ${decoded.at}`, lt(changelogEntry.id, decoded.id)))!
+      or(
+        sql`${sortKey} < ${decoded.at.toISOString()}::timestamp`,
+        and(sql`${sortKey} = ${decoded.at.toISOString()}::timestamp`, lt(changelogEntry.id, decoded.id))
+      )!
     )
   }
 
@@ -235,14 +241,28 @@ export async function generateAnnouncementDrafts(
     ? ANNOUNCEMENT_CHANNELS.filter((c) => options.channels!.includes(c))
     : [...ANNOUNCEMENT_CHANNELS]
 
-  const [[owner], linked] = await Promise.all([
-    db.select({ slug: team.slug }).from(team).where(eq(team.id, teamId)).limit(1),
-    db
-      .select({ title: feedback.title })
-      .from(changelogEntryFeedback)
-      .innerJoin(feedback, eq(feedback.id, changelogEntryFeedback.feedbackId))
-      .where(eq(changelogEntryFeedback.entryId, entry.id)),
-  ])
+  const [owner] = await db.select({ slug: team.slug }).from(team).where(eq(team.id, teamId)).limit(1)
+  const consent = await readConsent(teamId)
+
+  // Linked feedback titles are customer text: only sent with the team's consent
+  // for feedback text, never for hidden or support-derived items, and PII-stripped.
+  const linkedFeedbackTitles = consent.allowFeedbackText
+    ? (
+        await db
+          .select({ title: feedback.title })
+          .from(changelogEntryFeedback)
+          .innerJoin(feedback, eq(feedback.id, changelogEntryFeedback.feedbackId))
+          .where(
+            and(
+              eq(changelogEntryFeedback.entryId, entry.id),
+              eq(feedback.isHidden, false),
+              sql`coalesce(${feedback.metadata}->>'source', '') <> ${SUPPORT_FEEDBACK_SOURCE}`
+            )
+          )
+      )
+        .map((row) => stripPii(row.title).replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+    : []
 
   const link = publicEntryUrl(project, owner?.slug ?? null, entry.slug, options.requestUrl)
 
@@ -257,7 +277,7 @@ export async function generateAnnouncementDrafts(
         entrySummary: entry.summary ?? '',
         entryBody: markdownToPlainText(entry.body),
         labels: entry.labels,
-        linkedFeedbackTitles: linked.map((row) => row.title),
+        linkedFeedbackTitles,
       }),
       schema: ANNOUNCEMENT_SCHEMA,
       schemaName: 'announcement_drafts',

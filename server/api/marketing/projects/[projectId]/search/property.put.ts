@@ -31,16 +31,13 @@
  *       502: { description: Google request failed }
  *       503: { description: Search Console is not configured on this server }
  */
-import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { db } from '~/server/database/drizzle'
-import { gscConnection } from '~/server/database/schema/marketing'
 import { listSites } from '~/server/services/google/search-console'
 import {
-  deleteGscMetrics,
   getAccessTokenFor,
   requireGscConfig,
   requireGscConnection,
+  setGscProperty,
   toGoogleHttpError,
 } from '~/server/services/marketing/search/connection'
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
@@ -89,18 +86,8 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (conn.propertyUrl !== body.propertyUrl) await deleteGscMetrics(site.id)
-  await db
-    .update(gscConnection)
-    .set({
-      propertyUrl: body.propertyUrl,
-      status: 'connected',
-      lastError: null,
-      // Null lastSyncAt queues an immediate sync for the next task tick
-      lastSyncAt: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(gscConnection.siteId, site.id))
+  // Drops the old property's metrics in the same transaction, serialised with a running sync
+  await setGscProperty(site.id, body.propertyUrl)
 
   return createSuccessResponse({ propertyUrl: body.propertyUrl, status: 'connected' as const })
 })
