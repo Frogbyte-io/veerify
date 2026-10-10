@@ -493,6 +493,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/marketing-competitors-check": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Check watched competitor pages for changes",
+      "operationId": "cronMarketingCompetitorsCheck",
+      "responses": {
+        "200": {
+          "description": "Competitor check executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/marketing-mentions-digest": {
     "get": {
       "tags": [
@@ -1507,6 +1524,356 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Audit not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Competitors with their watched pages and recent changes",
+      "description": "Any team member with Marketing access. Lists the competitor terms of the site with their watched pages, the 50 most recent detected changes (newest first) and the number of unseen changes.\n",
+      "operationId": "getMarketingCompetitors",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Competitors",
+          "watches and changes": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/changes/seen": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Mark competitor changes as seen",
+      "description": "Any team member with Marketing access. Marks every unseen change when `ids` is omitted.",
+      "operationId": "markMarketingCompetitorChangesSeen",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ids": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Changes marked as seen"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/settings": {
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Turn AI summaries of competitor changes on or off",
+      "description": "Marketing admin only. Summaries use the team's own LLM key and its monthly budget. Stored in the product settings (no extra table).\n",
+      "operationId": "updateMarketingCompetitorSettings",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "summarize"
+              ],
+              "properties": {
+                "summarize": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Setting saved"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/watches": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Watch a public competitor page for changes",
+      "description": "Marketing admin only. https pages only; the host cannot be the product's own site and must match the competitor's domain when one is set. At most 3 pages per competitor and 15 per site. The page is fetched at most once a day as VeerifyBot, and robots.txt is respected.\n",
+      "operationId": "createMarketingCompetitorWatch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "termId",
+                "url",
+                "kind"
+              ],
+              "properties": {
+                "termId": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "pricing",
+                    "changelog",
+                    "homepage",
+                    "other"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Watch created"
+        },
+        "400": {
+          "description": "Validation failed or a limit is reached"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Site or competitor not found"
+        },
+        "409": {
+          "description": "This page is already watched"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/watches/{watchId}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Stop watching a competitor page",
+      "description": "Marketing admin only. Its recorded changes are deleted with it.",
+      "operationId": "deleteMarketingCompetitorWatch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "watchId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Watch deleted"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Watch not found for this product"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Pause, resume or re-label a watched page",
+      "description": "Marketing admin only. Resuming also clears an error or robots.txt block, so the next scheduled check tries the page again.\n",
+      "operationId": "updateMarketingCompetitorWatch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "watchId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "paused"
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "pricing",
+                    "changelog",
+                    "homepage",
+                    "other"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Watch updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Watch not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/watches/{watchId}/check": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Check a watched page now",
+      "description": "Marketing admin only, at most 3 manual checks per watch per day. Uses the same robots.txt and SSRF-safe fetch path as the scheduled check. The first check of a page records its baseline.\n",
+      "operationId": "checkMarketingCompetitorWatch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "watchId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Check finished; `outcome` says what happened"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Watch not found for this product"
+        },
+        "429": {
+          "description": "Daily manual check limit reached for this watch"
         }
       }
     }
