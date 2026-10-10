@@ -75,6 +75,10 @@ export interface AuditStore {
   /** Returns how many rows were new */
   insertPages(rows: NewPageRow[]): Promise<number>
   loadPages(auditId: string): Promise<StoredPage[]>
+  /** URLs already stored for the audit */
+  pageUrls(auditId: string): Promise<string[]>
+  /** Remove all issues of an audit (finishing must be re-entrant) */
+  deleteIssues(auditId: string): Promise<void>
   insertIssues(rows: NewIssueRow[]): Promise<void>
   /** Keep only the `keep` most recent audits of a site */
   pruneAudits(siteId: string, keep: number): Promise<void>
@@ -211,6 +215,15 @@ export const drizzleAuditStore: AuditStore = {
       .orderBy(seoAuditPage.createdAt, seoAuditPage.url)
   },
 
+  async pageUrls(auditId) {
+    const rows = await db.select({ url: seoAuditPage.url }).from(seoAuditPage).where(eq(seoAuditPage.auditId, auditId))
+    return rows.map((r) => r.url)
+  },
+
+  async deleteIssues(auditId) {
+    await db.delete(seoIssue).where(eq(seoIssue.auditId, auditId))
+  },
+
   async insertIssues(rows) {
     for (const batch of chunks(rows)) {
       await db.insert(seoIssue).values(batch)
@@ -237,7 +250,13 @@ export const drizzleAuditStore: AuditStore = {
   },
 
   async scheduleCandidates(olderThan, limit) {
-    const lastAudit = sql<Date | null>`(SELECT max(${seoAudit.createdAt}) FROM ${seoAudit} WHERE ${seoAudit.siteId} = ${marketingSite.id})`
+    // mapWith decodes the raw timestamp as UTC, matching how drizzle writes `timestamp` columns
+    const lastAudit =
+      sql<Date | null>`(SELECT max(${seoAudit.createdAt}) FROM ${seoAudit} WHERE ${seoAudit.siteId} = ${marketingSite.id})`.mapWith(
+        seoAudit.createdAt
+      )
+    // Raw SQL does not go through column mappers: bind UTC ISO text, not a Date (pg would use local time)
+    const olderThanSql = sql`${olderThan.toISOString()}::timestamp`
     const hasActive = sql`EXISTS (SELECT 1 FROM ${seoAudit} WHERE ${seoAudit.siteId} = ${marketingSite.id} AND ${inArray(seoAudit.status, ACTIVE_STATUSES)})`
     const rows = await db
       .select({
@@ -253,7 +272,7 @@ export const drizzleAuditStore: AuditStore = {
         and(
           isNotNull(marketingSite.verifiedAt),
           sql`NOT ${hasActive}`,
-          or(isNull(lastAudit), lt(lastAudit, olderThan as never))
+          or(isNull(lastAudit), lt(lastAudit, olderThanSql))
         )
       )
       .limit(limit)

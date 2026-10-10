@@ -5,7 +5,7 @@ import type { MatchTerm, SocialPost, SocialSource } from '~/server/services/soci
 vi.mock('~/server/database/drizzle', () => ({ db: {} }))
 vi.mock('~/server/utils/marketing-usage', () => ({ recordUsage: vi.fn() }))
 
-const { pollMentions, computeSince, buildExcerpt, pruneOldMentions } =
+const { pollMentions, computeSince, retryDelayMs, buildExcerpt, pruneOldMentions } =
   await import('~/server/services/marketing/mentions/poller')
 const { SocialSourceError } = await import('~/server/services/social-sources')
 
@@ -46,7 +46,13 @@ function post(id: string, text: string, overrides: Partial<SocialPost> = {}): So
 function makeStore(opts: {
   sites?: CandidateSite[]
   terms?: Record<string, MatchTerm[]>
-  cursors?: { siteId: string; source: 'hackernews' | 'reddit' | 'bluesky'; lastPolledAt: Date }[]
+  cursors?: {
+    siteId: string
+    source: 'hackernews' | 'reddit' | 'bluesky'
+    lastPolledAt: Date
+    lastAttemptAt?: Date | null
+    consecutiveFailures?: number
+  }[]
 }) {
   const inserted: MentionInsert[] = []
   const cursorWrites: unknown[][] = []
@@ -176,7 +182,7 @@ describe('pollMentions ingestion', () => {
       limit: 50,
     })
     expect(usage).toHaveBeenCalledWith('t1', 'mentions:hackernews:requests', 1)
-    expect(cursorWrites).toEqual([['s1', 'hackernews', NOW, null]])
+    expect(cursorWrites).toEqual([['s1', 'hackernews', NOW, null, { at: NOW, consecutiveFailures: 0 }]])
   })
 })
 
@@ -216,6 +222,104 @@ describe('pollMentions errors', () => {
     const summary = await pollMentions({ now: NOW }, { store, sources: [broken], recordUsage: vi.fn() })
     expect(summary.errors).toBe(1)
     expect(String(cursorWrites[0][3])).not.toContain('secret')
+  })
+})
+
+describe('failure backoff and starvation', () => {
+  it('computes retryDelayMs as min(2^failures * 15min, 6h)', () => {
+    expect(retryDelayMs(0)).toBe(30 * 60 * 1000)
+    expect(retryDelayMs(1)).toBe(30 * 60 * 1000)
+    expect(retryDelayMs(2)).toBe(60 * 60 * 1000)
+    expect(retryDelayMs(3)).toBe(2 * HOUR)
+    expect(retryDelayMs(5)).toBe(6 * HOUR)
+    expect(retryDelayMs(50)).toBe(6 * HOUR)
+  })
+
+  it('schedules on the last attempt, not the watermark, and backs off failing sources', async () => {
+    const old = new Date(NOW.getTime() - 3 * 24 * HOUR)
+    const { store } = makeStore({
+      cursors: [
+        // failed 10 minutes ago twice: not due again for an hour
+        {
+          siteId: 's1',
+          source: 'hackernews',
+          lastPolledAt: old,
+          lastAttemptAt: new Date(NOW.getTime() - 10 * 60 * 1000),
+          consecutiveFailures: 2,
+        },
+        // failed 2 hours ago twice: due
+        {
+          siteId: 's1',
+          source: 'bluesky',
+          lastPolledAt: old,
+          lastAttemptAt: new Date(NOW.getTime() - 2 * HOUR),
+          consecutiveFailures: 2,
+        },
+      ],
+    })
+    const hn = source('hackernews')
+    const bsky = source('bluesky')
+    await pollMentions({ now: NOW }, { store, sources: [hn, bsky], recordUsage: vi.fn() })
+    expect(hn.search).not.toHaveBeenCalled()
+    expect(bsky.search).toHaveBeenCalledTimes(1)
+  })
+
+  it('records the attempt and counts failures, keeping the watermark', async () => {
+    const lastPolledAt = new Date(NOW.getTime() - 5 * HOUR)
+    const { store, cursorWrites } = makeStore({
+      cursors: [{ siteId: 's1', source: 'hackernews', lastPolledAt, consecutiveFailures: 2 }],
+    })
+    const failing = source('hackernews', async () => {
+      throw new SocialSourceError('hackernews', 'server', 'boom', 500)
+    })
+    await pollMentions({ now: NOW }, { store, sources: [failing], recordUsage: vi.fn() })
+    expect(cursorWrites[0][2]).toEqual(lastPolledAt)
+    expect(cursorWrites[0][4]).toEqual({ at: NOW, consecutiveFailures: 3 })
+  })
+
+  it('does not let a permanently failing site hog the maxSites slots', async () => {
+    const { store } = makeStore({
+      sites: [site({ siteId: 'bad' }), site({ siteId: 'good' })],
+      cursors: [
+        {
+          siteId: 'bad',
+          source: 'hackernews',
+          lastPolledAt: new Date(NOW.getTime() - 30 * 24 * HOUR),
+          lastAttemptAt: new Date(NOW.getTime() - 7 * HOUR),
+          consecutiveFailures: 9,
+        },
+        { siteId: 'good', source: 'hackernews', lastPolledAt: new Date(NOW.getTime() - 2 * HOUR) },
+      ],
+    })
+    const writes: string[] = []
+    store.saveCursor = async (siteId) => {
+      writes.push(siteId)
+    }
+    await pollMentions({ now: NOW, maxSites: 1 }, { store, sources: [source('hackernews')], recordUsage: vi.fn() })
+    // "bad" was attempted 7h ago (older than good's 2h) so it goes first, but only once per backoff window
+    expect(writes).toEqual(['bad'])
+    writes.length = 0
+    const again = makeStore({
+      sites: [site({ siteId: 'bad' }), site({ siteId: 'good' })],
+      cursors: [
+        {
+          siteId: 'bad',
+          source: 'hackernews',
+          lastPolledAt: new Date(NOW.getTime() - 30 * 24 * HOUR),
+          lastAttemptAt: NOW,
+          consecutiveFailures: 10,
+        },
+        { siteId: 'good', source: 'hackernews', lastPolledAt: new Date(NOW.getTime() - 2 * HOUR) },
+      ],
+    })
+    again.store.saveCursor = async (siteId) => {
+      writes.push(siteId)
+    }
+    await pollMentions(
+      { now: NOW, maxSites: 1 },
+      { store: again.store, sources: [source('hackernews')], recordUsage: vi.fn() }
+    )
+    expect(writes).toEqual(['good'])
   })
 })
 

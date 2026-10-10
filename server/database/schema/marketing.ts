@@ -147,6 +147,10 @@ export const seoAudit = pgTable(
   },
   (table) => ({
     siteCreatedIdx: index('seo_audit_site_created_idx').on(table.siteId, table.createdAt),
+    // At most one active audit per site; the arbiter for concurrent starts
+    activePerSiteIdx: uniqueIndex('seo_audit_active_site_idx')
+      .on(table.siteId)
+      .where(sql`${table.status} IN ('queued', 'crawling', 'analyzing')`),
     statusIdx: index('seo_audit_status_idx').on(table.status),
   })
 )
@@ -245,6 +249,10 @@ export const aiVisibilityRun = pgTable(
   },
   (table) => ({
     siteCreatedIdx: index('ai_visibility_run_site_created_idx').on(table.siteId, table.createdAt),
+    // At most one active run per site; the arbiter for concurrent starts
+    activePerSiteIdx: uniqueIndex('ai_visibility_run_active_site_idx')
+      .on(table.siteId)
+      .where(sql`${table.status} IN ('queued', 'running')`),
   })
 )
 
@@ -329,7 +337,11 @@ export const mentionSourceCursor = pgTable(
       .notNull()
       .references(() => marketingSite.id, { onDelete: 'cascade' }),
     source: text('source').$type<MentionSource>().notNull(),
+    // Search-window watermark: only advances after a successful poll
     lastPolledAt: timestamp('last_polled_at').notNull(),
+    // Last time a poll was attempted (success or failure); drives scheduling and backoff
+    lastAttemptAt: timestamp('last_attempt_at'),
+    consecutiveFailures: integer('consecutive_failures').default(0).notNull(),
     lastError: text('last_error'),
   },
   (table) => ({

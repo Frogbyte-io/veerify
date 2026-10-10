@@ -27,7 +27,7 @@ describe('normalizeSiteOrigin', () => {
   it.each([
     ['Acme.com', 'https://acme.com'],
     ['http://www.Acme.com/pricing?x=1#y', 'https://www.acme.com'],
-    ['https://acme.com:8443/a', 'https://acme.com:8443'],
+    ['https://acme.com:443/a', 'https://acme.com'],
     ['  blog.acme.co.uk/ ', 'https://blog.acme.co.uk'],
   ])('normalizes %s', (input, expected) => {
     expect(normalizeSiteOrigin(input)).toBe(expected)
@@ -43,6 +43,9 @@ describe('normalizeSiteOrigin', () => {
     'foo.local',
     'ftp://acme.com',
     'a b',
+    'https://acme.com:8443',
+    'http://acme.com:80',
+    'acme.com:22',
   ])('rejects %j', (input) => {
     expect(() => normalizeSiteOrigin(input)).toThrow(SiteOriginError)
   })
@@ -104,20 +107,37 @@ describe('checkVerification', () => {
     mocks.safeFetchText.mockRejectedValue(new Error('Host resolves to a private or local address'))
     const result = await checkVerification('https://acme.com', TOKEN, 'file')
     expect(result.verified).toBe(false)
-    expect(result.detail).toContain('private')
+    expect(result.detail).toBe('Could not reach your site over HTTPS')
+    expect(result.detail).not.toContain('private')
   })
 })
 
 describe('isCoveredByVerifiedDomain', () => {
-  it('matches on registrable domain', () => {
-    expect(isCoveredByVerifiedDomain('https://acme.com', ['feedback.acme.com'])).toBe(true)
-    expect(isCoveredByVerifiedDomain('https://www.acme.com', ['feedback.acme.com'])).toBe(true)
-    expect(isCoveredByVerifiedDomain('https://shop.acme.co.uk', ['help.acme.co.uk'])).toBe(true)
+  it('matches the same host', () => {
+    expect(isCoveredByVerifiedDomain('https://feedback.acme.com', ['feedback.acme.com'])).toBe(true)
   })
 
-  it('does not match other domains', () => {
+  it('covers the registrable domain (and www) of an active hostname', () => {
+    expect(isCoveredByVerifiedDomain('https://acme.com', ['feedback.acme.com'])).toBe(true)
+    expect(isCoveredByVerifiedDomain('https://www.acme.com', ['feedback.acme.com'])).toBe(true)
+    expect(isCoveredByVerifiedDomain('https://acme.co.uk', ['help.acme.co.uk'])).toBe(true)
+  })
+
+  it('does not cover siblings or other subdomains', () => {
+    expect(isCoveredByVerifiedDomain('https://shop.acme.com', ['feedback.acme.com'])).toBe(false)
+    expect(isCoveredByVerifiedDomain('https://shop.acme.co.uk', ['help.acme.co.uk'])).toBe(false)
     expect(isCoveredByVerifiedDomain('https://acme.com', ['feedback.other.com'])).toBe(false)
     expect(isCoveredByVerifiedDomain('https://a.co.uk', ['b.co.uk'])).toBe(false)
     expect(isCoveredByVerifiedDomain('https://acme.com', [])).toBe(false)
+  })
+
+  it('treats private suffixes as public suffixes', () => {
+    expect(isCoveredByVerifiedDomain('https://b.github.io', ['a.github.io'])).toBe(false)
+    expect(isCoveredByVerifiedDomain('https://github.io', ['a.github.io'])).toBe(false)
+    expect(isCoveredByVerifiedDomain('https://b.duckdns.org', ['a.duckdns.org'])).toBe(false)
+    expect(isCoveredByVerifiedDomain('https://b.vercel.app', ['a.vercel.app'])).toBe(false)
+    expect(isCoveredByVerifiedDomain('https://vercel.app', ['a.vercel.app'])).toBe(false)
+    expect(isCoveredByVerifiedDomain('https://a.vercel.app', ['a.vercel.app'])).toBe(true)
+    expect(isCoveredByVerifiedDomain('https://www.a.github.io', ['a.github.io'])).toBe(true)
   })
 })

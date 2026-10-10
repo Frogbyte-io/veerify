@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto'
 import { createError } from 'h3'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
+import { isUniqueViolation } from '~/server/utils/support-errors'
 import { createLogger } from '~/server/utils/logger'
 import { marketingConfig } from '~/server/utils/marketing-config'
 import { getTeamApiKey, markCredentialInvalid } from '~/server/utils/team-credentials'
@@ -149,34 +150,37 @@ async function resolveConfigFor(
   return { config, teamKey: teamKey !== null && config.apiKey === teamKey }
 }
 
+function blockedError(status: AuditStartStatus) {
+  const reason = status.reason!
+  const message =
+    reason === 'daily_limit' && status.resetsAt
+      ? `${status.message}. You can run another at ${status.resetsAt.toISOString()}`
+      : (status.message ?? 'Cannot start audit')
+  const code =
+    reason === 'active_audit'
+      ? ErrorCode.CONFLICT
+      : reason === 'daily_limit'
+        ? ErrorCode.RATE_LIMITED
+        : reason === 'not_found'
+          ? ErrorCode.NOT_FOUND
+          : ErrorCode.FORBIDDEN
+  return createError({
+    statusCode: BLOCK_STATUS[reason],
+    statusMessage: message,
+    data: createErrorResponse(code, message, {
+      reason,
+      resetsAt: status.resetsAt?.toISOString() ?? null,
+    }),
+  })
+}
+
 export async function startAudit(
   input: { siteId: string; trigger: SeoAuditTrigger; userId?: string },
   partial?: Partial<RunnerDeps>
 ): Promise<{ id: string; mode: SeoAuditMode }> {
   const deps = withDeps(partial)
   const status = await getAuditStartStatus(input.siteId, input.trigger, partial)
-  if (!status.canStart && status.reason) {
-    const message =
-      status.reason === 'daily_limit' && status.resetsAt
-        ? `${status.message}. You can run another at ${status.resetsAt.toISOString()}`
-        : (status.message ?? 'Cannot start audit')
-    const code =
-      status.reason === 'active_audit'
-        ? ErrorCode.CONFLICT
-        : status.reason === 'daily_limit'
-          ? ErrorCode.RATE_LIMITED
-          : status.reason === 'not_found'
-            ? ErrorCode.NOT_FOUND
-            : ErrorCode.FORBIDDEN
-    throw createError({
-      statusCode: BLOCK_STATUS[status.reason],
-      statusMessage: message,
-      data: createErrorResponse(code, message, {
-        reason: status.reason,
-        resetsAt: status.resetsAt?.toISOString() ?? null,
-      }),
-    })
-  }
+  if (!status.canStart && status.reason) throw blockedError(status)
 
   const site = (await deps.store.loadSite(input.siteId))!
   const crawl = await resolveConfigFor(site.teamId, deps)
@@ -184,17 +188,30 @@ export async function startAudit(
   const now = deps.now()
   const id = deps.newId()
 
-  await deps.store.insertAudit({
-    id,
-    siteId: site.id,
-    trigger: input.trigger,
-    mode,
-    status: 'queued',
-    pageLimit: marketingConfig.maxAuditPages,
-    requestedByUserId: input.userId ?? null,
-    startedAt: now,
-    createdAt: now,
-  })
+  try {
+    await deps.store.insertAudit({
+      id,
+      siteId: site.id,
+      trigger: input.trigger,
+      mode,
+      status: 'queued',
+      pageLimit: marketingConfig.maxAuditPages,
+      requestedByUserId: input.userId ?? null,
+      startedAt: now,
+      createdAt: now,
+    })
+  } catch (error) {
+    // The partial unique index on active audits is the real arbiter of concurrent starts
+    if (isUniqueViolation(error)) {
+      throw blockedError({
+        canStart: false,
+        reason: 'active_audit',
+        message: BLOCK_MESSAGES.active_audit,
+        resetsAt: null,
+      })
+    }
+    throw error
+  }
   return { id, mode }
 }
 
@@ -429,16 +446,22 @@ async function pollCrawl(audit: AuditRow, teamId: string, deadline: number, deps
       return
     }
 
+    // Drop already-stored (and in-batch duplicate) URLs first so they neither use up the
+    // remaining room nor count as usage, then apply the page limit.
+    const known = new Set(await deps.store.pageUrls(audit.id))
+    const fresh = []
+    for (const page of batch.pages) {
+      const facts = pageFactsFor(page)
+      if (known.has(facts.url)) continue
+      known.add(facts.url)
+      fresh.push({ id: deps.newId(), auditId: audit.id, url: facts.url, statusCode: facts.statusCode, facts })
+    }
     const room = Math.max(0, audit.pageLimit - pagesFetched)
-    const accepted = batch.pages.slice(0, room)
-    if (accepted.length > 0) {
-      const rows = accepted.map((page) => {
-        const facts = pageFactsFor(page)
-        return { id: deps.newId(), auditId: audit.id, url: facts.url, statusCode: facts.statusCode, facts }
-      })
+    const rows = fresh.slice(0, room)
+    if (rows.length > 0) {
       const inserted = await deps.store.insertPages(rows)
       pagesFetched += inserted
-      await deps.recordUsage(teamId, 'crawl:pages', accepted.length)
+      if (inserted > 0) await deps.recordUsage(teamId, 'crawl:pages', inserted)
     }
     if (batch.next) cursor = batch.next
 
@@ -478,6 +501,8 @@ async function finishAudit(audit: AuditRow, origin: string, teamId: string, deps
   const score = computeScore(issues, analyzable.length)
 
   const idByUrl = new Map(stored.map((p) => [p.url, p.id]))
+  // Re-entry (lease expiry mid-finish) must not duplicate issues
+  await deps.store.deleteIssues(audit.id)
   await deps.store.insertIssues(
     issues.map((issue) => ({
       id: deps.newId(),

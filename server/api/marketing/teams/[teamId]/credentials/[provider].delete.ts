@@ -21,17 +21,16 @@
  *       404: { description: No key stored for this provider }
  */
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
-import { requireTeamAdmin } from '~/server/utils/support-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { deleteTeamCredential } from '~/server/utils/team-credentials'
 import { requireRouteParam } from '~/server/utils/marketing-site'
-import { requireCredentialProvider } from '~/server/utils/marketing-credential-routes'
+import { requireCredentialProvider, requireCredentialAdmin } from '~/server/utils/marketing-credential-routes'
 
 export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)
   const teamId = requireRouteParam(event, 'teamId')
   const provider = requireCredentialProvider(event)
-  await requireTeamAdmin(teamId, session.user.id)
+  await requireCredentialAdmin(teamId, session.user.id)
 
   const deleted = await deleteTeamCredential(teamId, provider)
   if (!deleted) {

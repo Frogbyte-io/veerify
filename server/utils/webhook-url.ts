@@ -3,8 +3,6 @@ import { lookup } from 'node:dns/promises'
 import http from 'node:http'
 import https from 'node:https'
 
-const PRIVATE_IPV4 = [/^10\./, /^127\./, /^169\.254\./, /^192\.168\./, /^172\.(1[6-9]|2\d|3[01])\./]
-
 function parseIPv6Words(address: string): number[] | null {
   let normalized = address.toLowerCase()
   const dottedTail = normalized.includes('.')
@@ -16,7 +14,7 @@ function parseIPv6Words(address: string): number[] | null {
     if (octets.length !== 4 || octets.some((octet) => !/^\d{1,3}$/.test(octet) || Number(octet) > 255)) return null
     const first = (Number(octets[0]) << 8) | Number(octets[1])
     const second = (Number(octets[2]) << 8) | Number(octets[3])
-    normalized = `${normalized.slice(0, separator)}${first.toString(16)}:${second.toString(16)}`
+    normalized = `${normalized.slice(0, separator + 1)}${first.toString(16)}:${second.toString(16)}`
   }
 
   const sections = normalized.split('::')
@@ -39,30 +37,56 @@ function parseIPv6Words(address: string): number[] | null {
   return [...left, ...Array.from({ length: zeroes }, () => 0), ...right]
 }
 
-function mappedIPv4Address(address: string): string | null {
-  const words = parseIPv6Words(address)
-  if (!words || words.length !== 8 || !words.slice(0, 5).every((word) => word === 0) || words[5] !== 0xffff) {
-    return null
+function wordsToIPv4(high: number, low: number): string {
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.')
+}
+
+/** Non-public IPv4: private, loopback, link-local, CGNAT, benchmarking, reserved, multicast, broadcast. */
+function isPrivateIPv4(address: string): boolean {
+  const parts = address.split('.').map(Number)
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true
+  const [a, b, c] = parts
+  return (
+    a === 0 || // 0.0.0.0/8
+    a === 10 ||
+    (a === 100 && b >= 64 && b <= 127) || // 100.64.0.0/10 CGNAT
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 0 && c === 0) || // 192.0.0.0/24
+    (a === 192 && b === 168) ||
+    (a === 198 && (b === 18 || b === 19)) || // 198.18.0.0/15
+    a >= 224 // 224.0.0.0/4 multicast, 240.0.0.0/4 reserved, 255.255.255.255
+  )
+}
+
+function isPrivateIPv6Words(words: number[]): boolean {
+  if (words.length !== 8) return true
+  const [w0, w1, w2, w3, w4, w5, w6, w7] = words
+  // :: and ::1, plus deprecated IPv4-compatible ::/96 (re-check embedded v4)
+  if (words.slice(0, 6).every((word) => word === 0)) return isPrivateIPv4(wordsToIPv4(w6, w7))
+  // IPv4-mapped ::ffff:0:0/96
+  if ([w0, w1, w2, w3, w4].every((word) => word === 0) && w5 === 0xffff) return isPrivateIPv4(wordsToIPv4(w6, w7))
+  // NAT64 64:ff9b::/96 (re-check embedded v4); 64:ff9b:1::/48 is local-use
+  if (w0 === 0x64 && w1 === 0xff9b) {
+    if (w2 === 1) return true
+    if (w2 === 0 && w3 === 0 && w4 === 0 && w5 === 0) return isPrivateIPv4(wordsToIPv4(w6, w7))
   }
-  return [words[6] >> 8, words[6] & 0xff, words[7] >> 8, words[7] & 0xff].join('.')
+  // 6to4 2002::/16 embeds the v4 address in words 1-2
+  if (w0 === 0x2002) return isPrivateIPv4(wordsToIPv4(w1, w2))
+  if ((w0 & 0xfe00) === 0xfc00) return true // fc00::/7 unique local
+  if ((w0 & 0xffc0) === 0xfe80) return true // fe80::/10 link-local
+  if ((w0 & 0xffc0) === 0xfec0) return true // fec0::/10 site-local (deprecated)
+  if (w0 >> 8 === 0xff) return true // ff00::/8 multicast
+  return false
 }
 
 function isPrivateAddress(address: string): boolean {
-  const mappedIpv4 = mappedIPv4Address(address)
-  if (mappedIpv4) return isPrivateAddress(mappedIpv4)
-  if (isIP(address) === 4) return PRIVATE_IPV4.some((pattern) => pattern.test(address)) || address === '0.0.0.0'
-  if (isIP(address) === 6) {
-    const normalized = address.toLowerCase()
-    return (
-      normalized === '::' ||
-      normalized === '::1' ||
-      normalized.startsWith('fc') ||
-      normalized.startsWith('fd') ||
-      normalized.startsWith('fe8') ||
-      normalized.startsWith('fe9') ||
-      normalized.startsWith('fea') ||
-      normalized.startsWith('feb')
-    )
+  const family = isIP(address)
+  if (family === 4) return isPrivateIPv4(address)
+  if (family === 6) {
+    const words = parseIPv6Words(address)
+    return !words || isPrivateIPv6Words(words)
   }
   return false
 }

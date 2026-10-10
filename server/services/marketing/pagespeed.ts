@@ -23,7 +23,7 @@ export const PAGESPEED_TIMEOUT_MS = 60_000
 
 export class PageSpeedError extends Error {
   constructor(
-    readonly kind: 'auth' | 'quota' | 'failed',
+    readonly kind: 'auth' | 'quota' | 'bad_request' | 'failed',
     message: string
   ) {
     super(message)
@@ -71,6 +71,21 @@ export function parsePageSpeed(body: Json, now: Date = new Date()): PageSpeedRes
   }
 }
 
+/** True when a 400 body says the key itself is invalid (reason API_KEY_INVALID / "API key not valid"). */
+async function indicatesInvalidKey(response: Response): Promise<boolean> {
+  let body: Json
+  try {
+    body = (await response.json()) as Json
+  } catch {
+    return false
+  }
+  const error = body?.error
+  const details: unknown[] = Array.isArray(error?.details) ? error.details : []
+  if (details.some((d) => (d as Json)?.reason === 'API_KEY_INVALID')) return true
+  const message = typeof error?.message === 'string' ? error.message : ''
+  return /api key (not valid|expired|invalid)/i.test(message)
+}
+
 export async function runPageSpeed(
   url: string,
   apiKey: string,
@@ -93,8 +108,16 @@ export async function runPageSpeed(
     throw new PageSpeedError('failed', timedOut ? 'PageSpeed request timed out' : 'PageSpeed request failed')
   }
 
-  if (response.status === 400 || response.status === 403) {
-    throw new PageSpeedError('auth', 'PageSpeed rejected the API key or request')
+  if (response.status === 400) {
+    // Google answers 400 both for a bad key and for a bad request (unreachable or unsupported
+    // target URL, ...). Only the former is a credential problem.
+    if (await indicatesInvalidKey(response)) {
+      throw new PageSpeedError('auth', 'PageSpeed rejected the API key')
+    }
+    throw new PageSpeedError('bad_request', 'PageSpeed could not analyze this URL')
+  }
+  if (response.status === 403) {
+    throw new PageSpeedError('auth', 'PageSpeed rejected the API key or it lacks access')
   }
   if (response.status === 429) throw new PageSpeedError('quota', 'PageSpeed quota exceeded')
   if (!response.ok) throw new PageSpeedError('failed', `PageSpeed returned HTTP ${response.status}`)

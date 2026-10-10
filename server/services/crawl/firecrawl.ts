@@ -18,6 +18,16 @@ import {
  */
 
 const REQUEST_TIMEOUT_MS = 30_000
+const MAX_ERROR_CHARS = 300
+
+/** Remove the API key (and anything key-shaped) from provider text, then truncate. */
+function sanitize(text: string, apiKey: string): string {
+  let out = text
+  if (apiKey) out = out.split(apiKey).join('[redacted]')
+  out = out.replace(/\bfc-[A-Za-z0-9_-]{8,}/g, '[redacted]')
+  out = out.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [redacted]')
+  return out.length > MAX_ERROR_CHARS ? `${out.slice(0, MAX_ERROR_CHARS)}...` : out
+}
 
 function kindForStatus(status: number): CrawlErrorKind {
   if (status === 401 || status === 403) return 'auth'
@@ -75,7 +85,12 @@ async function request(
   if (!response.ok) {
     const kind = kindForStatus(response.status)
     const detail = typeof json.error === 'string' ? `: ${json.error}` : ''
-    throw new CrawlProviderError('firecrawl', kind, `${messageForKind(kind)}${detail}`.slice(0, 300), response.status)
+    throw new CrawlProviderError(
+      'firecrawl',
+      kind,
+      sanitize(`${messageForKind(kind)}${detail}`, config.apiKey),
+      response.status
+    )
   }
   return json
 }
@@ -112,19 +127,24 @@ function mapPage(item: unknown): CrawledPage | null {
   return page
 }
 
-function assertSameOrigin(config: CrawlProviderConfig, cursor: string): string {
+/**
+ * Pagination cursors are provider-supplied URLs. Self-hosted instances often
+ * report their internal origin, so only the path and query are used, resolved
+ * against the configured base URL. The path must stay under /v2/crawl/.
+ */
+function rebaseCursor(config: CrawlProviderConfig, cursor: string): string {
   let next: URL
   let base: URL
   try {
     base = new URL(config.baseUrl)
-    next = new URL(cursor)
+    next = new URL(cursor, base)
   } catch {
     throw new CrawlProviderError('firecrawl', 'bad_request', 'Invalid pagination cursor')
   }
-  if (next.origin !== base.origin) {
-    throw new CrawlProviderError('firecrawl', 'bad_request', 'Pagination cursor points to a different host')
+  if (!next.pathname.startsWith('/v2/crawl/') || next.pathname.split('/').includes('..')) {
+    throw new CrawlProviderError('firecrawl', 'bad_request', 'Unexpected pagination cursor')
   }
-  return next.toString()
+  return `${config.baseUrl.replace(/\/+$/, '')}${next.pathname}${next.search}`
 }
 
 export const firecrawlProvider: CrawlProvider = {
@@ -161,7 +181,7 @@ export const firecrawlProvider: CrawlProvider = {
   },
 
   async getCrawl(config, jobId, cursor, signal): Promise<CrawlJobPage> {
-    const url = cursor ? assertSameOrigin(config, cursor) : `${config.baseUrl}/v2/crawl/${encodeURIComponent(jobId)}`
+    const url = cursor ? rebaseCursor(config, cursor) : `${config.baseUrl}/v2/crawl/${encodeURIComponent(jobId)}`
     const json = await request(config, url, { method: 'GET', signal })
     const pages = (Array.isArray(json.data) ? json.data : [])
       .map(mapPage)

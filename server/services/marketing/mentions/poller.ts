@@ -11,11 +11,13 @@ import {
 } from '~/server/services/social-sources'
 import { recordUsage } from '~/server/utils/marketing-usage'
 import { createLogger } from '~/server/utils/logger'
-import { dbMentionsStore, isMarketingOn, type MentionInsert, type MentionsStore } from './store'
+import { dbMentionsStore, isMarketingOn, type MentionInsert, type MentionsStore, type SourceCursorRow } from './store'
 
 const logger = createLogger('marketing-mentions')
 
 export const POLL_INTERVAL_MS = 30 * 60 * 1000
+export const FAILURE_BACKOFF_BASE_MS = 15 * 60 * 1000
+export const FAILURE_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000
 export const OVERLAP_MS = 60 * 60 * 1000
 export const MAX_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
 export const RETENTION_MS = 180 * 24 * 60 * 60 * 1000
@@ -44,8 +46,22 @@ export function computeSince(lastPolledAt: Date | null, now: Date): Date {
   return new Date(Math.max(lastPolledAt.getTime() - OVERLAP_MS, floor))
 }
 
-export function isDue(lastPolledAt: Date | null, now: Date): boolean {
-  return !lastPolledAt || now.getTime() - lastPolledAt.getTime() >= POLL_INTERVAL_MS
+/** Wait before retrying a failing source: min(2^failures * 15 minutes, 6 hours). */
+export function retryDelayMs(consecutiveFailures: number): number {
+  if (consecutiveFailures <= 0) return POLL_INTERVAL_MS
+  return Math.min(2 ** Math.min(consecutiveFailures, 10) * FAILURE_BACKOFF_BASE_MS, FAILURE_BACKOFF_MAX_MS)
+}
+
+/** When the source was last tried: coalesce(last_attempt_at, last_polled_at). */
+export function lastAttemptOf(cursor: SourceCursorRow | undefined): Date | null {
+  return cursor ? (cursor.lastAttemptAt ?? cursor.lastPolledAt) : null
+}
+
+/** Due when never tried, or the poll interval (or failure backoff) has elapsed since the last attempt. */
+export function isDue(cursor: SourceCursorRow | undefined, now: Date): boolean {
+  const attempt = lastAttemptOf(cursor)
+  if (!attempt) return true
+  return now.getTime() - attempt.getTime() >= retryDelayMs(cursor?.consecutiveFailures ?? 0)
 }
 
 export function buildExcerpt(title: string | null, text: string): string {
@@ -101,14 +117,14 @@ export async function pollMentions(
   const terms = await store.loadTerms(verified.map((site) => site.siteId))
   const withTerms = verified.filter((site) => (terms.get(site.siteId)?.length ?? 0) > 0)
   const cursors = await store.loadCursors(withTerms.map((site) => site.siteId))
-  const cursorOf = (siteId: string, source: string) =>
-    cursors.find((c) => c.siteId === siteId && c.source === source)?.lastPolledAt ?? null
+  const cursorRow = (siteId: string, source: string) => cursors.find((c) => c.siteId === siteId && c.source === source)
 
-  // Oldest-polled sites first so a backlog drains fairly across runs.
+  // Least-recently-attempted sites first so a backlog drains fairly across runs. Ordering uses
+  // the attempt time, not the watermark, so a failing source cannot hog the head of the queue.
   const due = withTerms
     .map((site) => {
-      const dueSources = sources.filter((source) => isDue(cursorOf(site.siteId, source.id), now))
-      const oldest = Math.min(...dueSources.map((s) => cursorOf(site.siteId, s.id)?.getTime() ?? 0))
+      const dueSources = sources.filter((source) => isDue(cursorRow(site.siteId, source.id), now))
+      const oldest = Math.min(...dueSources.map((s) => lastAttemptOf(cursorRow(site.siteId, s.id))?.getTime() ?? 0))
       return { site, dueSources, oldest }
     })
     .filter((entry) => entry.dueSources.length > 0)
@@ -124,7 +140,8 @@ export async function pollMentions(
 
     for (const source of dueSources) {
       if (rateLimited.has(source.id)) continue
-      const previous = cursorOf(site.siteId, source.id)
+      const existing = cursorRow(site.siteId, source.id)
+      const previous = existing?.lastPolledAt ?? null
       const since = computeSince(previous, now)
       const found = new Map<string, MentionInsert>()
       let requests = 0
@@ -155,7 +172,10 @@ export async function pollMentions(
         if (found.size > 0) summary.inserted += await store.insertMentions([...found.values()])
         // On failure the watermark stays put (or starts at the window start), so the
         // next run re-searches the same window; inserts are idempotent.
-        await store.saveCursor(site.siteId, source.id, failure ? (previous ?? since) : now, failure)
+        await store.saveCursor(site.siteId, source.id, failure ? (previous ?? since) : now, failure, {
+          at: now,
+          consecutiveFailures: failure ? (existing?.consecutiveFailures ?? 0) + 1 : 0,
+        })
         if (requests > 0) await usage(site.teamId, `mentions:${source.id}:requests`, requests)
       } catch (error) {
         summary.errors += 1

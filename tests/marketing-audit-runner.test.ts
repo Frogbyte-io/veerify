@@ -83,6 +83,12 @@ class MemStore implements AuditStore {
   async loadPages(auditId: string) {
     return this.pages.filter((p) => p.auditId === auditId)
   }
+  async pageUrls(auditId: string) {
+    return this.pages.filter((p) => p.auditId === auditId).map((p) => p.url)
+  }
+  async deleteIssues(auditId: string) {
+    this.issues = this.issues.filter((i) => i.auditId !== auditId)
+  }
   async insertIssues(rows: Array<{ auditId: string; pageId: string | null; ruleId: string }>) {
     this.issues.push(...rows)
   }
@@ -181,6 +187,15 @@ describe('startAudit guards', () => {
     store.audits.forEach((a) => (a.status = 'done'))
     clock += 24 * 3_600_000
     await expect(startAudit({ siteId: 's1', trigger: 'manual' }, deps())).resolves.toBeTruthy()
+  })
+
+  it('maps a unique violation on insert (concurrent start) to the 409 already-running error', async () => {
+    store.insertAudit = vi.fn(async () => {
+      throw Object.assign(new Error('failed query'), { cause: Object.assign(new Error('dup'), { code: '23505' }) })
+    }) as never
+    const err = await startAudit({ siteId: 's1', trigger: 'manual' }, deps()).catch((e) => e)
+    expect(err.statusCode).toBe(409)
+    expect(err.data.error.details.reason).toBe('active_audit')
   })
 
   it('picks the mode from the resolved crawl config and caps pages', async () => {
@@ -295,6 +310,37 @@ describe('full audit', () => {
     await advanceAudits({}, d)
     expect(store.audits[0].status).toBe('done')
     expect(store.audits[0].score).not.toBeNull()
+  })
+
+  it('records usage only for inserted rows and ignores already-stored URLs before applying the limit', async () => {
+    const d = withFull(deps())
+    provider.startCrawl.mockResolvedValue({ jobId: 'job1' })
+    provider.getCrawl
+      .mockResolvedValueOnce({ status: 'running', pages: [page('a'), page('b')], next: 'c1' })
+      // repeats a and b (and a within the batch); only c fits in the remaining room of 1
+      .mockResolvedValueOnce({ status: 'completed', pages: [page('a'), page('a'), page('b'), page('c'), page('d')] })
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    await advanceAudits({}, d)
+    expect(store.pages.map((p) => p.url)).toEqual([
+      'https://example.com/a',
+      'https://example.com/b',
+      'https://example.com/c',
+    ])
+    expect(d.recordUsage).toHaveBeenCalledTimes(2)
+    expect(d.recordUsage).toHaveBeenNthCalledWith(1, 't1', 'crawl:pages', 2)
+    expect(d.recordUsage).toHaveBeenNthCalledWith(2, 't1', 'crawl:pages', 1)
+  })
+
+  it('finishing twice does not duplicate issues', async () => {
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    const first = store.issues.length
+    expect(first).toBeGreaterThan(0)
+    store.audits[0].status = 'analyzing' // simulate re-entry after a lost lease
+    await advanceAudits({}, d)
+    expect(store.issues).toHaveLength(first)
   })
 
   it('stops polling a running job with no new batch and keeps the cursor', async () => {

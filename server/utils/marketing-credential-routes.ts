@@ -1,9 +1,11 @@
+import { createError } from 'h3'
 import type { H3Event } from 'h3'
 import type { ApiCredentialProvider } from '~/server/database/schema/marketing'
 import { isApiCredentialProvider, LLM_CREDENTIAL_PROVIDERS } from '~/server/utils/team-credentials'
 import { isSecretsConfigured } from '~/server/utils/secrets'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { requireRouteParam } from '~/server/utils/marketing-site'
+import { requireTeamAdmin, requireTeamMembership } from '~/server/utils/support-access'
 
 export function isLlmCredentialProvider(provider: ApiCredentialProvider): boolean {
   return (LLM_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider)
@@ -41,4 +43,26 @@ export function badRequest(message: string): never {
     statusMessage: 'Bad Request',
     data: createErrorResponse(ErrorCode.VALIDATION_ERROR, message),
   })
+}
+
+function rewriteForbidden<T>(run: () => Promise<T>, message: string): Promise<T> {
+  return run().catch((error: unknown) => {
+    // support-access messages mention support inboxes; surface a marketing one
+    if ((error as { statusCode?: number })?.statusCode === 403) {
+      throw createError({
+        statusCode: 403,
+        statusMessage: 'Forbidden',
+        data: createErrorResponse(ErrorCode.FORBIDDEN, message),
+      })
+    }
+    throw error
+  })
+}
+
+export function requireCredentialAdmin(teamId: string, userId: string) {
+  return rewriteForbidden(() => requireTeamAdmin(teamId, userId), 'Only team admins can manage marketing API keys')
+}
+
+export function requireCredentialMember(teamId: string, userId: string) {
+  return rewriteForbidden(() => requireTeamMembership(teamId, userId), 'You do not have access to this team')
 }

@@ -373,9 +373,9 @@ describe('computeScore', () => {
   })
 
   it('counts site-level issues once, weighted by severity', () => {
-    expect(computeScore([issue('error', null)], 50)).toBe(90)
-    expect(computeScore([issue('warning', null)], 50)).toBe(96)
+    expect(computeScore([issue('warning', null)], 50)).toBe(95)
     expect(computeScore([issue('notice', null)], 50)).toBe(99)
+    expect(computeScore([issue('warning', null), issue('notice', null)], 50)).toBe(94)
   })
 
   it('normalises page-level issues by page count', () => {
@@ -385,12 +385,45 @@ describe('computeScore', () => {
         n
       )
     expect(everyPageWarns(5)).toBe(everyPageWarns(500))
-    expect(everyPageWarns(5)).toBe(80)
+    expect(everyPageWarns(5)).toBe(90)
   })
 
   it('does not punish a single bad page on a big site as much as on a tiny one', () => {
     const one = [issue('error', 'https://e.com/a')]
     expect(computeScore(one, 100)).toBeGreaterThan(computeScore(one, 2))
+  })
+
+  describe('calibration', () => {
+    const page = 'https://example.com/'
+    const noticeIds = Array.from({ length: 9 }, () => issue('notice', page))
+
+    it('a decent page with only notices lands around 80-90', () => {
+      const score = computeScore(noticeIds, 1)
+      expect(score).toBeGreaterThanOrEqual(80)
+      expect(score).toBeLessThanOrEqual(92)
+    })
+
+    it('missing description, h1 and sitemap plus the notices lands around 60-70', () => {
+      const issues = [
+        issue('warning', page),
+        issue('warning', page),
+        issue('warning', null),
+        ...noticeIds.slice(0, 6),
+        ...Array.from({ length: 3 }, () => issue('notice', null)),
+      ]
+      const score = computeScore(issues, 1)
+      expect(score).toBeGreaterThanOrEqual(60)
+      expect(score).toBeLessThanOrEqual(70)
+    })
+
+    it('a site blocking search crawlers scores at most 60, however clean otherwise', () => {
+      expect(computeScore([issue('error', null)], 1)).toBeLessThanOrEqual(60)
+      expect(computeScore([issue('error', null), ...noticeIds], 1)).toBeLessThanOrEqual(60)
+    })
+
+    it('a page error on a tiny site is clearly visible', () => {
+      expect(computeScore([issue('error', page)], 1)).toBeLessThanOrEqual(40)
+    })
   })
 
   it('is an integer clamped to 0..100', () => {

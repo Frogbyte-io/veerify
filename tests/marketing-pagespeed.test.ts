@@ -56,6 +56,27 @@ describe('runPageSpeed', () => {
     expect(url.searchParams.get('url')).toBe('https://example.com/')
   })
 
+  it('only maps a 400 to auth when the body says the key is invalid', async () => {
+    const reply = (body: unknown) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(JSON.stringify(body), { status: 400 }))
+      )
+    reply({
+      error: { code: 400, message: 'API key not valid. Please pass a valid API key.', status: 'INVALID_ARGUMENT' },
+    })
+    expect(await runPageSpeed('https://example.com/', 'k').catch((e) => e.kind)).toBe('auth')
+    reply({ error: { code: 400, message: 'x', details: [{ reason: 'API_KEY_INVALID' }] } })
+    expect(await runPageSpeed('https://example.com/', 'k').catch((e) => e.kind)).toBe('auth')
+    reply({ error: { code: 400, message: 'Lighthouse returned error: FAILED_DOCUMENT_REQUEST.' } })
+    expect(await runPageSpeed('https://example.com/', 'k').catch((e) => e.kind)).toBe('bad_request')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('not json', { status: 400 }))
+    )
+    expect(await runPageSpeed('https://example.com/', 'k').catch((e) => e.kind)).toBe('bad_request')
+  })
+
   it('maps HTTP errors without leaking the key', async () => {
     vi.stubGlobal(
       'fetch',
