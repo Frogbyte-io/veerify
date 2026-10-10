@@ -52,6 +52,8 @@ export interface ClaimedReviewRequest {
   trigger: ReviewRequestTrigger
   sourceId: string | null
   token: string
+  /** Failed send attempts before this claim */
+  attempts: number
   projectName: string
   projectSettings: Record<string, unknown> | null
   teamMarketingEnabled: boolean | null
@@ -60,19 +62,13 @@ export interface ClaimedReviewRequest {
   feedbackTitle: string | null
 }
 
-export interface ClaimedBatch {
-  rows: ClaimedReviewRequest[]
-  markSent(id: string, at: Date): Promise<void>
-  markFailed(id: string, error: string): Promise<void>
-  markSkipped(id: string, reason: string): Promise<void>
-}
-
 export interface FeedbackRecipients {
+  feedbackId: string
   projectId: string
   status: string
   title: string
-  author: { email: string | null; name: string | null }
-  subscribers: string[]
+  /** Verified recipients only: the author (when a verified account), then verified subscribers, de-duplicated by email */
+  recipients: Array<{ email: string; name: string | null }>
 }
 
 export interface CsatContext {
@@ -87,18 +83,38 @@ export interface CsatContext {
 export interface ReviewsStore {
   loadProjectContext(projectId: string): Promise<ReviewProjectContext | null>
   isSuppressed(teamId: string, email: string): Promise<boolean>
-  /** A queued or sent request for this product and address created at or after `since`. */
+  /** A queued, sending or sent request for this product and address created at or after `since`. */
   hasRecentRequest(projectId: string, email: string, since: Date): Promise<boolean>
-  /** A request that was actually sent at or after `since`, ignoring `excludeId`. */
+  /** A request that was actually sent at or after `since`, ignoring `excludeId`. Reads committed state. */
   hasRecentSentRequest(projectId: string, email: string, since: Date, excludeId: string): Promise<boolean>
-  /** Returns false when the unique (project, trigger, source, email) index already holds the event. */
-  insertRequest(row: ReviewRequestInsert): Promise<boolean>
   /**
-   * Locks up to `limit` queued rows (`FOR UPDATE SKIP LOCKED`) for the duration of `run`,
-   * so concurrent passes never send the same request twice.
+   * Returns false when the unique (project, trigger, source, email) index already holds the event.
+   * With `dedupeSince` (manual requests, whose NULL sourceId bypasses the unique index) the insert is
+   * serialized per (product, address) and refused when a queued, sending or sent request exists since then.
    */
-  claimBatch(limit: number, run: (batch: ClaimedBatch) => Promise<void>): Promise<void>
-  loadFeedbackRecipients(feedbackId: string): Promise<FeedbackRecipients | null>
+  insertRequest(row: ReviewRequestInsert, options?: { dedupeSince?: Date }): Promise<boolean>
+  /** Manual requests queued for a team since `since`, for the daily cap. */
+  countManualSince(teamId: string, since: Date): Promise<number>
+  /**
+   * Returns `sending` rows whose claim is older than `staleAfterMinutes` to `queued`, counting the lost
+   * claim as an attempt (`failed` once `maxAttempts` is reached). Returns how many rows were touched.
+   */
+  sweepStale(staleAfterMinutes: number, maxAttempts: number): Promise<number>
+  /**
+   * Atomically moves up to `limit` due `queued` rows to `sending` (`FOR UPDATE SKIP LOCKED`, committed
+   * immediately) and returns them. No lock is held while sending.
+   */
+  claimBatch(limit: number): Promise<ClaimedReviewRequest[]>
+  /** Outcome writers. All are guarded by `status = 'sending'`, so a swept or finished row is never overwritten. */
+  markSent(id: string, at: Date): Promise<void>
+  markFailed(id: string, error: string): Promise<void>
+  markSkipped(id: string, reason: string): Promise<void>
+  /** Back to `queued` with `attempts + 1` and `nextAttemptAt = now + delayMs`. */
+  markRetry(id: string, error: string, delayMs: number): Promise<void>
+  /** Returns claimed rows that were not processed (out of time) to `queued` without counting an attempt. */
+  release(ids: string[]): Promise<void>
+  /** One query for all feedback items: verified recipients per item. */
+  loadFeedbackRecipients(feedbackIds: string[]): Promise<FeedbackRecipients[]>
   loadCsatContext(responseId: string): Promise<CsatContext | null>
   loadChangelogFeedbackIds(entryId: string): Promise<{ projectId: string; feedbackIds: string[] } | null>
 }
@@ -112,6 +128,7 @@ export type EnqueueSkipReason =
   | 'suppressed'
   | 'cooldown'
   | 'duplicate'
+  | 'daily_limit'
   | 'unknown_project'
 
 export interface EnqueueResult {

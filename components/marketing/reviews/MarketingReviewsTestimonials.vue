@@ -3,9 +3,21 @@
     <CardHeader>
       <CardTitle>Testimonials</CardTitle>
       <CardDescription>
-        Only testimonials the author agreed to publish and you approved appear on your public wall at
-        <code class="text-xs">/{{ productSlug }}/testimonials</code>
-        . Others stay private.
+        Only testimonials the author agreed to publish and you approved appear on your public wall. Others stay private.
+        <template v-if="wallUrl">
+          <a
+            :href="wallUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-medium text-primary underline underline-offset-2"
+            data-testid="testimonials-wall-link"
+          >
+            Open the public wall
+          </a>
+        </template>
+        <template v-else-if="product && product.isPublic === false"
+          >This product is private, so there is no public wall.</template
+        >
       </CardDescription>
     </CardHeader>
 
@@ -62,7 +74,10 @@
           </p>
           <p v-if="rowErrors[item.id]" class="mt-2 text-sm text-destructive" role="alert">{{ rowErrors[item.id] }}</p>
 
-          <div class="mt-3 flex flex-wrap gap-2">
+          <p v-if="!canManage" class="mt-3 text-xs text-muted-foreground" data-testid="testimonials-readonly">
+            Only team admins can approve, feature or delete testimonials.
+          </p>
+          <div v-else class="mt-3 flex flex-wrap gap-2">
             <Button
               v-if="item.status !== 'approved'"
               size="sm"
@@ -127,13 +142,16 @@
 
 <script>
 import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+import { buildPublicBoardUrl } from '~/lib/public-board-url'
 
 export default {
   name: 'MarketingReviewsTestimonials',
 
   props: {
     projectId: { type: String, required: true },
-    productSlug: { type: String, default: '' },
+    // The selected product (slug, isPublic, customDomain, settings), for the public wall link
+    product: { type: Object, default: null },
+    canManage: { type: Boolean, default: false },
   },
 
   emits: ['forbidden'],
@@ -150,10 +168,28 @@ export default {
       error: null,
       items: [],
       counts: { pending: 0, approved: 0, rejected: 0 },
+      teamSlug: null,
       busy: {},
       rowErrors: {},
       confirmDeleteId: null,
     }
+  },
+
+  computed: {
+    // Only for public products: a private product has no public wall.
+    wallUrl() {
+      if (!import.meta.client || !this.product || this.product.isPublic !== true) return ''
+      if (!this.product.customDomain && !this.teamSlug) return ''
+      const boardUrl = buildPublicBoardUrl({
+        project: this.product,
+        teamSlug: this.teamSlug,
+        projectSlug: this.product.slug,
+        appDomain: useRuntimeConfig().public.appDomain || 'localhost',
+        protocol: window.location.protocol,
+        port: window.location.port,
+      })
+      return `${boardUrl.replace(/\/+$/, '')}/testimonials`
+    },
   },
 
   async mounted() {
@@ -182,6 +218,7 @@ export default {
         if (projectId !== this.projectId || status !== this.status) return
         this.items = response.data.items
         this.counts = response.data.counts
+        this.teamSlug = response.data.teamSlug ?? null
       } catch (err) {
         if (projectId !== this.projectId || status !== this.status) return
         if (apiErrorStatus(err) === 403) this.$emit('forbidden', apiErrorMessage(err, ''))

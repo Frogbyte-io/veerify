@@ -6,7 +6,7 @@
  *     summary: Look up a review request link
  *     description: >
  *       Public, token-gated. Returns the product name, the recipient's first name
- *       and whether a testimonial was already submitted. No other personal data.
+ *       whether a testimonial was already submitted and whether one can still be submitted. No other personal data.
  *     operationId: getPublicReviewRequest
  *     parameters:
  *       - in: path
@@ -21,7 +21,12 @@
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { testimonial } from '~/server/database/schema/marketing'
-import { findReviewRequestByToken, firstNameOf, notFound } from '~/server/utils/marketing-reviews'
+import {
+  findReviewRequestByToken,
+  firstNameOf,
+  notFound,
+  testimonialSubmissionState,
+} from '~/server/utils/marketing-reviews'
 import { rateLimits, requireRateLimit } from '~/server/utils/rate-limit'
 import { createSuccessResponse } from '~/server/utils/response'
 
@@ -42,5 +47,7 @@ export default defineEventHandler(async (event) => {
     productName: request.projectName,
     firstName: firstNameOf(request.name),
     alreadySubmitted: Boolean(existing),
+    // False when the request was not sent, testimonials are off, or the link is older than 60 days.
+    canSubmit: testimonialSubmissionState(request) === 'ok',
   })
 })

@@ -6,7 +6,8 @@
  *     summary: Submit a testimonial
  *     description: >
  *       Public, token-gated and rate limited per IP and token. One testimonial per
- *       token. The testimonial starts as pending; it is only shown on the public
+ *       token, only for a sent request whose product still asks for testimonials,
+ *       and only within 60 days of sending. The testimonial starts as pending; it is only shown on the public
  *       wall once a team member approves it AND the author ticked the public consent box.
  *     operationId: submitPublicTestimonial
  *     parameters:
@@ -31,16 +32,19 @@
  *     responses:
  *       200: { description: Testimonial received }
  *       400: { description: Validation failed }
- *       404: { description: Link not found }
+ *       404: { description: Link not found, request not sent, or testimonials or Marketing switched off }
  *       409: { description: A testimonial was already submitted with this link }
+ *       410: { description: The link is older than 60 days }
  *       429: { description: Rate limited }
  */
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
-import { reviewRequest, testimonial } from '~/server/database/schema/marketing'
-import { notFound } from '~/server/utils/marketing-reviews'
+import { project } from '~/server/database/schema/feedback'
+import { reviewRequest, reviewRequestSettings, testimonial } from '~/server/database/schema/marketing'
+import { teamModuleSettings } from '~/server/database/schema/teams'
+import { notFound, testimonialSubmissionState } from '~/server/utils/marketing-reviews'
 import { rateLimits, requireRateLimit } from '~/server/utils/rate-limit'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -74,12 +78,30 @@ export default defineEventHandler(async (event) => {
   const outcome = await db.transaction(async (tx) => {
     // Locking the request row serializes concurrent submissions for one token.
     const [request] = await tx
-      .select({ id: reviewRequest.id, projectId: reviewRequest.projectId, email: reviewRequest.email })
+      .select({
+        id: reviewRequest.id,
+        projectId: reviewRequest.projectId,
+        email: reviewRequest.email,
+        status: reviewRequest.status,
+        sentAt: reviewRequest.sentAt,
+        createdAt: reviewRequest.createdAt,
+        projectSettings: project.settings,
+        teamMarketingEnabled: teamModuleSettings.marketingEnabled,
+        requestsEnabled: reviewRequestSettings.enabled,
+        askForTestimonial: reviewRequestSettings.askForTestimonial,
+      })
       .from(reviewRequest)
+      .innerJoin(project, eq(project.id, reviewRequest.projectId))
+      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, reviewRequest.teamId))
+      .leftJoin(reviewRequestSettings, eq(reviewRequestSettings.projectId, reviewRequest.projectId))
       .where(eq(reviewRequest.token, token))
       .limit(1)
-      .for('update')
+      .for('update', { of: reviewRequest })
     if (!request) return 'not_found' as const
+
+    const state = testimonialSubmissionState(request)
+    if (state === 'unavailable') return 'not_found' as const
+    if (state === 'expired') return 'expired' as const
 
     const [existing] = await tx
       .select({ id: testimonial.id })
@@ -105,6 +127,13 @@ export default defineEventHandler(async (event) => {
   })
 
   if (outcome === 'not_found') notFound('This link is not valid')
+  if (outcome === 'expired') {
+    throw createError({
+      statusCode: 410,
+      statusMessage: 'Gone',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'This link has expired'),
+    })
+  }
   if (outcome === 'duplicate') {
     throw createError({
       statusCode: 409,

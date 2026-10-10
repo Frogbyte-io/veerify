@@ -4,6 +4,9 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { feedbackStatus, project } from '~/server/database/schema/feedback'
 import { reviewRequest, type ReviewPlatform, reviewRequestSettings } from '~/server/database/schema/marketing'
+import { teamModuleSettings } from '~/server/database/schema/teams'
+import { isMarketingOn, isRequestLinkExpired } from '~/server/services/marketing/reviews/guards'
+import { requireTeamAdmin } from './support-access'
 import { SYSTEM_STATUSES } from './project-statuses'
 import { createErrorResponse, ErrorCode } from './response'
 
@@ -87,12 +90,19 @@ export async function findReviewRequestByToken(token: string) {
       email: reviewRequest.email,
       name: reviewRequest.name,
       clickedAt: reviewRequest.clickedAt,
+      status: reviewRequest.status,
+      sentAt: reviewRequest.sentAt,
+      createdAt: reviewRequest.createdAt,
       projectName: project.name,
+      projectSettings: project.settings,
+      teamMarketingEnabled: teamModuleSettings.marketingEnabled,
       platforms: reviewRequestSettings.platforms,
       askForTestimonial: reviewRequestSettings.askForTestimonial,
+      requestsEnabled: reviewRequestSettings.enabled,
     })
     .from(reviewRequest)
     .innerJoin(project, eq(project.id, reviewRequest.projectId))
+    .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, reviewRequest.teamId))
     .leftJoin(reviewRequestSettings, eq(reviewRequestSettings.projectId, reviewRequest.projectId))
     .where(eq(reviewRequest.token, token))
     .limit(1)
@@ -103,4 +113,35 @@ export async function findReviewRequestByToken(token: string) {
 export function firstNameOf(name: string | null): string | null {
   const first = name?.trim().split(/\s+/)[0]
   return first ? first.slice(0, 40) : null
+}
+
+/** Whether a testimonial can still be submitted for a looked-up request. */
+export function testimonialSubmissionState(
+  request: {
+    status: string
+    sentAt: Date | null
+    createdAt: Date
+    projectSettings: Record<string, unknown> | null
+    teamMarketingEnabled: boolean | null
+    requestsEnabled: boolean | null
+    askForTestimonial: boolean | null
+  },
+  now: Date = new Date()
+): 'ok' | 'unavailable' | 'expired' {
+  if (request.status !== 'sent') return 'unavailable'
+  if (request.requestsEnabled !== true || request.askForTestimonial !== true) return 'unavailable'
+  if (!isMarketingOn(request)) return 'unavailable'
+  if (isRequestLinkExpired(request, now)) return 'expired'
+  return 'ok'
+}
+
+/** True for team admins. A non-admin member reads as false; other failures are not swallowed. */
+export async function isTeamAdminOf(teamId: string, userId: string): Promise<boolean> {
+  try {
+    await requireTeamAdmin(teamId, userId)
+    return true
+  } catch (error) {
+    if ((error as { statusCode?: number })?.statusCode === 403) return false
+    throw error
+  }
 }

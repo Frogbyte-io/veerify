@@ -43,7 +43,8 @@ export type MentionKind = 'mention' | 'competitor' | 'opportunity'
 export type MentionStatus = 'new' | 'seen' | 'dismissed' | 'escalated'
 export type AnnouncementChannel = 'x' | 'linkedin' | 'bluesky' | 'newsletter'
 export type ReviewRequestTrigger = 'csat' | 'shipped' | 'manual'
-export type ReviewRequestStatus = 'queued' | 'sent' | 'skipped' | 'failed'
+// `sending` is a claim held by a worker (see `claimedAt`); a sweeper returns stale claims to `queued`.
+export type ReviewRequestStatus = 'queued' | 'sending' | 'sent' | 'skipped' | 'failed'
 export type EmailSuppressionReason = 'unsubscribed' | 'bounced' | 'complaint'
 export type TestimonialStatus = 'pending' | 'approved' | 'rejected'
 export type CustomerLanguageSource = 'feedback' | 'support'
@@ -438,6 +439,12 @@ export const reviewRequest = pgTable(
     error: text('error'),
     sentAt: timestamp('sent_at'),
     clickedAt: timestamp('clicked_at'),
+    // When a worker claimed the row (status `sending`); null otherwise.
+    claimedAt: timestamp('claimed_at'),
+    // Failed send attempts so far; the row is `failed` once this reaches the retry limit.
+    attempts: integer('attempts').default(0).notNull(),
+    // Earliest time a retry may be claimed; null means immediately.
+    nextAttemptAt: timestamp('next_attempt_at'),
     createdAt: createdAtColumn(),
   },
   (table) => ({

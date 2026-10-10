@@ -34,6 +34,14 @@
           </p>
         </CardContent>
 
+        <CardContent v-else-if="!info.canSubmit" class="space-y-2 py-10 text-center" data-testid="testimonial-closed">
+          <Icon name="lucide:clock" class="mx-auto h-8 w-8 text-muted-foreground" />
+          <h1 class="text-xl font-semibold">This link is no longer accepting testimonials</h1>
+          <p class="text-sm text-muted-foreground">
+            It may have expired. You are welcome to contact the {{ info.productName }} team directly.
+          </p>
+        </CardContent>
+
         <template v-else>
           <CardHeader>
             <CardTitle>Share your experience with {{ info.productName }}</CardTitle>
@@ -164,7 +172,7 @@ export default {
       isLoading: true,
       invalid: false,
       loadError: null,
-      info: { productName: '', firstName: null, alreadySubmitted: false },
+      info: { productName: '', firstName: null, alreadySubmitted: false, canSubmit: true },
       form: { quote: '', authorName: '', authorTitle: '', authorCompany: '', rating: null, consentPublic: false },
       submitting: false,
       submitError: null,
@@ -231,6 +239,8 @@ export default {
         const status = apiErrorStatus(err)
         if (status === 409) {
           this.info = { ...this.info, alreadySubmitted: true }
+        } else if (status === 410) {
+          this.info = { ...this.info, canSubmit: false }
         } else if (status === 404) {
           this.invalid = true
         } else {

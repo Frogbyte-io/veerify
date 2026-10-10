@@ -25,12 +25,23 @@
       <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
 
       <template v-else>
-        <MarketingReviewsSettings :key="`settings-${product.id}`" :project-id="product.id" @forbidden="onForbidden" />
-        <MarketingReviewsRequests :key="`requests-${product.id}`" :project-id="product.id" @forbidden="onForbidden" />
+        <MarketingReviewsSettings
+          :key="`settings-${product.id}`"
+          :project-id="product.id"
+          @forbidden="onForbidden"
+          @permissions="onPermissions"
+        />
+        <MarketingReviewsRequests
+          :key="`requests-${product.id}`"
+          :project-id="product.id"
+          :can-manage="canManage"
+          @forbidden="onForbidden"
+        />
         <MarketingReviewsTestimonials
           :key="`testimonials-${product.id}`"
           :project-id="product.id"
-          :product-slug="product.slug"
+          :product="product"
+          :can-manage="canManage"
           @forbidden="onForbidden"
         />
       </template>
@@ -49,10 +60,16 @@ export default {
       pickerError: false,
       marketingOff: false,
       disabledMessage: '',
+      // Unknown until the settings load; treated as read-only until then.
+      canManage: false,
     }
   },
 
   methods: {
+    onPermissions(permissions) {
+      this.canManage = permissions.canManage === true
+    },
+
     onPickerError() {
       this.product = null
       this.pickerError = true
@@ -65,6 +82,7 @@ export default {
       this.pickerError = false
       this.marketingOff = false
       this.disabledMessage = ''
+      this.canManage = false
     },
 
     onForbidden(message) {

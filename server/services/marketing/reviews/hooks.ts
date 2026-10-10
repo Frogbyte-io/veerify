@@ -1,4 +1,5 @@
 import { createLogger } from '~/server/utils/logger'
+import { describeError } from './errors'
 import { enqueueForCsatResponse, enqueueForFeedbackStatus } from './service'
 
 const logger = createLogger('marketing-reviews-hooks')
@@ -13,7 +14,7 @@ export async function onCsatRatingRecorded(responseId: string): Promise<void> {
   } catch (error) {
     logger.error('CSAT review request hook failed', {
       responseId,
-      error: error instanceof Error ? error.message : 'unknown',
+      ...describeError(error),
     })
   }
 }
@@ -24,7 +25,7 @@ export async function onFeedbackStatusChanged(feedbackId: string): Promise<void>
   } catch (error) {
     logger.error('Shipped review request hook failed', {
       feedbackId,
-      error: error instanceof Error ? error.message : 'unknown',
+      ...describeError(error),
     })
   }
 }

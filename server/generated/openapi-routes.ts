@@ -2026,7 +2026,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Send review requests manually",
-      "description": "Team admins only. Queues a request for up to 20 email addresses. The same guards as automatic requests apply (enabled, suppression list, cooldown). Each address gets a result; skipped addresses are not queued.\n",
+      "description": "Team admins only. Queues a request for up to 20 email addresses. The same guards as automatic requests apply (enabled, suppression list, cooldown). Each address gets its own result (invalid addresses and skipped addresses are reported per address, not queued). Limited to 10 calls per hour per product and 100 manually queued requests per team per day (reason `daily_limit`).\n",
       "operationId": "createMarketingReviewRequests",
       "parameters": [
         {
@@ -2054,7 +2054,7 @@ export const openapiPaths = {
                   "maxItems": 20,
                   "items": {
                     "type": "string",
-                    "format": "email"
+                    "maxLength": 254
                   }
                 }
               }
@@ -2075,6 +2075,9 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Product not found"
+        },
+        "429": {
+          "description": "Rate limited"
         }
       }
     }
@@ -2085,7 +2088,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Get review and testimonial request settings",
-      "description": "Returns the product's settings (defaults when never saved: disabled) and the product's feedback statuses, for the \"shipped\" trigger picker.\n",
+      "description": "Returns the product's settings (defaults when never saved: disabled) and the product's feedback statuses, for the \"shipped\" trigger picker, and `canManage` (true for team admins) so the UI can show a read-only view.\n",
       "operationId": "getMarketingReviewSettings",
       "parameters": [
         {
@@ -2786,7 +2789,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List testimonials for moderation",
-      "description": "Newest first, with counts by status. Includes whether the author consented to public display.",
+      "description": "Newest first, with counts by status and the team slug (for the public wall link). Includes whether the author consented to public display.",
       "operationId": "listMarketingTestimonials",
       "parameters": [
         {
@@ -3360,7 +3363,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Look up a review request link",
-      "description": "Public, token-gated. Returns the product name, the recipient's first name and whether a testimonial was already submitted. No other personal data.\n",
+      "description": "Public, token-gated. Returns the product name, the recipient's first name whether a testimonial was already submitted and whether one can still be submitted. No other personal data.\n",
       "operationId": "getPublicReviewRequest",
       "parameters": [
         {
@@ -3391,7 +3394,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Tracked redirect to a review platform",
-      "description": "Records the click and redirects (302) to the platform URL configured for the product. The target is always looked up from the product's saved settings by platform id; it is never taken from the request, so this is not an open redirect.\n",
+      "description": "Records the first click (links older than 60 days are not tracked) and redirects (302) to the platform URL configured for the product. The target is always looked up from the product's saved settings by platform id; it is never taken from the request, so this is not an open redirect.\n",
       "operationId": "redirectPublicReviewPlatform",
       "parameters": [
         {
@@ -3430,7 +3433,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Submit a testimonial",
-      "description": "Public, token-gated and rate limited per IP and token. One testimonial per token. The testimonial starts as pending; it is only shown on the public wall once a team member approves it AND the author ticked the public consent box.\n",
+      "description": "Public, token-gated and rate limited per IP and token. One testimonial per token, only for a sent request whose product still asks for testimonials, and only within 60 days of sending. The testimonial starts as pending; it is only shown on the public wall once a team member approves it AND the author ticked the public consent box.\n",
       "operationId": "submitPublicTestimonial",
       "parameters": [
         {
@@ -3492,10 +3495,15 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "404": {
-          "description": "Link not found"
+          "description": "Link not found",
+          "request not sent": null,
+          "or testimonials or Marketing switched off": null
         },
         "409": {
           "description": "A testimonial was already submitted with this link"
+        },
+        "410": {
+          "description": "The link is older than 60 days"
         },
         "429": {
           "description": "Rate limited"

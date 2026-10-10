@@ -5,7 +5,7 @@
  *     tags: [Public]
  *     summary: Tracked redirect to a review platform
  *     description: >
- *       Records the click and redirects (302) to the platform URL configured for the
+ *       Records the first click (links older than 60 days are not tracked) and redirects (302) to the platform URL configured for the
  *       product. The target is always looked up from the product's saved settings by
  *       platform id; it is never taken from the request, so this is not an open redirect.
  *     operationId: redirectPublicReviewPlatform
@@ -26,6 +26,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { reviewRequest } from '~/server/database/schema/marketing'
+import { isRequestLinkExpired } from '~/server/services/marketing/reviews/guards'
 import { findReviewRequestByToken, notFound } from '~/server/utils/marketing-reviews'
 import { rateLimits, requireRateLimit } from '~/server/utils/rate-limit'
 
@@ -41,7 +42,8 @@ export default defineEventHandler(async (event) => {
   // Re-check the scheme: only https URLs configured by the team are ever redirected to.
   if (!platform || !/^https:\/\//i.test(platform.url)) notFound('This link is not valid')
 
-  if (!request.clickedAt) {
+  // Expired links still redirect (the customer is reading an old email) but no longer record a click.
+  if (!request.clickedAt && !isRequestLinkExpired(request)) {
     await db
       .update(reviewRequest)
       .set({ clickedAt: new Date() })

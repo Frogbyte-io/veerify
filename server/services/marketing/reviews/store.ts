@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, ne, sql } from 'drizzle-orm'
+import { and, count, eq, gte, inArray, ne, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { user } from '~/server/database/schema/auth'
 import { changelogEntry, changelogEntryFeedback } from '~/server/database/schema/changelog'
@@ -8,10 +8,18 @@ import {
   reviewRequest,
   reviewRequestSettings,
   type ReviewPlatform,
+  type ReviewRequestStatus,
 } from '~/server/database/schema/marketing'
 import { contact, conversation, csatResponse, supportInbox } from '~/server/database/schema/support'
 import { teamModuleSettings } from '~/server/database/schema/teams'
-import type { ClaimedBatch, ClaimedReviewRequest, ReviewSettings, ReviewsStore } from './types'
+import type { ReviewSettings, ReviewsStore } from './types'
+
+/**
+ * Statuses that occupy the cooldown. `failed` and `skipped` do not: the person was never contacted,
+ * so a later event may ask them. The unique (project, trigger, source, email) slot of a failed row
+ * stays taken though, so the same event is never re-queued after it failed for good.
+ */
+const ACTIVE_STATUSES: ReviewRequestStatus[] = ['queued', 'sending', 'sent']
 
 export function toReviewSettings(row: typeof reviewRequestSettings.$inferSelect): ReviewSettings {
   return {
@@ -68,7 +76,7 @@ export const dbReviewsStore: ReviewsStore = {
         and(
           eq(reviewRequest.projectId, projectId),
           eq(reviewRequest.email, email),
-          inArray(reviewRequest.status, ['queued', 'sent']),
+          inArray(reviewRequest.status, ACTIVE_STATUSES),
           gte(reviewRequest.createdAt, since)
         )
       )
@@ -93,117 +101,216 @@ export const dbReviewsStore: ReviewsStore = {
     return Boolean(row)
   },
 
-  async insertRequest(row) {
-    const inserted = await db
-      .insert(reviewRequest)
-      .values(row)
-      .onConflictDoNothing()
-      .returning({ id: reviewRequest.id })
-    return inserted.length > 0
-  },
+  async insertRequest(row, options) {
+    const insert = (executor: Pick<typeof db, 'insert'>) =>
+      executor.insert(reviewRequest).values(row).onConflictDoNothing().returning({ id: reviewRequest.id })
 
-  async claimBatch(limit, run) {
-    await db.transaction(async (tx) => {
-      const locked = await tx.execute<{ id: string }>(sql`
-        SELECT id FROM review_request
-        WHERE status = 'queued'
-        ORDER BY created_at ASC
-        LIMIT ${limit}
-        FOR UPDATE SKIP LOCKED
-      `)
-      const ids = locked.rows.map((r) => r.id)
-      if (ids.length === 0) {
-        await run({ rows: [], markSent: async () => {}, markFailed: async () => {}, markSkipped: async () => {} })
-        return
-      }
+    if (!options?.dedupeSince) return (await insert(db)).length > 0
 
-      const rows = await tx
-        .select({
-          id: reviewRequest.id,
-          projectId: reviewRequest.projectId,
-          teamId: reviewRequest.teamId,
-          email: reviewRequest.email,
-          name: reviewRequest.name,
-          trigger: reviewRequest.trigger,
-          sourceId: reviewRequest.sourceId,
-          token: reviewRequest.token,
-          projectName: project.name,
-          projectSettings: project.settings,
-          teamMarketingEnabled: teamModuleSettings.marketingEnabled,
-          settings: reviewRequestSettings,
-          feedbackTitle: feedback.title,
-        })
+    // Manual requests have no source id, so the unique index cannot stop two of them for one
+    // address. Serialize on (product, address) and re-check inside the lock instead.
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`review:${row.projectId}:${row.email}`}))`)
+      const [existing] = await tx
+        .select({ id: reviewRequest.id })
         .from(reviewRequest)
-        .innerJoin(project, eq(project.id, reviewRequest.projectId))
-        .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, reviewRequest.teamId))
-        .leftJoin(reviewRequestSettings, eq(reviewRequestSettings.projectId, reviewRequest.projectId))
-        .leftJoin(
-          feedback,
+        .where(
           and(
-            eq(reviewRequest.trigger, 'shipped'),
-            eq(feedback.id, reviewRequest.sourceId),
-            eq(feedback.projectId, reviewRequest.projectId)
+            eq(reviewRequest.projectId, row.projectId),
+            eq(reviewRequest.email, row.email),
+            inArray(reviewRequest.status, ACTIVE_STATUSES),
+            gte(reviewRequest.createdAt, options.dedupeSince!)
           )
         )
-        .where(inArray(reviewRequest.id, ids))
-        .orderBy(reviewRequest.createdAt)
-
-      const claimed: ClaimedReviewRequest[] = rows.map((row) => ({
-        ...row,
-        settings: row.settings ? toReviewSettings(row.settings) : null,
-      }))
-
-      const batch: ClaimedBatch = {
-        rows: claimed,
-        async markSent(id, at) {
-          await tx
-            .update(reviewRequest)
-            .set({ status: 'sent', sentAt: at, error: null })
-            .where(eq(reviewRequest.id, id))
-        },
-        async markFailed(id, error) {
-          await tx
-            .update(reviewRequest)
-            .set({ status: 'failed', error: error.slice(0, 500) })
-            .where(eq(reviewRequest.id, id))
-        },
-        async markSkipped(id, reason) {
-          await tx.update(reviewRequest).set({ status: 'skipped', skipReason: reason }).where(eq(reviewRequest.id, id))
-        },
-      }
-      await run(batch)
+        .limit(1)
+      if (existing) return false
+      return (await insert(tx)).length > 0
     })
   },
 
-  async loadFeedbackRecipients(feedbackId) {
+  async countManualSince(teamId, since) {
     const [row] = await db
+      .select({ total: count() })
+      .from(reviewRequest)
+      .where(
+        and(eq(reviewRequest.teamId, teamId), eq(reviewRequest.trigger, 'manual'), gte(reviewRequest.createdAt, since))
+      )
+    return Number(row?.total ?? 0)
+  },
+
+  async sweepStale(staleAfterMinutes, maxAttempts) {
+    const swept = await db.execute<{ id: string }>(sql`
+      UPDATE review_request
+      SET status = CASE WHEN attempts + 1 >= ${maxAttempts} THEN 'failed' ELSE 'queued' END,
+          attempts = attempts + 1,
+          claimed_at = NULL,
+          next_attempt_at = NULL,
+          error = 'Sending timed out'
+      WHERE status = 'sending'
+        AND claimed_at < now() - make_interval(mins => ${staleAfterMinutes})
+      RETURNING id
+    `)
+    return swept.rows.length
+  },
+
+  async claimBatch(limit) {
+    // One statement, committed on return: the row locks are released before anything is sent.
+    const claimedIds = await db.execute<{ id: string }>(sql`
+      UPDATE review_request
+      SET status = 'sending', claimed_at = now()
+      WHERE id IN (
+        SELECT id FROM review_request
+        WHERE status = 'queued'
+          AND (next_attempt_at IS NULL OR next_attempt_at <= now())
+        ORDER BY created_at ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING id
+    `)
+    const ids = claimedIds.rows.map((r) => r.id)
+    if (ids.length === 0) return []
+
+    const rows = await db
       .select({
+        id: reviewRequest.id,
+        projectId: reviewRequest.projectId,
+        teamId: reviewRequest.teamId,
+        email: reviewRequest.email,
+        name: reviewRequest.name,
+        trigger: reviewRequest.trigger,
+        sourceId: reviewRequest.sourceId,
+        token: reviewRequest.token,
+        attempts: reviewRequest.attempts,
+        projectName: project.name,
+        projectSettings: project.settings,
+        teamMarketingEnabled: teamModuleSettings.marketingEnabled,
+        settings: reviewRequestSettings,
+        feedbackTitle: feedback.title,
+      })
+      .from(reviewRequest)
+      .innerJoin(project, eq(project.id, reviewRequest.projectId))
+      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, reviewRequest.teamId))
+      .leftJoin(reviewRequestSettings, eq(reviewRequestSettings.projectId, reviewRequest.projectId))
+      .leftJoin(
+        feedback,
+        and(
+          eq(reviewRequest.trigger, 'shipped'),
+          eq(feedback.id, reviewRequest.sourceId),
+          eq(feedback.projectId, reviewRequest.projectId)
+        )
+      )
+      .where(inArray(reviewRequest.id, ids))
+      .orderBy(reviewRequest.createdAt)
+
+    return rows.map((row) => ({
+      ...row,
+      settings: row.settings ? toReviewSettings(row.settings) : null,
+    }))
+  },
+
+  async markSent(id, at) {
+    await db
+      .update(reviewRequest)
+      .set({ status: 'sent', sentAt: at, error: null, claimedAt: null })
+      .where(and(eq(reviewRequest.id, id), eq(reviewRequest.status, 'sending')))
+  },
+
+  async markFailed(id, error) {
+    await db
+      .update(reviewRequest)
+      .set({
+        status: 'failed',
+        error: error.slice(0, 500),
+        attempts: sql`${reviewRequest.attempts} + 1`,
+        claimedAt: null,
+      })
+      .where(and(eq(reviewRequest.id, id), eq(reviewRequest.status, 'sending')))
+  },
+
+  async markSkipped(id, reason) {
+    await db
+      .update(reviewRequest)
+      .set({ status: 'skipped', skipReason: reason, claimedAt: null })
+      .where(and(eq(reviewRequest.id, id), eq(reviewRequest.status, 'sending')))
+  },
+
+  async markRetry(id, error, delayMs) {
+    // The delay is applied in SQL so it is measured on the same clock as the claim query's now().
+    await db
+      .update(reviewRequest)
+      .set({
+        status: 'queued',
+        error: error.slice(0, 500),
+        attempts: sql`${reviewRequest.attempts} + 1`,
+        nextAttemptAt: sql`now() + make_interval(secs => ${Math.round(delayMs / 1000)})`,
+        claimedAt: null,
+      })
+      .where(and(eq(reviewRequest.id, id), eq(reviewRequest.status, 'sending')))
+  },
+
+  async release(ids) {
+    if (ids.length === 0) return
+    await db
+      .update(reviewRequest)
+      .set({ status: 'queued', claimedAt: null })
+      .where(and(inArray(reviewRequest.id, ids), eq(reviewRequest.status, 'sending')))
+  },
+
+  async loadFeedbackRecipients(feedbackIds) {
+    if (feedbackIds.length === 0) return []
+
+    // Only verified addresses are ever contacted: `feedback.authorEmail` and a subscription's
+    // `email` are free text that anyone can type, so they are not used. A recipient is a user
+    // with `emailVerified = true`, addressed at the user's own email.
+    const items = await db
+      .select({
+        feedbackId: feedback.id,
         projectId: feedback.projectId,
         status: feedback.status,
         title: feedback.title,
-        authorEmail: feedback.authorEmail,
-        authorName: feedback.authorName,
-        userEmail: user.email,
-        userName: user.name,
+        authorEmail: user.email,
+        authorName: user.name,
+        authorVerified: user.emailVerified,
       })
       .from(feedback)
       .leftJoin(user, eq(user.id, feedback.authorUserId))
-      .where(eq(feedback.id, feedbackId))
-      .limit(1)
-    if (!row) return null
+      .where(inArray(feedback.id, feedbackIds))
 
+    // The subscription flow has no confirmation step for anonymous addresses (they are only
+    // sent an unsubscribe notice), so a subscription counts only when linked to a verified account.
     const subs = await db
-      .select({ email: feedbackSubscription.email })
+      .select({ feedbackId: feedbackSubscription.feedbackId, email: user.email, name: user.name })
       .from(feedbackSubscription)
-      .where(eq(feedbackSubscription.feedbackId, feedbackId))
+      .innerJoin(user, and(eq(user.id, feedbackSubscription.userId), eq(user.emailVerified, true)))
+      .where(inArray(feedbackSubscription.feedbackId, feedbackIds))
 
-    return {
-      projectId: row.projectId,
-      status: row.status,
-      title: row.title,
-      author: { email: row.authorEmail ?? row.userEmail ?? null, name: row.authorName ?? row.userName ?? null },
-      subscribers: subs.map((s) => s.email),
+    const subsByFeedback = new Map<string, Array<{ email: string; name: string | null }>>()
+    for (const sub of subs) {
+      const list = subsByFeedback.get(sub.feedbackId) ?? []
+      list.push({ email: sub.email, name: sub.name })
+      subsByFeedback.set(sub.feedbackId, list)
     }
+
+    return items.map((item) => {
+      const seen = new Set<string>()
+      const recipients: Array<{ email: string; name: string | null }> = []
+      const add = (email: string | null, name: string | null) => {
+        const key = email?.trim().toLowerCase()
+        if (!key || seen.has(key)) return
+        seen.add(key)
+        recipients.push({ email: key, name })
+      }
+      if (item.authorVerified === true) add(item.authorEmail, item.authorName)
+      for (const sub of subsByFeedback.get(item.feedbackId) ?? []) add(sub.email, sub.name)
+      return {
+        feedbackId: item.feedbackId,
+        projectId: item.projectId,
+        status: item.status,
+        title: item.title,
+        recipients,
+      }
+    })
   },
 
   async loadCsatContext(responseId) {

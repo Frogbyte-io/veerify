@@ -25,6 +25,15 @@
       </div>
 
       <form v-else-if="draft" class="space-y-6" @submit.prevent="save">
+        <p
+          v-if="!canManage"
+          class="rounded-md border bg-muted/50 p-3 text-sm text-muted-foreground"
+          role="note"
+          data-testid="reviews-settings-readonly"
+        >
+          You can view these settings. Only team admins can change them.
+        </p>
+
         <div class="flex items-center justify-between gap-4 rounded-md border p-3">
           <div>
             <Label for="reviews-enabled">Send review requests</Label>
@@ -33,7 +42,7 @@
           <Switch
             id="reviews-enabled"
             :model-value="draft.enabled"
-            :disabled="saving"
+            :disabled="locked"
             data-testid="reviews-enabled"
             @update:model-value="(value) => (draft.enabled = value)"
           />
@@ -49,7 +58,7 @@
           <p v-if="draft.platforms.length === 0" class="text-xs text-muted-foreground">No platforms yet.</p>
           <div
             v-for="(platform, index) in draft.platforms"
-            :key="platform.id || `new-${index}`"
+            :key="platform.uid"
             class="grid gap-2 sm:grid-cols-[10rem_1fr_auto]"
             data-testid="reviews-platform-row"
           >
@@ -58,7 +67,7 @@
               maxlength="40"
               placeholder="G2"
               :aria-label="`Platform ${index + 1} name`"
-              :disabled="saving"
+              :disabled="locked"
             />
             <Input
               v-model="platform.url"
@@ -66,14 +75,14 @@
               maxlength="500"
               placeholder="https://www.g2.com/products/your-product/reviews"
               :aria-label="`Platform ${index + 1} link`"
-              :disabled="saving"
+              :disabled="locked"
             />
             <Button
               type="button"
               size="icon"
               variant="ghost"
               :aria-label="`Remove platform ${index + 1}`"
-              :disabled="saving"
+              :disabled="locked"
               @click="removePlatform(index)"
             >
               <Icon name="lucide:trash-2" class="h-4 w-4" />
@@ -83,7 +92,7 @@
             type="button"
             size="sm"
             variant="outline"
-            :disabled="saving || draft.platforms.length >= maxPlatforms"
+            :disabled="locked || draft.platforms.length >= maxPlatforms"
             data-testid="reviews-add-platform"
             @click="addPlatform"
           >
@@ -102,7 +111,7 @@
           <Switch
             id="reviews-testimonial"
             :model-value="draft.askForTestimonial"
-            :disabled="saving"
+            :disabled="locked"
             @update:model-value="(value) => (draft.askForTestimonial = value)"
           />
         </div>
@@ -119,7 +128,7 @@
               <Switch
                 id="reviews-csat"
                 :model-value="draft.csatTrigger"
-                :disabled="saving"
+                :disabled="locked"
                 @update:model-value="(value) => (draft.csatTrigger = value)"
               />
             </div>
@@ -133,7 +142,7 @@
                 max="10"
                 placeholder="Top score of the scale"
                 class="mt-1"
-                :disabled="saving"
+                :disabled="locked"
               />
               <p class="mt-1 text-xs text-muted-foreground">
                 Leave empty to use only the top score of the survey scale.
@@ -153,7 +162,7 @@
               <Switch
                 id="reviews-shipped"
                 :model-value="draft.shippedTrigger"
-                :disabled="saving"
+                :disabled="locked"
                 @update:model-value="(value) => (draft.shippedTrigger = value)"
               />
             </div>
@@ -164,7 +173,7 @@
                   type="checkbox"
                   class="h-4 w-4 rounded border-input"
                   :checked="draft.shippedStatusValues.includes(status.value)"
-                  :disabled="saving"
+                  :disabled="locked"
                   @change="toggleStatus(status.value, $event.target.checked)"
                 />
                 {{ status.name }}
@@ -183,7 +192,7 @@
             min="1"
             max="730"
             class="mt-1"
-            :disabled="saving"
+            :disabled="locked"
           />
           <p class="mt-1 text-xs text-muted-foreground">An address is asked at most once in this many days.</p>
         </div>
@@ -193,7 +202,7 @@
         </p>
         <p v-else-if="savedAt" class="text-sm text-muted-foreground" role="status">Saved.</p>
 
-        <Button type="submit" :disabled="saving" data-testid="reviews-settings-save">
+        <Button v-if="canManage" type="submit" :disabled="locked" data-testid="reviews-settings-save">
           <Icon v-if="saving" name="lucide:loader-circle" class="mr-2 h-4 w-4 animate-spin" />
           Save settings
         </Button>
@@ -214,10 +223,12 @@ export default {
     projectId: { type: String, required: true },
   },
 
-  emits: ['forbidden', 'saved'],
+  emits: ['forbidden', 'saved', 'permissions'],
 
   data() {
     return {
+      canManage: false,
+      uidCounter: 0,
       isLoading: true,
       error: null,
       draft: null,
@@ -231,16 +242,32 @@ export default {
     }
   },
 
+  computed: {
+    locked() {
+      return this.saving || !this.canManage
+    },
+  },
+
   async mounted() {
     await this.load()
   },
 
   methods: {
+    // Rows are keyed by a client-side uid: platform ids are server-assigned and new rows have none.
+    nextUid() {
+      this.uidCounter += 1
+      return `platform-row-${this.uidCounter}`
+    },
+
     apply(data) {
       this.statuses = data.statuses
+      if (typeof data.canManage === 'boolean') {
+        this.canManage = data.canManage
+        this.$emit('permissions', { canManage: data.canManage })
+      }
       this.draft = {
         ...data.settings,
-        platforms: data.settings.platforms.map((platform) => ({ ...platform })),
+        platforms: data.settings.platforms.map((platform) => ({ ...platform, uid: this.nextUid() })),
         shippedStatusValues: [...data.settings.shippedStatusValues],
       }
       this.minRatingText = data.settings.csatMinRating === null ? '' : String(data.settings.csatMinRating)
@@ -268,7 +295,9 @@ export default {
     },
 
     addPlatform() {
-      if (this.draft.platforms.length < MAX_PLATFORMS) this.draft.platforms.push({ label: '', url: '' })
+      if (this.draft.platforms.length < MAX_PLATFORMS) {
+        this.draft.platforms.push({ uid: this.nextUid(), label: '', url: '' })
+      }
     },
 
     removePlatform(index) {
@@ -283,6 +312,7 @@ export default {
     },
 
     async save() {
+      if (!this.canManage) return
       const projectId = this.projectId
       const cooldown = Number.parseInt(this.cooldownText, 10)
       const minText = String(this.minRatingText ?? '').trim()
