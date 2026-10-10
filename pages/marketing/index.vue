@@ -284,6 +284,57 @@
                 </Button>
               </CardContent>
             </Card>
+
+            <Card data-testid="marketing-card-competitors">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:binoculars" class="w-4 h-4" />
+                  Competitors
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <template v-if="overview.competitors?.watching">
+                  <p class="text-2xl font-semibold">{{ overview.competitors.unseenChanges }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    unseen {{ overview.competitors.unseenChanges === 1 ? 'change' : 'changes' }} across
+                    {{ overview.competitors.watching }} watched
+                    {{ overview.competitors.watching === 1 ? 'page' : 'pages' }}
+                  </p>
+                </template>
+                <p v-else class="text-sm text-muted-foreground">
+                  Watch competitors' pricing and changelog pages for changes.
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/marketing/competitors')">
+                    {{ overview.competitors?.watching ? 'Review changes' : 'Watch a competitor' }}
+                  </NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="marketing-card-launch-kit">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:rocket" class="w-4 h-4" />
+                  Launch kit
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <p class="text-2xl font-semibold">
+                  {{ overview.launchKit?.live ?? 0 }}
+                  <span class="text-sm font-normal text-muted-foreground">
+                    / {{ overview.launchKit?.catalogSize ?? 0 }} live
+                  </span>
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  {{ overview.launchKit?.submitted ?? 0 }} submitted · {{ overview.launchKit?.inProgress ?? 0 }} in
+                  progress
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/marketing/launch')">Open launch kit</NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
           </div>
 
           <Card data-testid="marketing-usage">

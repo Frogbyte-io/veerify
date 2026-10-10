@@ -56,6 +56,7 @@ export default defineNuxtConfig({
       '0 * * * *': ['marketing:visibility-schedule'],
       '5 * * * *': ['marketing:audit-schedule'],
       '20 * * * *': ['marketing:search-sync'],
+      '35 * * * *': ['marketing:competitors-check'],
       '0 8 * * *': ['marketing:mentions-digest'],
     },
   },

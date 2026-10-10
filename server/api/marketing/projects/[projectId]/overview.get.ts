@@ -25,8 +25,11 @@ import { db } from '~/server/database/drizzle'
 import {
   aiVisibilityAnswer,
   aiVisibilityRun,
+  competitorChange,
+  competitorWatch,
   customerLanguageInsight,
   gscDailyMetric,
+  launchKitItem,
   marketingAnnouncementDraft,
   marketingDataConsent,
   marketingTerm,
@@ -37,6 +40,7 @@ import {
   testimonial,
 } from '~/server/database/schema/marketing'
 import { changelogEntry } from '~/server/database/schema/changelog'
+import { LAUNCH_DIRECTORIES } from '~/server/services/marketing/launch-kit/directories'
 import { resolveProductModules } from '~/lib/modules'
 import { findGscConnection, isGscConfigured } from '~/server/services/marketing/search/connection'
 import { computeTotals, shiftDate, splitPeriods } from '~/server/services/marketing/search/summary'
@@ -115,6 +119,8 @@ export default defineEventHandler(async (event) => {
   const announcements = await loadAnnouncements(projectId, changelogOn(project))
   const language = await loadLanguage(site?.id ?? null, teamId)
   const changelog = await loadChangelog(projectId, changelogOn(project))
+  const competitors = await loadCompetitors(site?.id ?? null)
+  const launchKit = await loadLaunchKit(projectId)
 
   const state = (id: string) => integrations.find((i) => i.id === id)?.state
   const usable = (id: string) => state(id) === 'ready'
@@ -138,6 +144,8 @@ export default defineEventHandler(async (event) => {
     announcements,
     language,
     changelog,
+    competitors,
+    launchKit,
   })
 })
 
@@ -264,4 +272,38 @@ async function loadChangelog(projectId: string, changelogEnabled: boolean) {
     .orderBy(desc(changelogEntry.publishedAt))
     .limit(1)
   return { enabled: true, latest: latest ?? null }
+}
+
+/** Watched competitor pages and changes nobody has looked at yet. */
+async function loadCompetitors(siteId: string | null) {
+  if (!siteId) return { watching: 0, unseenChanges: 0, latestChangeAt: null }
+  const [watching] = await db
+    .select({ total: count() })
+    .from(competitorWatch)
+    .where(and(eq(competitorWatch.siteId, siteId), eq(competitorWatch.status, 'active')))
+  const [unseen] = await db
+    .select({ total: count(), latest: sql<Date | null>`max(${competitorChange.detectedAt})` })
+    .from(competitorChange)
+    .where(and(eq(competitorChange.siteId, siteId), sql`${competitorChange.seenAt} is null`))
+  return {
+    watching: watching?.total ?? 0,
+    unseenChanges: unseen?.total ?? 0,
+    latestChangeAt: unseen?.latest ?? null,
+  }
+}
+
+/** Launch kit progress against the built-in catalog (custom directories count as extra). */
+async function loadLaunchKit(projectId: string) {
+  const rows = await db
+    .select({ status: launchKitItem.status, total: count() })
+    .from(launchKitItem)
+    .where(eq(launchKitItem.projectId, projectId))
+    .groupBy(launchKitItem.status)
+  const byStatus = Object.fromEntries(rows.map((row) => [row.status, row.total])) as Record<string, number>
+  return {
+    catalogSize: LAUNCH_DIRECTORIES.length,
+    live: byStatus.live ?? 0,
+    submitted: byStatus.submitted ?? 0,
+    inProgress: byStatus.in_progress ?? 0,
+  }
 }

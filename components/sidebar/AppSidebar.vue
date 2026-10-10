@@ -252,6 +252,16 @@ const marketingModuleItems: SidebarNavItem[] = [
     icon: 'lucide:star',
   },
   {
+    title: 'Competitors',
+    url: '/marketing/competitors',
+    icon: 'lucide:binoculars',
+  },
+  {
+    title: 'Launch kit',
+    url: '/marketing/launch',
+    icon: 'lucide:rocket',
+  },
+  {
     title: 'Customer language',
     url: '/marketing/language',
     icon: 'lucide:message-square-quote',
