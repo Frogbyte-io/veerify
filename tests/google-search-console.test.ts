@@ -7,6 +7,7 @@ import {
   getGoogleOAuthConfig,
   listSites,
   matchPropertyForOrigin,
+  isPropertySelectableForOrigin,
   querySearchAnalytics,
   refreshAccessToken,
   revokeToken,
@@ -180,6 +181,26 @@ describe('search console api', () => {
       rowLimit: 1,
     })
     expect(fetchMock.mock.calls[1][0]).toContain('/sites/https%3A%2F%2Facme.com%2F/searchAnalytics/query')
+  })
+})
+
+describe('isPropertySelectableForOrigin', () => {
+  it('accepts the origin prefix property and its domain property', () => {
+    expect(isPropertySelectableForOrigin('https://acme.com', 'https://acme.com/')).toBe(true)
+    expect(isPropertySelectableForOrigin('https://acme.com', 'https://acme.com')).toBe(true)
+    expect(isPropertySelectableForOrigin('https://app.acme.com', 'sc-domain:acme.com')).toBe(true)
+    expect(isPropertySelectableForOrigin('https://www.acme.com', 'https://www.acme.com/')).toBe(true)
+  })
+  it('rejects other sites, variants, paths and schemes', () => {
+    expect(isPropertySelectableForOrigin('https://acme.com', 'https://www.acme.com/')).toBe(false)
+    expect(isPropertySelectableForOrigin('https://acme.com', 'https://other.com/')).toBe(false)
+    expect(isPropertySelectableForOrigin('https://acme.com', 'https://acme.com/blog/')).toBe(false)
+    expect(isPropertySelectableForOrigin('https://acme.com', 'http://acme.com/')).toBe(false)
+    expect(isPropertySelectableForOrigin('https://acme.com', 'sc-domain:other.com')).toBe(false)
+  })
+  it('matchPropertyForOrigin never returns a non-matching property', () => {
+    const sites = [{ siteUrl: 'https://acme.com/blog/', permissionLevel: 'siteOwner' }]
+    expect(matchPropertyForOrigin('https://acme.com', sites)).toBeNull()
   })
 })
 

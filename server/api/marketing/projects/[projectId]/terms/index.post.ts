@@ -32,7 +32,7 @@
  *       404: { description: No site added yet }
  */
 import { randomUUID } from 'node:crypto'
-import { count, eq } from 'drizzle-orm'
+import { count, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { marketingTerm } from '~/server/database/schema/marketing'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
@@ -56,27 +56,31 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, createTermSchema)
   const site = await requireMarketingSite(projectId)
 
-  const [{ total }] = await db.select({ total: count() }).from(marketingTerm).where(eq(marketingTerm.siteId, site.id))
-  if (total >= MAX_TERMS_PER_SITE) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, `A site can have at most ${MAX_TERMS_PER_SITE} terms`),
-    })
-  }
-
-  const [row] = await db
-    .insert(marketingTerm)
-    .values({
-      id: randomUUID(),
-      siteId: site.id,
-      kind: body.kind,
-      label: body.label,
-      aliases: cleanAliases(body.label, body.aliases),
-      competitorDomain: resolveCompetitorDomain(body.kind, body.competitorDomain),
-      createdAt: new Date(),
-    })
-    .returning()
+  const row = await db.transaction(async (tx) => {
+    // Serialises concurrent creates for this site so the cap check and insert are atomic
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`marketing_terms:${site.id}`}, 0))`)
+    const [{ total }] = await tx.select({ total: count() }).from(marketingTerm).where(eq(marketingTerm.siteId, site.id))
+    if (total >= MAX_TERMS_PER_SITE) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'Bad Request',
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, `A site can have at most ${MAX_TERMS_PER_SITE} terms`),
+      })
+    }
+    const [inserted] = await tx
+      .insert(marketingTerm)
+      .values({
+        id: randomUUID(),
+        siteId: site.id,
+        kind: body.kind,
+        label: body.label,
+        aliases: cleanAliases(body.label, body.aliases),
+        competitorDomain: resolveCompetitorDomain(body.kind, body.competitorDomain),
+        createdAt: new Date(),
+      })
+      .returning()
+    return inserted
+  })
 
   return createSuccessResponse({ term: serializeTerm(row) })
 })

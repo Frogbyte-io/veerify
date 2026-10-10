@@ -25,3 +25,18 @@ export function isRequestLinkExpired(
   const issuedAt = request.sentAt ?? request.createdAt
   return now.getTime() - issuedAt.getTime() > REQUEST_LINK_MAX_AGE_DAYS * DAY_MS
 }
+
+const SCANNER_USER_AGENT =
+  /bot|crawler|spider|preview|scanner|safelinks|proofpoint|mimecast|barracuda|google-safety|slackbot|facebookexternalhit|curl|wget|python-requests|okhttp/i
+
+/**
+ * Email security scanners and link prefetchers open every link before the
+ * recipient does. Only GET requests with a real-looking user agent count as a click;
+ * the redirect itself is unaffected.
+ */
+export function isLikelyHumanClick(method: string | undefined, userAgent: string | undefined | null): boolean {
+  if ((method ?? 'GET').toUpperCase() !== 'GET') return false
+  const ua = (userAgent ?? '').trim()
+  if (!ua) return false
+  return !SCANNER_USER_AGENT.test(ua)
+}

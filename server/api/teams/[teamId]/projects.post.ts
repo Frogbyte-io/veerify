@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PRODUCT_MODULES, type ModuleKey } from '~/lib/modules'
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project, feedbackCategory } from '~/server/database/schema/feedback'
@@ -18,19 +19,18 @@ import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('projects')
 
+// Derived from the module registry so a new product-level module is never silently stripped on create
+export const productToggleShape = Object.fromEntries(
+  PRODUCT_MODULES.map((module) => [module.key, z.boolean().optional()])
+) as Record<ModuleKey, z.ZodOptional<z.ZodBoolean>>
+
 const createProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required').max(100, 'Project name too long'),
   slug: commonSchemas.slug,
   description: z.string().max(1000, 'Description too long').optional().nullable(),
   customDomain: z.string().max(253, 'Domain too long').optional().nullable(),
   isPublic: z.boolean().optional().default(true),
-  settings: z
-    .object({
-      changelogEnabled: z.boolean().optional(),
-      roadmapEnabled: z.boolean().optional(),
-    })
-    .optional()
-    .nullable(),
+  settings: z.object(productToggleShape).optional().nullable(),
 })
 
 export default defineEventHandler(async (event) => {

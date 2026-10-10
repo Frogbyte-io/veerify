@@ -2307,7 +2307,7 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "`{ properties: [{ siteUrl, permissionLevel }], selected }`"
+          "description": "`{ properties: [{ siteUrl, permissionLevel, selectable }], selected }; selectable is true only for properties matching the site origin`"
         },
         "403": {
           "description": "Team admin required",
@@ -2334,7 +2334,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Choose the Search Console property to read",
-      "description": "Team admins only. The property must be one the connected Google account can read. Changing the property clears stored metrics and queues a fresh sync.\n",
+      "description": "Team admins only. The property must be one the connected Google account can read and must match the site (its URL-prefix property, or the sc-domain property for its registrable domain). Changing the property clears stored metrics and queues a fresh sync.\n",
       "operationId": "putSearchProperty",
       "parameters": [
         {
@@ -3394,7 +3394,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Tracked redirect to a review platform",
-      "description": "Records the first click (links older than 60 days are not tracked) and redirects (302) to the platform URL configured for the product. The target is always looked up from the product's saved settings by platform id; it is never taken from the request, so this is not an open redirect.\n",
+      "description": "Records the first click from a likely-human request (HEAD requests and known link scanners or prefetchers are redirected but not counted; links older than 60 days are not tracked) and redirects (302) to the platform URL configured for the product. The target is always looked up from the product's saved settings by platform id; it is never taken from the request, so this is not an open redirect.\n",
       "operationId": "redirectPublicReviewPlatform",
       "parameters": [
         {

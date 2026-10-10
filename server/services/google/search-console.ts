@@ -321,18 +321,36 @@ export async function querySearchAnalytics(
  * Properties where the user is only `siteUnverifiedUser` are ignored (no data access).
  */
 export function matchPropertyForOrigin(origin: string, sites: GscSite[]): GscSite | null {
-  let url: URL
+  const usable = sites.filter(
+    (s) => s.permissionLevel !== 'siteUnverifiedUser' && isPropertySelectableForOrigin(origin, s.siteUrl)
+  )
+  return usable.find((s) => !s.siteUrl.toLowerCase().startsWith('sc-domain:')) ?? usable[0] ?? null
+}
+
+/**
+ * True when the property corresponds to the site origin: a URL-prefix property whose origin
+ * equals the site origin (trailing slash optional, no path; `www.` only when the site itself
+ * uses that host) or the `sc-domain:` property for the origin's registrable domain.
+ * Anything else (another site, a sub-path property, a different scheme) is not selectable.
+ */
+export function isPropertySelectableForOrigin(origin: string, propertyUrl: string): boolean {
+  let site: URL
   try {
-    url = new URL(origin)
+    site = new URL(origin)
   } catch {
-    return null
+    return false
   }
-  const usable = sites.filter((s) => s.permissionLevel !== 'siteUnverifiedUser')
-  const prefix = `${url.protocol}//${url.host}/`.toLowerCase()
-  const exact = usable.find((s) => s.siteUrl.toLowerCase() === prefix)
-  if (exact) return exact
-  const domain = getDomain(url.hostname)
-  if (!domain) return null
-  const wanted = `sc-domain:${domain}`.toLowerCase()
-  return usable.find((s) => s.siteUrl.toLowerCase() === wanted) ?? null
+  const value = propertyUrl.trim().toLowerCase()
+  if (value.startsWith('sc-domain:')) {
+    const domain = getDomain(site.hostname, { allowPrivateDomains: true })
+    return !!domain && value === `sc-domain:${domain}`
+  }
+  let prop: URL
+  try {
+    prop = new URL(value)
+  } catch {
+    return false
+  }
+  if (prop.pathname !== '/' || prop.search || prop.hash || prop.username || prop.password) return false
+  return prop.origin === site.origin.toLowerCase()
 }

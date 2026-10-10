@@ -40,9 +40,18 @@ vi.stubGlobal('createError', (input: Record<string, unknown>) =>
   Object.assign(new Error(String(input.statusMessage)), input)
 )
 
-vi.mock('~/server/database/drizzle', () => ({
-  db: { select: () => chain(), insert: () => chain(), update: () => chain(), delete: () => chain() },
-}))
+vi.mock('~/server/database/drizzle', () => {
+  const db: Record<string, unknown> = {
+    select: () => chain(),
+    insert: () => chain(),
+    update: () => chain(),
+    delete: () => chain(),
+    // advisory lock statements do not consume queued rows
+    execute: async () => undefined,
+  }
+  db.transaction = async (callback: (tx: unknown) => unknown) => callback(db)
+  return { db }
+})
 
 vi.mock('~/server/utils/team-context', () => ({
   requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),

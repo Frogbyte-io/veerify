@@ -346,7 +346,9 @@ describe('GET search/properties', () => {
 
   it('lists readable properties for admins', async () => {
     const result = await run(properties)
-    expect(result.data.properties).toEqual([{ siteUrl: 'sc-domain:acme.com', permissionLevel: 'siteOwner' }])
+    expect(result.data.properties).toEqual([
+      { siteUrl: 'sc-domain:acme.com', permissionLevel: 'siteOwner', selectable: true },
+    ])
   })
 
   it('rejects members and unconnected sites', async () => {
@@ -374,6 +376,19 @@ describe('PUT search/property', () => {
   it('rejects a property the account cannot read', async () => {
     state.body = { propertyUrl: 'sc-domain:evil.com' }
     expect((await failure(putProperty)).statusCode).toBe(400)
+    expect(state.updateSet).toBeNull()
+  })
+
+  it('rejects a readable property that belongs to a different site', async () => {
+    state.sites = [
+      { siteUrl: 'sc-domain:acme.com', permissionLevel: 'siteOwner' },
+      { siteUrl: 'sc-domain:other.com', permissionLevel: 'siteOwner' },
+      { siteUrl: 'https://acme.com/blog/', permissionLevel: 'siteOwner' },
+    ]
+    for (const propertyUrl of ['sc-domain:other.com', 'https://acme.com/blog/']) {
+      state.body = { propertyUrl }
+      expect((await failure(putProperty)).statusCode).toBe(400)
+    }
     expect(state.updateSet).toBeNull()
   })
 

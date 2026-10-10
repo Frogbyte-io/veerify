@@ -543,7 +543,7 @@ describe('processReviewRequests', () => {
     it('sweeps stale claims (10 minutes, counted as an attempt) before claiming', async () => {
       state.sweepResult = 2
       const { summary } = await run()
-      expect(state.sweepArgs).toEqual([[10, 3]])
+      expect(state.sweepArgs).toEqual([[10, 4]])
       expect(summary.recovered).toBe(2)
       expect(state.claimCalls).toBe(1)
     })
@@ -593,6 +593,13 @@ describe('processReviewRequests', () => {
       queue(claimed({ id: 'x', attempts: 1 }))
       await run(vi.fn().mockRejectedValue(new Error('451 try later')) as never)
       expect(state.outcomes[0]).toMatchObject({ outcome: 'retry', delayMs: 60 * 60_000 })
+    })
+
+    it('backs off 6 hours after the third failure and still retries', async () => {
+      queue(claimed({ id: 'x', attempts: 2 }))
+      await run(vi.fn().mockRejectedValue(new Error('451 try later')) as never)
+      expect(state.outcomes[0]).toMatchObject({ outcome: 'retry', delayMs: 6 * 60 * 60_000 })
+      expect(service.MAX_SEND_ATTEMPTS).toBe(4)
     })
 
     it('marks the request failed once the attempts are used up', async () => {

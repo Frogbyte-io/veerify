@@ -12,14 +12,14 @@
  *         required: true
  *         schema: { type: string }
  *     responses:
- *       200: { description: "`{ properties: [{ siteUrl, permissionLevel }], selected }`" }
+ *       200: { description: "`{ properties: [{ siteUrl, permissionLevel, selectable }], selected }; selectable is true only for properties matching the site origin`" }
  *       403: { description: Team admin required, or Marketing is off }
  *       404: { description: Search Console is not connected }
  *       409: { description: Google access was revoked; reconnect }
  *       502: { description: Google request failed }
  *       503: { description: Search Console is not configured on this server }
  */
-import { listSites } from '~/server/services/google/search-console'
+import { isPropertySelectableForOrigin, listSites } from '~/server/services/google/search-console'
 import {
   getAccessTokenFor,
   requireGscConfig,
@@ -51,7 +51,9 @@ export default defineEventHandler(async (event) => {
     const accessToken = await getAccessTokenFor(conn, config)
     const sites = await listSites(accessToken)
     return createSuccessResponse({
-      properties: sites.filter((s) => s.permissionLevel !== 'siteUnverifiedUser'),
+      properties: sites
+        .filter((s) => s.permissionLevel !== 'siteUnverifiedUser')
+        .map((s) => ({ ...s, selectable: isPropertySelectableForOrigin(site.origin, s.siteUrl) })),
       selected: conn.propertyUrl,
     })
   } catch (error) {

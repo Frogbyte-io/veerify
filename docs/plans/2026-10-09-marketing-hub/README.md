@@ -41,6 +41,13 @@ opportunities, and growth features built on feedback, changelog and support data
 - No realtime push for new mentions; the page and the daily digest are the only surfaces.
 - Budget caps are estimates (tokens × list price + web-search fees) and can overshoot by the answers
   already in flight.
+- Token-verified sites (dns/meta/file) are re-checked monthly without a schema change: a failed
+  re-check is stored in `lastVerificationError` ("Re-check failed (1/2)") and `updatedAt` is the
+  "last checked" marker, so editing the site also resets the monthly timer.
+- The language "apply" flow inserts terms and prompts from a pre-computed plan and does not take the
+  per-site cap lock, so a concurrent manual add can overshoot the caps by a few rows.
+- Vercel functions are configured for `maxDuration: 60` (nuxt.config.ts); the project's Vercel plan
+  must allow it.
 - The rate-limit store is in-memory unless `RATE_LIMIT_STORE=redis`, so limits are per instance on
   serverless.
 
