@@ -145,6 +145,14 @@
             <Icon name="lucide:map" class="w-4 h-4 inline mr-1.5" />
             Roadmap
           </span>
+          <NuxtLink
+            v-if="changelogEnabled"
+            :to="changelogPath"
+            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
+          >
+            <Icon name="lucide:newspaper" class="w-4 h-4 inline mr-1.5" />
+            Changelog
+          </NuxtLink>
         </div>
 
         <!-- Roadmap summary -->
@@ -404,6 +412,15 @@ export default {
     },
     roadmapEnabled() {
       return this.projectData?.project?.settings?.roadmapEnabled === true
+    },
+    changelogPath() {
+      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
+        return '/changelog'
+      }
+      return `/${this.projectSlug}/changelog`
+    },
+    changelogEnabled() {
+      return this.projectData?.project?.settings?.changelogEnabled === true
     },
     authRedirectTarget() {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}/roadmap`)

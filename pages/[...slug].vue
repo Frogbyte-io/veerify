@@ -5,6 +5,17 @@
       :team-slug="teamSubdomain"
       :project-slug="projectSlug"
     />
+    <PublicChangelog
+      v-else-if="teamSubdomain && projectSlug && subPage === 'changelog'"
+      :team-slug="teamSubdomain"
+      :project-slug="projectSlug"
+      :entry-slug="entrySlug"
+    />
+    <PublicTestimonials
+      v-else-if="teamSubdomain && projectSlug && subPage === 'testimonials'"
+      :team-slug="teamSubdomain"
+      :project-slug="projectSlug"
+    />
     <PublicFeedbackBoard
       v-else-if="teamSubdomain && projectSlug"
       :team-slug="teamSubdomain"
@@ -24,6 +35,11 @@
 </template>
 
 <script>
+// Sub-pages of a product's public site. On a custom domain they are addressed
+// without the product slug (`/changelog`), on a team subdomain with it
+// (`/<product>/changelog`).
+const SUB_PAGES = ['roadmap', 'changelog', 'testimonials']
+
 export default {
   name: 'CatchAllPage',
   computed: {
@@ -43,7 +59,7 @@ export default {
       }
 
       const firstSegment = this.slugParts[0] || null
-      if (!firstSegment || firstSegment === 'roadmap' || firstSegment === this.publicProjectSlug) {
+      if (!firstSegment || SUB_PAGES.includes(firstSegment) || firstSegment === this.publicProjectSlug) {
         return this.publicProjectSlug
       }
 
@@ -55,12 +71,19 @@ export default {
       }
 
       const firstSegment = this.slugParts[0] || null
-      if (firstSegment === 'roadmap') return 'roadmap'
+      if (SUB_PAGES.includes(firstSegment)) return firstSegment
       if (firstSegment === this.publicProjectSlug) {
         return this.slugParts[1] || null
       }
 
       return null
+    },
+    // `changelog/<entrySlug>` permalink segment, when present
+    entrySlug() {
+      if (this.subPage !== 'changelog') return null
+      const parts = this.slugParts
+      const index = this.publicProjectSlug && parts[0] !== this.publicProjectSlug ? 1 : 2
+      return parts[index] || null
     },
   },
 }

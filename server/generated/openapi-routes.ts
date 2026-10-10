@@ -46,6 +46,435 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/changelog/projects/{projectId}/entries": {
+    "get": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "List changelog entries of a product",
+      "operationId": "listChangelogEntries",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entries",
+          "newest first": null,
+          "with `nextCursor`": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Changelog is off": null
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Create a draft changelog entry",
+      "description": "The slug is generated from the title and is unique within the product.",
+      "operationId": "createChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "title"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 280,
+                  "nullable": true
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 50000
+                },
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "improved",
+                      "fixed"
+                    ]
+                  }
+                },
+                "feedbackIds": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Entry created"
+        },
+        "400": {
+          "description": "Validation failed",
+          "or feedback from another product": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Changelog is off": null
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/entries/{entryId}": {
+    "delete": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Delete a changelog entry",
+      "operationId": "deleteChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry deleted"
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    },
+    "get": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Get a changelog entry with its linked feedback",
+      "operationId": "getChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry with linked `feedback` (id, title, status)"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Changelog is off": null
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Update a changelog entry",
+      "description": "Partial update. `feedbackIds` replaces the linked feedback and must all belong to this product (max 50). The slug never changes.\n",
+      "operationId": "updateChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 280,
+                  "nullable": true
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 50000
+                },
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "improved",
+                      "fixed"
+                    ]
+                  }
+                },
+                "feedbackIds": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Entry updated"
+        },
+        "400": {
+          "description": "Validation failed",
+          "or feedback from another product": null
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/entries/{entryId}/publish": {
+    "post": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Publish a changelog entry",
+      "description": "Idempotent: publishing a published entry changes nothing. Publish hooks (review requests, announcement drafts) run on the first publish only and never block it.\n",
+      "operationId": "publishChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry published"
+        },
+        "400": {
+          "description": "Entry has no summary or body"
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/entries/{entryId}/unpublish": {
+    "post": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Return a published changelog entry to draft",
+      "operationId": "unpublishChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry is now a draft"
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/feedback-search": {
+    "get": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Search the product's feedback titles for linking to an entry",
+      "operationId": "searchChangelogFeedback",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "q",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Up to 20 matching feedback items (id, title, status)"
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/preview": {
+    "post": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Render changelog markdown to sanitised HTML",
+      "operationId": "previewChangelogMarkdown",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "body"
+              ],
+              "properties": {
+                "body": {
+                  "type": "string",
+                  "maxLength": 50000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "`{ html }`, sanitised server-side"
+        },
+        "400": {
+          "description": "Validation failed"
+        }
+      }
+    }
+  },
   "/api/cron/example-ping": {
     "get": {
       "tags": [
@@ -2284,6 +2713,136 @@ export const openapiPaths = {
         },
         "409": {
           "description": "Rating already submitted or comment window closed"
+        }
+      }
+    }
+  },
+  "/api/public/t/{teamSlug}/{projectSlug}/changelog": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Published changelog entries of a public product",
+      "description": "404 when the product's Changelog toggle is off; 403 when the product is private.",
+      "operationId": "getPublicChangelog",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ entries, nextCursor }`, newest first, with sanitised `html`"
+        },
+        "404": {
+          "description": "Not found or Changelog disabled"
+        }
+      }
+    }
+  },
+  "/api/public/t/{teamSlug}/{projectSlug}/changelog.rss": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "RSS 2.0 feed of the latest 30 published changelog entries",
+      "operationId": "getPublicChangelogRss",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "RSS feed",
+          "content": {
+            "application/rss+xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found or Changelog disabled"
+        }
+      }
+    }
+  },
+  "/api/public/t/{teamSlug}/{projectSlug}/changelog/{slug}": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "One published changelog entry of a public product",
+      "operationId": "getPublicChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry with sanitised `html`"
+        },
+        "404": {
+          "description": "Not found",
+          "a draft": null,
+          "or Changelog disabled": null
         }
       }
     }
