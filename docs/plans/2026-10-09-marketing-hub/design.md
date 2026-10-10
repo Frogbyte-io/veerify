@@ -226,6 +226,33 @@ it for _conversations_. A mention can be escalated into a support conversation, 
   suggestions for M2 and M3.
 - **Google Search Console** (OAuth): queries, clicks, impressions and position for the verified site.
 
+#### M5 implementation decisions (October 10, 2026)
+
+- **Changelog MVP ships as part of M5**, because the announcement feature needs it. It covers:
+  entries as markdown, with draft and published states, labels (`new`, `improved`, `fixed`), and links
+  to the feedback items each entry ships; a dashboard page at `/changelog`; a public page on the
+  product's board (`/<product>/changelog`, plus an RSS feed). It is gated by the existing
+  `changelogEnabled` team and product switches. Markdown is rendered on the server and sanitised.
+- **Announcement drafts** use the team's own Claude or OpenAI key. There is one editable draft per
+  channel (X, LinkedIn, Bluesky, newsletter) per entry, and regenerating replaces it. Nothing is posted
+  automatically.
+- **Review and testimonial requests** are off by default for each product.
+  - Triggers: a top CSAT rating (or one at or above a set threshold), and a customer's feedback reaching
+    a "shipped" status (default `completed`) or being linked from a published changelog entry. The
+    customer is the feedback author or a subscriber.
+  - Each email address is contacted at most once per cooldown (90 days by default). Every email has an
+    unsubscribe link that writes a per-team suppression.
+  - Testimonials are submitted on a public tokenised page. Only testimonials the author consented to
+    publish and a team member approved appear on the public wall at `/<product>/testimonials`.
+- **Customer language** needs a separate team-admin consent before any feedback or support text goes to
+  an LLM provider. The consent can be withdrawn at any time. Each run is started on demand and sends the
+  last 90 days, at most 300 items, each truncated. The output is suggested terms and prompts, which are
+  added with one click.
+- **Google Search Console** uses the install's own Google OAuth app (`GOOGLE_CLIENT_ID` and
+  `GOOGLE_CLIENT_SECRET`). The refresh token is stored encrypted for each marketing site. A daily sync
+  stores clicks, impressions, CTR and position, plus the top queries for the last 28 days. Without an
+  OAuth app the integration shows as not configured.
+
 ### 5. Later (M6+)
 
 - A launch kit: directory checklist (Product Hunt, BetaList, AlternativeTo, SaaS directories) with
