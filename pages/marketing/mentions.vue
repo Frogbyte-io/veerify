@@ -127,6 +127,20 @@
           </div>
         </div>
 
+        <!-- New mentions arrived (realtime) -->
+        <div
+          v-if="newArrivals > 0"
+          class="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm"
+          role="status"
+          data-testid="mentions-new-banner"
+        >
+          <span>{{ newArrivals }} new {{ newArrivals === 1 ? 'mention' : 'mentions' }}</span>
+          <Button size="sm" variant="outline" data-testid="mentions-new-refresh" @click="refreshNew">
+            <Icon name="lucide:refresh-cw" class="mr-1.5 h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
+
         <!-- Bulk actions -->
         <div
           v-if="!isLoading && items.length > 0"
@@ -184,8 +198,10 @@
             :mention="item"
             :selected="selected.includes(item.id)"
             :busy="busyIds.includes(item.id)"
+            :can-escalate="canEscalate"
             @toggle="toggleSelected"
             @status="updateOne"
+            @escalate="escalateOne"
           />
         </ul>
 
@@ -234,6 +250,9 @@ export default {
       error: null,
       forbidden: false,
       site: null,
+      canEscalate: false,
+      newArrivals: 0,
+      unsubscribeMentions: null,
       items: [],
       counts: { new: 0, seen: 0, dismissed: 0, escalated: 0 },
       nextCursor: null,
@@ -287,8 +306,54 @@ export default {
     },
   },
 
+  beforeUnmount() {
+    this.stopListening()
+  },
+
   methods: {
+    stopListening() {
+      if (this.unsubscribeMentions) this.unsubscribeMentions()
+      this.unsubscribeMentions = null
+    },
+
+    // Envelopes carry ids and a count only; the list is refetched through the authorized endpoint.
+    startListening() {
+      this.stopListening()
+      if (!import.meta.client || !this.product?.teamId || !this.$realtime) return
+      const productId = this.product.id
+      this.unsubscribeMentions = this.$realtime.subscribe(`team:${this.product.teamId}`, {
+        onEvent: (envelope) => {
+          if (envelope.type !== 'marketing.mentions.new' || envelope.projectId !== productId) return
+          if (this.product?.id !== productId) return
+          this.newArrivals += Number.isInteger(envelope.count) && envelope.count > 0 ? envelope.count : 1
+        },
+        onSubscribeError: (reason) => {
+          console.warn(`Could not subscribe to mention updates: ${reason}`)
+        },
+      })
+    },
+
+    async refreshNew() {
+      this.newArrivals = 0
+      await this.reload()
+    },
+
+    async escalateOne(id) {
+      this.busyIds = [...this.busyIds, id]
+      try {
+        const response = await $fetch(`${this.basePath}/${id}/escalate`, { method: 'POST' })
+        toast.success(response.data.alreadyEscalated ? 'Already escalated' : 'Escalated to support')
+        await this.reload()
+      } catch (err) {
+        toast.error(apiErrorMessage(err, 'Failed to escalate mention'))
+      } finally {
+        this.busyIds = this.busyIds.filter((x) => x !== id)
+      }
+    },
+
     onPickerError() {
+      this.stopListening()
+      this.newArrivals = 0
       this.requestToken++
       this.product = null
       this.pickerError = true
@@ -300,6 +365,9 @@ export default {
       this.pickerReady = true
       this.pickerError = false
       this.product = product
+      this.newArrivals = 0
+      this.canEscalate = false
+      this.stopListening()
       this.selected = []
       this.items = []
       this.nextCursor = null
@@ -315,6 +383,7 @@ export default {
         this.isLoading = false
         return
       }
+      this.startListening()
       await Promise.all([this.reload(), this.loadSources()])
     },
 
@@ -340,6 +409,7 @@ export default {
         this.counts = response.data.counts
         this.nextCursor = response.data.nextCursor
         this.site = response.data.site
+        this.canEscalate = response.data.canEscalate === true
         this.selected = []
         this.hasLoaded = true
       } catch (err) {

@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   updateWhere: null as unknown,
   updateSet: null as unknown,
   access: 'ok' as 'ok' | 'forbidden',
+  canEscalate: false,
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
@@ -45,6 +46,10 @@ vi.mock('~/server/utils/marketing-mentions', async (importOriginal) => {
   }
 })
 
+vi.mock('~/server/services/marketing/mentions/escalation', () => ({
+  canEscalateMentions: vi.fn(async () => state.canEscalate),
+}))
+
 vi.mock('~/server/database/drizzle', () => ({
   db: {
     update: vi.fn(() => ({
@@ -75,6 +80,7 @@ beforeEach(() => {
   state.updateRows = [{ id: 'm1', status: 'seen' }]
   state.updateWhere = null
   state.access = 'ok'
+  state.canEscalate = false
 })
 
 describe('PATCH mention', () => {
@@ -138,6 +144,14 @@ describe('GET mentions', () => {
     await expect(listHandler({} as never)).resolves.toMatchObject({
       data: { items: [], nextCursor: null, site: { exists: false, verified: false, termCount: 0 } },
     })
+  })
+
+  it('exposes canEscalate from the support gate', async () => {
+    state.site = null
+    state.canEscalate = true
+    await expect(listHandler({} as never)).resolves.toMatchObject({ data: { canEscalate: true } })
+    state.canEscalate = false
+    await expect(listHandler({} as never)).resolves.toMatchObject({ data: { canEscalate: false } })
   })
 
   it('rejects an invalid cursor', async () => {

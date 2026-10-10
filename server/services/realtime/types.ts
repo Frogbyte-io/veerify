@@ -22,6 +22,8 @@ export const REALTIME_ENVELOPE_FIELDS = [
   'inboxId',
   'conversationId',
   'messageId',
+  'projectId',
+  'count',
 ] as const
 
 export interface RealtimeEnvelope {
@@ -43,6 +45,10 @@ export interface RealtimeEnvelope {
   inboxId?: string
   conversationId?: string
   messageId?: string
+  /** Marketing events: the product the event is about. An id, never content. */
+  projectId?: string
+  /** Marketing events: how many new records arrived. A number, never content. */
+  count?: number
 }
 
 export type RealtimeHandler = (envelope: RealtimeEnvelope, channel: string) => void
@@ -134,6 +140,8 @@ export function sanitizeEnvelope(input: unknown): RealtimeEnvelope | null {
   if (isNonEmptyString(raw.inboxId)) envelope.inboxId = raw.inboxId
   if (isNonEmptyString(raw.conversationId)) envelope.conversationId = raw.conversationId
   if (isNonEmptyString(raw.messageId)) envelope.messageId = raw.messageId
+  if (isNonEmptyString(raw.projectId)) envelope.projectId = raw.projectId
+  if (typeof raw.count === 'number' && Number.isInteger(raw.count) && raw.count >= 0) envelope.count = raw.count
 
   // An unscoped envelope has nothing to authorize against and nothing to route
   // by, so it is rejected outright rather than delivered to whoever happens to

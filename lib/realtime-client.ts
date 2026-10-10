@@ -44,6 +44,9 @@ export interface RealtimeEnvelope {
   inboxId?: string
   conversationId?: string
   messageId?: string
+  /** `marketing.mentions.new` only */
+  projectId?: string
+  count?: number
 }
 
 export interface RealtimeSubscriptionHandlers {
