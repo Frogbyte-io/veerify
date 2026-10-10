@@ -10,6 +10,8 @@ export type IntegrationId =
   | 'pagespeed'
   | 'anthropic'
   | 'openai'
+  | 'perplexity'
+  | 'gemini'
   | 'hackernews'
   | 'reddit'
   | 'bluesky'
@@ -109,6 +111,16 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
       { id: 'openai', label: 'OpenAI', capability: 'AI visibility checks on ChatGPT models' },
       byProvider.get('openai'),
       { configured: false, missingHint: 'Add your OpenAI API key.' }
+    ),
+    fromCredential(
+      { id: 'gemini', label: 'Google Gemini', capability: 'AI visibility checks on Gemini with Google Search' },
+      byProvider.get('gemini'),
+      { configured: false, missingHint: 'Add your Google Gemini API key.' }
+    ),
+    fromCredential(
+      { id: 'perplexity', label: 'Perplexity', capability: 'AI visibility checks on Perplexity' },
+      byProvider.get('perplexity'),
+      { configured: false, missingHint: 'Add your Perplexity API key.' }
     ),
   ]
 

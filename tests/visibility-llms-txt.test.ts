@@ -69,6 +69,14 @@ describe('prompt helpers', () => {
         { provider: 'anthropic', status: 'invalid' },
       ])
     ).toBe('openai')
+    expect(
+      pickSuggestionProvider([
+        { provider: 'perplexity', status: 'valid' },
+        { provider: 'gemini', status: 'unchecked' },
+        { provider: 'openai', status: 'invalid' },
+      ])
+    ).toBe('gemini')
+    expect(pickSuggestionProvider([{ provider: 'perplexity', status: 'valid' }])).toBe('perplexity')
     expect(pickSuggestionProvider([{ provider: 'firecrawl', status: 'valid' }])).toBeNull()
   })
 

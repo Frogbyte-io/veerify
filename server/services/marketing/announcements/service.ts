@@ -283,7 +283,7 @@ export async function generateAnnouncementDrafts(
       schemaName: 'announcement_drafts',
     },
     {
-      noKey: 'Add a valid Anthropic or OpenAI API key in Marketing settings to generate drafts',
+      noKey: 'Add a valid Anthropic, OpenAI, Gemini or Perplexity API key in Marketing settings to generate drafts',
       upstream: 'The AI provider could not generate drafts. Try again',
     }
   )

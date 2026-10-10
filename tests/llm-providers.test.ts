@@ -33,7 +33,7 @@ const schema = { type: 'object', properties: { a: { type: 'string' } }, required
 
 describe('registry', () => {
   it('lists providers and resolves them', () => {
-    expect(LLM_PROVIDERS.map((p) => p.id).sort()).toEqual(['anthropic', 'openai'])
+    expect(LLM_PROVIDERS.map((p) => p.id).sort()).toEqual(['anthropic', 'gemini', 'openai', 'perplexity'])
     expect(getLlmProvider('openai').id).toBe('openai')
     expect(LLM_MODELS.anthropic).toEqual({ answer: 'claude-sonnet-5-5', extract: 'claude-haiku-4-5' })
   })

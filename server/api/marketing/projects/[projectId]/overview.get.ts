@@ -125,7 +125,7 @@ export default defineEventHandler(async (event) => {
       siteAdded: site !== null,
       siteVerified: site?.verifiedAt != null,
       hasBrandTerm,
-      hasLlmKey: usable('anthropic') || usable('openai'),
+      hasLlmKey: usable('anthropic') || usable('openai') || usable('gemini') || usable('perplexity'),
       hasCrawlKey: usable('firecrawl'),
     },
     integrations,

@@ -51,6 +51,8 @@ describe('getIntegrationStatus', () => {
       'pagespeed',
       'anthropic',
       'openai',
+      'gemini',
+      'perplexity',
       'hackernews',
       'reddit',
       'bluesky',

@@ -125,7 +125,7 @@
                   </p>
                 </template>
                 <p v-else-if="!overview.setup.hasLlmKey" class="text-sm text-muted-foreground">
-                  Add an Anthropic or OpenAI key to measure how AI assistants talk about you.
+                  Add an Anthropic, OpenAI, Gemini or Perplexity key to measure how AI assistants talk about you.
                 </p>
                 <p v-else class="text-sm text-muted-foreground">No run yet.</p>
                 <Button as-child variant="outline" size="sm">
@@ -360,7 +360,7 @@ export default {
         {
           key: 'keys',
           title: 'Add an AI key',
-          hint: 'An Anthropic or OpenAI key unlocks AI visibility. A Firecrawl key is optional and unlocks the full site crawl.',
+          hint: 'An Anthropic, OpenAI, Gemini or Perplexity key unlocks AI visibility. A Firecrawl key is optional and unlocks the full site crawl.',
           action: 'Add keys',
           done: setup.hasLlmKey,
         },

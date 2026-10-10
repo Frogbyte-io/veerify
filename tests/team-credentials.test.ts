@@ -102,6 +102,6 @@ describe('team credentials', () => {
 
   it('recognises provider ids', () => {
     expect(isApiCredentialProvider('pagespeed')).toBe(true)
-    expect(isApiCredentialProvider('gemini')).toBe(false)
+    expect(isApiCredentialProvider('mistral')).toBe(false)
   })
 })

@@ -4,7 +4,7 @@
  *   patch:
  *     tags: [Marketing]
  *     summary: Set or clear the monthly budget of an LLM key
- *     description: Team admins only. Applies to anthropic and openai keys. Null removes the cap.
+ *     description: Team admins only. Applies to LLM provider keys (anthropic, openai, perplexity, gemini). Null removes the cap.
  *     operationId: patchMarketingCredential
  *     parameters:
  *       - in: path
@@ -14,7 +14,7 @@
  *       - in: path
  *         name: provider
  *         required: true
- *         schema: { type: string, enum: [anthropic, openai] }
+ *         schema: { type: string, enum: [anthropic, openai, perplexity, gemini] }
  *     requestBody:
  *       required: true
  *       content:
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, bodySchema)
 
   if (!isLlmCredentialProvider(provider)) {
-    badRequest('A monthly budget only applies to Anthropic and OpenAI keys')
+    badRequest('A monthly budget only applies to LLM provider keys')
   }
 
   const updated = await updateCredentialBudget(teamId, provider, body.monthlyBudgetCents)

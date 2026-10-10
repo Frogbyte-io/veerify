@@ -19,7 +19,7 @@
  *       - in: path
  *         name: provider
  *         required: true
- *         schema: { type: string, enum: [anthropic, openai, firecrawl, pagespeed] }
+ *         schema: { type: string, enum: [anthropic, openai, perplexity, gemini, firecrawl, pagespeed] }
  *     requestBody:
  *       required: true
  *       content:
@@ -41,6 +41,7 @@ import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { createSuccessResponse } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
+import type { ApiCredentialProvider } from '~/server/database/schema/marketing'
 import { saveTeamCredential } from '~/server/utils/team-credentials'
 import { requireRouteParam } from '~/server/utils/marketing-site'
 import {
@@ -64,9 +65,12 @@ interface ValidationOutcome {
   message?: string
 }
 
-async function validateWithProvider(provider: string, apiKey: string): Promise<ValidationOutcome | null> {
+async function validateWithProvider(
+  provider: ApiCredentialProvider,
+  apiKey: string
+): Promise<ValidationOutcome | null> {
   try {
-    if (provider === 'anthropic' || provider === 'openai') {
+    if (isLlmCredentialProvider(provider)) {
       return await getLlmProvider(provider as LlmProviderId).validateKey(apiKey)
     }
     if (provider === 'firecrawl') {
@@ -90,7 +94,7 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, bodySchema)
 
   if (body.monthlyBudgetCents !== undefined && !isLlmCredentialProvider(provider)) {
-    badRequest('A monthly budget only applies to Anthropic and OpenAI keys')
+    badRequest('A monthly budget only applies to LLM provider keys')
   }
 
   await requireRateLimit(event, {

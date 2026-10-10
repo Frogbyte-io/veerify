@@ -14,7 +14,7 @@
  *       - in: path
  *         name: provider
  *         required: true
- *         schema: { type: string, enum: [anthropic, openai, firecrawl, pagespeed] }
+ *         schema: { type: string, enum: [anthropic, openai, perplexity, gemini, firecrawl, pagespeed] }
  *     responses:
  *       200: { description: Key removed }
  *       403: { description: Team admin required }

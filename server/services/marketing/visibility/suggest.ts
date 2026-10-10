@@ -40,7 +40,7 @@ export async function suggestPrompts(input: {
       schemaName: 'prompt_suggestions',
     },
     {
-      noKey: 'Add a valid Anthropic or OpenAI API key to get suggestions',
+      noKey: 'Add a valid Anthropic, OpenAI, Gemini or Perplexity API key to get suggestions',
       upstream: 'The AI provider could not generate suggestions. Try again',
     }
   )

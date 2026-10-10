@@ -6,7 +6,7 @@
  * provider SDKs.
  */
 
-export type LlmProviderId = 'anthropic' | 'openai'
+export type LlmProviderId = 'anthropic' | 'openai' | 'perplexity' | 'gemini'
 
 export interface LlmUsage {
   inputTokens: number
