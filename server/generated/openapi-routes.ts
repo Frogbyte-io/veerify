@@ -576,6 +576,198 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/audits": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List recent site audits for a product",
+      "description": "Returns the 20 most recent audits plus whether a new audit can be started now (`canStart`, with the `reason` when not: `not_verified`, `active_audit` or `daily_limit`). Requires Marketing enabled for the team and the product.\n",
+      "operationId": "listMarketingAudits",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Recent audits and start availability"
+        },
+        "403": {
+          "description": "Marketing not enabled or no access"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Start a manual site audit",
+      "description": "Queues an audit of the product's verified site. Runs a full crawl when a Firecrawl key is available (team key or instance key), otherwise a basic audit of robots.txt, llms.txt, sitemap and the home page. Fails with 409 while another audit is running and 429 after the daily manual limit. Unverified sites are never fetched (403).\n",
+      "operationId": "startMarketingAudit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "201": {
+          "description": "Audit queued"
+        },
+        "403": {
+          "description": "Not enabled",
+          "not verified or no access": null
+        },
+        "409": {
+          "description": "An audit is already running"
+        },
+        "429": {
+          "description": "Daily manual audit limit reached"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/audits/{auditId}": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get a site audit with its issues",
+      "description": "Status and progress, score and the previous audit's score, an issue summary, site facts (robots.txt, llms.txt, sitemap, AI crawler access, PageSpeed) and issues grouped by rule with up to 50 affected pages each.\n",
+      "operationId": "getMarketingAudit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "auditId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Audit detail"
+        },
+        "403": {
+          "description": "Marketing not enabled or no access"
+        },
+        "404": {
+          "description": "Audit not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/audits/{auditId}/cancel": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Cancel a running site audit",
+      "description": "Cancels a queued, crawling or analyzing audit; stops the provider crawl job when one is running.",
+      "operationId": "cancelMarketingAudit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "auditId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Audit cancelled"
+        },
+        "403": {
+          "description": "Marketing not enabled or no access"
+        },
+        "404": {
+          "description": "Audit not found for this product"
+        },
+        "409": {
+          "description": "Audit already finished"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/audits/{auditId}/pages": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List pages fetched by a site audit",
+      "description": "Pages ordered by URL, 50 per request. Pass `nextCursor` as `cursor` for the next page.",
+      "operationId": "listMarketingAuditPages",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "auditId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Pages with status code",
+          "title and issue count": null
+        },
+        "403": {
+          "description": "Marketing not enabled or no access"
+        },
+        "404": {
+          "description": "Audit not found for this product"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/mentions": {
     "get": {
       "tags": [
