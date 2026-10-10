@@ -83,6 +83,17 @@
               <Icon name="lucide:copy" class="mr-2 h-4 w-4" />
               Copy
             </Button>
+            <Button
+              v-if="drafts[active]"
+              variant="outline"
+              size="sm"
+              :disabled="deleting || saving || generating"
+              :data-testid="`announcement-delete-${entry.id}`"
+              @click="removeDraft"
+            >
+              <Icon :name="deleting ? 'lucide:loader-circle' : 'lucide:trash-2'" class="mr-2 h-4 w-4" />
+              {{ deleting ? 'Deleting...' : 'Delete' }}
+            </Button>
             <Button size="sm" :disabled="!canSave" :data-testid="`announcement-save-${entry.id}`" @click="save">
               <Icon name="lucide:save" class="mr-2 h-4 w-4" />
               {{ saving ? 'Saving...' : 'Save' }}
@@ -133,6 +144,7 @@ export default {
       generateError: null,
       saving: false,
       saveError: null,
+      deleting: false,
       copied: false,
       copyTimer: null,
     }
@@ -234,6 +246,27 @@ export default {
         this.saveError = apiErrorMessage(err, 'Could not save the draft')
       } finally {
         if (projectId === this.projectId) this.saving = false
+      }
+    },
+
+    async removeDraft() {
+      const channel = this.active
+      if (!this.drafts[channel]) return
+      if (!window.confirm(`Delete the ${this.activeLabel} draft? This cannot be undone.`)) return
+      const projectId = this.projectId
+      this.deleting = true
+      this.saveError = null
+      try {
+        await $fetch(`${this.base()}/${channel}`, { method: 'DELETE' })
+        if (projectId !== this.projectId) return
+        const { [channel]: _removed, ...rest } = this.drafts
+        this.drafts = rest
+        this.texts[channel] = ''
+      } catch (err) {
+        if (projectId !== this.projectId) return
+        this.saveError = apiErrorMessage(err, 'Could not delete the draft')
+      } finally {
+        if (projectId === this.projectId) this.deleting = false
       }
     },
 

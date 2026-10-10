@@ -1944,7 +1944,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Marketing overview for a product",
-      "description": "Setup checklist state, integration status, this month's usage and the latest audit, AI visibility run and new mention count.\n",
+      "description": "Setup checklist state, integration status, this month's usage and the latest audit, AI visibility run and new mention count, plus compact summaries for Search Console, reviews, announcements, customer language and the changelog (each reports whether it is set up).\n",
       "operationId": "getMarketingOverview",
       "parameters": [
         {
