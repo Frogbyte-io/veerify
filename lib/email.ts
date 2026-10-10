@@ -9,6 +9,7 @@ import {
   getSubscriptionConfirmationTemplate,
   getStatusChangeNotificationTemplate,
   getNewCommentNotificationTemplate,
+  marketingMentionsDigestTemplate,
 } from './email-templates'
 import type { Readable } from 'node:stream'
 import { createConsola } from 'consola'
@@ -335,5 +336,24 @@ interface NewCommentNotificationEmailOptions {
 
 export async function sendNewCommentNotificationEmail(options: NewCommentNotificationEmailOptions) {
   const template = getNewCommentNotificationTemplate(options)
+  return sendEmail({ to: options.to, subject: template.subject, html: template.html, text: template.text })
+}
+
+interface MarketingMentionsDigestEmailOptions {
+  to: string
+  productName: string
+  counts: { mention: number; competitor: number; opportunity: number }
+  items: Array<{
+    sourceLabel: string
+    kind: 'mention' | 'competitor' | 'opportunity'
+    title: string | null
+    excerpt: string
+    url: string
+  }>
+  mentionsUrl: string
+}
+
+export async function sendMarketingMentionsDigestEmail(options: MarketingMentionsDigestEmailOptions) {
+  const template = marketingMentionsDigestTemplate(options)
   return sendEmail({ to: options.to, subject: template.subject, html: template.html, text: template.text })
 }
