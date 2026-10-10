@@ -1691,6 +1691,218 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/launch-kit": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Launch kit checklist for a product",
+      "description": "The curated directory catalog merged with the product's status per directory, the product's custom directories, and progress counts by status.\n",
+      "operationId": "getMarketingLaunchKit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Directories",
+          "custom directories and progress": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/launch-kit/{directoryId}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Remove a custom directory or reset a catalog directory to todo",
+      "operationId": "deleteMarketingLaunchKitItem",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "directoryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Custom directory deleted",
+          "or catalog directory reset": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Unknown directory"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set the status, listing URL and notes of a launch kit directory",
+      "description": "Upserts the product's item for a catalog directory, or updates an existing custom directory (`custom:<id>`). `submittedAt` and `liveAt` are set the first time the status becomes submitted or live. Omitting `url` or `notes` keeps the current value; null or an empty string clears it.\n",
+      "operationId": "updateMarketingLaunchKitItem",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "directoryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "todo",
+                    "in_progress",
+                    "submitted",
+                    "live",
+                    "rejected",
+                    "skipped"
+                  ]
+                },
+                "url": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 500,
+                  "description": "https URL"
+                },
+                "notes": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 1000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Item saved"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Unknown directory"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/launch-kit/custom": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add a custom directory to the launch kit",
+      "description": "At most 30 custom directories per product.",
+      "operationId": "createMarketingLaunchKitCustom",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "url": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 500,
+                  "description": "https URL"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Custom directory created"
+        },
+        "400": {
+          "description": "Validation failed or the 30 directory limit is reached"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/mentions": {
     "get": {
       "tags": [
