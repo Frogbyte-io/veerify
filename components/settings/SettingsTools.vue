@@ -70,7 +70,6 @@
 import { toast } from 'vue-sonner'
 import { DEFAULT_TEAM_MODULES, MODULES } from '~/lib/modules'
 
-
 export default {
   name: 'SettingsTools',
 
