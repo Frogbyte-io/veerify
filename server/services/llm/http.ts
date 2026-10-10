@@ -12,7 +12,31 @@ export const VALIDATE_TIMEOUT_MS = 30_000
 
 const MAX_ERROR_BODY_CHARS = 300
 
-export function kindForStatus(status: number): LlmErrorKind {
+/**
+ * Billing/quota exhaustion is not retryable and is not a bad key:
+ * - OpenAI: 429 with error.code/type `insufficient_quota` (or `billing_*`)
+ * - Anthropic: 400 invalid_request_error "credit balance is too low", or 402/429 billing errors
+ */
+export function isQuotaError(status: number, body: string): boolean {
+  if (status !== 400 && status !== 402 && status !== 429) return false
+  if (status === 402) return true
+  let code = ''
+  let message = body
+  try {
+    const err = (JSON.parse(body) as { error?: { code?: unknown; type?: unknown; message?: unknown } }).error
+    code = `${typeof err?.code === 'string' ? err.code : ''} ${typeof err?.type === 'string' ? err.type : ''}`
+    message = typeof err?.message === 'string' ? err.message : body
+  } catch {
+    // non-JSON body: fall back to text matching below
+  }
+  if (/insufficient_quota|billing/i.test(code)) return true
+  return /insufficient[_ ]quota|exceeded your current quota|credit balance is too low|billing (hard )?limit|purchase credits/i.test(
+    message
+  )
+}
+
+export function kindForStatus(status: number, body = ''): LlmErrorKind {
+  if (isQuotaError(status, body)) return 'quota'
   if (status === 401 || status === 403) return 'auth'
   if (status === 429) return 'rate_limit'
   if (status >= 500) return 'server'
@@ -77,7 +101,7 @@ export async function requestJson(req: JsonRequest): Promise<unknown> {
   if (!res.ok) {
     throw new LlmProviderError(
       req.provider,
-      kindForStatus(res.status),
+      kindForStatus(res.status, text),
       `${req.provider} API error ${res.status}: ${sanitize(text, req.apiKey)}`,
       res.status
     )

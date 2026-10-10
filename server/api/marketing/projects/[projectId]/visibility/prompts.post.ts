@@ -4,7 +4,7 @@
  *   post:
  *     tags: [Marketing]
  *     summary: Create an AI visibility prompt
- *     description: Text must be 10-300 characters; at most 25 prompts can be active per product.
+ *     description: Text must be 10-300 characters; at most 25 prompts can be active and 100 exist in total per product.
  *     operationId: createVisibilityPrompt
  *     parameters:
  *       - in: path
@@ -15,14 +15,18 @@
  *       200: { description: Prompt created }
  *       400: { description: Validation failed }
  *       403: { description: Marketing is not enabled or no team access }
- *       409: { description: Duplicate prompt or active-prompt cap reached }
+ *       409: { description: Duplicate prompt or active (25) or total (100) prompt cap reached }
  */
 import { randomUUID } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { aiVisibilityPrompt } from '~/server/database/schema/marketing'
-import { assertPromptCapacity, requireVisibilityRequest } from '~/server/services/marketing/visibility/access'
+import {
+  assertPromptCapacity,
+  assertTotalPromptCapacity,
+  requireVisibilityRequest,
+} from '~/server/services/marketing/visibility/access'
 import { promptTextSchema } from '~/server/services/marketing/visibility/prompts'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -53,6 +57,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  await assertTotalPromptCapacity(site.id)
   if (active) await assertPromptCapacity(site.id)
 
   const [prompt] = await db

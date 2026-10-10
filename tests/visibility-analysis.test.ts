@@ -617,3 +617,50 @@ describe('topCitedDomains', () => {
     expect(result[1].domain).toBe('zebra.com')
   })
 })
+
+describe('buildAnalysis extraction hardening', () => {
+  const terms: MarketingTermInput[] = [
+    { id: 'b', kind: 'brand', label: 'Veerify', aliases: ['vf', 'Veerify App'] },
+    { id: 'c', kind: 'competitor', label: 'Acme', aliases: [] },
+  ]
+  const text = 'Acme is good, and Veerify too. vf is short.'
+
+  it('treats a malformed extraction as null (falls back to mention order)', () => {
+    const bad = { recommended: 'Veerify', brandSentiment: 'ecstatic' }
+    const out = buildAnalysis(text, [], terms, bad as never)
+    expect(out.brandRank).toBe(2)
+    expect(out.brandSentiment).toBeNull()
+  })
+
+  it('rejects oversized or empty names and too many entries', () => {
+    expect(
+      buildAnalysis(text, [], terms, { recommended: ['x'.repeat(101)], brandSentiment: null } as never).brandRank
+    ).toBe(2)
+    expect(
+      buildAnalysis(text, [], terms, { recommended: Array(31).fill('Veerify'), brandSentiment: 'positive' } as never)
+        .brandSentiment
+    ).toBeNull()
+  })
+
+  it('does not match tiny recommended names by substring', () => {
+    // "e" is inside "Veerify" and "Acme" but must not rank anything
+    const out = buildAnalysis(text, [], terms, { recommended: ['e', 'Veerify'], brandSentiment: null })
+    expect(out.brandRank).toBe(2)
+    expect(out.competitorsMentioned[0].rank).toBe(1) // fallback mention order, not the "e" entry
+  })
+
+  it('ignores aliases shorter than 3 chars when matching recommendations', () => {
+    const out = buildAnalysis(text, [], terms, {
+      recommended: ['Zed', 'vf', 'Other', 'Veerify App'],
+      brandSentiment: null,
+    })
+    expect(out.brandRank).toBe(4)
+  })
+
+  it('still accepts a valid extraction', () => {
+    const out = buildAnalysis(text, [], terms, { recommended: ['Veerify', 'Acme'], brandSentiment: 'positive' })
+    expect(out.brandRank).toBe(1)
+    expect(out.competitorsMentioned[0].rank).toBe(2)
+    expect(out.brandSentiment).toBe('positive')
+  })
+})

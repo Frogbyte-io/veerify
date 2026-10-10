@@ -11,6 +11,8 @@ export type LlmProviderId = 'anthropic' | 'openai'
 export interface LlmUsage {
   inputTokens: number
   outputTokens: number
+  /** Billed web search calls (answers only); optional so existing callers stay valid */
+  webSearchRequests?: number
 }
 
 export interface LlmCitation {
@@ -34,12 +36,13 @@ export interface LlmStructuredResult<T> {
   model: string
 }
 
-export type LlmErrorKind = 'auth' | 'rate_limit' | 'bad_request' | 'server' | 'network' | 'timeout'
+export type LlmErrorKind = 'auth' | 'rate_limit' | 'bad_request' | 'server' | 'network' | 'timeout' | 'quota'
 
 /**
  * Thrown by adapters for every provider failure. `kind === 'auth'` means the
  * team's key is invalid or revoked: callers mark the credential invalid and
- * pause runs for that provider.
+ * pause runs for that provider. `kind === 'quota'` means the account is out of
+ * credit/quota (not retryable, key is fine).
  */
 export class LlmProviderError extends Error {
   constructor(

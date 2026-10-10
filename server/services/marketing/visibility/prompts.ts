@@ -6,6 +6,8 @@ import type { LlmProviderId } from '~/server/services/llm/types'
 export const PROMPT_MIN_LENGTH = 10
 export const PROMPT_MAX_LENGTH = 300
 export const MAX_ACTIVE_PROMPTS = 25
+/** Active + inactive prompts per site */
+export const MAX_TOTAL_PROMPTS = 100
 export const SUGGESTION_COUNT = 8
 
 export const promptTextSchema = z

@@ -18,7 +18,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray, max, sql } from 'drizzle-orm'
+import { and, eq, inArray, lt, max, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import {
   aiVisibilityAnswer,
@@ -31,7 +31,7 @@ import {
 import { project } from '~/server/database/schema/feedback'
 import { teamMember, user } from '~/server/database/schema/auth'
 import { teamModuleSettings } from '~/server/database/schema/teams'
-import { resolveProductModules } from '~/lib/modules'
+import { DEFAULT_TEAM_MODULES, resolveProductModules } from '~/lib/modules'
 import { sendMarketingCredentialInvalidEmail } from '~/lib/email'
 import {
   getLlmProvider,
@@ -62,6 +62,26 @@ export const DEFAULT_SAMPLES_PER_PROMPT = 3
 export const CLAIM_LEASE_MS = 3 * 60 * 1000
 /** The scheduled weekly run happens when the last run is older than this */
 export const WEEKLY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
+/** Pending answers older than this are failed ("Timed out") so a run can never hang forever */
+export const ANSWER_MAX_AGE_MS = 24 * 60 * 60 * 1000
+/** Finished runs kept per site; older ones (and their answers) are deleted */
+export const RUN_RETENTION = 12
+
+/** Postgres unique_violation, possibly wrapped by the driver/ORM */
+function isUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } } | null
+  return e?.code === '23505' || e?.cause?.code === '23505'
+}
+
+/** Whether estimated month-to-date spend for a provider has reached the key's budget. */
+export function budgetExhausted(
+  usage: Record<string, number>,
+  provider: string,
+  monthlyBudgetCents: number | null
+): boolean {
+  if (monthlyBudgetCents == null) return false
+  return (usage[`llm:${provider}:cost_usd_micros`] ?? 0) >= monthlyBudgetCents * 10_000
+}
 
 export const LLM_PROVIDER_IDS: LlmProviderId[] = LLM_PROVIDERS.map((p) => p.id)
 
@@ -157,22 +177,29 @@ export async function createRun(input: CreateRunInput) {
     )
   )
 
-  const run = await db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(aiVisibilityRun)
-      .values({
-        id: runId,
-        siteId: site.id,
-        trigger: input.trigger,
-        status: 'queued',
-        samplesPerPrompt: samples,
-        providers,
-        createdAt: now,
-      })
-      .returning()
-    await tx.insert(aiVisibilityAnswer).values(answers)
-    return created
-  })
+  let run
+  try {
+    run = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(aiVisibilityRun)
+        .values({
+          id: runId,
+          siteId: site.id,
+          trigger: input.trigger,
+          status: 'queued',
+          samplesPerPrompt: samples,
+          providers,
+          createdAt: now,
+        })
+        .returning()
+      await tx.insert(aiVisibilityAnswer).values(answers)
+      return created
+    })
+  } catch (err) {
+    // The partial unique index on (site_id) WHERE status IN ('queued','running') closes the check-then-insert race
+    if (isUniqueViolation(err)) throw runError('already_running')
+    throw err
+  }
 
   return { run, answerCount: answers.length }
 }
@@ -194,6 +221,8 @@ export interface AnswerContext {
   promptText: string
   terms: MarketingTermInput[]
   brandLabel: string | null
+  /** Set when the run may no longer call providers (module off, site unverified) */
+  blockedReason?: string | null
 }
 
 export interface SavedAnswer {
@@ -215,13 +244,16 @@ export interface RunnerDeps {
   getKey: (teamId: string, provider: LlmProviderId) => Promise<TeamApiKey | null>
   getUsage: (teamId: string) => Promise<Record<string, number>>
   recordUsage: (teamId: string, metric: string, units: number) => Promise<void>
-  markInvalid: (teamId: string, provider: LlmProviderId, message: string) => Promise<boolean>
-  markValid: (teamId: string, provider: LlmProviderId) => Promise<void>
+  markInvalid: (teamId: string, provider: LlmProviderId, message: string, keyHint?: string) => Promise<boolean>
+  markValid: (teamId: string, provider: LlmProviderId, keyHint?: string) => Promise<void>
   notifyInvalid: (teamId: string, provider: LlmProviderId) => Promise<void>
   failAnswer: (answerId: string, error: string) => Promise<void>
   failPendingForProvider: (runId: string, provider: LlmProviderId, error: string) => Promise<void>
-  saveAnswer: (answerId: string, data: SavedAnswer) => Promise<void>
+  /** Resolves false when the row was no longer pending (already handled elsewhere) */
+  saveAnswer: (answerId: string, data: SavedAnswer) => Promise<boolean>
   finalizeRuns: (runIds: string[]) => Promise<void>
+  /** Fails answers pending longer than ANSWER_MAX_AGE_MS and finalizes every queued/running run with nothing pending */
+  sweepStuckRuns?: () => Promise<void>
   getProvider: (id: LlmProviderId) => LlmProvider
 }
 
@@ -249,6 +281,12 @@ export async function advanceVisibilityRuns(
   const invalidated = new Set<LlmProviderId>()
   const touchedRuns = new Set<string>()
   const result: AdvanceResult = { claimed: 0, done: 0, failed: 0 }
+
+  try {
+    await deps.sweepStuckRuns?.()
+  } catch (err) {
+    logger.error('Visibility sweep failed', { error: err instanceof Error ? err.name : 'unknown' })
+  }
 
   try {
     while (deps.now() < deadline) {
@@ -308,6 +346,11 @@ async function processAnswer(
     return 'failed'
   }
 
+  if (context.blockedReason) {
+    await failProvider(answer, deps, stopped, context.blockedReason)
+    return 'failed'
+  }
+
   const { teamId } = context
   const provider = answer.provider
 
@@ -324,24 +367,29 @@ async function processAnswer(
   // Budget check on the estimated month-to-date cost
   if (key.monthlyBudgetCents != null) {
     const usage = await deps.getUsage(teamId)
-    const spentMicros = usage[`llm:${provider}:cost_usd_micros`] ?? 0
-    if (spentMicros >= key.monthlyBudgetCents * 10_000) {
+    if (budgetExhausted(usage, provider, key.monthlyBudgetCents)) {
       await failProvider(answer, deps, stopped, 'Monthly budget reached for this provider')
       return 'failed'
     }
   }
 
   const llm = deps.getProvider(provider)
+  const answerModel = LLM_MODELS[provider].answer
+  const extractModel = LLM_MODELS[provider].extract
   let answered: LlmAnswer
   try {
-    answered = await llm.answerWithSearch({ apiKey: key.apiKey, prompt: context.promptText })
+    answered = await llm.answerWithSearch({
+      apiKey: key.apiKey,
+      prompt: context.promptText,
+      model: answerModel,
+    })
   } catch (err) {
-    return handleProviderError(err, answer, teamId, deps, stopped, invalidated)
+    return handleProviderError(err, answer, teamId, key.keyHint, deps, stopped, invalidated)
   }
 
   let totalIn = answered.usage.inputTokens
   let totalOut = answered.usage.outputTokens
-  let costMicros = estimateCostUsdMicros(provider, answered.model, answered.usage)
+  let costMicros = estimateCostUsdMicros(provider, answerModel, answered.model, answered.usage)
 
   let extraction: AnswerExtraction | null = null
   try {
@@ -351,12 +399,12 @@ async function processAnswer(
       input: answered.text,
       schema: EXTRACTION_SCHEMA,
       schemaName: 'answer_extraction',
-      model: LLM_MODELS[provider].extract,
+      model: extractModel,
     })
     extraction = extracted.data
     totalIn += extracted.usage.inputTokens
     totalOut += extracted.usage.outputTokens
-    costMicros += estimateCostUsdMicros(provider, extracted.model, extracted.usage)
+    costMicros += estimateCostUsdMicros(provider, extractModel, extracted.model, extracted.usage)
   } catch (err) {
     // The answer is still valuable: fall back to deterministic ranking
     logger.warn('Visibility extraction failed; using deterministic analysis', {
@@ -367,7 +415,7 @@ async function processAnswer(
   }
 
   const analysis = buildAnalysis(answered.text, answered.citations, context.terms, extraction)
-  await deps.saveAnswer(answer.id, {
+  const saved = await deps.saveAnswer(answer.id, {
     model: answered.model,
     answer: answered.text,
     citations: answered.citations.map((c) => ({ url: c.url, title: c.title ?? null })),
@@ -383,7 +431,10 @@ async function processAnswer(
     deps.recordUsage(teamId, 'visibility:answers', 1),
   ])
 
-  if (key.status === 'unchecked') await deps.markValid(teamId, provider)
+  // Not saved: another worker already settled this row. The spend above is real, so usage is still recorded.
+  if (saved === false) return 'released'
+
+  if (key.status === 'unchecked') await deps.markValid(teamId, provider, key.keyHint)
   return 'done'
 }
 
@@ -398,6 +449,7 @@ async function handleProviderError(
   err: unknown,
   answer: ClaimedAnswer,
   teamId: string,
+  keyHint: string | undefined,
   deps: RunnerDeps,
   stopped: Set<LlmProviderId>,
   invalidated: Set<LlmProviderId>
@@ -410,13 +462,25 @@ async function handleProviderError(
       const first = !invalidated.has(provider)
       invalidated.add(provider)
       stopped.add(provider)
-      const transitioned = first && (await deps.markInvalid(teamId, provider, 'The provider rejected the API key'))
+      const transitioned =
+        first && (await deps.markInvalid(teamId, provider, 'The provider rejected the API key', keyHint))
       await failProvider(answer, deps, stopped, 'The API key for this provider was rejected')
       if (transitioned) await deps.notifyInvalid(teamId, provider).catch(() => undefined)
       return 'failed'
     }
+    if (err.kind === 'quota') {
+      // Out of credit: retrying cannot help and the key itself is fine
+      await failProvider(
+        answer,
+        deps,
+        stopped,
+        'The provider account is out of credit or quota. Add credit with the provider and run again'
+      )
+      return 'failed'
+    }
     if (err.kind === 'rate_limit') {
-      // Leave it pending for the next tick and stop hammering this provider
+      // Leave it pending for the next tick and stop hammering this provider.
+      // Bounded by the 24h pending-answer timeout in the sweep.
       stopped.add(provider)
       await deps.release(answer.id)
       return 'released'
@@ -462,7 +526,7 @@ export async function notifyCredentialInvalid(teamId: string, provider: LlmProvi
 export function createDefaultDeps(): RunnerDeps {
   const runContext = new Map<
     string,
-    Promise<{ teamId: string; terms: MarketingTermInput[]; brandLabel: string | null }>
+    Promise<{ teamId: string; terms: MarketingTermInput[]; brandLabel: string | null; blockedReason: string | null }>
   >()
   const prompts = new Map<string, Promise<string | null>>()
 
@@ -531,12 +595,28 @@ export function createDefaultDeps(): RunnerDeps {
           answer.runId,
           (async () => {
             const [row] = await db
-              .select({ siteId: marketingSite.id, teamId: marketingSite.teamId })
+              .select({
+                siteId: marketingSite.id,
+                teamId: marketingSite.teamId,
+                verifiedAt: marketingSite.verifiedAt,
+                projectSettings: project.settings,
+                teamEnabled: teamModuleSettings.marketingEnabled,
+              })
               .from(aiVisibilityRun)
               .innerJoin(marketingSite, eq(marketingSite.id, aiVisibilityRun.siteId))
+              .innerJoin(project, eq(project.id, marketingSite.projectId))
+              .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
               .where(eq(aiVisibilityRun.id, answer.runId))
               .limit(1)
             if (!row) throw new Error('run not found')
+            const teamEnabled = row.teamEnabled ?? DEFAULT_TEAM_MODULES.marketingEnabled
+            const productEnabled = resolveProductModules(row.projectSettings).marketingEnabled
+            const blockedReason =
+              teamEnabled !== true || !productEnabled
+                ? 'Marketing is turned off for this product'
+                : !row.verifiedAt
+                  ? 'Site is no longer verified'
+                  : null
             const terms = await db.select().from(marketingTerm).where(eq(marketingTerm.siteId, row.siteId))
             const inputs: MarketingTermInput[] = terms.map((t) => ({
               id: t.id,
@@ -548,6 +628,7 @@ export function createDefaultDeps(): RunnerDeps {
               teamId: row.teamId,
               terms: inputs,
               brandLabel: inputs.find((t) => t.kind === 'brand')?.label ?? null,
+              blockedReason,
             }
           })()
         )
@@ -600,7 +681,7 @@ export function createDefaultDeps(): RunnerDeps {
     },
 
     async saveAnswer(answerId, data) {
-      await db
+      const rows = await db
         .update(aiVisibilityAnswer)
         .set({
           status: 'done',
@@ -617,17 +698,44 @@ export function createDefaultDeps(): RunnerDeps {
           error: null,
           completedAt: new Date(),
         })
-        .where(eq(aiVisibilityAnswer.id, answerId))
+        .where(and(eq(aiVisibilityAnswer.id, answerId), eq(aiVisibilityAnswer.status, 'pending')))
+        .returning({ id: aiVisibilityAnswer.id })
+      return rows.length > 0
     },
 
+    sweepStuckRuns: sweepStuckVisibilityRuns,
     finalizeRuns: finalizeVisibilityRuns,
     getProvider: getLlmProvider,
   }
 }
 
 /**
+ * Fails answers pending past ANSWER_MAX_AGE_MS, then finalizes EVERY queued or
+ * running run (not just ones touched this tick) so a run whose answers were all
+ * settled elsewhere, or that never had any, cannot stay stuck.
+ */
+export async function sweepStuckVisibilityRuns(now: Date = new Date()): Promise<void> {
+  await db
+    .update(aiVisibilityAnswer)
+    .set({ status: 'failed', error: 'Timed out', completedAt: now })
+    .where(
+      and(
+        eq(aiVisibilityAnswer.status, 'pending'),
+        lt(aiVisibilityAnswer.createdAt, new Date(now.getTime() - ANSWER_MAX_AGE_MS))
+      )
+    )
+  const active = await db
+    .select({ id: aiVisibilityRun.id })
+    .from(aiVisibilityRun)
+    .where(inArray(aiVisibilityRun.status, ['queued', 'running']))
+  await finalizeVisibilityRuns(active.map((r) => r.id))
+}
+
+/**
  * Completes runs that have no pending answers left: `done` when every answer
- * succeeded, `failed` when none did, `partial` otherwise.
+ * succeeded, `failed` when none did (or the run has no answers at all, with an
+ * explanatory error), `partial` otherwise. Afterwards keeps only the
+ * RUN_RETENTION most recent finished runs per affected site.
  */
 export async function finalizeVisibilityRuns(runIds: string[]): Promise<void> {
   if (runIds.length === 0) return
@@ -642,13 +750,55 @@ export async function finalizeVisibilityRuns(runIds: string[]): Promise<void> {
     .where(inArray(aiVisibilityAnswer.runId, runIds))
     .groupBy(aiVisibilityAnswer.runId)
 
+  const active = inArray(aiVisibilityRun.status, ['queued', 'running'])
+  const finished: string[] = []
+
   for (const row of rows) {
     if (row.pending > 0) continue
     const status = row.failed === 0 ? 'done' : row.done === 0 ? 'failed' : 'partial'
     await db
       .update(aiVisibilityRun)
       .set({ status, finishedAt: new Date() })
-      .where(and(eq(aiVisibilityRun.id, row.runId), inArray(aiVisibilityRun.status, ['queued', 'running'])))
+      .where(and(eq(aiVisibilityRun.id, row.runId), active))
+    finished.push(row.runId)
+  }
+
+  // Runs with no answer rows at all would otherwise stay queued forever
+  const withAnswers = new Set(rows.map((r) => r.runId))
+  const empty = runIds.filter((id) => !withAnswers.has(id))
+  if (empty.length > 0) {
+    await db
+      .update(aiVisibilityRun)
+      .set({ status: 'failed', error: 'The run has no answers to process', finishedAt: new Date() })
+      .where(and(inArray(aiVisibilityRun.id, empty), active))
+    finished.push(...empty)
+  }
+
+  if (finished.length > 0) await pruneFinishedRuns(finished)
+}
+
+/** Keeps the RUN_RETENTION newest finished runs per site; answers cascade. */
+async function pruneFinishedRuns(runIds: string[]): Promise<void> {
+  try {
+    const sites = await db
+      .selectDistinct({ siteId: aiVisibilityRun.siteId })
+      .from(aiVisibilityRun)
+      .where(inArray(aiVisibilityRun.id, runIds))
+    for (const { siteId } of sites) {
+      await db.execute(sql`
+        DELETE FROM ai_visibility_run
+        WHERE site_id = ${siteId}
+          AND status IN ('done', 'partial', 'failed')
+          AND id NOT IN (
+            SELECT id FROM ai_visibility_run
+            WHERE site_id = ${siteId} AND status IN ('done', 'partial', 'failed')
+            ORDER BY created_at DESC, id DESC
+            LIMIT ${RUN_RETENTION}
+          )
+      `)
+    }
+  } catch (err) {
+    logger.warn('Visibility run retention failed', { error: err instanceof Error ? err.name : 'unknown' })
   }
 }
 

@@ -1466,7 +1466,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Create an AI visibility prompt",
-      "description": "Text must be 10-300 characters; at most 25 prompts can be active per product.",
+      "description": "Text must be 10-300 characters; at most 25 prompts can be active and 100 exist in total per product.",
       "operationId": "createVisibilityPrompt",
       "parameters": [
         {
@@ -1489,7 +1489,7 @@ export const openapiPaths = {
           "description": "Marketing is not enabled or no team access"
         },
         "409": {
-          "description": "Duplicate prompt or active-prompt cap reached"
+          "description": "Duplicate prompt or active (25) or total (100) prompt cap reached"
         }
       }
     }
@@ -1600,10 +1600,10 @@ export const openapiPaths = {
           "description": "Marketing is not enabled or no team access"
         },
         "409": {
-          "description": "No usable LLM key"
+          "description": "No usable LLM key or monthly budget reached or provider out of credit"
         },
         "429": {
-          "description": "Provider rate limit"
+          "description": "Rate limit (10 per hour per site) or provider rate limit"
         },
         "502": {
           "description": "Provider error"
