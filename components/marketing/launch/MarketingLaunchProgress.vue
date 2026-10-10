@@ -16,7 +16,7 @@
     >
       <div class="bg-emerald-500 transition-all" :style="{ width: `${share('live')}%` }" />
       <div class="bg-sky-500 transition-all" :style="{ width: `${share('submitted')}%` }" />
-      <div class="bg-amber-500 transition-all" :style="{ width: `${share('in_progress')}%` }" />
+      <div class="bg-muted-foreground/40 transition-all" :style="{ width: `${share('skipped')}%` }" />
     </div>
     <ul class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
       <li v-for="status in statuses" :key="status.value" :data-testid="`launch-count-${status.value}`">

@@ -6,10 +6,14 @@
           <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing</h1>
           <p class="text-muted-foreground mt-1">Get your product found by search engines, AI assistants and people</p>
         </div>
-        <MarketingProductPicker @change="onProductChange" />
+        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
       </div>
 
-      <template v-if="pickerReady">
+      <p v-if="pickerError" class="text-sm text-muted-foreground" data-testid="marketing-picker-error">
+        Products could not be loaded. Use Retry above to try again.
+      </p>
+
+      <template v-else-if="pickerReady">
         <Card v-if="!product">
           <CardContent class="py-10 text-center">
             <p class="font-medium mb-1">No products yet</p>
@@ -69,9 +73,18 @@
                     </p>
                     <p v-if="!step.done" class="text-xs text-muted-foreground">{{ step.hint }}</p>
                   </div>
-                  <Button v-if="!step.done" as-child size="sm" variant="outline">
-                    <NuxtLink :to="settingsLink">{{ step.action }}</NuxtLink>
-                  </Button>
+                  <template v-if="!step.done">
+                    <span
+                      v-if="step.adminOnly && canManageSite === false"
+                      class="text-xs text-muted-foreground"
+                      :data-testid="`setup-${step.key}-admin-note`"
+                    >
+                      Ask a team admin
+                    </span>
+                    <Button v-else as-child size="sm" variant="outline">
+                      <NuxtLink :to="settingsLink">{{ step.action }}</NuxtLink>
+                    </Button>
+                  </template>
                 </li>
               </ul>
             </CardContent>
@@ -142,9 +155,9 @@
                 </CardTitle>
               </CardHeader>
               <CardContent class="space-y-3">
-                <p class="text-3xl font-bold">{{ overview.newMentions }}</p>
+                <p class="text-3xl font-bold">{{ overview.newMentions ?? 0 }}</p>
                 <p class="text-xs text-muted-foreground">
-                  new {{ overview.newMentions === 1 ? 'mention' : 'mentions' }}
+                  new {{ overview?.newMentions === 1 ? 'mention' : 'mentions' }}
                 </p>
                 <Button as-child variant="outline" size="sm">
                   <NuxtLink :to="withProduct('/marketing/mentions')">Open mentions</NuxtLink>
@@ -293,11 +306,11 @@
                 </CardTitle>
               </CardHeader>
               <CardContent class="space-y-3">
-                <template v-if="overview.competitors?.watching">
-                  <p class="text-2xl font-semibold">{{ overview.competitors.unseenChanges }}</p>
+                <template v-if="overview.competitors?.watching || overview.competitors?.unseenChanges">
+                  <p class="text-2xl font-semibold">{{ overview.competitors.unseenChanges ?? 0 }}</p>
                   <p class="text-xs text-muted-foreground">
                     unseen {{ overview.competitors.unseenChanges === 1 ? 'change' : 'changes' }} across
-                    {{ overview.competitors.watching }} watched
+                    {{ overview.competitors.watching ?? 0 }} watched
                     {{ overview.competitors.watching === 1 ? 'page' : 'pages' }}
                   </p>
                 </template>
@@ -306,7 +319,11 @@
                 </p>
                 <Button as-child variant="outline" size="sm">
                   <NuxtLink :to="withProduct('/marketing/competitors')">
-                    {{ overview.competitors?.watching ? 'Review changes' : 'Watch a competitor' }}
+                    {{
+                      overview.competitors?.watching || overview.competitors?.unseenChanges
+                        ? 'Review changes'
+                        : 'Watch a competitor'
+                    }}
                   </NuxtLink>
                 </Button>
               </CardContent>
@@ -379,6 +396,8 @@ export default {
       isLoading: false,
       error: null,
       disabledMessage: null,
+      pickerError: false,
+      canManageSite: null,
     }
   },
 
@@ -392,6 +411,7 @@ export default {
           title: 'Add your site',
           hint: 'Tell Marketing which website to look at.',
           action: 'Add site',
+          adminOnly: true,
           done: setup.siteAdded,
         },
         {
@@ -399,6 +419,7 @@ export default {
           title: 'Verify you own it',
           hint: 'Add a DNS record, a meta tag or a file. Nothing runs before this.',
           action: 'Verify',
+          adminOnly: true,
           done: setup.siteVerified,
         },
         {
@@ -500,9 +521,27 @@ export default {
       return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     },
 
+    onPickerError() {
+      this.product = null
+      this.overview = null
+      this.pickerError = true
+      this.pickerReady = true
+    },
+
+    async loadCanManage(productId) {
+      try {
+        const response = await $fetch(`/api/marketing/projects/${productId}/site`)
+        if (this.product?.id === productId) this.canManageSite = response?.data?.canManage ?? null
+      } catch {
+        // Unknown: keep the action buttons rather than hide them wrongly
+      }
+    },
+
     async onProductChange(product) {
       this.pickerReady = true
+      this.pickerError = false
       this.product = product
+      this.canManageSite = null
       this.overview = null
       this.disabledMessage = null
       this.error = null
@@ -515,6 +554,7 @@ export default {
       this.isLoading = true
       this.error = null
       this.disabledMessage = null
+      this.loadCanManage(productId)
       try {
         const response = await $fetch(`/api/marketing/projects/${productId}/overview`)
         if (this.product?.id !== productId) return

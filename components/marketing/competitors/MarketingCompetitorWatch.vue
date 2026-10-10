@@ -66,8 +66,8 @@
                 :data-testid="`competitor-toggle-${watch.id}`"
                 @click="toggle(watch)"
               >
-                <Icon :name="watch.status === 'paused' ? 'lucide:play' : 'lucide:pause'" class="mr-1.5 h-3.5 w-3.5" />
-                {{ watch.status === 'paused' || watch.status === 'error' ? 'Resume' : 'Pause' }}
+                <Icon :name="isResume(watch) ? 'lucide:play' : 'lucide:pause'" class="mr-1.5 h-3.5 w-3.5" />
+                {{ isResume(watch) ? 'Resume' : 'Pause' }}
               </Button>
               <Button
                 variant="ghost"
@@ -220,7 +220,7 @@ export default {
     },
 
     async toggle(watch) {
-      const status = watch.status === 'paused' || watch.status === 'error' ? 'active' : 'paused'
+      const status = this.isResume(watch) ? 'active' : 'paused'
       await this.run(
         watch,
         'toggle',
@@ -232,7 +232,12 @@ export default {
       )
     },
 
+    isResume(watch) {
+      return watch.status === 'paused' || watch.status === 'error'
+    },
+
     async remove(watch) {
+      if (!window.confirm(`Delete the watched page ${watch.url}? Its change history is removed too.`)) return
       await this.run(
         watch,
         'delete',

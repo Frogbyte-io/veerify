@@ -171,6 +171,7 @@ export default {
       this.entries = []
       this.nextCursor = null
       this.loadMoreError = null
+      this.loadingMore = false
       this.highlightId = null
       this.targetMissing = false
       if (product) await this.load()
@@ -188,6 +189,7 @@ export default {
       this.error = null
       this.marketingOff = false
       this.targetMissing = false
+      this.loadingMore = false
       try {
         const data = await this.fetchPage(productId)
         if (this.product?.id !== productId) return
@@ -243,7 +245,10 @@ export default {
           return
         }
         if (!this.nextCursor) break
+        const before = this.nextCursor
         await this.loadMore()
+        // loadMore no-ops while another page is in flight; stop rather than spin
+        if (this.nextCursor === before && !this.loadMoreError) break
         // A failed page shows its own retry; the entry may still be further down
         if (this.loadMoreError) return
       }

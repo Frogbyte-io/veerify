@@ -65,8 +65,10 @@
 
     <div class="mt-auto space-y-2 border-t border-border pt-3">
       <form v-if="editing" class="space-y-2" @submit.prevent="save">
-        <div v-if="!item.custom" class="space-y-1">
-          <Label :for="`launch-url-${item.id}`" class="text-xs">Your listing URL (https)</Label>
+        <div class="space-y-1">
+          <Label :for="`launch-url-${item.id}`" class="text-xs">
+            {{ item.custom ? 'Directory link (https)' : 'Your listing URL (https)' }}
+          </Label>
           <Input
             :id="`launch-url-${item.id}`"
             v-model="urlDraft"
@@ -188,7 +190,7 @@ export default {
 
   methods: {
     startEdit() {
-      this.urlDraft = this.item.custom ? '' : this.item.url || ''
+      this.urlDraft = (this.item.custom ? this.item.siteUrl : this.item.url) || ''
       this.notesDraft = this.item.notes || ''
       this.error = null
       this.editing = true
@@ -205,8 +207,12 @@ export default {
     },
 
     async save() {
-      const body = { status: this.item.status, notes: this.notesDraft.trim() || null }
-      if (!this.item.custom) body.url = this.urlDraft.trim() || null
+      // Custom items store their directory link in `url`, catalog items their own listing
+      const body = {
+        status: this.item.status,
+        notes: this.notesDraft.trim() || null,
+        url: this.urlDraft.trim() || null,
+      }
       if (await this.put(body)) this.editing = false
     },
 
@@ -232,6 +238,10 @@ export default {
     },
 
     async remove() {
+      const message = this.item.custom
+        ? `Remove ${this.item.name} from your launch kit?`
+        : `Reset ${this.item.name}? Its status, listing URL and notes are cleared.`
+      if (!window.confirm(message)) return
       const projectId = this.projectId
       this.saving = true
       this.error = null

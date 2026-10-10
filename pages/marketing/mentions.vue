@@ -129,7 +129,7 @@
 
         <!-- New mentions arrived (realtime) -->
         <div
-          v-if="newArrivals > 0"
+          v-if="newArrivals > 0 && status === 'new'"
           class="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm"
           role="status"
           data-testid="mentions-new-banner"
@@ -253,6 +253,7 @@ export default {
       canEscalate: false,
       newArrivals: 0,
       unsubscribeMentions: null,
+      unregisterReconnectHook: null,
       items: [],
       counts: { new: 0, seen: 0, dismissed: 0, escalated: 0 },
       nextCursor: null,
@@ -306,8 +307,16 @@ export default {
     },
   },
 
+  mounted() {
+    if (import.meta.client && this.$realtime?.onReconnect) {
+      this.unregisterReconnectHook = this.$realtime.onReconnect(this.handleRealtimeReconnect)
+    }
+  },
+
   beforeUnmount() {
     this.stopListening()
+    if (this.unregisterReconnectHook) this.unregisterReconnectHook()
+    this.unregisterReconnectHook = null
   },
 
   methods: {
@@ -331,6 +340,12 @@ export default {
           console.warn(`Could not subscribe to mention updates: ${reason}`)
         },
       })
+    },
+
+    // Events published during a reconnect gap are lost, so prompt a refetch.
+    handleRealtimeReconnect() {
+      if (!this.product) return
+      this.newArrivals = Math.max(this.newArrivals, 1)
     },
 
     async refreshNew() {
@@ -402,6 +417,7 @@ export default {
       this.error = null
       this.forbidden = false
       this.loadMoreError = null
+      if (this.status === 'new') this.newArrivals = 0
       try {
         const response = await $fetch(this.basePath, { query: this.listQuery() })
         if (token !== this.requestToken) return
@@ -438,6 +454,7 @@ export default {
         this.nextCursor = response.data.nextCursor
         this.counts = response.data.counts
       } catch (err) {
+        if (token !== this.requestToken) return
         this.loadMoreError = apiErrorMessage(err, 'Failed to load more mentions')
       } finally {
         this.isLoadingMore = false

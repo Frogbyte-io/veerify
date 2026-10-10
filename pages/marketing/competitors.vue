@@ -80,7 +80,7 @@
               :checked="summariesEnabled"
               :disabled="savingSetting"
               data-testid="competitor-summaries-toggle"
-              @change="setSummaries($event.target.checked)"
+              @change="setSummaries($event.target.checked, $event.target)"
             />
             <span>
               Summarise changes with AI
@@ -180,6 +180,8 @@ export default {
       this.changes = []
       this.unseenCount = 0
       this.site = null
+      this.savingSetting = false
+      this.settingError = null
       if (product) await this.load()
     },
 
@@ -243,16 +245,24 @@ export default {
       }
     },
 
-    async setSummaries(value) {
+    async setSummaries(value, input) {
+      if (!this.product) return
+      const productId = this.product.id
       this.savingSetting = true
       this.settingError = null
       try {
-        const response = await $fetch(`${this.base()}/settings`, { method: 'PATCH', body: { summarize: value } })
-        this.summariesEnabled = response.data.summariesEnabled
+        const response = await $fetch(`${this.base(productId)}/settings`, {
+          method: 'PATCH',
+          body: { summarize: value },
+        })
+        if (this.product?.id === productId) this.summariesEnabled = response.data.summariesEnabled
       } catch (err) {
+        if (this.product?.id !== productId) return
+        // Revert the native checkbox to the persisted state
+        if (input) input.checked = this.summariesEnabled
         this.settingError = apiErrorMessage(err, 'Could not save the setting')
       } finally {
-        this.savingSetting = false
+        if (this.product?.id === productId) this.savingSetting = false
       }
     },
   },
