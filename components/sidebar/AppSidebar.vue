@@ -216,6 +216,34 @@ const supportModuleItems: SidebarNavItem[] = [
   },
 ]
 
+const marketingModuleItems: SidebarNavItem[] = [
+  {
+    title: 'Overview',
+    url: '/marketing',
+    icon: 'lucide:megaphone',
+  },
+  {
+    title: 'Site audit',
+    url: '/marketing/audit',
+    icon: 'lucide:search-check',
+  },
+  {
+    title: 'AI visibility',
+    url: '/marketing/ai-visibility',
+    icon: 'lucide:sparkles',
+  },
+  {
+    title: 'Mentions',
+    url: '/marketing/mentions',
+    icon: 'lucide:at-sign',
+  },
+  {
+    title: 'Settings',
+    url: '/marketing/settings',
+    icon: 'lucide:sliders-horizontal',
+  },
+]
+
 // Per-team module enablement (delta D-31). Defaults match the table's column
 // defaults, so the sidebar renders correctly for a team that has never opened
 // the Tools tab and therefore has no row.
@@ -336,6 +364,27 @@ const visibleFeedbackItems = computed(() =>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem v-for="item in supportModuleItems" :key="item.title">
+                <SidebarMenuButton
+                  as-child
+                  :tooltip="item.title"
+                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                >
+                  <NuxtLink :to="item.url" prefetch-on="interaction">
+                    <Icon :name="item.icon" class="!size-5 shrink-0" />
+                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
+                  </NuxtLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <!-- Marketing Section — off by default; enabled per team in Settings → Tools -->
+        <SidebarGroup v-if="teamModules.marketingEnabled">
+          <SidebarGroupLabel>Marketing</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem v-for="item in marketingModuleItems" :key="item.url">
                 <SidebarMenuButton
                   as-child
                   :tooltip="item.title"
