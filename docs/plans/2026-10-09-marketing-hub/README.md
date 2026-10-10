@@ -30,14 +30,26 @@ opportunities, and growth features built on feedback, changelog and support data
     testimonial moderation, changelog publish hook, public pages). Search Console and the
     LLM-backed features have not been run against real Google and LLM accounts.
 
+- **M6 is implemented** (October 10, 2026), stacked on the M5 PR:
+  - Perplexity (Agent API, which replaced Sonar chat completions on 2026-09-27) and Google Gemini as
+    bring-your-own-key providers
+  - escalating a mention into a support conversation (a private note, nothing is emailed), plus a live
+    banner for new mentions
+  - a launch kit with 27 checked directories
+  - competitor change tracking: daily at most, robots.txt honoured on every redirect hop, competitor
+    domain required, 3 pages per competitor and 15 per site
+  - migration `0048`
+    It was verified with unit tests, a build, and a live smoke test (one real page fetched from
+    iana.org, change detection, escalation, launch kit). Perplexity and Gemini have not been called
+    with real keys.
+
 ## Known gaps
 
-- Mentions can't yet be escalated into a support conversation (the `escalated` status exists, no action).
-- No realtime push for new mentions; the page and the daily digest are the only surfaces.
 - Review-request emails are at-least-once: a worker that dies after sending but before recording the
   result can cause one duplicate after the 10-minute sweeper.
 - Review requests only go to verified user emails and CSAT contacts; anonymous feedback authors and
   unlinked subscribers are never asked.
+- Veerify-provided LLM keys on the cloud are not built (they need billing first).
 - Budget caps are estimates (tokens × list price + web-search fees) and can overshoot by the answers
   already in flight.
 - Token-verified sites (dns/meta/file) are re-checked monthly without a schema change: a failed

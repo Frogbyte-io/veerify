@@ -282,7 +282,10 @@ async function loadCompetitors(siteId: string | null) {
     .from(competitorWatch)
     .where(and(eq(competitorWatch.siteId, siteId), eq(competitorWatch.status, 'active')))
   const [unseen] = await db
-    .select({ total: count(), latest: sql<Date | null>`max(${competitorChange.detectedAt})` })
+    .select({
+      total: count(),
+      latest: sql<Date | null>`max(${competitorChange.detectedAt})`.mapWith(competitorChange.detectedAt),
+    })
     .from(competitorChange)
     .where(and(eq(competitorChange.siteId, siteId), sql`${competitorChange.seenAt} is null`))
   return {
