@@ -768,6 +768,186 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/language/apply": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add suggested terms and prompts from a language insight",
+      "description": "Uses the same validation and caps as the terms and prompts endpoints (50 terms; 25 active and 100 total prompts). Duplicates and items over a cap are skipped and reported.\n",
+      "operationId": "applyCustomerLanguageSuggestions",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "terms": {
+                  "type": "array",
+                  "maxItems": 15,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "label"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "keyword",
+                          "competitor"
+                        ]
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "prompts": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "What was added and what was skipped",
+          "with reasons": null
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "No marketing site is set up"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/language/history": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Recent customer language runs (metadata only)",
+      "operationId": "listCustomerLanguageHistory",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The 10 most recent runs without phrases"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "No marketing site is set up"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/language/latest": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Latest customer language insight, consent and run availability",
+      "operationId": "getLatestCustomerLanguage",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "insight (or null)",
+          "consent summary": null,
+          "canRun and a reason when not": null
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "No marketing site is set up"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/language/runs": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Analyze customer language for a product",
+      "description": "Team admin only. Sends PII-stripped feedback and/or support text from the last 90 days (at most 300 items) to the team's own AI provider key, but only for sources the team has consented to. At most 5 runs per product per day.\n",
+      "operationId": "runCustomerLanguage",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The stored insight"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is not enabled": null
+        },
+        "409": {
+          "description": "No consent",
+          "fewer than 10 items": null,
+          "no usable key": null,
+          "budget reached or provider rejected": null
+        },
+        "429": {
+          "description": "Daily limit or provider rate limit"
+        },
+        "502": {
+          "description": "Provider error"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/mentions": {
     "get": {
       "tags": [
@@ -2027,6 +2207,87 @@ export const openapiPaths = {
         },
         "503": {
           "description": "Key encryption is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/marketing/teams/{teamId}/data-consent": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Whether feedback and support text may be sent to the team's AI provider",
+      "description": "Both sources are off until a team admin turns them on.",
+      "operationId": "getMarketingDataConsent",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Consent flags",
+          "who consented and when": null,
+          "and canManage": null
+        },
+        "403": {
+          "description": "Not a member of this team"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set which text sources may be sent to the team's AI provider",
+      "description": "Team admin only. Records who changed it and when. Turning a source off takes effect immediately; every run re-reads consent.\n",
+      "operationId": "setMarketingDataConsent",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "allowFeedbackText",
+                "allowSupportText"
+              ],
+              "properties": {
+                "allowFeedbackText": {
+                  "type": "boolean"
+                },
+                "allowSupportText": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated consent"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Team admin required"
         }
       }
     }
