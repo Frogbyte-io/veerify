@@ -64,6 +64,40 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/marketing-mentions-digest": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Email the daily marketing mentions digest",
+      "operationId": "cronMarketingMentionsDigest",
+      "responses": {
+        "200": {
+          "description": "Mentions digest executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
+  "/api/cron/marketing-mentions-poll": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Poll social sources for marketing mentions",
+      "operationId": "cronMarketingMentionsPoll",
+      "responses": {
+        "200": {
+          "description": "Mentions poll executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/support-attachment-cleanup": {
     "get": {
       "tags": [
@@ -538,6 +572,253 @@ export const openapiPaths = {
               }
             }
           }
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List mentions for a product",
+      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured.\n",
+      "operationId": "listMarketingMentions",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "new",
+              "seen",
+              "dismissed",
+              "escalated"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "kind",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "mention",
+              "competitor",
+              "opportunity"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "source",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "hackernews",
+              "reddit",
+              "bluesky"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Mentions page"
+        },
+        "400": {
+          "description": "Invalid query or cursor"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions/{mentionId}": {
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Change the triage status of a mention",
+      "operationId": "updateMarketingMention",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "mentionId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "seen",
+                    "dismissed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Mention updated"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Mention not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions/bulk": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Change the triage status of several mentions",
+      "description": "Ids that do not belong to the product's site are ignored.",
+      "operationId": "bulkUpdateMarketingMentions",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "ids",
+                "status"
+              ],
+              "properties": {
+                "ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "seen",
+                    "dismissed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Number of mentions updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions/sources": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Status of each mention source for a product",
+      "description": "Whether each source is configured on this install, when it was last polled and its last error.",
+      "operationId": "listMarketingMentionSources",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Source status list"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
         }
       }
     }
