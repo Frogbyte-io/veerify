@@ -823,6 +823,598 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/overview": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Marketing overview for a product",
+      "description": "Setup checklist state, integration status, this month's usage and the latest audit, AI visibility run and new mention count.\n",
+      "operationId": "getMarketingOverview",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Overview"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off for the team or product": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/site": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get the marketing site and its verification instructions",
+      "description": "Requires Marketing to be enabled for the team and the product. Returns `site: null` until a site is added. `canManage` is true for team admins.\n",
+      "operationId": "getMarketingSite",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Site",
+          "verification instructions and whether the caller can manage it": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add or change the marketing site origin",
+      "description": "Team admins only. Changing the origin resets verification and issues a new token. A site covered by one of the product's verified custom domains is verified immediately (method `domain`).\n",
+      "operationId": "putMarketingSite",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "origin"
+              ],
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "example": "example.com"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Site saved"
+        },
+        "400": {
+          "description": "Invalid site address"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/site/verify": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Check site ownership with a DNS record, meta tag or file",
+      "description": "Team admins only. Rate limited to 10 checks per hour per site.",
+      "operationId": "verifyMarketingSite",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "method"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "dns",
+                    "meta",
+                    "file"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated site; `site.verified` tells whether the check passed"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "No site added yet"
+        },
+        "429": {
+          "description": "Too many verification attempts"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/terms": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List brand, competitor and keyword terms of the product's site",
+      "operationId": "listMarketingTerms",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Terms and whether the caller can manage them"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "No site added yet"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add a brand, competitor or keyword term",
+      "description": "Any team member with Marketing access. At most 50 terms per site and 10 aliases per term. `competitorDomain` is only allowed on competitors.\n",
+      "operationId": "createMarketingTerm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "kind",
+                "label"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "brand",
+                    "competitor",
+                    "keyword"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 80
+                },
+                "aliases": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "competitorDomain": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Term created"
+        },
+        "400": {
+          "description": "Validation failed or the 50 term limit is reached"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "No site added yet"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/terms/{termId}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete a term",
+      "operationId": "deleteMarketingTerm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "termId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Term deleted"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Term or site not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Update a term's name, aliases or competitor domain",
+      "operationId": "updateMarketingTerm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "termId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "label"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 80
+                },
+                "aliases": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "competitorDomain": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Term updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Term or site not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/teams/{teamId}/credentials": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List the team's marketing API keys",
+      "description": "Any team member can list. Only key hints and validation status are returned, never the keys. `secretsConfigured` is false when the server has no SECRETS_ENCRYPTION_KEY and keys cannot be stored.\n",
+      "operationId": "listMarketingCredentials",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Credentials",
+          "canManage and secretsConfigured": null
+        },
+        "403": {
+          "description": "Not a member of this team"
+        }
+      }
+    }
+  },
+  "/api/marketing/teams/{teamId}/credentials/{provider}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Remove a team API key",
+      "description": "Team admins only.",
+      "operationId": "deleteMarketingCredential",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "firecrawl",
+              "pagespeed"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Key removed"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "404": {
+          "description": "No key stored for this provider"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set or clear the monthly budget of an LLM key",
+      "description": "Team admins only. Applies to anthropic and openai keys. Null removes the cap.",
+      "operationId": "patchMarketingCredential",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai"
+            ]
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "monthlyBudgetCents"
+              ],
+              "properties": {
+                "monthlyBudgetCents": {
+                  "type": "integer",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Budget updated"
+        },
+        "400": {
+          "description": "Not an LLM provider or invalid budget"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "404": {
+          "description": "No key stored for this provider"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add or replace a team API key",
+      "description": "Team admins only. The key is checked against the provider before it is stored. A rejected key (authentication failure) returns 400 and is not saved. Network or provider outages save the key as `unchecked`. The key is encrypted at rest and never returned. Returns 503 when the server has no SECRETS_ENCRYPTION_KEY.\n",
+      "operationId": "putMarketingCredential",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "firecrawl",
+              "pagespeed"
+            ]
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "apiKey"
+              ],
+              "properties": {
+                "apiKey": {
+                  "type": "string"
+                },
+                "monthlyBudgetCents": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "LLM providers only"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Credential saved (hint and status only)"
+        },
+        "400": {
+          "description": "Invalid input or the provider rejected the key"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "503": {
+          "description": "Key encryption is not configured on this server"
+        }
+      }
+    }
+  },
   "/api/orgs": {
     "post": {
       "tags": [
