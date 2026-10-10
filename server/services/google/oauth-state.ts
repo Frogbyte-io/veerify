@@ -52,8 +52,11 @@ export function verifyOAuthState(state: string): OAuthStatePayload {
   const parts = state.split('.')
   if (parts.length !== 2 || !parts[0] || !parts[1]) throw new OAuthStateError('malformed')
   const [data, sig] = parts
-  const given = Buffer.from(sig, 'base64url')
-  const expected = mac(data)
+  // Compare the canonical base64url text, not decoded bytes: the last
+  // character of a 32-byte MAC carries two padding bits, so several spellings
+  // decode to the same bytes and would otherwise all be accepted.
+  const given = Buffer.from(sig, 'utf8')
+  const expected = Buffer.from(mac(data).toString('base64url'), 'utf8')
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) {
     throw new OAuthStateError('bad_signature')
   }

@@ -261,3 +261,18 @@ describe('error mapping', () => {
     }
   })
 })
+
+describe('oauth state signature encoding', () => {
+  it('rejects a non-canonical spelling of a valid signature', async () => {
+    const { signOAuthState, verifyOAuthState } = await import('~/server/services/google/oauth-state')
+    process.env.BETTER_AUTH_SECRET = process.env.BETTER_AUTH_SECRET || 'test-secret-for-oauth-state-0123456789'
+    const state = signOAuthState({ siteId: 's', userId: 'u', projectId: 'p' })
+    const [data, sig] = state.split('.')
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+    const last = alphabet.indexOf(sig[sig.length - 1])
+    // Same 4 significant bits, different padding bits: decodes to the same bytes.
+    const twin = alphabet[(last & 0b111100) | ((last + 1) & 0b11)]
+    expect(() => verifyOAuthState(`${data}.${sig.slice(0, -1)}${twin}`)).toThrow()
+    expect(verifyOAuthState(state)).toMatchObject({ siteId: 's' })
+  })
+})

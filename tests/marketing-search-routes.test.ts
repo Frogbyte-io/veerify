@@ -286,7 +286,10 @@ describe('GET google/callback', () => {
   it('rejects a bad or tampered state', async () => {
     state.query = { code: 'c', state: 'garbage' }
     expect((await run(callback)).redirect).toBe('/marketing/search?error=invalid_state')
-    state.query = { code: 'c', state: goodState().replace(/.$/, (c) => (c === 'A' ? 'B' : 'A')) }
+    // Flip a character inside the signature that carries real bits (the last
+    // base64url character is partly padding).
+    const [data, sig] = goodState().split('.')
+    state.query = { code: 'c', state: `${data}.${sig[0] === 'A' ? 'B' : 'A'}${sig.slice(1)}` }
     expect((await run(callback)).redirect).toBe('/marketing/search?error=invalid_state')
     expect(state.insertValues).toBeNull()
   })
