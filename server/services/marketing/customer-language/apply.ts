@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { aiVisibilityPrompt, marketingTerm } from '~/server/database/schema/marketing'
 import { MAX_ACTIVE_PROMPTS, MAX_TOTAL_PROMPTS, promptTextSchema } from '~/server/services/marketing/visibility/prompts'
@@ -84,48 +84,57 @@ export function planLanguageApply(input: ApplyInput, existing: ApplyExisting): A
 }
 
 export async function applyLanguageSuggestions(siteId: string, input: ApplyInput) {
-  const [terms, prompts] = await Promise.all([
-    db.select({ label: marketingTerm.label }).from(marketingTerm).where(eq(marketingTerm.siteId, siteId)),
-    db
+  // Same advisory locks as the terms and prompts endpoints, taken in a fixed
+  // order (terms, then prompts), so a concurrent manual add can't push the
+  // site past a cap between our count and our insert.
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`marketing_terms:${siteId}`}, 0))`)
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`marketing_prompts:${siteId}`}, 0))`)
+
+    const terms = await tx
+      .select({ label: marketingTerm.label })
+      .from(marketingTerm)
+      .where(eq(marketingTerm.siteId, siteId))
+    const prompts = await tx
       .select({ text: aiVisibilityPrompt.text, active: aiVisibilityPrompt.active })
       .from(aiVisibilityPrompt)
-      .where(eq(aiVisibilityPrompt.siteId, siteId)),
-  ])
+      .where(eq(aiVisibilityPrompt.siteId, siteId))
 
-  const plan = planLanguageApply(input, {
-    termLabels: terms.map((t) => t.label),
-    promptTexts: prompts.map((p) => p.text),
-    activePromptCount: prompts.filter((p) => p.active).length,
+    const plan = planLanguageApply(input, {
+      termLabels: terms.map((t) => t.label),
+      promptTexts: prompts.map((p) => p.text),
+      activePromptCount: prompts.filter((p) => p.active).length,
+    })
+
+    const now = new Date()
+    if (plan.termsToAdd.length > 0) {
+      await tx.insert(marketingTerm).values(
+        plan.termsToAdd.map((t) => ({
+          id: randomUUID(),
+          siteId,
+          kind: t.kind,
+          label: t.label,
+          aliases: [],
+          competitorDomain: null,
+          createdAt: now,
+        }))
+      )
+    }
+    if (plan.promptsToAdd.length > 0) {
+      await tx.insert(aiVisibilityPrompt).values(
+        plan.promptsToAdd.map((text) => ({
+          id: randomUUID(),
+          siteId,
+          text,
+          active: true,
+          source: 'suggested' as const,
+        }))
+      )
+    }
+
+    return {
+      terms: { added: plan.termsToAdd.map((t) => t.label), skipped: plan.skippedTerms },
+      prompts: { added: plan.promptsToAdd, skipped: plan.skippedPrompts },
+    }
   })
-
-  const now = new Date()
-  if (plan.termsToAdd.length > 0) {
-    await db.insert(marketingTerm).values(
-      plan.termsToAdd.map((t) => ({
-        id: randomUUID(),
-        siteId,
-        kind: t.kind,
-        label: t.label,
-        aliases: [],
-        competitorDomain: null,
-        createdAt: now,
-      }))
-    )
-  }
-  if (plan.promptsToAdd.length > 0) {
-    await db.insert(aiVisibilityPrompt).values(
-      plan.promptsToAdd.map((text) => ({
-        id: randomUUID(),
-        siteId,
-        text,
-        active: true,
-        source: 'suggested' as const,
-      }))
-    )
-  }
-
-  return {
-    terms: { added: plan.termsToAdd.map((t) => t.label), skipped: plan.skippedTerms },
-    prompts: { added: plan.promptsToAdd, skipped: plan.skippedPrompts },
-  }
 }
