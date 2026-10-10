@@ -98,6 +98,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/marketing-review-requests": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Send queued review and testimonial request emails",
+      "operationId": "cronMarketingReviewRequests",
+      "responses": {
+        "200": {
+          "description": "Review requests processed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/support-attachment-cleanup": {
     "get": {
       "tags": [
@@ -1047,6 +1064,253 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/reviews/requests": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List review and testimonial requests",
+      "description": "Cursor-paginated log, newest first, with status, trigger and whether the customer clicked.",
+      "operationId": "listMarketingReviewRequests",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Requests page"
+        },
+        "400": {
+          "description": "Invalid query or cursor"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Send review requests manually",
+      "description": "Team admins only. Queues a request for up to 20 email addresses. The same guards as automatic requests apply (enabled, suppression list, cooldown). Each address gets a result; skipped addresses are not queued.\n",
+      "operationId": "createMarketingReviewRequests",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "emails"
+              ],
+              "properties": {
+                "emails": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Per-address results"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team admin",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/reviews/settings": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get review and testimonial request settings",
+      "description": "Returns the product's settings (defaults when never saved: disabled) and the product's feedback statuses, for the \"shipped\" trigger picker.\n",
+      "operationId": "getMarketingReviewSettings",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Settings and available statuses"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Save review and testimonial request settings",
+      "description": "Team admins only. Replaces the whole settings object. At most 6 platforms, https URLs only, labels up to 40 characters. Shipped status values must exist in the product's feedback statuses.\n",
+      "operationId": "updateMarketingReviewSettings",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "enabled",
+                "platforms",
+                "askForTestimonial",
+                "csatTrigger",
+                "csatMinRating",
+                "shippedTrigger",
+                "shippedStatusValues",
+                "cooldownDays"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "platforms": {
+                  "type": "array",
+                  "maxItems": 6,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "label",
+                      "url"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      }
+                    }
+                  }
+                },
+                "askForTestimonial": {
+                  "type": "boolean"
+                },
+                "csatTrigger": {
+                  "type": "boolean"
+                },
+                "csatMinRating": {
+                  "type": "integer",
+                  "nullable": true
+                },
+                "shippedTrigger": {
+                  "type": "boolean"
+                },
+                "shippedStatusValues": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cooldownDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 730
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Settings saved"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team admin",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/site": {
     "get": {
       "tags": [
@@ -1397,6 +1661,156 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Term or site not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/testimonials": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List testimonials for moderation",
+      "description": "Newest first, with counts by status. Includes whether the author consented to public display.",
+      "operationId": "listMarketingTestimonials",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Testimonials and counts"
+        },
+        "400": {
+          "description": "Invalid query"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/testimonials/{id}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete a testimonial",
+      "operationId": "deleteMarketingTestimonial",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Testimonial deleted"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Testimonial not found for this product"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Moderate a testimonial",
+      "description": "Change the status and/or the featured flag. Only testimonials the author consented to publish can be featured. A testimonial without public consent can be approved for private use but never appears on the public wall.\n",
+      "operationId": "updateMarketingTestimonial",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "rejected"
+                  ]
+                },
+                "featured": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Testimonial updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Testimonial not found for this product"
         }
       }
     }
@@ -1821,6 +2235,209 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Run not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/r/{token}": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Look up a review request link",
+      "description": "Public, token-gated. Returns the product name, the recipient's first name and whether a testimonial was already submitted. No other personal data.\n",
+      "operationId": "getPublicReviewRequest",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Request summary"
+        },
+        "404": {
+          "description": "Link not found"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
+  "/api/marketing/r/{token}/go": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Tracked redirect to a review platform",
+      "description": "Records the click and redirects (302) to the platform URL configured for the product. The target is always looked up from the product's saved settings by platform id; it is never taken from the request, so this is not an open redirect.\n",
+      "operationId": "redirectPublicReviewPlatform",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "p",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "302": {
+          "description": "Redirect to the review platform"
+        },
+        "404": {
+          "description": "Unknown link or platform"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
+  "/api/marketing/r/{token}/testimonial": {
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Submit a testimonial",
+      "description": "Public, token-gated and rate limited per IP and token. One testimonial per token. The testimonial starts as pending; it is only shown on the public wall once a team member approves it AND the author ticked the public consent box.\n",
+      "operationId": "submitPublicTestimonial",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "authorName",
+                "quote",
+                "consentPublic"
+              ],
+              "properties": {
+                "authorName": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "authorTitle": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "authorCompany": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 20,
+                  "maxLength": 1000
+                },
+                "rating": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                },
+                "consentPublic": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Testimonial received"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "404": {
+          "description": "Link not found"
+        },
+        "409": {
+          "description": "A testimonial was already submitted with this link"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
+  "/api/marketing/r/{token}/unsubscribe": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Unsubscribe confirmation page",
+      "description": "Shows an HTML confirmation page with a button that POSTs to this URL. Nothing is changed by GET, so mail scanners that prefetch links cannot unsubscribe anyone.\n",
+      "operationId": "getPublicReviewUnsubscribePage",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Confirmation page (text/html)"
+        },
+        "404": {
+          "description": "Link not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Unsubscribe from review requests",
+      "description": "Writes a per-team marketing email suppression for the address. Also the RFC 8058 one-click target (`List-Unsubscribe-Post`). Responds with an HTML page.\n",
+      "operationId": "submitPublicReviewUnsubscribe",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Unsubscribed (text/html)"
+        },
+        "404": {
+          "description": "Link not found"
         }
       }
     }
@@ -2284,6 +2901,45 @@ export const openapiPaths = {
         },
         "409": {
           "description": "Rating already submitted or comment window closed"
+        }
+      }
+    }
+  },
+  "/api/public/t/{teamSlug}/{projectSlug}/testimonials": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Public testimonial wall",
+      "description": "Approved testimonials whose author consented to public display, featured first. Only name, title, company, quote, rating and date are returned.\n",
+      "operationId": "listPublicTestimonials",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Testimonials"
+        },
+        "403": {
+          "description": "Product is not public"
+        },
+        "404": {
+          "description": "Team or product not found"
         }
       }
     }
