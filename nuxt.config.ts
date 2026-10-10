@@ -45,11 +45,13 @@ export default defineNuxtConfig({
         'support:automation-rules',
         'support:csat-dispatch',
         'support:sla-breach',
+        'marketing:review-requests',
       ],
       // Marketing Hub (docs/plans/2026-10-09-marketing-hub)
       '*/15 * * * *': ['example:ping', 'marketing:mentions-poll'],
       '0 * * * *': ['marketing:visibility-schedule'],
       '5 * * * *': ['marketing:audit-schedule'],
+      '20 * * * *': ['marketing:search-sync'],
       '0 8 * * *': ['marketing:mentions-digest'],
     },
   },
