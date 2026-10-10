@@ -11,6 +11,7 @@ import {
   getNewCommentNotificationTemplate,
   marketingMentionsDigestTemplate,
   marketingCredentialInvalidTemplate,
+  marketingReviewRequestTemplate,
 } from './email-templates'
 import type { Readable } from 'node:stream'
 import { createConsola } from 'consola'
@@ -368,4 +369,31 @@ interface MarketingCredentialInvalidEmailOptions {
 export async function sendMarketingCredentialInvalidEmail(options: MarketingCredentialInvalidEmailOptions) {
   const template = marketingCredentialInvalidTemplate(options)
   return sendEmail({ to: options.to, subject: template.subject, html: template.html, text: template.text })
+}
+
+interface MarketingReviewRequestEmailOptions {
+  to: string
+  productName: string
+  name?: string | null
+  trigger: 'csat' | 'shipped' | 'manual'
+  feedbackTitle?: string | null
+  platforms: Array<{ label: string; url: string }>
+  testimonialUrl: string | null
+  unsubscribeUrl: string
+}
+
+/** Sends the review/testimonial request with RFC 8058 one-click unsubscribe headers. */
+export async function sendMarketingReviewRequestEmail(options: MarketingReviewRequestEmailOptions) {
+  const { to, ...templateOptions } = options
+  const template = marketingReviewRequestTemplate(templateOptions)
+  return sendEmail({
+    to,
+    subject: template.subject,
+    html: template.html,
+    text: template.text,
+    headers: {
+      'List-Unsubscribe': `<${options.unsubscribeUrl}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
+  })
 }
