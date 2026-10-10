@@ -542,6 +542,430 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/visibility/llms-txt": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Draft llms.txt for the product",
+      "description": "Template-based draft (llmstxt.org format) from the product name and description, the site origin, public board and roadmap URLs, and the top crawled pages from the latest finished site audit. No LLM is involved.\n",
+      "operationId": "getLlmsTxtDraft",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Draft content"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project or marketing site not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/prompts": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List AI visibility prompts for a product",
+      "operationId": "listVisibilityPrompts",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Prompts with the active-prompt cap"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project or marketing site not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Create an AI visibility prompt",
+      "description": "Text must be 10-300 characters; at most 25 prompts can be active per product.",
+      "operationId": "createVisibilityPrompt",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Prompt created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "409": {
+          "description": "Duplicate prompt or active-prompt cap reached"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/prompts/{promptId}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete an AI visibility prompt and its stored answers",
+      "operationId": "deleteVisibilityPrompt",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "promptId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Prompt deleted"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Prompt not found for this product"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Update an AI visibility prompt (text and/or active flag)",
+      "operationId": "updateVisibilityPrompt",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "promptId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Prompt updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Prompt not found for this product"
+        },
+        "409": {
+          "description": "Active-prompt cap reached"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/prompts/suggest": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Suggest AI visibility prompts (not saved)",
+      "description": "Uses the team's own LLM key (Anthropic first, else OpenAI). Only the product name, description and feedback category names are sent to the provider.\n",
+      "operationId": "suggestVisibilityPrompts",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Up to 8 suggested prompts"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "409": {
+          "description": "No usable LLM key"
+        },
+        "429": {
+          "description": "Provider rate limit"
+        },
+        "502": {
+          "description": "Provider error"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/runs": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List the 20 most recent AI visibility runs with progress counts",
+      "operationId": "listVisibilityRuns",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Recent runs"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project or marketing site not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Start an AI visibility run",
+      "description": "Requires a verified site, a brand term, an active prompt and a usable LLM key. One queued or running run per site; at most 3 manual runs per site per day.\n",
+      "operationId": "createVisibilityRun",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Run created"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "409": {
+          "description": "Setup incomplete or a run is already in progress"
+        },
+        "429": {
+          "description": "Daily manual run limit reached"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/runs/{runId}": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get one AI visibility run with progress counts",
+      "operationId": "getVisibilityRun",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Run and progress"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Run not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/runs/{runId}/answers": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List sampled answers of a run (optionally for one prompt)",
+      "operationId": "listVisibilityAnswers",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "promptId",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Answers with citations and analysis"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Run or prompt not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/setup": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Setup checklist for AI visibility",
+      "description": "Whether the site is verified, brand terms and prompts exist, and which LLM providers have a usable key.",
+      "operationId": "getVisibilitySetup",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Setup state"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/summary": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "AI visibility results for a run (latest finished run by default)",
+      "description": "Mention rate overall, per provider and per prompt x provider, average rank, share of voice, top cited domains and the mention-rate trend over the last 12 finished runs. Results come from provider APIs with web search and approximate, not replicate, the consumer apps.\n",
+      "operationId": "getVisibilitySummary",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "runId",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Summary; `run` is null when no run has finished yet"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Run not found for this product"
+        }
+      }
+    }
+  },
   "/api/orgs": {
     "post": {
       "tags": [
