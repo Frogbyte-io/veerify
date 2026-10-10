@@ -31,9 +31,16 @@ describe('module registry', () => {
         roadmapEnabled: true,
         changelogEnabled: false,
         supportEnabled: true,
+        marketingEnabled: true,
         updatedAt: new Date(),
       })
-    ).toEqual({ feedbackEnabled: false, roadmapEnabled: true, changelogEnabled: false, supportEnabled: true })
+    ).toEqual({
+      feedbackEnabled: false,
+      roadmapEnabled: true,
+      changelogEnabled: false,
+      supportEnabled: true,
+      marketingEnabled: true,
+    })
   })
 
   it('applies product defaults when project settings leave a module unset', () => {
@@ -41,11 +48,13 @@ describe('module registry', () => {
       feedbackEnabled: true,
       roadmapEnabled: false,
       changelogEnabled: false,
+      marketingEnabled: false,
     })
     expect(resolveProductModules({ feedbackEnabled: false, roadmapEnabled: true, theme: 'dark' })).toEqual({
       feedbackEnabled: false,
       roadmapEnabled: true,
       changelogEnabled: false,
+      marketingEnabled: false,
     })
   })
 })

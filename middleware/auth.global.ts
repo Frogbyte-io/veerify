@@ -29,6 +29,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
       '/submissions',
       '/get-started',
       '/support',
+      '/marketing',
     ]
     const isAppRoute = (route: string) => to.path === route || to.path.startsWith(`${route}/`)
     if (appRoutes.some(isAppRoute)) {
@@ -48,6 +49,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     '/onboarding',
     '/submissions',
     '/support',
+    '/marketing',
   ]
 
   // Auth routes that should redirect to dashboard if user is already logged in

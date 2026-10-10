@@ -24,7 +24,7 @@ export interface ProductToggle {
 }
 
 export interface VeerifyModule {
-  key: 'feedbackEnabled' | 'roadmapEnabled' | 'changelogEnabled' | 'supportEnabled'
+  key: 'feedbackEnabled' | 'roadmapEnabled' | 'changelogEnabled' | 'supportEnabled' | 'marketingEnabled'
   label: string
   icon: string
   /** Description in the team Tools tab */
@@ -86,6 +86,19 @@ export const MODULES: readonly VeerifyModule[] = [
     icon: 'lucide:inbox',
     description: 'Shared inbox for customer conversations and contacts',
     teamDefault: false,
+  },
+  {
+    key: 'marketingEnabled',
+    label: 'Marketing',
+    icon: 'lucide:megaphone',
+    description: 'Site audit, AI visibility and mentions for your products',
+    teamDefault: false,
+    product: {
+      label: 'Marketing',
+      description: 'Audit your site, track how AI assistants recommend you, and monitor mentions',
+      dataLabel: 'marketing data',
+      default: false,
+    },
   },
 ]
 

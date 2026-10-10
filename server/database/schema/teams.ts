@@ -29,6 +29,7 @@ export const teamModuleSettings = pgTable('team_module_settings', {
   roadmapEnabled: boolean('roadmap_enabled').default(false).notNull(),
   changelogEnabled: boolean('changelog_enabled').default(false).notNull(),
   supportEnabled: boolean('support_enabled').default(false).notNull(),
+  marketingEnabled: boolean('marketing_enabled').default(false).notNull(),
   createdAt: timestamp('created_at')
     .$defaultFn(() => new Date())
     .notNull(),
