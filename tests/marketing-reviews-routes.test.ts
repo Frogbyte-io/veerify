@@ -18,6 +18,8 @@ const state = vi.hoisted(() => ({
   access: 'ok' as 'ok' | 'forbidden',
   admin: 'ok' as 'ok' | 'forbidden',
   rateLimitKeys: [] as string[],
+  rateLimitConfigs: [] as Array<Record<string, unknown>>,
+  teamAdmin: true,
   enqueue: [] as unknown[],
   marketingOn: true,
 }))
@@ -55,6 +57,7 @@ vi.mock('~/server/utils/marketing-access', () => ({
 vi.mock('~/server/utils/rate-limit', () => ({
   rateLimits: { strict: { maxRequests: 5, windowSeconds: 60 }, relaxed: { maxRequests: 100, windowSeconds: 60 } },
   requireRateLimit: vi.fn(async (_e: unknown, config: { identifier?: string }) => {
+    state.rateLimitConfigs.push(config)
     state.rateLimitKeys.push(config.identifier ?? '')
   }),
 }))
@@ -67,10 +70,19 @@ vi.mock('~/server/utils/public-modules', () => ({
   isModuleEnabledForProject: vi.fn(async () => state.marketingOn),
 }))
 
+vi.mock('~/server/utils/support-access', () => ({
+  requireTeamAdmin: vi.fn(async () => {
+    if (!state.teamAdmin) throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
+    return { role: 'admin' }
+  }),
+}))
+
 vi.mock('~/server/services/marketing/reviews/service', () => ({
-  enqueueReviewRequest: vi.fn(async (input: { email: string }) => {
+  enqueueManualReviewRequests: vi.fn(async (input: { projectId: string; emails: string[] }) => {
     state.enqueue.push(input)
-    return input.email.startsWith('skip') ? { queued: false, reason: 'cooldown' } : { queued: true }
+    return input.emails.map((email) =>
+      email.startsWith('skip') ? { email, queued: false, reason: 'cooldown' } : { email, queued: true }
+    )
   }),
 }))
 
@@ -158,8 +170,32 @@ const requestRow = (overrides: Record<string, unknown> = {}) => ({
   email: 'Jane@Example.com',
   name: 'Jane Doe',
   clickedAt: null,
+  status: 'sent',
+  sentAt: new Date(),
+  createdAt: new Date(),
   projectName: 'Acme',
+  projectSettings: { marketingEnabled: true },
+  teamMarketingEnabled: true,
   platforms: [{ id: 'g2', label: 'G2', url: 'https://www.g2.com/products/acme/reviews' }],
+  askForTestimonial: true,
+  requestsEnabled: true,
+  ...overrides,
+})
+
+const DAY = 86_400_000
+const daysAgo = (days: number) => new Date(Date.now() - days * DAY)
+
+/** The row the testimonial POST selects (request + product + settings), sent and fresh by default. */
+const submitRow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'rr-1',
+  projectId: 'p1',
+  email: 'jane@example.com',
+  status: 'sent',
+  sentAt: daysAgo(1),
+  createdAt: daysAgo(1),
+  projectSettings: { marketingEnabled: true },
+  teamMarketingEnabled: true,
+  requestsEnabled: true,
   askForTestimonial: true,
   ...overrides,
 })
@@ -182,6 +218,8 @@ beforeEach(() => {
   state.marketingOn = true
   state.admin = 'ok'
   state.rateLimitKeys = []
+  state.rateLimitConfigs = []
+  state.teamAdmin = true
   state.enqueue = []
 })
 
@@ -189,7 +227,7 @@ describe('GET /api/marketing/r/[token]', () => {
   it('returns product name, first name and submitted flag only', async () => {
     state.selectQueue = [[requestRow()], []]
     const response = (await publicInfo({} as never)) as { data: Record<string, unknown> }
-    expect(response.data).toEqual({ productName: 'Acme', firstName: 'Jane', alreadySubmitted: false })
+    expect(response.data).toEqual({ productName: 'Acme', firstName: 'Jane', alreadySubmitted: false, canSubmit: true })
     expect(JSON.stringify(response)).not.toContain('example.com')
   })
 
@@ -289,7 +327,7 @@ describe('POST /api/marketing/r/[token]/testimonial', () => {
 
   it('stores a pending testimonial, keeping consent as submitted and the email private', async () => {
     state.body = valid
-    state.selectQueue = [[{ id: 'rr-1', projectId: 'p1', email: 'jane@example.com' }], []]
+    state.selectQueue = [[submitRow()], []]
     await submitHandler({} as never)
     expect(state.inserts).toHaveLength(1)
     expect(state.inserts[0].values).toMatchObject({
@@ -304,14 +342,14 @@ describe('POST /api/marketing/r/[token]/testimonial', () => {
 
   it('rate limits per token (the limiter adds the client ip)', async () => {
     state.body = valid
-    state.selectQueue = [[{ id: 'rr-1', projectId: 'p1', email: 'a@b.co' }], []]
+    state.selectQueue = [[submitRow({ email: 'a@b.co' })], []]
     await submitHandler({} as never)
     expect(state.rateLimitKeys[0]).toBe(`public-testimonial:${TOKEN}`)
   })
 
   it('allows only one testimonial per token', async () => {
     state.body = valid
-    state.selectQueue = [[{ id: 'rr-1', projectId: 'p1', email: 'a@b.co' }], [{ id: 'existing' }]]
+    state.selectQueue = [[submitRow({ email: 'a@b.co' })], [{ id: 'existing' }]]
     await expect(submitHandler({} as never)).rejects.toMatchObject({ statusCode: 409 })
     expect(state.inserts).toHaveLength(0)
   })
@@ -340,7 +378,7 @@ describe('POST /api/marketing/r/[token]/testimonial', () => {
 
   it('treats rating, title and company as optional', async () => {
     state.body = { authorName: 'J', quote: valid.quote, consentPublic: true }
-    state.selectQueue = [[{ id: 'rr-1', projectId: 'p1', email: 'a@b.co' }], []]
+    state.selectQueue = [[submitRow({ email: 'a@b.co' })], []]
     await submitHandler({} as never)
     expect(state.inserts[0].values).toMatchObject({ rating: null, authorTitle: null, authorCompany: null })
   })
@@ -514,8 +552,8 @@ describe('PUT reviews settings', () => {
 })
 
 describe('POST manual review requests', () => {
-  it('queues each unique address through the shared guards and reports skips', async () => {
-    state.body = { emails: ['a@x.io', 'A@x.io', 'skip@x.io'] }
+  it('passes the addresses to the manual queue and reports per-address results', async () => {
+    state.body = { emails: ['a@x.io', 'skip@x.io'] }
     const response = (await requestsPost({} as never)) as {
       data: { queued: number; results: Array<{ email: string; queued: boolean; reason?: string }> }
     }
@@ -524,7 +562,28 @@ describe('POST manual review requests', () => {
       { email: 'a@x.io', queued: true },
       { email: 'skip@x.io', queued: false, reason: 'cooldown' },
     ])
-    expect(state.enqueue[0]).toMatchObject({ projectId: 'p1', trigger: 'manual', sourceId: null })
+    expect(state.enqueue[0]).toMatchObject({ projectId: 'p1', emails: ['a@x.io', 'skip@x.io'] })
+  })
+
+  it('leaves malformed addresses to the per-address results instead of failing the batch', async () => {
+    state.body = { emails: ['a@x.io', 'nope'] }
+    const response = (await requestsPost({} as never)) as { data: { results: unknown[] } }
+    expect(response.data.results).toHaveLength(2)
+    expect(state.enqueue).toHaveLength(1)
+  })
+
+  it('rate limits to 10 calls per hour per product', async () => {
+    state.body = { emails: ['a@x.io'] }
+    await requestsPost({} as never)
+    expect(state.rateLimitConfigs[0]).toMatchObject({ maxRequests: 10, windowSeconds: 3600, subject: 'p1' })
+  })
+
+  it('is rejected with 429 when the limiter refuses', async () => {
+    const { requireRateLimit } = await import('~/server/utils/rate-limit')
+    vi.mocked(requireRateLimit).mockRejectedValueOnce(Object.assign(new Error('Too Many'), { statusCode: 429 }))
+    state.body = { emails: ['a@x.io'] }
+    await expect(requestsPost({} as never)).rejects.toMatchObject({ statusCode: 429 })
+    expect(state.enqueue).toHaveLength(0)
   })
 
   it('accepts at most 20 addresses', async () => {
@@ -533,14 +592,136 @@ describe('POST manual review requests', () => {
     expect(state.enqueue).toHaveLength(0)
   })
 
-  it('rejects empty and malformed lists, and non-admins', async () => {
+  it('rejects empty lists and non-admins', async () => {
     state.body = { emails: [] }
-    await expect(requestsPost({} as never)).rejects.toMatchObject({ statusCode: 400 })
-    state.body = { emails: ['nope'] }
     await expect(requestsPost({} as never)).rejects.toMatchObject({ statusCode: 400 })
     state.body = { emails: ['a@x.io'] }
     state.admin = 'forbidden'
     await expect(requestsPost({} as never)).rejects.toMatchObject({ statusCode: 403 })
     expect(state.enqueue).toHaveLength(0)
+  })
+})
+
+describe('testimonial POST guards', () => {
+  const valid = {
+    authorName: 'Jane Doe',
+    quote: 'This product changed the way our team works every day.',
+    consentPublic: false,
+  }
+
+  beforeEach(() => {
+    state.body = valid
+  })
+
+  it.each([
+    ['queued', { status: 'queued' }],
+    ['skipped', { status: 'skipped' }],
+    ['failed', { status: 'failed' }],
+    ['sending', { status: 'sending' }],
+    ['requests disabled', { requestsEnabled: false }],
+    ['no settings row', { requestsEnabled: null, askForTestimonial: null }],
+    ['testimonial ask off', { askForTestimonial: false }],
+    ['team marketing off', { teamMarketingEnabled: false }],
+    ['product marketing off', { projectSettings: { marketingEnabled: false } }],
+  ])('404s for a request that is %s', async (_label, patch) => {
+    state.selectQueue = [[submitRow(patch)], []]
+    await expect(submitHandler({} as never)).rejects.toMatchObject({ statusCode: 404 })
+    expect(state.inserts).toHaveLength(0)
+  })
+
+  it('accepts a token that is 59 days old', async () => {
+    state.selectQueue = [[submitRow({ sentAt: daysAgo(59) })], []]
+    await submitHandler({} as never)
+    expect(state.inserts).toHaveLength(1)
+  })
+
+  it('rejects a token older than 60 days with 410', async () => {
+    state.selectQueue = [[submitRow({ sentAt: daysAgo(61), createdAt: daysAgo(61) })], []]
+    await expect(submitHandler({} as never)).rejects.toMatchObject({ statusCode: 410 })
+    expect(state.inserts).toHaveLength(0)
+  })
+
+  it('measures the age from when it was sent', async () => {
+    state.selectQueue = [[submitRow({ sentAt: daysAgo(2), createdAt: daysAgo(90) })], []]
+    await submitHandler({} as never)
+    expect(state.inserts).toHaveLength(1)
+  })
+})
+
+describe('GET /api/marketing/r/[token] canSubmit', () => {
+  const canSubmit = async () => ((await publicInfo({} as never)) as { data: { canSubmit: boolean } }).data.canSubmit
+
+  it('is true for a fresh sent request', async () => {
+    state.selectQueue = [[requestRow()], []]
+    expect(await canSubmit()).toBe(true)
+  })
+
+  it.each([
+    ['expired', { sentAt: daysAgo(61), createdAt: daysAgo(61) }],
+    ['not sent', { status: 'queued' }],
+    ['testimonials off', { askForTestimonial: false }],
+  ])('is false when %s', async (_label, patch) => {
+    state.selectQueue = [[requestRow(patch)], []]
+    expect(await canSubmit()).toBe(false)
+  })
+})
+
+describe('GET go link expiry', () => {
+  it('still redirects an expired link but does not record the click', async () => {
+    state.query = { p: 'g2' }
+    state.selectQueue = [[requestRow({ sentAt: daysAgo(61), createdAt: daysAgo(61) })]]
+    await goHandler({} as never)
+    expect(state.redirect).toEqual({ url: 'https://www.g2.com/products/acme/reviews', code: 302 })
+    expect(state.updates).toHaveLength(0)
+  })
+
+  it('records the click on a link inside the window', async () => {
+    state.query = { p: 'g2' }
+    state.selectQueue = [[requestRow({ sentAt: daysAgo(59) })]]
+    await goHandler({} as never)
+    expect(state.updates).toHaveLength(1)
+  })
+})
+
+describe('unsubscribe stays available for old links', () => {
+  it('writes the suppression for an expired request', async () => {
+    state.selectQueue = [[requestRow({ sentAt: daysAgo(400), createdAt: daysAgo(400), status: 'failed' })]]
+    await unsubPost({} as never)
+    expect(state.inserts).toHaveLength(1)
+  })
+})
+
+describe('GET reviews settings canManage', () => {
+  const settingsGet = async () =>
+    (await import('~/server/api/marketing/projects/[projectId]/reviews/settings.get')).default
+
+  it('is true for a team admin', async () => {
+    state.selectQueue = [[], []]
+    const handler = await settingsGet()
+    const response = (await handler({} as never)) as { data: { canManage: boolean; settings: { enabled: boolean } } }
+    expect(response.data.canManage).toBe(true)
+    expect(response.data.settings.enabled).toBe(false)
+  })
+
+  it('is false for a member who is not an admin, who can still read the settings', async () => {
+    state.teamAdmin = false
+    state.selectQueue = [[], []]
+    const handler = await settingsGet()
+    const response = (await handler({} as never)) as { data: { canManage: boolean } }
+    expect(response.data.canManage).toBe(false)
+  })
+
+  it('still requires marketing access', async () => {
+    state.access = 'forbidden'
+    const handler = await settingsGet()
+    await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403 })
+  })
+})
+
+describe('GET testimonials list', () => {
+  it('returns the team slug for the public wall link', async () => {
+    state.selectQueue = [[], [], [{ slug: 'acme' }]]
+    const response = (await testimonialsGet({} as never)) as { data: { teamSlug: string | null } }
+    expect(response.data.teamSlug).toBe('acme')
   })
 })

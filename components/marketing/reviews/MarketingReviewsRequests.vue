@@ -5,7 +5,13 @@
         <CardTitle>Requests</CardTitle>
         <CardDescription>Every request that was queued, newest first.</CardDescription>
       </div>
-      <Button size="sm" variant="outline" data-testid="reviews-send-manually" @click="dialogOpen = true">
+      <Button
+        v-if="canManage"
+        size="sm"
+        variant="outline"
+        data-testid="reviews-send-manually"
+        @click="dialogOpen = true"
+      >
         <Icon name="lucide:send" class="mr-2 h-4 w-4" />
         Send manually
       </Button>
@@ -56,6 +62,7 @@
     </CardContent>
 
     <MarketingReviewsSendDialog
+      v-if="canManage"
       v-model:open="dialogOpen"
       :project-id="projectId"
       @forbidden="(message) => $emit('forbidden', message)"
@@ -74,6 +81,7 @@ export default {
 
   props: {
     projectId: { type: String, required: true },
+    canManage: { type: Boolean, default: false },
   },
 
   emits: ['forbidden'],

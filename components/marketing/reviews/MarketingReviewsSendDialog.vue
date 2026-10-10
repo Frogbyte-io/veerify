@@ -20,6 +20,13 @@
         />
         <p class="text-xs text-muted-foreground">{{ parsed.length }} of {{ maxEmails }} addresses</p>
 
+        <div v-if="invalid.length > 0" class="text-sm text-destructive" role="alert" data-testid="reviews-send-invalid">
+          <p>Fix {{ invalid.length === 1 ? 'this address' : 'these addresses' }} before sending:</p>
+          <ul class="mt-1 list-disc pl-5">
+            <li v-for="email in invalid" :key="email" class="break-all">{{ email }}</li>
+          </ul>
+        </div>
+
         <p v-if="error" class="text-sm text-destructive" role="alert">{{ error }}</p>
 
         <ul v-if="results" class="space-y-1 text-sm" data-testid="reviews-send-results">
@@ -33,7 +40,10 @@
 
         <DialogFooter>
           <Button type="button" variant="ghost" :disabled="sending" @click="onOpenChange(false)">Close</Button>
-          <Button type="submit" :disabled="sending || parsed.length === 0 || parsed.length > maxEmails">
+          <Button
+            type="submit"
+            :disabled="sending || parsed.length === 0 || parsed.length > maxEmails || invalid.length > 0"
+          >
             <Icon v-if="sending" name="lucide:loader-circle" class="mr-2 h-4 w-4 animate-spin" />
             Send
           </Button>
@@ -47,6 +57,7 @@
 import { apiErrorDetails, apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 
 const MAX_EMAILS = 20
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const REASONS = {
   invalid_email: 'Invalid address',
@@ -58,6 +69,7 @@ const REASONS = {
   cooldown: 'Asked recently',
   duplicate: 'Already queued',
   unknown_project: 'Unknown product',
+  daily_limit: 'Daily limit reached',
 }
 
 export default {
@@ -83,6 +95,10 @@ export default {
       }
       return [...seen]
     },
+
+    invalid() {
+      return this.parsed.filter((email) => email.length > 254 || !EMAIL_PATTERN.test(email))
+    },
   },
 
   methods: {
@@ -100,6 +116,7 @@ export default {
     },
 
     async send() {
+      if (this.invalid.length > 0 || this.parsed.length === 0 || this.parsed.length > this.maxEmails) return
       const projectId = this.projectId
       this.sending = true
       this.error = null

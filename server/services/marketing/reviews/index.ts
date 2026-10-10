@@ -2,6 +2,7 @@ export {
   enqueueForChangelogEntry,
   enqueueForCsatResponse,
   enqueueForFeedbackStatus,
+  enqueueManualReviewRequests,
   enqueueReviewRequest,
   processReviewRequests,
 } from './service'
