@@ -38,7 +38,6 @@
  */
 import { z } from 'zod'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
-import { requireTeamAdmin } from '~/server/utils/support-access'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { createSuccessResponse } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -48,6 +47,7 @@ import {
   badRequest,
   isLlmCredentialProvider,
   requireCredentialProvider,
+  requireCredentialAdmin,
   requireSecretsConfigured,
 } from '~/server/utils/marketing-credential-routes'
 import { getLlmProvider, type LlmProviderId } from '~/server/services/llm'
@@ -85,7 +85,7 @@ export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)
   const teamId = requireRouteParam(event, 'teamId')
   const provider = requireCredentialProvider(event)
-  await requireTeamAdmin(teamId, session.user.id)
+  await requireCredentialAdmin(teamId, session.user.id)
   requireSecretsConfigured()
   const body = await validateBody(event, bodySchema)
 

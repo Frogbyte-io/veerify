@@ -12,7 +12,7 @@ export class SiteOriginError extends Error {
   }
 }
 
-/** Accepts bare domains or URLs; returns `https://host[:port]`. */
+/** Accepts bare domains or URLs; returns `https://host`. Explicit ports other than 443 are rejected. */
 export function normalizeSiteOrigin(input: string): string {
   const raw = (input || '').trim()
   if (!raw) throw new SiteOriginError('Enter your site address, for example example.com')
@@ -37,8 +37,14 @@ export function normalizeSiteOrigin(input: string): string {
   if (!parsed.domain || !parsed.isIcann) {
     throw new SiteOriginError('Use a public domain name, for example example.com')
   }
-  const port = url.port && url.port !== '443' ? `:${url.port}` : ''
-  return `https://${hostname}${port}`
+  // `new URL` drops default ports (http :80), so inspect the raw authority
+  const explicitPort = /^[a-z][a-z\d+.-]*:\/\/[^/?#@]*?(?::(\d+))?(?:[/?#]|$)/i.exec(withScheme)?.[1]
+  if ((explicitPort && explicitPort !== '443') || (url.port && url.port !== '443')) {
+    throw new SiteOriginError(
+      'Custom ports are not supported. Use your site address without a port, for example example.com'
+    )
+  }
+  return `https://${hostname}`
 }
 
 export function generateVerificationToken(): string {
@@ -101,20 +107,30 @@ export async function checkVerification(
       ? { verified: true, detail: 'Verification file found' }
       : { verified: false, detail: 'Verification file does not contain the expected token' }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'request failed'
-    return { verified: false, detail: `Could not fetch your site: ${message}` }
+    // Deliberately generic: never reflect resolver/network error text back to the caller
+    return { verified: false, detail: 'Could not reach your site over HTTPS' }
   }
 }
 
-/** True when any verified custom domain shares the origin's registrable domain. */
+/**
+ * True when the origin is proven by an active project domain: the same host, or
+ * the registrable domain (optionally with `www.`) of an active hostname.
+ * Registrable domains use the public suffix list including private suffixes, so
+ * `a.github.io` never covers `b.github.io` or `github.io`.
+ */
 export function isCoveredByVerifiedDomain(origin: string, verifiedDomains: string[]): boolean {
   let host: string
   try {
-    host = new URL(origin).hostname
+    host = new URL(origin).hostname.toLowerCase().replace(/\.$/, '')
   } catch {
     return false
   }
-  const registrable = getDomain(host)
-  if (!registrable) return false
-  return verifiedDomains.some((domain) => getDomain(domain.trim().toLowerCase()) === registrable)
+  return verifiedDomains.some((domain) => {
+    const active = domain.trim().toLowerCase().replace(/\.$/, '')
+    if (!active) return false
+    if (active === host) return true
+    const registrable = getDomain(active, { allowPrivateDomains: true })
+    if (!registrable) return false
+    return host === registrable || host === `www.${registrable}`
+  })
 }

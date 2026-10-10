@@ -71,15 +71,24 @@ describe('firecrawl provider', () => {
     expect((await firecrawlProvider.getCrawl(config, 'j')).status).toBe('failed')
   })
 
-  it('follows a same-origin cursor and rejects a foreign one', async () => {
+  it('rebases a cursor onto the configured base URL and rejects other paths', async () => {
     reply(200, { status: 'completed', data: [] })
     await firecrawlProvider.getCrawl(config, 'j', 'https://fc.example.com/v2/crawl/j?skip=10')
     expect(fetchMock.mock.calls[0][0]).toBe('https://fc.example.com/v2/crawl/j?skip=10')
 
+    reply(200, { status: 'completed', data: [] })
+    await firecrawlProvider.getCrawl(config, 'j', 'http://internal:3002/v2/crawl/j?skip=20')
+    expect(fetchMock.mock.calls[1][0]).toBe('https://fc.example.com/v2/crawl/j?skip=20')
+
     await expect(firecrawlProvider.getCrawl(config, 'j', 'https://evil.example/steal')).rejects.toMatchObject({
       kind: 'bad_request',
     })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await expect(firecrawlProvider.getCrawl(config, 'j', 'https://fc.example.com/v2/crawl/../x')).rejects.toMatchObject(
+      {
+        kind: 'bad_request',
+      }
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('cancels with DELETE', async () => {
@@ -103,6 +112,16 @@ describe('firecrawl provider', () => {
     expect(error).toBeInstanceOf(CrawlProviderError)
     expect(error).toMatchObject({ kind, status })
     expect((error as Error).message).not.toContain('fc-secret-key')
+  })
+
+  it('redacts the API key from provider error text and truncates', async () => {
+    reply(400, { error: `bad key fc-secret-key and Bearer fc-secret-key ${'x'.repeat(1000)}` })
+    const error = (await firecrawlProvider
+      .startCrawl(config, { url: 'https://acme.com', limit: 1 })
+      .catch((e: unknown) => e)) as Error
+    expect(error.message).not.toContain('fc-secret-key')
+    expect(error.message).toContain('[redacted]')
+    expect(error.message.length).toBeLessThanOrEqual(310)
   })
 
   it('maps network failures and timeouts', async () => {

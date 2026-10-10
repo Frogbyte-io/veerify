@@ -42,7 +42,11 @@ export interface MentionInsert {
 export interface SourceCursorRow {
   siteId: string
   source: MentionSource
+  /** Search-window watermark; only advances after a successful poll */
   lastPolledAt: Date
+  /** Last attempt, successful or not. Null on rows written before this column existed */
+  lastAttemptAt?: Date | null
+  consecutiveFailures?: number
 }
 
 /** Both module switches must be on (D-31); a missing team row reads as the registry default. */
@@ -58,7 +62,13 @@ export interface MentionsStore {
   loadTerms(siteIds: string[]): Promise<Map<string, MatchTerm[]>>
   loadCursors(siteIds: string[]): Promise<SourceCursorRow[]>
   insertMentions(rows: MentionInsert[]): Promise<number>
-  saveCursor(siteId: string, source: MentionSource, lastPolledAt: Date, lastError: string | null): Promise<void>
+  saveCursor(
+    siteId: string,
+    source: MentionSource,
+    lastPolledAt: Date,
+    lastError: string | null,
+    attempt: { at: Date; consecutiveFailures: number }
+  ): Promise<void>
   deleteOlderThan(cutoff: Date, batchSize: number): Promise<number>
 }
 
@@ -116,6 +126,8 @@ export const dbMentionsStore: MentionsStore = {
         siteId: mentionSourceCursor.siteId,
         source: mentionSourceCursor.source,
         lastPolledAt: mentionSourceCursor.lastPolledAt,
+        lastAttemptAt: mentionSourceCursor.lastAttemptAt,
+        consecutiveFailures: mentionSourceCursor.consecutiveFailures,
       })
       .from(mentionSourceCursor)
       .where(inArray(mentionSourceCursor.siteId, siteIds))
@@ -131,13 +143,14 @@ export const dbMentionsStore: MentionsStore = {
     return inserted.length
   },
 
-  async saveCursor(siteId, source, lastPolledAt, lastError) {
+  async saveCursor(siteId, source, lastPolledAt, lastError, attempt) {
+    const attemptFields = { lastAttemptAt: attempt.at, consecutiveFailures: attempt.consecutiveFailures }
     await db
       .insert(mentionSourceCursor)
-      .values({ siteId, source, lastPolledAt, lastError })
+      .values({ siteId, source, lastPolledAt, lastError, ...attemptFields })
       .onConflictDoUpdate({
         target: [mentionSourceCursor.siteId, mentionSourceCursor.source],
-        set: { lastPolledAt, lastError },
+        set: { lastPolledAt, lastError, ...attemptFields },
       })
   },
 

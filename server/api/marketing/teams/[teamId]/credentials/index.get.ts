@@ -19,16 +19,16 @@
  *       403: { description: Not a member of this team }
  */
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
-import { requireTeamMembership } from '~/server/utils/support-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { listTeamCredentials } from '~/server/utils/team-credentials'
 import { isSecretsConfigured } from '~/server/utils/secrets'
 import { requireRouteParam } from '~/server/utils/marketing-site'
+import { requireCredentialMember } from '~/server/utils/marketing-credential-routes'
 
 export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)
   const teamId = requireRouteParam(event, 'teamId')
-  const membership = await requireTeamMembership(teamId, session.user.id)
+  const membership = await requireCredentialMember(teamId, session.user.id)
 
   const credentials = await listTeamCredentials(teamId)
   return createSuccessResponse({

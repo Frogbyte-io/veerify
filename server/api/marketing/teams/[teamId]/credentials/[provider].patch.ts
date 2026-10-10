@@ -32,7 +32,6 @@
  */
 import { z } from 'zod'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
-import { requireTeamAdmin } from '~/server/utils/support-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
 import { updateCredentialBudget } from '~/server/utils/team-credentials'
@@ -41,6 +40,7 @@ import {
   badRequest,
   isLlmCredentialProvider,
   requireCredentialProvider,
+  requireCredentialAdmin,
 } from '~/server/utils/marketing-credential-routes'
 
 const bodySchema = z.object({
@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)
   const teamId = requireRouteParam(event, 'teamId')
   const provider = requireCredentialProvider(event)
-  await requireTeamAdmin(teamId, session.user.id)
+  await requireCredentialAdmin(teamId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   if (!isLlmCredentialProvider(provider)) {
