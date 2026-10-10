@@ -600,3 +600,35 @@ Open the mentions inbox: ${mentionsUrl}
 
   return { subject, html, text }
 }
+
+interface MarketingCredentialInvalidTemplateOptions {
+  providerLabel: string
+  settingsUrl: string
+}
+
+export function marketingCredentialInvalidTemplate({
+  providerLabel,
+  settingsUrl,
+}: MarketingCredentialInvalidTemplateOptions) {
+  const subject = `Your ${providerLabel} API key was rejected`
+  const safeProvider = escapeHtml(providerLabel)
+  const safeUrl = escapeHtml(settingsUrl)
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Your ${safeProvider} API key was rejected</h2>
+      <p style="color:#444">${safeProvider} rejected the API key your team added for Marketing. AI visibility runs that use ${safeProvider} are paused until you replace the key.</p>
+      <p><a href="${safeUrl}" style="color:#6366f1">Update the key in Marketing settings</a></p>
+      <p style="color:#999;font-size:12px">You are receiving this because you are a team admin. Powered by Veerify</p>
+    </div>
+  `
+
+  const text = `Your ${providerLabel} API key was rejected
+
+${providerLabel} rejected the API key your team added for Marketing. AI visibility runs that use ${providerLabel} are paused until you replace the key.
+
+Update the key in Marketing settings: ${settingsUrl}
+`
+
+  return { subject, html, text }
+}
