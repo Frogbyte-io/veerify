@@ -113,6 +113,7 @@
 </template>
 
 <script>
+import { apiErrorMessage } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
 
 export default {
@@ -162,7 +163,7 @@ export default {
 
   methods: {
     errorMessage(err, fallback) {
-      return err?.data?.error?.message || err?.data?.message || fallback
+      return apiErrorMessage(err, fallback)
     },
 
     async load() {

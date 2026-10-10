@@ -73,6 +73,8 @@
 </template>
 
 <script>
+import { apiErrorMessage } from '~/lib/api-error'
+
 const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'OpenAI' }
 
 export default {
@@ -124,7 +126,7 @@ export default {
         )
         this.answers = response.data.answers
       } catch (err) {
-        this.error = err?.data?.error?.message || 'Failed to load answers'
+        this.error = apiErrorMessage(err, 'Failed to load answers')
       } finally {
         this.isLoading = false
       }

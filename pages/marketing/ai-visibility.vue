@@ -8,23 +8,22 @@
             See how often AI assistants recommend your product, and which sources they rely on.
           </p>
         </div>
-        <MarketingProductPicker @change="onProductChange" />
+        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
       </div>
 
-      <div v-if="!product && pickerSettled" class="text-sm text-muted-foreground">Create a product to get started.</div>
+      <div v-if="!pickerSettled" class="space-y-4">
+        <Skeleton class="h-24 w-full" />
+        <Skeleton class="h-48 w-full" />
+      </div>
+
+      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
+        Products could not be loaded. Use Retry above to try again.
+      </div>
+
+      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a product to get started.</div>
 
       <!-- Marketing off (403) -->
-      <Card v-else-if="marketingOff" data-testid="visibility-marketing-off">
-        <CardHeader>
-          <CardTitle>Marketing is off</CardTitle>
-          <CardDescription>
-            {{ marketingOffMessage }}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button as-child variant="outline"><NuxtLink to="/settings">Open settings</NuxtLink></Button>
-        </CardContent>
-      </Card>
+      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="marketingOffMessage" />
 
       <div v-else-if="setupLoading" class="space-y-4">
         <Skeleton class="h-24 w-full" />
@@ -90,6 +89,10 @@
                 <Badge :variant="statusVariant(latestRun.status)">{{ statusLabel(latestRun.status) }}</Badge>
                 <span class="text-muted-foreground">Started {{ formatDateTime(latestRun.createdAt) }}</span>
               </div>
+              <p v-if="runActive" class="text-sm text-muted-foreground" data-testid="visibility-run-in-progress">
+                A run is in progress, started {{ formatAgo(latestRun.createdAt) }}. Run now is available again when it
+                finishes.
+              </p>
               <div v-if="runActive" data-testid="visibility-progress">
                 <div class="h-2 overflow-hidden rounded-full bg-muted">
                   <div
@@ -139,6 +142,9 @@
 </template>
 
 <script>
+import { toast } from 'vue-sonner'
+import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+
 const POLL_MS = 5000
 
 export default {
@@ -148,6 +154,7 @@ export default {
     return {
       product: null,
       pickerSettled: false,
+      pickerError: false,
       marketingOff: false,
       marketingOffMessage: '',
       setup: null,
@@ -207,82 +214,120 @@ export default {
 
   methods: {
     errorMessage(err, fallback) {
-      return err?.data?.error?.message || err?.data?.message || fallback
+      return apiErrorMessage(err, fallback)
+    },
+
+    onPickerError() {
+      this.stopPolling()
+      this.product = null
+      this.pickerError = true
+      this.pickerSettled = true
+    },
+
+    isCurrent(productId) {
+      return this.product?.id === productId
     },
 
     async onProductChange(product) {
       this.pickerSettled = true
+      this.pickerError = false
       this.stopPolling()
       this.product = product
       this.setup = null
+      this.setupError = null
+      this.setupLoading = false
       this.runs = []
+      this.runsError = null
+      this.runsLoading = false
       this.summary = null
+      this.summaryError = null
+      this.summaryLoading = false
+      this.runError = null
       this.marketingOff = false
+      this.dialogOpen = false
       if (!product) return
       await this.loadSetup()
-      if (this.setup?.hasSite) {
+      if (this.isCurrent(product.id) && this.setup?.hasSite) {
         await Promise.all([this.loadRuns(), this.loadSummary()])
       }
     },
 
     async loadSetup(quiet = false) {
       if (!this.product) return
-      if (!quiet) this.setupLoading = true
-      this.setupError = null
+      const productId = this.product.id
+      if (!quiet) {
+        this.setupLoading = true
+        this.setupError = null
+      }
       try {
         const response = await $fetch(`${this.base}/setup`)
+        if (!this.isCurrent(productId)) return
         this.setup = response.data
+        this.setupError = null
         this.marketingOff = false
       } catch (err) {
-        if (err?.statusCode === 403 || err?.status === 403) {
+        if (!this.isCurrent(productId)) return
+        if (apiErrorStatus(err) === 403) {
           this.marketingOff = true
-          this.marketingOffMessage = this.errorMessage(err, 'Marketing is not enabled for this product.')
+          this.marketingOffMessage = this.errorMessage(err, '')
+        } else if (quiet) {
+          toast.error(this.errorMessage(err, 'Failed to refresh AI visibility setup'))
         } else {
           this.setupError = this.errorMessage(err, 'Failed to load AI visibility')
         }
       } finally {
-        this.setupLoading = false
+        if (this.isCurrent(productId)) this.setupLoading = false
       }
     },
 
     async loadRuns() {
+      if (!this.product) return
+      const productId = this.product.id
       this.runsLoading = this.runs.length === 0
       this.runsError = null
       try {
         const response = await $fetch(`${this.base}/runs`)
+        if (!this.isCurrent(productId)) return
         this.runs = response.data.runs
         if (this.runActive) this.startPolling()
       } catch (err) {
+        if (!this.isCurrent(productId)) return
         this.runsError = this.errorMessage(err, 'Failed to load runs')
       } finally {
-        this.runsLoading = false
+        if (this.isCurrent(productId)) this.runsLoading = false
       }
     },
 
     async loadSummary() {
+      if (!this.product) return
+      const productId = this.product.id
       this.summaryLoading = this.summary === null
       this.summaryError = null
       try {
         const response = await $fetch(`${this.base}/summary`)
+        if (!this.isCurrent(productId)) return
         this.summary = response.data
       } catch (err) {
+        if (!this.isCurrent(productId)) return
         this.summaryError = this.errorMessage(err, 'Failed to load results')
       } finally {
-        this.summaryLoading = false
+        if (this.isCurrent(productId)) this.summaryLoading = false
       }
     },
 
     async startRun() {
+      const productId = this.product.id
       this.starting = true
       this.runError = null
       try {
         const response = await $fetch(`${this.base}/runs`, { method: 'POST' })
+        if (!this.isCurrent(productId)) return
         this.runs = [response.data.run, ...this.runs.filter((run) => run.id !== response.data.run.id)]
         this.startPolling()
       } catch (err) {
-        this.runError = this.errorMessage(err, 'Failed to start the run')
+        if (this.isCurrent(productId)) this.runError = this.errorMessage(err, 'Failed to start the run')
       } finally {
-        this.starting = false
+        if (this.isCurrent(productId)) this.starting = false
       }
     },
 
@@ -304,15 +349,22 @@ export default {
         this.stopPolling()
         return
       }
+      const productId = this.product.id
       try {
         const response = await $fetch(`${this.base}/runs/${run.id}`)
+        if (!this.isCurrent(productId)) return
         this.runs = [response.data.run, ...this.runs.slice(1)]
         if (!this.runActive) {
           this.stopPolling()
           await this.loadSummary()
         }
-      } catch {
-        // Transient failure: keep polling; the next tick retries
+      } catch (err) {
+        if (!this.isCurrent(productId)) {
+          this.stopPolling()
+          return
+        }
+        // 404 means the run is gone: stop. Other failures are transient, the next tick retries.
+        if (apiErrorStatus(err) === 404) this.stopPolling()
       }
     },
 
@@ -333,6 +385,15 @@ export default {
       if (status === 'failed') return 'destructive'
       if (status === 'done') return 'default'
       return 'secondary'
+    },
+
+    formatAgo(value) {
+      const minutes = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 60000))
+      if (minutes < 1) return 'less than a minute ago'
+      if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+      const hours = Math.round(minutes / 60)
+      if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+      return `${Math.round(hours / 24)} days ago`
     },
 
     formatDateTime(value) {

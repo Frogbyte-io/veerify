@@ -106,7 +106,7 @@
                 :aria-label="`${provider.label} API key`"
               />
               <Button type="submit" :disabled="busy === provider.id || keyDraft.trim().length < 8">
-                <Icon v-if="busy === provider.id" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                <Icon v-if="busy === provider.id" name="lucide:loader-circle" class="w-4 h-4 mr-2 animate-spin" />
                 Check and save
               </Button>
               <Button type="button" variant="ghost" :disabled="busy === provider.id" @click="cancelEdit">
@@ -138,6 +138,7 @@
 </template>
 
 <script>
+import { apiErrorMessage } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
 
 const PROVIDERS = [
@@ -248,7 +249,7 @@ export default {
           this.credentials.map((credential) => [credential.provider, this.centsToInput(credential.monthlyBudgetCents)])
         )
       } catch (err) {
-        this.error = err?.data?.error?.message || 'Failed to load API keys'
+        this.error = apiErrorMessage(err, 'Failed to load API keys')
       } finally {
         this.isLoading = false
       }
@@ -282,7 +283,7 @@ export default {
         await this.load()
         this.$emit('changed')
       } catch (err) {
-        this.rowError = { ...this.rowError, [id]: err?.data?.error?.message || 'Failed to save the key' }
+        this.rowError = { ...this.rowError, [id]: apiErrorMessage(err, 'Failed to save the key') }
       } finally {
         this.busy = null
       }
@@ -304,7 +305,7 @@ export default {
         toast.success(cents === null ? 'Budget cap removed' : 'Budget saved')
         await this.load()
       } catch (err) {
-        this.rowError = { ...this.rowError, [id]: err?.data?.error?.message || 'Failed to save the budget' }
+        this.rowError = { ...this.rowError, [id]: apiErrorMessage(err, 'Failed to save the budget') }
       } finally {
         this.busy = null
       }
@@ -319,7 +320,7 @@ export default {
         await this.load()
         this.$emit('changed')
       } catch (err) {
-        this.rowError = { ...this.rowError, [id]: err?.data?.error?.message || 'Failed to remove the key' }
+        this.rowError = { ...this.rowError, [id]: apiErrorMessage(err, 'Failed to remove the key') }
       } finally {
         this.busy = null
       }

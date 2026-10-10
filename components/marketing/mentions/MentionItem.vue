@@ -41,7 +41,7 @@
       </p>
 
       <div class="flex flex-wrap items-center gap-2 pt-1">
-        <Button as-child variant="outline" size="sm">
+        <Button v-if="safeUrl" as-child variant="outline" size="sm">
           <a :href="safeUrl" target="_blank" rel="noopener noreferrer">
             <Icon name="lucide:external-link" class="mr-1.5 h-3.5 w-3.5" />
             Open
@@ -149,9 +149,9 @@ export default {
     safeUrl() {
       try {
         const url = new URL(this.mention.url)
-        return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : '#'
+        return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
       } catch {
-        return '#'
+        return null
       }
     },
     titleSegments() {

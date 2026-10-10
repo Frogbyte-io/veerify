@@ -9,7 +9,7 @@
           </p>
         </div>
         <div class="flex items-center gap-2">
-          <MarketingProductPicker @change="onProductChange" />
+          <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
           <Button
             v-if="showContent"
             :disabled="!canRun"
@@ -28,26 +28,22 @@
       </p>
       <p v-if="startError" class="text-sm text-destructive">{{ startError }}</p>
 
-      <div v-if="!product && pickerSettled" class="text-sm text-muted-foreground">
-        Create a product first to run a site audit.
-      </div>
-
-      <div v-else-if="isLoading" class="space-y-4">
+      <div v-if="!pickerSettled" class="space-y-4">
         <Skeleton class="h-40 w-full" />
         <Skeleton class="h-64 w-full" />
       </div>
 
-      <div
-        v-else-if="marketingOff"
-        class="rounded-lg border border-border bg-card p-6"
-        data-testid="audit-marketing-off"
-      >
-        <h2 class="text-lg font-semibold">Marketing is off for this product</h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Turn on the Marketing module for your team and this product in
-          <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
-          to run audits.
-        </p>
+      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
+        Products could not be loaded. Use Retry above to try again.
+      </div>
+
+      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a product first to run a site audit.</div>
+
+      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
+
+      <div v-else-if="isLoading" class="space-y-4">
+        <Skeleton class="h-40 w-full" />
+        <Skeleton class="h-64 w-full" />
       </div>
 
       <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
@@ -127,6 +123,8 @@
 </template>
 
 <script>
+import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+
 const POLL_MS = 5000
 
 export default {
@@ -136,9 +134,11 @@ export default {
     return {
       product: null,
       pickerSettled: false,
+      pickerError: false,
       isLoading: false,
       error: null,
       marketingOff: false,
+      disabledMessage: '',
       site: null,
       audits: [],
       canStart: false,
@@ -159,7 +159,14 @@ export default {
 
   computed: {
     showContent() {
-      return Boolean(this.product) && !this.marketingOff && !this.isLoading && !this.error && !this.notVerified
+      return (
+        this.pickerSettled &&
+        Boolean(this.product) &&
+        !this.marketingOff &&
+        !this.isLoading &&
+        !this.error &&
+        !this.notVerified
+      )
     },
     notVerified() {
       return !this.marketingOff && !this.error && !this.isLoading && (!this.site || !this.site.verified)
@@ -184,14 +191,28 @@ export default {
   },
 
   methods: {
-    base() {
-      return `/api/marketing/projects/${this.product.id}/audits`
+    base(productId = this.product.id) {
+      return `/api/marketing/projects/${productId}/audits`
+    },
+
+    onPickerError() {
+      this.stopPolling()
+      this.product = null
+      this.pickerError = true
+      this.pickerSettled = true
     },
 
     async onProductChange(product) {
       this.stopPolling()
       this.product = product
       this.pickerSettled = true
+      this.pickerError = false
+      this.isLoading = false
+      this.error = null
+      this.detailError = null
+      this.marketingOff = false
+      this.startError = null
+      this.cancelError = null
       this.detail = null
       this.selectedId = null
       this.audits = []
@@ -209,37 +230,50 @@ export default {
     },
 
     async load() {
+      if (!this.product) return
+      const productId = this.product.id
       this.isLoading = true
       this.error = null
       this.marketingOff = false
       try {
-        const response = await $fetch(this.base())
+        const response = await $fetch(this.base(productId))
+        if (this.product?.id !== productId) return
         this.applyList(response.data)
         if (this.audits.length) {
           this.selectedId = this.selectedId || this.audits[0].id
           await this.loadDetail()
         }
       } catch (err) {
-        if (err?.statusCode === 403 || err?.status === 403) this.marketingOff = true
-        else this.error = err?.data?.error?.message || 'Failed to load audits'
+        if (this.product?.id !== productId) return
+        if (apiErrorStatus(err) === 403) {
+          this.marketingOff = true
+          this.disabledMessage = apiErrorMessage(err, '')
+        } else {
+          this.error = apiErrorMessage(err, 'Failed to load audits')
+        }
       } finally {
-        this.isLoading = false
+        if (this.product?.id === productId) {
+          this.isLoading = false
+          this.syncPolling()
+        }
       }
-      this.syncPolling()
     },
 
     async loadDetail() {
-      if (!this.selectedId) return
+      if (!this.selectedId || !this.product) return
       const id = this.selectedId
+      const productId = this.product.id
       this.detailLoading = true
       this.detailError = null
       try {
-        const response = await $fetch(`${this.base()}/${id}`)
-        if (id === this.selectedId) this.detail = response.data
+        const response = await $fetch(`${this.base(productId)}/${id}`)
+        if (this.product?.id === productId && id === this.selectedId) this.detail = response.data
       } catch (err) {
-        this.detailError = err?.data?.error?.message || 'Failed to load the audit'
+        if (this.product?.id === productId && id === this.selectedId) {
+          this.detailError = apiErrorMessage(err, 'Failed to load the audit')
+        }
       } finally {
-        this.detailLoading = false
+        if (this.product?.id === productId && id === this.selectedId) this.detailLoading = false
       }
     },
 
@@ -260,7 +294,7 @@ export default {
         this.detail = null
         await this.refresh()
       } catch (err) {
-        this.startError = err?.data?.error?.message || err?.data?.statusMessage || 'Could not start the audit'
+        this.startError = apiErrorMessage(err, 'Could not start the audit')
         await this.refresh()
       } finally {
         this.starting = false
@@ -274,23 +308,36 @@ export default {
         await $fetch(`${this.base()}/${this.detail.id}/cancel`, { method: 'POST' })
         await this.refresh()
       } catch (err) {
-        this.cancelError = err?.data?.error?.message || 'Could not cancel the audit'
+        this.cancelError = apiErrorMessage(err, 'Could not cancel the audit')
       } finally {
         this.cancelling = false
       }
     },
 
-    /** Reload the list and the selected audit without flashing skeletons */
+    /**
+     * Reload the list and the selected audit without flashing skeletons.
+     * Background failures never replace the page: poll errors are ignored and
+     * the next tick retries.
+     */
     async refresh() {
+      if (!this.product) return
+      const productId = this.product.id
       try {
-        const response = await $fetch(this.base())
+        const response = await $fetch(this.base(productId))
+        if (this.product?.id !== productId) return
         this.applyList(response.data)
+        this.error = null
         if (!this.selectedId && this.audits.length) this.selectedId = this.audits[0].id
         await this.loadDetail()
       } catch (err) {
-        this.error = err?.data?.error?.message || 'Failed to refresh audits'
+        if (this.product?.id !== productId) return
+        if (apiErrorStatus(err) === 403) {
+          this.stopPolling()
+          this.marketingOff = true
+          this.disabledMessage = apiErrorMessage(err, '')
+        }
       }
-      this.syncPolling()
+      if (this.product?.id === productId) this.syncPolling()
     },
 
     syncPolling() {

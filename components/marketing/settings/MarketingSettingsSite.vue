@@ -36,7 +36,7 @@
             data-testid="marketing-site-origin"
           />
           <Button type="submit" :disabled="!canManage || saving || !originChanged">
-            <Icon v-if="saving" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+            <Icon v-if="saving" name="lucide:loader-circle" class="w-4 h-4 mr-2 animate-spin" />
             {{ site ? 'Change' : 'Add site' }}
           </Button>
         </div>
@@ -111,7 +111,7 @@
         </div>
 
         <Button :disabled="!canManage || verifying" data-testid="marketing-site-verify" @click="verify">
-          <Icon v-if="verifying" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+          <Icon v-if="verifying" name="lucide:loader-circle" class="w-4 h-4 mr-2 animate-spin" />
           <Icon v-else name="lucide:shield-check" class="w-4 h-4 mr-2" />
           Verify
         </Button>
@@ -122,6 +122,7 @@
 </template>
 
 <script>
+import { apiErrorMessage } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
 
 const METHOD_LABELS = { dns: 'DNS record', meta: 'meta tag', file: 'file', domain: 'custom domain' }
@@ -187,7 +188,7 @@ export default {
         this.$emit('changed')
         toast.success('Site saved')
       } catch (err) {
-        this.saveError = err?.data?.error?.message || 'Failed to save the site'
+        this.saveError = apiErrorMessage(err, 'Failed to save the site')
       } finally {
         this.saving = false
       }
@@ -204,7 +205,7 @@ export default {
         if (response?.data?.site?.verified) toast.success('Site verified')
         this.$emit('changed')
       } catch (err) {
-        this.verifyError = err?.data?.error?.message || 'Verification failed'
+        this.verifyError = apiErrorMessage(err, 'Verification failed')
       } finally {
         this.verifying = false
       }

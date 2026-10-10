@@ -20,7 +20,7 @@
           </CardContent>
         </Card>
 
-        <MarketingDisabled v-else-if="disabledMessage" :product="product" :message="disabledMessage" />
+        <MarketingDisabled v-else-if="disabledMessage !== null" :product="product" :message="disabledMessage" />
 
         <template v-else>
           <div v-if="isLoading" class="space-y-6">
@@ -65,6 +65,8 @@
 </template>
 
 <script>
+import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+
 export default {
   name: 'MarketingSettingsPage',
 
@@ -113,10 +115,10 @@ export default {
         this.loadIntegrations()
       } catch (err) {
         if (this.product?.id !== productId) return
-        if (err?.statusCode === 403 || err?.status === 403) {
-          this.disabledMessage = err?.data?.error?.message || ''
+        if (apiErrorStatus(err) === 403) {
+          this.disabledMessage = apiErrorMessage(err, '')
         } else {
-          this.error = err?.data?.error?.message || 'Failed to load the site'
+          this.error = apiErrorMessage(err, 'Failed to load the site')
         }
       } finally {
         if (this.product?.id === productId) this.isLoading = false
@@ -138,7 +140,7 @@ export default {
         this.integrations = response?.data?.integrations || []
       } catch (err) {
         if (this.product?.id !== productId) return
-        this.integrationsError = err?.data?.error?.message || 'Failed to load integration status'
+        this.integrationsError = apiErrorMessage(err, 'Failed to load integration status')
       } finally {
         if (this.product?.id === productId) this.integrationsLoading = false
       }

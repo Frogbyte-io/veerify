@@ -145,7 +145,7 @@
             <p v-if="formError" class="text-sm text-destructive" role="alert">{{ formError }}</p>
             <div class="flex gap-2">
               <Button type="submit" size="sm" :disabled="saving">
-                <Icon v-if="saving" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                <Icon v-if="saving" name="lucide:loader-circle" class="w-4 h-4 mr-2 animate-spin" />
                 Add
               </Button>
               <Button type="button" size="sm" variant="ghost" :disabled="saving" @click="cancelAdd">Cancel</Button>
@@ -171,6 +171,7 @@
 </template>
 
 <script>
+import { apiErrorMessage, apiErrorDetails } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
 
 const GROUPS = [
@@ -241,17 +242,23 @@ export default {
       return this.terms.filter((term) => term.kind === kind)
     },
 
-    async load() {
-      this.isLoading = true
+    // `silent` refreshes in place (after create/edit/delete) without a skeleton flash
+    async load(silent = false) {
+      const productId = this.product.id
+      if (!silent) this.isLoading = true
       this.error = null
       try {
-        const response = await $fetch(`/api/marketing/projects/${this.product.id}/terms`)
+        const response = await $fetch(`/api/marketing/projects/${productId}/terms`)
+        if (productId !== this.product.id) return
         this.terms = response?.data?.terms || []
         this.limit = response?.data?.limit || 50
       } catch (err) {
-        this.error = err?.data?.error?.message || 'Failed to load terms'
+        if (productId !== this.product.id) return
+        const message = apiErrorMessage(err, 'Failed to load terms')
+        if (silent) toast.error(message)
+        else this.error = message
       } finally {
-        this.isLoading = false
+        if (productId === this.product.id) this.isLoading = false
       }
     },
 
@@ -300,7 +307,7 @@ export default {
         }
         await $fetch(`/api/marketing/projects/${this.product.id}/terms`, { method: 'POST', body })
         this.adding = null
-        await this.load()
+        await this.load(true)
         this.$emit('changed')
       } catch (err) {
         this.formError = this.describe(err, 'Failed to add the term')
@@ -317,7 +324,7 @@ export default {
         if (term.kind === 'competitor') body.competitorDomain = this.draft.competitorDomain.trim() || null
         await $fetch(`/api/marketing/projects/${this.product.id}/terms/${term.id}`, { method: 'PUT', body })
         this.editingId = null
-        await this.load()
+        await this.load(true)
         this.$emit('changed')
       } catch (err) {
         this.formError = this.describe(err, 'Failed to save the term')
@@ -330,10 +337,10 @@ export default {
       this.saving = true
       try {
         await $fetch(`/api/marketing/projects/${this.product.id}/terms/${term.id}`, { method: 'DELETE' })
-        await this.load()
+        await this.load(true)
         this.$emit('changed')
       } catch (err) {
-        toast.error(err?.data?.error?.message || 'Failed to delete the term')
+        toast.error(apiErrorMessage(err, 'Failed to delete the term'))
       } finally {
         this.saving = false
       }
@@ -341,8 +348,8 @@ export default {
 
     describe(err, fallback) {
       // Validation errors carry per-field issues; show the first readable one
-      const issue = err?.data?.error?.details?.[0]?.message
-      return issue || err?.data?.error?.message || fallback
+      const issue = apiErrorDetails(err)?.[0]?.message
+      return issue || apiErrorMessage(err, fallback)
     },
   },
 }

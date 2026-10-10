@@ -178,6 +178,8 @@
 </template>
 
 <script>
+import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+
 export default {
   name: 'MarketingOverviewPage',
 
@@ -220,10 +222,10 @@ export default {
         },
         {
           key: 'keys',
-          title: 'Add API keys',
-          hint: 'An Anthropic or OpenAI key unlocks AI visibility. A Firecrawl key unlocks the full site crawl.',
+          title: 'Add an AI key',
+          hint: 'An Anthropic or OpenAI key unlocks AI visibility. A Firecrawl key is optional and unlocks the full site crawl.',
           action: 'Add keys',
-          done: setup.hasLlmKey && setup.hasCrawlKey,
+          done: setup.hasLlmKey,
         },
       ]
     },
@@ -306,10 +308,10 @@ export default {
         this.overview = response?.data || null
       } catch (err) {
         if (this.product?.id !== productId) return
-        if (err?.statusCode === 403 || err?.status === 403) {
-          this.disabledMessage = err?.data?.error?.message || ''
+        if (apiErrorStatus(err) === 403) {
+          this.disabledMessage = apiErrorMessage(err, '')
         } else {
-          this.error = err?.data?.error?.message || 'Failed to load the overview'
+          this.error = apiErrorMessage(err, 'Failed to load the overview')
         }
       } finally {
         if (this.product?.id === productId) this.isLoading = false

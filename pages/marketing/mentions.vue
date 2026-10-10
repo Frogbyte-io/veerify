@@ -8,38 +8,39 @@
             Posts on Hacker News, Reddit and Bluesky that name your brand, your competitors or the problem you solve.
           </p>
         </div>
-        <MarketingProductPicker @change="onProductChange" />
+        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+      </div>
+
+      <!-- Waiting for the product picker -->
+      <div v-if="!pickerReady" class="space-y-3" data-testid="mentions-picking">
+        <Skeleton class="h-9 w-80" />
+        <Skeleton v-for="n in 4" :key="n" class="h-24 w-full" />
+      </div>
+
+      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
+        Products could not be loaded. Use Retry above to try again.
       </div>
 
       <!-- No product -->
-      <Card v-if="pickerReady && !product">
+      <Card v-else-if="!product">
         <CardContent class="py-10 text-center text-sm text-muted-foreground">
           Create a product first, then switch Marketing on for it.
         </CardContent>
       </Card>
 
-      <!-- Loading -->
-      <div v-else-if="isLoading" class="space-y-3" data-testid="mentions-loading">
+      <!-- Marketing off -->
+      <MarketingDisabled v-else-if="forbidden" :product="product" :message="forbiddenMessage" />
+
+      <!-- Initial loading -->
+      <div v-else-if="isInitialLoading" class="space-y-3" data-testid="mentions-loading">
         <Skeleton class="h-9 w-80" />
         <Skeleton v-for="n in 4" :key="n" class="h-24 w-full" />
       </div>
 
-      <!-- Marketing off -->
-      <Card v-else-if="forbidden" data-testid="mentions-marketing-off">
+      <!-- Initial error (no data to show yet) -->
+      <Card v-else-if="error && !hasLoaded" data-testid="mentions-error">
         <CardContent class="py-10 text-center">
-          <Icon name="lucide:megaphone" class="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-          <p class="mb-1 font-medium">Marketing is not enabled for this product</p>
-          <p class="mx-auto max-w-md text-sm text-muted-foreground">
-            A team admin can switch Marketing on under Settings, Tools, and then for this product under its Features
-            tab. Both switches must be on.
-          </p>
-        </CardContent>
-      </Card>
-
-      <!-- Error -->
-      <Card v-else-if="error" data-testid="mentions-error">
-        <CardContent class="py-10 text-center">
-          <Icon name="lucide:alert-circle" class="mx-auto mb-3 h-8 w-8 text-destructive" />
+          <Icon name="lucide:circle-alert" class="mx-auto mb-3 h-8 w-8 text-destructive" />
           <p class="mb-3 text-sm text-muted-foreground">{{ error }}</p>
           <Button variant="outline" @click="reload">
             <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
@@ -127,7 +128,11 @@
         </div>
 
         <!-- Bulk actions -->
-        <div v-if="items.length > 0" class="flex flex-wrap items-center gap-2 text-sm" data-testid="mentions-bulk-bar">
+        <div
+          v-if="!isLoading && items.length > 0"
+          class="flex flex-wrap items-center gap-2 text-sm"
+          data-testid="mentions-bulk-bar"
+        >
           <label class="inline-flex items-center gap-2 text-muted-foreground">
             <input
               type="checkbox"
@@ -151,7 +156,22 @@
         </div>
 
         <!-- List -->
-        <Card v-if="items.length === 0" data-testid="mentions-empty">
+        <div v-if="isLoading" class="space-y-3" data-testid="mentions-list-loading">
+          <Skeleton v-for="n in 4" :key="n" class="h-24 w-full" />
+        </div>
+
+        <Card v-else-if="error" data-testid="mentions-error">
+          <CardContent class="py-10 text-center">
+            <Icon name="lucide:circle-alert" class="mx-auto mb-3 h-8 w-8 text-destructive" />
+            <p class="mb-3 text-sm text-muted-foreground">{{ error }}</p>
+            <Button variant="outline" @click="reload">
+              <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card v-else-if="items.length === 0" data-testid="mentions-empty">
           <CardContent class="py-10 text-center text-sm text-muted-foreground">
             {{ emptyMessage }}
           </CardContent>
@@ -169,10 +189,10 @@
           />
         </ul>
 
-        <div v-if="nextCursor" class="flex flex-col items-center gap-2">
+        <div v-if="!isLoading && nextCursor" class="flex flex-col items-center gap-2">
           <p v-if="loadMoreError" class="text-sm text-destructive">{{ loadMoreError }}</p>
           <Button variant="outline" :disabled="isLoadingMore" data-testid="mentions-load-more" @click="loadMore">
-            <Icon v-if="isLoadingMore" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+            <Icon v-if="isLoadingMore" name="lucide:loader-circle" class="mr-2 h-4 w-4 animate-spin" />
             {{ loadMoreError ? 'Retry' : 'Load more' }}
           </Button>
         </div>
@@ -189,6 +209,7 @@
 </template>
 
 <script>
+import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
 
 const KIND_LABELS = {
@@ -206,7 +227,10 @@ export default {
     return {
       pickerReady: false,
       product: null,
-      isLoading: true,
+      isLoading: false,
+      hasLoaded: false,
+      pickerError: false,
+      forbiddenMessage: '',
       error: null,
       forbidden: false,
       site: null,
@@ -225,10 +249,12 @@ export default {
       sourcesLoading: false,
       sourcesError: null,
       requestToken: 0,
+      sourcesToken: 0,
       statusOptions: [
         { value: 'new', label: 'New' },
         { value: 'seen', label: 'Seen' },
         { value: 'dismissed', label: 'Dismissed' },
+        { value: 'escalated', label: 'Escalated' },
       ],
       kindOptions: Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label })),
       sourceOptions: Object.entries(SOURCE_LABELS).map(([value, label]) => ({ value, label })),
@@ -248,6 +274,9 @@ export default {
     sourceLabel() {
       return SOURCE_LABELS[this.source]
     },
+    isInitialLoading() {
+      return this.isLoading && !this.hasLoaded
+    },
     allSelected() {
       return this.items.length > 0 && this.items.every((item) => this.selected.includes(item.id))
     },
@@ -259,10 +288,29 @@ export default {
   },
 
   methods: {
+    onPickerError() {
+      this.requestToken++
+      this.product = null
+      this.pickerError = true
+      this.pickerReady = true
+      this.isLoading = false
+    },
+
     async onProductChange(product) {
       this.pickerReady = true
+      this.pickerError = false
       this.product = product
       this.selected = []
+      this.items = []
+      this.nextCursor = null
+      this.site = null
+      this.hasLoaded = false
+      this.forbidden = false
+      this.error = null
+      this.sources = []
+      this.sourcesError = null
+      this.sourcesLoading = false
+      this.requestToken++
       if (!product) {
         this.isLoading = false
         return
@@ -293,12 +341,14 @@ export default {
         this.nextCursor = response.data.nextCursor
         this.site = response.data.site
         this.selected = []
+        this.hasLoaded = true
       } catch (err) {
         if (token !== this.requestToken) return
-        if (err?.statusCode === 403 || err?.status === 403) {
+        if (apiErrorStatus(err) === 403) {
           this.forbidden = true
+          this.forbiddenMessage = apiErrorMessage(err, '')
         } else {
-          this.error = err?.data?.error?.message || 'Failed to load mentions'
+          this.error = apiErrorMessage(err, 'Failed to load mentions')
         }
       } finally {
         if (token === this.requestToken) this.isLoading = false
@@ -318,7 +368,7 @@ export default {
         this.nextCursor = response.data.nextCursor
         this.counts = response.data.counts
       } catch (err) {
-        this.loadMoreError = err?.data?.error?.message || 'Failed to load more mentions'
+        this.loadMoreError = apiErrorMessage(err, 'Failed to load more mentions')
       } finally {
         this.isLoadingMore = false
       }
@@ -326,18 +376,22 @@ export default {
 
     async loadSources() {
       if (!this.product) return
+      const productId = this.product.id
+      const token = ++this.sourcesToken
       this.sourcesLoading = true
       this.sourcesError = null
       try {
         const response = await $fetch(`${this.basePath}/sources`)
+        if (this.product?.id !== productId || token !== this.sourcesToken) return
         this.sources = response.data.sources
       } catch (err) {
+        if (this.product?.id !== productId || token !== this.sourcesToken) return
         // Marketing-off is already explained by the list state.
-        if (err?.statusCode !== 403 && err?.status !== 403) {
-          this.sourcesError = err?.data?.error?.message || 'Failed to load source status'
+        if (apiErrorStatus(err) !== 403) {
+          this.sourcesError = apiErrorMessage(err, 'Failed to load source status')
         }
       } finally {
-        this.sourcesLoading = false
+        if (this.product?.id === productId && token === this.sourcesToken) this.sourcesLoading = false
       }
     },
 
@@ -381,6 +435,8 @@ export default {
         if (idSet.has(item.id)) item.status = status
       })
       this.selected = this.selected.filter((id) => !idSet.has(id))
+      // The visible page may now be empty while more rows exist on the server.
+      if (this.items.length === 0 && this.nextCursor) this.reload()
     },
 
     async updateOne(id, status) {
@@ -389,7 +445,7 @@ export default {
         await $fetch(`${this.basePath}/${id}`, { method: 'PATCH', body: { status } })
         this.applyStatus([id], status)
       } catch (err) {
-        toast.error(err?.data?.error?.message || 'Failed to update mention')
+        toast.error(apiErrorMessage(err, 'Failed to update mention'))
       } finally {
         this.busyIds = this.busyIds.filter((x) => x !== id)
       }
@@ -403,7 +459,7 @@ export default {
         await $fetch(`${this.basePath}/bulk`, { method: 'POST', body: { ids, status } })
         this.applyStatus(ids, status)
       } catch (err) {
-        toast.error(err?.data?.error?.message || 'Failed to update mentions')
+        toast.error(apiErrorMessage(err, 'Failed to update mentions'))
       } finally {
         this.bulkBusy = false
       }

@@ -32,6 +32,7 @@
 </template>
 
 <script>
+import { apiErrorMessage } from '~/lib/api-error'
 import { resolveProductModules } from '~/lib/modules'
 
 const STORAGE_KEY = 'veerify_marketing_product'
@@ -43,13 +44,14 @@ const STORAGE_KEY = 'veerify_marketing_product'
  * localStorage across pages.
  *
  * Emits `change` with the selected product (or null when the team has none),
- * including once after the initial load. Products with marketing switched off
+ * including once after the initial load. Emits `error` when products fail to
+ * load, so pages can settle instead of showing a skeleton forever. Products with marketing switched off
  * are still listed, marked "Off": the page explains how to enable it.
  */
 export default {
   name: 'MarketingProductPicker',
 
-  emits: ['change'],
+  emits: ['change', 'error'],
 
   data() {
     return {
@@ -61,10 +63,10 @@ export default {
   },
 
   async mounted() {
-    await this.load()
     if (import.meta.client) {
       window.addEventListener('veerify:active-team-changed', this.load)
     }
+    await this.load()
   },
 
   beforeUnmount() {
@@ -100,7 +102,8 @@ export default {
           null
         this.applySelection(match)
       } catch (err) {
-        this.error = err?.data?.error?.message || 'Failed to load products'
+        this.error = apiErrorMessage(err, 'Failed to load products')
+        this.$emit('error', this.error)
       } finally {
         this.isLoading = false
       }

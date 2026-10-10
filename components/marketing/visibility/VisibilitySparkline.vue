@@ -19,17 +19,21 @@
           stroke-width="2"
           vector-effect="non-scaling-stroke"
         />
-        <circle
+        <!-- Zero-length round-capped lines stay round under preserveAspectRatio="none" -->
+        <line
           v-for="(point, index) in coords"
           :key="index"
-          :cx="point.x"
-          :cy="point.y"
-          r="2.5"
-          fill="currentColor"
+          :x1="point.x"
+          :x2="point.x"
+          :y1="point.y"
+          :y2="point.y"
+          stroke="currentColor"
+          stroke-width="6"
+          stroke-linecap="round"
           vector-effect="non-scaling-stroke"
         >
           <title>{{ point.title }}</title>
-        </circle>
+        </line>
       </svg>
       <div class="mt-1 flex justify-between text-xs text-muted-foreground">
         <span>{{ firstDate }}</span>

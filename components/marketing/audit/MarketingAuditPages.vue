@@ -46,6 +46,8 @@
 </template>
 
 <script>
+import { apiErrorMessage } from '~/lib/api-error'
+
 export default {
   name: 'MarketingAuditPages',
 
@@ -67,12 +69,15 @@ export default {
 
   watch: {
     auditId() {
-      this.load(true)
+      this.load()
+    },
+    projectId() {
+      this.load()
     },
   },
 
   async mounted() {
-    await this.load(true)
+    await this.load()
   },
 
   methods: {
@@ -81,31 +86,44 @@ export default {
       return cursor ? `${base}?cursor=${encodeURIComponent(cursor)}` : base
     },
 
+    key() {
+      return `${this.projectId}:${this.auditId}`
+    },
+
     async load() {
+      const key = this.key()
       this.isLoading = true
       this.error = null
+      this.moreError = null
+      this.pages = []
+      this.nextCursor = null
       try {
         const response = await $fetch(this.url(null))
+        if (key !== this.key()) return
         this.pages = response.data.pages
         this.nextCursor = response.data.nextCursor
       } catch (err) {
-        this.error = err?.data?.error?.message || 'Failed to load pages'
+        if (key !== this.key()) return
+        this.error = apiErrorMessage(err, 'Failed to load pages')
       } finally {
-        this.isLoading = false
+        if (key === this.key()) this.isLoading = false
       }
     },
 
     async loadMore() {
+      const key = this.key()
       this.isLoadingMore = true
       this.moreError = null
       try {
         const response = await $fetch(this.url(this.nextCursor))
+        if (key !== this.key()) return
         this.pages = [...this.pages, ...response.data.pages]
         this.nextCursor = response.data.nextCursor
       } catch (err) {
-        this.moreError = err?.data?.error?.message || 'Failed to load more pages'
+        if (key !== this.key()) return
+        this.moreError = apiErrorMessage(err, 'Failed to load more pages')
       } finally {
-        this.isLoadingMore = false
+        if (key === this.key()) this.isLoadingMore = false
       }
     },
   },

@@ -37,6 +37,7 @@
 </template>
 
 <script>
+import { apiErrorMessage } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
 
 export default {
@@ -61,15 +62,18 @@ export default {
 
   methods: {
     async load() {
+      const projectId = this.projectId
       this.isLoading = true
       this.error = null
       try {
-        const response = await $fetch(`/api/marketing/projects/${this.projectId}/visibility/llms-txt`)
+        const response = await $fetch(`/api/marketing/projects/${projectId}/visibility/llms-txt`)
+        if (projectId !== this.projectId) return
         this.content = response.data.content
       } catch (err) {
-        this.error = err?.data?.error?.message || 'Failed to generate the llms.txt draft'
+        if (projectId !== this.projectId) return
+        this.error = apiErrorMessage(err, 'Failed to generate the llms.txt draft')
       } finally {
-        this.isLoading = false
+        if (projectId === this.projectId) this.isLoading = false
       }
     },
 
@@ -90,8 +94,10 @@ export default {
       const link = document.createElement('a')
       link.href = url
       link.download = 'llms.txt'
+      document.body.appendChild(link)
       link.click()
-      URL.revokeObjectURL(url)
+      document.body.removeChild(link)
+      setTimeout(() => URL.revokeObjectURL(url), 0)
     },
   },
 }
