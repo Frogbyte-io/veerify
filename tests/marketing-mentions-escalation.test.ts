@@ -38,7 +38,7 @@ vi.mock('~/server/utils/marketing-mentions', async (importOriginal) => {
   const original = await importOriginal<typeof import('~/server/utils/marketing-mentions')>()
   return {
     ...original,
-    requireMarketingSite: vi.fn(async () => {
+    requireMentionsSite: vi.fn(async () => {
       if (!state.site) throw Object.assign(new Error('Not Found'), { statusCode: 404 })
       return state.site
     }),

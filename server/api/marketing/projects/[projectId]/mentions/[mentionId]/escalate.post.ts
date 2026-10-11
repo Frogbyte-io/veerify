@@ -32,7 +32,7 @@ import {
   pickEscalationInbox,
 } from '~/server/services/marketing/mentions/escalation'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
-import { requireMarketingSite, requireRouterParam } from '~/server/utils/marketing-mentions'
+import { requireMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { SUPPORT_INBOX_FORBIDDEN_MESSAGE } from '~/server/utils/support-access'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   const mentionId = requireRouterParam(event, 'mentionId', 'Mention ID')
   const { teamId } = await requireMarketingAccess(projectId, session.user.id)
-  const site = await requireMarketingSite(projectId)
+  const site = await requireMentionsSite(projectId)
 
   if (!(await isSupportEnabled(teamId))) {
     throw createError({

@@ -31,7 +31,7 @@ export const markSeenSchema = z.object({ ids: z.array(z.string().min(1)).max(100
 
 export const settingsSchema = z.object({ summarize: z.boolean() })
 
-export function badRequest(message: string): never {
+export function watchValidationError(message: string): never {
   throw createError({
     statusCode: 400,
     statusMessage: 'Validation failed',
@@ -54,15 +54,15 @@ export function validateWatchUrl(
   try {
     url = new URL(input)
   } catch {
-    badRequest('Enter a full URL such as https://rival.com/pricing')
+    watchValidationError('Enter a full URL such as https://rival.com/pricing')
   }
-  if (url.protocol !== 'https:') badRequest('Only https pages can be watched')
-  if (url.username || url.password) badRequest('The URL cannot contain credentials')
-  if (url.port) badRequest('The URL cannot use a custom port')
+  if (url.protocol !== 'https:') watchValidationError('Only https pages can be watched')
+  if (url.username || url.password) watchValidationError('The URL cannot contain credentials')
+  if (url.port) watchValidationError('The URL cannot use a custom port')
 
   const host = bareHost(url.hostname)
   if (isIP(url.hostname.replace(/^\[|\]$/g, '')) || !host.includes('.') || host.endsWith('.local')) {
-    badRequest('Enter a public page on the competitor website')
+    watchValidationError('Enter a public page on the competitor website')
   }
 
   let own = ''
@@ -71,10 +71,10 @@ export function validateWatchUrl(
   } catch {
     // an unparsable origin cannot match
   }
-  if (own && host === own) badRequest('That is your own website. Watch a competitor page instead')
+  if (own && host === own) watchValidationError('That is your own website. Watch a competitor page instead')
 
   if (!hostMatchesDomain(host, competitorDomain)) {
-    badRequest(
+    watchValidationError(
       competitorDomain
         ? `The page must be on ${bareHost(competitorDomain)} (or a subdomain), the domain set for this competitor`
         : COMPETITOR_DOMAIN_REQUIRED_MESSAGE

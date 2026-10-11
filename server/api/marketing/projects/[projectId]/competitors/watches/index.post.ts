@@ -39,7 +39,7 @@ import { db } from '~/server/database/drizzle'
 import { competitorWatch, marketingTerm } from '~/server/database/schema/marketing'
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import {
-  badRequest,
+  watchValidationError,
   COMPETITOR_DOMAIN_REQUIRED_MESSAGE,
   createWatchSchema,
   MAX_WATCHES_PER_COMPETITOR,
@@ -106,10 +106,10 @@ export default defineEventHandler(async (event) => {
       .from(competitorWatch)
       .where(eq(competitorWatch.siteId, site.id))
     if ((counts?.term ?? 0) >= MAX_WATCHES_PER_COMPETITOR) {
-      badRequest(`A competitor can have at most ${MAX_WATCHES_PER_COMPETITOR} watched pages`)
+      watchValidationError(`A competitor can have at most ${MAX_WATCHES_PER_COMPETITOR} watched pages`)
     }
     if ((counts?.site ?? 0) >= MAX_WATCHES_PER_SITE) {
-      badRequest(`A product can have at most ${MAX_WATCHES_PER_SITE} watched pages`)
+      watchValidationError(`A product can have at most ${MAX_WATCHES_PER_SITE} watched pages`)
     }
 
     const now = new Date()
