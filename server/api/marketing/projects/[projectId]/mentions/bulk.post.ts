@@ -31,7 +31,7 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { mention } from '~/server/database/schema/marketing'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
-import { findMarketingSite, requireRouterParam } from '~/server/utils/marketing-mentions'
+import { findMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { validateBody } from '~/server/utils/validation'
@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
   await requireMarketingAccess(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
-  const site = await findMarketingSite(projectId)
+  const site = await findMentionsSite(projectId)
   if (!site) return createSuccessResponse({ updated: 0 })
 
   const updated = await db

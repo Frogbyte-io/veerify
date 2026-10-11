@@ -4,7 +4,7 @@ import { marketingSite } from '~/server/database/schema/marketing'
 import { createErrorResponse, ErrorCode } from './response'
 
 /** The product's marketing site, or null before one has been created. */
-export async function findMarketingSite(projectId: string) {
+export async function findMentionsSite(projectId: string) {
   const [site] = await db
     .select({ id: marketingSite.id, verifiedAt: marketingSite.verifiedAt })
     .from(marketingSite)
@@ -13,9 +13,9 @@ export async function findMarketingSite(projectId: string) {
   return site ?? null
 }
 
-/** Like `findMarketingSite` but 404s: mutating endpoints have nothing to act on without a site. */
-export async function requireMarketingSite(projectId: string) {
-  const site = await findMarketingSite(projectId)
+/** Like `findMentionsSite` but 404s: mutating endpoints have nothing to act on without a site. */
+export async function requireMentionsSite(projectId: string) {
+  const site = await findMentionsSite(projectId)
   if (!site) {
     throw createError({
       statusCode: 404,

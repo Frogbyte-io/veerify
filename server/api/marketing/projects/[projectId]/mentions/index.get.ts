@@ -40,7 +40,7 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { marketingTerm, mention } from '~/server/database/schema/marketing'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
-import { findMarketingSite, requireRouterParam } from '~/server/utils/marketing-mentions'
+import { findMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
   const cursor = query.cursor ? decodeListCursor(query.cursor, 'mention') : null
 
   const counts = { new: 0, seen: 0, dismissed: 0, escalated: 0 }
-  const site = await findMarketingSite(projectId)
+  const site = await findMentionsSite(projectId)
   if (!site) {
     return createSuccessResponse({
       items: [],

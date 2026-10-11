@@ -33,7 +33,7 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { mention } from '~/server/database/schema/marketing'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
-import { requireMarketingSite, requireRouterParam } from '~/server/utils/marketing-mentions'
+import { requireMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { validateBody } from '~/server/utils/validation'
@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
   await requireMarketingAccess(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
-  const site = await requireMarketingSite(projectId)
+  const site = await requireMentionsSite(projectId)
 
   // Scoping the UPDATE by siteId is what stops a member of one product from
   // changing another product's mention by guessing its id.
