@@ -16,7 +16,7 @@
  *   arrive as a `refusal` content part instead of output_text.
  * - Key validation: GET /v1/models
  */
-import { LLM_MODELS } from './models'
+import { LLM_CALL_LIMITS, LLM_MODELS } from './models'
 import {
   addCitation,
   ANSWER_TIMEOUT_MS,
@@ -37,7 +37,7 @@ import {
 
 const BASE_URL = 'https://api.openai.com'
 /** Cost control: Responses API `max_tool_calls` caps built-in tool calls (searches are billed per call) */
-const WEB_SEARCH_MAX_CALLS = 5
+const WEB_SEARCH_MAX_CALLS = LLM_CALL_LIMITS.openai.maxSearches
 
 interface OpenAiContentPart {
   type: string

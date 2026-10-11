@@ -108,3 +108,21 @@ export function estimateCostUsdMicros(
   const search = (usage.webSearchRequests ?? 0) * LLM_WEB_SEARCH_FEE_MICROS[provider]
   return Math.ceil(usage.inputTokens * price.input + usage.outputTokens * price.output + search)
 }
+
+/**
+ * Per-call caps the adapters enforce (or, where the provider has no hard cap, the figure budget
+ * reservations assume). Adapters import these so reservations and real requests cannot drift.
+ * - `answerMaxOutputTokens` / `extractMaxOutputTokens`: request output cap. OpenAI sets none, so
+ *   4096 is an assumption for reservations only.
+ * - `maxSearches`: web searches per answer call. Anthropic (`max_uses`) and OpenAI
+ *   (`max_tool_calls`) cap it; Gemini and Perplexity do not, so 5 is an assumption.
+ */
+export const LLM_CALL_LIMITS: Record<
+  LlmProviderId,
+  { answerMaxOutputTokens: number; extractMaxOutputTokens: number; maxSearches: number }
+> = {
+  anthropic: { answerMaxOutputTokens: 4096, extractMaxOutputTokens: 4096, maxSearches: 5 },
+  openai: { answerMaxOutputTokens: 4096, extractMaxOutputTokens: 4096, maxSearches: 5 },
+  perplexity: { answerMaxOutputTokens: 2048, extractMaxOutputTokens: 1024, maxSearches: 5 },
+  gemini: { answerMaxOutputTokens: 4096, extractMaxOutputTokens: 2048, maxSearches: 5 },
+}

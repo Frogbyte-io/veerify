@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   markInvalid: vi.fn(),
   notify: vi.fn(),
   calledWith: [] as string[],
+  budgetCalls: [] as string[],
 }))
 
 vi.mock('h3', () => ({
@@ -26,7 +27,6 @@ vi.mock('~/server/utils/team-credentials', () => ({
 }))
 
 vi.mock('~/server/utils/marketing-usage', () => ({
-  getUsage: vi.fn(async () => state.usage),
   recordUsage: vi.fn(async (teamId: string, metric: string, units: number) => {
     state.recorded.push([teamId, metric, units])
   }),
@@ -40,9 +40,38 @@ vi.mock('~/server/utils/response', () => ({
   ErrorCode: { CONFLICT: 'CONFLICT', RATE_LIMITED: 'RATE_LIMITED' },
 }))
 
+// In-memory store honouring the same guard as the SQL: spent + reserved + amount <= cap
+vi.mock('~/server/services/marketing/llm-budget', async () => {
+  const actual = await vi.importActual<typeof import('~/server/services/marketing/llm-budget')>(
+    '~/server/services/marketing/llm-budget'
+  )
+  return {
+    ...actual,
+    reserveBudget: vi.fn(async (_t: string, provider: string, amount: number, cap: number | null) => {
+      state.budgetCalls.push(`reserve:${amount}`)
+      if (cap == null) return true
+      const reservedKey = `llm:${provider}:reserved_usd_micros`
+      const spent = state.usage[`llm:${provider}:cost_usd_micros`] ?? 0
+      const reserved = state.usage[reservedKey] ?? 0
+      if (!actual.fitsBudget(spent, reserved, amount, cap)) return false
+      state.usage[reservedKey] = reserved + amount
+      return true
+    }),
+    settleBudget: vi.fn(async (_t: string, provider: string, held: number, cost: number) => {
+      state.budgetCalls.push(`settle:${held}:${cost}`)
+      const reservedKey = `llm:${provider}:reserved_usd_micros`
+      state.usage[reservedKey] = Math.max(0, (state.usage[reservedKey] ?? 0) - held)
+      state.usage[`llm:${provider}:cost_usd_micros`] = (state.usage[`llm:${provider}:cost_usd_micros`] ?? 0) + cost
+    }),
+    releaseBudget: vi.fn(async (_t: string, provider: string, held: number) => {
+      state.budgetCalls.push(`release:${held}`)
+      const reservedKey = `llm:${provider}:reserved_usd_micros`
+      state.usage[reservedKey] = Math.max(0, (state.usage[reservedKey] ?? 0) - held)
+    }),
+  }
+})
+
 vi.mock('~/server/services/marketing/visibility/runner', () => ({
-  budgetExhausted: (usage: Record<string, number>, provider: string, cents: number | null) =>
-    cents != null && (usage[`llm:${provider}:cost_usd_micros`] ?? 0) >= cents * 10_000,
   notifyCredentialInvalid: (...args: unknown[]) => state.notify(...args),
 }))
 
@@ -72,6 +101,7 @@ beforeEach(() => {
   state.usage = {}
   state.recorded = []
   state.calledWith = []
+  state.budgetCalls = []
   state.markInvalid.mockReset().mockResolvedValue(true)
   state.notify.mockReset().mockResolvedValue(undefined)
   state.extract.mockReset().mockResolvedValue({
@@ -92,11 +122,8 @@ describe('callTeamLlm', () => {
     expect(result.provider).toBe('anthropic')
     expect(state.calledWith).toEqual(['anthropic'])
     const metrics = state.recorded.map(([, metric]) => metric)
-    expect(metrics).toEqual([
-      'llm:anthropic:input_tokens',
-      'llm:anthropic:output_tokens',
-      'llm:anthropic:cost_usd_micros',
-    ])
+    // cost is booked by settleBudget, not recordUsage
+    expect(metrics).toEqual(['llm:anthropic:input_tokens', 'llm:anthropic:output_tokens'])
     expect(state.recorded[0][2]).toBe(100)
     expect(state.recorded[1][2]).toBe(50)
   })
@@ -128,10 +155,43 @@ describe('callTeamLlm', () => {
     expect(state.recorded).toEqual([])
   })
 
-  it('still calls when usage is below the budget', async () => {
+  it('still calls when the reservation fits under the budget', async () => {
     state.keys.anthropic = key('abcd', 100)
-    state.usage = { 'llm:anthropic:cost_usd_micros': 999_999 }
+    state.usage = { 'llm:anthropic:cost_usd_micros': 900_000 }
     await expect(callTeamLlm('t1', request, messages)).resolves.toMatchObject({ data: { ok: true } })
+  })
+
+  it('counts in-flight reservations against the budget', async () => {
+    state.keys.anthropic = key('abcd', 100)
+    state.usage = { 'llm:anthropic:reserved_usd_micros': 990_000 }
+    await expect(callTeamLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
+    expect(state.extract).not.toHaveBeenCalled()
+  })
+
+  it('reserves before the call and settles the actual cost (haiku 100*1 + 50*5)', async () => {
+    state.keys.anthropic = key('abcd', 100)
+    await callTeamLlm('t1', request, messages)
+    const [reserve, settle] = state.budgetCalls
+    expect(reserve).toMatch(/^reserve:\d+$/)
+    const held = Number(reserve.split(':')[1])
+    expect(held).toBeGreaterThan(350)
+    expect(settle).toBe(`settle:${held}:350`)
+    expect(state.usage['llm:anthropic:reserved_usd_micros']).toBe(0)
+    expect(state.usage['llm:anthropic:cost_usd_micros']).toBe(350)
+  })
+
+  it('holds nothing for a key without a cap but still books the cost', async () => {
+    await callTeamLlm('t1', request, messages)
+    expect(state.budgetCalls).toEqual(['reserve:0', 'settle:0:350'])
+  })
+
+  it('releases the reservation when the provider fails', async () => {
+    state.keys.anthropic = key('abcd', 100)
+    state.extract.mockRejectedValue(new LlmProviderError('anthropic', 'server', 'x'))
+    await callTeamLlm('t1', request, messages).catch(() => undefined)
+    expect(state.budgetCalls[1]).toMatch(/^release:\d+$/)
+    expect(state.usage['llm:anthropic:reserved_usd_micros']).toBe(0)
+    expect(state.usage['llm:anthropic:cost_usd_micros'] ?? 0).toBe(0)
   })
 
   it('marks the key invalid with its hint on auth errors and maps to 409', async () => {

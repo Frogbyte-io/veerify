@@ -18,7 +18,7 @@
  *   `additionalProperties` must be false on objects.
  * - Key validation: GET /v1/models
  */
-import { ANTHROPIC_WEB_SEARCH_TOOL_TYPE, LLM_MODELS } from './models'
+import { ANTHROPIC_WEB_SEARCH_TOOL_TYPE, LLM_CALL_LIMITS, LLM_MODELS } from './models'
 import {
   addCitation,
   ANSWER_TIMEOUT_MS,
@@ -39,12 +39,12 @@ import {
 
 const BASE_URL = 'https://api.anthropic.com'
 const ANTHROPIC_VERSION = '2023-06-01'
-const ANSWER_MAX_TOKENS = 4096
-const EXTRACT_MAX_TOKENS = 4096
+const ANSWER_MAX_TOKENS = LLM_CALL_LIMITS.anthropic.answerMaxOutputTokens
+const EXTRACT_MAX_TOKENS = LLM_CALL_LIMITS.anthropic.extractMaxOutputTokens
 /** Max times a `pause_turn` is continued before giving up */
 const MAX_PAUSE_CONTINUATIONS = 4
 /** Cost control: searches per request (each is billed) */
-const WEB_SEARCH_MAX_USES = 5
+const WEB_SEARCH_MAX_USES = LLM_CALL_LIMITS.anthropic.maxSearches
 
 interface AnthropicBlock {
   type: string

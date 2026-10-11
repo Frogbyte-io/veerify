@@ -4,7 +4,7 @@
  * prompt suggestions, announcement drafts and customer language analysis.
  *
  * Handles key selection (Anthropic first, then OpenAI, Gemini, Perplexity), the monthly budget
- * guard, usage recording and the mapping of provider failures to HTTP errors.
+ * guard (an atomic upper-bound reservation, see llm-budget.ts), usage recording and the mapping of provider failures to HTTP errors.
  */
 
 import { createError } from 'h3'
@@ -12,9 +12,10 @@ import { getLlmProvider, LlmProviderError, LLM_MODELS, type LlmProviderId } from
 import { estimateCostUsdMicros } from '~/server/services/llm/models'
 import type { ApiCredentialProvider } from '~/server/database/schema/marketing'
 import { getTeamApiKey, listTeamCredentials, markCredentialInvalid } from '~/server/utils/team-credentials'
-import { getUsage, recordUsage } from '~/server/utils/marketing-usage'
+import { recordUsage } from '~/server/utils/marketing-usage'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
-import { budgetExhausted, notifyCredentialInvalid } from './visibility/runner'
+import { notifyCredentialInvalid } from './visibility/runner'
+import { estimateTeamCallReservation, heldMicros, releaseBudget, reserveBudget, settleBudget } from './llm-budget'
 import { pickSuggestionProvider } from './visibility/prompts'
 
 /** Why a call was refused or failed; sent as `error.details.reason` on 409s. */
@@ -75,19 +76,19 @@ export async function callTeamLlm<T>(
   const key = await getTeamApiKey(teamId, providerId as ApiCredentialProvider)
   if (!key) failWith(409, 'Conflict', ErrorCode.CONFLICT, messages.noKey, 'no_key')
 
-  // Same monthly budget guard as the runner
-  if (key.monthlyBudgetCents != null) {
-    const usage = await getUsage(teamId)
-    if (budgetExhausted(usage, providerId, key.monthlyBudgetCents)) {
-      failWith(
-        409,
-        'Conflict',
-        ErrorCode.CONFLICT,
-        'The monthly budget for this provider is reached. Raise it in Marketing settings',
-        'budget'
-      )
-    }
+  // Same monthly budget guard as the runner: reserve an upper bound atomically so concurrent
+  // calls cannot all pass the check. Settled with the actual cost, released if nothing was spent.
+  const held = heldMicros(estimateTeamCallReservation(providerId, request), key.monthlyBudgetCents)
+  if (!(await reserveBudget(teamId, providerId, held, key.monthlyBudgetCents))) {
+    failWith(
+      409,
+      'Conflict',
+      ErrorCode.CONFLICT,
+      'The monthly budget for this provider is reached. Raise it in Marketing settings',
+      'budget'
+    )
   }
+  let settled = false
 
   try {
     const result = await getLlmProvider(providerId).extractStructured<T>({
@@ -99,19 +100,18 @@ export async function callTeamLlm<T>(
       model: LLM_MODELS[providerId].extract,
     })
 
+    const costMicros = estimateCostUsdMicros(providerId, LLM_MODELS[providerId].extract, result.model, result.usage)
+    await settleBudget(teamId, providerId, held, costMicros)
+    settled = true
     await Promise.all([
       recordUsage(teamId, `llm:${providerId}:input_tokens`, result.usage.inputTokens),
       recordUsage(teamId, `llm:${providerId}:output_tokens`, result.usage.outputTokens),
-      recordUsage(
-        teamId,
-        `llm:${providerId}:cost_usd_micros`,
-        estimateCostUsdMicros(providerId, LLM_MODELS[providerId].extract, result.model, result.usage)
-      ),
       ...Object.entries(request.extraUsageMetrics ?? {}).map(([metric, units]) => recordUsage(teamId, metric, units)),
     ])
 
     return { data: result.data, provider: providerId, model: result.model, usage: result.usage }
   } catch (err) {
+    if (!settled) await releaseBudget(teamId, providerId, held).catch(() => undefined)
     if (err instanceof LlmProviderError) {
       if (err.kind === 'auth') {
         const transitioned = await markCredentialInvalid(
