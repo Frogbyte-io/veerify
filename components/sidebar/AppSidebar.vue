@@ -408,7 +408,7 @@ const visibleFeedbackItems = computed(() =>
         </SidebarGroup>
 
         <!-- Marketing Section — off by default; enabled per team in Settings → Tools -->
-        <SidebarGroup v-if="teamModules.marketingEnabled">
+        <SidebarGroup v-if="teamModules.marketingEnabled" data-testid="sidebar-marketing-group">
           <SidebarGroupLabel>Marketing</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
