@@ -291,7 +291,11 @@ PageSpeed keys in Marketing settings; to let them save keys, set `SECRETS_ENCRYP
 | `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`  | Crawl limits (defaults 50 pages, 3 manual audits per product per day; hard cap 500 pages)                                                                                                                                              |
 
 Hacker News mentions need nothing. Marketing settings shows an integration status panel listing what is
-configured.
+configured. After setting the variables and restarting, open Marketing settings, go to Integration status and
+choose **Test all** (team admins only). Each integration runs its cheapest real check (key validation, one
+search, an encryption round trip, a Search Console token refresh) and shows what worked or what to fix;
+nothing is generated and no key is shown. Tests are limited to 10 per hour per team, and Test all skips
+integrations that are not configured.
 
 #### Bring the stack up
 
