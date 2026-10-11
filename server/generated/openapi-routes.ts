@@ -4488,6 +4488,98 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/teams/{teamId}/integrations/{id}/test": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Test one Marketing integration",
+      "description": "Team admins only. Runs the cheapest real check for the integration (key validation, one search, an encryption round trip, ...) and reports what was checked. Never returns keys. A rejected team key is marked invalid and a working one valid. Limited to 10 tests per hour per team.\n",
+      "operationId": "testMarketingIntegration",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "secrets",
+              "firecrawl",
+              "pagespeed",
+              "anthropic",
+              "openai",
+              "gemini",
+              "perplexity",
+              "hackernews",
+              "reddit",
+              "bluesky",
+              "google"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Test result (ok may be false)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "ok": {
+                        "type": "boolean"
+                      },
+                      "durationMs": {
+                        "type": "integer"
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          "team",
+                          "instance"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Unknown integration"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "429": {
+          "description": "Too many tests"
+        }
+      }
+    }
+  },
   "/api/orgs": {
     "post": {
       "tags": [

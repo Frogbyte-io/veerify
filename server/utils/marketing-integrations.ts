@@ -63,7 +63,7 @@ function fromCredential(
   return { ...base, state: 'not_configured', source: null, detail: fallback.missingHint }
 }
 
-const SOCIAL_HINTS: Record<string, string> = {
+export const SOCIAL_HINTS: Record<string, string> = {
   reddit: 'Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET (a Reddit API app) on the server.',
   bluesky: 'Set BLUESKY_IDENTIFIER and BLUESKY_APP_PASSWORD (a Bluesky app password) on the server.',
 }

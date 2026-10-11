@@ -55,7 +55,10 @@
               :integrations="integrations"
               :is-loading="integrationsLoading"
               :error="integrationsError"
-              @retry="loadIntegrations"
+              :team-id="product.teamId"
+              :can-manage="canManage"
+              @retry="loadIntegrations()"
+              @refresh="loadIntegrations(true)"
             />
           </template>
         </template>
@@ -129,10 +132,11 @@ export default {
       await this.loadSite(true)
     },
 
-    async loadIntegrations() {
+    // `silent` refreshes in place, so test results below stay on screen
+    async loadIntegrations(silent = false) {
       if (!this.product) return
       const productId = this.product.id
-      this.integrationsLoading = true
+      if (silent !== true) this.integrationsLoading = true
       this.integrationsError = null
       try {
         const response = await $fetch(`/api/marketing/projects/${productId}/overview`)
