@@ -19,7 +19,7 @@
  * Caveat: the docs pages fetched did not show an exact `web_search` country field,
  * so `country` is not sent.
  */
-import { LLM_MODELS } from './models'
+import { LLM_CALL_LIMITS, LLM_MODELS } from './models'
 import {
   addCitation,
   ANSWER_TIMEOUT_MS,
@@ -41,8 +41,8 @@ import {
 const BASE_URL = 'https://api.perplexity.ai'
 
 /** Agent API `max_output_tokens` (int, min 1; confirmed in the /v1/agent request reference). */
-export const PERPLEXITY_ANSWER_MAX_OUTPUT_TOKENS = 2048
-export const PERPLEXITY_EXTRACT_MAX_OUTPUT_TOKENS = 1024
+export const PERPLEXITY_ANSWER_MAX_OUTPUT_TOKENS = LLM_CALL_LIMITS.perplexity.answerMaxOutputTokens
+export const PERPLEXITY_EXTRACT_MAX_OUTPUT_TOKENS = LLM_CALL_LIMITS.perplexity.extractMaxOutputTokens
 
 interface PerplexityOutputItem {
   type: string
