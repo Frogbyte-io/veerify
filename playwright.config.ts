@@ -15,9 +15,10 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   maxFailures: process.env.CI ? 1 : undefined,
   timeout: process.env.CI ? 60_000 : 90_000,
-  // The Neon-backed suite runs serially and now covers 121 workflows; leave a
-  // small buffer below the CI job's 25-minute timeout for artifact upload.
-  globalTimeout: process.env.CI ? 24 * 60_000 : undefined,
+  // The Neon-backed suite runs serially (120+ workflows) and takes 18-24 minutes
+  // depending on Neon latency, so 24 minutes was hit intermittently. Leave a
+  // buffer below the CI job's 45-minute `timeout-minutes` for artifact upload.
+  globalTimeout: process.env.CI ? 40 * 60_000 : undefined,
   expect: {
     timeout: process.env.CI ? 10_000 : 15_000,
   },
