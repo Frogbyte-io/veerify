@@ -82,6 +82,10 @@ export const marketingSite = pgTable(
     verificationMethod: text('verification_method').$type<MarketingVerificationMethod>(),
     verificationToken: text('verification_token').notNull(),
     verifiedAt: timestamp('verified_at'),
+    // When ownership was last proven or re-checked; null on rows that predate the column (use verifiedAt)
+    verificationCheckedAt: timestamp('verification_checked_at'),
+    // Consecutive failed re-checks; the site is unverified at 2
+    verificationFailures: integer('verification_failures').default(0).notNull(),
     lastVerificationError: text('last_verification_error'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),

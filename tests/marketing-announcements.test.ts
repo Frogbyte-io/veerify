@@ -9,6 +9,8 @@ const state = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
   access: 'on' as 'on' | 'forbidden',
   limited: false,
+  dbLimited: false,
+  dbLimits: [] as Array<{ teamId: string; key: string; limit: number }>,
   queue: [] as unknown[][],
   drafts: new Map<string, Record<string, any>>(),
   deleted: [] as unknown[],
@@ -60,6 +62,15 @@ vi.mock('~/server/utils/rate-limit', () => ({
   requireRateLimit: vi.fn(async (_e: unknown, config: unknown) => {
     state.rateLimits.push(config)
     if (state.limited) throw httpError(429)
+  }),
+}))
+
+vi.mock('~/server/utils/marketing-db-limit', () => ({
+  dayStamp: () => '2026-10-10',
+  requireDbLimit: vi.fn(async (teamId: string, key: string, limit: number) => {
+    state.dbLimits.push({ teamId, key, limit })
+    if (state.dbLimited) throw httpError(429)
+    return { allowed: true, remaining: limit - 1 }
   }),
 }))
 
@@ -168,6 +179,8 @@ beforeEach(() => {
   state.query = {}
   state.access = 'on'
   state.limited = false
+  state.dbLimited = false
+  state.dbLimits = []
   state.queue = []
   state.drafts = new Map()
   state.deleted = []
@@ -211,6 +224,14 @@ describe('generate', () => {
     await expect(call(generatePost)).rejects.toMatchObject({ statusCode: 429 })
     expect(state.llm).not.toHaveBeenCalled()
     expect(state.rateLimits[0]).toMatchObject({ maxRequests: 20, windowSeconds: 3600, subject: 'p1' })
+  })
+
+  it('also caps generations per product per day in the database (50/day)', async () => {
+    state.dbLimited = true
+    queueGenerate()
+    await expect(call(generatePost)).rejects.toMatchObject({ statusCode: 429 })
+    expect(state.llm).not.toHaveBeenCalled()
+    expect(state.dbLimits[0]).toEqual({ teamId: 't1', key: 'ratelimit:announce:p1:2026-10-10', limit: 50 })
   })
 
   it('404s for an entry that belongs to another product', async () => {

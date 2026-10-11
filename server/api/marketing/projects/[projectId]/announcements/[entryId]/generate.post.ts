@@ -32,13 +32,14 @@
  *       403: { description: Marketing is not enabled or no team access }
  *       404: { description: Entry not found for this product }
  *       409: { description: Entry unpublished, no usable LLM key, budget reached, quota or key rejected }
- *       429: { description: Rate limit (20 per hour per product) or provider rate limit }
+ *       429: { description: Rate limit (20 per hour and 50 per day per product) or provider rate limit }
  *       502: { description: Provider error or unusable model output }
  */
 import { z } from 'zod'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { requireRouteParam } from '~/server/utils/marketing-site'
+import { dayStamp, requireDbLimit } from '~/server/utils/marketing-db-limit'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { createSuccessResponse } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -49,11 +50,13 @@ const bodySchema = z.object({
   channels: z.array(z.enum(ANNOUNCEMENT_CHANNELS)).min(1).max(ANNOUNCEMENT_CHANNELS.length).optional(),
 })
 
+const GENERATIONS_PER_DAY = 50
+
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   const entryId = requireRouteParam(event, 'entryId')
-  await requireMarketingAccess(projectId, session.user.id)
+  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   // Each call spends the team's own provider credit: 20 per hour per product
@@ -63,6 +66,14 @@ export default defineEventHandler(async (event) => {
     identifier: 'announcement-generate',
     subject: projectId,
   })
+
+  // Counted in the database so the cap holds across serverless instances
+  await requireDbLimit(
+    teamId,
+    `ratelimit:announce:${projectId}:${dayStamp()}`,
+    GENERATIONS_PER_DAY,
+    'Daily limit of announcement generations reached for this product. Try again tomorrow'
+  )
 
   const drafts = await generateAnnouncementDrafts(entryId, {
     userId: session.user.id,

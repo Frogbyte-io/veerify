@@ -34,5 +34,10 @@ export async function getUsage(teamId: string, period: string = currentPeriod())
     .from(marketingUsage)
     .where(and(eq(marketingUsage.teamId, teamId), eq(marketingUsage.period, period)))
 
-  return Object.fromEntries(rows.map((row) => [row.metric, Number(row.units)]))
+  return Object.fromEntries(
+    rows
+      // `ratelimit:*` rows are request counters (marketing-db-limit.ts), not billable usage
+      .filter((row) => !row.metric.startsWith('ratelimit:'))
+      .map((row) => [row.metric, Number(row.units)])
+  )
 }
