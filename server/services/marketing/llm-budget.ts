@@ -27,8 +27,9 @@
  *   drop a real one; a late settle after a reset is clamped at zero.
  */
 
-import { sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
+import { marketingUsage } from '~/server/database/schema/marketing'
 import { estimateCostUsdMicros, LLM_CALL_LIMITS, LLM_MODELS } from '~/server/services/llm/models'
 import type { LlmProviderId } from '~/server/services/llm/types'
 import { currentPeriod } from '~/server/utils/marketing-usage'
@@ -146,6 +147,32 @@ export async function reserveBudget(
     `)
     return result.rows.length > 0
   })
+}
+
+/**
+ * Why `reserveBudget` refused: `cap` when the call would not fit even with nothing else in flight
+ * (the month's spend plus this call exceeds the cap), `in_flight` when only other callers'
+ * reservations are in the way and the call may fit once they settle.
+ */
+export async function budgetRefusalReason(
+  teamId: string,
+  provider: string,
+  amountMicros: number,
+  capCents: number
+): Promise<'cap' | 'in_flight'> {
+  const [row] = await db
+    .select({ units: marketingUsage.units })
+    .from(marketingUsage)
+    .where(
+      and(
+        eq(marketingUsage.teamId, teamId),
+        eq(marketingUsage.period, currentPeriod()),
+        eq(marketingUsage.metric, costMetric(provider))
+      )
+    )
+    .limit(1)
+  const spent = Number(row?.units ?? 0)
+  return spent + Math.max(0, Math.ceil(amountMicros)) > capCents * 10_000 ? 'cap' : 'in_flight'
 }
 
 /**

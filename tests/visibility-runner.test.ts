@@ -196,6 +196,11 @@ function makeHarness(
         cap * 10_000
       )
     }),
+    // Mirrors llm-budget: a refusal is a real cap only if spend alone plus this call exceeds it
+    budgetRefusalReason: vi.fn(async (_t: string, provider: string, amount: number, cap: number) => {
+      const usage = options.usage ?? {}
+      return (usage[`llm:${provider}:cost_usd_micros`] ?? 0) + amount > cap * 10_000 ? 'cap' : 'in_flight'
+    }),
     settleBudget: vi.fn(async () => undefined),
     releaseBudget: vi.fn(async () => undefined),
     finalize: vi.fn(async () => undefined),
@@ -251,6 +256,7 @@ function makeHarness(
       options.key === undefined ? { apiKey: 'sk-secret', status: 'valid', monthlyBudgetCents: null } : options.key
     ),
     reserveBudget: calls.reserveBudget,
+    budgetRefusalReason: calls.budgetRefusalReason,
     settleBudget: calls.settleBudget,
     releaseBudget: calls.releaseBudget,
     recordUsage: calls.recordUsage,
@@ -427,15 +433,27 @@ describe('advanceVisibilityRuns', () => {
     expect(h.state.failed.get('a1')).toMatch(/unexpected/i)
   })
 
-  it('counts in-flight reservations when deciding a provider is out of budget', async () => {
+  it('leaves answers pending when only in-flight reservations block the budget', async () => {
     const h = makeHarness([mk('a1'), mk('a2')], {
       key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: 100 },
       usage: { 'llm:anthropic:reserved_usd_micros': 990_000 },
     })
     await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 1 }, h.deps)
-    expect(h.state.failed.get('a1')).toMatch(/budget/i)
+    // Not failed: other answers' reservations may settle below the cap
+    expect(h.state.failed.size).toBe(0)
     expect(h.calls.answerWithSearch).not.toHaveBeenCalled()
     expect(h.calls.releaseBudget).not.toHaveBeenCalled()
+    expect(h.calls.budgetRefusalReason).toHaveBeenCalled()
+  })
+
+  it('fails answers when spend alone would exceed the cap', async () => {
+    const h = makeHarness([mk('a1')], {
+      key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: 100 },
+      usage: { 'llm:anthropic:cost_usd_micros': 999_999 },
+    })
+    await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 1 }, h.deps)
+    expect(h.state.failed.get('a1')).toMatch(/budget/i)
+    expect(h.calls.answerWithSearch).not.toHaveBeenCalled()
   })
 
   it('on auth error marks the key invalid, emails once and fails remaining pending answers', async () => {

@@ -56,6 +56,7 @@ import {
   heldMicros,
   releaseBudget,
   reserveBudget,
+  budgetRefusalReason,
   settleBudget,
 } from '~/server/services/marketing/llm-budget'
 import { createLogger } from '~/server/utils/logger'
@@ -255,6 +256,12 @@ export interface RunnerDeps {
   getKey: (teamId: string, provider: LlmProviderId) => Promise<TeamApiKey | null>
   /** Atomic budget reservation (see llm-budget.ts); false when the cap would be exceeded */
   reserveBudget: (teamId: string, provider: string, amountMicros: number, capCents: number | null) => Promise<boolean>
+  budgetRefusalReason: (
+    teamId: string,
+    provider: string,
+    amountMicros: number,
+    capCents: number
+  ) => Promise<'cap' | 'in_flight'>
   /** Replaces a reservation with the actual spend */
   settleBudget: (teamId: string, provider: string, reservedMicros: number, actualMicros: number) => Promise<void>
   releaseBudget: (teamId: string, provider: string, reservedMicros: number) => Promise<void>
@@ -391,6 +398,18 @@ async function processAnswer(
     key.monthlyBudgetCents
   )
   if (!(await deps.reserveBudget(teamId, provider, held, key.monthlyBudgetCents))) {
+    // Only a real cap fails the provider's answers. If the refusal came from other answers'
+    // reservations still in flight, leave this one pending for the next tick (bounded by the 24h
+    // pending-answer timeout) instead of failing work that may fit once they settle.
+    const reason =
+      key.monthlyBudgetCents == null
+        ? 'cap'
+        : await deps.budgetRefusalReason(teamId, provider, held, key.monthlyBudgetCents)
+    if (reason === 'in_flight') {
+      stopped.add(provider)
+      await deps.release(answer.id)
+      return 'released'
+    }
     await failProvider(answer, deps, stopped, 'Monthly budget reached for this provider')
     return 'failed'
   }
@@ -682,6 +701,7 @@ export function createDefaultDeps(): RunnerDeps {
 
     getKey: getTeamApiKey,
     reserveBudget,
+    budgetRefusalReason,
     settleBudget,
     releaseBudget,
     recordUsage,
