@@ -85,8 +85,20 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date()
   const verification = covered
-    ? { verifiedAt: now, verificationMethod: 'domain' as const, lastVerificationError: null }
-    : { verifiedAt: null, verificationMethod: null, lastVerificationError: null }
+    ? {
+        verifiedAt: now,
+        verificationMethod: 'domain' as const,
+        verificationCheckedAt: now,
+        verificationFailures: 0,
+        lastVerificationError: null,
+      }
+    : {
+        verifiedAt: null,
+        verificationMethod: null,
+        verificationCheckedAt: null,
+        verificationFailures: 0,
+        lastVerificationError: null,
+      }
 
   let saved
   if (existing) {
