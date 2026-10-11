@@ -21,7 +21,7 @@ import { db } from '~/server/database/drizzle'
 import { mentionSourceCursor } from '~/server/database/schema/marketing'
 import { SOCIAL_SOURCES } from '~/server/services/social-sources'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
-import { findMarketingSite, requireRouterParam } from '~/server/utils/marketing-mentions'
+import { findMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 
@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   await requireMarketingAccess(projectId, session.user.id)
 
-  const site = await findMarketingSite(projectId)
+  const site = await findMentionsSite(projectId)
   const cursors = site
     ? await db
         .select({

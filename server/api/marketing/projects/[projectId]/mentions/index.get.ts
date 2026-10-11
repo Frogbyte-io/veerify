@@ -44,7 +44,7 @@ import { conversation } from '~/server/database/schema/support'
 import { marketingTerm, mention } from '~/server/database/schema/marketing'
 import { accessibleInboxIds, canEscalateMentions } from '~/server/services/marketing/mentions/escalation'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
-import { findMarketingSite, requireRouterParam } from '~/server/utils/marketing-mentions'
+import { findMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
@@ -68,7 +68,7 @@ export default defineEventHandler(async (event) => {
 
   const counts = { new: 0, seen: 0, dismissed: 0, escalated: 0 }
   const canEscalate = await canEscalateMentions(teamId, projectId, session.user.id)
-  const site = await findMarketingSite(projectId)
+  const site = await findMentionsSite(projectId)
   if (!site) {
     return createSuccessResponse({
       items: [],

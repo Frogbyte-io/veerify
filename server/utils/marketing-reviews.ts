@@ -6,7 +6,6 @@ import { feedbackStatus, project } from '~/server/database/schema/feedback'
 import { reviewRequest, type ReviewPlatform, reviewRequestSettings } from '~/server/database/schema/marketing'
 import { teamModuleSettings } from '~/server/database/schema/teams'
 import { isMarketingOn, isRequestLinkExpired } from '~/server/services/marketing/reviews/guards'
-import { requireTeamAdmin } from './support-access'
 import { SYSTEM_STATUSES } from './project-statuses'
 import { createErrorResponse, ErrorCode } from './response'
 
@@ -133,15 +132,4 @@ export function testimonialSubmissionState(
   if (!isMarketingOn(request)) return 'unavailable'
   if (isRequestLinkExpired(request, now)) return 'expired'
   return 'ok'
-}
-
-/** True for team admins. A non-admin member reads as false; other failures are not swallowed. */
-export async function isTeamAdminOf(teamId: string, userId: string): Promise<boolean> {
-  try {
-    await requireTeamAdmin(teamId, userId)
-    return true
-  } catch (error) {
-    if ((error as { statusCode?: number })?.statusCode === 403) return false
-    throw error
-  }
 }
