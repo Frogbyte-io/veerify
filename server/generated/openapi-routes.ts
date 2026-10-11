@@ -4494,7 +4494,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Test one Marketing integration",
-      "description": "Team admins only. Runs the cheapest real check for the integration (key validation, one search, an encryption round trip, ...) and reports what was checked. Never returns keys. A rejected team key is marked invalid and a working one valid. Limited to 10 tests per hour per team.\n",
+      "description": "Team admins only. Runs the cheapest real check for the integration (key validation, one search, an encryption round trip, ...) and reports what was checked. Never returns keys. A rejected team key is marked invalid and a working one valid. Limited to 30 tests per hour per team (enough for \"Test all\" across every integration, plus retries).\n",
       "operationId": "testMarketingIntegration",
       "parameters": [
         {

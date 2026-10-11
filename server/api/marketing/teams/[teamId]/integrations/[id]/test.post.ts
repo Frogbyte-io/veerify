@@ -8,7 +8,7 @@
  *       Team admins only. Runs the cheapest real check for the integration
  *       (key validation, one search, an encryption round trip, ...) and reports
  *       what was checked. Never returns keys. A rejected team key is marked
- *       invalid and a working one valid. Limited to 10 tests per hour per team.
+ *       invalid and a working one valid. Limited to 30 tests per hour per team (enough for "Test all" across every integration, plus retries).
  *     operationId: testMarketingIntegration
  *     parameters:
  *       - in: path
@@ -51,7 +51,7 @@ import { dayStamp, requireDbLimit } from '~/server/utils/marketing-db-limit'
 import { recordUsage } from '~/server/utils/marketing-usage'
 import { isIntegrationId, runIntegrationTest } from '~/server/services/marketing/integration-test'
 
-const TESTS_PER_HOUR = 10
+const TESTS_PER_HOUR = 30
 
 export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)

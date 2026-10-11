@@ -88,13 +88,13 @@ describe('POST integration test', () => {
     expect(state.ran).toEqual([])
   })
 
-  it('limits 10 per hour per team in memory and in the database', async () => {
+  it('limits 30 per hour per team in memory and in the database', async () => {
     await call()
-    expect(state.rateConfigs[0]).toMatchObject({ maxRequests: 10, windowSeconds: 3600, subject: 'team-a' })
+    expect(state.rateConfigs[0]).toMatchObject({ maxRequests: 30, windowSeconds: 3600, subject: 'team-a' })
     expect(state.dbLimitCalls[0].slice(0, 3)).toEqual([
       'team-a',
       expect.stringMatching(/^ratelimit:integration-test:2026-10-11T\d+$/),
-      10,
+      30,
     ])
   })
 
