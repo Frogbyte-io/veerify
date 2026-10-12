@@ -20,7 +20,8 @@ MVP
 
 - [x] **Feedback submission confirmation email** — Send a confirmation email to the submitter when they submit feedback (if email provided), including a tokenized edit link
 - [x] **Edit feedback from confirmation email** — Create a token-based edit endpoint (`GET/PUT /api/feedback/[id]/edit?token=...`) and edit page so submitters can update their feedback via email link
-- [ ] **File/image/log attachments** — Add file upload support to the feedback submission form; store files (S3/local) and reference them from the feedback record
+- [x] **File/image/log attachments** — Add file upload support to the feedback submission form; store files (S3/local) and reference them from the feedback record
+  - Done: `feedback_attachment` table (migration `0050`), presign -> upload -> finalize pipeline under `/api/feedback-attachments/**` mirroring the support one (content sniffing, 5 files / 10 MB, PNG/JPG/WebP/GIF/PDF/txt/log/json, EXIF stripped), private storage served only via 5-minute signed URLs to permitted viewers, picker in the public submit dialog, thumbnails/chips in the public and dashboard detail views, and cleanup folded into the existing `support:attachment-cleanup` task.
 - [x] **Email notification subscription** — Allow users/anonymous submitters to subscribe to a feedback item for state-change and comment notifications; implement notification dispatch on status change and new public comment
   - Added `feedbackSubscription` table (migration `0014_medical_jamie_braddock.sql`). `POST/DELETE /api/feedback/[id]/subscribe` handle subscribe/unsubscribe; `GET /api/feedback/[id]/unsubscribe?token=` handles one-click email links. Status-change and new-comment notifications are dispatched fire-and-forget in `status.patch.ts` and `comments.post.ts`. Three email templates added. UI: logged-in users get a one-click toggle; anonymous users see an inline email prompt with a confirmation message.
 

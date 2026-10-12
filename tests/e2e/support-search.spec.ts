@@ -214,7 +214,8 @@ test('support search finds a resolved conversation from Unassigned by email and 
     await expect(
       page.getByTestId(`support-conversation-${resolvedConversationId}`).getByTestId('support-conversation-csat')
     ).toHaveText('5')
-    expect(new URL(page.url()).searchParams.get('csat')).toBe('rated')
+    // The filter writes the query string asynchronously; poll like the other URL checks above.
+    await expect.poll(() => new URL(page.url()).searchParams.get('csat')).toBe('rated')
     await page.getByTestId('support-csat-filter').selectOption('unrated')
     await expect(page.getByTestId(`support-conversation-${resolvedConversationId}`)).toHaveCount(0)
   } finally {

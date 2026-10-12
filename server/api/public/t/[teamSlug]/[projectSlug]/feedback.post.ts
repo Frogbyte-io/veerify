@@ -10,6 +10,8 @@ import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
 import { createAutomaticFeedbackLink } from '~/server/utils/support-auto-link'
+import { FEEDBACK_ATTACHMENT_MAX_COUNT } from '~/server/utils/feedback-attachments'
+import { attachUploadsToFeedback } from '~/server/utils/feedback-attachment-access'
 
 const submitFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
@@ -17,6 +19,8 @@ const submitFeedbackSchema = z.object({
   categoryId: z.string().optional().nullable(),
   authorName: optionalTrimmedString(100, 'Name too long'),
   authorEmail: optionalTrimmedEmail('Invalid email'),
+  // Ids of finalized, unattached uploads from POST /api/feedback-attachments/presign
+  attachmentIds: z.array(z.string().min(1)).max(FEEDBACK_ATTACHMENT_MAX_COUNT).optional(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -98,6 +102,16 @@ export default defineEventHandler(async (event) => {
         feedbackId: createdFeedback.id,
         authorUserId: session.user.id,
         createdAt: now,
+      })
+    }
+
+    if (body.attachmentIds?.length) {
+      await attachUploadsToFeedback(tx, {
+        attachmentIds: body.attachmentIds,
+        feedbackId: createdFeedback.id,
+        projectId: proj.id,
+        actor: { userId: session?.user?.id ?? null, anonSessionId },
+        now,
       })
     }
 
