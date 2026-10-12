@@ -32,8 +32,8 @@
     <template v-else-if="conversation">
       <!-- Header -->
       <div class="border-b px-4 py-3">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-[12rem] flex-1 basis-48">
             <div class="flex items-center gap-2">
               <h2 class="text-sm font-semibold truncate">{{ conversation.subject || 'No subject' }}</h2>
               <span class="text-xs text-muted-foreground shrink-0">#{{ conversation.displayId }}</span>
