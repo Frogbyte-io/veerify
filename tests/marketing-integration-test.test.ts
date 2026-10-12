@@ -100,6 +100,7 @@ vi.mock('~/server/services/google/search-console', async () => {
   return {
     GoogleApiError: actual.GoogleApiError,
     getGoogleOAuthConfig: () => state.google.config,
+    getGoogleRedirectUri: () => (state.google.config as { redirectUri?: string } | null)?.redirectUri ?? null,
     refreshAccessToken: vi.fn(async () => {
       if (state.google.refresh) throw state.google.refresh
       return { accessToken: 'ya29.token', expiresAt: new Date() }

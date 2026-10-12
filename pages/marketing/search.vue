@@ -57,6 +57,7 @@
           :configured="data.configured"
           :can-manage="data.canManage"
           :origin="data.site.origin"
+          :redirect-uri="data.redirectUri"
           :reconnect="Boolean(data.connection)"
           :connecting="connecting"
           :connect-error="connectError"

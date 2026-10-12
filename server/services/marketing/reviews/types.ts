@@ -82,7 +82,13 @@ export interface CsatContext {
 /** Persistence seam for the review request service, so it can be tested without a database. */
 export interface ReviewsStore {
   loadProjectContext(projectId: string): Promise<ReviewProjectContext | null>
+  /** Suppressed by address or by its keyed hash (an anonymised row's unsubscribe is hash-only). */
   isSuppressed(teamId: string, email: string): Promise<boolean>
+  /**
+   * Last check before the mailer is called: the row still exists and is still `sending` (a contact
+   * erasure may have deleted it since the claim) and the address is not suppressed.
+   */
+  stillSendable(id: string, teamId: string, email: string): Promise<boolean>
   /** A queued, sending or sent request for this product and address created at or after `since`. */
   hasRecentRequest(projectId: string, email: string, since: Date): Promise<boolean>
   /** A request that was actually sent at or after `since`, ignoring `excludeId`. Reads committed state. */

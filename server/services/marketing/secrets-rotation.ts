@@ -19,7 +19,7 @@ import {
  * and gsc_connection.encryptedRefreshToken (AAD `gsc:<siteId>`, see search/connection.ts).
  * Idempotent: rows already on the current key are never selected. Rows are updated only if the
  * stored value is unchanged since it was read, so a concurrent re-save of the secret wins.
- * Plaintext is never logged; undecryptable rows are reported by id and left untouched.
+ * Plaintext is never logged; undecryptable rows are reported by id in the summary (counts only in logs) and left untouched.
  */
 
 const logger = createLogger('marketing-secrets-rotation')
@@ -125,21 +125,33 @@ export async function rotateSecrets(
   const maxRows = options.maxRows ?? ROTATION_MAX_ROWS
   const keyId = currentKeyId()
 
+  // One budget per table, so a table full of undecryptable rows cannot starve the other one. Rows that
+  // fail to decrypt are remembered for this run and do not use up the budget; the id cursor moves past
+  // them, so they are not read again within the run.
   for (const table of ['team_api_credential', 'gsc_connection'] as const) {
     let afterId = ''
-    while (summary.scanned < maxRows) {
+    let budget = maxRows
+    const failedIds = new Set<string>()
+    while (budget > 0) {
       const batch = await store.loadOutdated(table, keyId, afterId, batchSize)
       if (batch.length === 0) break
       for (const row of batch) {
         afterId = row.id
+        if (failedIds.has(row.id)) continue
+        if (budget <= 0) break
         summary.scanned += 1
         try {
           // Malformed payloads throw here too and are reported as failures
-          if (!needsReencryption(row.payload)) continue
+          if (!needsReencryption(row.payload)) {
+            budget -= 1
+            continue
+          }
           const next = encryptSecret(decryptSecret(row.payload, row.aad), row.aad)
+          budget -= 1
           if (await store.replace(table, row.id, row.payload, next)) summary.rewrapped += 1
         } catch {
           // Error text is dropped on purpose; only the row identity is reported
+          failedIds.add(row.id)
           summary.failed.push({ table, id: row.id })
         }
       }
@@ -152,7 +164,6 @@ export async function rotateSecrets(
     logger.info('Secrets re-encryption sweep finished', {
       rewrapped: summary.rewrapped,
       failedCount: summary.failed.length,
-      failed: summary.failed.slice(0, 20),
       remaining: summary.remaining,
     })
   }

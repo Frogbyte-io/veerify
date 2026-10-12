@@ -91,24 +91,40 @@ opportunities, and growth features built on feedback, changelog and support data
 The `marketing:retention` task runs daily (`30 3 * * *`; a Nitro task on self-hosted installs, the
 `/api/cron/marketing-retention` route on Vercel).
 
-| Data                                                                       | Kept                                                                         |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Review requests (`sent`, `failed`, `skipped`): email, name, token, error   | 180 days, then deleted. `queued` and `sending` rows are never pruned         |
-| Email suppressions (`marketing_email_suppression`)                         | Indefinitely: the durable opt-out record                                     |
-| Testimonial author email                                                   | 180 days, then cleared. Name, title, company and quote stay                  |
-| Mentions                                                                   | 180 days after publication (mentions poller)                                 |
-| Competitor changes                                                         | 12 months                                                                    |
-| Usage counters (`marketing_usage`)                                         | 13 months by period                                                          |
-| Rate-limit counters (`ratelimit:*` in `marketing_usage`)                   | 2 days after the last update                                                 |
-| Customer language insights                                                 | Until consent for any source they used is switched off, then deleted at once |
-| Everything else (audits, visibility answers, terms, launch kit, and so on) | Until the product's Marketing data is deleted                                |
+| Data                                                                       | Kept                                                                                                                                 |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Review requests (`sent`, `failed`, `skipped`): email, name, error          | 180 days, then anonymised (see below). Anonymised rows are deleted after 3 years, only when no testimonial references them           |
+| Review requests still `queued`                                             | 30 days, then `skipped` (reason `expired`) and anonymised on the normal schedule. `sending` rows are left to the stale-claim sweeper |
+| Email suppressions (`marketing_email_suppression`)                         | Indefinitely: the durable opt-out record (address and/or keyed hash)                                                                 |
+| Testimonial author email                                                   | 180 days, then cleared (the keyed hash stays). Name, title, company and quote stay                                                   |
+| Mentions                                                                   | 180 days after publication (mentions poller)                                                                                         |
+| Competitor changes                                                         | 12 months                                                                                                                            |
+| Usage counters (`marketing_usage`)                                         | 13 months by period                                                                                                                  |
+| Rate-limit counters (`ratelimit:*` in `marketing_usage`)                   | 2 days after the last update                                                                                                         |
+| Digest ledger (`digest:<date>`) and OAuth nonces (`oauth-nonce:*`)         | 7 days and 1 day after the last update                                                                                               |
+| Customer language insights                                                 | Until consent for any source they used is switched off, then deleted at once                                                         |
+| Everything else (audits, visibility answers, terms, launch kit, and so on) | Until the product's Marketing data is deleted                                                                                        |
 
+- **Anonymisation, not deletion.** After 180 days a terminal review request keeps its id, token,
+  project, team, trigger, source, status, timestamps and `email_hash`; `email` becomes `redacted:<id>`
+  and `name` and `error` are cleared. `email_hash` (and `testimonial.author_email_hash`) is
+  HMAC-SHA256 of the lower-cased, trimmed address, keyed by a key derived from `BETTER_AUTH_SECRET` with
+  HKDF (info `marketing-email-hash`, `server/utils/marketing-email-hash.ts`). It is never exported or
+  returned by an API. Because the token stays, the unsubscribe and withdraw links keep working for old
+  emails (an unsubscribe on an anonymised row writes a hash-based suppression); suppression checks (at
+  enqueue and right before sending) match by address or hash; and the unique
+  (project, trigger, source, email_hash) index keeps a `shipped` event from being queued twice. Hashes
+  are filled lazily by the retention task before anonymising, so existing rows need no data migration.
+  Rotating `BETTER_AUTH_SECRET` invalidates existing hashes (they no longer match a given address).
 - **Erase a person:** `POST /api/marketing/teams/{teamId}/erase-contact` (team admin) deletes all review
-  requests and testimonials for an email (case-insensitive) in the team's products and keeps or
-  creates a suppression, so the address is never contacted again.
+  requests and testimonials for an email (case-insensitive, or its keyed hash, so anonymised rows and
+  testimonials without an address are found too) in the team's products and keeps or creates a
+  suppression (address and hash), so the address is never contacted again. A review request the sender
+  already claimed is deleted too; the sender re-checks that the row exists and the address is not
+  suppressed immediately before calling the mailer.
 - **Withdraw consent:** the testimonial page and the review-request email footer link to a page that
   calls `POST /api/marketing/r/{token}/withdraw`, which turns public consent off and un-features the
-  testimonial. It works for expired links.
+  testimonial. It works for expired links and after the 180-day anonymisation (the token is kept).
 - **Export and delete a product's data:** `GET /api/marketing/projects/{projectId}/export` returns a JSON
   file (never keys or tokens); `DELETE /api/marketing/projects/{projectId}/data` with
   `{ "confirm": "<product slug>" }` revokes a connected Search Console token and deletes the site (with

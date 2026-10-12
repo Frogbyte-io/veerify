@@ -43,7 +43,7 @@
             class="flex flex-wrap items-center gap-x-3 gap-y-1 p-3 text-sm"
             data-testid="reviews-request-row"
           >
-            <span class="min-w-0 flex-1 truncate font-medium">{{ item.email }}</span>
+            <span class="min-w-0 flex-1 truncate font-medium">{{ item.email || 'Anonymised' }}</span>
             <Badge variant="secondary">{{ triggerLabel(item.trigger) }}</Badge>
             <Badge :variant="statusVariant(item.status)">{{ statusLabel(item) }}</Badge>
             <Badge v-if="item.clickedAt" variant="default">Clicked</Badge>

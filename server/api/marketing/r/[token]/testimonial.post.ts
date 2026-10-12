@@ -44,6 +44,7 @@ import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 import { reviewRequest, reviewRequestSettings, testimonial } from '~/server/database/schema/marketing'
 import { teamModuleSettings } from '~/server/database/schema/teams'
+import { hashEmail, isRedactedEmail } from '~/server/utils/marketing-email-hash'
 import { notFound, testimonialSubmissionState } from '~/server/utils/marketing-reviews'
 import { rateLimits, requireRateLimit } from '~/server/utils/rate-limit'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -82,6 +83,7 @@ export default defineEventHandler(async (event) => {
         id: reviewRequest.id,
         projectId: reviewRequest.projectId,
         email: reviewRequest.email,
+        emailHash: reviewRequest.emailHash,
         status: reviewRequest.status,
         sentAt: reviewRequest.sentAt,
         createdAt: reviewRequest.createdAt,
@@ -117,7 +119,8 @@ export default defineEventHandler(async (event) => {
       authorName: body.authorName,
       authorTitle: body.authorTitle,
       authorCompany: body.authorCompany,
-      authorEmail: request.email,
+      authorEmail: isRedactedEmail(request.email) ? null : request.email,
+      authorEmailHash: request.emailHash ?? (isRedactedEmail(request.email) ? null : hashEmail(request.email)),
       quote: body.quote,
       rating: body.rating ?? null,
       consentPublic: body.consentPublic,

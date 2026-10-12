@@ -33,6 +33,7 @@ vi.mock('~/server/utils/secrets', () => ({
 
 const { eraseContact, withdrawTestimonialConsent, deleteProductMarketingData } =
   await import('~/server/services/marketing/privacy')
+const { hashEmail } = await import('~/server/utils/marketing-email-hash')
 const { exportProductMarketingData } = await import('~/server/services/marketing/data-export')
 
 beforeEach(() => {
@@ -58,7 +59,9 @@ describe('eraseContact', () => {
     const requestDelete = queries('delete from "review_request"')[0]
     expect(requestDelete.text).toContain('"team_id" = $1')
     expect(requestDelete.text).toContain('lower("review_request"."email") = $2')
-    expect(requestDelete.params).toEqual(['team-1', 'jane.doe@example.com'])
+    // Rows the retention task anonymised only have the keyed hash left
+    expect(requestDelete.text).toContain('"review_request"."email_hash" = $3')
+    expect(requestDelete.params).toEqual(['team-1', 'jane.doe@example.com', hashEmail('jane.doe@example.com')])
 
     const testimonialDelete = queries('delete from "testimonial"')[0]
     // Scoped to the team's own products, never to every testimonial with that email
@@ -66,10 +69,43 @@ describe('eraseContact', () => {
     expect(testimonialDelete.params).toContain('team-1')
     expect(testimonialDelete.params).toContain('jane.doe@example.com')
     expect(testimonialDelete.params).toContain('rr1')
+    // By the author's own address or hash (cleared emails keep the hash)
+    expect(testimonialDelete.text).toContain('"author_email_hash" = $')
+    expect(testimonialDelete.params).toContain(hashEmail('jane.doe@example.com'))
 
     const suppression = queries('insert into "marketing_email_suppression"')[0]
     expect(suppression.text).toContain('on conflict do nothing')
-    expect(suppression.params).toEqual(expect.arrayContaining(['team-1', 'jane.doe@example.com', 'unsubscribed']))
+    expect(suppression.params).toEqual(
+      expect.arrayContaining(['team-1', 'jane.doe@example.com', hashEmail('jane.doe@example.com'), 'unsubscribed'])
+    )
+    // A suppression that only had the address gets its hash
+    const backfill = queries('update "marketing_email_suppression"')[0]
+    expect(backfill.text).toContain('"email_hash" = $1')
+    expect(backfill.text).toContain('"email_hash" is null')
+    expect(backfill.params[0]).toBe(hashEmail('jane.doe@example.com'))
+  })
+
+  it('finds a person by hash alone (address already anonymised), including testimonials without an address', async () => {
+    await eraseContact('team-1', 'Anon@Example.com')
+    const hash = hashEmail('anon@example.com')
+    expect(queries('delete from "review_request"')[0].params).toContain(hash)
+    const testimonialDelete = queries('delete from "testimonial"')[0]
+    expect(testimonialDelete.params).toContain(hash)
+    expect(hash).toBe(hashEmail('  ANON@example.com '))
+  })
+
+  it('the export never contains hashes or redacted placeholders', async () => {
+    state.respond = (text) =>
+      text.includes('from "review_request"')
+        ? [['rr1', 'redacted:rr1', 'Name', 'csat', 'sent', null, null, null, new Date()]]
+        : []
+    const exported = (await exportProductMarketingData('p1', 'slug')) as {
+      reviewRequests: Array<{ email: string | null }>
+    }
+    expect(exported.reviewRequests[0]?.email).toBeNull()
+    const select = queries('from "testimonial"')[0]
+    expect(select.text).not.toContain('author_email_hash')
+    for (const q of state.log) expect(q.text).not.toContain('"email_hash"')
   })
 
   it('still suppresses when nothing matches', async () => {

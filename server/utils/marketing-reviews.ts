@@ -87,6 +87,7 @@ export async function findReviewRequestByToken(token: string) {
       projectId: reviewRequest.projectId,
       teamId: reviewRequest.teamId,
       email: reviewRequest.email,
+      emailHash: reviewRequest.emailHash,
       name: reviewRequest.name,
       clickedAt: reviewRequest.clickedAt,
       status: reviewRequest.status,
