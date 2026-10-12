@@ -19,10 +19,13 @@ import {
   boolean,
   integer,
   bigint,
+  date,
+  doublePrecision,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { user, team } from './auth'
 import { project } from './feedback'
+import { changelogEntry } from './changelog'
 import type { PageFacts } from '../../services/marketing/audit/types'
 
 export type MarketingVerificationMethod = 'dns' | 'meta' | 'file' | 'domain'
@@ -38,6 +41,19 @@ export type AiVisibilityAnswerStatus = 'pending' | 'done' | 'failed'
 export type MentionSource = 'hackernews' | 'reddit' | 'bluesky'
 export type MentionKind = 'mention' | 'competitor' | 'opportunity'
 export type MentionStatus = 'new' | 'seen' | 'dismissed' | 'escalated'
+export type AnnouncementChannel = 'x' | 'linkedin' | 'bluesky' | 'newsletter'
+export type ReviewRequestTrigger = 'csat' | 'shipped' | 'manual'
+// `sending` is a claim held by a worker (see `claimedAt`); a sweeper returns stale claims to `queued`.
+export type ReviewRequestStatus = 'queued' | 'sending' | 'sent' | 'skipped' | 'failed'
+export type EmailSuppressionReason = 'unsubscribed' | 'bounced' | 'complaint'
+export type TestimonialStatus = 'pending' | 'approved' | 'rejected'
+export type CustomerLanguageSource = 'feedback' | 'support'
+export type CustomerLanguagePhraseKind = 'pain' | 'feature' | 'praise' | 'comparison'
+export type GscConnectionStatus = 'connected' | 'needs_property' | 'error'
+
+export type ReviewPlatform = { id: string; label: string; url: string }
+export type CustomerLanguagePhrase = { phrase: string; kind: CustomerLanguagePhraseKind; mentions: number }
+export type CustomerLanguageSuggestedTerm = { kind: 'keyword' | 'competitor'; label: string }
 
 const createdAtColumn = () =>
   timestamp('created_at')
@@ -346,5 +362,248 @@ export const mentionSourceCursor = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.siteId, table.source] }),
+  })
+)
+
+// One editable announcement draft per (entry, channel). Regenerating replaces
+// it; nothing is ever posted automatically.
+export const marketingAnnouncementDraft = pgTable(
+  'marketing_announcement_draft',
+  {
+    id: text('id').primaryKey(),
+    entryId: text('entry_id')
+      .notNull()
+      .references(() => changelogEntry.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    channel: text('channel').$type<AnnouncementChannel>().notNull(),
+    content: text('content').notNull(),
+    provider: text('provider'),
+    model: text('model'),
+    edited: boolean('edited').default(false).notNull(),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => ({
+    uniqueEntryChannel: uniqueIndex('marketing_announcement_draft_entry_channel_idx').on(table.entryId, table.channel),
+    projectIdx: index('marketing_announcement_draft_project_idx').on(table.projectId),
+  })
+)
+
+// Review and testimonial request settings per product. Off by default.
+export const reviewRequestSettings = pgTable('review_request_settings', {
+  projectId: text('project_id')
+    .primaryKey()
+    .references(() => project.id, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').default(false).notNull(),
+  platforms: jsonb('platforms')
+    .$type<ReviewPlatform[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  askForTestimonial: boolean('ask_for_testimonial').default(true).notNull(),
+  csatTrigger: boolean('csat_trigger').default(true).notNull(),
+  // null means the top score of the survey scale
+  csatMinRating: integer('csat_min_rating'),
+  shippedTrigger: boolean('shipped_trigger').default(true).notNull(),
+  shippedStatusValues: text('shipped_status_values')
+    .array()
+    .notNull()
+    .default(sql`'{completed}'::text[]`),
+  cooldownDays: integer('cooldown_days').default(90).notNull(),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+})
+
+// `sourceId` is the CSAT response id, feedback id or changelog entry id,
+// depending on `trigger`. The unique index stops the same event queuing twice
+// (NULL sourceIds, i.e. manual requests, are never deduplicated by it).
+export const reviewRequest = pgTable(
+  'review_request',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    name: text('name'),
+    trigger: text('trigger').$type<ReviewRequestTrigger>().notNull(),
+    sourceId: text('source_id'),
+    token: text('token').notNull(),
+    status: text('status').$type<ReviewRequestStatus>().default('queued').notNull(),
+    skipReason: text('skip_reason'),
+    error: text('error'),
+    sentAt: timestamp('sent_at'),
+    clickedAt: timestamp('clicked_at'),
+    // When a worker claimed the row (status `sending`); null otherwise.
+    claimedAt: timestamp('claimed_at'),
+    // Failed send attempts so far; the row is `failed` once this reaches the retry limit.
+    attempts: integer('attempts').default(0).notNull(),
+    // Earliest time a retry may be claimed; null means immediately.
+    nextAttemptAt: timestamp('next_attempt_at'),
+    createdAt: createdAtColumn(),
+  },
+  (table) => ({
+    uniqueToken: uniqueIndex('review_request_token_idx').on(table.token),
+    uniqueEvent: uniqueIndex('review_request_event_idx').on(
+      table.projectId,
+      table.trigger,
+      table.sourceId,
+      table.email
+    ),
+    projectEmailIdx: index('review_request_project_email_idx').on(table.projectId, table.email, table.createdAt),
+    statusIdx: index('review_request_status_idx').on(table.status, table.createdAt),
+  })
+)
+
+// Per-team marketing email suppression. `email` is lower-cased in app code.
+export const marketingEmailSuppression = pgTable(
+  'marketing_email_suppression',
+  {
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    reason: text('reason').$type<EmailSuppressionReason>().notNull(),
+    createdAt: createdAtColumn(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.teamId, table.email] }),
+  })
+)
+
+// `authorEmail` is private and must never be returned by public endpoints.
+export const testimonial = pgTable(
+  'testimonial',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    reviewRequestId: text('review_request_id').references(() => reviewRequest.id, { onDelete: 'set null' }),
+    authorName: text('author_name').notNull(),
+    authorTitle: text('author_title'),
+    authorCompany: text('author_company'),
+    authorEmail: text('author_email'),
+    quote: text('quote').notNull(),
+    rating: integer('rating'),
+    consentPublic: boolean('consent_public').default(false).notNull(),
+    status: text('status').$type<TestimonialStatus>().default('pending').notNull(),
+    featured: boolean('featured').default(false).notNull(),
+    moderatedAt: timestamp('moderated_at'),
+    moderatedByUserId: text('moderated_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: createdAtColumn(),
+    updatedAt: updatedAtColumn(),
+  },
+  (table) => ({
+    projectStatusIdx: index('testimonial_project_status_idx').on(table.projectId, table.status, table.createdAt),
+  })
+)
+
+// Team-admin consent before feedback or support text is sent to an LLM provider.
+export const marketingDataConsent = pgTable('marketing_data_consent', {
+  teamId: text('team_id')
+    .primaryKey()
+    .references(() => team.id, { onDelete: 'cascade' }),
+  allowFeedbackText: boolean('allow_feedback_text').default(false).notNull(),
+  allowSupportText: boolean('allow_support_text').default(false).notNull(),
+  consentedByUserId: text('consented_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+  consentedAt: timestamp('consented_at'),
+  updatedAt: updatedAtColumn(),
+})
+
+export const customerLanguageInsight = pgTable(
+  'customer_language_insight',
+  {
+    id: text('id').primaryKey(),
+    siteId: text('site_id')
+      .notNull()
+      .references(() => marketingSite.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    model: text('model').notNull(),
+    itemCount: integer('item_count').notNull(),
+    sources: text('sources')
+      .array()
+      .$type<CustomerLanguageSource[]>()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    phrases: jsonb('phrases')
+      .$type<CustomerLanguagePhrase[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    suggestedTerms: jsonb('suggested_terms')
+      .$type<CustomerLanguageSuggestedTerm[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    suggestedPrompts: jsonb('suggested_prompts')
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    inputTokens: integer('input_tokens').default(0).notNull(),
+    outputTokens: integer('output_tokens').default(0).notNull(),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: createdAtColumn(),
+  },
+  (table) => ({
+    siteCreatedIdx: index('customer_language_insight_site_created_idx').on(table.siteId, table.createdAt),
+  })
+)
+
+// Google Search Console connection per site. The refresh token is the
+// versioned envelope from `server/utils/secrets.ts`; never returned by the API.
+export const gscConnection = pgTable('gsc_connection', {
+  siteId: text('site_id')
+    .primaryKey()
+    .references(() => marketingSite.id, { onDelete: 'cascade' }),
+  encryptedRefreshToken: text('encrypted_refresh_token').notNull(),
+  googleAccountEmail: text('google_account_email'),
+  // e.g. `sc-domain:acme.com` or `https://acme.com/`
+  propertyUrl: text('property_url'),
+  status: text('status').$type<GscConnectionStatus>().default('needs_property').notNull(),
+  lastSyncAt: timestamp('last_sync_at'),
+  lastError: text('last_error'),
+  connectedByUserId: text('connected_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+  createdAt: createdAtColumn(),
+  updatedAt: updatedAtColumn(),
+})
+
+export const gscDailyMetric = pgTable(
+  'gsc_daily_metric',
+  {
+    siteId: text('site_id')
+      .notNull()
+      .references(() => marketingSite.id, { onDelete: 'cascade' }),
+    date: date('date', { mode: 'string' }).notNull(),
+    clicks: integer('clicks').notNull(),
+    impressions: integer('impressions').notNull(),
+    ctr: doublePrecision('ctr').notNull(),
+    position: doublePrecision('position').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.siteId, table.date] }),
+  })
+)
+
+// Top queries for the 28 days ending `periodEnd`.
+export const gscQueryStat = pgTable(
+  'gsc_query_stat',
+  {
+    siteId: text('site_id')
+      .notNull()
+      .references(() => marketingSite.id, { onDelete: 'cascade' }),
+    periodEnd: date('period_end', { mode: 'string' }).notNull(),
+    query: text('query').notNull(),
+    clicks: integer('clicks').notNull(),
+    impressions: integer('impressions').notNull(),
+    ctr: doublePrecision('ctr').notNull(),
+    position: doublePrecision('position').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.siteId, table.periodEnd, table.query] }),
+    sitePeriodIdx: index('gsc_query_stat_site_period_idx').on(table.siteId, table.periodEnd),
   })
 )

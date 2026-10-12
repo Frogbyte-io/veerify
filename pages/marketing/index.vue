@@ -24,7 +24,7 @@
 
         <div v-else-if="isLoading" class="space-y-6">
           <Skeleton class="h-40 w-full" />
-          <div class="grid gap-4 md:grid-cols-3">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Skeleton class="h-40" />
             <Skeleton class="h-40" />
             <Skeleton class="h-40" />
@@ -77,7 +77,7 @@
             </CardContent>
           </Card>
 
-          <div class="grid gap-4 md:grid-cols-3">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Card data-testid="marketing-card-audit">
               <CardHeader>
                 <CardTitle class="flex items-center gap-2 text-base">
@@ -151,6 +151,139 @@
                 </Button>
               </CardContent>
             </Card>
+
+            <Card data-testid="marketing-card-search">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:trending-up" class="w-4 h-4" />
+                  Search
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <template v-if="overview.search?.connected && overview.search.totals">
+                  <p class="text-3xl font-bold">{{ formatNumber(overview.search.totals.current.clicks) }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    clicks and {{ formatNumber(overview.search.totals.current.impressions) }} impressions, last
+                    {{ overview.search.totals.days }} days
+                  </p>
+                  <p v-if="searchDelta" class="text-xs" :class="searchDelta.className" data-testid="search-delta">
+                    {{ searchDelta.label }}
+                  </p>
+                </template>
+                <p v-else-if="overview.search?.connected" class="text-sm text-muted-foreground">
+                  Connected. Waiting for the first sync.
+                </p>
+                <p v-else class="text-sm text-muted-foreground">
+                  Connect Search Console to see clicks and impressions.
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/marketing/search')">
+                    {{ overview.search?.connected ? 'Open search' : 'Connect Search Console' }}
+                  </NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="marketing-card-reviews">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:star" class="w-4 h-4" />
+                  Reviews
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <template v-if="overview.reviews?.enabled">
+                  <p class="text-3xl font-bold">{{ formatNumber(overview.reviews.requestsSent) }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    {{ overview.reviews.requestsSent === 1 ? 'request' : 'requests' }} sent in the last
+                    {{ overview.reviews.sinceDays }} days.
+                    {{ formatNumber(overview.reviews.pendingTestimonials) }} pending
+                    {{ overview.reviews.pendingTestimonials === 1 ? 'testimonial' : 'testimonials' }}.
+                  </p>
+                </template>
+                <p v-else class="text-sm text-muted-foreground">
+                  Review requests are off. Ask happy customers for reviews and testimonials.
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/marketing/reviews')">
+                    {{ overview.reviews?.enabled ? 'Open reviews' : 'Turn on review requests' }}
+                  </NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="marketing-card-announcements">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:megaphone" class="w-4 h-4" />
+                  Announcements
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <template v-if="overview.announcements?.changelogEnabled">
+                  <p class="text-3xl font-bold">{{ formatNumber(overview.announcements.withoutDrafts) }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    published {{ overview.announcements.withoutDrafts === 1 ? 'entry' : 'entries' }} without drafts
+                  </p>
+                </template>
+                <p v-else class="text-sm text-muted-foreground">
+                  Changelog is off. Turn it on to draft announcements for what you ship.
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/marketing/announcements')">Open announcements</NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="marketing-card-language">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:message-circle-heart" class="w-4 h-4" />
+                  Customer language
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <template v-if="overview.language?.lastRunAt">
+                  <p class="text-3xl font-bold">{{ formatDate(overview.language.lastRunAt) }}</p>
+                  <p class="text-xs text-muted-foreground">last analysis</p>
+                </template>
+                <p v-else-if="overview.language?.consented" class="text-sm text-muted-foreground">
+                  No analysis yet. Run one to see how customers describe you.
+                </p>
+                <p v-else class="text-sm text-muted-foreground">
+                  Give consent to analyse customer feedback and learn the words they use.
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/marketing/language')">
+                    {{ overview.language?.consented ? 'Open customer language' : 'Give consent to analyse' }}
+                  </NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="marketing-card-changelog">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:newspaper" class="w-4 h-4" />
+                  Changelog
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <template v-if="overview.changelog?.latest">
+                  <p class="text-base font-semibold line-clamp-2">{{ overview.changelog.latest.title }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    Published {{ formatDate(overview.changelog.latest.publishedAt) }}
+                  </p>
+                </template>
+                <p v-else-if="overview.changelog?.enabled" class="text-sm text-muted-foreground">
+                  Nothing published yet.
+                </p>
+                <p v-else class="text-sm text-muted-foreground">Changelog is off for this product.</p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/dashboard/changelog')">Open changelog</NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
           </div>
 
           <Card data-testid="marketing-usage">
@@ -167,6 +300,10 @@
                 <div>
                   <dt class="text-xs text-muted-foreground">Pages crawled</dt>
                   <dd class="text-xl font-semibold">{{ formatNumber(crawledPages) }}</dd>
+                </div>
+                <div v-for="item in llmCosts" :key="item.provider" :data-testid="`usage-cost-${item.provider}`">
+                  <dt class="text-xs text-muted-foreground">Estimated cost, {{ item.provider }}</dt>
+                  <dd class="text-xl font-semibold">{{ item.label }}</dd>
                 </div>
               </dl>
             </CardContent>
@@ -266,6 +403,31 @@ export default {
       return Object.entries(usage)
         .filter(([metric]) => metric.startsWith('llm:') && /:(input|output)_tokens$/.test(metric))
         .reduce((sum, [, units]) => sum + units, 0)
+    },
+
+    llmCosts() {
+      const usage = this.overview?.usage || {}
+      return Object.entries(usage)
+        .map(([metric, micros]) => ({ match: /^llm:(.+):cost_usd_micros$/.exec(metric), micros }))
+        .filter((item) => item.match)
+        .map((item) => ({
+          provider: item.match[1],
+          label: `$${(item.micros / 1_000_000).toFixed(2)}`,
+        }))
+        .sort((a, b) => a.provider.localeCompare(b.provider))
+    },
+
+    searchDelta() {
+      const totals = this.overview?.search?.totals
+      if (!totals?.previous || totals.previous.clicks === 0) return null
+      const change = (totals.current.clicks - totals.previous.clicks) / totals.previous.clicks
+      const pct = Math.round(Math.abs(change) * 100)
+      if (pct === 0) return { label: 'Clicks unchanged vs the previous period', className: 'text-muted-foreground' }
+      const up = change > 0
+      return {
+        label: `Clicks ${up ? 'up' : 'down'} ${pct}% vs the previous period`,
+        className: up ? 'text-green-600 dark:text-green-500' : 'text-destructive',
+      }
     },
 
     crawledPages() {

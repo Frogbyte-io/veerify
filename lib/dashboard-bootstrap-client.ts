@@ -62,7 +62,11 @@ export async function fetchDashboardBootstrap(options: { force?: boolean } = {})
   }
 
   if (!dashboardBootstrapCache.pendingRequest) {
-    dashboardBootstrapCache.pendingRequest = $fetch<{ data?: DashboardBootstrap }>('/api/dashboard/bootstrap')
+    // Called through a narrowly typed alias: Nitro's typed `$fetch` resolves the
+    // response against every API route, and with the routes Marketing adds that
+    // inference exceeds TypeScript's instantiation depth (TS2589).
+    const fetchBootstrap = $fetch as unknown as (url: string) => Promise<{ data?: DashboardBootstrap }>
+    dashboardBootstrapCache.pendingRequest = fetchBootstrap('/api/dashboard/bootstrap')
       .then((response) => {
         const data = response?.data || null
         setDashboardBootstrapCache(data)

@@ -10,6 +10,7 @@ import {
   csatSurvey,
   supportInbox,
 } from '~/server/database/schema/support'
+import { onCsatRatingRecorded } from '~/server/services/marketing/reviews/hooks'
 import { enqueueOutboundDelivery } from '~/server/utils/outbound-delivery'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 
@@ -187,6 +188,8 @@ export async function submitCsatResponse(input: {
       messageId,
     })
   }
+  // Marketing review requests. Never throws into the CSAT flow.
+  if (input.rating !== undefined) await onCsatRatingRecorded(response.id)
   return { response, messageId }
 }
 

@@ -46,6 +46,435 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/changelog/projects/{projectId}/entries": {
+    "get": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "List changelog entries of a product",
+      "operationId": "listChangelogEntries",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entries",
+          "newest first": null,
+          "with `nextCursor`": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Changelog is off": null
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Create a draft changelog entry",
+      "description": "The slug is generated from the title and is unique within the product.",
+      "operationId": "createChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "title"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 280,
+                  "nullable": true
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 50000
+                },
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "improved",
+                      "fixed"
+                    ]
+                  }
+                },
+                "feedbackIds": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Entry created"
+        },
+        "400": {
+          "description": "Validation failed",
+          "or feedback from another product": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Changelog is off": null
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/entries/{entryId}": {
+    "delete": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Delete a changelog entry",
+      "operationId": "deleteChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry deleted"
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    },
+    "get": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Get a changelog entry with its linked feedback",
+      "operationId": "getChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry with linked `feedback` (id, title, status)"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Changelog is off": null
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Update a changelog entry",
+      "description": "Partial update. `feedbackIds` replaces the linked feedback and must all belong to this product (max 50). The slug never changes.\n",
+      "operationId": "updateChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "summary": {
+                  "type": "string",
+                  "maxLength": 280,
+                  "nullable": true
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 50000
+                },
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "new",
+                      "improved",
+                      "fixed"
+                    ]
+                  }
+                },
+                "feedbackIds": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Entry updated"
+        },
+        "400": {
+          "description": "Validation failed",
+          "or feedback from another product": null
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/entries/{entryId}/publish": {
+    "post": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Publish a changelog entry",
+      "description": "Idempotent: publishing a published entry changes nothing. Publish hooks (review requests, announcement drafts) run on the first publish only and never block it.\n",
+      "operationId": "publishChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry published"
+        },
+        "400": {
+          "description": "Entry has no summary or body"
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/entries/{entryId}/unpublish": {
+    "post": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Return a published changelog entry to draft",
+      "operationId": "unpublishChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry is now a draft"
+        },
+        "404": {
+          "description": "Entry not found"
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/feedback-search": {
+    "get": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Search the product's feedback titles for linking to an entry",
+      "operationId": "searchChangelogFeedback",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "q",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Up to 20 matching feedback items (id, title, status)"
+        }
+      }
+    }
+  },
+  "/api/changelog/projects/{projectId}/preview": {
+    "post": {
+      "tags": [
+        "Changelog"
+      ],
+      "summary": "Render changelog markdown to sanitised HTML",
+      "operationId": "previewChangelogMarkdown",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "body"
+              ],
+              "properties": {
+                "body": {
+                  "type": "string",
+                  "maxLength": 50000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "`{ html }`, sanitised server-side"
+        },
+        "400": {
+          "description": "Validation failed"
+        }
+      }
+    }
+  },
   "/api/cron/example-ping": {
     "get": {
       "tags": [
@@ -91,6 +520,40 @@ export const openapiPaths = {
       "responses": {
         "200": {
           "description": "Mentions poll executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
+  "/api/cron/marketing-review-requests": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Send queued review and testimonial request emails",
+      "operationId": "cronMarketingReviewRequests",
+      "responses": {
+        "200": {
+          "description": "Review requests processed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
+  "/api/cron/marketing-search-sync": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Sync Google Search Console data for marketing sites",
+      "operationId": "cronMarketingSearchSync",
+      "responses": {
+        "200": {
+          "description": "Search Console sync executed"
         },
         "401": {
           "description": "Missing or invalid cron secret"
@@ -576,6 +1039,286 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/google/callback": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Google OAuth callback for Search Console",
+      "description": "Registered as the redirect URI in the Google OAuth app. Requires the session of the user who started the flow. Stores the encrypted refresh token and redirects to the Search page with `connected=1` or `error=<code>`. Tokens never appear in a URL or response.\n",
+      "operationId": "googleSearchCallback",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "code",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "state",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "error",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "302": {
+          "description": "Redirect to the Search page"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/announcements": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Published changelog entries with their announcement drafts",
+      "description": "Published entries of the product, newest first, each with its drafts per channel (entries without drafts included). Also reports whether the changelog is on and whether the team has a usable LLM key.\n",
+      "operationId": "listMarketingAnnouncements",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entries with drafts and a next cursor"
+        },
+        "400": {
+          "description": "Invalid cursor"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/announcements/{entryId}/{channel}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete an announcement draft",
+      "operationId": "deleteMarketingAnnouncement",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "channel",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "x",
+              "linkedin",
+              "bluesky",
+              "newsletter"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Draft deleted (also when none existed)"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Entry or channel not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Save an edited announcement draft",
+      "description": "Content is trimmed and limited to 1.5 times the channel limit (x 280, bluesky 300, linkedin 1300, newsletter 2000). Marks the draft as edited.",
+      "operationId": "updateMarketingAnnouncement",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "channel",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "x",
+              "linkedin",
+              "bluesky",
+              "newsletter"
+            ]
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "content"
+              ],
+              "properties": {
+                "content": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "The saved draft"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Entry or channel not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/announcements/{entryId}/generate": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Generate announcement drafts for a published changelog entry",
+      "description": "Uses the team's own LLM key (Anthropic first, else OpenAI). Regenerating overwrites existing drafts, hand edits included. Nothing is ever posted.\n",
+      "operationId": "generateMarketingAnnouncements",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "entryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "channels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "x",
+                      "linkedin",
+                      "bluesky",
+                      "newsletter"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "The generated drafts"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Entry not found for this product"
+        },
+        "409": {
+          "description": "Entry unpublished",
+          "no usable LLM key": null,
+          "budget reached": null,
+          "quota or key rejected": null
+        },
+        "429": {
+          "description": "Rate limit (20 per hour per product) or provider rate limit"
+        },
+        "502": {
+          "description": "Provider error or unusable model output"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/audits": {
     "get": {
       "tags": [
@@ -764,6 +1507,186 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Audit not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/language/apply": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add suggested terms and prompts from a language insight",
+      "description": "Uses the same validation and caps as the terms and prompts endpoints (50 terms; 25 active and 100 total prompts). Duplicates and items over a cap are skipped and reported.\n",
+      "operationId": "applyCustomerLanguageSuggestions",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "terms": {
+                  "type": "array",
+                  "maxItems": 15,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "label"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "keyword",
+                          "competitor"
+                        ]
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "prompts": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "What was added and what was skipped",
+          "with reasons": null
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "No marketing site is set up"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/language/history": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Recent customer language runs (metadata only)",
+      "operationId": "listCustomerLanguageHistory",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The 10 most recent runs without phrases"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "No marketing site is set up"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/language/latest": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Latest customer language insight, consent and run availability",
+      "operationId": "getLatestCustomerLanguage",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "insight (or null)",
+          "consent summary": null,
+          "canRun and a reason when not": null
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "No marketing site is set up"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/language/runs": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Analyze customer language for a product",
+      "description": "Team admin only. Sends PII-stripped feedback and/or support text from the last 90 days (at most 300 items) to the team's own AI provider key, but only for sources the team has consented to. At most 5 runs per product per day.\n",
+      "operationId": "runCustomerLanguage",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The stored insight"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is not enabled": null
+        },
+        "409": {
+          "description": "No consent",
+          "fewer than 10 items": null,
+          "no usable key": null,
+          "budget reached or provider rejected": null
+        },
+        "429": {
+          "description": "Daily limit or provider rate limit"
+        },
+        "502": {
+          "description": "Provider error"
         }
       }
     }
@@ -1021,7 +1944,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Marketing overview for a product",
-      "description": "Setup checklist state, integration status, this month's usage and the latest audit, AI visibility run and new mention count.\n",
+      "description": "Setup checklist state, integration status, this month's usage and the latest audit, AI visibility run and new mention count, plus compact summaries for Search Console, reviews, announcements, customer language and the changelog (each reports whether it is set up).\n",
       "operationId": "getMarketingOverview",
       "parameters": [
         {
@@ -1043,6 +1966,465 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/reviews/requests": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List review and testimonial requests",
+      "description": "Cursor-paginated log, newest first, with status, trigger and whether the customer clicked.",
+      "operationId": "listMarketingReviewRequests",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Requests page"
+        },
+        "400": {
+          "description": "Invalid query or cursor"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Send review requests manually",
+      "description": "Team admins only. Queues a request for up to 20 email addresses. The same guards as automatic requests apply (enabled, suppression list, cooldown). Each address gets its own result (invalid addresses and skipped addresses are reported per address, not queued). Limited to 10 calls per hour per product and 100 manually queued requests per team per day (reason `daily_limit`).\n",
+      "operationId": "createMarketingReviewRequests",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "emails"
+              ],
+              "properties": {
+                "emails": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 254
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Per-address results"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team admin",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/reviews/settings": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get review and testimonial request settings",
+      "description": "Returns the product's settings (defaults when never saved: disabled) and the product's feedback statuses, for the \"shipped\" trigger picker, and `canManage` (true for team admins) so the UI can show a read-only view.\n",
+      "operationId": "getMarketingReviewSettings",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Settings and available statuses"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Save review and testimonial request settings",
+      "description": "Team admins only. Replaces the whole settings object. At most 6 platforms, https URLs only, labels up to 40 characters. Shipped status values must exist in the product's feedback statuses.\n",
+      "operationId": "updateMarketingReviewSettings",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "enabled",
+                "platforms",
+                "askForTestimonial",
+                "csatTrigger",
+                "csatMinRating",
+                "shippedTrigger",
+                "shippedStatusValues",
+                "cooldownDays"
+              ],
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "platforms": {
+                  "type": "array",
+                  "maxItems": 6,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "label",
+                      "url"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      }
+                    }
+                  }
+                },
+                "askForTestimonial": {
+                  "type": "boolean"
+                },
+                "csatTrigger": {
+                  "type": "boolean"
+                },
+                "csatMinRating": {
+                  "type": "integer",
+                  "nullable": true
+                },
+                "shippedTrigger": {
+                  "type": "boolean"
+                },
+                "shippedStatusValues": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "cooldownDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 730
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Settings saved"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team admin",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/connect": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Start the Google Search Console connection",
+      "description": "Team admins only. Returns the Google consent URL, carrying a signed state that binds the flow to this site and user. The site must be verified. Returns 503 when the server has no Google OAuth app or no secrets encryption key.\n",
+      "operationId": "getSearchConnectUrl",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ url }` to send the browser to"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "409": {
+          "description": "The site is not set up or not verified"
+        },
+        "503": {
+          "description": "Search Console is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/connection": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Disconnect Google Search Console",
+      "description": "Team admins only. Revokes the Google token (best effort) and deletes the connection and its stored metrics.\n",
+      "operationId": "deleteSearchConnection",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Disconnected"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Search Console is not connected"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/properties": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List the Search Console properties the connected Google account can read",
+      "description": "Team admins only. Properties where the account is only an unverified user are left out.",
+      "operationId": "listSearchProperties",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ properties: [{ siteUrl, permissionLevel, selectable }], selected }; selectable is true only for properties matching the site origin`"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Search Console is not connected"
+        },
+        "409": {
+          "description": "Google access was revoked; reconnect"
+        },
+        "502": {
+          "description": "Google request failed"
+        },
+        "503": {
+          "description": "Search Console is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/property": {
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Choose the Search Console property to read",
+      "description": "Team admins only. The property must be one the connected Google account can read and must match the site (its URL-prefix property, or the sc-domain property for its registrable domain). Changing the property clears stored metrics and queues a fresh sync.\n",
+      "operationId": "putSearchProperty",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "propertyUrl"
+              ],
+              "properties": {
+                "propertyUrl": {
+                  "type": "string",
+                  "example": "sc-domain:example.com"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Property saved; status is now connected"
+        },
+        "400": {
+          "description": "Not one of the account's properties"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Search Console is not connected"
+        },
+        "409": {
+          "description": "Google access was revoked; reconnect"
+        },
+        "502": {
+          "description": "Google request failed"
+        },
+        "503": {
+          "description": "Search Console is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/search/summary": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Search Console clicks, impressions, CTR, position and top queries",
+      "description": "Totals cover the last `days` ending at the latest synced date and the same number of days before it (`previous` is null when there is no earlier data). CTR is clicks divided by impressions and position is weighted by impressions. `topQueries` is the latest 28-day snapshot, top 50 by clicks. Stored history is about 90 days, so `days` is capped at 45.\n",
+      "operationId": "getSearchSummary",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "days",
+          "schema": {
+            "type": "integer",
+            "minimum": 7,
+            "maximum": 45,
+            "default": 28
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Summary; `connection` is null when Search Console is not connected"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
         }
       }
     }
@@ -1397,6 +2779,156 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Term or site not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/testimonials": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List testimonials for moderation",
+      "description": "Newest first, with counts by status and the team slug (for the public wall link). Includes whether the author consented to public display.",
+      "operationId": "listMarketingTestimonials",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Testimonials and counts"
+        },
+        "400": {
+          "description": "Invalid query"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/testimonials/{id}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete a testimonial",
+      "operationId": "deleteMarketingTestimonial",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Testimonial deleted"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Testimonial not found for this product"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Moderate a testimonial",
+      "description": "Change the status and/or the featured flag. Only testimonials the author consented to publish can be featured. A testimonial without public consent can be approved for private use but never appears on the public wall.\n",
+      "operationId": "updateMarketingTestimonial",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "rejected"
+                  ]
+                },
+                "featured": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Testimonial updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Testimonial not found for this product"
         }
       }
     }
@@ -1825,6 +3357,214 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/r/{token}": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Look up a review request link",
+      "description": "Public, token-gated. Returns the product name, the recipient's first name whether a testimonial was already submitted and whether one can still be submitted. No other personal data.\n",
+      "operationId": "getPublicReviewRequest",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Request summary"
+        },
+        "404": {
+          "description": "Link not found"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
+  "/api/marketing/r/{token}/go": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Tracked redirect to a review platform",
+      "description": "Records the first click from a likely-human request (HEAD requests and known link scanners or prefetchers are redirected but not counted; links older than 60 days are not tracked) and redirects (302) to the platform URL configured for the product. The target is always looked up from the product's saved settings by platform id; it is never taken from the request, so this is not an open redirect.\n",
+      "operationId": "redirectPublicReviewPlatform",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "p",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "302": {
+          "description": "Redirect to the review platform"
+        },
+        "404": {
+          "description": "Unknown link or platform"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
+  "/api/marketing/r/{token}/testimonial": {
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Submit a testimonial",
+      "description": "Public, token-gated and rate limited per IP and token. One testimonial per token, only for a sent request whose product still asks for testimonials, and only within 60 days of sending. The testimonial starts as pending; it is only shown on the public wall once a team member approves it AND the author ticked the public consent box.\n",
+      "operationId": "submitPublicTestimonial",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "authorName",
+                "quote",
+                "consentPublic"
+              ],
+              "properties": {
+                "authorName": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "authorTitle": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "authorCompany": {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 20,
+                  "maxLength": 1000
+                },
+                "rating": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                },
+                "consentPublic": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Testimonial received"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "404": {
+          "description": "Link not found",
+          "request not sent": null,
+          "or testimonials or Marketing switched off": null
+        },
+        "409": {
+          "description": "A testimonial was already submitted with this link"
+        },
+        "410": {
+          "description": "The link is older than 60 days"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
+  "/api/marketing/r/{token}/unsubscribe": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Unsubscribe confirmation page",
+      "description": "Shows an HTML confirmation page with a button that POSTs to this URL. Nothing is changed by GET, so mail scanners that prefetch links cannot unsubscribe anyone.\n",
+      "operationId": "getPublicReviewUnsubscribePage",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Confirmation page (text/html)"
+        },
+        "404": {
+          "description": "Link not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Unsubscribe from review requests",
+      "description": "Writes a per-team marketing email suppression for the address. Also the RFC 8058 one-click target (`List-Unsubscribe-Post`). Responds with an HTML page.\n",
+      "operationId": "submitPublicReviewUnsubscribe",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Unsubscribed (text/html)"
+        },
+        "404": {
+          "description": "Link not found"
+        }
+      }
+    }
+  },
   "/api/marketing/teams/{teamId}/credentials": {
     "get": {
       "tags": [
@@ -2027,6 +3767,87 @@ export const openapiPaths = {
         },
         "503": {
           "description": "Key encryption is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/marketing/teams/{teamId}/data-consent": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Whether feedback and support text may be sent to the team's AI provider",
+      "description": "Both sources are off until a team admin turns them on.",
+      "operationId": "getMarketingDataConsent",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Consent flags",
+          "who consented and when": null,
+          "and canManage": null
+        },
+        "403": {
+          "description": "Not a member of this team"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set which text sources may be sent to the team's AI provider",
+      "description": "Team admin only. Records who changed it and when. Turning a source off takes effect immediately; every run re-reads consent.\n",
+      "operationId": "setMarketingDataConsent",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "allowFeedbackText",
+                "allowSupportText"
+              ],
+              "properties": {
+                "allowFeedbackText": {
+                  "type": "boolean"
+                },
+                "allowSupportText": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated consent"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Team admin required"
         }
       }
     }
@@ -2284,6 +4105,176 @@ export const openapiPaths = {
         },
         "409": {
           "description": "Rating already submitted or comment window closed"
+        }
+      }
+    }
+  },
+  "/api/public/t/{teamSlug}/{projectSlug}/changelog": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Published changelog entries of a public product",
+      "description": "404 when the product's Changelog toggle is off; 403 when the product is private.",
+      "operationId": "getPublicChangelog",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ entries, nextCursor }`, newest first, with sanitised `html`"
+        },
+        "404": {
+          "description": "Not found or Changelog disabled"
+        }
+      }
+    }
+  },
+  "/api/public/t/{teamSlug}/{projectSlug}/changelog.rss": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "RSS 2.0 feed of the latest 30 published changelog entries",
+      "operationId": "getPublicChangelogRss",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "RSS feed",
+          "content": {
+            "application/rss+xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Not found or Changelog disabled"
+        }
+      }
+    }
+  },
+  "/api/public/t/{teamSlug}/{projectSlug}/changelog/{slug}": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "One published changelog entry of a public product",
+      "operationId": "getPublicChangelogEntry",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Entry with sanitised `html`"
+        },
+        "404": {
+          "description": "Not found",
+          "a draft": null,
+          "or Changelog disabled": null
+        }
+      }
+    }
+  },
+  "/api/public/t/{teamSlug}/{projectSlug}/testimonials": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Public testimonial wall",
+      "description": "Approved testimonials whose author consented to public display, featured first. Only name, title, company, quote, rating and date are returned.\n",
+      "operationId": "listPublicTestimonials",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Testimonials"
+        },
+        "403": {
+          "description": "Product is not public"
+        },
+        "404": {
+          "description": "Team or product not found",
+          "or Marketing is off": null
         }
       }
     }

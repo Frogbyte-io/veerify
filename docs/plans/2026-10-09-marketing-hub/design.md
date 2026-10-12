@@ -226,6 +226,34 @@ it for _conversations_. A mention can be escalated into a support conversation, 
   suggestions for M2 and M3.
 - **Google Search Console** (OAuth): queries, clicks, impressions and position for the verified site.
 
+#### M5 implementation decisions (October 10, 2026)
+
+- **Changelog MVP ships as part of M5**, because the announcement feature needs it. It covers:
+  entries as markdown, with draft and published states, labels (`new`, `improved`, `fixed`), and links
+  to the feedback items each entry ships; a dashboard page at `/changelog`; a public page on the
+  product's board (`/<product>/changelog`, plus an RSS feed). It is gated by the existing
+  `changelogEnabled` team and product switches. Markdown is rendered on the server and sanitised.
+- **Announcement drafts** use the team's own Claude or OpenAI key. There is one editable draft per
+  channel (X, LinkedIn, Bluesky, newsletter) per entry, and regenerating replaces it. Nothing is posted
+  automatically.
+- **Review and testimonial requests** are off by default for each product.
+  - Triggers: a top CSAT rating (or one at or above a set threshold), and a customer's feedback reaching
+    a "shipped" status (default `completed`) or being linked from a published changelog entry. The
+    customer is the feedback author or a subscriber.
+  - Each email address is contacted at most once per cooldown (90 days by default). Every email has an
+    unsubscribe link that writes a per-team suppression.
+  - Testimonials are submitted on a public tokenised page. Only testimonials the author consented to
+    publish and a team member approved appear on the public wall at `/<product>/testimonials`.
+- **Customer language** needs a separate team-admin consent before any feedback or support text goes to
+  an LLM provider. The consent can be withdrawn at any time. Each run is started on demand and sends the
+  last 90 days, at most 300 items, each truncated. The output is suggested terms and prompts, which are
+  added with one click.
+- **Google Search Console** uses the install's own Google OAuth app (`GOOGLE_CLIENT_ID` and
+  `GOOGLE_CLIENT_SECRET`). The refresh token is stored encrypted for each marketing site. A daily sync
+  stores clicks, impressions, CTR and position, plus the top queries for the last 28 days. The 12 most
+  recent query snapshots are kept, which is about 12 days of history with a daily sync. Without an
+  OAuth app the integration shows as not configured.
+
 ### 5. Later (M6+)
 
 - A launch kit: directory checklist (Product Hunt, BetaList, AlternativeTo, SaaS directories) with
@@ -257,19 +285,31 @@ team → marketingUsage (period, metric, units)        ← metering for LLM call
 
 ### Data model sketch (`server/database/schema/marketing.ts`)
 
-| Table                | Key columns                                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `marketingSite`      | id, projectId (unique), teamId, origin, verificationMethod, verificationToken, verifiedAt                                                                     |
-| `seoAudit`           | id, siteId, trigger (`auto`/`schedule`/`manual`), status, pageLimit, pagesFetched, score, startedAt, finishedAt                                               |
-| `seoAuditPage`       | id, auditId, url (unique per audit), depth, status, httpStatus, fetchedAt, facts (jsonb: title, meta, canonical, …)                                           |
-| `seoIssue`           | id, auditId, pageId (nullable for site-level), ruleId, severity, details (jsonb)                                                                              |
-| `marketingTerm`      | id, siteId, kind (`brand`/`competitor`/`keyword`), label, aliases (text[]), competitorDomain                                                                  |
-| `aiVisibilityPrompt` | id, siteId, text, locale, active, source (`user`/`suggested`)                                                                                                 |
-| `aiVisibilityRun`    | id, siteId, trigger, status, startedAt, finishedAt                                                                                                            |
-| `aiVisibilityAnswer` | id, runId, promptId, provider, model, sample, answer, brandMentioned, brandRank, competitorsMentioned (jsonb), citations (jsonb), inputTokens, outputTokens   |
-| `mention`            | id, siteId, source, externalId (unique per source), url, author, excerpt, publishedAt, termId, kind, status                                                   |
-| `teamApiCredential`  | id, teamId, provider (`anthropic`/`openai`/`firecrawl`/`pagespeed`), encryptedKey, keyHint, createdBy, lastValidatedAt, lastError (unique on teamId+provider) |
-| `marketingUsage`     | teamId, period (`YYYY-MM`), metric, units (unique on teamId+period+metric)                                                                                    |
+| Table                        | Key columns                                                                                                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `marketingSite`              | id, projectId (unique), teamId, origin, verificationMethod, verificationToken, verifiedAt                                                                                                                |
+| `seoAudit`                   | id, siteId, trigger (`auto`/`schedule`/`manual`), status, pageLimit, pagesFetched, score, startedAt, finishedAt                                                                                          |
+| `seoAuditPage`               | id, auditId, url (unique per audit), depth, status, httpStatus, fetchedAt, facts (jsonb: title, meta, canonical, …)                                                                                      |
+| `seoIssue`                   | id, auditId, pageId (nullable for site-level), ruleId, severity, details (jsonb)                                                                                                                         |
+| `marketingTerm`              | id, siteId, kind (`brand`/`competitor`/`keyword`), label, aliases (text[]), competitorDomain                                                                                                             |
+| `aiVisibilityPrompt`         | id, siteId, text, locale, active, source (`user`/`suggested`)                                                                                                                                            |
+| `aiVisibilityRun`            | id, siteId, trigger, status, startedAt, finishedAt                                                                                                                                                       |
+| `aiVisibilityAnswer`         | id, runId, promptId, provider, model, sample, answer, brandMentioned, brandRank, competitorsMentioned (jsonb), citations (jsonb), inputTokens, outputTokens                                              |
+| `mention`                    | id, siteId, source, externalId (unique per source), url, author, excerpt, publishedAt, termId, kind, status                                                                                              |
+| `teamApiCredential`          | id, teamId, provider (`anthropic`/`openai`/`firecrawl`/`pagespeed`), encryptedKey, keyHint, createdBy, lastValidatedAt, lastError (unique on teamId+provider)                                            |
+| `marketingUsage`             | teamId, period (`YYYY-MM`), metric, units (unique on teamId+period+metric)                                                                                                                               |
+| `changelogEntry`             | (`schema/changelog.ts`) id, projectId, title, slug (unique per project), summary, body (markdown), status (`draft`/`published`), labels (text[]), publishedAt, authorUserId                              |
+| `changelogEntryFeedback`     | (`schema/changelog.ts`) entryId, feedbackId (PK on both), createdAt                                                                                                                                      |
+| `marketingAnnouncementDraft` | id, entryId, projectId, channel (`x`/`linkedin`/`bluesky`/`newsletter`), content, provider, model, edited (unique on entryId+channel)                                                                    |
+| `reviewRequestSettings`      | projectId (PK), enabled, platforms (jsonb), askForTestimonial, csatTrigger, csatMinRating, shippedTrigger, shippedStatusValues, cooldownDays                                                             |
+| `reviewRequest`              | id, projectId, teamId, email, trigger (`csat`/`shipped`/`manual`), sourceId, token (unique), status (`queued`/`sent`/`skipped`/`failed`), sentAt, clickedAt (unique on projectId+trigger+sourceId+email) |
+| `marketingEmailSuppression`  | teamId, email, reason (`unsubscribed`/`bounced`/`complaint`) (PK on teamId+email)                                                                                                                        |
+| `testimonial`                | id, projectId, reviewRequestId, authorName, authorEmail (private), quote, rating, consentPublic, status (`pending`/`approved`/`rejected`), featured, moderatedAt                                         |
+| `marketingDataConsent`       | teamId (PK), allowFeedbackText, allowSupportText, consentedByUserId, consentedAt                                                                                                                         |
+| `customerLanguageInsight`    | id, siteId, provider, model, itemCount, sources, phrases, suggestedTerms, suggestedPrompts (jsonb), inputTokens, outputTokens                                                                            |
+| `gscConnection`              | siteId (PK), encryptedRefreshToken, googleAccountEmail, propertyUrl, status (`connected`/`needs_property`/`error`), lastSyncAt, lastError                                                                |
+| `gscDailyMetric`             | siteId, date, clicks, impressions, ctr, position (PK on siteId+date)                                                                                                                                     |
+| `gscQueryStat`               | siteId, periodEnd, query, clicks, impressions, ctr, position (PK on siteId+periodEnd+query)                                                                                                              |
 
 The rule definitions, provider list and source list are code, not tables, for the same reason the
 conversation statuses are fixed (design.md of support): reports must mean the same thing across teams.

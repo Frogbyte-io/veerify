@@ -80,6 +80,7 @@ import {
   resolveStatusLabel,
   verifyGithubWebhookSignature,
 } from '~/server/utils/github-webhook'
+import { onFeedbackStatusChanged } from '~/server/services/marketing/reviews/hooks'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('github')
@@ -256,6 +257,9 @@ export default defineEventHandler(async (event) => {
     })
     .where(eq(feedback.id, link.feedbackId))
     .returning()
+
+  // Marketing review requests for shipped statuses. Never throws into this flow.
+  if (updatedFeedback) await onFeedbackStatusChanged(updatedFeedback.id)
 
   const statusLabel = resolveStatusLabel(feedbackStatus, integration.settings)
   const existingLabels = (payload.issue?.labels || [])

@@ -7,6 +7,7 @@ import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackStatus, feedbackSubscription } from '~/server/database/schema/feedback'
 import { sendStatusChangeNotificationEmail } from '~/lib/email'
+import { onFeedbackStatusChanged } from '~/server/services/marketing/reviews/hooks'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 import { createLogger } from '~/server/utils/logger'
 import { notifyProjectTeam, notifyFeedbackSubscribers } from '~/server/utils/notifications'
@@ -138,6 +139,9 @@ export default defineEventHandler(async (event) => {
       actorUserId: session.user.id,
       actorName: session.user.name,
     })
+
+    // Marketing review requests for shipped statuses. Never throws into this flow.
+    await onFeedbackStatusChanged(id)
   }
 
   return createSuccessResponse(updated)

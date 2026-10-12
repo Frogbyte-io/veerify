@@ -23,12 +23,12 @@
  */
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { db } from '~/server/database/drizzle'
 import { aiVisibilityPrompt } from '~/server/database/schema/marketing'
 import {
   assertPromptCapacity,
   requireSitePrompt,
   requireVisibilityRequest,
+  withPromptCapLock,
 } from '~/server/services/marketing/visibility/access'
 import { promptTextSchema } from '~/server/services/marketing/visibility/prompts'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -52,16 +52,18 @@ export default defineEventHandler(async (event) => {
   const existing = await requireSitePrompt(site.id, promptId)
   const body = await validateBody(event, bodySchema)
 
-  if (body.active === true && !existing.active) await assertPromptCapacity(site.id, existing.id)
-
-  const [prompt] = await db
-    .update(aiVisibilityPrompt)
-    .set({
-      ...(body.text !== undefined ? { text: body.text } : {}),
-      ...(body.active !== undefined ? { active: body.active } : {}),
-    })
-    .where(eq(aiVisibilityPrompt.id, existing.id))
-    .returning()
+  const prompt = await withPromptCapLock(site.id, async (tx) => {
+    if (body.active === true && !existing.active) await assertPromptCapacity(site.id, existing.id, tx)
+    const [updated] = await tx
+      .update(aiVisibilityPrompt)
+      .set({
+        ...(body.text !== undefined ? { text: body.text } : {}),
+        ...(body.active !== undefined ? { active: body.active } : {}),
+      })
+      .where(eq(aiVisibilityPrompt.id, existing.id))
+      .returning()
+    return updated
+  })
 
   return createSuccessResponse({ prompt })
 })

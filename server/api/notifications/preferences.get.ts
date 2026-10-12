@@ -15,6 +15,8 @@ const DEFAULT_PREFERENCES = {
   // are expected to act on.
   conversationAssigned: true,
   conversationMentions: true,
+  // Daily Marketing mentions digest email (team admins only receive it)
+  marketingDigest: true,
 }
 
 export default defineEventHandler(async (event) => {

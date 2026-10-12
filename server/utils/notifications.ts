@@ -25,6 +25,9 @@ export type NotificationType =
  * own today. Keys must stay in step with `DEFAULT_PREFERENCES` in
  * `server/api/notifications/preferences.get.ts` and the zod whitelist in
  * `preferences.put.ts`, or a toggle silently does nothing.
+ *
+ * `marketingDigest` is not a notification type: it gates the daily Marketing
+ * mentions digest email (`server/services/marketing/mentions/digest.ts`).
  */
 const PREFERENCE_KEY_BY_TYPE: Partial<Record<NotificationType, string>> = {
   new_feedback: 'newFeedback',

@@ -28,6 +28,10 @@ export default defineNuxtConfig({
     // invalid relative targets and recurse until ELOOP during packaging. Cloud
     // builds retain Nitro's normal tracing behavior for platform deployment.
     ...(deploymentMode === 'self-hosted' ? { externals: { trace: false } } : {}),
+    // Only read by the Vercel preset (ignored by node-server builds). The marketing
+    // advance tasks work in ~45s slices, which needs more than Vercel's default
+    // function duration. 60s is within every plan's limit.
+    vercel: { functions: { maxDuration: 60 } },
     experimental: {
       websocket: true,
       // Self-hosted scheduler backend — see server/services/scheduler/.
@@ -45,11 +49,13 @@ export default defineNuxtConfig({
         'support:automation-rules',
         'support:csat-dispatch',
         'support:sla-breach',
+        'marketing:review-requests',
       ],
       // Marketing Hub (docs/plans/2026-10-09-marketing-hub)
       '*/15 * * * *': ['example:ping', 'marketing:mentions-poll'],
       '0 * * * *': ['marketing:visibility-schedule'],
       '5 * * * *': ['marketing:audit-schedule'],
+      '20 * * * *': ['marketing:search-sync'],
       '0 8 * * *': ['marketing:mentions-digest'],
     },
   },
