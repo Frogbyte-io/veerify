@@ -16,7 +16,7 @@
             size="sm"
             class="shrink-0 gap-1"
             :disabled="saving"
-            :aria-label="`Status for ${item.name}: ${statusText}`"
+            :aria-label="`${statusText} status for ${item.name}`"
             :data-testid="`launch-status-${item.id}`"
           >
             <Icon v-if="saving" name="lucide:loader-circle" class="h-3.5 w-3.5 animate-spin" />
@@ -50,6 +50,7 @@
       >
         <Icon name="lucide:external-link" class="h-3.5 w-3.5" />
         Visit site
+        <span class="sr-only">for {{ item.name }}</span>
       </a>
       <a
         v-if="item.submitUrl"
@@ -61,11 +62,12 @@
       >
         <Icon name="lucide:send" class="h-3.5 w-3.5" />
         Submit page
+        <span class="sr-only">for {{ item.name }}</span>
       </a>
     </div>
 
     <div class="mt-auto space-y-2 border-t border-border pt-3">
-      <form v-if="editing" class="space-y-2" @submit.prevent="save" @keydown.esc="cancelEdit">
+      <form v-if="editing" class="space-y-2" data-inline-form="edit" @submit.prevent="save">
         <div class="space-y-1">
           <Label :for="`launch-url-${item.id}`" class="text-xs">
             {{ item.custom ? 'Directory link (https)' : 'Your listing URL (https)' }}
@@ -109,6 +111,7 @@
             size="sm"
             variant="ghost"
             :aria-label="`Edit ${item.name}`"
+            data-inline-opener="edit"
             :data-testid="`launch-edit-${item.id}`"
             @click="startEdit"
           >
@@ -135,10 +138,13 @@
 
 <script>
 import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+import inlineFormMixin from '~/lib/inline-form-mixin'
 import { LAUNCH_STATUSES, categoryLabel, statusLabel } from '~/lib/marketing-launch'
 
 export default {
   name: 'MarketingLaunchDirectory',
+
+  mixins: [inlineFormMixin],
 
   props: {
     item: { type: Object, required: true },
@@ -183,6 +189,10 @@ export default {
   },
 
   watch: {
+    editing(open) {
+      if (open) this.inlineOpen('edit', () => this.cancelEdit())
+      else this.inlineClose()
+    },
     projectId() {
       this.editing = false
       this.error = null

@@ -85,7 +85,7 @@
                 v-if="canManage"
                 size="sm"
                 variant="outline"
-                :aria-label="`Save ${provider.label} budget`"
+                :aria-label="`Save budget for ${provider.label}`"
                 :disabled="busy === provider.id || !budgetChanged(provider.id)"
                 @click="saveBudget(provider.id)"
               >
@@ -98,8 +98,8 @@
             <form
               v-if="editing === provider.id"
               class="flex flex-wrap gap-2"
+              :data-inline-form="`key-${provider.id}`"
               @submit.prevent="saveKey(provider.id)"
-              @keydown.esc="cancelEdit"
             >
               <Input
                 v-model="keyDraft"
@@ -124,7 +124,8 @@
                 size="sm"
                 variant="outline"
                 :disabled="!secretsConfigured"
-                :aria-label="`${credentialFor(provider.id) ? 'Replace' : 'Add'} ${provider.label} key`"
+                :aria-label="`${credentialFor(provider.id) ? 'Replace key' : 'Add key'} for ${provider.label}`"
+                :data-inline-opener="`key-${provider.id}`"
                 @click="startEdit(provider.id)"
               >
                 {{ credentialFor(provider.id) ? 'Replace key' : 'Add key' }}
@@ -134,7 +135,7 @@
                 size="sm"
                 variant="ghost"
                 :disabled="busy === provider.id"
-                :aria-label="`Remove ${provider.label} key`"
+                :aria-label="`Remove key for ${provider.label}`"
                 @click="remove(provider.id)"
               >
                 Remove
@@ -153,6 +154,7 @@
 <script>
 import { apiErrorMessage } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
+import inlineFormMixin from '~/lib/inline-form-mixin'
 
 const PROVIDERS = [
   {
@@ -196,6 +198,8 @@ const PROVIDERS = [
 export default {
   name: 'MarketingSettingsApiKeys',
 
+  mixins: [inlineFormMixin],
+
   props: {
     teamId: { type: String, required: true },
   },
@@ -221,6 +225,10 @@ export default {
   watch: {
     teamId() {
       this.load()
+    },
+    editing(id) {
+      if (id) this.inlineOpen(`key-${id}`, () => this.cancelEdit())
+      else this.inlineClose()
     },
   },
 

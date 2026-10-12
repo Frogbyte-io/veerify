@@ -83,7 +83,7 @@
               >
                 <Icon name="lucide:message-square" class="w-3 h-3" />
                 Feedback
-                <span class="opacity-60">· {{ product.feedbackCount || 0 }}</span>
+                <span class="opacity-80">· {{ product.feedbackCount || 0 }}</span>
               </span>
               <span
                 v-if="product.settings?.roadmapEnabled === true"
@@ -312,6 +312,10 @@ export default {
       const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : ''
       return `${protocol}//${teamSlug}.${appDomain}${portSuffix}/${this.form.slug || '...'}`
     },
+  },
+
+  created() {
+    useHead({ title: 'Products' })
   },
 
   async mounted() {

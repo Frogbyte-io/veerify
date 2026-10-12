@@ -6,7 +6,8 @@
  *     summary: Look up a review request link
  *     description: >
  *       Public, token-gated. Returns the product name, the recipient's first name
- *       whether a testimonial was already submitted and whether one can still be submitted. No other personal data.
+ *       whether a testimonial was already submitted, whether it was withdrawn from the public page and
+ *       whether one can still be submitted. No other personal data.
  *     operationId: getPublicReviewRequest
  *     parameters:
  *       - in: path
@@ -38,7 +39,13 @@ export default defineEventHandler(async (event) => {
   if (!request) notFound('This link is not valid')
 
   const [existing] = await db
-    .select({ id: testimonial.id })
+    .select({
+      id: testimonial.id,
+      consentPublic: testimonial.consentPublic,
+      createdAt: testimonial.createdAt,
+      moderatedAt: testimonial.moderatedAt,
+      updatedAt: testimonial.updatedAt,
+    })
     .from(testimonial)
     .where(eq(testimonial.reviewRequestId, request.id))
     .limit(1)
@@ -47,6 +54,14 @@ export default defineEventHandler(async (event) => {
     productName: request.projectName,
     firstName: firstNameOf(request.name),
     alreadySubmitted: Boolean(existing),
+    // True after the submitter withdrew public consent. There is no explicit withdrawn marker, so this
+    // infers it: no public consent, and the row was touched after submission/moderation (withdrawing is
+    // the only submitter-side write). A private submission that was never edited stays false.
+    withdrawn: Boolean(
+      existing &&
+      !existing.consentPublic &&
+      new Date(existing.updatedAt).getTime() - new Date(existing.moderatedAt ?? existing.createdAt).getTime() > 50
+    ),
     // False when the request was not sent, testimonials are off, or the link is older than 60 days.
     canSubmit: testimonialSubmissionState(request) === 'ok',
   })

@@ -4,15 +4,12 @@
       <NuxtPage />
     </NuxtLayout>
     <Toaster />
-    <Analytics />
+    <Analytics v-if="onVercel" />
   </div>
 </template>
 
-<script setup>
-import { Analytics } from '@vercel/analytics/nuxt'
-</script>
-
 <script>
+import { Analytics } from '@vercel/analytics/nuxt'
 import { Toaster } from '~/components/ui/sonner'
 import 'vue-sonner/style.css'
 
@@ -20,6 +17,13 @@ export default {
   name: 'App',
   components: {
     Toaster,
+    Analytics,
+  },
+  computed: {
+    // /_vercel/insights/script.js only exists on Vercel; elsewhere it returns the HTML shell
+    onVercel() {
+      return useRuntimeConfig().public.onVercel === true
+    },
   },
 }
 </script>

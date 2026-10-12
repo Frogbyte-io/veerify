@@ -17,7 +17,14 @@ const deploymentMode =
       ? 'cloud'
       : 'self-hosted'
 
+const onVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV)
+
 export default defineNuxtConfig({
+  app: {
+    head: {
+      htmlAttrs: { lang: 'en' },
+    },
+  },
   compatibilityDate: '2025-05-15',
   buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
   devtools: { enabled: process.env.NUXT_DEVTOOLS_ENABLED !== 'false' },
@@ -130,6 +137,7 @@ export default defineNuxtConfig({
       dashboardDomain,
       cnameTarget: process.env.CNAME_TARGET || 'cname.veerify.io',
       deploymentMode,
+      onVercel,
     },
   },
   colorMode: {

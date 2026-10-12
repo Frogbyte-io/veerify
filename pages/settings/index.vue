@@ -14,6 +14,7 @@
               <li v-for="tab in availableTabs" :key="tab.key">
                 <button
                   :data-testid="`settings-tab-${tab.key}`"
+                  :aria-label="`${tab.label} settings`"
                   :class="[
                     'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
                     activeTab === tab.key
@@ -126,6 +127,10 @@ export default {
       return componentMap[this.activeTab] || 'SettingsProfile'
     },
   },
+  created() {
+    useHead({ title: 'Settings' })
+  },
+
   async mounted() {
     this.isHydrated = true
     const config = useRuntimeConfig()

@@ -3,6 +3,7 @@
     <main class="mx-auto flex min-h-screen max-w-xl items-center px-4 py-12" data-testid="testimonial-page">
       <Card class="w-full">
         <div v-if="isLoading" class="space-y-4 p-6" data-testid="testimonial-loading">
+          <h1 class="sr-only">Loading your testimonial request</h1>
           <Skeleton class="h-8 w-2/3" />
           <Skeleton class="h-24 w-full" />
           <Skeleton class="h-10 w-full" />
@@ -17,6 +18,7 @@
         </CardContent>
 
         <CardContent v-else-if="loadError" class="space-y-3 py-10 text-center" data-testid="testimonial-error">
+          <h1 class="text-xl font-semibold">Something went wrong</h1>
           <p class="text-sm text-destructive">{{ loadError }}</p>
           <Button variant="outline" size="sm" @click="load">Retry</Button>
         </CardContent>
@@ -26,17 +28,27 @@
           class="space-y-2 py-10 text-center"
           data-testid="testimonial-thanks"
         >
-          <Icon name="lucide:heart" class="mx-auto h-8 w-8 text-primary" />
-          <h1 class="text-xl font-semibold">Thank you{{ info.firstName ? `, ${info.firstName}` : '' }}!</h1>
-          <p class="text-sm text-muted-foreground">
-            {{ done ? 'Your testimonial was received.' : 'You already sent a testimonial with this link.' }}
-            The {{ info.productName }} team will review it before anything is shown publicly.
-          </p>
-          <div class="pt-3" data-testid="testimonial-withdraw">
-            <p v-if="withdrawn" class="text-sm font-medium" role="status" data-testid="testimonial-withdrawn">
-              Your testimonial is no longer shown on the public page.
+          <template v-if="isWithdrawn">
+            <Icon name="lucide:eye-off" class="mx-auto h-8 w-8 text-muted-foreground" />
+            <h1 class="text-xl font-semibold">Your testimonial has been removed from the public page</h1>
+            <p
+              ref="status"
+              tabindex="-1"
+              class="text-sm text-muted-foreground outline-none"
+              role="status"
+              data-testid="testimonial-withdrawn"
+            >
+              The {{ info.productName }} team still holds it privately. Contact them if you would like it deleted.
             </p>
-            <template v-else>
+          </template>
+          <template v-else>
+            <Icon name="lucide:heart" class="mx-auto h-8 w-8 text-primary" />
+            <h1 class="text-xl font-semibold">Thank you{{ info.firstName ? `, ${info.firstName}` : '' }}!</h1>
+            <p class="text-sm text-muted-foreground">
+              {{ done ? 'Your testimonial was received.' : 'You already sent a testimonial with this link.' }}
+              The {{ info.productName }} team will review it before anything is shown publicly.
+            </p>
+            <div class="pt-3" data-testid="testimonial-withdraw">
               <p v-if="confirmingWithdraw" class="mb-2 text-sm text-muted-foreground">
                 Remove your testimonial from the public page? You can still contact the team to have it deleted.
               </p>
@@ -71,8 +83,8 @@
                 </button>
               </div>
               <p v-if="withdrawError" class="mt-2 text-sm text-destructive" role="alert">{{ withdrawError }}</p>
-            </template>
-          </div>
+            </div>
+          </template>
         </CardContent>
 
         <CardContent v-else-if="!info.canSubmit" class="space-y-2 py-10 text-center" data-testid="testimonial-closed">
@@ -85,7 +97,7 @@
 
         <template v-else>
           <CardHeader>
-            <CardTitle>Share your experience with {{ info.productName }}</CardTitle>
+            <h1 class="text-2xl leading-none font-semibold">Share your experience with {{ info.productName }}</h1>
             <CardDescription>
               {{ info.firstName ? `Hi ${info.firstName}, a` : 'A' }} few honest words help other people decide. It takes
               about a minute.
@@ -229,9 +241,25 @@ export default {
   },
 
   computed: {
+    isWithdrawn() {
+      return this.withdrawn || this.info.withdrawn === true
+    },
+    pageTitle() {
+      if (this.isLoading) return 'Your testimonial'
+      if (this.invalid) return 'Link not valid'
+      if (this.loadError) return 'Something went wrong'
+      if (this.isWithdrawn) return 'Testimonial removed'
+      if (this.done || this.info.alreadySubmitted) return 'Thank you'
+      if (!this.info.canSubmit) return 'Link no longer accepting testimonials'
+      return `Share your experience with ${this.info.productName}`
+    },
     token() {
       return String(this.$route.params.token || '')
     },
+  },
+
+  created() {
+    useHead({ title: () => this.pageTitle })
   },
 
   async mounted() {
@@ -262,6 +290,7 @@ export default {
       try {
         await $fetch(`/api/marketing/r/${encodeURIComponent(this.token)}/withdraw`, { method: 'POST' })
         this.withdrawn = true
+        this.$nextTick(() => this.$refs.status?.focus())
       } catch (err) {
         this.withdrawError = apiErrorMessage(err, 'Could not remove your testimonial. Please try again.')
       } finally {

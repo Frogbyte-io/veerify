@@ -70,7 +70,7 @@
             variant="outline"
             size="sm"
             :disabled="busy"
-            :aria-label="`Test ${item.label}`"
+            :aria-label="running[item.id] ? undefined : `Test ${item.label}`"
             :data-testid="`marketing-integration-test-${item.id}`"
             @click="testOne(item.id)"
           >

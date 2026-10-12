@@ -4420,7 +4420,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Look up a review request link",
-      "description": "Public, token-gated. Returns the product name, the recipient's first name whether a testimonial was already submitted and whether one can still be submitted. No other personal data.\n",
+      "description": "Public, token-gated. Returns the product name, the recipient's first name whether a testimonial was already submitted, whether it was withdrawn from the public page and whether one can still be submitted. No other personal data.\n",
       "operationId": "getPublicReviewRequest",
       "parameters": [
         {

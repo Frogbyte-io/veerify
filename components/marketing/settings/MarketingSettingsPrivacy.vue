@@ -24,6 +24,7 @@
             type="email"
             placeholder="person@example.com"
             class="max-w-xs"
+            aria-label="Email address to erase"
             :disabled="erasing"
             data-testid="privacy-erase-email"
           />
@@ -105,7 +106,13 @@
             Type <strong>{{ product.slug }}</strong> to confirm. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
-        <Input v-model="confirmText" :disabled="deleting" data-testid="privacy-delete-confirm-input" />
+        <Input
+          v-model="confirmText"
+          :disabled="deleting"
+          :aria-label="`Type ${product.slug} to confirm deletion`"
+          autocomplete="off"
+          data-testid="privacy-delete-confirm-input"
+        />
         <p v-if="deleteError" class="text-sm text-destructive" role="alert">{{ deleteError }}</p>
         <DialogFooter>
           <Button variant="outline" :disabled="deleting" @click="deleteOpen = false">Cancel</Button>
@@ -189,11 +196,22 @@ export default {
         link.click()
         link.remove()
         URL.revokeObjectURL(url)
+        toast.success('Export downloaded', { description: `marketing-${this.product.slug}.json` })
       } catch (err) {
         this.exportError = apiErrorMessage(err, 'Could not export the data. Try again.')
       } finally {
         this.exporting = false
       }
+    },
+
+    // The dialog hands focus back to its trigger as it closes, so move to the page heading after that
+    focusPageHeading() {
+      setTimeout(() => {
+        const heading = document.querySelector('h1')
+        if (!heading) return
+        heading.setAttribute('tabindex', '-1')
+        heading.focus()
+      }, 300)
     },
 
     openDelete() {
@@ -214,6 +232,7 @@ export default {
         this.deleteOpen = false
         toast.success('Marketing data deleted')
         this.$emit('changed')
+        this.focusPageHeading()
       } catch (err) {
         this.deleteError = apiErrorMessage(err, 'Could not delete the data. Try again.')
       } finally {

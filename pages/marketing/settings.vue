@@ -91,8 +91,19 @@ export default {
       integrations: [],
       integrationsLoading: false,
       integrationsError: null,
-      hashHandled: false,
+      hashToken: 0,
     }
+  },
+
+  watch: {
+    // Same-page hash changes (setup checklist links) re-focus the target section
+    '$route.hash'() {
+      this.focusHashSection()
+    },
+  },
+
+  beforeUnmount() {
+    this.hashToken++
   },
 
   methods: {
@@ -131,28 +142,38 @@ export default {
         }
       } finally {
         if (this.product?.id === productId) this.isLoading = false
-        if (!silent && !this.hashHandled) this.$nextTick(() => this.focusHashSection())
+        if (!silent && this.$route.hash) this.$nextTick(() => this.focusHashSection())
       }
     },
 
     // Deep links from the setup checklist: /marketing/settings#terms
-    focusHashSection(attempt = 0) {
+    // Sections render after their data loads, so poll animation frames (up to ~2s) until the
+    // section's first enabled control exists. A newer call or a route change cancels the poll.
+    focusHashSection() {
       if (!import.meta.client) return
-      const id = decodeURIComponent((this.$route.hash || '').slice(1))
-      if (!id || !['site', 'terms', 'keys', 'integrations'].includes(id)) {
-        this.hashHandled = true
+      const token = ++this.hashToken
+      let id = ''
+      try {
+        id = decodeURIComponent((this.$route.hash || '').slice(1))
+      } catch {
         return
       }
-      const section = document.getElementById(id)
-      // Sections load their own data; wait briefly for the first field to appear
-      const field = section?.querySelector('input:not([disabled]), textarea:not([disabled]), button:not([disabled])')
-      if (!section || !field) {
-        if (attempt < 20) setTimeout(() => this.focusHashSection(attempt + 1), 150)
-        return
+      if (!id || !['site', 'terms', 'keys', 'integrations'].includes(id)) return
+      const deadline = performance.now() + 2000
+      const attempt = () => {
+        if (token !== this.hashToken) return
+        const section = document.getElementById(id)
+        const field = section?.querySelector(
+          'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href]'
+        )
+        if (section && field) {
+          section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          field.focus({ preventScroll: true })
+          return
+        }
+        if (performance.now() < deadline) requestAnimationFrame(attempt)
       }
-      this.hashHandled = true
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      field.focus({ preventScroll: true })
+      requestAnimationFrame(attempt)
     },
 
     async onSiteChanged() {
