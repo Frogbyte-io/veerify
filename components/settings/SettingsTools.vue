@@ -10,7 +10,7 @@
 
     <div class="p-6">
       <div v-if="isLoading" class="space-y-3">
-        <Skeleton v-for="i in 4" :key="i" class="h-20 w-full" />
+        <Skeleton v-for="i in modules.length" :key="i" class="h-20 w-full" />
       </div>
 
       <div v-else-if="error" class="text-center py-6" data-testid="settings-tools-error">
@@ -68,33 +68,7 @@
 
 <script>
 import { toast } from 'vue-sonner'
-
-const MODULES = [
-  {
-    key: 'feedbackEnabled',
-    label: 'Feedback',
-    icon: 'lucide:message-square',
-    description: 'Collect, vote on, and triage product feedback',
-  },
-  {
-    key: 'roadmapEnabled',
-    label: 'Roadmap',
-    icon: 'lucide:map',
-    description: 'Share planned work publicly as a kanban-style roadmap',
-  },
-  {
-    key: 'changelogEnabled',
-    label: 'Changelog',
-    icon: 'lucide:newspaper',
-    description: 'Publish release notes and product updates',
-  },
-  {
-    key: 'supportEnabled',
-    label: 'Support',
-    icon: 'lucide:inbox',
-    description: 'Shared inbox for customer conversations and contacts',
-  },
-]
+import { DEFAULT_TEAM_MODULES, MODULES } from '~/lib/modules'
 
 export default {
   name: 'SettingsTools',
@@ -102,12 +76,7 @@ export default {
   data() {
     return {
       modules: MODULES,
-      values: {
-        feedbackEnabled: true,
-        roadmapEnabled: false,
-        changelogEnabled: false,
-        supportEnabled: false,
-      },
+      values: { ...DEFAULT_TEAM_MODULES },
       teamId: null,
       canManage: false,
       isLoading: true,

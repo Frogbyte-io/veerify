@@ -49,7 +49,12 @@ jobs:
 
   playwright_e2e:
     name: PR E2E (Playwright on Neon)
-    needs: create_neon_branch
+    # `setup` must be listed too: `needs.setup.outputs.branch` is empty unless it is a direct
+    # dependency, and the resolve step below would then create a second, unexpiring
+    # `preview/pr-<n>-` branch that the delete job never removes.
+    needs: [setup, create_neon_branch]
+    # Bounds the run; Playwright's globalTimeout (40 min on CI) stops the suite first.
+    timeout-minutes: 45
     if: |
       github.event_name == 'pull_request' && (
       github.event.action == 'synchronize'

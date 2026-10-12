@@ -275,6 +275,23 @@ production stack), `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_AC
 and `UPLOAD_TOKEN_SECRET`. `STORAGE_ACCESS_KEY_ID`/`STORAGE_SECRET_ACCESS_KEY` double as the MinIO root
 credentials — there is no separate MinIO admin password to set.
 
+#### Marketing (optional)
+
+The Marketing module works on self-hosted installs. Teams bring their own Claude, OpenAI, Firecrawl and
+PageSpeed keys in Marketing settings; to let them save keys, set `SECRETS_ENCRYPTION_KEY`
+(`openssl rand -base64 32`). Everything else is optional and only unlocks one capability:
+
+| Variable                                                        | Unlocks                                                                                                                                                                                            |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`                        | Full site crawl for every team (point the URL at a self-hosted Firecrawl if you run one). Without it, teams without their own key get a basic audit of robots.txt, llms.txt, sitemap and home page |
+| `PAGESPEED_API_KEY`                                             | Core Web Vitals in site audits                                                                                                                                                                     |
+| `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | Reddit mentions (register your own Reddit app; you are bound by Reddit's API terms)                                                                                                                |
+| `BLUESKY_IDENTIFIER`, `BLUESKY_APP_PASSWORD`                    | Bluesky mentions (use an app password)                                                                                                                                                             |
+| `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`  | Crawl limits (defaults 50 pages, 3 manual audits per product per day; hard cap 500 pages)                                                                                                          |
+
+Hacker News mentions need nothing. Marketing settings shows an integration status panel listing what is
+configured.
+
 #### Bring the stack up
 
 ```bash

@@ -514,3 +514,121 @@ To unsubscribe: ${unsubscribeUrl}
 
   return { subject, html, text }
 }
+
+interface MarketingMentionsDigestOptions {
+  productName: string
+  counts: { mention: number; competitor: number; opportunity: number }
+  items: Array<{
+    sourceLabel: string
+    kind: 'mention' | 'competitor' | 'opportunity'
+    title: string | null
+    excerpt: string
+    url: string
+  }>
+  mentionsUrl: string
+}
+
+const MENTION_KIND_LABELS = {
+  mention: 'Brand mentions',
+  competitor: 'Competitor mentions',
+  opportunity: 'Opportunities',
+}
+
+/** Only http(s) links from third-party posts are rendered as hrefs. */
+function safeHttpUrl(value: string): string | null {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+export function marketingMentionsDigestTemplate({
+  productName,
+  counts,
+  items,
+  mentionsUrl,
+}: MarketingMentionsDigestOptions) {
+  const total = counts.mention + counts.competitor + counts.opportunity
+  const subject = `${total} new ${total === 1 ? 'mention' : 'mentions'} for ${productName}`
+
+  const countKinds = (Object.keys(MENTION_KIND_LABELS) as Array<keyof typeof MENTION_KIND_LABELS>).filter(
+    (kind) => counts[kind] > 0
+  )
+
+  const itemsHtml = items
+    .map((item) => {
+      const heading = item.title || item.excerpt
+      const href = safeHttpUrl(item.url)
+      const headingHtml = href
+        ? `<a href="${escapeHtml(href)}" style="color:#6366f1;text-decoration:none">${escapeHtml(heading)}</a>`
+        : escapeHtml(heading)
+      const detail = item.title && item.excerpt ? escapeHtml(item.excerpt) : ''
+      return `<li style="margin:0 0 14px 0">
+        <div style="font-size:12px;color:#888">${escapeHtml(item.sourceLabel)} &middot; ${escapeHtml(MENTION_KIND_LABELS[item.kind])}</div>
+        <div style="font-weight:600;color:#1a1a1a">${headingHtml}</div>
+        ${detail ? `<div style="color:#555;font-size:14px">${detail}</div>` : ''}
+      </li>`
+    })
+    .join('')
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">New mentions for ${escapeHtml(productName)}</h2>
+      <p style="color:#444">${countKinds.map((kind) => `${counts[kind]} ${MENTION_KIND_LABELS[kind].toLowerCase()}`).join(' &middot; ')}</p>
+      <ul style="padding-left:18px;margin:16px 0">${itemsHtml}</ul>
+      <p><a href="${escapeHtml(mentionsUrl)}" style="color:#6366f1">Open the mentions inbox</a></p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:12px">Powered by Veerify</p>
+    </div>
+  `
+
+  const text = `New mentions for ${productName}
+
+${countKinds.map((kind) => `${counts[kind]} ${MENTION_KIND_LABELS[kind].toLowerCase()}`).join(', ')}
+
+${items
+  .map(
+    (item) =>
+      `- [${item.sourceLabel}] ${item.title || item.excerpt}${item.title && item.excerpt ? `\n  ${item.excerpt}` : ''}\n  ${item.url}`
+  )
+  .join('\n')}
+
+Open the mentions inbox: ${mentionsUrl}
+`
+
+  return { subject, html, text }
+}
+
+interface MarketingCredentialInvalidTemplateOptions {
+  providerLabel: string
+  settingsUrl: string
+}
+
+export function marketingCredentialInvalidTemplate({
+  providerLabel,
+  settingsUrl,
+}: MarketingCredentialInvalidTemplateOptions) {
+  const subject = `Your ${providerLabel} API key was rejected`
+  const safeProvider = escapeHtml(providerLabel)
+  const safeUrl = escapeHtml(settingsUrl)
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Your ${safeProvider} API key was rejected</h2>
+      <p style="color:#444">${safeProvider} rejected the API key your team added for Marketing. AI visibility runs that use ${safeProvider} are paused until you replace the key.</p>
+      <p><a href="${safeUrl}" style="color:#6366f1">Update the key in Marketing settings</a></p>
+      <p style="color:#999;font-size:12px">You are receiving this because you are a team admin. Powered by Veerify</p>
+    </div>
+  `
+
+  const text = `Your ${providerLabel} API key was rejected
+
+${providerLabel} rejected the API key your team added for Marketing. AI visibility runs that use ${providerLabel} are paused until you replace the key.
+
+Update the key in Marketing settings: ${settingsUrl}
+`
+
+  return { subject, html, text }
+}

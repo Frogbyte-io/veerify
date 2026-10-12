@@ -64,6 +64,40 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/marketing-mentions-digest": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Email the daily marketing mentions digest",
+      "operationId": "cronMarketingMentionsDigest",
+      "responses": {
+        "200": {
+          "description": "Mentions digest executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
+  "/api/cron/marketing-mentions-poll": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Poll social sources for marketing mentions",
+      "operationId": "cronMarketingMentionsPoll",
+      "responses": {
+        "200": {
+          "description": "Mentions poll executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/support-attachment-cleanup": {
     "get": {
       "tags": [
@@ -538,6 +572,1461 @@ export const openapiPaths = {
               }
             }
           }
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/audits": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List recent site audits for a product",
+      "description": "Returns the 20 most recent audits plus whether a new audit can be started now (`canStart`, with the `reason` when not: `not_verified`, `active_audit` or `daily_limit`). Requires Marketing enabled for the team and the product.\n",
+      "operationId": "listMarketingAudits",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Recent audits and start availability"
+        },
+        "403": {
+          "description": "Marketing not enabled or no access"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Start a manual site audit",
+      "description": "Queues an audit of the product's verified site. Runs a full crawl when a Firecrawl key is available (team key or instance key), otherwise a basic audit of robots.txt, llms.txt, sitemap and the home page. Fails with 409 while another audit is running and 429 after the daily manual limit. Unverified sites are never fetched (403).\n",
+      "operationId": "startMarketingAudit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "201": {
+          "description": "Audit queued"
+        },
+        "403": {
+          "description": "Not enabled",
+          "not verified or no access": null
+        },
+        "409": {
+          "description": "An audit is already running"
+        },
+        "429": {
+          "description": "Daily manual audit limit reached"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/audits/{auditId}": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get a site audit with its issues",
+      "description": "Status and progress, score and the previous audit's score, an issue summary, site facts (robots.txt, llms.txt, sitemap, AI crawler access, PageSpeed) and issues grouped by rule with up to 50 affected pages each.\n",
+      "operationId": "getMarketingAudit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "auditId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Audit detail"
+        },
+        "403": {
+          "description": "Marketing not enabled or no access"
+        },
+        "404": {
+          "description": "Audit not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/audits/{auditId}/cancel": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Cancel a running site audit",
+      "description": "Cancels a queued, crawling or analyzing audit; stops the provider crawl job when one is running.",
+      "operationId": "cancelMarketingAudit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "auditId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Audit cancelled"
+        },
+        "403": {
+          "description": "Marketing not enabled or no access"
+        },
+        "404": {
+          "description": "Audit not found for this product"
+        },
+        "409": {
+          "description": "Audit already finished"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/audits/{auditId}/pages": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List pages fetched by a site audit",
+      "description": "Pages ordered by URL, 50 per request. Pass `nextCursor` as `cursor` for the next page.",
+      "operationId": "listMarketingAuditPages",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "auditId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Pages with status code",
+          "title and issue count": null
+        },
+        "403": {
+          "description": "Marketing not enabled or no access"
+        },
+        "404": {
+          "description": "Audit not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List mentions for a product",
+      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured.\n",
+      "operationId": "listMarketingMentions",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "new",
+              "seen",
+              "dismissed",
+              "escalated"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "kind",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "mention",
+              "competitor",
+              "opportunity"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "source",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "hackernews",
+              "reddit",
+              "bluesky"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Mentions page"
+        },
+        "400": {
+          "description": "Invalid query or cursor"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions/{mentionId}": {
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Change the triage status of a mention",
+      "operationId": "updateMarketingMention",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "mentionId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "seen",
+                    "dismissed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Mention updated"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Mention not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions/bulk": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Change the triage status of several mentions",
+      "description": "Ids that do not belong to the product's site are ignored.",
+      "operationId": "bulkUpdateMarketingMentions",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "ids",
+                "status"
+              ],
+              "properties": {
+                "ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "seen",
+                    "dismissed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Number of mentions updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions/sources": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Status of each mention source for a product",
+      "description": "Whether each source is configured on this install, when it was last polled and its last error.",
+      "operationId": "listMarketingMentionSources",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Source status list"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is not enabled": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/overview": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Marketing overview for a product",
+      "description": "Setup checklist state, integration status, this month's usage and the latest audit, AI visibility run and new mention count.\n",
+      "operationId": "getMarketingOverview",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Overview"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off for the team or product": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/site": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get the marketing site and its verification instructions",
+      "description": "Requires Marketing to be enabled for the team and the product. Returns `site: null` until a site is added. `canManage` is true for team admins.\n",
+      "operationId": "getMarketingSite",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Site",
+          "verification instructions and whether the caller can manage it": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add or change the marketing site origin",
+      "description": "Team admins only. Changing the origin resets verification and issues a new token. A site covered by one of the product's verified custom domains is verified immediately (method `domain`).\n",
+      "operationId": "putMarketingSite",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "origin"
+              ],
+              "properties": {
+                "origin": {
+                  "type": "string",
+                  "example": "example.com"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Site saved"
+        },
+        "400": {
+          "description": "Invalid site address"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/site/verify": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Check site ownership with a DNS record, meta tag or file",
+      "description": "Team admins only. Rate limited to 10 checks per hour per site.",
+      "operationId": "verifyMarketingSite",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "method"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "dns",
+                    "meta",
+                    "file"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated site; `site.verified` tells whether the check passed"
+        },
+        "403": {
+          "description": "Team admin required",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "No site added yet"
+        },
+        "429": {
+          "description": "Too many verification attempts"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/terms": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List brand, competitor and keyword terms of the product's site",
+      "operationId": "listMarketingTerms",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Terms and whether the caller can manage them"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "No site added yet"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add a brand, competitor or keyword term",
+      "description": "Any team member with Marketing access. At most 50 terms per site and 10 aliases per term. `competitorDomain` is only allowed on competitors.\n",
+      "operationId": "createMarketingTerm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "kind",
+                "label"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "brand",
+                    "competitor",
+                    "keyword"
+                  ]
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 80
+                },
+                "aliases": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "competitorDomain": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Term created"
+        },
+        "400": {
+          "description": "Validation failed or the 50 term limit is reached"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "No site added yet"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/terms/{termId}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete a term",
+      "operationId": "deleteMarketingTerm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "termId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Term deleted"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Term or site not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Update a term's name, aliases or competitor domain",
+      "operationId": "updateMarketingTerm",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "termId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "label"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 80
+                },
+                "aliases": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "competitorDomain": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Term updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Term or site not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/llms-txt": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Draft llms.txt for the product",
+      "description": "Template-based draft (llmstxt.org format) from the product name and description, the site origin, public board and roadmap URLs, and the top crawled pages from the latest finished site audit. No LLM is involved.\n",
+      "operationId": "getLlmsTxtDraft",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Draft content"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project or marketing site not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/prompts": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List AI visibility prompts for a product",
+      "operationId": "listVisibilityPrompts",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Prompts with the active-prompt cap"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project or marketing site not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Create an AI visibility prompt",
+      "description": "Text must be 10-300 characters; at most 25 prompts can be active and 100 exist in total per product.",
+      "operationId": "createVisibilityPrompt",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Prompt created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "409": {
+          "description": "Duplicate prompt or active (25) or total (100) prompt cap reached"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/prompts/{promptId}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete an AI visibility prompt and its stored answers",
+      "operationId": "deleteVisibilityPrompt",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "promptId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Prompt deleted"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Prompt not found for this product"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Update an AI visibility prompt (text and/or active flag)",
+      "operationId": "updateVisibilityPrompt",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "promptId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Prompt updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Prompt not found for this product"
+        },
+        "409": {
+          "description": "Active-prompt cap reached"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/prompts/suggest": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Suggest AI visibility prompts (not saved)",
+      "description": "Uses the team's own LLM key (Anthropic first, else OpenAI). Only the product name, description and feedback category names are sent to the provider.\n",
+      "operationId": "suggestVisibilityPrompts",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Up to 8 suggested prompts"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "409": {
+          "description": "No usable LLM key or monthly budget reached or provider out of credit"
+        },
+        "429": {
+          "description": "Rate limit (10 per hour per site) or provider rate limit"
+        },
+        "502": {
+          "description": "Provider error"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/runs": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List the 20 most recent AI visibility runs with progress counts",
+      "operationId": "listVisibilityRuns",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Recent runs"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project or marketing site not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Start an AI visibility run",
+      "description": "Requires a verified site, a brand term, an active prompt and a usable LLM key. One queued or running run per site; at most 3 manual runs per site per day.\n",
+      "operationId": "createVisibilityRun",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Run created"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "409": {
+          "description": "Setup incomplete or a run is already in progress"
+        },
+        "429": {
+          "description": "Daily manual run limit reached"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/runs/{runId}": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get one AI visibility run with progress counts",
+      "operationId": "getVisibilityRun",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Run and progress"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Run not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/runs/{runId}/answers": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List sampled answers of a run (optionally for one prompt)",
+      "operationId": "listVisibilityAnswers",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "promptId",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Answers with citations and analysis"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Run or prompt not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/setup": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Setup checklist for AI visibility",
+      "description": "Whether the site is verified, brand terms and prompts exist, and which LLM providers have a usable key.",
+      "operationId": "getVisibilitySetup",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Setup state"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/summary": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "AI visibility results for a run (latest finished run by default)",
+      "description": "Mention rate overall, per provider and per prompt x provider, average rank, share of voice, top cited domains and the mention-rate trend over the last 12 finished runs. Results come from provider APIs with web search and approximate, not replicate, the consumer apps.\n",
+      "operationId": "getVisibilitySummary",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "runId",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Summary; `run` is null when no run has finished yet"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Run not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/teams/{teamId}/credentials": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "List the team's marketing API keys",
+      "description": "Any team member can list. Only key hints and validation status are returned, never the keys. `secretsConfigured` is false when the server has no SECRETS_ENCRYPTION_KEY and keys cannot be stored.\n",
+      "operationId": "listMarketingCredentials",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Credentials",
+          "canManage and secretsConfigured": null
+        },
+        "403": {
+          "description": "Not a member of this team"
+        }
+      }
+    }
+  },
+  "/api/marketing/teams/{teamId}/credentials/{provider}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Remove a team API key",
+      "description": "Team admins only.",
+      "operationId": "deleteMarketingCredential",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "firecrawl",
+              "pagespeed"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Key removed"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "404": {
+          "description": "No key stored for this provider"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set or clear the monthly budget of an LLM key",
+      "description": "Team admins only. Applies to anthropic and openai keys. Null removes the cap.",
+      "operationId": "patchMarketingCredential",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai"
+            ]
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "monthlyBudgetCents"
+              ],
+              "properties": {
+                "monthlyBudgetCents": {
+                  "type": "integer",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Budget updated"
+        },
+        "400": {
+          "description": "Not an LLM provider or invalid budget"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "404": {
+          "description": "No key stored for this provider"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add or replace a team API key",
+      "description": "Team admins only. The key is checked against the provider before it is stored. A rejected key (authentication failure) returns 400 and is not saved. Network or provider outages save the key as `unchecked`. The key is encrypted at rest and never returned. Returns 503 when the server has no SECRETS_ENCRYPTION_KEY.\n",
+      "operationId": "putMarketingCredential",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "firecrawl",
+              "pagespeed"
+            ]
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "apiKey"
+              ],
+              "properties": {
+                "apiKey": {
+                  "type": "string"
+                },
+                "monthlyBudgetCents": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "LLM providers only"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Credential saved (hint and status only)"
+        },
+        "400": {
+          "description": "Invalid input or the provider rejected the key"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "503": {
+          "description": "Key encryption is not configured on this server"
         }
       }
     }

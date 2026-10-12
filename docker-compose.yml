@@ -167,6 +167,21 @@ services:
       STORAGE_PUBLIC_BASE_URL: https://${STORAGE_DOMAIN}/${STORAGE_BUCKET}
       UPLOAD_TOKEN_SECRET: ${UPLOAD_TOKEN_SECRET}
 
+      # --- Marketing (all optional except SECRETS_ENCRYPTION_KEY, which is
+      # needed before teams can save their own API keys) ---
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
+      SECRETS_ENCRYPTION_KEY_PREVIOUS: ${SECRETS_ENCRYPTION_KEY_PREVIOUS:-}
+      MARKETING_MAX_AUDIT_PAGES: ${MARKETING_MAX_AUDIT_PAGES:-}
+      MARKETING_MANUAL_AUDITS_PER_DAY: ${MARKETING_MANUAL_AUDITS_PER_DAY:-}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      FIRECRAWL_API_URL: ${FIRECRAWL_API_URL:-}
+      PAGESPEED_API_KEY: ${PAGESPEED_API_KEY:-}
+      REDDIT_CLIENT_ID: ${REDDIT_CLIENT_ID:-}
+      REDDIT_CLIENT_SECRET: ${REDDIT_CLIENT_SECRET:-}
+      REDDIT_USER_AGENT: ${REDDIT_USER_AGENT:-}
+      BLUESKY_IDENTIFIER: ${BLUESKY_IDENTIFIER:-}
+      BLUESKY_APP_PASSWORD: ${BLUESKY_APP_PASSWORD:-}
+
       # --- Realtime / rate limiting (Redis-protocol; valkey is the
       # self-hosted broker, wire-compatible with the same ioredis driver
       # used against Upstash on cloud) ---

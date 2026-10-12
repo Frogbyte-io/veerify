@@ -25,14 +25,11 @@ import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { requireTeamAdmin } from '~/server/utils/support-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
-import { DEFAULT_TEAM_MODULES } from './modules.get'
+import { DEFAULT_TEAM_MODULES, MODULE_KEYS, pickTeamModules } from '~/lib/modules'
 
-const bodySchema = z.object({
-  feedbackEnabled: z.boolean().optional(),
-  roadmapEnabled: z.boolean().optional(),
-  changelogEnabled: z.boolean().optional(),
-  supportEnabled: z.boolean().optional(),
-})
+const bodySchema = z.object(Object.fromEntries(MODULE_KEYS.map((key) => [key, z.boolean().optional()]))) as z.ZodType<
+  Partial<Record<(typeof MODULE_KEYS)[number], boolean>>
+>
 
 export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)
@@ -70,11 +67,6 @@ export default defineEventHandler(async (event) => {
     .returning()
 
   return createSuccessResponse({
-    modules: {
-      feedbackEnabled: row.feedbackEnabled,
-      roadmapEnabled: row.roadmapEnabled,
-      changelogEnabled: row.changelogEnabled,
-      supportEnabled: row.supportEnabled,
-    },
+    modules: pickTeamModules(row),
   })
 })
