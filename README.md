@@ -290,6 +290,8 @@ PageSpeed keys in Marketing settings; to let them save keys, set `SECRETS_ENCRYP
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                      | Google Search Console data (clicks, impressions, queries). Create a Google OAuth web client with the Search Console API enabled and the redirect URI `<BETTER_AUTH_URL>/api/marketing/google/callback`; needs `SECRETS_ENCRYPTION_KEY` |
 | `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`  | Crawl limits (defaults 50 pages, 3 manual audits per product per day; hard cap 500 pages)                                                                                                                                              |
 
+To rotate `SECRETS_ENCRYPTION_KEY`, move the old value to `SECRETS_ENCRYPTION_KEY_PREVIOUS` and set a new key. Stored keys keep decrypting, but nothing re-encrypts them automatically, so keep the old key there until teams have re-saved their keys. Run exactly one app replica: the scheduled tasks run inside every app process. Deployment details are in `docs/plans/2026-09-21-coolify-deployment.md`.
+
 Hacker News mentions need nothing. Marketing settings shows an integration status panel listing what is
 configured. After setting the variables and restarting, open Marketing settings, go to Integration status and
 choose **Test all** (team admins only). Each integration runs its cheapest real check (key validation, one

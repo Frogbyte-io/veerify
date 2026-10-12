@@ -227,3 +227,182 @@ MVP-DEP-4 removes fabricated analytics while reporting remains deferred. MVP-DEP
 checklist above still require isolated services and real-provider evidence. Domain automation and
 multi-replica scheduler ownership each require their own design and tests; neither is needed for the
 initial single-container MVP. No live infrastructure changes have been performed by these local tasks.
+
+## Marketing module deployment
+
+Applies to the Marketing hub (`docs/plans/2026-10-09-marketing-hub/`), migrations `0044`-`0049` on
+this branch. The Marketing code reads its settings from `process.env` on each access (not from Nuxt
+runtime config), so the plain variable names below work as Coolify runtime environment variables. No
+`NUXT_` mapping is needed and none has to exist at image build time. Mark them "runtime only" in
+Coolify, not as build variables.
+
+### Marketing environment variables
+
+Every variable the Marketing code reads is in `.env.example` (documented), passed through in the
+`docker-compose.yml` app environment, and listed below. Audit result: no variable is read by
+Marketing code without being in all three places.
+
+| Variable                                                        | Required?          | Cloud (veerify.io)                                                                                                                     | Self-host                                                                                        |
+| --------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `SECRETS_ENCRYPTION_KEY`                                        | Yes, to save keys  | Required. `openssl rand -base64 32`. Keep a copy in a secret store; losing it makes every saved team key unusable                      | Required before teams can save their own API keys. Back it up separately from the database       |
+| `SECRETS_ENCRYPTION_KEY_PREVIOUS`                               | Only when rotating | Empty except during a rotation (see runbook). Comma-separated list accepted                                                            | Same                                                                                             |
+| `BETTER_AUTH_URL`                                               | Yes (existing)     | `https://app.veerify.io`. Also used for the Google redirect URI, digest and review links, and the `VeerifyBot` user agent              | Public dashboard origin over HTTPS, reachable by Google when Search Console is used              |
+| `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`                        | No                 | **Do not set `FIRECRAWL_API_KEY` until billing exists.** An instance key gives every team free full crawls (billing design, stage B2)  | Optional instance-wide crawler; `FIRECRAWL_API_URL` can point at a self-hosted Firecrawl         |
+| `PAGESPEED_API_KEY`                                             | No                 | **Do not set until billing exists.** It is a shared instance fallback that every team consumes                                         | Optional; without it PageSpeed uses the team's key or is skipped                                 |
+| `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | No                 | Instance-wide: one Reddit app serves all teams and shares one API quota. Decide on Reddit API terms and capacity before enabling       | Register your own Reddit app; all three are needed for Reddit mentions                           |
+| `BLUESKY_IDENTIFIER`, `BLUESKY_APP_PASSWORD`                    | No                 | Instance-wide shared account; use a dedicated account and an app password                                                              | Handle (for example `you.bsky.social`) and an app password, never the login password             |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                      | No                 | Needs an external OAuth consent screen; `webmasters.readonly` is a sensitive scope and requires Google verification before general use | Web-application OAuth client with the Search Console API enabled; needs `SECRETS_ENCRYPTION_KEY` |
+| `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`  | No                 | Defaults (50 pages, 3 manual audits per product per day) are the cost guardrails; lower rather than raise them                         | Defaults 50 (hard cap 500) and 3                                                                 |
+
+Format notes:
+
+- The Google redirect URI must be exactly `<BETTER_AUTH_URL>/api/marketing/google/callback`, for
+  example `https://app.veerify.io/api/marketing/google/callback`, registered as an authorized
+  redirect URI. Changing `BETTER_AUTH_URL` requires updating Google too.
+- `REDDIT_USER_AGENT` should follow Reddit's format `<platform>:<app id>:<version> (by /u/<reddit username>)`,
+  for example `web:io.veerify.marketing:1.0 (by /u/your_username)`. If unset, the code sends
+  `veerify:marketing-mentions:1.0 (self-hosted)`, which Reddit may throttle; always set it on cloud.
+- `SECRETS_ENCRYPTION_KEY` is 32 bytes as base64, base64url or 64 hex characters. An invalid value
+  makes saving keys fail and the integration panel report encryption as unconfigured. It is never
+  logged.
+- LLM provider keys (Anthropic, OpenAI, Perplexity, Gemini) are not instance variables. Teams save
+  their own in Marketing settings; there is no instance LLM fallback in this code.
+- Cloud caveat: the instance `FIRECRAWL_API_KEY` and `PAGESPEED_API_KEY` fallbacks currently apply to
+  every team, and the billing work that restricts them on cloud
+  (`docs/plans/2026-10-11-billing/design.md`, stage B2) is not implemented. Leave both unset on
+  cloud. Teams there bring their own key; without one they get the basic audit.
+
+### Scheduled tasks
+
+Nitro registers these in `nuxt.config.ts` `nitro.scheduledTasks` and runs them in-process on Coolify.
+Do not add Coolify scheduled commands on top. The same tasks exist as `/api/cron/*` handlers for
+Vercel Cron, which need `CRON_SECRET`; Nitro does not.
+
+| Task                            | Cadence      | Needs                                                                                                                   |
+| ------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `marketing:audit-advance`       | every minute | Outbound HTTPS to verified user sites; Firecrawl (team or instance key) for full crawls; PageSpeed host if a key exists |
+| `marketing:visibility-advance`  | every minute | LLM provider egress and a team LLM key; works in time-budgeted slices of about 45 s                                     |
+| `marketing:review-requests`     | every 5 min  | Working SMTP (`SMTP_*`, `MAIL_FROM`)                                                                                    |
+| `marketing:mentions-poll`       | every 15 min | HN Algolia (no key); Reddit and Bluesky only with their credentials                                                     |
+| `marketing:visibility-schedule` | hourly, :00  | Database only (queues weekly runs)                                                                                      |
+| `marketing:audit-schedule`      | hourly, :05  | Database only (queues first and weekly audits)                                                                          |
+| `marketing:search-sync`         | hourly, :20  | Google OAuth and Search Console egress, `GOOGLE_*`, `SECRETS_ENCRYPTION_KEY`                                            |
+| `marketing:competitors-check`   | hourly, :35  | Outbound HTTPS to competitor sites (robots.txt honoured, at most daily per page)                                        |
+| `marketing:mentions-digest`     | daily, 08:00 | Working SMTP; emails team admins who have not opted out                                                                 |
+
+All nine are registered in both `nuxt.config.ts` and `vercel.json`.
+
+Vercel only: Hobby plans allow cron jobs at most once per day, so `vercel.json` with per-minute
+crons does not work there; the Marketing advance tasks need minute cadence, so a Vercel deployment
+requires Pro. Coolify and compose are unaffected. Vercel also needs `CRON_SECRET` (fail-closed:
+unset means every task returns 401) and uses `nitro.vercel.functions.maxDuration: 60`.
+
+#### Replicas and scheduler safety
+
+Run exactly one app replica with stop-before-start deploys, as required above. Nitro starts every
+task in every process, so a second replica or a rolling-deploy overlap runs them twice. Review of
+the Marketing code for that case:
+
+- Safe through a claim, lease or unique index: `audit-advance` (row lease in `site_facts._runtime`
+  with `FOR UPDATE SKIP LOCKED`, 3-minute lease), `visibility-advance` (answer claims with
+  `SKIP LOCKED`, 3-minute lease), `review-requests` (`SKIP LOCKED` claim plus stale-claim sweep),
+  `competitors-check` (atomic per-watch claim), and `audit-schedule` / `visibility-schedule` (the
+  partial unique indexes from migration `0045` turn a duplicate start into a handled
+  `already_running`).
+- Not claimed, so duplicated under overlap: `mentions-digest` (no sent ledger, so each admin gets one
+  email per overlapping process), `mentions-poll` (mention inserts are deduplicated by a unique
+  index, but there is no per-source claim, so overlapping processes spend the same Reddit and
+  Bluesky quota) and `search-sync` (upserts are idempotent but Google API calls are duplicated).
+- A brief rolling overlap is therefore mostly harmless (wasted calls, at worst a duplicate digest if
+  it spans 08:00). There is still no scheduler-disable flag or leader election, so multiple replicas
+  are not supported.
+
+### Migrations 0044-0049
+
+The `migrate` service (compose) or the Coolify one-off `migrate` operation applies them in order
+before traffic starts. All are forward-only. Only `0045` can reject existing data: it creates two
+partial unique indexes (one active AI visibility run per site, one active audit per site). On a
+fresh database `0044` creates those tables in the same run, so no conflicting rows can exist. The
+risk is a database that already applied `0044` from an earlier build (staging, a preview) and holds
+duplicate in-flight rows, or one where the Marketing tables were created by `db:push`, which makes
+`0044`'s `CREATE TABLE` collide. Also read the `0019` journal-ordering warning at the top of this plan.
+
+Run this read-only check against the target database before migrating. The first query must return
+`null`, or the other queries must return no rows:
+
+```sql
+-- Marketing tables already present? (null on a clean pre-0044 database)
+select to_regclass('public.marketing_site');
+
+-- Only if the tables exist: duplicate active audits per site (blocks 0045)
+select site_id, count(*) from seo_audit
+ where status in ('queued', 'crawling', 'analyzing') group by site_id having count(*) > 1;
+
+-- Only if the tables exist: duplicate active visibility runs per site (blocks 0045)
+select site_id, count(*) from ai_visibility_run
+ where status in ('queued', 'running') group by site_id having count(*) > 1;
+
+-- Which migrations are recorded (Drizzle applies by timestamp)
+select id, created_at from drizzle.__drizzle_migrations order by created_at desc limit 8;
+```
+
+On a database before `0044` the second and third queries fail with "relation does not exist", which
+is the expected clean state. To clear duplicates, take a backup, then mark all but the newest row as
+failed (for example `update seo_audit set status = 'failed' where id = '<older id>'`).
+
+### Outbound network and egress
+
+The app needs outbound HTTPS (443) to the hosts below. If the Coolify host or network has an egress
+firewall, allow them by hostname (IPs change); a deny-by-default firewall silently stops the matching
+task.
+
+| Purpose                                                               | Hosts                                                                                                                             |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| LLM providers (AI visibility, key validation)                         | `api.anthropic.com`, `api.openai.com`, `api.perplexity.ai`, `generativelanguage.googleapis.com`                                   |
+| Crawl                                                                 | `api.firecrawl.dev`, or the host in `FIRECRAWL_API_URL` if self-hosted (may be an internal address)                               |
+| PageSpeed Insights                                                    | `www.googleapis.com`                                                                                                              |
+| Google OAuth and Search Console                                       | `accounts.google.com`, `oauth2.googleapis.com`, `openidconnect.googleapis.com`, `www.googleapis.com`                              |
+| Hacker News mentions                                                  | `hn.algolia.com`                                                                                                                  |
+| Reddit mentions                                                       | `www.reddit.com`, `oauth.reddit.com`                                                                                              |
+| Bluesky mentions                                                      | `bsky.social`                                                                                                                     |
+| User sites (verification, audit, competitors, launch kit directories) | Arbitrary public hostnames on 80/443, redirects followed. Allow general outbound web access; a hostname allowlist is not workable |
+| Email                                                                 | The SMTP relay host and port (digest, review requests)                                                                            |
+
+User-supplied URLs are checked by the app before fetching, but as defense in depth keep the
+container unable to reach the Coolify host, the tailnet and admin interfaces.
+
+### SECRETS_ENCRYPTION_KEY rotation runbook
+
+Behaviour (`server/utils/secrets.ts`): new secrets are encrypted with `SECRETS_ENCRYPTION_KEY`; each
+payload records an 8-character key id; decryption picks the key by that id from the current key and
+the comma-separated `SECRETS_ENCRYPTION_KEY_PREVIOUS`. `needsReencryption()` exists but **no code
+calls it**: there is no re-encryption job, script or endpoint. Old payloads are never rewritten
+automatically; they move to the new key only when a team re-saves its key or reconnects Google.
+
+1. Generate a new key: `openssl rand -base64 32`.
+2. Set `SECRETS_ENCRYPTION_KEY_PREVIOUS` to the old key and `SECRETS_ENCRYPTION_KEY` to the new key in
+   Coolify, then redeploy (one replica). Old payloads still decrypt; new saves use the new key.
+3. Verify with Marketing settings, Integration status, **Test all**.
+4. Keep the old key in `SECRETS_ENCRYPTION_KEY_PREVIOUS`. Removing it is not safe until every team
+   API key and Search Console refresh token has been re-saved, and there is no tool to find or
+   rewrite them. Removing it early leaves those credentials undecryptable (teams must re-enter keys
+   and reconnect Google).
+5. If the key was leaked, rotate as above and also have teams revoke and re-enter provider keys;
+   assume the old key stays needed until they have.
+6. Store current and previous keys outside the app host. Restoring a database without the matching
+   key loses all saved team keys.
+
+### Marketing go-live checklist
+
+- [ ] `SECRETS_ENCRYPTION_KEY` set and recorded in the secret store; `..._PREVIOUS` empty.
+- [ ] Cloud: `FIRECRAWL_API_KEY` and `PAGESPEED_API_KEY` are unset; `REDDIT_USER_AGENT` set if Reddit is enabled.
+- [ ] Optional sources configured: Reddit (id, secret, user agent), Bluesky, Google (redirect URI registered).
+- [ ] Egress to the hosts above works from the app container.
+- [ ] Pre-deploy SQL checked; backup taken; `migrate` succeeded (`0044`-`0049` recorded); one app replica.
+- [ ] Startup log shows `Scheduler backend: Nitro scheduled tasks`, and `marketing:*` tasks run after a few minutes.
+- [ ] As team admin: enable the Marketing module, then Marketing settings, Integration status, **Test all**: every configured integration passes.
+- [ ] Verify a site (meta tag, file or DNS method) and confirm it shows as verified.
+- [ ] Start the first audit; it moves from queued to complete within a few ticks and issues appear.
+- [ ] Save a team LLM key, add a prompt, start the first visibility run; answers complete and usage is recorded.
+- [ ] Digest email: with a mention present, confirm one digest arrives after 08:00 UTC (SMTP works, no duplicates).
+- [ ] Complete the Google Search Console connect round trip back to the dashboard.
