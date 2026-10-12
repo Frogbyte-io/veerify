@@ -168,9 +168,8 @@ const feedbackItems: SidebarNavItem[] = [
   },
   {
     title: 'Roadmap',
-    url: '/roadmap',
+    url: '/dashboard/roadmap',
     icon: 'lucide:map',
-    disabled: true,
     module: 'roadmapEnabled',
   },
   {
@@ -294,10 +293,7 @@ async function loadTeamModules() {
   }
 }
 
-// `Roadmap` remains `disabled` even when its module is on: the dashboard page
-// genuinely does not exist yet (`pages/roadmap` is absent), so enabling the
-// toggle must not produce a link to a 404. The toggle controls whether the placeholder is advertised at
-// all. See Technical Debt #11.
+// Roadmap and Changelog entries only show when their team module is on.
 const visibleFeedbackItems = computed(() =>
   feedbackItems.filter((item) => !item.module || teamModules.value[item.module])
 )

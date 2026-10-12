@@ -316,10 +316,8 @@ test('roadmap and changelog are hidden until their team module is enabled', asyn
   await expect(sidebar.getByRole('button', { name: 'Roadmap' })).toHaveCount(0)
   await expect(sidebar.getByRole('button', { name: 'Changelog' })).toHaveCount(0)
 
-  // Whether shown or hidden, neither ever renders as a working link: the
-  // dashboard pages do not exist yet, so the entries stay disabled
-  // placeholders even once the module is on. See Technical Debt #11.
-  await expect(sidebar.locator('a[href="/roadmap"]')).toHaveCount(0)
+  // Hidden while the modules are off, so no links render either.
+  await expect(sidebar.locator('a[href="/dashboard/roadmap"]')).toHaveCount(0)
   await expect(sidebar.locator('a[href="/dashboard/changelog"]')).toHaveCount(0)
 })
 
