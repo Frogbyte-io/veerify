@@ -8,8 +8,15 @@ vi.mock('~/server/utils/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
-const { checkCompetitorWatches, checkWatch, checkWatchNow, newRunContext, summarizeChange, interleaveByHost } =
-  await import('~/server/services/marketing/competitors/checker')
+const {
+  checkCompetitorWatches,
+  checkWatch,
+  checkWatchNow,
+  newRunContext,
+  summarizeChange,
+  interleaveByHost,
+  groupByUrl,
+} = await import('~/server/services/marketing/competitors/checker')
 const { callTeamLlm } = await import('~/server/services/marketing/llm-call')
 const { hashText, normalizeHtml } = await import('~/server/services/marketing/competitors/normalize')
 
@@ -65,6 +72,7 @@ function setup(pages: Record<string, ReturnType<typeof res> | Error>, watches: W
   let clock = 1_000_000_000_000
   const store = {
     loadDue: vi.fn(async () => watches),
+    loadLastText: vi.fn(async () => null as string | null),
     claim: vi.fn(async () => true),
     save: vi.fn(async (id: string, patch: Patch) => {
       saves.push({ id, patch })
@@ -513,6 +521,105 @@ describe('checkCompetitorWatches fairness and concurrency', () => {
     const summary = await checkCompetitorWatches({ budgetMs: 0 }, t.deps)
     expect(summary).toMatchObject({ checked: 0, skipped: 5 })
     expect(t.store.claim).not.toHaveBeenCalled()
+  })
+})
+
+describe('shared fetches and lazy text', () => {
+  const rivalPages = (body: string) => ({
+    'https://rival.com/robots.txt': res(404, ''),
+    'https://rival.com/pricing': res(200, page(body)),
+  })
+
+  it('fetches a URL watched by several teams once and applies it to each, diffing against each own text', async () => {
+    const old1 = normalizeHtml(page('<p>Pro $29</p><p>Team $99</p>'))
+    const old2 = normalizeHtml(page('<p>Pro $19</p><p>Team $99</p>'))
+    const t = setup(rivalPages('<p>Pro $39</p><p>Team $99</p>'))
+    const texts: Record<string, string> = { a: old1, b: old2 }
+    ;(t.store as Record<string, unknown>).loadLastText = vi.fn(async (id: string) => texts[id] ?? null)
+    t.store.loadDue = vi.fn(async (_c: Date, _l: number, scope?: string) =>
+      scope === 'never'
+        ? []
+        : [
+            makeWatch({
+              id: 'a',
+              teamId: 'ta',
+              siteId: 'sa',
+              lastContentHash: hashText(old1),
+              lastCheckedAt: new Date(1),
+            }),
+            makeWatch({
+              id: 'b',
+              teamId: 'tb',
+              siteId: 'sb',
+              lastContentHash: hashText(old2),
+              lastCheckedAt: new Date(1),
+            }),
+          ]
+    ) as never
+    const summary = await checkCompetitorWatches({}, t.deps)
+    expect(t.requested.filter((u) => u.endsWith('/pricing'))).toHaveLength(1)
+    expect(t.requested.filter((u) => u.endsWith('/robots.txt'))).toHaveLength(1)
+    expect(summary.checked).toBe(2)
+    expect(summary.changes).toBe(2)
+    expect(t.changes.map((c) => c.watchId).sort()).toEqual(['a', 'b'])
+    // each team's diff is against its own stored text
+    const byWatch = Object.fromEntries(t.changes.map((c) => [c.watchId, c]))
+    expect(byWatch.a.removedText).toBe('Pro $29')
+    expect(byWatch.b.removedText).toBe('Pro $19')
+    // usage is metered for every team that used the fetch
+    expect(t.deps.recordUsage).toHaveBeenCalledWith('ta', 'competitors:fetches', 1)
+    expect(t.deps.recordUsage).toHaveBeenCalledWith('tb', 'competitors:fetches', 1)
+  })
+
+  it('applies a shared failure to each watch without refetching', async () => {
+    const t = setup({ 'https://rival.com/robots.txt': res(404, ''), 'https://rival.com/pricing': res(503, '') })
+    t.store.loadDue = vi.fn(async (_c: Date, _l: number, scope?: string) =>
+      scope === 'never' ? [makeWatch({ id: 'a' }), makeWatch({ id: 'b', teamId: 't2', siteId: 's2' })] : []
+    ) as never
+    const summary = await checkCompetitorWatches({}, t.deps)
+    expect(t.requested.filter((u) => u.endsWith('/pricing'))).toHaveLength(1)
+    expect(summary.errors).toBe(2)
+  })
+
+  it('groups watches of the same URL next to each other', () => {
+    const w = (id: string, url: string) => makeWatch({ id, url })
+    const grouped = groupByUrl([w('1', 'https://a.com/x'), w('2', 'https://b.com/x'), w('3', 'https://a.com/x')])
+    expect(grouped.map((x) => x.id)).toEqual(['1', '3', '2'])
+  })
+
+  it('does not load the stored text when the content hash is unchanged', async () => {
+    const text = normalizeHtml(page('<p>Pro $29</p>'))
+    const t = setup(rivalPages('<p>Pro $29</p>'))
+    const loadLastText = vi.fn(async () => text)
+    ;(t.store as Record<string, unknown>).loadLastText = loadLastText
+    const outcome = await checkWatch(
+      makeWatch({ lastContentHash: hashText(text) }),
+      newRunContext(Date.now() + 1e9),
+      t.deps
+    )
+    expect(outcome).toBe('unchanged')
+    expect(loadLastText).not.toHaveBeenCalled()
+  })
+
+  it('loads the stored text lazily only when the hash differs', async () => {
+    const before = normalizeHtml(page('<p>Pro $29</p><p>Team $99</p>'))
+    const t = setup(rivalPages('<p>Pro $39</p><p>Team $99</p>'))
+    const loadLastText = vi.fn(async () => before)
+    ;(t.store as Record<string, unknown>).loadLastText = loadLastText
+    const outcome = await checkWatch(
+      makeWatch({ lastContentHash: hashText(before) }),
+      newRunContext(Date.now() + 1e9),
+      t.deps
+    )
+    expect(outcome).toBe('changed')
+    expect(loadLastText).toHaveBeenCalledWith('w1')
+  })
+
+  it('re-baselines when the hash is set but no text is stored', async () => {
+    const t = setup(rivalPages('<p>Pro $29</p>'))
+    ;(t.store as Record<string, unknown>).loadLastText = vi.fn(async () => null)
+    const outcome = await checkWatch(makeWatch({ lastContentHash: 'stale' }), newRunContext(Date.now() + 1e9), t.deps)
+    expect(outcome).toBe('baseline')
   })
 })
 

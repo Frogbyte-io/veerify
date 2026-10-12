@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import * as schema from './schema/index'
-import { createDatabaseConnectionConfig } from './connection-config'
+import { createDatabaseConnectionConfig, resolvePoolMax } from './connection-config'
 import { createLogger } from '../utils/logger'
 import 'dotenv/config'
 
@@ -10,7 +10,7 @@ const log = createLogger('db')
 const poolConfig = { ...createDatabaseConnectionConfig() }
 delete poolConfig.connectionString
 
-const pool = new Pool(poolConfig)
+const pool = new Pool({ ...poolConfig, max: resolvePoolMax() })
 
 pool.on('error', (err: Error & { code?: string }) => {
   if (err.code === 'ECONNREFUSED') {

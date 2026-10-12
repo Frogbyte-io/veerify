@@ -75,6 +75,8 @@ const {
   finalizeVisibilityRuns,
   sweepStuckVisibilityRuns,
   scheduleWeeklyVisibilityRuns,
+  scheduleBatchForBacklog,
+  createDefaultDeps,
   buildDueSitesQuery,
   allocateClaims,
   VisibilityRunError,
@@ -545,6 +547,100 @@ describe('advanceVisibilityRuns', () => {
   })
 })
 
+describe('advanceVisibilityRuns resilience and deadlines', () => {
+  it('survives a failing release (rate limited provider) without aborting the tick', async () => {
+    const limited = {
+      answerWithSearch: async () => {
+        throw new LlmProviderError('anthropic', 'rate_limit', 'slow down', 429)
+      },
+    }
+    const h = makeHarness([mk('a1'), mk('a2'), mk('o1', 'openai')], { llm: { anthropic: limited } })
+    ;(h.raw as { release: unknown }).release = vi.fn(async () => {
+      throw new Error('db down')
+    })
+    const result = await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 3 }, h.deps)
+    expect(result.claimed).toBe(3)
+    // the unaffected provider still finished
+    expect(h.state.saved.has('o1')).toBe(true)
+  })
+
+  it('does not claim new answers when less than the claim cutoff of the budget remains', async () => {
+    const h = makeHarness([mk('a1'), mk('a2')])
+    // a 45 s budget with a 20 s cutoff: claiming stops after 25 s; the clock jumps to 30 s after the first reading
+    let t = 0
+    ;(h.raw as { now: () => number }).now = () => {
+      const v = t
+      t = 30_000
+      return v
+    }
+    const result = await advanceVisibilityRuns({ budgetMs: 45_000 }, h.deps)
+    expect(result.claimed).toBe(0)
+    expect(h.raw.claim).not.toHaveBeenCalled()
+  })
+
+  it('passes an abort signal to provider calls that fires at the hard deadline, and releases the cut-off answer', async () => {
+    let seen: AbortSignal | undefined
+    const slow = {
+      answerWithSearch: (input: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          seen = input.signal
+          input.signal?.addEventListener('abort', () =>
+            reject(new LlmProviderError('anthropic', 'timeout', 'aborted by caller'))
+          )
+        }),
+    }
+    const h = makeHarness([mk('a1')], { llm: { anthropic: slow } })
+    const result = await advanceVisibilityRuns({ budgetMs: 5000, hardDeadlineExtraMs: -4950 }, h.deps)
+    expect(seen).toBeInstanceOf(AbortSignal)
+    expect(seen?.aborted).toBe(true)
+    // cut off by our deadline: back to the queue, not failed
+    expect(h.state.released.map((a) => a.id)).toEqual(['a1'])
+    expect(h.state.failed.size).toBe(0)
+    expect(result).toEqual({ claimed: 1, done: 0, failed: 0 })
+  })
+
+  it('passes the signal to the extraction call too', async () => {
+    const h = makeHarness([mk('a1')])
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    expect((h.calls.answerWithSearch.mock.calls[0][0] as { signal?: AbortSignal }).signal).toBeInstanceOf(AbortSignal)
+    expect((h.calls.extractStructured.mock.calls[0][0] as { signal?: AbortSignal }).signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('defaults to 24 answers in flight and 8 per provider', async () => {
+    const h = makeHarness([])
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    const [limit, , capacity] = (h.raw.claim as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(limit).toBe(24)
+    expect(capacity.anthropic).toBe(8)
+  })
+})
+
+describe('provider-first pending index', () => {
+  it('claims per provider, oldest first, in the order of the (provider, created_at, id) partial index', async () => {
+    state.executed = 0
+    state.executedSql = []
+    state.executeRows = [[], []]
+    const deps = createDefaultDeps()
+    await deps.claim(6, [], { anthropic: 3, openai: 3, perplexity: 0, gemini: 0 })
+    expect(state.executedSql).toHaveLength(2)
+    for (const query of state.executedSql) {
+      const { sql: text } = render(query)
+      expect(text).toMatch(/a\.status = 'pending'\s+AND a\.provider = \$\d+/)
+      expect(text).toMatch(/ORDER BY a\.created_at ASC, a\.id ASC/)
+    }
+  })
+
+  it('declares the partial index with provider as the leading column', async () => {
+    const { getTableConfig } = await import('drizzle-orm/pg-core')
+    const { aiVisibilityAnswer } = await import('~/server/database/schema/marketing')
+    const idx = getTableConfig(aiVisibilityAnswer).indexes.find(
+      (i) => i.config.name === 'ai_visibility_answer_pending_idx'
+    )
+    expect(idx?.config.columns.map((c) => (c as { name: string }).name)).toEqual(['provider', 'created_at', 'id'])
+    expect(idx?.config.where).toBeDefined()
+  })
+})
+
 describe('advanceVisibilityRuns hardening', () => {
   it('runs the stuck-run sweep at the start of every tick, even with nothing to claim', async () => {
     const h = makeHarness([])
@@ -714,7 +810,10 @@ describe('sweepStuckVisibilityRuns', () => {
     expect(state.executed).toBe(2)
     const timeout = render(state.executedSql[0])
     expect(timeout.sql).toMatch(/UPDATE ai_visibility_answer/)
-    expect(timeout.sql).toMatch(/status = 'pending' AND created_at </)
+    // provider first, then the created_at range: matches the (provider, created_at, id) partial index
+    expect(timeout.sql).toMatch(
+      /status = 'pending'\s+AND provider IN \(\$\d+, \$\d+, \$\d+, \$\d+\)\s+AND created_at </
+    )
     expect(timeout.params).toContain('2026-10-11T00:00:00.000Z')
     expect(render(state.executedSql[1]).sql).toMatch(/UPDATE ai_visibility_run r/)
   })
@@ -824,6 +923,46 @@ describe('scheduleWeeklyVisibilityRuns', () => {
     expect(createRunFake).toHaveBeenCalledTimes(3)
     expect(createRunFake).toHaveBeenCalledWith({ siteId: 's1', trigger: 'schedule' })
     expect(result).toEqual({ created: 1, skipped: 2 })
+  })
+
+  it('creates no runs while the pending-answer backlog is at the limit', async () => {
+    const selectDueSites = vi.fn(async () => ['s1'])
+    const createRunFake = vi.fn()
+    const result = await scheduleWeeklyVisibilityRuns(NOW, {
+      countPendingAnswers: async () => 5000,
+      selectDueSites,
+      createRun: createRunFake,
+    })
+    expect(result).toEqual({ created: 0, skipped: 0, backlog: { pending: 5000, batch: 0 } })
+    expect(selectDueSites).not.toHaveBeenCalled()
+    expect(createRunFake).not.toHaveBeenCalled()
+  })
+
+  it('shrinks the batch as the backlog approaches the limit and uses the full batch when it is small', async () => {
+    expect(scheduleBatchForBacklog(0)).toBe(150)
+    expect(scheduleBatchForBacklog(2500)).toBe(150)
+    expect(scheduleBatchForBacklog(3750)).toBe(75)
+    expect(scheduleBatchForBacklog(4999)).toBe(1)
+    expect(scheduleBatchForBacklog(9000)).toBe(0)
+
+    const selectDueSites = vi.fn(async () => [])
+    await scheduleWeeklyVisibilityRuns(NOW, {
+      countPendingAnswers: async () => 3750,
+      selectDueSites,
+      createRun: vi.fn(),
+    })
+    expect(selectDueSites).toHaveBeenCalledWith(expect.any(Date), 75)
+  })
+
+  it('counts the backlog with a bounded query', async () => {
+    state.executed = 0
+    state.executedSql = []
+    state.executeRows = [[{ n: 42 }], []]
+    const created = await scheduleWeeklyVisibilityRuns(NOW)
+    expect(created).toEqual({ created: 0, skipped: 0 })
+    const count = render(state.executedSql[0])
+    expect(count.sql).toMatch(/SELECT 1 FROM ai_visibility_answer WHERE status = 'pending' LIMIT \$1/)
+    expect(count.params).toEqual([5000])
   })
 
   it('makes no per-site queries of its own', async () => {

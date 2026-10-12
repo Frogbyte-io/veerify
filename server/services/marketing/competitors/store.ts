@@ -10,7 +10,7 @@ import {
   type CompetitorWatchKind,
   type CompetitorWatchStatus,
 } from '~/server/database/schema/marketing'
-import { teamModuleSettings } from '~/server/database/schema/teams'
+import { sqlTimestamp } from '~/server/utils/sql-timestamp'
 
 export interface WatchContext {
   id: string
@@ -27,7 +27,8 @@ export interface WatchContext {
   status: CompetitorWatchStatus
   lastCheckedAt: Date | null
   lastContentHash: string | null
-  lastText: string | null
+  /** Not loaded with due watches (large); `CompetitorStore.loadLastText` fetches it when a diff is needed */
+  lastText?: string | null
   consecutiveFailures: number
 }
 
@@ -59,10 +60,13 @@ export interface ChangeSummary {
 export interface CompetitorStore {
   /**
    * Active, verified, marketing-on watches not checked since `cutoff`, oldest first (never-checked
-   * first). `scope` narrows to watches never checked (`never`) or due for a recheck (`recheck`), so the
+   * first), with at most `MAX_PAGES_PER_HOST` distinct pages per host so one popular host cannot
+   * crowd out the others. Loads the content hash but not the stored text. `scope` narrows to watches never checked (`never`) or due for a recheck (`recheck`), so the
    * checker can reserve a share of each run for new watches.
    */
   loadDue(cutoff: Date, limit: number, scope?: 'all' | 'never' | 'recheck'): Promise<WatchContext[]>
+  /** The stored page text of a watch (null when none), read only when the content hash changed */
+  loadLastText(id: string): Promise<string | null>
   /**
    * Marks the watch as picked up by this run; false when another run (cron or manual) took it first.
    * `anyStatus` lets a manual check claim a blocked/errored watch to re-test it (never a paused one).
@@ -87,7 +91,6 @@ const contextColumns = {
   status: competitorWatch.status,
   lastCheckedAt: competitorWatch.lastCheckedAt,
   lastContentHash: competitorWatch.lastContentHash,
-  lastText: competitorWatch.lastText,
   consecutiveFailures: competitorWatch.consecutiveFailures,
 }
 
@@ -104,6 +107,46 @@ function toContext(row: Awaited<ReturnType<typeof baseQuery>>[number]): WatchCon
   return { ...row, projectSettings: (row.projectSettings as Record<string, unknown> | null) ?? null }
 }
 
+/** Distinct pages per host considered due in one run (mirrors MAX_PAGES_PER_HOST in checker.ts) */
+const MAX_PAGES_PER_HOST = 5
+
+/**
+ * The due-watches statement: every gate is applied before ranking, then at most MAX_PAGES_PER_HOST
+ * distinct URLs per host are kept (`dense_rank` over the URL within the host, so every team watching
+ * one URL stays together and shares its single fetch), oldest first, then LIMIT.
+ */
+export function buildDueWatchesQuery(cutoff: Date, limit: number, scope: 'all' | 'never' | 'recheck') {
+  const scopeSql =
+    scope === 'never'
+      ? sql`w.last_checked_at IS NULL`
+      : scope === 'recheck'
+        ? sql`w.last_checked_at < ${sqlTimestamp(cutoff)}`
+        : sql`(w.last_checked_at IS NULL OR w.last_checked_at < ${sqlTimestamp(cutoff)})`
+  return sql`
+    SELECT * FROM (
+      SELECT w.id, w.site_id, s.team_id, s.project_id, p.name AS project_name, p.settings AS project_settings,
+             t.label AS term_label, t.competitor_domain, w.url, w.kind, w.status, w.last_checked_at,
+             w.last_content_hash, w.consecutive_failures,
+             dense_rank() OVER (
+               PARTITION BY regexp_replace(lower(substring(w.url from '^[a-zA-Z]+://([^/:?#]+)')), '^www[.]', '')
+               ORDER BY w.url
+             ) AS host_page_rank
+      FROM competitor_watch w
+      JOIN marketing_site s ON s.id = w.site_id
+      JOIN marketing_term t ON t.id = w.term_id
+      JOIN project p ON p.id = s.project_id
+      JOIN team_module_settings tm ON tm.team_id = s.team_id AND tm.marketing_enabled = true
+      WHERE w.status = 'active'
+        AND s.verified_at IS NOT NULL
+        AND p.settings ->> 'marketingEnabled' = 'true'
+        AND ${scopeSql}
+    ) due
+    WHERE host_page_rank <= ${MAX_PAGES_PER_HOST}
+    ORDER BY last_checked_at ASC NULLS FIRST, id ASC
+    LIMIT ${limit}
+  `
+}
+
 /** One watch with its site context, scoped to the site. Does not apply the module gates. */
 export async function loadWatchContext(watchId: string, siteId: string): Promise<WatchContext | null> {
   const [row] = await baseQuery()
@@ -114,27 +157,47 @@ export async function loadWatchContext(watchId: string, siteId: string): Promise
 
 export const dbCompetitorStore: CompetitorStore = {
   async loadDue(cutoff, limit, scope = 'all') {
-    // Every gate is in SQL, before the LIMIT, so gated-off watches never crowd out due ones.
-    const rows = await baseQuery()
-      .innerJoin(
-        teamModuleSettings,
-        and(eq(teamModuleSettings.teamId, marketingSite.teamId), eq(teamModuleSettings.marketingEnabled, true))
-      )
-      .where(
-        and(
-          eq(competitorWatch.status, 'active'),
-          sql`${marketingSite.verifiedAt} is not null`,
-          sql`${project.settings}->>'marketingEnabled' = 'true'`,
-          scope === 'never'
-            ? isNull(competitorWatch.lastCheckedAt)
-            : scope === 'recheck'
-              ? lt(competitorWatch.lastCheckedAt, cutoff)
-              : or(isNull(competitorWatch.lastCheckedAt), lt(competitorWatch.lastCheckedAt, cutoff))
-        )
-      )
-      .orderBy(sql`${competitorWatch.lastCheckedAt} asc nulls first`)
-      .limit(limit)
-    return rows.map(toContext)
+    const res = await db.execute<{
+      id: string
+      site_id: string
+      team_id: string
+      project_id: string
+      project_name: string
+      project_settings: Record<string, unknown> | null
+      term_label: string
+      competitor_domain: string | null
+      url: string
+      kind: CompetitorWatchKind
+      status: CompetitorWatchStatus
+      last_checked_at: Date | string | null
+      last_content_hash: string | null
+      consecutive_failures: number
+    }>(buildDueWatchesQuery(cutoff, limit, scope))
+    return res.rows.map((row) => ({
+      id: row.id,
+      siteId: row.site_id,
+      teamId: row.team_id,
+      projectId: row.project_id,
+      projectName: row.project_name,
+      projectSettings: row.project_settings ?? null,
+      termLabel: row.term_label,
+      competitorDomain: row.competitor_domain,
+      url: row.url,
+      kind: row.kind,
+      status: row.status,
+      lastCheckedAt: row.last_checked_at ? new Date(row.last_checked_at) : null,
+      lastContentHash: row.last_content_hash,
+      consecutiveFailures: Number(row.consecutive_failures),
+    }))
+  },
+
+  async loadLastText(id) {
+    const [row] = await db
+      .select({ lastText: competitorWatch.lastText })
+      .from(competitorWatch)
+      .where(eq(competitorWatch.id, id))
+      .limit(1)
+    return row?.lastText ?? null
   },
 
   async claim(id, cutoff, now, opts) {

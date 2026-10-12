@@ -142,3 +142,18 @@ export function createDatabaseConnectionConfig(env: DatabaseEnvironment = proces
     ssl,
   }
 }
+
+export const DEFAULT_POOL_MAX = 20
+const MAX_POOL_MAX = 200
+
+/**
+ * Maximum pg pool size from `PG_POOL_MAX` (default 20, clamped to 1..200). The scheduled Marketing
+ * tasks and web requests share this pool, so it is a hard cap on simultaneous statements: a task never
+ * holds a connection while waiting on network I/O (statements and transactions are short), so more
+ * in-flight workers than connections just queue briefly at checkout.
+ */
+export function resolvePoolMax(env: DatabaseEnvironment = process.env): number {
+  const parsed = Number.parseInt(env.PG_POOL_MAX?.trim() ?? '', 10)
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_POOL_MAX
+  return Math.min(parsed, MAX_POOL_MAX)
+}

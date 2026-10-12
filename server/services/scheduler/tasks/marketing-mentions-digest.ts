@@ -5,6 +5,6 @@ export const MARKETING_MENTIONS_DIGEST_TASK_NAME = 'marketing:mentions-digest'
 
 export const marketingMentionsDigestTask = defineScheduledTask(
   MARKETING_MENTIONS_DIGEST_TASK_NAME,
-  '0 8-10 * * *',
+  '0 7-11 * * *',
   () => sendMentionsDigests()
 )

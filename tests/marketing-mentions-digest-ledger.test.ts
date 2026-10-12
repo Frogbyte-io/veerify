@@ -154,16 +154,49 @@ describe('mentions digest ledger', () => {
     })
     const w1 = makeWorker(ledger, sites, send, { clock: () => t })
     const first = await sendMentionsDigests({ now: NOW, teamBatch: 2, budgetMs: 45_000 }, w1.deps)
-    // batch 1: t0 -> 40s (two sends), batch 2 starts at 40s < 45s, batch 3 is past the budget
-    expect(first.teamsProcessed).toBe(4)
-    expect(first.teamsDeferred).toBe(2)
+    // The budget is checked per email: batch 1 sends at 0 s and 20 s, batch 2 sends one at 40 s, and the
+    // next email (60 s) is past the budget, so that team's claim is released and batch 3 never starts
+    expect(first.teamsProcessed).toBe(3)
+    expect(first.teamsDeferred).toBe(3)
 
     const w2 = makeWorker(ledger, sites, send)
     const second = await sendMentionsDigests({ now: new Date('2026-10-12T09:00:00Z') }, w2.deps)
-    expect(second.teamsProcessed).toBe(2)
-    expect(second.teamsAlreadyClaimed).toBe(4)
+    expect(second.teamsProcessed).toBe(3)
+    expect(second.teamsAlreadyClaimed).toBe(3)
     const recipients = send.mock.calls.map((c) => c[0].to)
     expect(new Set(recipients).size).toBe(6)
+  })
+
+  it('sends up to 10 emails at once within a batch', async () => {
+    const { ledger } = sharedLedger()
+    const sites = Array.from({ length: 25 }, (_, i) => siteFor(`s${i}`, `t${i}`))
+    let inFlight = 0
+    let max = 0
+    const send = vi.fn().mockImplementation(async () => {
+      inFlight += 1
+      max = Math.max(max, inFlight)
+      await new Promise((r) => setTimeout(r, 5))
+      inFlight -= 1
+    })
+    const w = makeWorker(ledger, sites, send)
+    const summary = await sendMentionsDigests({ now: NOW }, w.deps)
+    expect(summary.emailsSent).toBe(25)
+    expect(max).toBe(10)
+  })
+
+  it('checks the time budget before every email, not only per batch', async () => {
+    const { ledger, rows } = sharedLedger()
+    const sites = Array.from({ length: 4 }, (_, i) => siteFor(`s${i}`, `t${i}`))
+    let t = 0
+    const send = vi.fn().mockImplementation(async () => {
+      t += 50_000
+    })
+    const w = makeWorker(ledger, sites, send, { clock: () => t })
+    const summary = await sendMentionsDigests({ now: NOW, teamBatch: 25, budgetMs: 45_000 }, w.deps)
+    // one batch of four teams: only the first email starts before the budget is gone
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(summary).toMatchObject({ emailsSent: 1, teamsProcessed: 1, teamsDeferred: 3 })
+    expect(rows.size).toBe(1)
   })
 
   it('releases the claim when every email of a team fails so the next hourly run retries', async () => {
@@ -218,8 +251,8 @@ describe('mentions digest ledger', () => {
     expect([...rows].some((r) => r.startsWith('tq') || r.startsWith('to'))).toBe(false)
   })
 
-  it('anchors the 24 h window at 08:00 UTC so a resumed run covers the same window', () => {
-    expect(digestWindowEnd(new Date('2026-10-12T10:00:00Z')).toISOString()).toBe('2026-10-12T08:00:00.000Z')
+  it('anchors the 24 h window at 07:00 UTC so a resumed run covers the same window', () => {
+    expect(digestWindowEnd(new Date('2026-10-12T10:00:00Z')).toISOString()).toBe('2026-10-12T07:00:00.000Z')
     expect(digestWindowEnd(new Date('2026-10-12T07:00:00Z')).toISOString()).toBe('2026-10-12T07:00:00.000Z')
     expect(digestMetric('2026-10-12')).toBe('digest:2026-10-12')
   })

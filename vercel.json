@@ -44,11 +44,11 @@
     },
     {
       "path": "/api/cron/marketing-mentions-poll",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/marketing-mentions-digest",
-      "schedule": "0 8-10 * * *"
+      "schedule": "0 7-11 * * *"
     },
     {
       "path": "/api/cron/marketing-review-requests",
