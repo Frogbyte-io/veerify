@@ -246,6 +246,19 @@ export interface ClaimedAnswer {
   promptId: string
   provider: LlmProviderId
   sample: number
+  /** Times this answer was cut off by the hard deadline so far (counted in the row's `error` field) */
+  aborts?: number
+}
+
+/** After this many hard-deadline aborts the answer is failed instead of retried (providers may bill aborted calls). */
+export const MAX_ANSWER_ABORTS = 3
+const ABORT_MARKER = 'deadline-abort:'
+
+/** Abort counter kept in the pending row's `error` field, so no extra column is needed. */
+export function parseAbortCount(error: string | null | undefined): number {
+  if (!error?.startsWith(ABORT_MARKER)) return 0
+  const n = Number.parseInt(error.slice(ABORT_MARKER.length), 10)
+  return Number.isFinite(n) && n > 0 ? n : 0
 }
 
 export interface AnswerContext {
@@ -274,7 +287,8 @@ export interface RunnerDeps {
    * provider and none for `excludeProviders`.
    */
   claim: (limit: number, excludeProviders: string[], capacity: Record<string, number>) => Promise<ClaimedAnswer[]>
-  release: (answerId: string) => Promise<void>
+  /** Gives a claim back; `error` (when given) is stored on the still-pending row (used for the abort counter) */
+  release: (answerId: string, error?: string) => Promise<void>
   markRunsRunning: (runIds: string[]) => Promise<void>
   loadContext: (answer: ClaimedAnswer) => Promise<AnswerContext | null>
   getKey: (teamId: string, provider: LlmProviderId) => Promise<TeamApiKey | null>
@@ -448,9 +462,9 @@ export async function advanceVisibilityRuns(
 }
 
 /** Releases a claim; a failure is logged and the lease lapse returns the row to the queue anyway. */
-async function releaseSafely(deps: RunnerDeps, answerId: string): Promise<void> {
+async function releaseSafely(deps: RunnerDeps, answerId: string, error?: string): Promise<void> {
   try {
-    await deps.release(answerId)
+    await deps.release(answerId, error)
   } catch (err) {
     logger.error('Visibility answer release failed', { answerId, error: err instanceof Error ? err.name : 'unknown' })
   }
@@ -612,8 +626,18 @@ async function handleProviderError(
 
   if (err instanceof LlmProviderError) {
     if (signal?.aborted && err.kind === 'timeout') {
-      // Cut off by our own hard deadline, not a provider failure: back to the queue for the next tick
-      await releaseSafely(deps, answer.id)
+      // Cut off by our own hard deadline, not a provider failure: back to the queue for the next tick.
+      // The provider may still bill an aborted call and nothing is booked for it (the reservation is
+      // released), so retries are bounded: after MAX_ANSWER_ABORTS the answer fails with a clear error.
+      const aborts = (answer.aborts ?? 0) + 1
+      if (aborts >= MAX_ANSWER_ABORTS) {
+        await deps.failAnswer(
+          answer.id,
+          `The provider did not answer in time after ${MAX_ANSWER_ABORTS} attempts. Try this prompt again later`
+        )
+        return 'failed'
+      }
+      await releaseSafely(deps, answer.id, `${ABORT_MARKER}${aborts}`)
       return 'released'
     }
     if (err.kind === 'auth') {
@@ -706,6 +730,7 @@ export function createDefaultDeps(): RunnerDeps {
             prompt_id: string
             provider: LlmProviderId
             sample: number
+            error: string | null
           }>(sql`
             UPDATE ai_visibility_answer
             SET completed_at = ${sqlTimestamp(now)}
@@ -719,7 +744,7 @@ export function createDefaultDeps(): RunnerDeps {
               LIMIT ${count}
               FOR UPDATE OF a SKIP LOCKED
             )
-            RETURNING id, run_id, prompt_id, provider, sample, created_at
+            RETURNING id, run_id, prompt_id, provider, sample, error, created_at
           `)
           return res.rows
         })
@@ -730,13 +755,14 @@ export function createDefaultDeps(): RunnerDeps {
         promptId: row.prompt_id,
         provider: row.provider,
         sample: row.sample,
+        aborts: parseAbortCount(row.error),
       }))
     },
 
-    async release(answerId) {
+    async release(answerId, error) {
       await db
         .update(aiVisibilityAnswer)
-        .set({ completedAt: null })
+        .set(error === undefined ? { completedAt: null } : { completedAt: null, error })
         .where(and(eq(aiVisibilityAnswer.id, answerId), eq(aiVisibilityAnswer.status, 'pending')))
     },
 

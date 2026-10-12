@@ -322,7 +322,7 @@ describe('email hash matching', () => {
     await expect(dbReviewsStore.isSuppressed('t1', 'jane@example.com')).resolves.toBe(true)
     const { sql, params } = sqlOf(state.selects[0]!.where)
     expect(sql).toContain('"marketing_email_suppression"."email" =')
-    expect(sql).toContain('"marketing_email_suppression"."email_hash" =')
+    expect(sql).toContain('"marketing_email_suppression"."email_hash" in (')
     expect(sql).toContain(' or ')
     expect(params).toEqual(expect.arrayContaining(['t1', 'jane@example.com', hash()]))
   })
@@ -332,7 +332,7 @@ describe('email hash matching', () => {
     await dbReviewsStore.hasRecentSentRequest('p1', 'jane@example.com', new Date(), 'x')
     for (const select of state.selects) {
       const { sql, params } = sqlOf(select.where)
-      expect(sql).toContain('"review_request"."email_hash" =')
+      expect(sql).toContain('"review_request"."email_hash" in (')
       expect(params).toContain(hash())
     }
   })

@@ -72,6 +72,7 @@ vi.mock('~/lib/email', () => ({ sendMarketingCredentialInvalidEmail: vi.fn() }))
 const {
   createRun,
   advanceVisibilityRuns,
+  parseAbortCount,
   finalizeVisibilityRuns,
   sweepStuckVisibilityRuns,
   scheduleWeeklyVisibilityRuns,
@@ -181,6 +182,7 @@ interface FakeAnswer {
   promptId: string
   provider: 'anthropic' | 'openai'
   sample: number
+  aborts?: number
 }
 
 function makeHarness(
@@ -597,6 +599,38 @@ describe('advanceVisibilityRuns resilience and deadlines', () => {
     expect(h.state.released.map((a) => a.id)).toEqual(['a1'])
     expect(h.state.failed.size).toBe(0)
     expect(result).toEqual({ claimed: 1, done: 0, failed: 0 })
+  })
+
+  describe('hard-deadline abort retries', () => {
+    const slow = {
+      answerWithSearch: (input: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          input.signal?.addEventListener('abort', () =>
+            reject(new LlmProviderError('anthropic', 'timeout', 'aborted by caller'))
+          )
+        }),
+    }
+
+    it('records the abort count when releasing a cut-off answer', async () => {
+      const h = makeHarness([{ ...mk('a1'), aborts: 1 }], { llm: { anthropic: slow } })
+      await advanceVisibilityRuns({ budgetMs: 5000, hardDeadlineExtraMs: -4950 }, h.deps)
+      expect(h.raw.release).toHaveBeenCalledWith('a1', 'deadline-abort:2')
+      expect(h.state.failed.size).toBe(0)
+    })
+
+    it('fails the answer with a clear error after the third abort', async () => {
+      const h = makeHarness([{ ...mk('a1'), aborts: 2 }], { llm: { anthropic: slow } })
+      const result = await advanceVisibilityRuns({ budgetMs: 5000, hardDeadlineExtraMs: -4950 }, h.deps)
+      expect(h.state.released).toHaveLength(0)
+      expect(h.state.failed.get('a1')).toMatch(/did not answer in time after 3 attempts/)
+      expect(result).toEqual({ claimed: 1, done: 0, failed: 1 })
+    })
+
+    it('parses the counter from the error field', () => {
+      expect(parseAbortCount('deadline-abort:2')).toBe(2)
+      expect(parseAbortCount(null)).toBe(0)
+      expect(parseAbortCount('Provider error')).toBe(0)
+    })
   })
 
   it('passes the signal to the extraction call too', async () => {

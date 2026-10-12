@@ -199,6 +199,25 @@ describe('mentions digest ledger', () => {
     expect(rows.size).toBe(1)
   })
 
+  it('finishes every email of a team that has started even when the budget runs out mid-team', async () => {
+    const { ledger, rows } = sharedLedger()
+    const sites = [siteFor('s0', 't0'), siteFor('s1', 't1')]
+    let t = 0
+    const send = vi.fn().mockImplementation(async () => {
+      t += 50_000
+    })
+    const w = makeWorker(ledger, sites, send, {
+      clock: () => t,
+      loadAdminEmailsForTeams: async (teamIds: string[]) =>
+        new Map(teamIds.map((id) => [id, [`a@${id}.test`, `b@${id}.test`, `c@${id}.test`]])),
+    })
+    const summary = await sendMentionsDigests({ now: NOW, teamBatch: 25, budgetMs: 45_000 }, w.deps)
+    // t0 started before the deadline, so all 3 of its recipients are mailed; t1 never started and is released
+    expect(send.mock.calls.map((c) => c[0].to)).toEqual(['a@t0.test', 'b@t0.test', 'c@t0.test'])
+    expect(summary).toMatchObject({ emailsSent: 3, teamsProcessed: 1, teamsDeferred: 1 })
+    expect(rows).toEqual(new Set(['t0|2026-10-12']))
+  })
+
   it('releases the claim when every email of a team fails so the next hourly run retries', async () => {
     const { ledger, rows } = sharedLedger()
     const sites = [siteFor('s1', 't1'), siteFor('s2', 't2')]

@@ -311,6 +311,10 @@ test('roadmap and changelog are hidden until their team module is enabled', asyn
 
   const sidebar = page.locator('[data-testid="app-sidebar"]')
 
+  // The sidebar is client-only: wait for it (and a stable entry) before asserting anything is absent.
+  await expect(sidebar).toBeVisible()
+  await expect(sidebar.locator('a[href="/products"]')).toBeVisible()
+
   // Both modules default to off (SUP-02-12, delta D-31), so neither entry
   // renders at all for a team that has not enabled them.
   await expect(sidebar.getByRole('button', { name: 'Roadmap' })).toHaveCount(0)
@@ -326,6 +330,10 @@ test('support nav is hidden until the support module is enabled', async ({ page 
   await page.goto('/dashboard')
 
   const sidebar = page.locator('[data-testid="app-sidebar"]')
+
+  // The sidebar is client-only: wait for it (and a stable entry) before asserting anything is absent.
+  await expect(sidebar).toBeVisible()
+  await expect(sidebar.locator('a[href="/products"]')).toBeVisible()
 
   // supportEnabled defaults to false, so the whole Support group is absent.
   await expect(sidebar.locator('a[href="/support"]')).toHaveCount(0)

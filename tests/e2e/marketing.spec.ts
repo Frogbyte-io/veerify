@@ -93,6 +93,8 @@ test('marketing is gated by the team module and the product toggle', async ({ pa
 
   await page.goto(`/marketing?product=${PRODUCT_SLUG}`, { waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('marketing-disabled')).toBeVisible({ timeout: 30_000 })
+  // The sidebar is client-only: wait for it to mount before asserting the group is absent.
+  await expect(page.getByTestId('app-sidebar')).toBeVisible()
   await expect(page.getByTestId('sidebar-marketing-group')).toHaveCount(0)
 
   await putTeamModules(page, { marketingEnabled: true })

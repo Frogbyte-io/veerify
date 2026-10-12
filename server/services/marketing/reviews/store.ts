@@ -12,7 +12,7 @@ import {
 } from '~/server/database/schema/marketing'
 import { contact, conversation, csatResponse, supportInbox } from '~/server/database/schema/support'
 import { teamModuleSettings } from '~/server/database/schema/teams'
-import { hashEmail } from '~/server/utils/marketing-email-hash'
+import { hashEmail, hashEmailCandidates } from '~/server/utils/marketing-email-hash'
 import type { ReviewSettings, ReviewsStore } from './types'
 
 /**
@@ -37,7 +37,7 @@ export function toReviewSettings(row: typeof reviewRequestSettings.$inferSelect)
 
 /** Matches a request row by address or, once anonymised, by the keyed hash of it. */
 function requestEmailMatches(email: string) {
-  return or(eq(reviewRequest.email, email), eq(reviewRequest.emailHash, hashEmail(email)))
+  return or(eq(reviewRequest.email, email), inArray(reviewRequest.emailHash, hashEmailCandidates(email)))
 }
 
 export const dbReviewsStore: ReviewsStore = {
@@ -72,7 +72,10 @@ export const dbReviewsStore: ReviewsStore = {
       .where(
         and(
           eq(marketingEmailSuppression.teamId, teamId),
-          or(eq(marketingEmailSuppression.email, email), eq(marketingEmailSuppression.emailHash, hashEmail(email)))
+          or(
+            eq(marketingEmailSuppression.email, email),
+            inArray(marketingEmailSuppression.emailHash, hashEmailCandidates(email))
+          )
         )
       )
       .limit(1)
