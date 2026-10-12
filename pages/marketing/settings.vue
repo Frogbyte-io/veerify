@@ -1,10 +1,10 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6 max-w-4xl mx-auto space-y-6" data-testid="marketing-settings-page">
+    <div class="p-4 sm:p-6 max-w-4xl mx-auto min-w-0 space-y-6" data-testid="marketing-settings-page">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing settings</h1>
-          <p class="text-muted-foreground mt-1">Your site, brand terms and the keys Marketing runs on</p>
+          <p class="text-muted-foreground mt-1">Your site, brand names and the keys Marketing runs on</p>
         </div>
         <MarketingProductPicker @change="onProductChange" />
       </div>
@@ -73,6 +73,10 @@ import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 export default {
   name: 'MarketingSettingsPage',
 
+  created() {
+    useHead({ title: 'Marketing settings' })
+  },
+
   data() {
     return {
       pickerReady: false,
@@ -86,6 +90,7 @@ export default {
       integrations: [],
       integrationsLoading: false,
       integrationsError: null,
+      hashHandled: false,
     }
   },
 
@@ -125,7 +130,28 @@ export default {
         }
       } finally {
         if (this.product?.id === productId) this.isLoading = false
+        if (!silent && !this.hashHandled) this.$nextTick(() => this.focusHashSection())
       }
+    },
+
+    // Deep links from the setup checklist: /marketing/settings#terms
+    focusHashSection(attempt = 0) {
+      if (!import.meta.client) return
+      const id = decodeURIComponent((this.$route.hash || '').slice(1))
+      if (!id || !['site', 'terms', 'keys', 'integrations'].includes(id)) {
+        this.hashHandled = true
+        return
+      }
+      const section = document.getElementById(id)
+      // Sections load their own data; wait briefly for the first field to appear
+      const field = section?.querySelector('input:not([disabled]), textarea:not([disabled]), button:not([disabled])')
+      if (!section || !field) {
+        if (attempt < 20) setTimeout(() => this.focusHashSection(attempt + 1), 150)
+        return
+      }
+      this.hashHandled = true
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      field.focus({ preventScroll: true })
     },
 
     async onSiteChanged() {

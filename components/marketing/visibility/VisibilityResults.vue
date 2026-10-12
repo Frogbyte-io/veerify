@@ -51,7 +51,7 @@
 
       <Card>
         <CardHeader>
-          <CardTitle>By prompt</CardTitle>
+          <CardTitle role="heading" aria-level="2">By prompt</CardTitle>
           <CardDescription
             >Share of sampled answers that mention your brand. Select a prompt to read the answers.</CardDescription
           >
@@ -88,7 +88,7 @@
       <div class="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Share of voice</CardTitle>
+            <CardTitle role="heading" aria-level="2">Share of voice</CardTitle>
             <CardDescription>Mentions of your brand compared with competitors.</CardDescription>
           </CardHeader>
           <CardContent class="space-y-3">
@@ -116,7 +116,7 @@
 
         <Card>
           <CardHeader>
-            <CardTitle>Top cited domains</CardTitle>
+            <CardTitle role="heading" aria-level="2">Top cited domains</CardTitle>
             <CardDescription>Sources the assistants cite most for your prompts.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -135,7 +135,7 @@
 
       <Card>
         <CardHeader>
-          <CardTitle>Trend</CardTitle>
+          <CardTitle role="heading" aria-level="2">Trend</CardTitle>
           <CardDescription>Mention rate across your last 12 finished runs.</CardDescription>
         </CardHeader>
         <CardContent>

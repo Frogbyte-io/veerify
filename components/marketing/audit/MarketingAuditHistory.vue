@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="audit-history">
     <CardHeader>
-      <CardTitle class="text-base">Audit history</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Audit history</CardTitle>
     </CardHeader>
     <CardContent>
       <ul class="space-y-1">

@@ -8,7 +8,7 @@
             A checklist of places to launch and list your product, with your progress on each.
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
           <Button v-if="showContent" data-testid="launch-add" @click="addOpen = true">
             <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
@@ -73,6 +73,7 @@
               :key="option.value"
               size="sm"
               :variant="categoryFilter === option.value ? 'default' : 'outline'"
+              :aria-pressed="categoryFilter === option.value"
               :data-testid="`launch-filter-category-${option.value}`"
               @click="categoryFilter = option.value"
             >
@@ -86,6 +87,7 @@
               :key="option.value"
               size="sm"
               :variant="statusFilter === option.value ? 'default' : 'outline'"
+              :aria-pressed="statusFilter === option.value"
               :data-testid="`launch-filter-status-${option.value}`"
               @click="statusFilter = option.value"
             >
@@ -130,6 +132,10 @@ import { LAUNCH_CATEGORIES, LAUNCH_STATUSES } from '~/lib/marketing-launch'
 
 export default {
   name: 'MarketingLaunchPage',
+
+  created() {
+    useHead({ title: 'Launch kit · Marketing' })
+  },
 
   data() {
     return {

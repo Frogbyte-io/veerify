@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="audit-issues">
     <CardHeader>
-      <CardTitle class="text-base">Issues</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Issues</CardTitle>
       <CardDescription v-if="summary">
         {{ summary.total }} found: {{ summary.bySeverity.error }} errors, {{ summary.bySeverity.warning }} warnings,
         {{ summary.bySeverity.notice }} notices.

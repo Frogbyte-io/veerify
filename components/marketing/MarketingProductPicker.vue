@@ -119,7 +119,7 @@ export default {
       if (product) {
         this.storeSlug(product.slug)
         if (this.$route.query.product !== product.slug) {
-          this.$router.replace({ query: { ...this.$route.query, product: product.slug } })
+          this.$router.replace({ query: { ...this.$route.query, product: product.slug }, hash: this.$route.hash })
         }
       }
       this.$emit('change', product)

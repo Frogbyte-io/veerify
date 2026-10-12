@@ -29,6 +29,7 @@
         <Switch
           :model-value="localFeatures[feature.key]"
           :disabled="savingFeature === feature.key"
+          :aria-label="feature.product.label"
           class="shrink-0 ml-4 mt-0.5"
           @update:model-value="toggleFeature(feature.key, $event)"
         />

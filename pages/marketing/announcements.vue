@@ -129,6 +129,10 @@ const MAX_TARGET_PAGES = 10
 export default {
   name: 'MarketingAnnouncementsPage',
 
+  created() {
+    useHead({ title: 'Announcements · Marketing' })
+  },
+
   data() {
     return {
       product: null,

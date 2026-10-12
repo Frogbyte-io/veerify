@@ -495,6 +495,12 @@ export default {
       this.$colorMode.preference = this.previousColorMode
     }
   },
+  created() {
+    useHead(() => ({
+      title: ['Roadmap', this.projectData?.project?.name].filter(Boolean).join(' · '),
+    }))
+  },
+
   async mounted() {
     if (import.meta.client) {
       this.previousColorMode = this.$colorMode.preference

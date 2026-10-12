@@ -180,6 +180,7 @@
             <select
               v-model="filters.status"
               data-testid="public-feedback-filter-status"
+              aria-label="Filter by status"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -193,6 +194,7 @@
             <select
               v-model="filters.categoryId"
               data-testid="public-feedback-filter-category"
+              aria-label="Filter by category"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -205,6 +207,7 @@
             <select
               v-model="filters.tag"
               data-testid="public-feedback-filter-tag"
+              aria-label="Filter by tag"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -217,6 +220,7 @@
             <select
               v-model="filters.sortBy"
               data-testid="public-feedback-filter-sort"
+              aria-label="Sort feedback"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -273,6 +277,7 @@
                   class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
                   :class="item.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
                   :title="item.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
+                  :aria-label="`${item.voteType === 'upvote' ? 'Remove upvote from' : 'Upvote'}: ${item.title}`"
                   :disabled="votingIds.has(item.id)"
                   @click.stop="handleVote(item, 'upvote')"
                 >
@@ -285,6 +290,7 @@
                     item.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
                   "
                   :title="item.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
+                  :aria-label="`${item.voteType === 'downvote' ? 'Remove downvote from' : 'Downvote'}: ${item.title}`"
                   :disabled="votingIds.has(item.id)"
                   @click.stop="handleVote(item, 'downvote')"
                 >
@@ -1201,6 +1207,12 @@ export default {
       }
     }
   },
+  created() {
+    useHead(() => ({
+      title: [this.projectData?.project?.name, 'Feedback'].filter(Boolean).join(' · ') || 'Feedback',
+    }))
+  },
+
   async mounted() {
     if (import.meta.client) {
       this.previousColorMode = this.$colorMode.preference

@@ -1,7 +1,7 @@
 <template>
-  <Card data-testid="marketing-settings-terms">
+  <Card id="terms" class="scroll-mt-20" data-testid="marketing-settings-terms">
     <CardHeader>
-      <CardTitle>Brand and competitors</CardTitle>
+      <CardTitle role="heading" aria-level="2">Brand and competitors</CardTitle>
       <CardDescription>
         Names Marketing looks for in AI answers and public posts. Veerify only records whether a competitor is named; it
         never crawls their site.
@@ -35,7 +35,12 @@
 
           <ul v-else class="space-y-2">
             <li v-for="term in termsOf(group.kind)" :key="term.id" class="rounded-md border p-3">
-              <form v-if="editingId === term.id" class="space-y-3" @submit.prevent="saveEdit(term)">
+              <form
+                v-if="editingId === term.id"
+                class="space-y-3"
+                @submit.prevent="saveEdit(term)"
+                @keydown.esc="cancelEdit"
+              >
                 <div class="grid gap-3 sm:grid-cols-2">
                   <div>
                     <Label :for="`term-label-${term.id}`">Name</Label>
@@ -109,6 +114,7 @@
             v-if="adding === group.kind"
             class="space-y-3 rounded-md border border-dashed p-3"
             @submit.prevent="create(group.kind)"
+            @keydown.esc="cancelAdd"
           >
             <div class="grid gap-3 sm:grid-cols-2">
               <div>

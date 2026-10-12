@@ -130,6 +130,10 @@ const POLL_MS = 5000
 export default {
   name: 'MarketingAuditPage',
 
+  created() {
+    useHead({ title: 'Site audit · Marketing' })
+  },
+
   data() {
     return {
       product: null,
