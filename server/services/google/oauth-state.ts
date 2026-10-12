@@ -12,6 +12,11 @@ export interface OAuthStatePayload {
   projectId: string
 }
 
+export interface VerifiedOAuthState extends OAuthStatePayload {
+  /** Random per-state value; the callback consumes it once (see consumeOAuthNonce) */
+  nonce: string
+}
+
 export type OAuthStateErrorKind = 'malformed' | 'bad_signature' | 'expired'
 
 export class OAuthStateError extends Error {
@@ -47,7 +52,7 @@ export function signOAuthState(payload: OAuthStatePayload, ttlMs = DEFAULT_TTL_M
   return `${data}.${mac(data).toString('base64url')}`
 }
 
-export function verifyOAuthState(state: string): OAuthStatePayload {
+export function verifyOAuthState(state: string): VerifiedOAuthState {
   if (typeof state !== 'string' || state.length > 2048) throw new OAuthStateError('malformed')
   const parts = state.split('.')
   if (parts.length !== 2 || !parts[0] || !parts[1]) throw new OAuthStateError('malformed')
@@ -66,15 +71,16 @@ export function verifyOAuthState(state: string): OAuthStatePayload {
   } catch {
     throw new OAuthStateError('malformed')
   }
-  const { siteId, userId, projectId, exp } = parsed ?? {}
+  const { siteId, userId, projectId, nonce, exp } = parsed ?? {}
   if (
     typeof siteId !== 'string' ||
     typeof userId !== 'string' ||
     typeof projectId !== 'string' ||
+    typeof nonce !== 'string' ||
     typeof exp !== 'number'
   ) {
     throw new OAuthStateError('malformed')
   }
   if (Date.now() > exp) throw new OAuthStateError('expired')
-  return { siteId, userId, projectId }
+  return { siteId, userId, projectId, nonce }
 }

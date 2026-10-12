@@ -7,7 +7,9 @@
  *     description: >
  *       Team admins only. Changing the origin resets verification and issues a
  *       new token. A site covered by one of the product's verified custom
- *       domains is verified immediately (method `domain`).
+ *       domains is verified immediately (method `domain`). It also disconnects Search Console (token revoked,
+ *       metrics deleted) and deletes SEO audits and competitor watches on the old host; terms, AI visibility
+ *       prompts and mentions are brand-level and kept.
  *     operationId: putMarketingSite
  *     parameters:
  *       - in: path
@@ -39,6 +41,7 @@ import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
 import { findMarketingSite, requireRouteParam, serializeSiteWithVerification } from '~/server/utils/marketing-site'
+import { resetOriginScopedData } from '~/server/services/marketing/site-origin'
 import {
   generateVerificationToken,
   isCoveredByVerifiedDomain,
@@ -99,6 +102,9 @@ export default defineEventHandler(async (event) => {
         verificationFailures: 0,
         lastVerificationError: null,
       }
+
+  // Origin-scoped data must not outlive the origin it describes (see site-origin.ts for the rule)
+  if (existing && originChanged) await resetOriginScopedData(existing.id, existing.origin)
 
   let saved
   if (existing) {

@@ -159,6 +159,11 @@ export function needsReencryption(payload: string): boolean {
   return parsePayload(payload).keyId !== current.id
 }
 
+/** Short id of the current key; the second segment of every payload encrypted with it. */
+export function currentKeyId(): string {
+  return loadKeyRing().current.id
+}
+
 /** Display hint for UI: an ellipsis plus the last 4 chars (just an ellipsis if short). */
 export function keyHint(secret: string): string {
   return secret.length < 8 ? '…' : `…${secret.slice(-4)}`

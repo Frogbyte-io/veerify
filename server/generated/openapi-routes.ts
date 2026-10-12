@@ -3095,7 +3095,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Add or change the marketing site origin",
-      "description": "Team admins only. Changing the origin resets verification and issues a new token. A site covered by one of the product's verified custom domains is verified immediately (method `domain`).\n",
+      "description": "Team admins only. Changing the origin resets verification and issues a new token. A site covered by one of the product's verified custom domains is verified immediately (method `domain`). It also disconnects Search Console (token revoked, metrics deleted) and deletes SEO audits and competitor watches on the old host; terms, AI visibility prompts and mentions are brand-level and kept.\n",
       "operationId": "putMarketingSite",
       "parameters": [
         {

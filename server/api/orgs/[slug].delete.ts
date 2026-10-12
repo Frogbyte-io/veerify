@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { organization, session as sessionTable, team } from '~/server/database/schema/auth'
+import { revokeGscTokensForOrganization } from '~/server/services/marketing/search/connection'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireOrganizationRoleBySlug } from '~/server/utils/organization-access'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
@@ -35,6 +36,9 @@ export default defineEventHandler(async (event) => {
       data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Confirmation slug does not match organization slug'),
     })
   }
+
+  // Revoke Google tokens while the connection rows still exist; best effort, never throws
+  await revokeGscTokensForOrganization(org.id)
 
   await db.transaction(async (tx) => {
     const teams = await tx.select({ id: team.id }).from(team).where(eq(team.organizationId, org.id))

@@ -1,5 +1,6 @@
 import { marketingConfig } from '~/server/utils/marketing-config'
 import { listTeamCredentials, type TeamCredentialSummary } from '~/server/utils/team-credentials'
+import { countOutdatedSecrets } from '~/server/services/marketing/secrets-rotation'
 import { isSecretsConfigured } from '~/server/utils/secrets'
 import { getGoogleOAuthConfig } from '~/server/services/google/search-console'
 import { SOCIAL_SOURCES } from '~/server/services/social-sources'
@@ -74,6 +75,11 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
   const byProvider = new Map(credentials.map((c) => [c.provider, c]))
 
   const secretsReady = isSecretsConfigured()
+  const outdated = secretsReady ? await countOutdatedSecrets() : null
+  const secretsDetail =
+    outdated && outdated > 0
+      ? `${outdated} ${outdated === 1 ? 'key is' : 'keys are'} still encrypted with the previous key — keep SECRETS_ENCRYPTION_KEY_PREVIOUS until this reaches 0`
+      : 'API keys are encrypted at rest'
   const result: IntegrationStatus[] = [
     {
       id: 'secrets',
@@ -82,7 +88,7 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
       state: secretsReady ? 'ready' : 'not_configured',
       source: secretsReady ? 'instance' : null,
       detail: secretsReady
-        ? 'API keys are encrypted at rest'
+        ? secretsDetail
         : 'Set SECRETS_ENCRYPTION_KEY (32 random bytes, for example from `openssl rand -base64 32`) on the server to store API keys.',
     },
     fromCredential(

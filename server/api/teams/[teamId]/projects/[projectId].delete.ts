@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 import { teamMember } from '~/server/database/schema/auth'
+import { revokeGscTokensForProject } from '~/server/services/marketing/search/connection'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 
@@ -54,6 +55,9 @@ export default defineEventHandler(async (event) => {
       data: createErrorResponse(ErrorCode.NOT_FOUND, 'Project not found in this team'),
     })
   }
+
+  // Revoke Google tokens while the connection rows still exist; best effort, never throws
+  await revokeGscTokensForProject(projectId)
 
   await db.delete(project).where(eq(project.id, projectId))
 

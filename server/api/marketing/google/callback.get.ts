@@ -19,7 +19,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
-import { OAuthStateError, verifyOAuthState, type OAuthStatePayload } from '~/server/services/google/oauth-state'
+import { OAuthStateError, verifyOAuthState, type VerifiedOAuthState } from '~/server/services/google/oauth-state'
 import {
   exchangeCode,
   getGoogleOAuthConfig,
@@ -28,7 +28,12 @@ import {
   matchPropertyForOrigin,
   type GscSite,
 } from '~/server/services/google/search-console'
-import { gscAad, saveGscConnection } from '~/server/services/marketing/search/connection'
+import {
+  consumeOAuthNonce,
+  gscAad,
+  revokeReplacedToken,
+  saveGscConnection,
+} from '~/server/services/marketing/search/connection'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { findMarketingSite } from '~/server/utils/marketing-site'
@@ -58,7 +63,7 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const str = (value: unknown) => (typeof value === 'string' ? value : '')
 
-  let state: OAuthStatePayload
+  let state: VerifiedOAuthState
   try {
     state = verifyOAuthState(str(query.state))
   } catch (error) {
@@ -70,11 +75,15 @@ export default defineEventHandler(async (event) => {
   if (state.userId !== session.user.id) return back(event, { error: 'user_mismatch' })
 
   const slug = await slugFor(state.projectId)
+  let teamId: string
   try {
-    await requireMarketingAdmin(state.projectId, session.user.id)
+    ;({ teamId } = await requireMarketingAdmin(state.projectId, session.user.id))
   } catch {
     return back(event, { error: 'forbidden' }, slug)
   }
+
+  // Single-use state: a replayed callback URL (history, logs, referrer) is rejected
+  if (!(await consumeOAuthNonce(teamId, state.nonce))) return back(event, { error: 'invalid_state' }, slug)
 
   if (str(query.error)) {
     return back(event, { error: str(query.error) === 'access_denied' ? 'access_denied' : 'google_error' }, slug)
@@ -120,7 +129,9 @@ export default defineEventHandler(async (event) => {
     updatedAt: now,
   }
   // Drops the old property's metrics in the same transaction when the property differs
-  await saveGscConnection(site.id, values, now)
+  const { previousEncryptedToken } = await saveGscConnection(site.id, values, now)
+  // The replaced token would otherwise stay valid at Google; best effort, never blocks the reconnect
+  await revokeReplacedToken(site.id, previousEncryptedToken, tokens.refreshToken)
 
   return back(event, { connected: '1' }, slug)
 })
