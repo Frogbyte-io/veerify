@@ -125,6 +125,9 @@ vi.mock('~/server/services/crawl', () => ({
   resolveCrawlConfig: (key: string | null) => (key ? { apiKey: key, baseUrl: 'https://crawl.test' } : null),
 }))
 
+const resetOrigin = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('~/server/services/marketing/site-origin', () => ({ resetOriginScopedData: resetOrigin }))
+
 vi.mock('~/server/services/marketing/site-verification', async (importActual) => {
   const actual = await importActual<typeof import('~/server/services/marketing/site-verification')>()
   return { ...actual, checkVerification: vi.fn(async () => state.checkVerification) }
@@ -244,6 +247,7 @@ describe('PUT site', () => {
     expect(set.verificationMethod).toBeNull()
     expect(set.verificationToken).toBeTypeOf('string')
     expect(set.verificationToken).not.toBe('old-token')
+    expect(resetOrigin).toHaveBeenCalledWith('s1', 'https://example.com')
   })
 
   it('keeps an already verified site untouched when the origin is unchanged', async () => {
@@ -254,6 +258,7 @@ describe('PUT site', () => {
     const res = await run(handler)
     expect(state.ops.some((o) => o.op === 'set' || o.op === 'values')).toBe(false)
     expect(res.data.site.verified).toBe(true)
+    expect(resetOrigin).not.toHaveBeenCalled()
   })
 
   it('verifies immediately with method domain when a verified custom domain covers the origin', async () => {

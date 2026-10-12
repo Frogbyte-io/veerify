@@ -375,9 +375,10 @@ container unable to reach the Coolify host, the tailnet and admin interfaces.
 
 Behaviour (`server/utils/secrets.ts`): new secrets are encrypted with `SECRETS_ENCRYPTION_KEY`; each
 payload records an 8-character key id; decryption picks the key by that id from the current key and
-the comma-separated `SECRETS_ENCRYPTION_KEY_PREVIOUS`. `needsReencryption()` exists but **no code
-calls it**: there is no re-encryption job, script or endpoint. Old payloads are never rewritten
-automatically; they move to the new key only when a team re-saves its key or reconnects Google.
+the comma-separated `SECRETS_ENCRYPTION_KEY_PREVIOUS`. A re-encryption sweep
+(`server/services/marketing/secrets-rotation.ts`) runs hourly from `marketing:visibility-schedule` and
+rewrites team API keys and Search Console tokens still on a previous key. Marketing settings →
+Integration status shows how many remain; remove the previous key only when that reaches 0.
 
 1. Generate a new key: `openssl rand -base64 32`.
 2. Set `SECRETS_ENCRYPTION_KEY_PREVIOUS` to the old key and `SECRETS_ENCRYPTION_KEY` to the new key in

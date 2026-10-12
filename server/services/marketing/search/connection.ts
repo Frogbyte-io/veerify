@@ -1,12 +1,20 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
-import { gscConnection, gscDailyMetric, gscQueryStat } from '~/server/database/schema/marketing'
+import { project } from '~/server/database/schema/feedback'
+import {
+  gscConnection,
+  gscDailyMetric,
+  gscQueryStat,
+  marketingSite,
+  marketingUsage,
+} from '~/server/database/schema/marketing'
 import {
   getGoogleOAuthConfig,
   GoogleApiError,
   GoogleAuthError,
   refreshAccessToken,
+  revokeToken,
   type GoogleOAuthConfig,
 } from '~/server/services/google/search-console'
 import { decryptSecret, isSecretsConfigured, SecretDecryptionError } from '~/server/utils/secrets'
@@ -98,8 +106,8 @@ export async function saveGscConnection(
   siteId: string,
   values: Omit<typeof gscConnection.$inferInsert, 'siteId' | 'createdAt'>,
   now: Date
-) {
-  await db.transaction(async (tx) => {
+): Promise<{ previousEncryptedToken: string | null; previousAccountEmail: string | null }> {
+  return db.transaction(async (tx) => {
     const existing = await lockGscConnection(tx, siteId)
     // A different account or property must not mix into old numbers
     if (existing && existing.propertyUrl !== (values.propertyUrl ?? null)) await deleteGscMetrics(siteId, tx)
@@ -107,7 +115,103 @@ export async function saveGscConnection(
       .insert(gscConnection)
       .values({ siteId, ...values, createdAt: now })
       .onConflictDoUpdate({ target: gscConnection.siteId, set: values })
+    return {
+      previousEncryptedToken: existing?.encryptedRefreshToken ?? null,
+      previousAccountEmail: existing?.googleAccountEmail ?? null,
+    }
   })
+}
+
+/** Best-effort revoke of one stored token; never throws. Returns whether Google confirmed. */
+export async function revokeStoredToken(encryptedRefreshToken: string, siteId: string): Promise<boolean> {
+  try {
+    return await revokeToken(decryptSecret(encryptedRefreshToken, gscAad(siteId)))
+  } catch {
+    // Undecryptable (key lost) or Google unreachable: nothing more can be done
+    return false
+  }
+}
+
+/**
+ * After a reconnect, revokes the token the new one replaced. Skipped when Google handed back the
+ * same token (revoking it would kill the new connection). Never throws.
+ */
+/**
+ * Revokes the token a reconnect replaced, but only when a DIFFERENT Google account connected.
+ * Google revokes the whole grant for a user and client, so revoking the old token of the same
+ * account would also invalidate the token that was just issued. Unknown emails count as "same".
+ */
+export async function revokeReplacedToken(
+  siteId: string,
+  previousEncrypted: string | null,
+  newRefreshToken: string,
+  accounts: { previousEmail: string | null; newEmail: string | null } = { previousEmail: null, newEmail: null }
+) {
+  if (!previousEncrypted) return
+  const previousEmail = accounts.previousEmail?.trim().toLowerCase() || null
+  const newEmail = accounts.newEmail?.trim().toLowerCase() || null
+  if (!previousEmail || !newEmail || previousEmail === newEmail) return
+  try {
+    if (decryptSecret(previousEncrypted, gscAad(siteId)) === newRefreshToken) return
+  } catch {
+    return
+  }
+  await revokeStoredToken(previousEncrypted, siteId)
+}
+
+const REVOKE_ALL_BUDGET_MS = 8_000
+const REVOKE_ALL_MAX_TOKENS = 50
+
+async function revokeConnections(rows: Array<{ siteId: string; encryptedRefreshToken: string }>) {
+  if (rows.length === 0) return
+  const work = Promise.allSettled(
+    rows.slice(0, REVOKE_ALL_MAX_TOKENS).map((row) => revokeStoredToken(row.encryptedRefreshToken, row.siteId))
+  )
+  // Deleting must never wait long on Google: give up after the budget and carry on
+  await Promise.race([work, new Promise((resolve) => setTimeout(resolve, REVOKE_ALL_BUDGET_MS).unref?.())])
+}
+
+/** Best-effort revoke of every GSC token under a product, before it is deleted. Never throws. */
+export async function revokeGscTokensForProject(projectId: string): Promise<void> {
+  try {
+    const rows = await db
+      .select({ siteId: gscConnection.siteId, encryptedRefreshToken: gscConnection.encryptedRefreshToken })
+      .from(gscConnection)
+      .innerJoin(marketingSite, eq(marketingSite.id, gscConnection.siteId))
+      .where(eq(marketingSite.projectId, projectId))
+    await revokeConnections(rows)
+  } catch {
+    // Best effort
+  }
+}
+
+/** Best-effort revoke of every GSC token under a team, before it is deleted. Never throws. */
+export async function revokeGscTokensForTeam(teamId: string): Promise<void> {
+  try {
+    const rows = await db
+      .select({ siteId: gscConnection.siteId, encryptedRefreshToken: gscConnection.encryptedRefreshToken })
+      .from(gscConnection)
+      .innerJoin(marketingSite, eq(marketingSite.id, gscConnection.siteId))
+      .where(eq(marketingSite.teamId, teamId))
+    await revokeConnections(rows)
+  } catch {
+    // Best effort
+  }
+}
+
+/** Best-effort revoke of every GSC token under an organization (all its products), before deletion. Never throws. */
+export async function revokeGscTokensForOrganization(organizationId: string): Promise<void> {
+  try {
+    const rows = await db
+      .select({ siteId: gscConnection.siteId, encryptedRefreshToken: gscConnection.encryptedRefreshToken })
+      .from(gscConnection)
+      .innerJoin(marketingSite, eq(marketingSite.id, gscConnection.siteId))
+      .innerJoin(project, eq(project.id, marketingSite.projectId))
+      .where(eq(project.organizationId, organizationId))
+    await revokeConnections(rows)
+  } catch {
+    // Best effort
+  }
 }
 
 /** Selects the property of an existing connection; a changed property drops the old metrics, atomically. */
@@ -178,4 +282,34 @@ export async function toGoogleHttpError(siteId: string, error: unknown): Promise
     })
   }
   throw error
+}
+
+const NONCE_PERIOD = 'oauth'
+const NONCE_PREFIX = 'oauth-nonce:'
+const NONCE_RETENTION_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Makes an OAuth state single-use. The nonce is recorded as a `marketing_usage` row keyed
+ * `oauth-nonce:<nonce>` (period `oauth`, so it never mixes with monthly usage) with ON CONFLICT DO
+ * NOTHING; returns false when it was already consumed, so a replayed callback URL is rejected.
+ * States expire after 10 minutes; consumed rows older than a day are pruned opportunistically.
+ */
+export async function consumeOAuthNonce(teamId: string, nonce: string, now: Date = new Date()): Promise<boolean> {
+  const metric = `${NONCE_PREFIX}${nonce}`
+  const inserted = await db
+    .insert(marketingUsage)
+    .values({ teamId, period: NONCE_PERIOD, metric, units: 1 })
+    .onConflictDoNothing()
+    .returning({ metric: marketingUsage.metric })
+  try {
+    const cutoff = new Date(now.getTime() - NONCE_RETENTION_MS)
+    await db
+      .delete(marketingUsage)
+      .where(
+        sql`${marketingUsage.period} = ${NONCE_PERIOD} and ${marketingUsage.updatedAt} < ${cutoff.toISOString()}::timestamptz`
+      )
+  } catch {
+    // Pruning is housekeeping only
+  }
+  return inserted.length > 0
 }

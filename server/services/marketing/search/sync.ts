@@ -8,6 +8,7 @@ import {
   getGoogleOAuthConfig,
   GoogleApiError,
   GoogleAuthError,
+  isPropertySelectableForOrigin,
   querySearchAnalytics,
   type GoogleOAuthConfig,
   type SearchAnalyticsOptions,
@@ -20,6 +21,9 @@ import { createLogger } from '~/server/utils/logger'
 import { isSecretsConfigured } from '~/server/utils/secrets'
 
 const logger = createLogger('marketing-search-sync')
+
+export const PROPERTY_MISMATCH_MESSAGE =
+  'The Search Console property no longer matches the site address — choose a property'
 
 /**
  * A connection is due once its last sync is older than this. Slightly under a
@@ -39,6 +43,8 @@ const INSERT_CHUNK = 500
 const MAX_QUERY_LENGTH = 500
 
 export interface SyncCandidate extends CandidateSite {
+  /** Current site origin, to check the property still belongs to it */
+  origin: string
   propertyUrl: string
   encryptedRefreshToken: string
   lastSyncAt: Date | null
@@ -84,6 +90,8 @@ export interface SearchSyncStore {
    */
   commitSync(write: SyncWrite): Promise<boolean>
   markFailed(siteId: string, at: Date, message: string, revoked: boolean): Promise<void>
+  /** Flags a connection whose property no longer matches the site origin so the user picks one again */
+  markNeedsProperty(siteId: string, at: Date): Promise<void>
 }
 
 export interface SyncSummary {
@@ -121,6 +129,7 @@ export const dbSearchSyncStore: SearchSyncStore = {
       .select({
         siteId: marketingSite.id,
         teamId: marketingSite.teamId,
+        origin: marketingSite.origin,
         projectId: project.id,
         projectName: project.name,
         projectSlug: project.slug,
@@ -205,6 +214,13 @@ export const dbSearchSyncStore: SearchSyncStore = {
         .where(eq(gscConnection.siteId, write.siteId))
       return true
     })
+  },
+
+  async markNeedsProperty(siteId, at) {
+    await db
+      .update(gscConnection)
+      .set({ status: 'needs_property', lastError: PROPERTY_MISMATCH_MESSAGE, updatedAt: at })
+      .where(eq(gscConnection.siteId, siteId))
   },
 
   async markFailed(siteId, at, message, revoked) {
@@ -319,6 +335,18 @@ export async function syncSearchConsole(
 
   for (const candidate of due) {
     if (Date.now() - started >= budget) break
+    // The site origin changed after the property was chosen: never sync (or store) another site's data
+    if (!isPropertySelectableForOrigin(candidate.origin, candidate.propertyUrl)) {
+      try {
+        await store.markNeedsProperty(candidate.siteId, now)
+      } catch {
+        // Retried on the next tick
+      }
+      logger.info('Search Console sync skipped, the property does not match the site origin', {
+        siteId: candidate.siteId,
+      })
+      continue
+    }
     try {
       const written = await syncOne(candidate, now, config, store, getAccessToken, query)
       if (written) summary.sitesSynced += 1

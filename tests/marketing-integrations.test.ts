@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   credentials: [] as Array<Record<string, unknown>>,
   secrets: true,
+  outdated: 0 as number | null,
 }))
 
 vi.mock('~/server/utils/team-credentials', () => ({
   listTeamCredentials: vi.fn(async () => state.credentials),
 }))
+vi.mock('~/server/services/marketing/secrets-rotation', () => ({ countOutdatedSecrets: async () => state.outdated }))
 vi.mock('~/server/utils/secrets', () => ({ isSecretsConfigured: () => state.secrets }))
 
 const { getIntegrationStatus } = await import('~/server/utils/marketing-integrations')
@@ -27,6 +29,7 @@ beforeEach(() => {
   for (const key of ENV_KEYS) vi.stubEnv(key, '')
   state.credentials = []
   state.secrets = true
+  state.outdated = 0
 })
 
 afterEach(() => {
@@ -43,6 +46,19 @@ const credential = (provider: string, status: string, lastError: string | null =
 })
 
 describe('getIntegrationStatus', () => {
+  it('reports how many secrets are still on a previous encryption key', async () => {
+    state.outdated = 3
+    expect((await byId()).secrets.detail).toBe(
+      '3 keys are still encrypted with the previous key — keep SECRETS_ENCRYPTION_KEY_PREVIOUS until this reaches 0'
+    )
+    state.outdated = 1
+    expect((await byId()).secrets.detail).toContain('1 key is still encrypted with the previous key')
+    state.outdated = 0
+    expect((await byId()).secrets.detail).toBe('API keys are encrypted at rest')
+    state.outdated = null
+    expect((await byId()).secrets.detail).toBe('API keys are encrypted at rest')
+  })
+
   it('lists every integration with a capability', async () => {
     const all = await getIntegrationStatus('t1')
     expect(all.map((i) => i.id)).toEqual([

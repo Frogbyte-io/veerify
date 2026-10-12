@@ -83,6 +83,7 @@ function candidate(overrides: Partial<SyncCandidate> = {}): SyncCandidate {
     siteId: 's1',
     teamId: 't1',
     projectId: 'p1',
+    origin: 'https://acme.com',
     projectName: 'Acme',
     projectSlug: 'acme',
     projectSettings: { marketingEnabled: true },
@@ -105,6 +106,7 @@ function makeStore(candidates: SyncCandidate[], commitResult = true) {
       keep: number
     }>,
     failed: [] as Array<{ siteId: string; message: string; revoked: boolean }>,
+    needsProperty: [] as string[],
   }
   const store: SearchSyncStore = {
     loadDue: async () => candidates,
@@ -114,6 +116,9 @@ function makeStore(candidates: SyncCandidate[], commitResult = true) {
     },
     markFailed: async (siteId, _at, message, revoked) => {
       calls.failed.push({ siteId, message, revoked })
+    },
+    markNeedsProperty: async (siteId) => {
+      calls.needsProperty.push(siteId)
     },
   }
   return { store, calls }
@@ -142,6 +147,20 @@ const deps = (store: SearchSyncStore, overrides: Record<string, unknown> = {}) =
 })
 
 describe('syncSearchConsole', () => {
+  it('skips a connection whose property no longer matches the site origin and marks needs_property', async () => {
+    const { store, calls } = makeStore([
+      candidate({ siteId: 'moved', origin: 'https://newsite.com' }),
+      candidate({ siteId: 'ok' }),
+    ])
+    const getAccessToken = vi.fn(async () => 'access')
+    const summary = await syncSearchConsole({ now: NOW }, deps(store, { getAccessToken }))
+
+    expect(summary).toEqual({ sitesSynced: 1, sitesFailed: 0, skipped: false })
+    expect(calls.needsProperty).toEqual(['moved'])
+    expect(calls.writes.map((w) => w.siteId)).toEqual(['ok'])
+    expect(getAccessToken).toHaveBeenCalledTimes(1)
+  })
+
   it('upserts daily metrics and replaces the query snapshot', async () => {
     const { store, calls } = makeStore([candidate()])
     const summary = await syncSearchConsole({ now: NOW }, deps(store))
