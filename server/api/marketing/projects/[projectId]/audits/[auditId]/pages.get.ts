@@ -23,7 +23,7 @@
  *       403: { description: Marketing not enabled or no access }
  *       404: { description: Audit not found for this product }
  */
-import { and, asc, eq, gt, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { seoAuditPage, seoIssue } from '~/server/database/schema/marketing'
@@ -43,7 +43,6 @@ export default defineEventHandler(async (event) => {
   const { audit } = await requireAuditAccess(projectId, auditId, session.user.id)
   const { cursor } = validateQuery(event, querySchema)
 
-  const issueCount = sql<number>`(SELECT count(*)::int FROM ${seoIssue} WHERE ${seoIssue.pageId} = ${seoAuditPage.id})`
   const rows = await db
     .select({
       id: seoAuditPage.id,
@@ -51,7 +50,6 @@ export default defineEventHandler(async (event) => {
       statusCode: seoAuditPage.statusCode,
       title: sql<string | null>`${seoAuditPage.facts}->>'title'`,
       error: sql<string | null>`${seoAuditPage.facts}->>'error'`,
-      issueCount,
     })
     .from(seoAuditPage)
     .where(
@@ -63,7 +61,23 @@ export default defineEventHandler(async (event) => {
     .limit(AUDIT_PAGES_PAGE_SIZE + 1)
 
   const hasMore = rows.length > AUDIT_PAGES_PAGE_SIZE
-  const pages = rows.slice(0, AUDIT_PAGES_PAGE_SIZE)
+  const pageRows = rows.slice(0, AUDIT_PAGES_PAGE_SIZE)
+
+  // One grouped count for the returned page ids (uses seo_issue_page_idx)
+  const counts = pageRows.length
+    ? await db
+        .select({ pageId: seoIssue.pageId, count: sql<number>`count(*)::int` })
+        .from(seoIssue)
+        .where(
+          inArray(
+            seoIssue.pageId,
+            pageRows.map((row) => row.id)
+          )
+        )
+        .groupBy(seoIssue.pageId)
+    : []
+  const countByPage = new Map(counts.map((row) => [row.pageId, Number(row.count)]))
+  const pages = pageRows.map((row) => ({ ...row, issueCount: countByPage.get(row.id) ?? 0 }))
   return createSuccessResponse({
     pages,
     nextCursor: hasMore ? pages[pages.length - 1].url : null,

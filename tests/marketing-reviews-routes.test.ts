@@ -412,6 +412,7 @@ describe('GET public testimonial wall', () => {
     state.selectQueue = [[{ id: 't1', authorName: 'Jane' }]]
     const response = (await publicWall({} as never)) as { data: { items: unknown[] } }
     expect(response.data.items).toHaveLength(1)
+    expect(state.headers['Cache-Control']).toBe('public, max-age=60, stale-while-revalidate=300')
 
     const { sql, params } = sqlOf(state.wheres[0])
     expect(sql).toContain('"testimonial"."project_id"')

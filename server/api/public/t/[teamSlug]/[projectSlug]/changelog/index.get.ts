@@ -26,5 +26,6 @@ export default defineEventHandler(async (event) => {
   const { cursor } = validateQuery(event, publicListQuerySchema)
 
   const { entries, nextCursor } = await listPublishedEntries(project.id, { cursor })
+  setHeader(event, 'Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
   return createSuccessResponse({ entries, nextCursor })
 })

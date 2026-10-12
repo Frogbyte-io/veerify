@@ -1,3 +1,4 @@
+import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
@@ -5,6 +6,7 @@ const state = vi.hoisted(() => ({
   conflict: undefined as unknown,
   rows: [] as unknown[],
   insertCalls: 0,
+  where: undefined as unknown,
 }))
 
 vi.mock('~/server/database/drizzle', () => ({
@@ -22,7 +24,12 @@ vi.mock('~/server/database/drizzle', () => ({
       },
     }),
     select: () => ({
-      from: () => ({ where: () => Promise.resolve(state.rows) }),
+      from: () => ({
+        where: (condition: unknown) => {
+          state.where = condition
+          return Promise.resolve(state.rows)
+        },
+      }),
     }),
   },
 }))
@@ -81,6 +88,13 @@ describe('getUsage', () => {
       'crawl:pages': 12,
       'llm:anthropic:input_tokens': 3400,
     })
+  })
+
+  it('filters ratelimit counters in SQL', async () => {
+    await getUsage('team-1', '2026-10')
+    const query = new PgDialect().sqlToQuery(state.where as never)
+    expect(query.sql).toContain('"metric" not like')
+    expect(query.params).toEqual(expect.arrayContaining(['team-1', '2026-10', 'ratelimit:%']))
   })
 
   it('returns an empty record when nothing was used', async () => {

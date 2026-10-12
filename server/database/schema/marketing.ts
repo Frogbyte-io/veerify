@@ -139,6 +139,10 @@ export const marketingUsage = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.teamId, table.period, table.metric] }),
+    // Spend-reservation sweep: only the `llm:*:reserved_usd_micros` rows.
+    reservedIdx: index('marketing_usage_reserved_idx')
+      .on(table.updatedAt)
+      .where(sql`${table.metric} LIKE 'llm:%:reserved_usd_micros'`),
   })
 )
 
@@ -210,6 +214,7 @@ export const seoIssue = pgTable(
   },
   (table) => ({
     auditRuleIdx: index('seo_issue_audit_rule_idx').on(table.auditId, table.ruleId),
+    pageIdx: index('seo_issue_page_idx').on(table.pageId),
   })
 )
 
@@ -321,6 +326,12 @@ export const aiVisibilityAnswer = pgTable(
       table.sample
     ),
     promptIdx: index('ai_visibility_answer_prompt_idx').on(table.promptId),
+    pendingIdx: index('ai_visibility_answer_pending_idx')
+      .on(table.createdAt, table.id)
+      .where(sql`${table.status} = 'pending'`),
+    runPendingIdx: index('ai_visibility_answer_run_pending_idx')
+      .on(table.runId)
+      .where(sql`${table.status} = 'pending'`),
   })
 )
 
@@ -350,6 +361,16 @@ export const mention = pgTable(
   (table) => ({
     uniqueExternal: uniqueIndex('mention_site_source_external_idx').on(table.siteId, table.source, table.externalId),
     inboxIdx: index('mention_site_status_published_idx').on(table.siteId, table.status, table.publishedAt),
+    publishedIdx: index('mention_published_idx').on(table.publishedAt),
+    sitePublishedIdx: index('mention_site_published_idx').on(
+      table.siteId,
+      sql`${table.publishedAt} DESC`,
+      sql`${table.id} DESC`
+    ),
+    siteNewCreatedIdx: index('mention_site_new_created_idx')
+      .on(table.siteId, table.createdAt)
+      .where(sql`${table.status} = 'new'`),
+    termIdx: index('mention_term_idx').on(table.termId),
   })
 )
 
@@ -465,6 +486,12 @@ export const reviewRequest = pgTable(
     ),
     projectEmailIdx: index('review_request_project_email_idx').on(table.projectId, table.email, table.createdAt),
     statusIdx: index('review_request_status_idx').on(table.status, table.createdAt),
+    teamTriggerCreatedIdx: index('review_request_team_trigger_created_idx').on(
+      table.teamId,
+      table.trigger,
+      table.createdAt
+    ),
+    projectSentIdx: index('review_request_project_sent_idx').on(table.projectId, table.sentAt),
   })
 )
 
@@ -704,5 +731,9 @@ export const competitorChange = pgTable(
   },
   (table) => ({
     siteDetectedIdx: index('competitor_change_site_detected_idx').on(table.siteId, table.detectedAt),
+    watchIdx: index('competitor_change_watch_idx').on(table.watchId),
+    siteUnseenIdx: index('competitor_change_site_unseen_idx')
+      .on(table.siteId)
+      .where(sql`${table.seenAt} IS NULL`),
   })
 )
