@@ -118,15 +118,17 @@ describe('eraseContact', () => {
 })
 
 describe('withdrawTestimonialConsent', () => {
-  it('turns consent and featuring off for the request, nothing else', async () => {
+  it('turns consent and featuring off and records the withdrawal, nothing else', async () => {
     state.respond = () => [['t1']]
     expect(await withdrawTestimonialConsent('rr1')).toBe(1)
     const update = queries('update "testimonial"')[0]
     expect(update.text).toContain('"consent_public" = $1')
     expect(update.text).toContain('"featured" = $2')
     expect(update.params.slice(0, 2)).toEqual([false, false])
-    expect(update.text).toContain('"review_request_id" = $4')
-    expect(update.params[3]).toBe('rr1')
+    expect(update.text).toContain('"withdrawn_at" = $3')
+    expect(Number.isNaN(Date.parse(String(update.params[2])))).toBe(false)
+    expect(update.text).toContain('"review_request_id" = $5')
+    expect(update.params[4]).toBe('rr1')
   })
 })
 

@@ -1,5 +1,5 @@
 {
-  "id": "bb0fd17d-3830-4aa1-a5d4-a9905d5fbd77",
+  "id": "cddb4d6f-1e7b-4c65-8a13-6525ab491337",
   "prevId": "c9c89230-7632-47c6-9928-3e2268fabef6",
   "version": "7",
   "dialect": "postgresql",
@@ -12059,6 +12059,12 @@
         "moderated_by_user_id": {
           "name": "moderated_by_user_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawn_at": {
+          "name": "withdrawn_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": false
         },

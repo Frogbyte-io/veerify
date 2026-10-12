@@ -247,15 +247,13 @@ describe('GET /api/marketing/r/[token]', () => {
     expect(response.data.alreadySubmitted).toBe(true)
   })
 
-  it('reports a withdrawn testimonial', async () => {
-    const created = new Date('2026-10-01T10:00:00Z')
-    const touched = new Date('2026-10-02T10:00:00Z')
-    state.selectQueue = [
-      [requestRow()],
-      [{ id: 't1', consentPublic: false, createdAt: created, moderatedAt: null, updatedAt: touched }],
-    ]
+  it('reports a withdrawn testimonial, and not a private one', async () => {
+    state.selectQueue = [[requestRow()], [{ id: 't1', withdrawnAt: new Date('2026-10-02T10:00:00Z') }]]
     const response = (await publicInfo({} as never)) as { data: { withdrawn: boolean } }
     expect(response.data.withdrawn).toBe(true)
+    state.selectQueue = [[requestRow()], [{ id: 't1', withdrawnAt: null }]]
+    const privateOne = (await publicInfo({} as never)) as { data: { withdrawn: boolean } }
+    expect(privateOne.data.withdrawn).toBe(false)
   })
 
   it('404s for unknown and malformed tokens', async () => {

@@ -552,6 +552,8 @@ export const testimonial = pgTable(
     featured: boolean('featured').default(false).notNull(),
     moderatedAt: timestamp('moderated_at'),
     moderatedByUserId: text('moderated_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    /** Set when the submitter withdrew public consent through their link */
+    withdrawnAt: timestamp('withdrawn_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },

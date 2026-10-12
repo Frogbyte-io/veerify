@@ -41,10 +41,7 @@ export default defineEventHandler(async (event) => {
   const [existing] = await db
     .select({
       id: testimonial.id,
-      consentPublic: testimonial.consentPublic,
-      createdAt: testimonial.createdAt,
-      moderatedAt: testimonial.moderatedAt,
-      updatedAt: testimonial.updatedAt,
+      withdrawnAt: testimonial.withdrawnAt,
     })
     .from(testimonial)
     .where(eq(testimonial.reviewRequestId, request.id))
@@ -54,14 +51,8 @@ export default defineEventHandler(async (event) => {
     productName: request.projectName,
     firstName: firstNameOf(request.name),
     alreadySubmitted: Boolean(existing),
-    // True after the submitter withdrew public consent. There is no explicit withdrawn marker, so this
-    // infers it: no public consent, and the row was touched after submission/moderation (withdrawing is
-    // the only submitter-side write). A private submission that was never edited stays false.
-    withdrawn: Boolean(
-      existing &&
-      !existing.consentPublic &&
-      new Date(existing.updatedAt).getTime() - new Date(existing.moderatedAt ?? existing.createdAt).getTime() > 50
-    ),
+    // True after the submitter withdrew public consent through this link
+    withdrawn: Boolean(existing?.withdrawnAt),
     // False when the request was not sent, testimonials are off, or the link is older than 60 days.
     canSubmit: testimonialSubmissionState(request) === 'ok',
   })

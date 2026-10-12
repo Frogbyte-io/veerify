@@ -103,9 +103,10 @@ export async function eraseContact(teamId: string, rawEmail: string): Promise<Er
  * Returns how many testimonials were changed (0 when none was submitted with this request).
  */
 export async function withdrawTestimonialConsent(reviewRequestId: string): Promise<number> {
+  const now = new Date()
   const rows = await db
     .update(testimonial)
-    .set({ consentPublic: false, featured: false, updatedAt: new Date() })
+    .set({ consentPublic: false, featured: false, withdrawnAt: now, updatedAt: now })
     .where(eq(testimonial.reviewRequestId, reviewRequestId))
     .returning({ id: testimonial.id })
   return rows.length

@@ -370,7 +370,7 @@ Later migrations in the range: `0050` creates the feedback attachments table (su
 Marketing). `0051` adds Marketing indexes using non-concurrent `CREATE INDEX` on `mention` and
 `ai_visibility_answer`; this takes brief locks and runs in the `migrate` step before traffic starts.
 `0052` adds email-hash columns for privacy-preserving retention (review requests, testimonials and
-suppressions). `0053` adds the mention poller's query offset and cycle start, and rebuilds the pending
+suppressions). `0053` adds the mention poller's query offset and cycle start, records when a testimonial was withdrawn, and rebuilds the pending
 AI visibility answer index with `provider` first (non-concurrent, brief lock).
 
 Run this read-only check against the target database before migrating. The first query must return
