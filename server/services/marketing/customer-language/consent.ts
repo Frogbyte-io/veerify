@@ -1,7 +1,12 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
-import { marketingDataConsent } from '~/server/database/schema/marketing'
+import {
+  customerLanguageInsight,
+  marketingDataConsent,
+  marketingSite,
+  type CustomerLanguageSource,
+} from '~/server/database/schema/marketing'
 import { user } from '~/server/database/schema/auth'
 import { requireTeamAdmin, requireTeamMembership } from '~/server/utils/support-access'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
@@ -51,6 +56,7 @@ export async function setConsent(
   value: { allowFeedbackText: boolean; allowSupportText: boolean }
 ) {
   const now = new Date()
+  const previous = await readConsent(teamId)
   const set = {
     allowFeedbackText: value.allowFeedbackText,
     allowSupportText: value.allowSupportText,
@@ -62,6 +68,28 @@ export async function setConsent(
     .insert(marketingDataConsent)
     .values({ teamId, ...set })
     .onConflictDoUpdate({ target: marketingDataConsent.teamId, set })
+
+  // Revoking consent also removes what the withdrawn source produced: an insight is derived from the
+  // text of every source listed in `sources`, so it goes as soon as any of those sources is switched off.
+  const revoked: CustomerLanguageSource[] = []
+  if (previous.allowFeedbackText && !value.allowFeedbackText) revoked.push('feedback')
+  if (previous.allowSupportText && !value.allowSupportText) revoked.push('support')
+  if (revoked.length > 0) await purgeInsightsForSources(teamId, revoked)
+}
+
+/** Deletes the team's customer language insights built from any of `sources`. */
+export async function purgeInsightsForSources(teamId: string, sources: CustomerLanguageSource[]): Promise<void> {
+  if (sources.length === 0) return
+  const teamSites = db.select({ id: marketingSite.id }).from(marketingSite).where(eq(marketingSite.teamId, teamId))
+  await db.delete(customerLanguageInsight).where(
+    and(
+      sql`${customerLanguageInsight.siteId} in (${teamSites})`,
+      sql`${customerLanguageInsight.sources} && ARRAY[${sql.join(
+        sources.map((source) => sql`${source}`),
+        sql`, `
+      )}]::text[]`
+    )
+  )
 }
 
 function forbidden(message: string): never {
