@@ -372,6 +372,13 @@
       "when": 1791845260734,
       "tag": "0052_sour_micromacro",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791846579750,
+      "tag": "0053_plain_ricochet",
+      "breakpoints": true
     }
   ]
 }

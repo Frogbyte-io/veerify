@@ -228,10 +228,17 @@ function readRuntime(audit: AuditRow): Runtime {
   return { errors: typeof runtime?.errors === 'number' ? runtime.errors : 0 }
 }
 
-/** Interim siteFacts: keeps the error counter and drops the lease. */
-function interimFacts(audit: AuditRow, errors: number): Record<string, unknown> {
-  const { _runtime: _drop, ...rest } = (audit.siteFacts ?? {}) as Record<string, unknown>
-  return { ...rest, _runtime: { errors } }
+/**
+ * Interim siteFacts: keeps the error counter and drops the lease, so the next tick can claim the audit.
+ * `keepLease` preserves this worker's lease for a step that continues in the same tick (basic audits
+ * go straight from `queued` to finishing): `extendLease` only succeeds while a lease is still stored.
+ */
+function interimFacts(audit: AuditRow, errors: number, keepLease = false): Record<string, unknown> {
+  const { _runtime: previous, ...rest } = (audit.siteFacts ?? {}) as Record<string, unknown> & {
+    _runtime?: { leaseUntil?: unknown }
+  }
+  const leaseUntil = keepLease && typeof previous?.leaseUntil === 'string' ? { leaseUntil: previous.leaseUntil } : {}
+  return { ...rest, _runtime: { errors, ...leaseUntil } }
 }
 
 function emptyFacts(url: string, statusCode: number): PageFacts {
@@ -294,27 +301,47 @@ export interface AdvanceResult {
   processed: number
 }
 
+/** Audits advanced at the same time (each claims its own row with SKIP LOCKED and holds its own lease) */
+export const AUDIT_LANES = 4
+
 export async function advanceAudits(
-  options: { budgetMs?: number } = {},
+  options: { budgetMs?: number; lanes?: number } = {},
   partial?: Partial<RunnerDeps>
 ): Promise<AdvanceResult> {
   const deps = withDeps(partial)
   const budgetMs = options.budgetMs ?? 45_000
+  const lanes = Math.max(1, options.lanes ?? AUDIT_LANES)
   const deadline = deps.now().getTime() + budgetMs
   const seen: string[] = []
 
-  while (deps.now().getTime() < deadline) {
-    const now = deps.now()
-    const audit = await deps.store.claimDue(seen, now, new Date(now.getTime() + LEASE_MS))
-    if (!audit) break
-    seen.push(audit.id)
-    try {
-      await processAudit(audit, deadline, deps)
-    } catch (err) {
-      logger.error('Audit step crashed', { auditId: audit.id, error: err instanceof Error ? err.message : 'unknown' })
-      await recordTransient(deps, audit, err)
+  // Each lane claims the next due audit until none is left or the budget is spent. Claims are atomic
+  // (FOR UPDATE SKIP LOCKED), so lanes (and other replicas) never take the same audit.
+  // Claims are issued one at a time so `seen` is up to date for every claim (a lane never re-claims an
+  // audit another lane of this tick already took); processing runs in parallel.
+  let claimChain: Promise<unknown> = Promise.resolve()
+  const claimNext = (): Promise<AuditRow | null> => {
+    const next = claimChain.then(async () => {
+      const now = deps.now()
+      const audit = await deps.store.claimDue(seen, now, new Date(now.getTime() + LEASE_MS))
+      if (audit) seen.push(audit.id)
+      return audit
+    })
+    claimChain = next.catch(() => undefined)
+    return next
+  }
+  const lane = async () => {
+    while (deps.now().getTime() < deadline) {
+      const audit = await claimNext()
+      if (!audit) return
+      try {
+        await processAudit(audit, deadline, deps)
+      } catch (err) {
+        logger.error('Audit step crashed', { auditId: audit.id, error: err instanceof Error ? err.message : 'unknown' })
+        await recordTransient(deps, audit, err)
+      }
     }
   }
+  await Promise.all(Array.from({ length: lanes }, lane))
   return { processed: seen.length }
 }
 
@@ -397,7 +424,8 @@ async function runBasic(audit: AuditRow, origin: string, teamId: string, deps: R
   const moved = await deps.store.updateAudit(audit.id, {
     status: 'analyzing',
     pagesFetched: 1,
-    siteFacts: interimFacts(audit, 0),
+    // Keep the lease: finishAudit re-takes it below in this same tick
+    siteFacts: interimFacts(audit, 0, true),
   })
   if (!moved) return
   await finishAudit({ ...audit, status: 'analyzing', pagesFetched: 1 }, origin, teamId, deps)

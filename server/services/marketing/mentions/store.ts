@@ -1,4 +1,4 @@
-import { eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 import {
@@ -53,6 +53,10 @@ export interface SourceCursorRow {
   /** Last attempt, successful or not. Null on rows written before this column existed */
   lastAttemptAt?: Date | null
   consecutiveFailures?: number
+  /** Next query index to search; 0 (or past the end of the term list) starts a new rotation cycle */
+  queryOffset?: number
+  /** Start of the current rotation cycle (when offset 0 was searched); null when unknown */
+  cycleStartedAt?: Date | null
 }
 
 /** Both module switches must be on (D-31); a missing team row reads as the registry default. */
@@ -77,6 +81,11 @@ export interface MentionsStore {
    * Resolves false when another worker holds it.
    */
   claimCursor(siteId: string, source: MentionSource, now: Date, windowStart: Date, leaseMs: number): Promise<boolean>
+  /**
+   * Gives a claimed cursor back untouched (a rate-limited poll): restores `last_attempt_at` to the
+   * value before the claim, only while it is still the claim's `claimedAt`.
+   */
+  releaseClaim(siteId: string, source: MentionSource, claimedAt: Date, previousAttempt: Date | null): Promise<void>
   loadTerms(siteIds: string[]): Promise<Map<string, MatchTerm[]>>
   loadCursors(siteIds: string[]): Promise<SourceCursorRow[]>
   insertMentions(rows: MentionInsert[]): Promise<number>
@@ -85,7 +94,7 @@ export interface MentionsStore {
     source: MentionSource,
     lastPolledAt: Date,
     lastError: string | null,
-    attempt: { at: Date; consecutiveFailures: number }
+    attempt: { at: Date; consecutiveFailures: number; queryOffset: number; cycleStartedAt: Date | null }
   ): Promise<void>
   deleteOlderThan(cutoff: Date, batchSize: number): Promise<number>
 }
@@ -181,6 +190,19 @@ export const dbMentionsStore: MentionsStore = {
     return claimed.length > 0
   },
 
+  async releaseClaim(siteId, source, claimedAt, previousAttempt) {
+    await db
+      .update(mentionSourceCursor)
+      .set({ lastAttemptAt: previousAttempt })
+      .where(
+        and(
+          eq(mentionSourceCursor.siteId, siteId),
+          eq(mentionSourceCursor.source, source),
+          eq(mentionSourceCursor.lastAttemptAt, claimedAt)
+        )
+      )
+  },
+
   async loadTerms(siteIds) {
     const result = new Map<string, MatchTerm[]>()
     if (siteIds.length === 0) return result
@@ -213,6 +235,8 @@ export const dbMentionsStore: MentionsStore = {
         lastPolledAt: mentionSourceCursor.lastPolledAt,
         lastAttemptAt: mentionSourceCursor.lastAttemptAt,
         consecutiveFailures: mentionSourceCursor.consecutiveFailures,
+        queryOffset: mentionSourceCursor.queryOffset,
+        cycleStartedAt: mentionSourceCursor.cycleStartedAt,
       })
       .from(mentionSourceCursor)
       .where(inArray(mentionSourceCursor.siteId, siteIds))
@@ -229,7 +253,12 @@ export const dbMentionsStore: MentionsStore = {
   },
 
   async saveCursor(siteId, source, lastPolledAt, lastError, attempt) {
-    const attemptFields = { lastAttemptAt: attempt.at, consecutiveFailures: attempt.consecutiveFailures }
+    const attemptFields = {
+      lastAttemptAt: attempt.at,
+      consecutiveFailures: attempt.consecutiveFailures,
+      queryOffset: attempt.queryOffset,
+      cycleStartedAt: attempt.cycleStartedAt,
+    }
     await db
       .insert(mentionSourceCursor)
       .values({ siteId, source, lastPolledAt, lastError, ...attemptFields })

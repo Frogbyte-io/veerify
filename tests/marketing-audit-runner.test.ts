@@ -60,14 +60,14 @@ class MemStore implements AuditStore {
   async getAudit(id: string) {
     return this.audits.find((a) => a.id === id) ?? null
   }
-  async claimDue(exclude: string[]) {
+  async claimDue(exclude: string[], _now?: Date, _leaseUntil?: Date): Promise<AuditRow | null> {
     return (
       this.audits.find((a) => ['queued', 'crawling', 'analyzing'].includes(a.status) && !exclude.includes(a.id)) ?? null
     )
   }
   leaseHeld = true
   leaseExtensions = 0
-  async extendLease() {
+  async extendLease(_id?: string, _now?: Date, _leaseUntil?: Date): Promise<boolean> {
     this.leaseExtensions++
     return this.leaseHeld
   }
@@ -525,6 +525,101 @@ describe('audit lease while finishing', () => {
     expect(store.audits[0].status).not.toBe('done')
     // no delete/insert of issues from the worker that lost the lease
     expect(store.issues).toHaveLength(0)
+  })
+})
+
+/** Store whose lease behaves like the SQL: stored in siteFacts._runtime.leaseUntil, NULL fails extendLease */
+class LeasingStore extends MemStore {
+  override async claimDue(exclude: string[], now = new Date(), leaseUntil = new Date()): Promise<AuditRow | null> {
+    const audit = this.audits.find((a) => {
+      if (!['queued', 'crawling', 'analyzing'].includes(a.status) || exclude.includes(a.id)) return false
+      const held = (a.siteFacts as { _runtime?: { leaseUntil?: string } } | null)?._runtime?.leaseUntil
+      return !held || new Date(held).getTime() < now.getTime()
+    })
+    if (!audit) return null
+    const facts = (audit.siteFacts ?? {}) as { _runtime?: Record<string, unknown> }
+    audit.siteFacts = { ...facts, _runtime: { ...facts._runtime, leaseUntil: leaseUntil.toISOString() } } as never
+    return { ...audit }
+  }
+  override async extendLease(id?: string, now = new Date(), leaseUntil = new Date()): Promise<boolean> {
+    this.leaseExtensions++
+    const audit = this.audits.find((a) => a.id === id)
+    const facts = audit?.siteFacts as { _runtime?: { leaseUntil?: string } } | null
+    const held = facts?._runtime?.leaseUntil
+    if (!audit || !held || new Date(held).getTime() < now.getTime()) return false
+    audit.siteFacts = { ...facts, _runtime: { ...facts._runtime, leaseUntil: leaseUntil.toISOString() } } as never
+    return true
+  }
+}
+
+describe('basic audit lease', () => {
+  it('finishes in one tick: the interim facts keep the lease so finishing can extend it', async () => {
+    store = new LeasingStore()
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    expect(store.audits[0].status).toBe('done')
+    expect(store.issues.length).toBeGreaterThan(0)
+    expect(store.leaseExtensions).toBe(3)
+  })
+})
+
+describe('audit lanes', () => {
+  const seedAudits = async (d: Partial<RunnerDeps>, n: number) => {
+    for (let i = 0; i < n; i++) {
+      store.audits.push({
+        id: `a${i}`,
+        siteId: 's1',
+        projectId: 'p1',
+        mode: 'basic',
+        status: 'queued',
+        trigger: 'manual',
+        createdAt: new Date(clock + i),
+        pageLimit: 3,
+        pagesFetched: 0,
+        siteFacts: null,
+      } as unknown as AuditRow)
+    }
+    void d
+  }
+
+  it('advances up to 4 audits at the same time and never the same audit twice', async () => {
+    store = new LeasingStore()
+    const d = deps()
+    await seedAudits(d, 10)
+    let inFlight = 0
+    let max = 0
+    const calls: string[] = []
+    ;(d.fetchHomePage as any).mockImplementation(async () => {
+      inFlight++
+      max = Math.max(max, inFlight)
+      calls.push('home')
+      await new Promise((r) => setTimeout(r, 5))
+      inFlight--
+      return { url: 'https://example.com/', statusCode: 200, html: HTML('Home') }
+    })
+    const result = await advanceAudits({}, d)
+    expect(result.processed).toBe(10)
+    expect(calls).toHaveLength(10)
+    expect(max).toBe(4)
+    expect(store.audits.every((a) => a.status === 'done')).toBe(true)
+  })
+
+  it('honours a lane override', async () => {
+    store = new LeasingStore()
+    const d = deps()
+    await seedAudits(d, 5)
+    let inFlight = 0
+    let max = 0
+    ;(d.fetchHomePage as any).mockImplementation(async () => {
+      inFlight++
+      max = Math.max(max, inFlight)
+      await new Promise((r) => setTimeout(r, 5))
+      inFlight--
+      return { url: 'https://example.com/', statusCode: 200, html: HTML('Home') }
+    })
+    await advanceAudits({ lanes: 2 }, d)
+    expect(max).toBe(2)
   })
 })
 

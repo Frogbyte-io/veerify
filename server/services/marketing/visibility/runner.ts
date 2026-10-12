@@ -13,10 +13,19 @@
  * queue after the lease lapses; a completed row's `completed_at` is the finish
  * time as usual.
  *
- * Throughput: a worker pool (default 12 answers in flight, `MARKETING_VISIBILITY_CONCURRENCY`) with a
- * per-provider cap (default 4, `MARKETING_VISIBILITY_PROVIDER_CONCURRENCY`), refilled as answers finish,
+ * Throughput: a worker pool (default 24 answers in flight, `MARKETING_VISIBILITY_CONCURRENCY`) with a
+ * per-provider cap (default 8, `MARKETING_VISIBILITY_PROVIDER_CONCURRENCY`), refilled as answers finish,
  * so a slow provider only ever holds its own slots. Claims walk the pending partial index in
- * `(created_at, id)` order, one cheap query per provider with remaining capacity.
+ * `(provider, created_at, id)` order, one cheap query per provider with remaining capacity.
+ *
+ * Time: the task runs on Vercel's 60 s limit with a 45 s budget. No new answer is claimed when less
+ * than `CLAIM_CUTOFF_MS` of the budget remains (a started answer needs time for its search plus
+ * extraction call), and every provider call receives an AbortSignal that fires at the hard deadline
+ * (budget + `HARD_DEADLINE_EXTRA_MS`) so nothing is killed mid-flight by the platform; an answer cut
+ * off that way is released back to the queue for the next tick instead of failed.
+ *
+ * Database: a worker holds no connection while waiting on a provider. Every DB step (claim, context,
+ * budget reservation, save) is a short statement or a short transaction with no network I/O inside.
  *
  * Logging: only ids, providers and error kinds. Prompts, answers, keys and
  * provider response bodies are never logged.
@@ -79,6 +88,10 @@ export const CLAIM_LEASE_MS = 3 * 60 * 1000
 export const WEEKLY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 /** Pending answers older than this are failed ("Timed out") so a run can never hang forever */
 export const ANSWER_MAX_AGE_MS = 24 * 60 * 60 * 1000
+/** No new answer is claimed once less than this much of the time budget remains */
+export const CLAIM_CUTOFF_MS = 20_000
+/** Provider calls are aborted this long after the budget ends (the platform kills the task at 60 s) */
+export const HARD_DEADLINE_EXTRA_MS = 10_000
 /** Finished runs kept per site; older ones (and their answers) are deleted */
 export const RUN_RETENTION = 12
 
@@ -292,10 +305,14 @@ export interface RunnerDeps {
 
 export interface AdvanceOptions {
   budgetMs?: number
-  /** Answers in flight across all providers (default: MARKETING_VISIBILITY_CONCURRENCY, 12) */
+  /** Answers in flight across all providers (default: MARKETING_VISIBILITY_CONCURRENCY, 24) */
   concurrency?: number
-  /** Answers in flight per provider (default: MARKETING_VISIBILITY_PROVIDER_CONCURRENCY, 4) */
+  /** Answers in flight per provider (default: MARKETING_VISIBILITY_PROVIDER_CONCURRENCY, 8) */
   perProviderConcurrency?: number
+  /** Stop claiming when less than this much budget remains (default 20 s, at most half the budget) */
+  claimCutoffMs?: number
+  /** Provider calls are aborted this long after the budget ends (default 10 s) */
+  hardDeadlineExtraMs?: number
 }
 
 export interface AdvanceResult {
@@ -341,6 +358,14 @@ export async function advanceVisibilityRuns(
   const concurrency = Math.max(1, options.concurrency ?? marketingConfig.visibilityConcurrency)
   const perProvider = Math.max(1, options.perProviderConcurrency ?? marketingConfig.visibilityProviderConcurrency)
   const deadline = deps.now() + budgetMs
+  const claimUntil = deadline - Math.min(options.claimCutoffMs ?? CLAIM_CUTOFF_MS, Math.floor(budgetMs / 2))
+  // Real timer: the abort has to fire while provider calls are pending, whatever `deps.now` says
+  const hardStop = new AbortController()
+  const hardTimer = setTimeout(
+    () => hardStop.abort(),
+    budgetMs + (options.hardDeadlineExtraMs ?? HARD_DEADLINE_EXTRA_MS)
+  )
+  const signal = hardStop.signal
   const stopped = new Set<LlmProviderId>()
   const invalidated = new Set<LlmProviderId>()
   const touchedRuns = new Set<string>()
@@ -361,11 +386,11 @@ export async function advanceVisibilityRuns(
       let outcome: Outcome
       if (stopped.has(answer.provider)) {
         // Provider was stopped by a sibling while this one was waiting
-        await deps.release(answer.id)
+        await releaseSafely(deps, answer.id)
         outcome = 'released'
       } else {
         try {
-          outcome = await processAnswer(answer, deps, stopped, invalidated)
+          outcome = await processAnswer(answer, deps, stopped, invalidated, signal)
         } catch (err) {
           logger.error('Visibility answer processing crashed', {
             answerId: answer.id,
@@ -386,7 +411,7 @@ export async function advanceVisibilityRuns(
   }
 
   try {
-    while (deps.now() < deadline) {
+    while (deps.now() < claimUntil) {
       let claimedNow = 0
       const free = concurrency - inflight.size
       if (free > 0) {
@@ -412,8 +437,9 @@ export async function advanceVisibilityRuns(
       }
     }
   } finally {
-    // Let in-flight answers finish; each is bounded by the provider call timeout
+    // Let in-flight answers finish; each is bounded by the provider call timeout and the hard deadline
     await Promise.allSettled([...inflight])
+    clearTimeout(hardTimer)
     // Catches runs whose last pending answers were failed in bulk
     if (touchedRuns.size > 0) await deps.finalizeRuns([...touchedRuns]).catch(() => undefined)
   }
@@ -421,11 +447,21 @@ export async function advanceVisibilityRuns(
   return result
 }
 
+/** Releases a claim; a failure is logged and the lease lapse returns the row to the queue anyway. */
+async function releaseSafely(deps: RunnerDeps, answerId: string): Promise<void> {
+  try {
+    await deps.release(answerId)
+  } catch (err) {
+    logger.error('Visibility answer release failed', { answerId, error: err instanceof Error ? err.name : 'unknown' })
+  }
+}
+
 async function processAnswer(
   answer: ClaimedAnswer,
   deps: RunnerDeps,
   stopped: Set<LlmProviderId>,
-  invalidated: Set<LlmProviderId>
+  invalidated: Set<LlmProviderId>,
+  signal?: AbortSignal
 ): Promise<Outcome> {
   const context = await deps.loadContext(answer)
   if (!context) {
@@ -476,7 +512,7 @@ async function processAnswer(
         : await deps.budgetRefusalReason(teamId, provider, held, key.monthlyBudgetCents)
     if (reason === 'in_flight') {
       stopped.add(provider)
-      await deps.release(answer.id)
+      await releaseSafely(deps, answer.id)
       return 'released'
     }
     await failProvider(answer, deps, stopped, 'Monthly budget reached for this provider')
@@ -490,9 +526,10 @@ async function processAnswer(
         apiKey: key.apiKey,
         prompt: context.promptText,
         model: answerModel,
+        signal,
       })
     } catch (err) {
-      return await handleProviderError(err, answer, teamId, key.keyHint, deps, stopped, invalidated)
+      return await handleProviderError(err, answer, teamId, key.keyHint, deps, stopped, invalidated, signal)
     }
 
     let totalIn = answered.usage.inputTokens
@@ -508,6 +545,7 @@ async function processAnswer(
         schema: EXTRACTION_SCHEMA,
         schemaName: 'answer_extraction',
         model: extractModel,
+        signal,
       })
       extraction = extracted.data
       totalIn += extracted.usage.inputTokens
@@ -567,11 +605,17 @@ async function handleProviderError(
   keyHint: string | undefined,
   deps: RunnerDeps,
   stopped: Set<LlmProviderId>,
-  invalidated: Set<LlmProviderId>
+  invalidated: Set<LlmProviderId>,
+  signal?: AbortSignal
 ): Promise<Outcome> {
   const provider = answer.provider
 
   if (err instanceof LlmProviderError) {
+    if (signal?.aborted && err.kind === 'timeout') {
+      // Cut off by our own hard deadline, not a provider failure: back to the queue for the next tick
+      await releaseSafely(deps, answer.id)
+      return 'released'
+    }
     if (err.kind === 'auth') {
       // Concurrent answers in one batch can all hit the same 401; handle the key once per tick
       const first = !invalidated.has(provider)
@@ -597,7 +641,7 @@ async function handleProviderError(
       // Leave it pending for the next tick and stop hammering this provider.
       // Bounded by the 24h pending-answer timeout in the sweep.
       stopped.add(provider)
-      await deps.release(answer.id)
+      await releaseSafely(deps, answer.id)
       return 'released'
     }
     await deps.failAnswer(answer.id, `Provider error (${err.kind}${err.status ? `, ${err.status}` : ''})`)
@@ -831,15 +875,20 @@ export function createDefaultDeps(): RunnerDeps {
  * running run (not just ones touched this tick) so a run whose answers were all
  * settled elsewhere, or that never had any, cannot stay stuck.
  *
- * Index-friendly: the timeout update is a range scan of the pending partial index on
- * `(created_at, id)`, and the finalize is one set-based statement.
+ * Index-friendly: the timeout update filters `provider IN (...)` so it is a range scan of the pending
+ * partial index on `(provider, created_at, id)`, and the finalize is one set-based statement.
  */
 export async function sweepStuckVisibilityRuns(now: Date = new Date()): Promise<void> {
   const cutoff = new Date(now.getTime() - ANSWER_MAX_AGE_MS)
   await db.execute(sql`
     UPDATE ai_visibility_answer
     SET status = 'failed', error = 'Timed out', completed_at = ${sqlTimestamp(now)}
-    WHERE status = 'pending' AND created_at < ${sqlTimestamp(cutoff)}
+    WHERE status = 'pending'
+      AND provider IN (${sql.join(
+        LLM_PROVIDER_IDS.map((id) => sql`${id}`),
+        sql`, `
+      )})
+      AND created_at < ${sqlTimestamp(cutoff)}
   `)
   await finalizeVisibilityRuns()
 }
@@ -928,12 +977,32 @@ async function pruneFinishedRuns(siteIds: string[]): Promise<void> {
 export interface ScheduleResult {
   created: number
   skipped: number
+  /** Set when run creation was paused or trimmed because too many answers were still pending */
+  backlog?: { pending: number; batch: number }
 }
 
 /** Due sites started per hourly tick; with a 7 day interval this staggers ~25k sites a week */
 export const SCHEDULE_BATCH_SIZE = 150
 
+/** Pending answers (all providers) above which no new scheduled runs are created */
+export const BACKLOG_LIMIT_DEFAULT = 5000
+
+/**
+ * Sites to start this tick given the global pending-answer backlog: the full batch while the queue is
+ * under half the limit, scaled down linearly between half and the limit, none at or above it. A run
+ * adds prompts x providers x samples answers, so queueing more than the tick-by-tick drain rate can
+ * clear only makes every run (including users' manual ones) finish later.
+ */
+export function scheduleBatchForBacklog(pending: number, limit: number = BACKLOG_LIMIT_DEFAULT): number {
+  if (pending >= limit) return 0
+  const half = limit / 2
+  if (pending <= half) return SCHEDULE_BATCH_SIZE
+  return Math.max(1, Math.ceil((SCHEDULE_BATCH_SIZE * (limit - pending)) / half))
+}
+
 export interface ScheduleDeps {
+  /** Pending answers across all providers, counted up to `limit` (bounded cost) */
+  countPendingAnswers?: (limit: number) => Promise<number>
   selectDueSites: (cutoff: Date, limit: number) => Promise<string[]>
   createRun: (input: CreateRunInput) => Promise<unknown>
 }
@@ -976,6 +1045,14 @@ export function buildDueSitesQuery(cutoff: Date, limit: number) {
 
 function createDefaultScheduleDeps(): ScheduleDeps {
   return {
+    async countPendingAnswers(limit) {
+      const res = await db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM (
+          SELECT 1 FROM ai_visibility_answer WHERE status = 'pending' LIMIT ${limit}
+        ) pending
+      `)
+      return Number(res.rows[0]?.n ?? 0)
+    },
     async selectDueSites(cutoff, limit) {
       const res = await db.execute<{ id: string }>(buildDueSitesQuery(cutoff, limit))
       return res.rows.map((r) => r.id)
@@ -990,9 +1067,21 @@ export async function scheduleWeeklyVisibilityRuns(
   deps: ScheduleDeps = createDefaultScheduleDeps()
 ): Promise<ScheduleResult> {
   const cutoff = new Date(now.getTime() - WEEKLY_INTERVAL_MS)
-  const siteIds = await deps.selectDueSites(cutoff, SCHEDULE_BATCH_SIZE)
+  const backlogLimit = marketingConfig.visibilityBacklogLimit
+  let batch = SCHEDULE_BATCH_SIZE
+  let backlog: ScheduleResult['backlog']
+  if (deps.countPendingAnswers) {
+    const pending = await deps.countPendingAnswers(backlogLimit)
+    batch = scheduleBatchForBacklog(pending, backlogLimit)
+    if (batch < SCHEDULE_BATCH_SIZE) {
+      backlog = { pending, batch }
+      logger.warn('Visibility backlog: scheduled runs trimmed', { pending, batch })
+    }
+    if (batch === 0) return { created: 0, skipped: 0, backlog }
+  }
+  const siteIds = await deps.selectDueSites(cutoff, batch)
 
-  const result: ScheduleResult = { created: 0, skipped: 0 }
+  const result: ScheduleResult = { created: 0, skipped: 0, ...(backlog ? { backlog } : {}) }
   for (const siteId of siteIds) {
     try {
       await deps.createRun({ siteId, trigger: 'schedule' })

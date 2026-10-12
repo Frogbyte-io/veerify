@@ -73,13 +73,21 @@ export const marketingConfig = {
   get botUserAgent() {
     return `VeerifyBot/1.0 (+${readEnv('BETTER_AUTH_URL') ?? ''}/bot)`
   },
-  /** Concurrent AI visibility answers per tick, across providers (1..50, default 12). */
+  /** Concurrent AI visibility answers per tick, across providers (1..50, default 24). */
   get visibilityConcurrency() {
-    return readInt('MARKETING_VISIBILITY_CONCURRENCY', 12, 1, 50)
+    return readInt('MARKETING_VISIBILITY_CONCURRENCY', 24, 1, 50)
   },
-  /** Concurrent AI visibility answers per LLM provider (1..20, default 4). */
+  /** Concurrent AI visibility answers per LLM provider (1..20, default 8). */
   get visibilityProviderConcurrency() {
-    return readInt('MARKETING_VISIBILITY_PROVIDER_CONCURRENCY', 4, 1, 20)
+    return readInt('MARKETING_VISIBILITY_PROVIDER_CONCURRENCY', 8, 1, 20)
+  },
+  /** Pending visibility answers above which weekly runs stop being scheduled (100..100000, default 5000). */
+  get visibilityBacklogLimit() {
+    return readInt('MARKETING_VISIBILITY_BACKLOG_LIMIT', 5000, 100, 100_000)
+  },
+  /** Sites polled at the same time by the mentions poller (1..32, default 16); each polls its sources in parallel. */
+  get mentionsConcurrency() {
+    return readInt('MARKETING_MENTIONS_CONCURRENCY', 16, 1, 32)
   },
   /** Whether team API keys can be encrypted at rest on this instance. */
   get secretsConfigured() {

@@ -13,12 +13,14 @@ const logger = createLogger('marketing-mentions-digest')
 
 export const DIGEST_WINDOW_MS = 24 * 60 * 60 * 1000
 export const DIGEST_TOP_ITEMS = 10
-/** UTC hour the digest window ends at; the task runs hourly from 08:00 to 10:00 so a run can resume */
-export const DIGEST_HOUR_UTC = 8
+/** UTC hour the digest window ends at; the task runs hourly from 07:00 to 11:00 so a run can resume */
+export const DIGEST_HOUR_UTC = 7
 /** Wall-clock budget of one run; teams left over are picked up by the next hourly run */
 export const DIGEST_BUDGET_MS = 45_000
 /** Teams claimed and processed per batch (also the granularity of the budget check) */
 export const DIGEST_TEAM_BATCH = 25
+/** Emails sent at the same time within a batch; the time budget is checked before each email */
+export const DIGEST_SEND_CONCURRENCY = 10
 const SITE_QUERY_CHUNK = 500
 
 export interface DigestItem {
@@ -78,7 +80,7 @@ export function digestMetric(date: string): string {
   return `digest:${date}`
 }
 
-/** End of the 24 h window: 08:00 UTC of the run's date (or `now` before that), stable across resumed runs. */
+/** End of the 24 h window: 07:00 UTC of the run's date (or `now` before that), stable across resumed runs. */
 export function digestWindowEnd(now: Date): Date {
   const anchor = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), DIGEST_HOUR_UTC)
   return new Date(Math.min(now.getTime(), anchor))
@@ -240,8 +242,9 @@ export async function loadAdminEmailsForTeams(teamIds: string[]): Promise<Map<st
  * Multi-replica safe and resumable. Each (team, UTC date) is claimed in `marketing_usage`
  * (`digest:<date>`, INSERT ... ON CONFLICT DO NOTHING RETURNING) before anything is sent, so two
  * workers running at once split the teams and never both email one. The task runs hourly from
- * 08:00 to 10:00 UTC: a run stops starting new batches once its budget is spent, and the next run
- * continues with teams nobody has claimed yet. Delivery is at-most-once per team and day: a worker
+ * 07:00 to 11:00 UTC: a run stops starting batches and emails once its budget is spent (checked per
+ * email, 10 sends in flight), and the next run continues with teams nobody has claimed yet; a team
+ * whose emails were not started at all gets its claim back. Delivery is at-most-once per team and day: a worker
  * that dies after claiming loses that team's digest for the day. When every email of a team fails
  * (for example SMTP is down) the claim is released so the next hourly run retries.
  */
@@ -282,7 +285,7 @@ export async function sendMentionsDigests(
 
   for (let i = 0; i < teams.length; i += batchSize) {
     if (clock() >= deadline) {
-      summary.teamsDeferred = teams.length - i
+      summary.teamsDeferred += teams.length - i
       break
     }
     const batch = teams.slice(i, i + batchSize)
@@ -304,40 +307,64 @@ export async function sendMentionsDigests(
         loadEmails(claimedTeams),
       ])
 
+      type Job = { teamId: string; siteId: string; payload: Parameters<typeof send>[0] }
+      const jobs: Job[] = []
       for (const teamId of claimedTeams) {
-        let teamSent = 0
-        let teamErrors = 0
         for (const site of sitesByTeam.get(teamId) ?? []) {
-          try {
-            const content = contents.get(site.siteId)
-            if (!content) continue
-            const total = content.counts.mention + content.counts.competitor + content.counts.opportunity
-            if (total === 0) continue
-            const recipients = emails.get(teamId) ?? []
-            if (recipients.length === 0) continue
-
-            const mentionsUrl = `${baseUrl}/marketing/mentions?product=${encodeURIComponent(site.projectSlug)}`
-            const results = await Promise.allSettled(
-              recipients.map((to) =>
-                send({ to, productName: site.projectName, counts: content.counts, items: content.items, mentionsUrl })
-              )
-            )
-            const sent = results.filter((r) => r.status === 'fulfilled').length
-            summary.emailsSent += sent
-            summary.errors += results.length - sent
-            teamSent += sent
-            teamErrors += results.length - sent
-            if (sent > 0) summary.sitesNotified += 1
-          } catch (error) {
-            summary.errors += 1
-            teamErrors += 1
-            logger.error('Mentions digest failed for site', {
+          const content = contents.get(site.siteId)
+          if (!content) continue
+          const total = content.counts.mention + content.counts.competitor + content.counts.opportunity
+          if (total === 0) continue
+          const mentionsUrl = `${baseUrl}/marketing/mentions?product=${encodeURIComponent(site.projectSlug)}`
+          for (const to of emails.get(teamId) ?? []) {
+            jobs.push({
+              teamId,
               siteId: site.siteId,
-              error: error instanceof Error ? error.message : 'unknown',
+              payload: { to, productName: site.projectName, counts: content.counts, items: content.items, mentionsUrl },
             })
           }
         }
-        if (teamSent === 0 && teamErrors > 0) failedTeams.push(teamId)
+      }
+
+      const stats = new Map<string, { sent: number; errors: number; attempted: number; jobs: number }>()
+      const sitesNotified = new Set<string>()
+      for (const job of jobs) {
+        const entry = stats.get(job.teamId) ?? { sent: 0, errors: 0, attempted: 0, jobs: 0 }
+        entry.jobs += 1
+        stats.set(job.teamId, entry)
+      }
+      // Send pool: workers take the next email, re-checking the budget before each one
+      let next = 0
+      const worker = async () => {
+        while (clock() < deadline) {
+          const job = jobs[next++]
+          if (!job) return
+          const entry = stats.get(job.teamId)!
+          entry.attempted += 1
+          try {
+            await send(job.payload)
+            entry.sent += 1
+            summary.emailsSent += 1
+            sitesNotified.add(job.siteId)
+          } catch (error) {
+            entry.errors += 1
+            summary.errors += 1
+            logger.error('Mentions digest email failed', { error: error instanceof Error ? error.message : 'unknown' })
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(DIGEST_SEND_CONCURRENCY, jobs.length) }, worker))
+      summary.sitesNotified += sitesNotified.size
+
+      for (const [teamId, entry] of stats) {
+        if (entry.attempted === 0) {
+          // Budget ran out before any email of this team started: give the claim back for the next run
+          failedTeams.push(teamId)
+          summary.teamsProcessed -= 1
+          summary.teamsDeferred += 1
+        } else if (entry.sent === 0 && entry.errors > 0) {
+          failedTeams.push(teamId)
+        }
       }
     } catch (error) {
       // Loading content failed for the whole batch: nothing was sent, so give the claims back

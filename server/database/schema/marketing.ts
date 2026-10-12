@@ -326,8 +326,9 @@ export const aiVisibilityAnswer = pgTable(
       table.sample
     ),
     promptIdx: index('ai_visibility_answer_prompt_idx').on(table.promptId),
+    // Provider first: the runner claims per provider, oldest first, so each claim walks one provider's slice
     pendingIdx: index('ai_visibility_answer_pending_idx')
-      .on(table.createdAt, table.id)
+      .on(table.provider, table.createdAt, table.id)
       .where(sql`${table.status} = 'pending'`),
     runPendingIdx: index('ai_visibility_answer_run_pending_idx')
       .on(table.runId)
@@ -388,6 +389,10 @@ export const mentionSourceCursor = pgTable(
     lastAttemptAt: timestamp('last_attempt_at'),
     consecutiveFailures: integer('consecutive_failures').default(0).notNull(),
     lastError: text('last_error'),
+    // Next query index to search (term lists above the per-run cap are polled in rotating slices)
+    queryOffset: integer('query_offset').default(0).notNull(),
+    // When the current rotation cycle (offset 0) started; becomes the watermark when the offset wraps
+    cycleStartedAt: timestamp('cycle_started_at'),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.siteId, table.source] }),
