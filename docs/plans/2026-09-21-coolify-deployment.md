@@ -230,7 +230,7 @@ initial single-container MVP. No live infrastructure changes have been performed
 
 ## Marketing module deployment
 
-Applies to the Marketing hub (`docs/plans/2026-10-09-marketing-hub/`), migrations `0044`-`0049` on
+Applies to the Marketing hub (`docs/plans/2026-10-09-marketing-hub/`), migrations `0044`-`0052` on
 this branch. The Marketing code reads its settings from `process.env` on each access (not from Nuxt
 runtime config), so the plain variable names below work as Coolify runtime environment variables. No
 `NUXT_` mapping is needed and none has to exist at image build time. Mark them "runtime only" in
@@ -293,8 +293,9 @@ Vercel Cron, which need `CRON_SECRET`; Nitro does not.
 | `marketing:audit-schedule`      | hourly, :05            | Database only (queues first and weekly audits, never-audited sites first)                                                              |
 | `marketing:search-sync`         | hourly, :20            | Google OAuth and Search Console egress, `GOOGLE_*`, `SECRETS_ENCRYPTION_KEY`; 100 sites per run, 5 at a time                           |
 | `marketing:mentions-digest`     | hourly 08:00-10:00 UTC | Working SMTP; emails team admins who have not opted out; one send per team and day, resumes if a run ran out of time                   |
+| `marketing:retention`           | daily 03:30 UTC        | Database only (anonymises old review requests and testimonial emails, prunes competitor changes and usage/ledger rows)                 |
 
-All nine are registered in both `nuxt.config.ts` and `vercel.json`.
+All ten are registered in both `nuxt.config.ts` and `vercel.json`.
 
 Vercel only: Hobby plans allow cron jobs at most once per day, so `vercel.json` with per-minute
 crons does not work there; the Marketing advance tasks need minute cadence, so a Vercel deployment
@@ -325,12 +326,15 @@ deliberate second replica); the only cost is some duplicated, idempotent work. P
   Reddit/Bluesky rate-limit state is per process.
 - `search-sync`: each site is claimed (`last_sync_at` stamped when still older than the 23 h due
   threshold) before syncing. A crash after the claim leaves the site marked synced for that day.
+- `retention`: idempotent deletes and updates, so running it twice is safe.
+- Secrets-rotation sweep (inside `marketing:visibility-schedule`): compare-and-swap updates, so it is
+  safe under multiple replicas.
 - `mentions-digest`: one `marketing_usage` row per team and day (`digest:<YYYY-MM-DD>`, inserted
   `ON CONFLICT DO NOTHING RETURNING`) is the claim, so only one process emails a team. It is
   at-most-once: a process that dies after claiming loses that team's digest for the day; if every
   email of a team fails the claim is released and the next hourly run (up to 10:00 UTC) retries.
 
-### Migrations 0044-0049
+### Migrations 0044-0052
 
 The `migrate` service (compose) or the Coolify one-off `migrate` operation applies them in order
 before traffic starts. All are forward-only. Only `0045` can reject existing data: it creates two
@@ -339,6 +343,12 @@ fresh database `0044` creates those tables in the same run, so no conflicting ro
 risk is a database that already applied `0044` from an earlier build (staging, a preview) and holds
 duplicate in-flight rows, or one where the Marketing tables were created by `db:push`, which makes
 `0044`'s `CREATE TABLE` collide. Also read the `0019` journal-ordering warning at the top of this plan.
+
+Later migrations in the range: `0050` creates the feedback attachments table (support/feedback, not
+Marketing). `0051` adds Marketing indexes using non-concurrent `CREATE INDEX` on `mention` and
+`ai_visibility_answer`; this takes brief locks and runs in the `migrate` step before traffic starts.
+`0052` adds email-hash columns for privacy-preserving retention (review requests, testimonials and
+suppressions).
 
 Run this read-only check against the target database before migrating. The first query must return
 `null`, or the other queries must return no rows:
@@ -397,10 +407,9 @@ Integration status shows how many remain; remove the previous key only when that
 2. Set `SECRETS_ENCRYPTION_KEY_PREVIOUS` to the old key and `SECRETS_ENCRYPTION_KEY` to the new key in
    Coolify, then redeploy (one replica). Old payloads still decrypt; new saves use the new key.
 3. Verify with Marketing settings, Integration status, **Test all**.
-4. Keep the old key in `SECRETS_ENCRYPTION_KEY_PREVIOUS`. Removing it is not safe until every team
-   API key and Search Console refresh token has been re-saved, and there is no tool to find or
-   rewrite them. Removing it early leaves those credentials undecryptable (teams must re-enter keys
-   and reconnect Google).
+4. Wait until Marketing settings → Integration status shows 0 keys on the previous key (the sweep
+   runs hourly), then remove `SECRETS_ENCRYPTION_KEY_PREVIOUS` and redeploy. Removing it earlier
+   leaves the remaining credentials undecryptable (teams must re-enter keys and reconnect Google).
 5. If the key was leaked, rotate as above and also have teams revoke and re-enter provider keys;
    assume the old key stays needed until they have.
 6. Store current and previous keys outside the app host. Restoring a database without the matching
@@ -408,15 +417,18 @@ Integration status shows how many remain; remove the previous key only when that
 
 ### Marketing go-live checklist
 
-- [ ] `SECRETS_ENCRYPTION_KEY` set and recorded in the secret store; `..._PREVIOUS` empty.
-- [ ] Cloud: `FIRECRAWL_API_KEY` and `PAGESPEED_API_KEY` are unset; `REDDIT_USER_AGENT` set if Reddit is enabled.
-- [ ] Optional sources configured: Reddit (id, secret, user agent), Bluesky, Google (redirect URI registered).
+- [ ] Backup taken.
+- [ ] Pre-deploy SQL (the `0045` pre-check above) checked; no duplicate active rows.
+- [ ] `migrate` succeeded (`0044`-`0052` recorded).
+- [ ] Config and env: `SECRETS_ENCRYPTION_KEY` set and recorded in the secret store; `..._PREVIOUS` empty.
+- [ ] Config and env: cloud: `FIRECRAWL_API_KEY` and `PAGESPEED_API_KEY` are unset, and `MARKETING_ALLOW_INSTANCE_KEYS` is unset (or not `true`) until billing exists; `REDDIT_USER_AGENT` set if Reddit is enabled.
+- [ ] Config and env: optional sources configured: Reddit (id, secret, user agent), Bluesky, Google (redirect URI registered).
+- [ ] Deploy with one app replica (stop-before-start).
+- [ ] Scheduler startup log shows `Scheduler backend: Nitro scheduled tasks`, and `marketing:*` tasks run after a few minutes, including `marketing:retention` after its next 03:30 UTC run.
 - [ ] Egress to the hosts above works from the app container.
-- [ ] Pre-deploy SQL checked; backup taken; `migrate` succeeded (`0044`-`0049` recorded); one app replica.
-- [ ] Startup log shows `Scheduler backend: Nitro scheduled tasks`, and `marketing:*` tasks run after a few minutes.
 - [ ] As team admin: enable the Marketing module, then Marketing settings, Integration status, **Test all**: every configured integration passes.
 - [ ] Verify a site (meta tag, file or DNS method) and confirm it shows as verified.
 - [ ] Start the first audit; it moves from queued to complete within a few ticks and issues appear.
 - [ ] Save a team LLM key, add a prompt, start the first visibility run; answers complete and usage is recorded.
-- [ ] Digest email: with a mention present, confirm one digest arrives after 08:00 UTC (SMTP works, no duplicates).
 - [ ] Complete the Google Search Console connect round trip back to the dashboard.
+- [ ] Digest email: with a mention present, confirm one digest arrives after 08:00 UTC (SMTP works, no duplicates).
