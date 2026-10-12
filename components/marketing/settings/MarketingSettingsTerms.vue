@@ -38,8 +38,8 @@
               <form
                 v-if="editingId === term.id"
                 class="space-y-3"
+                :data-inline-form="`edit-${term.id}`"
                 @submit.prevent="saveEdit(term)"
-                @keydown.esc="cancelEdit"
               >
                 <div class="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -91,6 +91,7 @@
                     size="icon"
                     variant="ghost"
                     :aria-label="`Edit ${term.label}`"
+                    :data-inline-opener="`edit-${term.id}`"
                     :disabled="saving"
                     @click="startEdit(term)"
                   >
@@ -113,8 +114,8 @@
           <form
             v-if="adding === group.kind"
             class="space-y-3 rounded-md border border-dashed p-3"
+            :data-inline-form="`add-${group.kind}`"
             @submit.prevent="create(group.kind)"
-            @keydown.esc="cancelAdd"
           >
             <div class="grid gap-3 sm:grid-cols-2">
               <div>
@@ -163,6 +164,7 @@
             variant="outline"
             :disabled="terms.length >= limit || saving"
             :data-testid="`marketing-terms-add-${group.kind}`"
+            :data-inline-opener="`add-${group.kind}`"
             @click="startAdd(group.kind)"
           >
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -179,6 +181,7 @@
 <script>
 import { apiErrorMessage, apiErrorDetails } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
+import inlineFormMixin from '~/lib/inline-form-mixin'
 
 const GROUPS = [
   {
@@ -209,6 +212,8 @@ const emptyDraft = () => ({ label: '', aliases: '', competitorDomain: '' })
 export default {
   name: 'MarketingSettingsTerms',
 
+  mixins: [inlineFormMixin],
+
   props: {
     product: { type: Object, required: true },
     siteAdded: { type: Boolean, default: false },
@@ -232,6 +237,14 @@ export default {
   },
 
   watch: {
+    adding(kind) {
+      if (kind) this.inlineOpen(`add-${kind}`, () => this.cancelAdd())
+      else if (!this.editingId) this.inlineClose()
+    },
+    editingId(id) {
+      if (id) this.inlineOpen(`edit-${id}`, () => this.cancelEdit())
+      else if (!this.adding) this.inlineClose()
+    },
     siteAdded: {
       immediate: true,
       handler(value) {

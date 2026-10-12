@@ -230,7 +230,13 @@ describe('GET /api/marketing/r/[token]', () => {
   it('returns product name, first name and submitted flag only', async () => {
     state.selectQueue = [[requestRow()], []]
     const response = (await publicInfo({} as never)) as { data: Record<string, unknown> }
-    expect(response.data).toEqual({ productName: 'Acme', firstName: 'Jane', alreadySubmitted: false, canSubmit: true })
+    expect(response.data).toEqual({
+      productName: 'Acme',
+      firstName: 'Jane',
+      alreadySubmitted: false,
+      withdrawn: false,
+      canSubmit: true,
+    })
     expect(JSON.stringify(response)).not.toContain('example.com')
   })
 
@@ -238,6 +244,17 @@ describe('GET /api/marketing/r/[token]', () => {
     state.selectQueue = [[requestRow()], [{ id: 't1' }]]
     const response = (await publicInfo({} as never)) as { data: { alreadySubmitted: boolean } }
     expect(response.data.alreadySubmitted).toBe(true)
+  })
+
+  it('reports a withdrawn testimonial', async () => {
+    const created = new Date('2026-10-01T10:00:00Z')
+    const touched = new Date('2026-10-02T10:00:00Z')
+    state.selectQueue = [
+      [requestRow()],
+      [{ id: 't1', consentPublic: false, createdAt: created, moderatedAt: null, updatedAt: touched }],
+    ]
+    const response = (await publicInfo({} as never)) as { data: { withdrawn: boolean } }
+    expect(response.data.withdrawn).toBe(true)
   })
 
   it('404s for unknown and malformed tokens', async () => {

@@ -97,7 +97,7 @@
               @update:model-value="(value) => toggle(prompt, value)"
             />
             <div class="min-w-0 flex-1">
-              <div v-if="editingId === prompt.id" class="flex gap-2">
+              <div v-if="editingId === prompt.id" class="flex gap-2" :data-inline-form="`edit-${prompt.id}`">
                 <Input
                   v-model="editText"
                   maxlength="300"
@@ -113,7 +113,13 @@
               <p v-else :class="['text-sm', !prompt.active && 'text-muted-foreground']">{{ prompt.text }}</p>
             </div>
             <div v-if="editingId !== prompt.id" class="flex shrink-0 gap-1">
-              <Button size="sm" variant="ghost" aria-label="Edit prompt" @click="startEdit(prompt)">
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Edit prompt"
+                :data-inline-opener="`edit-${prompt.id}`"
+                @click="startEdit(prompt)"
+              >
                 <Icon name="lucide:pencil" class="h-4 w-4" />
               </Button>
               <Button size="sm" variant="ghost" aria-label="Delete prompt" :disabled="saving" @click="remove(prompt)">
@@ -130,9 +136,12 @@
 <script>
 import { apiErrorMessage } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
+import inlineFormMixin from '~/lib/inline-form-mixin'
 
 export default {
   name: 'VisibilityPrompts',
+
+  mixins: [inlineFormMixin],
 
   props: {
     projectId: { type: String, required: true },
@@ -167,6 +176,10 @@ export default {
   },
 
   watch: {
+    editingId(id) {
+      if (id) this.inlineOpen(`edit-${id}`, () => (this.editingId = null))
+      else this.inlineClose()
+    },
     projectId: {
       immediate: true,
       handler() {
