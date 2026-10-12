@@ -7,7 +7,9 @@
  *     description: >
  *       Cursor-paginated, newest published first. Also returns counts by status
  *       (with the kind and source filters applied) and whether the site is
- *       verified and has terms configured.
+ *       verified and has terms configured. `canEscalate` is true when Support is on and the
+ *       caller can work in a support inbox; escalated items carry `conversationId` and
+ *       `conversationInboxId` only when the caller can open that inbox (otherwise both are null).
  *     operationId: listMarketingMentions
  *     parameters:
  *       - in: path
@@ -38,7 +40,9 @@
 import { and, count, desc, eq, lt, or, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
+import { conversation } from '~/server/database/schema/support'
 import { marketingTerm, mention } from '~/server/database/schema/marketing'
+import { accessibleInboxIds, canEscalateMentions } from '~/server/services/marketing/mentions/escalation'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { findMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
@@ -57,18 +61,20 @@ const querySchema = z.object({
 export default defineEventHandler(async (event) => {
   const { session } = await requireAuthWithResolvedTeam(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
-  await requireMarketingAccess(projectId, session.user.id)
+  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
 
   const query = validateQuery(event, querySchema)
   const cursor = query.cursor ? decodeListCursor(query.cursor, 'mention') : null
 
   const counts = { new: 0, seen: 0, dismissed: 0, escalated: 0 }
+  const canEscalate = await canEscalateMentions(teamId, projectId, session.user.id)
   const site = await findMentionsSite(projectId)
   if (!site) {
     return createSuccessResponse({
       items: [],
       nextCursor: null,
       counts,
+      canEscalate,
       site: { exists: false, verified: false, termCount: 0 },
     })
   }
@@ -104,9 +110,12 @@ export default defineEventHandler(async (event) => {
         createdAt: mention.createdAt,
         termId: mention.termId,
         termLabel: marketingTerm.label,
+        conversationId: mention.conversationId,
+        conversationInboxId: conversation.inboxId,
       })
       .from(mention)
       .leftJoin(marketingTerm, eq(marketingTerm.id, mention.termId))
+      .leftJoin(conversation, eq(conversation.id, mention.conversationId))
       .where(and(...listConditions))
       .orderBy(desc(mention.publishedAt), desc(mention.id))
       .limit(query.limit + 1),
@@ -124,10 +133,21 @@ export default defineEventHandler(async (event) => {
   const items = hasMore ? rows.slice(0, query.limit) : rows
   const last = items[items.length - 1]
 
+  const reachable = await accessibleInboxIds(
+    items.flatMap((row) => (row.conversationInboxId ? [row.conversationInboxId] : [])),
+    session.user.id
+  )
+  const visibleItems = items.map((row) =>
+    row.conversationInboxId && reachable.has(row.conversationInboxId)
+      ? row
+      : { ...row, conversationId: null, conversationInboxId: null }
+  )
+
   return createSuccessResponse({
-    items,
+    items: visibleItems,
     nextCursor: hasMore && last ? encodeListCursor({ createdAt: last.publishedAt, id: last.id }) : null,
     counts,
+    canEscalate,
     site: { exists: true, verified: site.verifiedAt !== null, termCount: Number(termTotal?.total ?? 0) },
   })
 })

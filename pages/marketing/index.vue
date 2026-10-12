@@ -6,10 +6,14 @@
           <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing</h1>
           <p class="text-muted-foreground mt-1">Get your product found by search engines, AI assistants and people</p>
         </div>
-        <MarketingProductPicker @change="onProductChange" />
+        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
       </div>
 
-      <template v-if="pickerReady">
+      <p v-if="pickerError" class="text-sm text-muted-foreground" data-testid="marketing-picker-error">
+        Products could not be loaded. Use Retry above to try again.
+      </p>
+
+      <template v-else-if="pickerReady">
         <Card v-if="!product">
           <CardContent class="py-10 text-center">
             <p class="font-medium mb-1">No products yet</p>
@@ -69,9 +73,18 @@
                     </p>
                     <p v-if="!step.done" class="text-xs text-muted-foreground">{{ step.hint }}</p>
                   </div>
-                  <Button v-if="!step.done" as-child size="sm" variant="outline">
-                    <NuxtLink :to="settingsLink">{{ step.action }}</NuxtLink>
-                  </Button>
+                  <template v-if="!step.done">
+                    <span
+                      v-if="step.adminOnly && canManageSite === false"
+                      class="text-xs text-muted-foreground"
+                      :data-testid="`setup-${step.key}-admin-note`"
+                    >
+                      Ask a team admin
+                    </span>
+                    <Button v-else as-child size="sm" variant="outline">
+                      <NuxtLink :to="settingsLink">{{ step.action }}</NuxtLink>
+                    </Button>
+                  </template>
                 </li>
               </ul>
             </CardContent>
@@ -125,7 +138,7 @@
                   </p>
                 </template>
                 <p v-else-if="!overview.setup.hasLlmKey" class="text-sm text-muted-foreground">
-                  Add an Anthropic or OpenAI key to measure how AI assistants talk about you.
+                  Add an Anthropic, OpenAI, Gemini or Perplexity key to measure how AI assistants talk about you.
                 </p>
                 <p v-else class="text-sm text-muted-foreground">No run yet.</p>
                 <Button as-child variant="outline" size="sm">
@@ -142,9 +155,9 @@
                 </CardTitle>
               </CardHeader>
               <CardContent class="space-y-3">
-                <p class="text-3xl font-bold">{{ overview.newMentions }}</p>
+                <p class="text-3xl font-bold">{{ overview.newMentions ?? 0 }}</p>
                 <p class="text-xs text-muted-foreground">
-                  new {{ overview.newMentions === 1 ? 'mention' : 'mentions' }}
+                  new {{ overview?.newMentions === 1 ? 'mention' : 'mentions' }}
                 </p>
                 <Button as-child variant="outline" size="sm">
                   <NuxtLink :to="withProduct('/marketing/mentions')">Open mentions</NuxtLink>
@@ -284,6 +297,61 @@
                 </Button>
               </CardContent>
             </Card>
+
+            <Card data-testid="marketing-card-competitors">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:binoculars" class="w-4 h-4" />
+                  Competitors
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <template v-if="overview.competitors?.watching || overview.competitors?.unseenChanges">
+                  <p class="text-2xl font-semibold">{{ overview.competitors.unseenChanges ?? 0 }}</p>
+                  <p class="text-xs text-muted-foreground">
+                    unseen {{ overview.competitors.unseenChanges === 1 ? 'change' : 'changes' }} across
+                    {{ overview.competitors.watching ?? 0 }} watched
+                    {{ overview.competitors.watching === 1 ? 'page' : 'pages' }}
+                  </p>
+                </template>
+                <p v-else class="text-sm text-muted-foreground">
+                  Watch competitors' pricing and changelog pages for changes.
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/marketing/competitors')">
+                    {{
+                      overview.competitors?.watching || overview.competitors?.unseenChanges
+                        ? 'Review changes'
+                        : 'Watch a competitor'
+                    }}
+                  </NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card data-testid="marketing-card-launch-kit">
+              <CardHeader>
+                <CardTitle class="flex items-center gap-2 text-base">
+                  <Icon name="lucide:rocket" class="w-4 h-4" />
+                  Launch kit
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <p class="text-2xl font-semibold">
+                  {{ overview.launchKit?.live ?? 0 }}
+                  <span class="text-sm font-normal text-muted-foreground">
+                    / {{ overview.launchKit?.catalogSize ?? 0 }} live
+                  </span>
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  {{ overview.launchKit?.submitted ?? 0 }} submitted · {{ overview.launchKit?.inProgress ?? 0 }} in
+                  progress
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink :to="withProduct('/marketing/launch')">Open launch kit</NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
           </div>
 
           <Card data-testid="marketing-usage">
@@ -328,6 +396,8 @@ export default {
       isLoading: false,
       error: null,
       disabledMessage: null,
+      pickerError: false,
+      canManageSite: null,
     }
   },
 
@@ -341,6 +411,7 @@ export default {
           title: 'Add your site',
           hint: 'Tell Marketing which website to look at.',
           action: 'Add site',
+          adminOnly: true,
           done: setup.siteAdded,
         },
         {
@@ -348,6 +419,7 @@ export default {
           title: 'Verify you own it',
           hint: 'Add a DNS record, a meta tag or a file. Nothing runs before this.',
           action: 'Verify',
+          adminOnly: true,
           done: setup.siteVerified,
         },
         {
@@ -360,7 +432,7 @@ export default {
         {
           key: 'keys',
           title: 'Add an AI key',
-          hint: 'An Anthropic or OpenAI key unlocks AI visibility. A Firecrawl key is optional and unlocks the full site crawl.',
+          hint: 'An Anthropic, OpenAI, Gemini or Perplexity key unlocks AI visibility. A Firecrawl key is optional and unlocks the full site crawl.',
           action: 'Add keys',
           done: setup.hasLlmKey,
         },
@@ -449,9 +521,27 @@ export default {
       return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     },
 
+    onPickerError() {
+      this.product = null
+      this.overview = null
+      this.pickerError = true
+      this.pickerReady = true
+    },
+
+    async loadCanManage(productId) {
+      try {
+        const response = await $fetch(`/api/marketing/projects/${productId}/site`)
+        if (this.product?.id === productId) this.canManageSite = response?.data?.canManage ?? null
+      } catch {
+        // Unknown: keep the action buttons rather than hide them wrongly
+      }
+    },
+
     async onProductChange(product) {
       this.pickerReady = true
+      this.pickerError = false
       this.product = product
+      this.canManageSite = null
       this.overview = null
       this.disabledMessage = null
       this.error = null
@@ -464,6 +554,7 @@ export default {
       this.isLoading = true
       this.error = null
       this.disabledMessage = null
+      this.loadCanManage(productId)
       try {
         const response = await $fetch(`/api/marketing/projects/${productId}/overview`)
         if (this.product?.id !== productId) return

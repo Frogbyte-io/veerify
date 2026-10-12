@@ -77,6 +77,23 @@
           <Icon name="lucide:rotate-ccw" class="mr-1.5 h-3.5 w-3.5" />
           Mark new
         </Button>
+        <Button
+          v-if="canEscalate && mention.status !== 'escalated'"
+          variant="ghost"
+          size="sm"
+          :disabled="busy"
+          data-testid="mention-escalate"
+          @click="$emit('escalate', mention.id)"
+        >
+          <Icon name="lucide:life-buoy" class="mr-1.5 h-3.5 w-3.5" />
+          Escalate to support
+        </Button>
+        <Button v-if="conversationLink" as-child variant="ghost" size="sm" data-testid="mention-view-conversation">
+          <NuxtLink :to="conversationLink">
+            <Icon name="lucide:message-square" class="mr-1.5 h-3.5 w-3.5" />
+            View conversation
+          </NuxtLink>
+        </Button>
         <span v-if="mention.termLabel" class="ml-auto text-xs text-muted-foreground"
           >Matched: {{ mention.termLabel }}</span
         >
@@ -129,9 +146,10 @@ export default {
     mention: { type: Object, required: true },
     selected: { type: Boolean, default: false },
     busy: { type: Boolean, default: false },
+    canEscalate: { type: Boolean, default: false },
   },
 
-  emits: ['toggle', 'status'],
+  emits: ['toggle', 'status', 'escalate'],
 
   computed: {
     sourceLabel() {
@@ -145,6 +163,11 @@ export default {
     },
     kindVariant() {
       return KINDS[this.mention.kind]?.variant || 'outline'
+    },
+    conversationLink() {
+      const { conversationId, conversationInboxId } = this.mention
+      if (!conversationId || !conversationInboxId) return null
+      return { path: '/support', query: { inboxId: conversationInboxId, conversationId } }
     },
     safeUrl() {
       try {

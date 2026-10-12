@@ -1,10 +1,14 @@
 import { anthropicProvider } from './anthropic'
+import { geminiProvider } from './gemini'
 import { openaiProvider } from './openai'
+import { perplexityProvider } from './perplexity'
 import type { LlmProvider, LlmProviderId } from './types'
 
 const PROVIDERS: Record<LlmProviderId, LlmProvider> = {
   anthropic: anthropicProvider,
   openai: openaiProvider,
+  perplexity: perplexityProvider,
+  gemini: geminiProvider,
 }
 
 export const LLM_PROVIDERS: { id: LlmProviderId; label: string }[] = Object.values(PROVIDERS).map(({ id, label }) => ({

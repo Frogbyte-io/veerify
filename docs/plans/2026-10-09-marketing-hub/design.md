@@ -254,6 +254,31 @@ it for _conversations_. A mention can be escalated into a support conversation, 
   recent query snapshots are kept, which is about 12 days of history with a daily sync. Without an
   OAuth app the integration shows as not configured.
 
+#### M6 implementation decisions (October 10, 2026)
+
+- **More providers:** Perplexity (Sonar, which searches the web natively) and Google Gemini (with
+  Google Search grounding) are added as bring-your-own-key providers for AI visibility, next to Claude
+  and OpenAI.
+- **Escalating mentions:** a mention can be turned into a support conversation in the team's inbox
+  (needs Support enabled). The mention links to the conversation. New mentions trigger a thin realtime
+  event on `team:<id>`, and team members can turn off the daily digest in their notification settings.
+- **Launch kit:** a curated catalog of launch sites and directories lives in code (Product Hunt,
+  BetaList, AlternativeTo, G2, Capterra, SaaS directories and others). Each item has a category and a
+  submission URL. Each product tracks a status per directory (todo, in progress, submitted, live,
+  rejected or skipped) and can add custom directories.
+- **Competitor change tracking:**
+  - Only public pages of competitors the team already listed are watched, at most 3 URLs per
+    competitor and 15 per site.
+  - Pages are fetched at most once a day with the `VeerifyBot` user agent, through safe-fetch. The
+    competitor's `robots.txt` is respected, and a blocked page is marked `blocked_by_robots` and
+    never fetched.
+  - Only normalised text is stored, capped at 50 KB. A change records the added and removed lines.
+  - An optional one-paragraph summary is written with the team's own LLM key, under the same budget
+    checks as the other LLM features.
+  - This is the "separate review of the abuse question" called for above. Risk stays low because the
+    rate is low, there is one request per page per day, robots rules are honoured, and the bot
+    identifies itself.
+
 ### 5. Later (M6+)
 
 - A launch kit: directory checklist (Product Hunt, BetaList, AlternativeTo, SaaS directories) with

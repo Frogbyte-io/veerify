@@ -101,7 +101,7 @@ const RUN_ERROR_MESSAGES: Record<VisibilityRunErrorCode, string> = {
   site_unverified: 'Verify your site before running AI visibility',
   no_brand: 'Add at least one brand term before running AI visibility',
   no_prompts: 'Add at least one active prompt before running AI visibility',
-  no_key: 'Add a valid Anthropic or OpenAI API key before running AI visibility',
+  no_key: 'Add a valid Anthropic, OpenAI, Gemini or Perplexity API key before running AI visibility',
   already_running: 'A run is already queued or in progress for this site',
 }
 

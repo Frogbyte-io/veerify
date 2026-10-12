@@ -17,7 +17,7 @@
           size="sm"
           :variant="hasDrafts ? 'outline' : 'default'"
           :disabled="generating || !hasUsableKey"
-          :title="hasUsableKey ? '' : 'Add an Anthropic or OpenAI key in Marketing settings first'"
+          :title="hasUsableKey ? '' : 'Add an Anthropic, OpenAI, Gemini or Perplexity key in Marketing settings first'"
           :data-testid="`announcement-generate-${entry.id}`"
           @click="generate"
         >

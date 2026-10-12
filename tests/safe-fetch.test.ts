@@ -122,6 +122,15 @@ describe('safeFetchText', () => {
     expect(await kindOf(safeFetchText('https://example.com/'))).toBe('blocked_address')
   })
 
+  it('returns the redirect response instead of following it with manualRedirects', async () => {
+    mocks.handler.mockReset()
+    mocks.handler.mockReturnValueOnce({ status: 301, headers: { location: 'https://other.com/x' } })
+    const result = await safeFetchText('https://example.com/start', { maxRedirects: 0, manualRedirects: true })
+    expect(result.status).toBe(301)
+    expect(result.headers.location).toBe('https://other.com/x')
+    expect(mocks.handler).toHaveBeenCalledTimes(1)
+  })
+
   it('throws too_many_redirects', async () => {
     mocks.handler.mockReturnValue({ status: 302, headers: { location: '/loop' } })
     expect(await kindOf(safeFetchText('https://example.com/', { maxRedirects: 2 }))).toBe('too_many_redirects')

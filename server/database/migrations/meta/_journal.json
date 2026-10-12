@@ -337,6 +337,13 @@
       "when": 1791619200331,
       "tag": "0047_red_squadron_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791622125806,
+      "tag": "0048_huge_giant_girl",
+      "breakpoints": true
     }
   ]
 }

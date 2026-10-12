@@ -493,6 +493,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/marketing-competitors-check": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Check watched competitor pages for changes",
+      "operationId": "cronMarketingCompetitorsCheck",
+      "responses": {
+        "200": {
+          "description": "Competitor check executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/marketing-mentions-digest": {
     "get": {
       "tags": [
@@ -1248,7 +1265,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Generate announcement drafts for a published changelog entry",
-      "description": "Uses the team's own LLM key (Anthropic first, else OpenAI). Regenerating overwrites existing drafts, hand edits included. Nothing is ever posted.\n",
+      "description": "Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Regenerating overwrites existing drafts, hand edits included. Nothing is ever posted.\n",
       "operationId": "generateMarketingAnnouncements",
       "parameters": [
         {
@@ -1511,6 +1528,362 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/competitors": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Competitors with their watched pages and recent changes",
+      "description": "Any team member with Marketing access. Lists the competitor terms of the site with their watched pages, the 50 most recent detected changes (newest first) and the number of unseen changes.\n",
+      "operationId": "getMarketingCompetitors",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Competitors",
+          "watches and changes": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/changes/seen": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Mark competitor changes as seen",
+      "description": "Any team member with Marketing access. Marks every unseen change when `ids` is omitted.",
+      "operationId": "markMarketingCompetitorChangesSeen",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "ids": {
+                  "type": "array",
+                  "maxItems": 100,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Changes marked as seen"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/settings": {
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Turn AI summaries of competitor changes on or off",
+      "description": "Marketing admin only. Summaries use the team's own LLM key and its monthly budget. Stored in the product settings (no extra table).\n",
+      "operationId": "updateMarketingCompetitorSettings",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "summarize"
+              ],
+              "properties": {
+                "summarize": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Setting saved"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/watches": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Watch a public competitor page for changes",
+      "description": "Marketing admin only. https pages only; the competitor must have a domain set (a bare public suffix such as github.io does not count), the host cannot be the product's own site and must be on that domain. At most 3 pages per competitor, 15 per site and 20 new watches per day per site. The page is fetched at most once a day as VeerifyBot, and robots.txt is respected.\n",
+      "operationId": "createMarketingCompetitorWatch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "termId",
+                "url",
+                "kind"
+              ],
+              "properties": {
+                "termId": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "pricing",
+                    "changelog",
+                    "homepage",
+                    "other"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Watch created"
+        },
+        "400": {
+          "description": "Validation failed or a limit is reached"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Site or competitor not found"
+        },
+        "409": {
+          "description": "This page is already watched",
+          "or the competitor has no domain set": null
+        },
+        "429": {
+          "description": "Too many watches created today"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/watches/{watchId}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Stop watching a competitor page",
+      "description": "Marketing admin only. Its recorded changes are deleted with it.",
+      "operationId": "deleteMarketingCompetitorWatch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "watchId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Watch deleted"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Watch not found for this product"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Pause, resume or re-label a watched page",
+      "description": "Marketing admin only. Resuming also clears an error or robots.txt block, so the next scheduled check tries the page again.\n",
+      "operationId": "updateMarketingCompetitorWatch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "watchId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "paused"
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "pricing",
+                    "changelog",
+                    "homepage",
+                    "other"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Watch updated"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Watch not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/competitors/watches/{watchId}/check": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Check a watched page now",
+      "description": "Marketing admin only, and the site must be verified. Refused when the watch was checked in the last hour; also at most 3 manual checks per day per site and competitor host (so deleting and re-creating a watch does not reset the limit). Takes the same claim as the scheduled check and uses the same robots.txt, per-host spacing and SSRF-safe fetch path. The first check of a page records its baseline.\n",
+      "operationId": "checkMarketingCompetitorWatch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "watchId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Check finished; `outcome` says what happened"
+        },
+        "403": {
+          "description": "Not a marketing admin",
+          "Marketing is off": null,
+          "or the site is not verified": null
+        },
+        "404": {
+          "description": "Watch not found for this product"
+        },
+        "429": {
+          "description": "Checked within the last hour",
+          "or the daily manual check limit is reached": null
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/language/apply": {
     "post": {
       "tags": [
@@ -1691,13 +2064,225 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/launch-kit": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Launch kit checklist for a product",
+      "description": "The curated directory catalog merged with the product's status per directory, the product's custom directories, and progress counts by status.\n",
+      "operationId": "getMarketingLaunchKit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Directories",
+          "custom directories and progress": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/launch-kit/{directoryId}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Remove a custom directory or reset a catalog directory to todo",
+      "operationId": "deleteMarketingLaunchKitItem",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "directoryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Custom directory deleted",
+          "or catalog directory reset": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Unknown directory"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set the status, listing URL and notes of a launch kit directory",
+      "description": "Upserts the product's item for a catalog directory, or updates an existing custom directory (`custom:<id>`). `submittedAt` and `liveAt` are set the first time the status becomes submitted or live. Omitting `url` or `notes` keeps the current value; null or an empty string clears it.\n",
+      "operationId": "updateMarketingLaunchKitItem",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "directoryId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "todo",
+                    "in_progress",
+                    "submitted",
+                    "live",
+                    "rejected",
+                    "skipped"
+                  ]
+                },
+                "url": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 500,
+                  "description": "https URL"
+                },
+                "notes": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 1000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Item saved"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Unknown directory"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/launch-kit/custom": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Add a custom directory to the launch kit",
+      "description": "At most 30 custom directories per product.",
+      "operationId": "createMarketingLaunchKitCustom",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "url": {
+                  "type": "string",
+                  "nullable": true,
+                  "maxLength": 500,
+                  "description": "https URL"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Custom directory created"
+        },
+        "400": {
+          "description": "Validation failed or the 30 directory limit is reached"
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Marketing is off": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/mentions": {
     "get": {
       "tags": [
         "Marketing"
       ],
       "summary": "List mentions for a product",
-      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured.\n",
+      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured. `canEscalate` is true when Support is on and the caller can work in a support inbox; escalated items carry `conversationId` and `conversationInboxId` only when the caller can open that inbox (otherwise both are null).\n",
       "operationId": "listMarketingMentions",
       "parameters": [
         {
@@ -1838,6 +2423,50 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Mention not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/mentions/{mentionId}/escalate": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Escalate a mention to a support conversation",
+      "description": "Creates a conversation in the team's support inbox whose first message is an internal note (never sent to anyone) describing the mention, and marks the mention escalated. Idempotent: escalating again returns the existing conversation. Requires the Support module and access to a support inbox.\n",
+      "operationId": "escalateMarketingMention",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "mentionId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "escalated: true. Conversation id, inbox id and display id are included only when the caller can open that inbox"
+        },
+        "403": {
+          "description": "Not a team member",
+          "Marketing is off": null,
+          "or no access to a support inbox": null
+        },
+        "404": {
+          "description": "Mention not found for this product"
+        },
+        "409": {
+          "description": "Support is not enabled for this team"
         }
       }
     }
@@ -2715,7 +3344,7 @@ export const openapiPaths = {
       "tags": [
         "Marketing"
       ],
-      "summary": "Update a term's name, aliases or competitor domain",
+      "summary": "Update a term's name, aliases or competitor domain (changing it on a term with watches needs a marketing admin)",
       "operationId": "updateMarketingTerm",
       "parameters": [
         {
@@ -2775,7 +3404,8 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Not a team member",
-          "or Marketing is off": null
+          "Marketing is off": null,
+          "or the competitor domain of a term with watched pages is changed by a non-admin": null
         },
         "404": {
           "description": "Term or site not found"
@@ -3112,7 +3742,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Suggest AI visibility prompts (not saved)",
-      "description": "Uses the team's own LLM key (Anthropic first, else OpenAI). Only the product name, description and feedback category names are sent to the provider.\n",
+      "description": "Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Only the product name, description and feedback category names are sent to the provider.\n",
       "operationId": "suggestVisibilityPrompts",
       "parameters": [
         {
@@ -3620,6 +4250,8 @@ export const openapiPaths = {
             "enum": [
               "anthropic",
               "openai",
+              "perplexity",
+              "gemini",
               "firecrawl",
               "pagespeed"
             ]
@@ -3643,7 +4275,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Set or clear the monthly budget of an LLM key",
-      "description": "Team admins only. Applies to anthropic and openai keys. Null removes the cap.",
+      "description": "Team admins only. Applies to LLM provider keys (anthropic, openai, perplexity, gemini). Null removes the cap.",
       "operationId": "patchMarketingCredential",
       "parameters": [
         {
@@ -3662,7 +4294,9 @@ export const openapiPaths = {
             "type": "string",
             "enum": [
               "anthropic",
-              "openai"
+              "openai",
+              "perplexity",
+              "gemini"
             ]
           }
         }
@@ -3726,6 +4360,8 @@ export const openapiPaths = {
             "enum": [
               "anthropic",
               "openai",
+              "perplexity",
+              "gemini",
               "firecrawl",
               "pagespeed"
             ]

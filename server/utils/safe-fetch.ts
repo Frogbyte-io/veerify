@@ -21,6 +21,8 @@ export interface SafeFetchOptions {
   timeoutMs?: number
   maxBytes?: number
   maxRedirects?: number
+  /** Return 3xx responses (with their Location header) instead of following them, so the caller can vet each hop. */
+  manualRedirects?: boolean
   accept?: string
   userAgent?: string
   signal?: AbortSignal
@@ -203,7 +205,7 @@ export async function safeFetchText(url: string, opts: SafeFetchOptions = {}): P
   for (let hop = 0; ; hop++) {
     const response = await requestOnce(current, options)
     const location = response.headers.location
-    if (REDIRECT_STATUSES.has(response.status) && location) {
+    if (REDIRECT_STATUSES.has(response.status) && location && !opts.manualRedirects) {
       if (hop >= maxRedirects) throw new SafeFetchError('too_many_redirects', 'Too many redirects')
       let next: string
       try {

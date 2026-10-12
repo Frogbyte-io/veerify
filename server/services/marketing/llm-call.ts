@@ -3,7 +3,7 @@
  * Shared by the features that call the model outside the scheduled runner:
  * prompt suggestions, announcement drafts and customer language analysis.
  *
- * Handles key selection (Anthropic first, else OpenAI), the monthly budget
+ * Handles key selection (Anthropic first, then OpenAI, Gemini, Perplexity), the monthly budget
  * guard, usage recording and the mapping of provider failures to HTTP errors.
  */
 

@@ -75,7 +75,7 @@
 <script>
 import { apiErrorMessage } from '~/lib/api-error'
 
-const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'OpenAI' }
+const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'OpenAI', gemini: 'Google Gemini', perplexity: 'Perplexity' }
 
 export default {
   name: 'VisibilityAnswersDialog',

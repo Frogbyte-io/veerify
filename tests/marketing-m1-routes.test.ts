@@ -364,7 +364,7 @@ describe('credentials routes', () => {
 
   it('PUT rejects an unknown provider', async () => {
     state.role = 'admin'
-    state.params.provider = 'gemini'
+    state.params.provider = 'mistral'
     state.body = { apiKey: KEY }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
@@ -391,6 +391,17 @@ describe('credentials routes', () => {
     )
     expect(JSON.stringify(res)).not.toContain(KEY)
     expect(res.data.credential.keyHint).toBe('1234')
+  })
+
+  it.each(['gemini', 'perplexity'])('PUT validates and saves a %s key with a budget', async (provider) => {
+    state.role = 'admin'
+    state.params.provider = provider
+    state.body = { apiKey: KEY, monthlyBudgetCents: 500 }
+    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    await run(handler)
+    expect(teamCredentials.saveTeamCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ provider, status: 'valid', monthlyBudgetCents: 500 })
+    )
   })
 
   it('PUT saves unchecked with the error on network or server failures', async () => {
@@ -555,6 +566,51 @@ describe('terms routes', () => {
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
   })
 
+  it('needs a marketing admin to change or clear the domain of a competitor that has watches', async () => {
+    const handler = await load('~/server/api/marketing/projects/[projectId]/terms/[termId].put')
+    const rival = {
+      id: 'term1',
+      siteId: 's1',
+      kind: 'competitor',
+      label: 'Rival',
+      aliases: [],
+      competitorDomain: 'rival.com',
+    }
+    const updated = { ...rival, createdAt: new Date() }
+
+    state.role = 'member'
+    state.body = { label: 'Rival', competitorDomain: 'rival.io' }
+    state.rows = [siteRow, [rival], [{ count: 2 }]]
+    await expect(run(handler)).rejects.toMatchObject({ statusCode: 403 })
+    state.body = { label: 'Rival', competitorDomain: null }
+    state.rows = [siteRow, [rival], [{ count: 2 }]]
+    await expect(run(handler)).rejects.toMatchObject({ statusCode: 403 })
+
+    // unchanged domain, or no watches: a member may edit
+    state.body = { label: 'Rival Inc', competitorDomain: 'www.rival.com' }
+    state.rows = [siteRow, [rival], [updated]]
+    await run(handler)
+    state.body = { label: 'Rival', competitorDomain: 'rival.io' }
+    state.rows = [siteRow, [rival], [{ count: 0 }], [updated]]
+    await run(handler)
+
+    state.role = 'admin'
+    state.body = { label: 'Rival', competitorDomain: 'rival.io' }
+    state.rows = [siteRow, [rival], [{ count: 2 }], [updated]]
+    await run(handler)
+    state.role = 'member'
+  })
+
+  it('refuses a public-suffix-only competitor domain', async () => {
+    const handler = await load('~/server/api/marketing/projects/[projectId]/terms/[termId].put')
+    const rival = { id: 'term1', siteId: 's1', kind: 'competitor', label: 'Rival', aliases: [], competitorDomain: null }
+    for (const domain of ['github.io', 'vercel.app', 'https://co.uk/']) {
+      state.body = { label: 'Rival', competitorDomain: domain }
+      state.rows = [siteRow, [rival]]
+      await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
+    }
+  })
+
   it('deletes a term and 404s when it is not on this site', async () => {
     const handler = await load('~/server/api/marketing/projects/[projectId]/terms/[termId].delete')
     state.rows = [siteRow, []]
@@ -587,6 +643,22 @@ describe('overview route', () => {
     expect(res.data.announcements).toEqual({ changelogEnabled: false, withoutDrafts: 0 })
     expect(res.data.language).toEqual({ consented: false, lastRunAt: null })
     expect(res.data.changelog).toEqual({ enabled: false, latest: null })
+  })
+
+  it('counts only catalog directories in the launch kit progress', async () => {
+    vi.doMock('~/server/utils/marketing-usage', () => ({ getUsage: async () => ({}) }))
+    vi.resetModules()
+    state.rows = [[]]
+    state.ops = []
+    const { LAUNCH_DIRECTORIES } = await import('~/server/services/marketing/launch-kit/directories')
+    const { PgDialect } = await import('drizzle-orm/pg-core')
+    const handler = await load('~/server/api/marketing/projects/[projectId]/overview.get')
+    await run(handler)
+    const queries = state.ops.filter((o) => o.op === 'where').map((o) => new PgDialect().sqlToQuery(o.args[0] as never))
+    const kit = queries.find((q) => q.sql.includes('"launch_kit_item"."directory_id" in ('))
+    expect(kit).toBeDefined()
+    expect(kit!.params).toEqual(expect.arrayContaining(['p1', ...LAUNCH_DIRECTORIES.map((d) => d.id)]))
+    expect(kit!.params.some((p) => String(p).startsWith('custom:'))).toBe(false)
   })
 
   it('computes the mention rate from answers with a brand verdict', async () => {

@@ -155,6 +155,18 @@ const PROVIDERS = [
     llm: true,
   },
   {
+    id: 'gemini',
+    label: 'Google Gemini',
+    hint: 'Used for AI visibility checks on Gemini, with Google Search grounding.',
+    llm: true,
+  },
+  {
+    id: 'perplexity',
+    label: 'Perplexity',
+    hint: 'Used for AI visibility checks on Perplexity, which searches the web on every answer.',
+    llm: true,
+  },
+  {
     id: 'firecrawl',
     label: 'Firecrawl',
     hint: 'Enables the full site crawl. Without it, audits cover the home page and site files only.',

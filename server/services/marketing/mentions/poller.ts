@@ -10,6 +10,7 @@ import {
   type SocialSource,
 } from '~/server/services/social-sources'
 import { recordUsage } from '~/server/utils/marketing-usage'
+import { publishMentionsNew } from '~/server/utils/marketing-realtime'
 import { createLogger } from '~/server/utils/logger'
 import { dbMentionsStore, isMarketingOn, type MentionInsert, type MentionsStore, type SourceCursorRow } from './store'
 
@@ -37,6 +38,7 @@ export interface PollDeps {
   store?: MentionsStore
   sources?: SocialSource[]
   recordUsage?: (teamId: string, metric: string, units: number) => Promise<void>
+  publishNew?: (input: { teamId: string; projectId: string; count: number }) => Promise<void>
 }
 
 /** Start of the search window: one hour before the last poll, never older than seven days. */
@@ -111,6 +113,7 @@ export async function pollMentions(
   const store = deps.store ?? dbMentionsStore
   const sources = (deps.sources ?? SOCIAL_SOURCES).filter((source) => source.isConfigured())
   const usage = deps.recordUsage ?? recordUsage
+  const publishNew = deps.publishNew ?? publishMentionsNew
   const summary: PollSummary = { sitesPolled: 0, sourcesPolled: 0, inserted: 0, errors: 0 }
 
   const verified = (await store.loadVerifiedSites()).filter(isMarketingOn)
@@ -137,6 +140,7 @@ export async function pollMentions(
     const siteTerms = terms.get(site.siteId) ?? []
     const queries = buildQueries(siteTerms)
     let polledAny = false
+    let siteInserted = 0
 
     for (const source of dueSources) {
       if (rateLimited.has(source.id)) continue
@@ -169,7 +173,11 @@ export async function pollMentions(
       }
 
       try {
-        if (found.size > 0) summary.inserted += await store.insertMentions([...found.values()])
+        if (found.size > 0) {
+          const inserted = await store.insertMentions([...found.values()])
+          summary.inserted += inserted
+          siteInserted += inserted
+        }
         // On failure the watermark stays put (or starts at the window start), so the
         // next run re-searches the same window; inserts are idempotent.
         await store.saveCursor(site.siteId, source.id, failure ? (previous ?? since) : now, failure, {
@@ -192,6 +200,18 @@ export async function pollMentions(
     }
 
     if (polledAny) summary.sitesPolled += 1
+
+    // One thin event per site per run, only when rows were really inserted (conflicts excluded).
+    if (siteInserted > 0) {
+      try {
+        await publishNew({ teamId: site.teamId, projectId: site.projectId, count: siteInserted })
+      } catch (error) {
+        logger.warn('Mentions realtime publish failed', {
+          siteId: site.siteId,
+          error: error instanceof Error ? error.message : 'unknown',
+        })
+      }
+    }
   }
 
   try {
