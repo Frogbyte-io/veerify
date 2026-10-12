@@ -325,8 +325,10 @@ export async function pollMentions(options: PollOptions = {}, deps: PollDeps = {
         summary.inserted += inserted
         siteInserted.set(site.siteId, (siteInserted.get(site.siteId) ?? 0) + inserted)
       }
-      if (rateLimit) {
-        // Leave the cursor as it was: no failure counted, watermark and offset unchanged
+      if (rateLimit || requests === 0) {
+        // Leave the cursor as it was: no failure counted, watermark and offset unchanged. Also when the
+        // claim was taken but no request was issued (budget spent / source rate limited by another site),
+        // so the pair is due again at once instead of waiting a full interval.
         await store.releaseClaim(site.siteId, source.id as MentionSource, now, previousAttempt)
       } else if (requests > 0) {
         const plan = planRotation({

@@ -59,10 +59,10 @@ test.describe('Sidebar resizing', () => {
     await page.goto('/feedback')
     await expect(page).toHaveURL(/\/feedback/)
 
-    await expect(page.getByRole('link', { name: 'Help Center' })).toHaveCount(0)
-
+    // The sidebar is client-only: wait for a stable link to render before asserting another is absent.
     const submissionsLink = page.getByRole('link', { name: 'My Submissions' })
     await expect(submissionsLink).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Help Center' })).toHaveCount(0)
     await submissionsLink.hover()
     await submissionsLink.click()
 

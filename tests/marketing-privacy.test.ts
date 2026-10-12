@@ -60,7 +60,7 @@ describe('eraseContact', () => {
     expect(requestDelete.text).toContain('"team_id" = $1')
     expect(requestDelete.text).toContain('lower("review_request"."email") = $2')
     // Rows the retention task anonymised only have the keyed hash left
-    expect(requestDelete.text).toContain('"review_request"."email_hash" = $3')
+    expect(requestDelete.text).toContain('"review_request"."email_hash" in ($3)')
     expect(requestDelete.params).toEqual(['team-1', 'jane.doe@example.com', hashEmail('jane.doe@example.com')])
 
     const testimonialDelete = queries('delete from "testimonial"')[0]
@@ -70,7 +70,7 @@ describe('eraseContact', () => {
     expect(testimonialDelete.params).toContain('jane.doe@example.com')
     expect(testimonialDelete.params).toContain('rr1')
     // By the author's own address or hash (cleared emails keep the hash)
-    expect(testimonialDelete.text).toContain('"author_email_hash" = $')
+    expect(testimonialDelete.text).toContain('"author_email_hash" in ($')
     expect(testimonialDelete.params).toContain(hashEmail('jane.doe@example.com'))
 
     const suppression = queries('insert into "marketing_email_suppression"')[0]

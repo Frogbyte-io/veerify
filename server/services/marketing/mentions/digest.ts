@@ -19,7 +19,7 @@ export const DIGEST_HOUR_UTC = 7
 export const DIGEST_BUDGET_MS = 45_000
 /** Teams claimed and processed per batch (also the granularity of the budget check) */
 export const DIGEST_TEAM_BATCH = 25
-/** Emails sent at the same time within a batch; the time budget is checked before each email */
+/** Emails sent at the same time within a batch; the time budget is checked before each team's first email */
 export const DIGEST_SEND_CONCURRENCY = 10
 const SITE_QUERY_CHUNK = 500
 
@@ -242,8 +242,8 @@ export async function loadAdminEmailsForTeams(teamIds: string[]): Promise<Map<st
  * Multi-replica safe and resumable. Each (team, UTC date) is claimed in `marketing_usage`
  * (`digest:<date>`, INSERT ... ON CONFLICT DO NOTHING RETURNING) before anything is sent, so two
  * workers running at once split the teams and never both email one. The task runs hourly from
- * 07:00 to 11:00 UTC: a run stops starting batches and emails once its budget is spent (checked per
- * email, 10 sends in flight), and the next run continues with teams nobody has claimed yet; a team
+ * 07:00 to 11:00 UTC: a run stops starting batches and teams once its budget is spent (checked before each team's first
+ * email; a started team is always finished, so the run can overrun by that team's remaining emails), and the next run continues with teams nobody has claimed yet; a team
  * whose emails were not started at all gets its claim back. Delivery is at-most-once per team and day: a worker
  * that dies after claiming loses that team's digest for the day. When every email of a team fails
  * (for example SMTP is down) the claim is released so the next hourly run retries.
@@ -333,13 +333,18 @@ export async function sendMentionsDigests(
         entry.jobs += 1
         stats.set(job.teamId, entry)
       }
-      // Send pool: workers take the next email, re-checking the budget before each one
+      // Send pool: workers take the next email. The budget is only checked before a team's FIRST email:
+      // once any job of a team has started, all of its jobs run, because the team keeps its per-day
+      // claim and a half-sent team would never get the rest of its recipients' digests that day. The
+      // overrun past the deadline is bounded by the remaining emails of the teams already started
+      // (sites x admins per team, at most DIGEST_SEND_CONCURRENCY in flight).
       let next = 0
       const worker = async () => {
-        while (clock() < deadline) {
+        for (;;) {
           const job = jobs[next++]
           if (!job) return
           const entry = stats.get(job.teamId)!
+          if (entry.attempted === 0 && clock() >= deadline) continue
           entry.attempted += 1
           try {
             await send(job.payload)

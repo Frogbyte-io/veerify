@@ -643,6 +643,32 @@ describe('pollMentions throughput and multi-replica safety', () => {
     expect(summary.errors).toBe(1)
   })
 
+  it('releases a claimed cursor that issued no request, so it is not stuck for a full interval', async () => {
+    const lastAttemptAt = new Date(NOW.getTime() - 40 * 60 * 1000)
+    const { store, cursorWrites, releases } = makeStore({
+      cursors: [
+        {
+          siteId: 's1',
+          source: 'hackernews',
+          lastPolledAt: new Date(NOW.getTime() - 2 * HOUR),
+          lastAttemptAt,
+          consecutiveFailures: 0,
+        },
+      ],
+    })
+    let t = 0
+    // The budget runs out between claiming the cursor and the first query
+    store.claimCursor = async () => {
+      t = 100_000
+      return true
+    }
+    const hn = source('hackernews', async () => [])
+    await pollMentions({ now: NOW, budgetMs: 45_000 }, { store, sources: [hn], recordUsage: vi.fn(), clock: () => t })
+    expect(hn.search).not.toHaveBeenCalled()
+    expect(cursorWrites).toHaveLength(0)
+    expect(releases).toEqual([['s1', 'hackernews', NOW, lastAttemptAt]])
+  })
+
   it('leaves the cursor untouched on a rate limit: no failure counted, claim released', async () => {
     const lastPolledAt = new Date(NOW.getTime() - 2 * HOUR)
     const lastAttemptAt = new Date(NOW.getTime() - 40 * 60 * 1000)

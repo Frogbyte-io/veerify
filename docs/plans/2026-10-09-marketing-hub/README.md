@@ -108,14 +108,21 @@ The `marketing:retention` task runs daily (`30 3 * * *`; a Nitro task on self-ho
 - **Anonymisation, not deletion.** After 180 days a terminal review request keeps its id, token,
   project, team, trigger, source, status, timestamps and `email_hash`; `email` becomes `redacted:<id>`
   and `name` and `error` are cleared. `email_hash` (and `testimonial.author_email_hash`) is
-  HMAC-SHA256 of the lower-cased, trimmed address, keyed by a key derived from `BETTER_AUTH_SECRET` with
+  HMAC-SHA256 of the lower-cased, trimmed address, keyed by a key derived from `MARKETING_EMAIL_HASH_KEY` (preferred) or
+  `BETTER_AUTH_SECRET` with
   HKDF (info `marketing-email-hash`, `server/utils/marketing-email-hash.ts`). It is never exported or
   returned by an API. Because the token stays, the unsubscribe and withdraw links keep working for old
   emails (an unsubscribe on an anonymised row writes a hash-based suppression); suppression checks (at
   enqueue and right before sending) match by address or hash; and the unique
   (project, trigger, source, email_hash) index keeps a `shipped` event from being queued twice. Hashes
   are filled lazily by the retention task before anonymising, so existing rows need no data migration.
-  Rotating `BETTER_AUTH_SECRET` invalidates existing hashes (they no longer match a given address).
+  Writes always use the primary key (`MARKETING_EMAIL_HASH_KEY` if set, else `BETTER_AUTH_SECRET`).
+  Lookups (suppression, cooldown, erase) match every candidate hash: the primary one, the one from
+  `BETTER_AUTH_SECRET` (so installs that add `MARKETING_EMAIL_HASH_KEY` later keep matching old rows) and
+  the one from `BETTER_AUTH_SECRET_PREV` (so a secret rotation keeps matching while the previous secret
+  is configured). Set `MARKETING_EMAIL_HASH_KEY` once and never rotate it: that makes hashes independent
+  of auth secret rotation. If you rotate `BETTER_AUTH_SECRET` without it and then drop
+  `BETTER_AUTH_SECRET_PREV`, hashes written under the old secret stop matching.
 - **Erase a person:** `POST /api/marketing/teams/{teamId}/erase-contact` (team admin) deletes all review
   requests and testimonials for an email (case-insensitive, or its keyed hash, so anonymised rows and
   testimonials without an address are found too) in the team's products and keeps or creates a

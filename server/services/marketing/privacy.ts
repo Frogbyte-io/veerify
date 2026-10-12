@@ -12,7 +12,7 @@ import {
 } from '~/server/database/schema/marketing'
 import { revokeToken } from '~/server/services/google/search-console'
 import { findGscConnection, gscAad, removeGscConnection } from '~/server/services/marketing/search/connection'
-import { hashEmail, normalizeMarketingEmail } from '~/server/utils/marketing-email-hash'
+import { hashEmail, hashEmailCandidates, normalizeMarketingEmail } from '~/server/utils/marketing-email-hash'
 import { decryptSecret } from '~/server/utils/secrets'
 
 export interface EraseContactResult {
@@ -69,17 +69,21 @@ export async function writeSuppression(
 export async function eraseContact(teamId: string, rawEmail: string): Promise<EraseContactResult> {
   const email = normalizeEmail(rawEmail)
   const emailHash = hashEmail(email)
+  const emailHashes = hashEmailCandidates(email)
 
   return db.transaction(async (tx) => {
     const teamProjects = tx.select({ id: project.id }).from(project).where(eq(project.teamId, teamId))
     const matchesRequest = and(
       eq(reviewRequest.teamId, teamId),
-      or(sql`lower(${reviewRequest.email}) = ${email}`, eq(reviewRequest.emailHash, emailHash))
+      or(sql`lower(${reviewRequest.email}) = ${email}`, inArray(reviewRequest.emailHash, emailHashes))
     )
     const requests = await tx.select({ id: reviewRequest.id }).from(reviewRequest).where(matchesRequest)
     const requestIds = requests.map((row) => row.id)
 
-    const byAuthor = or(sql`lower(${testimonial.authorEmail}) = ${email}`, eq(testimonial.authorEmailHash, emailHash))
+    const byAuthor = or(
+      sql`lower(${testimonial.authorEmail}) = ${email}`,
+      inArray(testimonial.authorEmailHash, emailHashes)
+    )
     const matchesPerson = requestIds.length ? or(byAuthor, inArray(testimonial.reviewRequestId, requestIds)) : byAuthor
     const removedTestimonials = await tx
       .delete(testimonial)
