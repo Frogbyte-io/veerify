@@ -42,6 +42,8 @@ export const AUDIT_RETENTION = 10
 export const MAX_CRAWL_MINUTES = 60
 export const MAX_CONSECUTIVE_ERRORS = 10
 export const LEASE_MS = 3 * 60_000
+/** Lease taken before the long steps of finishing an audit (site files, PageSpeed) and before writing results */
+export const FINISH_LEASE_MS = 6 * 60_000
 export const SCHEDULE_INTERVAL_MS = 7 * 24 * 3_600_000
 export const MANUAL_WINDOW_MS = 24 * 3_600_000
 
@@ -483,11 +485,25 @@ async function pollCrawl(audit: AuditRow, teamId: string, deadline: number, deps
   }
 }
 
+/**
+ * Re-takes the lease for the next long step. False means the lease lapsed and another worker may have
+ * claimed the audit, so this one must stop: two workers finishing the same audit would interleave
+ * their delete/insert of issues.
+ */
+async function holdLease(audit: AuditRow, deps: RunnerDeps): Promise<boolean> {
+  const now = deps.now()
+  const held = await deps.store.extendLease(audit.id, now, new Date(now.getTime() + FINISH_LEASE_MS))
+  if (!held) logger.warn('Audit lease lost while finishing; leaving it to the current owner', { auditId: audit.id })
+  return held
+}
+
 async function finishAudit(audit: AuditRow, origin: string, teamId: string, deps: RunnerDeps) {
   const userAgent = marketingConfig.botUserAgent
+  if (!(await holdLease(audit, deps))) return
   const site: SiteFacts = await deps.fetchSiteFacts(origin, { userAgent })
   const stored = await deps.store.loadPages(audit.id)
 
+  if (!(await holdLease(audit, deps))) return
   const pagespeed = await collectPageSpeed(teamId, origin, deps)
 
   const analyzable = stored.filter((p) => !(p.facts as FactsWithError).error)
@@ -501,6 +517,8 @@ async function finishAudit(audit: AuditRow, origin: string, teamId: string, deps
   const score = computeScore(issues, analyzable.length)
 
   const idByUrl = new Map(stored.map((p) => [p.url, p.id]))
+  // PageSpeed can take a minute: confirm we still own the audit before the delete + insert below
+  if (!(await holdLease(audit, deps))) return
   // Re-entry (lease expiry mid-finish) must not duplicate issues
   await deps.store.deleteIssues(audit.id)
   await deps.store.insertIssues(

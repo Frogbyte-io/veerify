@@ -242,17 +242,19 @@ Every variable the Marketing code reads is in `.env.example` (documented), passe
 `docker-compose.yml` app environment, and listed below. Audit result: no variable is read by
 Marketing code without being in all three places.
 
-| Variable                                                        | Required?          | Cloud (veerify.io)                                                                                                                     | Self-host                                                                                        |
-| --------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `SECRETS_ENCRYPTION_KEY`                                        | Yes, to save keys  | Required. `openssl rand -base64 32`. Keep a copy in a secret store; losing it makes every saved team key unusable                      | Required before teams can save their own API keys. Back it up separately from the database       |
-| `SECRETS_ENCRYPTION_KEY_PREVIOUS`                               | Only when rotating | Empty except during a rotation (see runbook). Comma-separated list accepted                                                            | Same                                                                                             |
-| `BETTER_AUTH_URL`                                               | Yes (existing)     | `https://app.veerify.io`. Also used for the Google redirect URI, digest and review links, and the `VeerifyBot` user agent              | Public dashboard origin over HTTPS, reachable by Google when Search Console is used              |
-| `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`                        | No                 | **Do not set `FIRECRAWL_API_KEY` until billing exists.** An instance key gives every team free full crawls (billing design, stage B2)  | Optional instance-wide crawler; `FIRECRAWL_API_URL` can point at a self-hosted Firecrawl         |
-| `PAGESPEED_API_KEY`                                             | No                 | **Do not set until billing exists.** It is a shared instance fallback that every team consumes                                         | Optional; without it PageSpeed uses the team's key or is skipped                                 |
-| `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | No                 | Instance-wide: one Reddit app serves all teams and shares one API quota. Decide on Reddit API terms and capacity before enabling       | Register your own Reddit app; all three are needed for Reddit mentions                           |
-| `BLUESKY_IDENTIFIER`, `BLUESKY_APP_PASSWORD`                    | No                 | Instance-wide shared account; use a dedicated account and an app password                                                              | Handle (for example `you.bsky.social`) and an app password, never the login password             |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                      | No                 | Needs an external OAuth consent screen; `webmasters.readonly` is a sensitive scope and requires Google verification before general use | Web-application OAuth client with the Search Console API enabled; needs `SECRETS_ENCRYPTION_KEY` |
-| `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`  | No                 | Defaults (50 pages, 3 manual audits per product per day) are the cost guardrails; lower rather than raise them                         | Defaults 50 (hard cap 500) and 3                                                                 |
+| Variable                                                                        | Required?          | Cloud (veerify.io)                                                                                                                           | Self-host                                                                                        |
+| ------------------------------------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `SECRETS_ENCRYPTION_KEY`                                                        | Yes, to save keys  | Required. `openssl rand -base64 32`. Keep a copy in a secret store; losing it makes every saved team key unusable                            | Required before teams can save their own API keys. Back it up separately from the database       |
+| `SECRETS_ENCRYPTION_KEY_PREVIOUS`                                               | Only when rotating | Empty except during a rotation (see runbook). Comma-separated list accepted                                                                  | Same                                                                                             |
+| `BETTER_AUTH_URL`                                                               | Yes (existing)     | `https://app.veerify.io`. Also used for the Google redirect URI, digest and review links, and the `VeerifyBot` user agent                    | Public dashboard origin over HTTPS, reachable by Google when Search Console is used              |
+| `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`                                        | No                 | **Do not set `FIRECRAWL_API_KEY` until billing exists.** An instance key gives every team free full crawls (billing design, stage B2)        | Optional instance-wide crawler; `FIRECRAWL_API_URL` can point at a self-hosted Firecrawl         |
+| `PAGESPEED_API_KEY`                                                             | No                 | **Do not set until billing exists.** It is a shared instance fallback that every team consumes                                               | Optional; without it PageSpeed uses the team's key or is skipped                                 |
+| `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`                 | No                 | Instance-wide: one Reddit app serves all teams and shares one API quota. Decide on Reddit API terms and capacity before enabling             | Register your own Reddit app; all three are needed for Reddit mentions                           |
+| `BLUESKY_IDENTIFIER`, `BLUESKY_APP_PASSWORD`                                    | No                 | Instance-wide shared account; use a dedicated account and an app password                                                                    | Handle (for example `you.bsky.social`) and an app password, never the login password             |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                                      | No                 | Needs an external OAuth consent screen; `webmasters.readonly` is a sensitive scope and requires Google verification before general use       | Web-application OAuth client with the Search Console API enabled; needs `SECRETS_ENCRYPTION_KEY` |
+| `MARKETING_ALLOW_INSTANCE_KEYS`                                                 | No                 | Leave unset. On cloud (`APP_DEPLOYMENT_MODE=cloud`) the instance `FIRECRAWL_API_KEY` / `PAGESPEED_API_KEY` are ignored unless this is `true` | Ignored: instance keys always apply when self-hosting                                            |
+| `MARKETING_VISIBILITY_CONCURRENCY`, `MARKETING_VISIBILITY_PROVIDER_CONCURRENCY` | No                 | Defaults 12 answers in flight and 4 per LLM provider (caps 50 and 20). Raise only with higher provider rate limits                           | Same defaults                                                                                    |
+| `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`                  | No                 | Defaults (50 pages, 3 manual audits per product per day) are the cost guardrails; lower rather than raise them                               | Defaults 50 (hard cap 500) and 3                                                                 |
 
 Format notes:
 
@@ -267,10 +269,12 @@ Format notes:
   logged.
 - LLM provider keys (Anthropic, OpenAI, Perplexity, Gemini) are not instance variables. Teams save
   their own in Marketing settings; there is no instance LLM fallback in this code.
-- Cloud caveat: the instance `FIRECRAWL_API_KEY` and `PAGESPEED_API_KEY` fallbacks currently apply to
-  every team, and the billing work that restricts them on cloud
-  (`docs/plans/2026-10-11-billing/design.md`, stage B2) is not implemented. Leave both unset on
-  cloud. Teams there bring their own key; without one they get the basic audit.
+- Cloud guard: when `APP_DEPLOYMENT_MODE=cloud` (or Vercel is detected with the mode unset), the
+  instance `FIRECRAWL_API_KEY` and `PAGESPEED_API_KEY` fallbacks are ignored, so no team gets free
+  crawling or PageSpeed at the operator's expense. Integration status shows "Bring your own key"
+  and teams without their own key get the basic audit. Setting `MARKETING_ALLOW_INSTANCE_KEYS=true`
+  re-enables the fallbacks (only do that deliberately, until the billing entitlements in
+  `docs/plans/2026-10-11-billing/design.md`, stage B2, exist). Self-hosted installs are unaffected.
 
 ### Scheduled tasks
 
@@ -278,17 +282,17 @@ Nitro registers these in `nuxt.config.ts` `nitro.scheduledTasks` and runs them i
 Do not add Coolify scheduled commands on top. The same tasks exist as `/api/cron/*` handlers for
 Vercel Cron, which need `CRON_SECRET`; Nitro does not.
 
-| Task                            | Cadence      | Needs                                                                                                                   |
-| ------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `marketing:audit-advance`       | every minute | Outbound HTTPS to verified user sites; Firecrawl (team or instance key) for full crawls; PageSpeed host if a key exists |
-| `marketing:visibility-advance`  | every minute | LLM provider egress and a team LLM key; works in time-budgeted slices of about 45 s                                     |
-| `marketing:review-requests`     | every 5 min  | Working SMTP (`SMTP_*`, `MAIL_FROM`)                                                                                    |
-| `marketing:mentions-poll`       | every 15 min | HN Algolia (no key); Reddit and Bluesky only with their credentials                                                     |
-| `marketing:visibility-schedule` | hourly, :00  | Database only (queues weekly runs)                                                                                      |
-| `marketing:audit-schedule`      | hourly, :05  | Database only (queues first and weekly audits)                                                                          |
-| `marketing:search-sync`         | hourly, :20  | Google OAuth and Search Console egress, `GOOGLE_*`, `SECRETS_ENCRYPTION_KEY`                                            |
-| `marketing:competitors-check`   | hourly, :35  | Outbound HTTPS to competitor sites (robots.txt honoured, at most daily per page)                                        |
-| `marketing:mentions-digest`     | daily, 08:00 | Working SMTP; emails team admins who have not opted out                                                                 |
+| Task                            | Cadence                | Needs                                                                                                                                  |
+| ------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `marketing:audit-advance`       | every minute           | Outbound HTTPS to verified user sites; Firecrawl (team key, or instance key off-cloud) for full crawls; PageSpeed host if a key exists |
+| `marketing:visibility-advance`  | every minute           | LLM provider egress and a team LLM key; 12 answers in flight (4 per provider), time-budgeted slices of about 45 s                      |
+| `marketing:review-requests`     | every 5 min            | Working SMTP (`SMTP_*`, `MAIL_FROM`)                                                                                                   |
+| `marketing:competitors-check`   | every 10 min           | Outbound HTTPS to competitor sites (robots.txt honoured, one page per host per 10 s, at most daily per page)                           |
+| `marketing:mentions-poll`       | every 15 min           | HN Algolia (no key); Reddit and Bluesky only with their credentials; 8 sites at a time within 45 s                                     |
+| `marketing:visibility-schedule` | hourly, :00            | Database only (queues weekly runs, at most 150 sites per tick)                                                                         |
+| `marketing:audit-schedule`      | hourly, :05            | Database only (queues first and weekly audits, never-audited sites first)                                                              |
+| `marketing:search-sync`         | hourly, :20            | Google OAuth and Search Console egress, `GOOGLE_*`, `SECRETS_ENCRYPTION_KEY`; 100 sites per run, 5 at a time                           |
+| `marketing:mentions-digest`     | hourly 08:00-10:00 UTC | Working SMTP; emails team admins who have not opted out; one send per team and day, resumes if a run ran out of time                   |
 
 All nine are registered in both `nuxt.config.ts` and `vercel.json`.
 
@@ -299,23 +303,32 @@ unset means every task returns 401) and uses `nitro.vercel.functions.maxDuration
 
 #### Replicas and scheduler safety
 
-Run exactly one app replica with stop-before-start deploys, as required above. Nitro starts every
-task in every process, so a second replica or a rolling-deploy overlap runs them twice. Review of
-the Marketing code for that case:
+Run exactly one app replica with stop-before-start deploys, as required above: there is still no
+scheduler-disable flag or leader election, and Nitro starts every task in every process. The
+Marketing tasks themselves are now safe against a second process (a rolling-deploy overlap or a
+deliberate second replica); the only cost is some duplicated, idempotent work. Per task:
 
-- Safe through a claim, lease or unique index: `audit-advance` (row lease in `site_facts._runtime`
-  with `FOR UPDATE SKIP LOCKED`, 3-minute lease), `visibility-advance` (answer claims with
-  `SKIP LOCKED`, 3-minute lease), `review-requests` (`SKIP LOCKED` claim plus stale-claim sweep),
-  `competitors-check` (atomic per-watch claim), and `audit-schedule` / `visibility-schedule` (the
-  partial unique indexes from migration `0045` turn a duplicate start into a handled
-  `already_running`).
-- Not claimed, so duplicated under overlap: `mentions-digest` (no sent ledger, so each admin gets one
-  email per overlapping process), `mentions-poll` (mention inserts are deduplicated by a unique
-  index, but there is no per-source claim, so overlapping processes spend the same Reddit and
-  Bluesky quota) and `search-sync` (upserts are idempotent but Google API calls are duplicated).
-- A brief rolling overlap is therefore mostly harmless (wasted calls, at worst a duplicate digest if
-  it spans 08:00). There is still no scheduler-disable flag or leader election, so multiple replicas
-  are not supported.
+- `audit-advance`: row lease in `site_facts._runtime` with `FOR UPDATE SKIP LOCKED` (3-minute lease).
+  Finishing an audit re-takes the lease (6 minutes) before the site-file fetch, before PageSpeed and
+  before writing results, and stops if it no longer holds it, so a slow PageSpeed call cannot cause a
+  double finish. `audit-schedule`: the partial unique index from `0045` turns a duplicate start into
+  a handled `already_running`.
+- `visibility-advance`: answer claims with `SKIP LOCKED` and a 3-minute lease, per-provider claims.
+  Finalizing runs is one set-based statement guarded by the run's status. `visibility-schedule`:
+  duplicate starts hit the `0045` unique index.
+- `review-requests`: `SKIP LOCKED` claim plus a stale-claim sweep. Delivery stays at-least-once (a
+  worker that dies after sending but before recording can send one duplicate after the sweep).
+- `competitors-check`: atomic per-watch claim on `last_checked_at`. The per-host 10 s spacing is
+  per process, so two replicas can each fetch one page from a host in the same window.
+- `mentions-poll`: each (site, source) cursor is claimed before polling (`last_attempt_at` stamped
+  only if unset or older than 15 minutes), so overlapping processes poll different pairs. The
+  Reddit/Bluesky rate-limit state is per process.
+- `search-sync`: each site is claimed (`last_sync_at` stamped when still older than the 23 h due
+  threshold) before syncing. A crash after the claim leaves the site marked synced for that day.
+- `mentions-digest`: one `marketing_usage` row per team and day (`digest:<YYYY-MM-DD>`, inserted
+  `ON CONFLICT DO NOTHING RETURNING`) is the claim, so only one process emails a team. It is
+  at-most-once: a process that dies after claiming loses that team's digest for the day; if every
+  email of a team fails the claim is released and the next hourly run (up to 10:00 UTC) retries.
 
 ### Migrations 0044-0049
 

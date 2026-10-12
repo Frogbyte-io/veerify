@@ -14,6 +14,12 @@ export const BOT_TOKEN = 'VeerifyBot'
 export const RECHECK_AFTER_MS = 23 * 60 * 60 * 1000
 export const HOST_SPACING_MS = 10_000
 export const MAX_FAILURES = 5
+/** Watches loaded per run (10 minute cadence x 45 s budget; the budget is the real limiter) */
+export const MAX_WATCHES_PER_RUN = 120
+/** Pages checked at the same time, always on different hosts */
+export const CHECK_CONCURRENCY = 8
+/** Share of each run reserved for watches never checked, so new watches get a baseline promptly */
+export const NEVER_CHECKED_SHARE = 0.3
 export const SUMMARY_SETTING_KEY = 'marketingCompetitorSummaries'
 
 export type CheckOutcome = 'baseline' | 'changed' | 'unchanged' | 'noise' | 'blocked' | 'error' | 'skipped'
@@ -368,38 +374,92 @@ export async function checkWatchNow(
   return outcome
 }
 
+function hostKey(watch: WatchContext): string {
+  try {
+    return canonicalHost(new URL(watch.url).hostname)
+  } catch {
+    return watch.url
+  }
+}
+
+/**
+ * Loads this run's watches: a reserved share (NEVER_CHECKED_SHARE) for watches never checked, the
+ * rest for rechecks ordered by `last_checked_at` (oldest first). Unused reserve flows to rechecks, so
+ * neither group can starve the other.
+ */
+export async function loadRunWatches(
+  store: CompetitorStore,
+  cutoff: Date,
+  maxWatches: number
+): Promise<WatchContext[]> {
+  const reserved = Math.max(1, Math.floor(maxWatches * NEVER_CHECKED_SHARE))
+  const fresh = await store.loadDue(cutoff, reserved, 'never')
+  const rechecks = await store.loadDue(cutoff, Math.max(0, maxWatches - fresh.length), 'recheck')
+  const seen = new Set<string>()
+  return [...fresh, ...rechecks].filter((watch) => !seen.has(watch.id) && seen.add(watch.id))
+}
+
 export async function checkCompetitorWatches(
-  options: { budgetMs?: number; maxWatches?: number } = {},
+  options: { budgetMs?: number; maxWatches?: number; concurrency?: number } = {},
   partial: Partial<CheckerDeps> = {}
 ): Promise<CheckSummary> {
   const deps = { ...defaultDeps, ...partial }
   const budgetMs = options.budgetMs ?? 45_000
-  const maxWatches = options.maxWatches ?? 30
+  const maxWatches = options.maxWatches ?? MAX_WATCHES_PER_RUN
+  const concurrency = Math.max(1, options.concurrency ?? CHECK_CONCURRENCY)
   const started = deps.now().getTime()
   const ctx = newRunContext(started + budgetMs)
   const summary: CheckSummary = { checked: 0, changes: 0, baselines: 0, blocked: 0, errors: 0, skipped: 0 }
 
   const cutoff = new Date(started - RECHECK_AFTER_MS)
-  const due = interleaveByHost(await deps.store.loadDue(cutoff, maxWatches))
+  const queue = interleaveByHost(await loadRunWatches(deps.store, cutoff, maxWatches))
 
-  for (const watch of due) {
-    if (deps.now().getTime() >= ctx.deadline) {
-      summary.skipped++
-      continue
-    }
-    if (!(await deps.store.claim(watch.id, cutoff, deps.now()))) continue
-    const outcome = await checkWatch(watch, ctx, deps)
-    if (outcome === 'skipped') {
-      // Not fetched: release the claim so the next run picks it up.
-      await deps.store.save(watch.id, { lastCheckedAt: watch.lastCheckedAt })
-      summary.skipped++
-      continue
-    }
-    summary.checked++
-    if (outcome === 'changed') summary.changes++
-    else if (outcome === 'baseline') summary.baselines++
-    else if (outcome === 'blocked') summary.blocked++
-    else if (outcome === 'error') summary.errors++
+  // Different hosts run in parallel; one host is never checked by two workers at once, so the
+  // per-host spacing (which reads and writes `lastPageRequestAt`) stays correct.
+  const busyHosts = new Set<string>()
+  let waiters: Array<() => void> = []
+  const wake = () => {
+    const pending = waiters
+    waiters = []
+    pending.forEach((resolve) => resolve())
   }
+
+  const worker = async () => {
+    for (;;) {
+      if (deps.now().getTime() >= ctx.deadline) return
+      if (queue.length === 0) return
+      const index = queue.findIndex((watch) => !busyHosts.has(hostKey(watch)))
+      if (index === -1) {
+        // Every remaining watch is on a host another worker is busy with
+        await new Promise<void>((resolve) => waiters.push(resolve))
+        continue
+      }
+      const [watch] = queue.splice(index, 1)
+      const host = hostKey(watch)
+      busyHosts.add(host)
+      try {
+        if (!(await deps.store.claim(watch.id, cutoff, deps.now()))) continue
+        const outcome = await checkWatch(watch, ctx, deps)
+        if (outcome === 'skipped') {
+          // Not fetched: release the claim so the next run picks it up.
+          await deps.store.save(watch.id, { lastCheckedAt: watch.lastCheckedAt })
+          summary.skipped++
+          continue
+        }
+        summary.checked++
+        if (outcome === 'changed') summary.changes++
+        else if (outcome === 'baseline') summary.baselines++
+        else if (outcome === 'blocked') summary.blocked++
+        else if (outcome === 'error') summary.errors++
+      } finally {
+        busyHosts.delete(host)
+        wake()
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(queue.length, 1)) }, worker))
+  // Watches the budget never reached stay due for the next run
+  summary.skipped += queue.length
   return summary
 }

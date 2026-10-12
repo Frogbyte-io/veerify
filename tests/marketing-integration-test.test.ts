@@ -25,6 +25,7 @@ vi.mock('~/server/database/drizzle', () => ({
 }))
 vi.mock('~/server/utils/logger', () => ({ createLogger: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) }))
 vi.mock('~/server/utils/marketing-config', () => ({
+  instanceKeysAllowed: () => true,
   marketingConfig: {
     get pagespeedApiKey() {
       return state.pagespeedKey

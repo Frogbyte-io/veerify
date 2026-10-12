@@ -16,6 +16,7 @@ import {
 import { isMarketingOn, type CandidateSite } from '~/server/services/marketing/mentions/store'
 import { getAccessTokenFor, REVOKED_MESSAGE } from '~/server/services/marketing/search/connection'
 import { shiftDate } from '~/server/services/marketing/search/summary'
+import { runPool } from '~/server/utils/task-pool'
 import { createLogger } from '~/server/utils/logger'
 import { isSecretsConfigured } from '~/server/utils/secrets'
 
@@ -33,7 +34,10 @@ export const QUERY_END_LAG_DAYS = 3
 export const QUERY_ROW_LIMIT = 1000
 /** With one sync per day this is about 12 days of query history. */
 export const SNAPSHOTS_TO_KEEP = 12
-export const MAX_SITES_PER_TICK = 20
+/** Sites synced per hourly run; with a daily sync each, this covers 2,400 connected sites a day */
+export const MAX_SITES_PER_TICK = 100
+/** Sites synced at the same time (Google's per-project quota is far above this) */
+export const SYNC_CONCURRENCY = 5
 export const TIME_BUDGET_MS = 45_000
 const INSERT_CHUNK = 500
 const MAX_QUERY_LENGTH = 500
@@ -76,7 +80,12 @@ export interface SyncWrite {
 
 /** Persistence seam so the sync can be tested without a database. */
 export interface SearchSyncStore {
-  loadDue(now: Date): Promise<SyncCandidate[]>
+  loadDue(now: Date, limit?: number): Promise<SyncCandidate[]>
+  /**
+   * Takes the site for this run: stamps `last_sync_at = now` only while it is still unset or older than
+   * `cutoff`, so two replicas never sync the same site. Resolves false when another worker took it.
+   */
+  claim(siteId: string, cutoff: Date, now: Date): Promise<boolean>
   /**
    * Writes daily metrics, replaces the query snapshot (pruned to the most recent
    * `keep`) and marks the site synced, all in one transaction. Returns false and
@@ -115,7 +124,22 @@ const teamMarketingOn = sql`coalesce(${teamModuleSettings.marketingEnabled}, ${D
 const productMarketingOn = sql`coalesce(${project.settings}->'marketingEnabled' = 'true'::jsonb, false)`
 
 export const dbSearchSyncStore: SearchSyncStore = {
-  async loadDue(now) {
+  async claim(siteId, cutoff, now) {
+    const rows = await db
+      .update(gscConnection)
+      .set({ lastSyncAt: now })
+      .where(
+        and(
+          eq(gscConnection.siteId, siteId),
+          eq(gscConnection.status, 'connected'),
+          or(sql`${gscConnection.lastSyncAt} is null`, lt(gscConnection.lastSyncAt, cutoff))
+        )
+      )
+      .returning({ siteId: gscConnection.siteId })
+    return rows.length > 0
+  },
+
+  async loadDue(now, limit = MAX_SITES_PER_TICK) {
     const cutoff = new Date(now.getTime() - SYNC_DUE_AFTER_MS)
     const rows = await db
       .select({
@@ -146,7 +170,7 @@ export const dbSearchSyncStore: SearchSyncStore = {
         )
       )
       .orderBy(sql`${gscConnection.lastSyncAt} asc nulls first`)
-      .limit(200)
+      .limit(limit)
 
     return rows.map((row) => ({
       ...row,
@@ -296,7 +320,7 @@ async function syncOne(
 }
 
 export async function syncSearchConsole(
-  options: { now?: Date; maxSites?: number; timeBudgetMs?: number } = {},
+  options: { now?: Date; maxSites?: number; timeBudgetMs?: number; concurrency?: number } = {},
   deps: SyncDeps = {}
 ): Promise<SyncSummary> {
   const now = options.now ?? new Date()
@@ -315,31 +339,38 @@ export async function syncSearchConsole(
   }
 
   const started = Date.now()
-  const due = (await store.loadDue(now)).filter(isMarketingOn).slice(0, maxSites)
+  const cutoff = new Date(now.getTime() - SYNC_DUE_AFTER_MS)
+  const due = (await store.loadDue(now, maxSites)).filter(isMarketingOn).slice(0, maxSites)
 
-  for (const candidate of due) {
-    if (Date.now() - started >= budget) break
-    try {
-      const written = await syncOne(candidate, now, config, store, getAccessToken, query)
-      if (written) summary.sitesSynced += 1
-      else logger.info('Search Console sync skipped, the connection changed meanwhile', { siteId: candidate.siteId })
-    } catch (error) {
-      summary.sitesFailed += 1
-      const revoked = error instanceof GoogleAuthError
-      logger.warn('Search Console sync failed', {
-        siteId: candidate.siteId,
-        kind: error instanceof GoogleApiError ? error.kind : 'unknown',
-      })
+  await runPool(
+    due,
+    options.concurrency ?? SYNC_CONCURRENCY,
+    async (candidate) => {
       try {
-        await store.markFailed(candidate.siteId, now, revoked ? REVOKED_MESSAGE : describeError(error), revoked)
-      } catch (storeError) {
-        logger.error('Failed to record Search Console sync failure', {
+        // Lost the race to another replica (or an overlapping run): it syncs this site
+        if (!(await store.claim(candidate.siteId, cutoff, now))) return
+        const written = await syncOne(candidate, now, config, store, getAccessToken, query)
+        if (written) summary.sitesSynced += 1
+        else logger.info('Search Console sync skipped, the connection changed meanwhile', { siteId: candidate.siteId })
+      } catch (error) {
+        summary.sitesFailed += 1
+        const revoked = error instanceof GoogleAuthError
+        logger.warn('Search Console sync failed', {
           siteId: candidate.siteId,
-          error: storeError instanceof Error ? storeError.message : 'unknown',
+          kind: error instanceof GoogleApiError ? error.kind : 'unknown',
         })
+        try {
+          await store.markFailed(candidate.siteId, now, revoked ? REVOKED_MESSAGE : describeError(error), revoked)
+        } catch (storeError) {
+          logger.error('Failed to record Search Console sync failure', {
+            siteId: candidate.siteId,
+            error: storeError instanceof Error ? storeError.message : 'unknown',
+          })
+        }
       }
-    }
-  }
+    },
+    () => Date.now() - started >= budget
+  )
 
   return summary
 }

@@ -1,4 +1,4 @@
-import { marketingConfig } from '~/server/utils/marketing-config'
+import { instanceKeysAllowed, marketingConfig } from '~/server/utils/marketing-config'
 import { listTeamCredentials, type TeamCredentialSummary } from '~/server/utils/team-credentials'
 import { isSecretsConfigured } from '~/server/utils/secrets'
 import { getGoogleOAuthConfig } from '~/server/services/google/search-console'
@@ -31,6 +31,11 @@ export interface IntegrationStatus {
 }
 
 type CredentialFallback = { configured: boolean; missingHint: string }
+
+/** On the cloud instance keys are not used (see `instanceKeysAllowed`), so the only path is the team's own key. */
+function instanceHint(selfHosted: string, byok: string): string {
+  return instanceKeysAllowed() ? selfHosted : byok
+}
 
 function fromCredential(
   base: Pick<IntegrationStatus, 'id' | 'label' | 'capability'>,
@@ -90,8 +95,10 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
       byProvider.get('firecrawl'),
       {
         configured: Boolean(marketingConfig.firecrawl.apiKey),
-        missingHint:
+        missingHint: instanceHint(
           'Add a Firecrawl key, or set FIRECRAWL_API_KEY on the server. Without it, audits run in basic mode (home page and site files only).',
+          'Bring your own key: add your Firecrawl key. Without it, audits run in basic mode (home page and site files only).'
+        ),
       }
     ),
     fromCredential(
@@ -99,7 +106,10 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
       byProvider.get('pagespeed'),
       {
         configured: Boolean(marketingConfig.pagespeedApiKey),
-        missingHint: 'Add a PageSpeed Insights key, or set PAGESPEED_API_KEY on the server.',
+        missingHint: instanceHint(
+          'Add a PageSpeed Insights key, or set PAGESPEED_API_KEY on the server.',
+          'Bring your own key: add your PageSpeed Insights key.'
+        ),
       }
     ),
     fromCredential(

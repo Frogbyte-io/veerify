@@ -8,7 +8,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { gscConnection, marketingSite, type ApiCredentialProvider } from '~/server/database/schema/marketing'
-import { marketingConfig } from '~/server/utils/marketing-config'
+import { instanceKeysAllowed, marketingConfig } from '~/server/utils/marketing-config'
 import { SOCIAL_HINTS, type IntegrationId } from '~/server/utils/marketing-integrations'
 import { decryptSecret, encryptSecret, isSecretsConfigured } from '~/server/utils/secrets'
 import {
@@ -67,8 +67,17 @@ const MISSING_KEY: Record<string, string> = {
   openai: 'Add your OpenAI API key.',
   gemini: 'Add your Google Gemini API key.',
   perplexity: 'Add your Perplexity API key.',
-  firecrawl: 'Add a Firecrawl key, or set FIRECRAWL_API_KEY on the server.',
-  pagespeed: 'Add a PageSpeed Insights key, or set PAGESPEED_API_KEY on the server.',
+  // Getters: read the deployment mode at use time, not import time
+  get firecrawl() {
+    return instanceKeysAllowed()
+      ? 'Add a Firecrawl key, or set FIRECRAWL_API_KEY on the server.'
+      : 'Bring your own key: add your Firecrawl key.'
+  },
+  get pagespeed() {
+    return instanceKeysAllowed()
+      ? 'Add a PageSpeed Insights key, or set PAGESPEED_API_KEY on the server.'
+      : 'Bring your own key: add your PageSpeed Insights key.'
+  },
 }
 
 /** Fixed, key-free phrase for a failure kind from any provider adapter. */

@@ -36,8 +36,9 @@ export async function getUsage(teamId: string, period: string = currentPeriod())
 
   return Object.fromEntries(
     rows
-      // `ratelimit:*` rows are request counters (marketing-db-limit.ts), not billable usage
-      .filter((row) => !row.metric.startsWith('ratelimit:'))
+      // `ratelimit:*` rows are request counters (marketing-db-limit.ts) and `digest:<date>` rows are the
+      // mentions-digest claim ledger (mentions/digest.ts); neither is billable usage
+      .filter((row) => !row.metric.startsWith('ratelimit:') && !row.metric.startsWith('digest:'))
       .map((row) => [row.metric, Number(row.units)])
   )
 }
