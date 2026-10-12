@@ -66,6 +66,49 @@ export default defineEventHandler(async (event) => {
     Object.entries(allUsage).filter(([metric]) => !metric.endsWith(':reserved_usd_micros'))
   )
 
+  const changelogEnabled = changelogOn(project)
+  // The loaders are independent; run them concurrently
+  const [siteData, search, reviews, announcements, language, changelog, competitors, launchKit] = await Promise.all([
+    loadSiteData(site),
+    loadSearch(site?.id ?? null),
+    loadReviews(projectId),
+    loadAnnouncements(projectId, changelogEnabled),
+    loadLanguage(site?.id ?? null, teamId),
+    loadChangelog(projectId, changelogEnabled),
+    loadCompetitors(site?.id ?? null),
+    loadLaunchKit(projectId),
+  ])
+  const { hasBrandTerm, latestAudit, latestVisibilityRun, newMentions } = siteData
+
+  const state = (id: string) => integrations.find((i) => i.id === id)?.state
+  const usable = (id: string) => state(id) === 'ready'
+
+  return createSuccessResponse({
+    site: site ? serializeSite(site) : null,
+    setup: {
+      siteAdded: site !== null,
+      siteVerified: site?.verifiedAt != null,
+      hasBrandTerm,
+      hasLlmKey: usable('anthropic') || usable('openai') || usable('gemini') || usable('perplexity'),
+      hasCrawlKey: usable('firecrawl'),
+    },
+    integrations,
+    usage,
+    latestAudit,
+    latestVisibilityRun,
+    newMentions,
+    search,
+    reviews,
+    announcements,
+    language,
+    changelog,
+    competitors,
+    launchKit,
+  })
+})
+
+/** Brand term, latest audit and visibility run, and the new-mention count for the site. */
+async function loadSiteData(site: { id: string } | null) {
   let hasBrandTerm = false
   let latestAudit = null
   let latestVisibilityRun = null
@@ -116,42 +159,8 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Each loader is a handful of count/limit queries; run in order so the
-  // response cost stays predictable.
-  const search = await loadSearch(site?.id ?? null)
-  const reviews = await loadReviews(projectId)
-  const announcements = await loadAnnouncements(projectId, changelogOn(project))
-  const language = await loadLanguage(site?.id ?? null, teamId)
-  const changelog = await loadChangelog(projectId, changelogOn(project))
-  const competitors = await loadCompetitors(site?.id ?? null)
-  const launchKit = await loadLaunchKit(projectId)
-
-  const state = (id: string) => integrations.find((i) => i.id === id)?.state
-  const usable = (id: string) => state(id) === 'ready'
-
-  return createSuccessResponse({
-    site: site ? serializeSite(site) : null,
-    setup: {
-      siteAdded: site !== null,
-      siteVerified: site?.verifiedAt != null,
-      hasBrandTerm,
-      hasLlmKey: usable('anthropic') || usable('openai') || usable('gemini') || usable('perplexity'),
-      hasCrawlKey: usable('firecrawl'),
-    },
-    integrations,
-    usage,
-    latestAudit,
-    latestVisibilityRun,
-    newMentions,
-    search,
-    reviews,
-    announcements,
-    language,
-    changelog,
-    competitors,
-    launchKit,
-  })
-})
+  return { hasBrandTerm, latestAudit, latestVisibilityRun, newMentions }
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const SEARCH_DAYS = 28

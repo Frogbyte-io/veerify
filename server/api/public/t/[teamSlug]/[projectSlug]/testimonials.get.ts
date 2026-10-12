@@ -63,5 +63,6 @@ export default defineEventHandler(async (event) => {
     .orderBy(desc(testimonial.featured), desc(testimonial.createdAt), desc(testimonial.id))
     .limit(MAX_PUBLIC_TESTIMONIALS)
 
+  setHeader(event, 'Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
   return createSuccessResponse({ items })
 })

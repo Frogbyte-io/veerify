@@ -2547,7 +2547,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List mentions for a product",
-      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured. `canEscalate` is true when Support is on and the caller can work in a support inbox; escalated items carry `conversationId` and `conversationInboxId` only when the caller can open that inbox (otherwise both are null).\n",
+      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied, over the last 180 days) and whether the site is verified and has terms configured. `canEscalate` is true when Support is on and the caller can work in a support inbox; escalated items carry `conversationId` and `conversationInboxId` only when the caller can open that inbox (otherwise both are null).\n",
       "operationId": "listMarketingMentions",
       "parameters": [
         {
@@ -4144,6 +4144,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List sampled answers of a run (optionally for one prompt)",
+      "description": "With `promptId` the answers of that prompt are returned including the full `answer` text (bounded: providers x samples). Without it only metadata is returned (no `answer` text), 100 per request; pass `nextCursor` as `cursor` for the next page and fetch single answers with `/answers/{answerId}`.\n",
       "operationId": "listVisibilityAnswers",
       "parameters": [
         {
@@ -4168,6 +4169,13 @@ export const openapiPaths = {
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
         }
       ],
       "responses": {
@@ -4179,6 +4187,52 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Run or prompt not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/runs/{runId}/answers/{answerId}": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get one sampled answer with its full text",
+      "operationId": "getVisibilityAnswer",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "answerId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The answer including its text"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Run or answer not found for this product"
         }
       }
     }

@@ -22,5 +22,6 @@ export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
   const { project } = await resolvePublicChangelogProject(teamSlug!, projectSlug!)
 
+  setHeader(event, 'Cache-Control', 'public, max-age=60, stale-while-revalidate=300')
   return createSuccessResponse(await findPublishedEntryBySlug(project.id, slug!))
 })
