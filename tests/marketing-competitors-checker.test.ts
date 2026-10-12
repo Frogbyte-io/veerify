@@ -358,8 +358,13 @@ describe('checkCompetitorWatches', () => {
   it('loads due watches with a 23 hour cutoff and the limit', async () => {
     const t = setup({})
     await checkCompetitorWatches({ maxWatches: 7 }, t.deps)
-    const [cutoff, limit] = t.store.loadDue.mock.calls[0] as unknown as [Date, number]
-    expect(limit).toBe(7)
+    const [cutoff, limit, scope] = t.store.loadDue.mock.calls[0] as unknown as [Date, number, string]
+    // A reserved share goes to never-checked watches, the rest to rechecks
+    expect(limit).toBe(2)
+    expect(scope).toBe('never')
+    const [, recheckLimit, recheckScope] = t.store.loadDue.mock.calls[1] as unknown as [Date, number, string]
+    expect(recheckLimit).toBe(7)
+    expect(recheckScope).toBe('recheck')
     expect(t.deps.now().getTime() - cutoff.getTime()).toBe(23 * 60 * 60 * 1000)
   })
 
@@ -406,6 +411,108 @@ describe('checkCompetitorWatches', () => {
     const summary = await checkCompetitorWatches({}, t.deps)
     expect(summary.checked).toBe(0)
     expect(t.requested).toEqual([])
+  })
+})
+
+describe('checkCompetitorWatches fairness and concurrency', () => {
+  const hostPages = (hosts: string[]) =>
+    Object.fromEntries(
+      hosts.flatMap((h) => [
+        [`https://${h}/robots.txt`, res(404, '')],
+        [`https://${h}/a`, res(200, page('<p>a</p>'))],
+        [`https://${h}/b`, res(200, page('<p>b</p>'))],
+      ])
+    )
+
+  it('reserves a share of the run for never-checked watches and gives the rest to rechecks', async () => {
+    const t = setup({})
+    t.store.loadDue = vi.fn(async (_cutoff: Date, limit: number, scope?: string) => {
+      const pool =
+        scope === 'never'
+          ? [makeWatch({ id: 'n1', url: 'https://n1.com/a' }), makeWatch({ id: 'n2', url: 'https://n2.com/a' })]
+          : [makeWatch({ id: 'r1', url: 'https://r1.com/a', lastCheckedAt: new Date(1) })]
+      return pool.slice(0, limit)
+    }) as never
+    await checkCompetitorWatches({ maxWatches: 10 }, t.deps)
+    const calls = vi.mocked(t.store.loadDue).mock.calls as unknown as Array<[Date, number, string]>
+    expect(calls[0].slice(1)).toEqual([3, 'never'])
+    // the unused part of the reserve flows to rechecks: 10 - 2 never-checked watches loaded
+    expect(calls[1].slice(1)).toEqual([8, 'recheck'])
+  })
+
+  it('checks both new and recheck watches in one run, so rechecks are not starved by new ones', async () => {
+    const t = setup(hostPages(['n.com', 'r.com']))
+    t.store.loadDue = vi.fn(async (_c: Date, _l: number, scope?: string) =>
+      scope === 'never'
+        ? [makeWatch({ id: 'n', url: 'https://n.com/a' })]
+        : [makeWatch({ id: 'r', url: 'https://r.com/a', lastCheckedAt: new Date(1) })]
+    ) as never
+    const summary = await checkCompetitorWatches({}, t.deps)
+    expect(summary.checked).toBe(2)
+    expect(t.requested).toEqual(expect.arrayContaining(['https://n.com/a', 'https://r.com/a']))
+  })
+
+  it('does not run the same watch twice when both loads return it', async () => {
+    const t = setup(hostPages(['rival.com']))
+    const w = makeWatch({ id: 'dup', url: 'https://rival.com/a' })
+    t.store.loadDue = vi.fn(async () => [w]) as never
+    const summary = await checkCompetitorWatches({}, t.deps)
+    expect(summary.checked).toBe(1)
+  })
+
+  function slowFetch(t: ReturnType<typeof setup>) {
+    const inflight = new Map<string, number>()
+    const track = { total: 0, maxTotal: 0, maxByHost: 0 }
+    const original = t.deps.fetchText
+    t.deps.fetchText = vi.fn(async (url: string, opts: never) => {
+      const host = new URL(url).hostname
+      inflight.set(host, (inflight.get(host) ?? 0) + 1)
+      track.total++
+      track.maxTotal = Math.max(track.maxTotal, track.total)
+      track.maxByHost = Math.max(track.maxByHost, inflight.get(host)!)
+      await new Promise((r) => setTimeout(r, 5))
+      inflight.set(host, inflight.get(host)! - 1)
+      track.total--
+      return (original as (u: string, o: unknown) => Promise<unknown>)(url, opts)
+    }) as never
+    return track
+  }
+
+  it('checks different hosts in parallel (at most 8) but never two pages of one host at once', async () => {
+    const hosts = Array.from({ length: 12 }, (_, i) => `h${i}.com`)
+    const watches = hosts.flatMap((h) => [
+      makeWatch({ id: `${h}-a`, url: `https://${h}/a` }),
+      makeWatch({ id: `${h}-b`, url: `https://${h}/b` }),
+    ])
+    const t = setup(hostPages(hosts), watches)
+    const track = slowFetch(t)
+    const summary = await checkCompetitorWatches({ budgetMs: 10 * 60_000 }, t.deps)
+    expect(summary.checked).toBe(24)
+    expect(track.maxByHost).toBe(1)
+    expect(track.maxTotal).toBeGreaterThan(1)
+    expect(track.maxTotal).toBeLessThanOrEqual(8)
+  })
+
+  it('still spaces consecutive pages of one host by 10 seconds when other hosts run in parallel', async () => {
+    const watches = [
+      makeWatch({ id: 'a', url: 'https://one.com/a' }),
+      makeWatch({ id: 'b', url: 'https://one.com/b' }),
+      makeWatch({ id: 'c', url: 'https://two.com/a' }),
+      makeWatch({ id: 'd', url: 'https://two.com/b' }),
+    ]
+    const t = setup(hostPages(['one.com', 'two.com']), watches)
+    await checkCompetitorWatches({}, t.deps)
+    // The fake clock is shared, so the first wait also satisfies the other host's; every wait is the full spacing
+    expect(t.sleeps.length).toBeGreaterThanOrEqual(1)
+    expect(t.sleeps.every((ms) => ms === 10_000)).toBe(true)
+  })
+
+  it('counts watches the budget never reached as skipped and leaves them unclaimed', async () => {
+    const watches = Array.from({ length: 5 }, (_, i) => makeWatch({ id: `w${i}`, url: `https://h${i}.com/a` }))
+    const t = setup(hostPages(watches.map((_, i) => `h${i}.com`)), watches)
+    const summary = await checkCompetitorWatches({ budgetMs: 0 }, t.deps)
+    expect(summary).toMatchObject({ checked: 0, skipped: 5 })
+    expect(t.store.claim).not.toHaveBeenCalled()
   })
 })
 

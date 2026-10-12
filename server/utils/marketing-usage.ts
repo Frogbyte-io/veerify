@@ -37,7 +37,10 @@ export async function getUsage(teamId: string, period: string = currentPeriod())
         eq(marketingUsage.teamId, teamId),
         eq(marketingUsage.period, period),
         // `ratelimit:*` rows are request counters (marketing-db-limit.ts), not billable usage
-        notLike(marketingUsage.metric, 'ratelimit:%')
+        // `ratelimit:*` rows are request counters (marketing-db-limit.ts) and `digest:<date>` rows the
+        // mentions-digest claim ledger (mentions/digest.ts); neither is billable usage
+        notLike(marketingUsage.metric, 'ratelimit:%'),
+        notLike(marketingUsage.metric, 'digest:%')
       )
     )
 

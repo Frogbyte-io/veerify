@@ -49,6 +49,22 @@ opportunities, and growth features built on feedback, changelog and support data
   result can cause one duplicate after the 10-minute sweeper.
 - Review requests only go to verified user emails and CSAT contacts; anonymous feedback authors and
   unlinked subscribers are never asked.
+- Multiple app replicas are still unsupported (no scheduler leader election or disable flag), but the
+  Marketing tasks no longer double-send or double-spend when two processes overlap: digest has a
+  per-team-per-day ledger, mention polling and search sync claim each (site, source) / site before
+  working, and audit finishing holds its lease. Remaining: the per-host competitor spacing and the
+  Reddit/Bluesky rate-limit state are per process, the digest is at-most-once (a crash after the
+  claim loses that team's digest for the day) and search sync marks a site synced when claimed.
+- Capacity at 5,000 products with Marketing on: AI visibility starts at most 150 weekly runs per hour
+  (3,600 a day, so a 7-day cycle covers about 25,000 sites) and answers 12 at a time (4 per
+  provider), which is provider-rate-limit bound; mention polling handles on the order of 100-200
+  sites per 15-minute run, so with many sites the 30-minute poll interval stretches (the backlog
+  drains oldest first); a site with more than 20 search queries rotates through them across runs
+  (no stored offset, so a delayed run can repeat or skip a slice once); competitor checks cover
+  roughly 100 pages per 10-minute run. Raise the cadence or move tasks to a worker process if demand
+  outgrows this.
+- On the cloud the instance Firecrawl and PageSpeed keys are ignored (bring your own key) unless
+  `MARKETING_ALLOW_INSTANCE_KEYS=true`.
 - Veerify-provided LLM keys on the cloud are not built (they need billing first). A proposal is in the
   [billing design](../2026-10-11-billing/design.md) (status: Proposed, needs owner decisions).
 - Budget caps are estimates (tokens × list price + web-search fees), enforced with atomic

@@ -57,8 +57,12 @@ export interface ChangeSummary {
 
 /** Persistence seam for the checker so it can be tested without a database. */
 export interface CompetitorStore {
-  /** Active, verified, marketing-on watches not checked since `cutoff`, oldest first. */
-  loadDue(cutoff: Date, limit: number): Promise<WatchContext[]>
+  /**
+   * Active, verified, marketing-on watches not checked since `cutoff`, oldest first (never-checked
+   * first). `scope` narrows to watches never checked (`never`) or due for a recheck (`recheck`), so the
+   * checker can reserve a share of each run for new watches.
+   */
+  loadDue(cutoff: Date, limit: number, scope?: 'all' | 'never' | 'recheck'): Promise<WatchContext[]>
   /**
    * Marks the watch as picked up by this run; false when another run (cron or manual) took it first.
    * `anyStatus` lets a manual check claim a blocked/errored watch to re-test it (never a paused one).
@@ -109,7 +113,7 @@ export async function loadWatchContext(watchId: string, siteId: string): Promise
 }
 
 export const dbCompetitorStore: CompetitorStore = {
-  async loadDue(cutoff, limit) {
+  async loadDue(cutoff, limit, scope = 'all') {
     // Every gate is in SQL, before the LIMIT, so gated-off watches never crowd out due ones.
     const rows = await baseQuery()
       .innerJoin(
@@ -121,7 +125,11 @@ export const dbCompetitorStore: CompetitorStore = {
           eq(competitorWatch.status, 'active'),
           sql`${marketingSite.verifiedAt} is not null`,
           sql`${project.settings}->>'marketingEnabled' = 'true'`,
-          or(isNull(competitorWatch.lastCheckedAt), lt(competitorWatch.lastCheckedAt, cutoff))
+          scope === 'never'
+            ? isNull(competitorWatch.lastCheckedAt)
+            : scope === 'recheck'
+              ? lt(competitorWatch.lastCheckedAt, cutoff)
+              : or(isNull(competitorWatch.lastCheckedAt), lt(competitorWatch.lastCheckedAt, cutoff))
         )
       )
       .orderBy(sql`${competitorWatch.lastCheckedAt} asc nulls first`)

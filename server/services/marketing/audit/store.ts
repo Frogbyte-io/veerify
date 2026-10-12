@@ -70,6 +70,12 @@ export interface AuditStore {
   getAudit(auditId: string): Promise<AuditRow | null>
   /** Atomically lease one active audit not in `excludeIds`; null when none is due */
   claimDue(excludeIds: string[], now: Date, leaseUntil: Date): Promise<AuditRow | null>
+  /**
+   * Pushes the lease out to `leaseUntil` but only while this worker still holds it (the stored lease
+   * has not lapsed at `now`) and the audit is active. False means another worker may own the audit,
+   * so the caller must stop writing.
+   */
+  extendLease(auditId: string, now: Date, leaseUntil: Date): Promise<boolean>
   /** Update only while the audit is still active (never resurrects cancelled/failed/done) */
   updateAudit(auditId: string, patch: Partial<NewAuditRow>): Promise<boolean>
   /** Returns how many rows were new */
@@ -82,7 +88,7 @@ export interface AuditStore {
   insertIssues(rows: NewIssueRow[]): Promise<void>
   /** Keep only the `keep` most recent audits of a site */
   pruneAudits(siteId: string, keep: number): Promise<void>
-  /** Verified sites with no audit, or none newer than `olderThan`, no active audit */
+  /** Verified, Marketing-on sites with no audit, or none newer than `olderThan`, no active audit; never audited first */
   scheduleCandidates(olderThan: Date, limit: number): Promise<ScheduleCandidate[]>
 }
 
@@ -185,6 +191,21 @@ export const drizzleAuditStore: AuditStore = {
     return this.getAudit(id)
   },
 
+  async extendLease(auditId, now, leaseUntil) {
+    const result = await db.execute<{ id: string }>(sql`
+      UPDATE seo_audit
+      SET site_facts = COALESCE(site_facts, '{}'::jsonb) || jsonb_build_object(
+        '_runtime',
+        COALESCE(site_facts->'_runtime', '{}'::jsonb) || jsonb_build_object('leaseUntil', ${leaseUntil.toISOString()}::text)
+      )
+      WHERE id = ${auditId}
+        AND status IN ('queued', 'crawling', 'analyzing')
+        AND (site_facts->'_runtime'->>'leaseUntil')::timestamptz >= ${now.toISOString()}::timestamptz
+      RETURNING id
+    `)
+    return result.rows.length > 0
+  },
+
   async updateAudit(auditId, patch) {
     const rows = await db
       .update(seoAudit)
@@ -262,8 +283,6 @@ export const drizzleAuditStore: AuditStore = {
       .select({
         siteId: marketingSite.id,
         lastAuditAt: lastAudit,
-        settings: project.settings,
-        teamMarketing: teamModuleSettings.marketingEnabled,
       })
       .from(marketingSite)
       .innerJoin(project, eq(project.id, marketingSite.projectId))
@@ -271,17 +290,18 @@ export const drizzleAuditStore: AuditStore = {
       .where(
         and(
           isNotNull(marketingSite.verifiedAt),
+          // Both Marketing switches are in the query (not filtered afterwards), so sites with
+          // Marketing off never fill the LIMIT or get re-selected every hour
+          sql`coalesce(${teamModuleSettings.marketingEnabled}, ${DEFAULT_TEAM_MODULES.marketingEnabled}) = true`,
+          sql`${project.settings}->>'marketingEnabled' = 'true'`,
           sql`NOT ${hasActive}`,
           or(isNull(lastAudit), lt(lastAudit, olderThanSql))
         )
       )
+      // Never-audited sites first, then the longest-waiting, so a backlog drains fairly
+      .orderBy(sql`${lastAudit} asc nulls first`, marketingSite.id)
       .limit(limit)
 
-    return rows
-      .filter((row) => {
-        const teamOn = row.teamMarketing === null ? DEFAULT_TEAM_MODULES.marketingEnabled : row.teamMarketing === true
-        return teamOn && resolveProductModules(row.settings as Record<string, unknown> | null).marketingEnabled === true
-      })
-      .map((row) => ({ siteId: row.siteId, lastAuditAt: row.lastAuditAt ? new Date(row.lastAuditAt) : null }))
+    return rows.map((row) => ({ siteId: row.siteId, lastAuditAt: row.lastAuditAt ? new Date(row.lastAuditAt) : null }))
   },
 }

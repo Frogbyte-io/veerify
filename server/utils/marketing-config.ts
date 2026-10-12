@@ -16,6 +16,28 @@ function readInt(name: string, fallback: number, min: number, max: number): numb
   return Math.min(max, Math.max(min, parsed))
 }
 
+/**
+ * Whether this deployment is the multi-tenant cloud. Mirrors the detection in
+ * `server/services/scheduler/index.ts` and `nuxt.config.ts`: `APP_DEPLOYMENT_MODE` wins when set to a
+ * recognized value, otherwise Vercel's own env vars imply cloud.
+ */
+export function isCloudDeployment(): boolean {
+  const configured = (readEnv('APP_DEPLOYMENT_MODE') ?? '').toLowerCase()
+  if (configured === 'cloud') return true
+  if (configured === 'self-hosted') return false
+  return Boolean(process.env.VERCEL || process.env.VERCEL_ENV)
+}
+
+/**
+ * Whether instance-wide Firecrawl / PageSpeed keys may serve every team. Always true self-hosted. On
+ * the cloud an instance key would give every team free crawling at the operator's expense, so it is
+ * ignored unless `MARKETING_ALLOW_INSTANCE_KEYS=true` (until billing entitlements exist).
+ */
+export function instanceKeysAllowed(): boolean {
+  if (!isCloudDeployment()) return true
+  return (readEnv('MARKETING_ALLOW_INSTANCE_KEYS') ?? '').toLowerCase() === 'true'
+}
+
 export const marketingConfig = {
   /** Hard cap on pages per audit (1..500). */
   get maxAuditPages() {
@@ -27,12 +49,12 @@ export const marketingConfig = {
   },
   get firecrawl() {
     return {
-      apiKey: readEnv('FIRECRAWL_API_KEY'),
+      apiKey: instanceKeysAllowed() ? readEnv('FIRECRAWL_API_KEY') : undefined,
       baseUrl: readEnv('FIRECRAWL_API_URL') ?? 'https://api.firecrawl.dev',
     }
   },
   get pagespeedApiKey() {
-    return readEnv('PAGESPEED_API_KEY')
+    return instanceKeysAllowed() ? readEnv('PAGESPEED_API_KEY') : undefined
   },
   get reddit() {
     return {
@@ -50,6 +72,14 @@ export const marketingConfig = {
   /** User agent for outbound audit fetches; the /bot page explains the crawler. */
   get botUserAgent() {
     return `VeerifyBot/1.0 (+${readEnv('BETTER_AUTH_URL') ?? ''}/bot)`
+  },
+  /** Concurrent AI visibility answers per tick, across providers (1..50, default 12). */
+  get visibilityConcurrency() {
+    return readInt('MARKETING_VISIBILITY_CONCURRENCY', 12, 1, 50)
+  },
+  /** Concurrent AI visibility answers per LLM provider (1..20, default 4). */
+  get visibilityProviderConcurrency() {
+    return readInt('MARKETING_VISIBILITY_PROVIDER_CONCURRENCY', 4, 1, 20)
   },
   /** Whether team API keys can be encrypted at rest on this instance. */
   get secretsConfigured() {

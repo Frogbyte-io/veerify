@@ -65,6 +65,12 @@ class MemStore implements AuditStore {
       this.audits.find((a) => ['queued', 'crawling', 'analyzing'].includes(a.status) && !exclude.includes(a.id)) ?? null
     )
   }
+  leaseHeld = true
+  leaseExtensions = 0
+  async extendLease() {
+    this.leaseExtensions++
+    return this.leaseHeld
+  }
   async updateAudit(id: string, patch: Partial<AuditRow>) {
     const audit = this.audits.find((a) => a.id === id)
     if (!audit || !['queued', 'crawling', 'analyzing'].includes(audit.status)) return false
@@ -483,5 +489,67 @@ describe('scheduleAudits', () => {
     store.site.verifiedAt = null
     store.candidates = [{ siteId: 's1', lastAuditAt: null }]
     await expect(scheduleAudits(deps())).resolves.toEqual({ created: 0 })
+  })
+})
+
+describe('audit lease while finishing', () => {
+  it('extends the lease before the site-file fetch, before PageSpeed and before writing results', async () => {
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    expect(store.audits[0].status).toBe('done')
+    expect(store.leaseExtensions).toBe(3)
+  })
+
+  it('writes nothing when the lease was already lost (another worker owns the audit)', async () => {
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    store.leaseHeld = false
+    await advanceAudits({}, d)
+    expect(store.audits[0].status).not.toBe('done')
+    expect(store.issues).toHaveLength(0)
+    expect(d.fetchSiteFacts).not.toHaveBeenCalled()
+  })
+
+  it('re-checks after the slow PageSpeed step and does not double-finish when the lease lapsed meanwhile', async () => {
+    process.env.PAGESPEED_API_KEY = 'psi'
+    const d = deps()
+    ;(d.runPageSpeed as any).mockImplementation(async () => {
+      // A second worker claimed the audit while PageSpeed was running
+      store.leaseHeld = false
+      return { performanceScore: 90, lab: {}, field: null, fetchedAt: 'x' }
+    })
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    expect(d.runPageSpeed).toHaveBeenCalled()
+    expect(store.audits[0].status).not.toBe('done')
+    // no delete/insert of issues from the worker that lost the lease
+    expect(store.issues).toHaveLength(0)
+  })
+})
+
+describe('cloud instance-key guard in audits', () => {
+  it('ignores the instance PageSpeed key on the cloud, uses it with MARKETING_ALLOW_INSTANCE_KEYS=true', async () => {
+    process.env.APP_DEPLOYMENT_MODE = 'cloud'
+    process.env.PAGESPEED_API_KEY = 'psi'
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    expect(d.runPageSpeed).not.toHaveBeenCalled()
+    expect((store.audits[0].siteFacts as any).pagespeed).toEqual({ status: 'not_configured' })
+
+    store.audits[0].status = 'done'
+    process.env.MARKETING_ALLOW_INSTANCE_KEYS = 'true'
+    ;(d.runPageSpeed as any).mockResolvedValue({ performanceScore: 90, lab: {}, field: null, fetchedAt: 'x' })
+    await startAudit({ siteId: 's1', trigger: 'schedule' }, d)
+    await advanceAudits({}, d)
+    expect(d.runPageSpeed).toHaveBeenCalledWith('https://example.com/', 'psi', { strategy: 'mobile' })
+  })
+
+  it('runs audits in basic mode on the cloud when only the instance Firecrawl key exists', async () => {
+    process.env.APP_DEPLOYMENT_MODE = 'cloud'
+    process.env.FIRECRAWL_API_KEY = 'instance'
+    const audit = await startAudit({ siteId: 's1', trigger: 'manual' }, deps())
+    expect(audit.mode).toBe('basic')
   })
 })
