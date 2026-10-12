@@ -56,11 +56,15 @@ export default defineEventHandler(async (event) => {
   const projectId = requireRouteParam(event, 'projectId')
   const { project, teamId } = await requireMarketingAccess(projectId, session.user.id)
 
-  const [site, integrations, usage] = await Promise.all([
+  const [site, integrations, allUsage] = await Promise.all([
     findMarketingSite(projectId),
     getIntegrationStatus(teamId),
     getUsage(teamId),
   ])
+  // In-flight budget reservations are internal bookkeeping, not usage or cost
+  const usage = Object.fromEntries(
+    Object.entries(allUsage).filter(([metric]) => !metric.endsWith(':reserved_usd_micros'))
+  )
 
   let hasBrandTerm = false
   let latestAudit = null

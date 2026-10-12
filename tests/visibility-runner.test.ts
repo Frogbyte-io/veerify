@@ -58,7 +58,11 @@ vi.mock('~/server/utils/team-credentials', () => ({
   markCredentialInvalid: vi.fn(),
   markCredentialValid: vi.fn(),
 }))
-vi.mock('~/server/utils/marketing-usage', () => ({ getUsage: vi.fn(), recordUsage: vi.fn() }))
+vi.mock('~/server/utils/marketing-usage', () => ({
+  getUsage: vi.fn(),
+  recordUsage: vi.fn(),
+  currentPeriod: () => '2026-10',
+}))
 vi.mock('~/lib/email', () => ({ sendMarketingCredentialInvalidEmail: vi.fn() }))
 
 const { createRun, advanceVisibilityRuns, finalizeVisibilityRuns, VisibilityRunError } =
@@ -181,6 +185,24 @@ function makeHarness(
     markValid: vi.fn(async () => undefined),
     notifyInvalid: vi.fn(async () => undefined),
     recordUsage: vi.fn(async () => undefined),
+    // Same guard as the SQL: spent + reserved + amount <= cap
+    reserveBudget: vi.fn(async (_t: string, provider: string, amount: number, cap: number | null) => {
+      if (cap == null) return true
+      const usage = options.usage ?? {}
+      return (
+        (usage[`llm:${provider}:cost_usd_micros`] ?? 0) +
+          (usage[`llm:${provider}:reserved_usd_micros`] ?? 0) +
+          amount <=
+        cap * 10_000
+      )
+    }),
+    // Mirrors llm-budget: a refusal is a real cap only if spend alone plus this call exceeds it
+    budgetRefusalReason: vi.fn(async (_t: string, provider: string, amount: number, cap: number) => {
+      const usage = options.usage ?? {}
+      return (usage[`llm:${provider}:cost_usd_micros`] ?? 0) + amount > cap * 10_000 ? 'cap' : 'in_flight'
+    }),
+    settleBudget: vi.fn(async () => undefined),
+    releaseBudget: vi.fn(async () => undefined),
     finalize: vi.fn(async () => undefined),
     answerWithSearch: vi.fn(),
     extractStructured: vi.fn(),
@@ -233,7 +255,10 @@ function makeHarness(
     getKey: vi.fn(async () =>
       options.key === undefined ? { apiKey: 'sk-secret', status: 'valid', monthlyBudgetCents: null } : options.key
     ),
-    getUsage: vi.fn(async () => options.usage ?? {}),
+    reserveBudget: calls.reserveBudget,
+    budgetRefusalReason: calls.budgetRefusalReason,
+    settleBudget: calls.settleBudget,
+    releaseBudget: calls.releaseBudget,
     recordUsage: calls.recordUsage,
     markInvalid: calls.markInvalid,
     markValid: calls.markValid,
@@ -290,7 +315,8 @@ describe('advanceVisibilityRuns', () => {
     expect(metrics['llm:anthropic:input_tokens']).toBe(1200)
     expect(metrics['llm:anthropic:output_tokens']).toBe(550)
     // sonnet 1000*2 + 500*10, haiku 200*1 + 50*5
-    expect(metrics['llm:anthropic:cost_usd_micros']).toBe(7000 + 450)
+    expect(metrics['llm:anthropic:cost_usd_micros']).toBeUndefined() // booked by settleBudget
+    expect(h.calls.settleBudget).toHaveBeenCalledWith('t1', 'anthropic', 0, 7000 + 450)
     expect(metrics['visibility:answers']).toBe(1)
     expect(h.calls.finalize).toHaveBeenCalled()
   })
@@ -334,6 +360,100 @@ describe('advanceVisibilityRuns', () => {
     expect(h.calls.answerWithSearch).toHaveBeenCalledTimes(1) // only openai
     expect(h.state.saved.has('a3')).toBe(true)
     expect(result.done).toBe(1)
+  })
+
+  it('reserves one upper bound per answer and settles the held amount with the actual cost', async () => {
+    const h = makeHarness([mk('a1')], { key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: 500 } })
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+
+    expect(h.calls.reserveBudget).toHaveBeenCalledTimes(1)
+    const [teamId, provider, held, cap] = h.calls.reserveBudget.mock.calls[0] as unknown as [
+      string,
+      string,
+      number,
+      number,
+    ]
+    expect([teamId, provider, cap]).toEqual(['t1', 'anthropic', 500])
+    expect(held).toBeGreaterThan(7450)
+    expect(h.calls.settleBudget).toHaveBeenCalledWith('t1', 'anthropic', held, 7450)
+    expect(h.calls.releaseBudget).not.toHaveBeenCalled()
+  })
+
+  it('settles only the answer cost when extraction fails', async () => {
+    const h = makeHarness([mk('a1')], {
+      key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: 500 },
+      llm: {
+        anthropic: {
+          extractStructured: async () => {
+            throw new LlmProviderError('anthropic', 'server', 'boom', 500)
+          },
+        },
+      },
+    })
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    expect(h.calls.settleBudget).toHaveBeenCalledWith('t1', 'anthropic', expect.any(Number), 7000)
+  })
+
+  it('holds nothing when the key has no cap', async () => {
+    const h = makeHarness([mk('a1')])
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    expect(h.calls.settleBudget).toHaveBeenCalledWith('t1', 'anthropic', 0, 7450)
+  })
+
+  it('releases the reservation when the provider fails before returning an answer', async () => {
+    const h = makeHarness([mk('a1'), mk('a2')], {
+      key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: 500 },
+      llm: {
+        anthropic: {
+          answerWithSearch: async () => {
+            throw new LlmProviderError('anthropic', 'rate_limit', 'slow', 429)
+          },
+        },
+      },
+    })
+    await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 2 }, h.deps)
+    expect(h.calls.reserveBudget).toHaveBeenCalledTimes(2)
+    expect(h.calls.releaseBudget).toHaveBeenCalledTimes(2)
+    expect(h.calls.settleBudget).not.toHaveBeenCalled()
+  })
+
+  it('releases the reservation when processing crashes after the reservation', async () => {
+    const h = makeHarness([mk('a1')], {
+      key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: 500 },
+      llm: {
+        anthropic: {
+          answerWithSearch: async () => {
+            throw new Error('network exploded')
+          },
+        },
+      },
+    })
+    await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
+    expect(h.calls.releaseBudget).toHaveBeenCalledTimes(1)
+    expect(h.state.failed.get('a1')).toMatch(/unexpected/i)
+  })
+
+  it('leaves answers pending when only in-flight reservations block the budget', async () => {
+    const h = makeHarness([mk('a1'), mk('a2')], {
+      key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: 100 },
+      usage: { 'llm:anthropic:reserved_usd_micros': 990_000 },
+    })
+    await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 1 }, h.deps)
+    // Not failed: other answers' reservations may settle below the cap
+    expect(h.state.failed.size).toBe(0)
+    expect(h.calls.answerWithSearch).not.toHaveBeenCalled()
+    expect(h.calls.releaseBudget).not.toHaveBeenCalled()
+    expect(h.calls.budgetRefusalReason).toHaveBeenCalled()
+  })
+
+  it('fails answers when spend alone would exceed the cap', async () => {
+    const h = makeHarness([mk('a1')], {
+      key: { apiKey: 'k', status: 'valid', monthlyBudgetCents: 100 },
+      usage: { 'llm:anthropic:cost_usd_micros': 999_999 },
+    })
+    await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 1 }, h.deps)
+    expect(h.state.failed.get('a1')).toMatch(/budget/i)
+    expect(h.calls.answerWithSearch).not.toHaveBeenCalled()
   })
 
   it('on auth error marks the key invalid, emails once and fails remaining pending answers', async () => {
@@ -472,9 +592,8 @@ describe('advanceVisibilityRuns hardening', () => {
       },
     })
     await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
-    const metrics = Object.fromEntries(h.calls.recordUsage.mock.calls.map((c: unknown[]) => [c[1], c[2]]))
     // sonnet 1000*2 + 2 searches * 10_000, + haiku extraction 200*1 + 50*5
-    expect(metrics['llm:anthropic:cost_usd_micros']).toBe(2000 + 20_000 + 450)
+    expect(h.calls.settleBudget).toHaveBeenCalledWith('t1', 'anthropic', 0, 2000 + 20_000 + 450)
   })
 
   it('ignores an answer another worker already settled (no done count, no key update)', async () => {

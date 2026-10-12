@@ -1328,7 +1328,7 @@ export const openapiPaths = {
           "quota or key rejected": null
         },
         "429": {
-          "description": "Rate limit (20 per hour per product) or provider rate limit"
+          "description": "Rate limit (20 per hour and 50 per day per product) or provider rate limit"
         },
         "502": {
           "description": "Provider error or unusable model output"
@@ -3765,7 +3765,7 @@ export const openapiPaths = {
           "description": "No usable LLM key or monthly budget reached or provider out of credit"
         },
         "429": {
-          "description": "Rate limit (10 per hour per site) or provider rate limit"
+          "description": "Rate limit (10 per hour and 40 per day per site) or provider rate limit"
         },
         "502": {
           "description": "Provider error"

@@ -24,7 +24,7 @@
  * `webSearchQueries`, `usageMetadata`) come from the generateContent reference and
  * could not be re-confirmed field by field on 2026-10-10.
  */
-import { LLM_MODELS } from './models'
+import { LLM_CALL_LIMITS, LLM_MODELS } from './models'
 import {
   addCitation,
   ANSWER_TIMEOUT_MS,
@@ -69,8 +69,8 @@ function headers(apiKey: string) {
 }
 
 /** Output caps. maxOutputTokens counts thinking tokens too, so the caps leave room for them. */
-export const GEMINI_ANSWER_MAX_OUTPUT_TOKENS = 4096
-export const GEMINI_EXTRACT_MAX_OUTPUT_TOKENS = 2048
+export const GEMINI_ANSWER_MAX_OUTPUT_TOKENS = LLM_CALL_LIMITS.gemini.answerMaxOutputTokens
+export const GEMINI_EXTRACT_MAX_OUTPUT_TOKENS = LLM_CALL_LIMITS.gemini.extractMaxOutputTokens
 
 /**
  * Google answers a bad key with HTTP 400 (`API key not valid`, reason `API_KEY_INVALID`) instead of

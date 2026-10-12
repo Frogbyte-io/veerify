@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, lt, ne } from 'drizzle-orm'
+import { and, eq, isNotNull, ne, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { marketingSite } from '~/server/database/schema/marketing'
 import { projectDomain } from '~/server/database/schema/feedback'
@@ -13,17 +13,18 @@ import {
  *
  * - `domain` sites: verified through an active project domain. Re-checked on
  *   every run (cheap, DB only); unverified as soon as that domain is gone.
- * - `dns` / `meta` / `file` sites: re-checked at most monthly. Two consecutive
- *   failures unverify the site. There is no schema column for the failure
- *   count, so a failed re-check is recorded in `lastVerificationError` as
- *   `Re-check failed (1/2): ...`, and `updatedAt` doubles as "last checked at".
+ * - `dns` / `meta` / `file` sites: re-checked when `verificationCheckedAt` is
+ *   older than 30 days (rows that predate the column fall back to
+ *   `verifiedAt`). A failure increments `verificationFailures` and retries a day
+ *   later; the second consecutive failure unverifies the site. Success resets
+ *   the counter. `lastVerificationError` only carries a human message.
  */
 
 export const DOMAIN_LOST_MESSAGE = 'The custom domain that verified this site is no longer active — verify again'
 export const RECHECK_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000
 /** After a first failure the retry comes a day later, not a month later */
 export const RECHECK_RETRY_MS = 24 * 60 * 60 * 1000
-export const RECHECK_FAILURE_PREFIX = 'Re-check failed (1/2): '
+export const RECHECK_MAX_FAILURES = 2
 const BATCH = 100
 
 export interface RecheckSite {
@@ -33,17 +34,33 @@ export interface RecheckSite {
   verificationToken: string
   verificationMethod: string | null
   lastVerificationError: string | null
+  verifiedAt: Date | null
+  verificationCheckedAt: Date | null
+  verificationFailures: number
+}
+
+/** Pure twin of the SQL filter in `listDueSites`. */
+export function isRecheckDue(site: RecheckSite, now: Date): boolean {
+  const last = site.verificationCheckedAt ?? site.verifiedAt
+  if (!last) return false
+  const interval = site.verificationFailures > 0 ? RECHECK_RETRY_MS : RECHECK_INTERVAL_MS
+  return now.getTime() - last.getTime() > interval
 }
 
 export interface RecheckDeps {
   now: () => Date
   listDomainSites(): Promise<RecheckSite[]>
-  listDueSites(olderThan: Date, limit: number): Promise<RecheckSite[]>
+  listDueSites(now: Date, limit: number): Promise<RecheckSite[]>
   activeDomains(projectId: string): Promise<string[]>
   check: typeof checkVerification
   update(
     siteId: string,
-    patch: { verifiedAt?: null; lastVerificationError: string | null; updatedAt: Date }
+    patch: {
+      verifiedAt?: null
+      lastVerificationError: string | null
+      verificationCheckedAt: Date
+      verificationFailures: number
+    }
   ): Promise<void>
 }
 
@@ -54,6 +71,9 @@ const siteColumns = {
   verificationToken: marketingSite.verificationToken,
   verificationMethod: marketingSite.verificationMethod,
   lastVerificationError: marketingSite.lastVerificationError,
+  verifiedAt: marketingSite.verifiedAt,
+  verificationCheckedAt: marketingSite.verificationCheckedAt,
+  verificationFailures: marketingSite.verificationFailures,
 }
 
 const defaultDeps: RecheckDeps = {
@@ -63,8 +83,11 @@ const defaultDeps: RecheckDeps = {
       .select(siteColumns)
       .from(marketingSite)
       .where(and(isNotNull(marketingSite.verifiedAt), eq(marketingSite.verificationMethod, 'domain'))),
-  listDueSites: (olderThan, limit) =>
-    db
+  listDueSites: (now, limit) => {
+    const lastCheck = sql`coalesce(${marketingSite.verificationCheckedAt}, ${marketingSite.verifiedAt})`
+    const monthAgo = new Date(now.getTime() - RECHECK_INTERVAL_MS)
+    const dayAgo = new Date(now.getTime() - RECHECK_RETRY_MS)
+    return db
       .select(siteColumns)
       .from(marketingSite)
       .where(
@@ -72,11 +95,12 @@ const defaultDeps: RecheckDeps = {
           isNotNull(marketingSite.verifiedAt),
           isNotNull(marketingSite.verificationMethod),
           ne(marketingSite.verificationMethod, 'domain'),
-          lt(marketingSite.updatedAt, olderThan)
+          sql`(case when ${marketingSite.verificationFailures} > 0 then ${lastCheck} < ${dayAgo} else ${lastCheck} < ${monthAgo} end)`
         )
       )
-      .orderBy(marketingSite.updatedAt)
-      .limit(limit),
+      .orderBy(lastCheck)
+      .limit(limit)
+  },
   async activeDomains(projectId) {
     const rows = await db
       .select({ hostname: projectDomain.hostname })
@@ -102,33 +126,43 @@ export async function recheckVerifiedSites(
     try {
       const domains = await deps.activeDomains(site.projectId)
       if (isCoveredByVerifiedDomain(site.origin, domains)) continue
-      await deps.update(site.id, { verifiedAt: null, lastVerificationError: DOMAIN_LOST_MESSAGE, updatedAt: now })
+      await deps.update(site.id, {
+        verifiedAt: null,
+        lastVerificationError: DOMAIN_LOST_MESSAGE,
+        verificationCheckedAt: now,
+        verificationFailures: 0,
+      })
       unverified++
     } catch {
       // One bad row must not stop the sweep; it is retried next hour
     }
   }
 
-  const due = await deps.listDueSites(new Date(now.getTime() - RECHECK_INTERVAL_MS), BATCH)
+  const due = (await deps.listDueSites(now, BATCH)).filter((site) => isRecheckDue(site, now))
   for (const site of due) {
     try {
       const method = site.verificationMethod as VerificationMethod
       const result = await deps.check(site.origin, site.verificationToken, method)
       checked++
       if (result.verified) {
-        await deps.update(site.id, { lastVerificationError: null, updatedAt: now })
-      } else if (site.lastVerificationError?.startsWith(RECHECK_FAILURE_PREFIX)) {
+        await deps.update(site.id, {
+          lastVerificationError: null,
+          verificationCheckedAt: now,
+          verificationFailures: 0,
+        })
+      } else if (site.verificationFailures + 1 >= RECHECK_MAX_FAILURES) {
         await deps.update(site.id, {
           verifiedAt: null,
           lastVerificationError: `Verification lapsed: ${result.detail}. Verify again`,
-          updatedAt: now,
+          verificationCheckedAt: now,
+          verificationFailures: site.verificationFailures + 1,
         })
         unverified++
       } else {
         await deps.update(site.id, {
-          lastVerificationError: `${RECHECK_FAILURE_PREFIX}${result.detail}`,
-          // Back-dated so the single retry is due in a day rather than a month
-          updatedAt: new Date(now.getTime() - RECHECK_INTERVAL_MS + RECHECK_RETRY_MS),
+          lastVerificationError: `Re-check failed: ${result.detail}`,
+          verificationCheckedAt: now,
+          verificationFailures: site.verificationFailures + 1,
         })
       }
     } catch {

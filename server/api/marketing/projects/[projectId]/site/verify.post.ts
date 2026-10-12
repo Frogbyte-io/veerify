@@ -68,7 +68,14 @@ export default defineEventHandler(async (event) => {
     .update(marketingSite)
     .set(
       result.verified
-        ? { verifiedAt: now, verificationMethod: body.method, lastVerificationError: null, updatedAt: now }
+        ? {
+            verifiedAt: now,
+            verificationMethod: body.method,
+            verificationCheckedAt: now,
+            verificationFailures: 0,
+            lastVerificationError: null,
+            updatedAt: now,
+          }
         : { lastVerificationError: result.detail, updatedAt: now }
     )
     .where(eq(marketingSite.id, site.id))

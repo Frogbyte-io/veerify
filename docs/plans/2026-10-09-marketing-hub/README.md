@@ -50,15 +50,24 @@ opportunities, and growth features built on feedback, changelog and support data
 - Review requests only go to verified user emails and CSAT contacts; anonymous feedback authors and
   unlinked subscribers are never asked.
 - Veerify-provided LLM keys on the cloud are not built (they need billing first).
-- Budget caps are estimates (tokens × list price + web-search fees) and can overshoot by the answers
-  already in flight.
-- Token-verified sites (dns/meta/file) are re-checked monthly without a schema change: a failed
-  re-check is stored in `lastVerificationError` ("Re-check failed (1/2)") and `updatedAt` is the
-  "last checked" marker, so editing the site also resets the monthly timer.
+- Budget caps are estimates (tokens × list price + web-search fees), enforced with atomic
+  reservations: each LLM call reserves an upper bound (output cap, max searches, prompt ÷ 3 chars per
+  token) in `llm:<provider>:reserved_usd_micros` only if `spent + reserved + amount <= cap`, then
+  settles the actual estimate, so concurrent calls no longer overshoot. Remaining caveats: the
+  reservation is an upper bound, so a call near the cap can be refused although its real cost would
+  have fit; a call that costs more than reserved is still booked in full; reservations leaked by a
+  crash are cleared by the hourly visibility schedule task once untouched for 15 minutes; the
+  provider's invoice stays the source of truth.
 - Vercel functions are configured for `maxDuration: 60` (nuxt.config.ts); the project's Vercel plan
   must allow it.
-- The rate-limit store is in-memory unless `RATE_LIMIT_STORE=redis`, so limits are per instance on
-  serverless.
+- The in-memory rate-limit store (unless `RATE_LIMIT_STORE=redis`) is per instance on serverless. The
+  cost-relevant marketing endpoints do not depend on it: visibility prompt suggestions (40/day per
+  site) and announcement generation (50/day per product) are also capped by `consumeDbLimit`
+  (`server/utils/marketing-db-limit.ts`, atomic guarded upsert into `marketing_usage` with
+  `ratelimit:*` metrics that age out with their month), and manual audits, manual visibility runs,
+  competitor checks (per-watch claim on `lastCheckedAt`) and manual review sends (team daily cap) are
+  already counted from database rows. The remaining in-memory limits (hourly caps, per-host competitor
+  day cap, site verify attempts) only add burst protection.
 
 ## Durable references
 

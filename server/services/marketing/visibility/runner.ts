@@ -50,7 +50,15 @@ import {
   markCredentialValid,
   type TeamApiKey,
 } from '~/server/utils/team-credentials'
-import { getUsage, recordUsage } from '~/server/utils/marketing-usage'
+import { recordUsage } from '~/server/utils/marketing-usage'
+import {
+  estimateVisibilityReservation,
+  heldMicros,
+  releaseBudget,
+  reserveBudget,
+  budgetRefusalReason,
+  settleBudget,
+} from '~/server/services/marketing/llm-budget'
 import { createLogger } from '~/server/utils/logger'
 import { buildAnalysis, buildExtractionSystemPrompt, EXTRACTION_SCHEMA } from './analysis'
 import type { AnswerAnalysis, AnswerExtraction, MarketingTermInput } from './types'
@@ -73,14 +81,18 @@ function isUniqueViolation(err: unknown): boolean {
   return e?.code === '23505' || e?.cause?.code === '23505'
 }
 
-/** Whether estimated month-to-date spend for a provider has reached the key's budget. */
+/**
+ * Whether estimated month-to-date spend plus in-flight reservations for a provider has reached the
+ * key's budget. For reads (UI, setup checks); calls go through `reserveBudget`.
+ */
 export function budgetExhausted(
   usage: Record<string, number>,
   provider: string,
   monthlyBudgetCents: number | null
 ): boolean {
   if (monthlyBudgetCents == null) return false
-  return (usage[`llm:${provider}:cost_usd_micros`] ?? 0) >= monthlyBudgetCents * 10_000
+  const spent = (usage[`llm:${provider}:cost_usd_micros`] ?? 0) + (usage[`llm:${provider}:reserved_usd_micros`] ?? 0)
+  return spent >= monthlyBudgetCents * 10_000
 }
 
 export const LLM_PROVIDER_IDS: LlmProviderId[] = LLM_PROVIDERS.map((p) => p.id)
@@ -242,7 +254,17 @@ export interface RunnerDeps {
   markRunsRunning: (runIds: string[]) => Promise<void>
   loadContext: (answer: ClaimedAnswer) => Promise<AnswerContext | null>
   getKey: (teamId: string, provider: LlmProviderId) => Promise<TeamApiKey | null>
-  getUsage: (teamId: string) => Promise<Record<string, number>>
+  /** Atomic budget reservation (see llm-budget.ts); false when the cap would be exceeded */
+  reserveBudget: (teamId: string, provider: string, amountMicros: number, capCents: number | null) => Promise<boolean>
+  budgetRefusalReason: (
+    teamId: string,
+    provider: string,
+    amountMicros: number,
+    capCents: number
+  ) => Promise<'cap' | 'in_flight'>
+  /** Replaces a reservation with the actual spend */
+  settleBudget: (teamId: string, provider: string, reservedMicros: number, actualMicros: number) => Promise<void>
+  releaseBudget: (teamId: string, provider: string, reservedMicros: number) => Promise<void>
   recordUsage: (teamId: string, metric: string, units: number) => Promise<void>
   markInvalid: (teamId: string, provider: LlmProviderId, message: string, keyHint?: string) => Promise<boolean>
   markValid: (teamId: string, provider: LlmProviderId, keyHint?: string) => Promise<void>
@@ -364,78 +386,102 @@ async function processAnswer(
     return 'failed'
   }
 
-  // Budget check on the estimated month-to-date cost
-  if (key.monthlyBudgetCents != null) {
-    const usage = await deps.getUsage(teamId)
-    if (budgetExhausted(usage, provider, key.monthlyBudgetCents)) {
-      await failProvider(answer, deps, stopped, 'Monthly budget reached for this provider')
-      return 'failed'
-    }
-  }
-
   const llm = deps.getProvider(provider)
   const answerModel = LLM_MODELS[provider].answer
   const extractModel = LLM_MODELS[provider].extract
-  let answered: LlmAnswer
-  try {
-    answered = await llm.answerWithSearch({
-      apiKey: key.apiKey,
-      prompt: context.promptText,
-      model: answerModel,
-    })
-  } catch (err) {
-    return handleProviderError(err, answer, teamId, key.keyHint, deps, stopped, invalidated)
+  const extractionSystem = buildExtractionSystemPrompt(context.brandLabel)
+
+  // Reserve an upper bound for the answer and the extraction together, so concurrent answers cannot
+  // all pass the monthly cap check. Settled with the actual cost, released if nothing was spent.
+  const held = heldMicros(
+    estimateVisibilityReservation(provider, answerModel, extractModel, context.promptText, extractionSystem),
+    key.monthlyBudgetCents
+  )
+  if (!(await deps.reserveBudget(teamId, provider, held, key.monthlyBudgetCents))) {
+    // Only a real cap fails the provider's answers. If the refusal came from other answers'
+    // reservations still in flight, leave this one pending for the next tick (bounded by the 24h
+    // pending-answer timeout) instead of failing work that may fit once they settle.
+    const reason =
+      key.monthlyBudgetCents == null
+        ? 'cap'
+        : await deps.budgetRefusalReason(teamId, provider, held, key.monthlyBudgetCents)
+    if (reason === 'in_flight') {
+      stopped.add(provider)
+      await deps.release(answer.id)
+      return 'released'
+    }
+    await failProvider(answer, deps, stopped, 'Monthly budget reached for this provider')
+    return 'failed'
   }
-
-  let totalIn = answered.usage.inputTokens
-  let totalOut = answered.usage.outputTokens
-  let costMicros = estimateCostUsdMicros(provider, answerModel, answered.model, answered.usage)
-
-  let extraction: AnswerExtraction | null = null
+  let settled = false
   try {
-    const extracted = await llm.extractStructured<AnswerExtraction>({
-      apiKey: key.apiKey,
-      system: buildExtractionSystemPrompt(context.brandLabel),
-      input: answered.text,
-      schema: EXTRACTION_SCHEMA,
-      schemaName: 'answer_extraction',
-      model: extractModel,
+    let answered: LlmAnswer
+    try {
+      answered = await llm.answerWithSearch({
+        apiKey: key.apiKey,
+        prompt: context.promptText,
+        model: answerModel,
+      })
+    } catch (err) {
+      return await handleProviderError(err, answer, teamId, key.keyHint, deps, stopped, invalidated)
+    }
+
+    let totalIn = answered.usage.inputTokens
+    let totalOut = answered.usage.outputTokens
+    let costMicros = estimateCostUsdMicros(provider, answerModel, answered.model, answered.usage)
+
+    let extraction: AnswerExtraction | null = null
+    try {
+      const extracted = await llm.extractStructured<AnswerExtraction>({
+        apiKey: key.apiKey,
+        system: extractionSystem,
+        input: answered.text,
+        schema: EXTRACTION_SCHEMA,
+        schemaName: 'answer_extraction',
+        model: extractModel,
+      })
+      extraction = extracted.data
+      totalIn += extracted.usage.inputTokens
+      totalOut += extracted.usage.outputTokens
+      costMicros += estimateCostUsdMicros(provider, extractModel, extracted.model, extracted.usage)
+    } catch (err) {
+      // The answer is still valuable: fall back to deterministic ranking
+      logger.warn('Visibility extraction failed; using deterministic analysis', {
+        answerId: answer.id,
+        provider,
+        kind: err instanceof LlmProviderError ? err.kind : 'unknown',
+      })
+    }
+
+    // The spend is real from here on, whatever happens to the row
+    await deps.settleBudget(teamId, provider, held, costMicros)
+    settled = true
+
+    const analysis = buildAnalysis(answered.text, answered.citations, context.terms, extraction)
+    const saved = await deps.saveAnswer(answer.id, {
+      model: answered.model,
+      answer: answered.text,
+      citations: answered.citations.map((c) => ({ url: c.url, title: c.title ?? null })),
+      analysis,
+      inputTokens: totalIn,
+      outputTokens: totalOut,
     })
-    extraction = extracted.data
-    totalIn += extracted.usage.inputTokens
-    totalOut += extracted.usage.outputTokens
-    costMicros += estimateCostUsdMicros(provider, extractModel, extracted.model, extracted.usage)
-  } catch (err) {
-    // The answer is still valuable: fall back to deterministic ranking
-    logger.warn('Visibility extraction failed; using deterministic analysis', {
-      answerId: answer.id,
-      provider,
-      kind: err instanceof LlmProviderError ? err.kind : 'unknown',
-    })
+
+    await Promise.all([
+      deps.recordUsage(teamId, `llm:${provider}:input_tokens`, totalIn),
+      deps.recordUsage(teamId, `llm:${provider}:output_tokens`, totalOut),
+      deps.recordUsage(teamId, 'visibility:answers', 1),
+    ])
+
+    // Not saved: another worker already settled this row. The spend above is real, so usage is still recorded.
+    if (saved === false) return 'released'
+
+    if (key.status === 'unchecked') await deps.markValid(teamId, provider, key.keyHint)
+    return 'done'
+  } finally {
+    // Provider failed or the worker crashed before settling: give the reservation back
+    if (!settled) await deps.releaseBudget(teamId, provider, held).catch(() => undefined)
   }
-
-  const analysis = buildAnalysis(answered.text, answered.citations, context.terms, extraction)
-  const saved = await deps.saveAnswer(answer.id, {
-    model: answered.model,
-    answer: answered.text,
-    citations: answered.citations.map((c) => ({ url: c.url, title: c.title ?? null })),
-    analysis,
-    inputTokens: totalIn,
-    outputTokens: totalOut,
-  })
-
-  await Promise.all([
-    deps.recordUsage(teamId, `llm:${provider}:input_tokens`, totalIn),
-    deps.recordUsage(teamId, `llm:${provider}:output_tokens`, totalOut),
-    deps.recordUsage(teamId, `llm:${provider}:cost_usd_micros`, costMicros),
-    deps.recordUsage(teamId, 'visibility:answers', 1),
-  ])
-
-  // Not saved: another worker already settled this row. The spend above is real, so usage is still recorded.
-  if (saved === false) return 'released'
-
-  if (key.status === 'unchecked') await deps.markValid(teamId, provider, key.keyHint)
-  return 'done'
 }
 
 /** Fail this answer and every other pending answer for the provider in its run. */
@@ -654,7 +700,10 @@ export function createDefaultDeps(): RunnerDeps {
     },
 
     getKey: getTeamApiKey,
-    getUsage: (teamId) => getUsage(teamId),
+    reserveBudget,
+    budgetRefusalReason,
+    settleBudget,
+    releaseBudget,
     recordUsage,
     markInvalid: markCredentialInvalid,
     markValid: markCredentialValid,
