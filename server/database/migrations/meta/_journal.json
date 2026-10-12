@@ -351,6 +351,13 @@
       "when": 1791738237440,
       "tag": "0049_short_richard_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791802920348,
+      "tag": "0050_perfect_retro_girl",
+      "breakpoints": true
     }
   ]
 }

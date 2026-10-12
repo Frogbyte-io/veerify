@@ -2,22 +2,14 @@
 import TeamSwitcher from './TeamSwitcher.vue'
 import NavUser from './NavUser.vue'
 import { useSidebar } from '~/components/ui/sidebar'
-import { DEFAULT_TEAM_MODULES, type ModuleKey } from '~/lib/modules'
+import { DEFAULT_TEAM_MODULES } from '~/lib/modules'
+import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups } from '~/lib/sidebar-nav'
 
 interface SidebarProps {
   side?: 'left' | 'right'
   variant?: 'sidebar' | 'floating' | 'inset'
   collapsible?: 'offcanvas' | 'icon' | 'none'
   class?: string
-}
-
-interface SidebarNavItem {
-  title: string
-  url: string
-  icon: string
-  disabled?: boolean
-  /** Hidden unless this module is enabled for the active team */
-  module?: ModuleKey
 }
 
 const props = withDefaults(defineProps<SidebarProps>(), {
@@ -132,145 +124,7 @@ onBeforeUnmount(() => {
 })
 
 // Shared state set by TeamSwitcher — null = loading, true = has org, false = personal account
-const hasActiveOrganization = useState('hasActiveOrganization', () => null)
-
-// All personal nav items
-const personalItems: SidebarNavItem[] = [
-  {
-    title: 'Dashboard',
-    url: '/dashboard',
-    icon: 'lucide:layout-dashboard',
-  },
-  {
-    title: 'My Submissions',
-    url: '/submissions',
-    icon: 'lucide:list',
-  },
-  {
-    title: 'Notifications',
-    url: '/settings#notifications',
-    icon: 'lucide:bell',
-  },
-]
-
-// Dashboard is only relevant in workspace context; show it while loading (null) too
-const personalNavItems = computed(() =>
-  hasActiveOrganization.value !== false ? personalItems : personalItems.filter((item) => item.title !== 'Dashboard')
-)
-
-// Workspace navigation items (only shown when org is active)
-const feedbackItems: SidebarNavItem[] = [
-  {
-    title: 'Feedback',
-    url: '/feedback',
-    icon: 'lucide:message-square',
-    module: 'feedbackEnabled',
-  },
-  {
-    title: 'Roadmap',
-    url: '/dashboard/roadmap',
-    icon: 'lucide:map',
-    module: 'roadmapEnabled',
-  },
-  {
-    title: 'Changelog',
-    url: '/dashboard/changelog',
-    icon: 'lucide:scroll-text',
-    module: 'changelogEnabled',
-  },
-]
-
-const managementItems: SidebarNavItem[] = [
-  {
-    title: 'Products',
-    url: '/products',
-    icon: 'lucide:package',
-  },
-  {
-    title: 'Members',
-    url: '/settings#organization',
-    icon: 'lucide:user-plus',
-  },
-]
-
-const systemItems: SidebarNavItem[] = [
-  {
-    title: 'Settings',
-    url: '/settings',
-    icon: 'lucide:settings',
-  },
-]
-
-const supportModuleItems: SidebarNavItem[] = [
-  {
-    title: 'Inbox',
-    url: '/support',
-    icon: 'lucide:inbox',
-  },
-  {
-    title: 'Contacts',
-    url: '/support/contacts',
-    icon: 'lucide:contact',
-  },
-]
-
-const marketingModuleItems: SidebarNavItem[] = [
-  {
-    title: 'Overview',
-    url: '/marketing',
-    icon: 'lucide:megaphone',
-  },
-  {
-    title: 'Site audit',
-    url: '/marketing/audit',
-    icon: 'lucide:search-check',
-  },
-  {
-    title: 'AI visibility',
-    url: '/marketing/ai-visibility',
-    icon: 'lucide:sparkles',
-  },
-  {
-    title: 'Search',
-    url: '/marketing/search',
-    icon: 'lucide:chart-line',
-  },
-  {
-    title: 'Mentions',
-    url: '/marketing/mentions',
-    icon: 'lucide:at-sign',
-  },
-  {
-    title: 'Announcements',
-    url: '/marketing/announcements',
-    icon: 'lucide:send',
-  },
-  {
-    title: 'Reviews',
-    url: '/marketing/reviews',
-    icon: 'lucide:star',
-  },
-  {
-    title: 'Competitors',
-    url: '/marketing/competitors',
-    icon: 'lucide:binoculars',
-  },
-  {
-    title: 'Launch kit',
-    url: '/marketing/launch',
-    icon: 'lucide:rocket',
-  },
-  {
-    title: 'Customer language',
-    url: '/marketing/language',
-    icon: 'lucide:message-square-quote',
-  },
-  {
-    title: 'Settings',
-    url: '/marketing/settings',
-    icon: 'lucide:sliders-horizontal',
-  },
-]
+const hasActiveOrganization = useState<boolean | null>('hasActiveOrganization', () => null)
 
 // Per-team module enablement (delta D-31). Defaults match the table's column
 // defaults, so the sidebar renders correctly for a team that has never opened
@@ -293,9 +147,12 @@ async function loadTeamModules() {
   }
 }
 
-// Roadmap and Changelog entries only show when their team module is on.
-const visibleFeedbackItems = computed(() =>
-  feedbackItems.filter((item) => !item.module || teamModules.value[item.module])
+// One rule decides every group and item; see lib/sidebar-nav.ts.
+const visibleGroups = computed(() =>
+  getVisibleNavGroups(SIDEBAR_NAV_GROUPS, {
+    hasActiveOrganization: hasActiveOrganization.value,
+    modules: teamModules.value,
+  })
 )
 </script>
 
@@ -306,131 +163,11 @@ const visibleFeedbackItems = computed(() =>
     </SidebarHeader>
 
     <SidebarContent>
-      <!-- Personal Section (always visible) -->
-      <SidebarGroup>
-        <SidebarGroupLabel>Personal</SidebarGroupLabel>
+      <SidebarGroup v-for="group in visibleGroups" :key="group.id" :data-testid="group.testId">
+        <SidebarGroupLabel>{{ group.label }}</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            <SidebarMenuItem v-for="item in personalNavItems" :key="item.title">
-              <SidebarMenuButton
-                as-child
-                :tooltip="item.title"
-                class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
-              >
-                <NuxtLink :to="item.url" prefetch-on="interaction">
-                  <Icon :name="item.icon" class="!size-5 shrink-0" />
-                  <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
-                </NuxtLink>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
-
-      <!-- Workspace sections (only when org is active) -->
-      <template v-if="hasActiveOrganization === true">
-        <!-- Feedback Section -->
-        <SidebarGroup v-if="visibleFeedbackItems.length > 0">
-          <SidebarGroupLabel>Feedback</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem v-for="item in visibleFeedbackItems" :key="item.title">
-                <SidebarMenuButton
-                  v-if="item.disabled"
-                  :tooltip="item.title"
-                  disabled
-                  aria-disabled="true"
-                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
-                >
-                  <Icon :name="item.icon" class="!size-5 shrink-0" />
-                  <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
-                </SidebarMenuButton>
-                <SidebarMenuButton
-                  v-else
-                  as-child
-                  :tooltip="item.title"
-                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
-                >
-                  <NuxtLink :to="item.url" prefetch-on="interaction">
-                    <Icon :name="item.icon" class="!size-5 shrink-0" />
-                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
-                  </NuxtLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <!-- Management Section -->
-        <SidebarGroup>
-          <SidebarGroupLabel>Management</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem v-for="item in managementItems" :key="item.title">
-                <SidebarMenuButton
-                  as-child
-                  :tooltip="item.title"
-                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
-                >
-                  <NuxtLink :to="item.url" prefetch-on="interaction">
-                    <Icon :name="item.icon" class="!size-5 shrink-0" />
-                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
-                  </NuxtLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <!-- Support Section — off by default; enabled per team in Settings → Tools -->
-        <SidebarGroup v-if="teamModules.supportEnabled">
-          <SidebarGroupLabel>Support</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem v-for="item in supportModuleItems" :key="item.title">
-                <SidebarMenuButton
-                  as-child
-                  :tooltip="item.title"
-                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
-                >
-                  <NuxtLink :to="item.url" prefetch-on="interaction">
-                    <Icon :name="item.icon" class="!size-5 shrink-0" />
-                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
-                  </NuxtLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <!-- Marketing Section — off by default; enabled per team in Settings → Tools -->
-        <SidebarGroup v-if="teamModules.marketingEnabled" data-testid="sidebar-marketing-group">
-          <SidebarGroupLabel>Marketing</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem v-for="item in marketingModuleItems" :key="item.url">
-                <SidebarMenuButton
-                  as-child
-                  :tooltip="item.title"
-                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
-                >
-                  <NuxtLink :to="item.url" prefetch-on="interaction">
-                    <Icon :name="item.icon" class="!size-5 shrink-0" />
-                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
-                  </NuxtLink>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </template>
-
-      <!-- System Section (always visible) -->
-      <SidebarGroup>
-        <SidebarGroupLabel>System</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            <SidebarMenuItem v-for="item in systemItems" :key="item.title">
+            <SidebarMenuItem v-for="item in group.items" :key="item.url">
               <SidebarMenuButton
                 as-child
                 :tooltip="item.title"

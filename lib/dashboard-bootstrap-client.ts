@@ -13,6 +13,7 @@ export type DashboardBootstrap = {
   }
   teamContext?: {
     teams?: unknown[]
+    organizations?: unknown[]
     activeTeam?: Record<string, unknown> | null
     activeOrganization?: Record<string, unknown> | null
   }

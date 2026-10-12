@@ -20,6 +20,8 @@ import { buildIssueLabels, ensureGitHubLabels } from '~/server/utils/github'
 import { createLogger } from '~/server/utils/logger'
 import { notifyProjectTeam } from '~/server/utils/notifications'
 import { createAutomaticFeedbackLink } from '~/server/utils/support-auto-link'
+import { FEEDBACK_ATTACHMENT_MAX_COUNT } from '~/server/utils/feedback-attachments'
+import { attachUploadsToFeedback } from '~/server/utils/feedback-attachment-access'
 
 const logger = createLogger('feedback')
 
@@ -31,6 +33,8 @@ const createFeedbackSchema = z.object({
   feedbackType: z.enum(['feature_request', 'bug_report', 'improvement', 'question', 'other']).optional(),
   authorName: optionalTrimmedString(100),
   authorEmail: optionalTrimmedEmail(),
+  // Ids of finalized, unattached uploads from POST /api/feedback-attachments/presign
+  attachmentIds: z.array(z.string().min(1)).max(FEEDBACK_ATTACHMENT_MAX_COUNT).optional(),
 })
 
 function createGitHubHeaders(accessToken: string) {
@@ -245,6 +249,16 @@ export default defineEventHandler(async (event) => {
             feedbackId: created.id,
             authorUserId: session.user.id,
             createdAt: now,
+          })
+        }
+
+        if (body.attachmentIds?.length) {
+          await attachUploadsToFeedback(tx, {
+            attachmentIds: body.attachmentIds,
+            feedbackId: created.id,
+            projectId: body.projectId,
+            actor: { userId: session?.user?.id ?? null, anonSessionId },
+            now,
           })
         }
 

@@ -136,6 +136,8 @@
                   </p>
                   <p v-else class="italic text-muted-foreground">No description provided.</p>
 
+                  <FeedbackAttachmentList :key="item.id" :feedback-id="item.id" />
+
                   <div class="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2 xl:grid-cols-4">
                     <div class="rounded-xl bg-background/80 p-4">
                       <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Author</div>

@@ -646,6 +646,271 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/feedback-attachments/{id}": {
+    "delete": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Delete a feedback attachment",
+      "description": "Allowed for the feedback author or a team member of the project. Pending uploads may be deleted by their uploader.",
+      "operationId": "deleteFeedbackAttachment",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Deleted"
+        },
+        "403": {
+          "description": "Not allowed"
+        },
+        "404": {
+          "description": "Attachment not found"
+        }
+      }
+    }
+  },
+  "/api/feedback-attachments/{id}/file": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Download an attachment through a signed, expiring URL",
+      "description": "The URL is minted by the list/url endpoints after an authorization check and is scoped to this attachment id with a 5 minute expiry. Images render inline; everything else is a forced download. Responses are sandboxed with `nosniff` and a restrictive CSP.\n",
+      "operationId": "downloadFeedbackAttachment",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "exp",
+          "required": true,
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "in": "query",
+          "name": "sig",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "File bytes"
+        },
+        "403": {
+          "description": "Invalid or expired signature"
+        },
+        "404": {
+          "description": "Attachment not found"
+        }
+      }
+    }
+  },
+  "/api/feedback-attachments/{id}/finalize": {
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Validate an uploaded feedback attachment and mark it ready",
+      "description": "Re-checks the stored object server-side: size, content sniffing against the allowlist (images, PDF, .txt/.log/.json), and decodes and re-encodes JPEG/PNG/WebP images to strip EXIF metadata. Invalid uploads are deleted.\n",
+      "operationId": "finalizeFeedbackAttachment",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Attachment ready"
+        },
+        "400": {
+          "description": "Content rejected"
+        },
+        "404": {
+          "description": "Attachment or uploaded object not found"
+        }
+      }
+    }
+  },
+  "/api/feedback-attachments/{id}/url": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Get a fresh short-lived signed download URL for an attachment",
+      "description": "Issued only to viewers allowed to see the feedback: team members, the author, and public board visitors for non-hidden, non-support-derived feedback on public products.\n",
+      "operationId": "getFeedbackAttachmentUrl",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Signed URL"
+        },
+        "404": {
+          "description": "Attachment not found or not visible"
+        }
+      }
+    }
+  },
+  "/api/feedback-attachments/presign": {
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Get an upload target for a feedback attachment",
+      "description": "Pass `projectId` to upload before the feedback exists (the returned attachment id is then sent in `attachmentIds` of `POST /api/feedback`), or `feedbackId` to add a file to an existing item (author or team member). Anonymous callers are accepted only for public projects. Enforces the type allowlist, the 10 MB cap and the 5 files per feedback limit.\n",
+      "operationId": "presignFeedbackAttachment",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "fileName",
+                "contentType",
+                "sizeBytes"
+              ],
+              "properties": {
+                "projectId": {
+                  "type": "string"
+                },
+                "feedbackId": {
+                  "type": "string"
+                },
+                "fileName": {
+                  "type": "string"
+                },
+                "contentType": {
+                  "type": "string"
+                },
+                "sizeBytes": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Upload target"
+        },
+        "400": {
+          "description": "Unsupported type",
+          "too large": null,
+          "or too many attachments": null
+        },
+        "403": {
+          "description": "Not allowed to attach files here"
+        },
+        "404": {
+          "description": "Project or feedback not found"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
+  "/api/feedback-attachments/upload/{token}": {
+    "put": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Stream bytes into a pending feedback attachment",
+      "description": "Used when storage does not enforce content length on direct uploads (local driver, or S3 with proxy-required). The token only identifies a pending attachment; the 10 MB limit is enforced while reading the stream and the storage key is never caller-supplied.\n",
+      "operationId": "uploadFeedbackAttachment",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Uploaded"
+        },
+        "400": {
+          "description": "Invalid token",
+          "type mismatch": null,
+          "or size mismatch": null
+        },
+        "404": {
+          "description": "Attachment not found"
+        },
+        "409": {
+          "description": "Attachment already finalized"
+        },
+        "413": {
+          "description": "Upload exceeds the 10 MB limit"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/attachments": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "List attachments of a feedback item with short-lived signed URLs",
+      "description": "Visible to team members, the author, and public board visitors for non-hidden, non-support-derived feedback on public products. Hidden feedback and support-derived items return 404 to everyone else.\n",
+      "operationId": "listFeedbackAttachments",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Attachments"
+        },
+        "404": {
+          "description": "Feedback not found or not visible"
+        }
+      }
+    }
+  },
   "/api/github/issues": {
     "get": {
       "tags": [
