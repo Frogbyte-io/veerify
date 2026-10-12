@@ -51,7 +51,7 @@
         <template v-else-if="overview">
           <Card v-if="!setupComplete" data-testid="marketing-setup">
             <CardHeader>
-              <CardTitle>Get set up</CardTitle>
+              <CardTitle role="heading" aria-level="2">Get set up</CardTitle>
               <CardDescription>{{ completedSteps }} of {{ steps.length }} steps done</CardDescription>
             </CardHeader>
             <CardContent>
@@ -69,6 +69,7 @@
                   />
                   <div class="min-w-0 flex-1">
                     <p class="text-sm font-medium" :class="step.done ? 'text-muted-foreground' : ''">
+                      <span class="sr-only">{{ step.done ? 'Done: ' : 'To do: ' }}</span>
                       {{ step.title }}
                     </p>
                     <p v-if="!step.done" class="text-xs text-muted-foreground">{{ step.hint }}</p>
@@ -82,7 +83,7 @@
                       Ask a team admin
                     </span>
                     <Button v-else as-child size="sm" variant="outline">
-                      <NuxtLink :to="settingsLink">{{ step.action }}</NuxtLink>
+                      <NuxtLink :to="`${settingsLink}#${step.section}`">{{ step.action }}</NuxtLink>
                     </Button>
                   </template>
                 </li>
@@ -93,7 +94,7 @@
           <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Card data-testid="marketing-card-audit">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:search-check" class="w-4 h-4" />
                   Site audit
                 </CardTitle>
@@ -122,7 +123,7 @@
 
             <Card data-testid="marketing-card-visibility">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:sparkles" class="w-4 h-4" />
                   AI visibility
                 </CardTitle>
@@ -149,7 +150,7 @@
 
             <Card data-testid="marketing-card-mentions">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:at-sign" class="w-4 h-4" />
                   Mentions
                 </CardTitle>
@@ -167,7 +168,7 @@
 
             <Card data-testid="marketing-card-search">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:trending-up" class="w-4 h-4" />
                   Search
                 </CardTitle>
@@ -199,7 +200,7 @@
 
             <Card data-testid="marketing-card-reviews">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:star" class="w-4 h-4" />
                   Reviews
                 </CardTitle>
@@ -227,7 +228,7 @@
 
             <Card data-testid="marketing-card-announcements">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:megaphone" class="w-4 h-4" />
                   Announcements
                 </CardTitle>
@@ -250,7 +251,7 @@
 
             <Card data-testid="marketing-card-language">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:message-circle-heart" class="w-4 h-4" />
                   Customer language
                 </CardTitle>
@@ -276,7 +277,7 @@
 
             <Card data-testid="marketing-card-changelog">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:newspaper" class="w-4 h-4" />
                   Changelog
                 </CardTitle>
@@ -300,7 +301,7 @@
 
             <Card data-testid="marketing-card-competitors">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:binoculars" class="w-4 h-4" />
                   Competitors
                 </CardTitle>
@@ -331,7 +332,7 @@
 
             <Card data-testid="marketing-card-launch-kit">
               <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
+                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
                   <Icon name="lucide:rocket" class="w-4 h-4" />
                   Launch kit
                 </CardTitle>
@@ -356,7 +357,7 @@
 
           <Card data-testid="marketing-usage">
             <CardHeader>
-              <CardTitle class="text-base">Usage this month</CardTitle>
+              <CardTitle role="heading" aria-level="2" class="text-base">Usage this month</CardTitle>
               <CardDescription>Counted for your whole team. Provider invoices are the source of truth.</CardDescription>
             </CardHeader>
             <CardContent>
@@ -388,6 +389,10 @@ import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 export default {
   name: 'MarketingOverviewPage',
 
+  created() {
+    useHead({ title: 'Marketing overview' })
+  },
+
   data() {
     return {
       pickerReady: false,
@@ -408,6 +413,7 @@ export default {
       return [
         {
           key: 'site',
+          section: 'site',
           title: 'Add your site',
           hint: 'Tell Marketing which website to look at.',
           action: 'Add site',
@@ -416,6 +422,7 @@ export default {
         },
         {
           key: 'verify',
+          section: 'site',
           title: 'Verify you own it',
           hint: 'Add a DNS record, a meta tag or a file. Nothing runs before this.',
           action: 'Verify',
@@ -424,6 +431,7 @@ export default {
         },
         {
           key: 'terms',
+          section: 'terms',
           title: 'Add your brand name',
           hint: 'Add competitors and keywords too, if you like.',
           action: 'Add terms',
@@ -431,6 +439,7 @@ export default {
         },
         {
           key: 'keys',
+          section: 'keys',
           title: 'Add an AI key',
           hint: 'An Anthropic, OpenAI, Gemini or Perplexity key unlocks AI visibility. A Firecrawl key is optional and unlocks the full site crawl.',
           action: 'Add keys',

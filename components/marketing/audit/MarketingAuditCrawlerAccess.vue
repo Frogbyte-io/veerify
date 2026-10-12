@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="audit-crawler-access">
     <CardHeader>
-      <CardTitle class="flex items-center gap-2 text-base">
+      <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
         <Icon name="lucide:bot" class="h-4 w-4" />
         AI and search crawler access
       </CardTitle>

@@ -9,7 +9,7 @@
         <div class="space-y-1">
           <p class="font-medium">Search Console is not configured on this server</p>
           <p class="mx-auto max-w-lg text-sm text-muted-foreground">
-            Veerify reads Search Console through an OAuth app you own. Ask whoever runs this installation to set it up.
+            Veerify reads Search Console through an OAuth app you own. Ask your server admin to set it up.
           </p>
         </div>
         <ol
@@ -19,11 +19,11 @@
           <li>In Google Cloud, enable the Search Console API and create an OAuth client of type Web application.</li>
           <li>
             Add
-            <code class="rounded bg-muted px-1 py-0.5 text-xs">{BETTER_AUTH_URL}/api/marketing/google/callback</code>
+            <code class="break-all rounded bg-muted px-1 py-0.5 text-xs">{{ callbackUrl }}</code>
             as an authorized redirect URI.
           </li>
           <li>
-            Set
+            Ask your server admin to set
             <code class="rounded bg-muted px-1 py-0.5 text-xs">GOOGLE_CLIENT_ID</code>
             and
             <code class="rounded bg-muted px-1 py-0.5 text-xs">GOOGLE_CLIENT_SECRET</code>
@@ -76,5 +76,19 @@ export default {
   },
 
   emits: ['connect'],
+
+  data() {
+    return { appOrigin: '' }
+  },
+
+  computed: {
+    callbackUrl() {
+      return `${this.appOrigin || '<your app URL>'}/api/marketing/google/callback`
+    },
+  },
+
+  mounted() {
+    if (import.meta.client) this.appOrigin = window.location.origin
+  },
 }
 </script>

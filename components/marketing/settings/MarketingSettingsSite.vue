@@ -1,32 +1,32 @@
 <template>
-  <Card data-testid="marketing-settings-site">
+  <Card id="site" class="scroll-mt-20" data-testid="marketing-settings-site">
     <CardHeader>
-      <div class="flex items-start justify-between gap-3">
-        <div>
-          <CardTitle>Site</CardTitle>
+      <div class="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:justify-between">
+        <div class="min-w-0">
+          <CardTitle role="heading" aria-level="2">Site</CardTitle>
           <CardDescription>
             The website Marketing audits and monitors. You must prove you own it before anything runs.
           </CardDescription>
         </div>
-        <Badge v-if="site && site.verified" variant="default" data-testid="marketing-site-verified">
+        <Badge v-if="site && site.verified" variant="default" class="shrink-0" data-testid="marketing-site-verified">
           <Icon name="lucide:check" />
           Verified{{ methodLabel ? ` (${methodLabel})` : '' }}
         </Badge>
-        <Badge v-else-if="site" variant="outline" data-testid="marketing-site-unverified">
+        <Badge v-else-if="site" variant="outline" class="shrink-0" data-testid="marketing-site-unverified">
           <Icon name="lucide:clock" />
           Not verified
         </Badge>
       </div>
     </CardHeader>
 
-    <CardContent class="space-y-5">
+    <CardContent class="min-w-0 space-y-5">
       <p v-if="!canManage" class="rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         Only team admins can change the site or verify it.
       </p>
 
-      <form class="space-y-2" @submit.prevent="saveOrigin">
+      <form class="space-y-2" @submit.prevent="saveOrigin" @keydown.esc="origin = site?.origin || ''">
         <Label for="marketing-site-origin">Site address</Label>
-        <div class="flex gap-2">
+        <div class="flex flex-col gap-2 sm:flex-row">
           <Input
             id="marketing-site-origin"
             v-model="origin"
@@ -35,11 +35,19 @@
             :disabled="!canManage || saving"
             data-testid="marketing-site-origin"
           />
-          <Button type="submit" :disabled="!canManage || saving || !originChanged">
+          <Button
+            type="submit"
+            class="shrink-0"
+            :disabled="!canManage || saving || !originChanged"
+            :title="addDisabledReason"
+          >
             <Icon v-if="saving" name="lucide:loader-circle" class="w-4 h-4 mr-2 animate-spin" />
             {{ site ? 'Change' : 'Add site' }}
           </Button>
         </div>
+        <p v-if="addDisabledReason" class="text-xs text-muted-foreground" data-testid="marketing-site-disabled-reason">
+          {{ addDisabledReason }}
+        </p>
         <p v-if="site && originChanged" class="text-xs text-muted-foreground">
           Changing the address resets verification and creates a new token.
         </p>
@@ -156,6 +164,12 @@ export default {
   },
 
   computed: {
+    addDisabledReason() {
+      if (!this.canManage) return 'Only team admins can change the site.'
+      if (!this.origin.trim()) return this.site ? '' : 'Enter your site address to add it.'
+      return ''
+    },
+
     methodLabel() {
       return METHOD_LABELS[this.site?.verificationMethod] || ''
     },

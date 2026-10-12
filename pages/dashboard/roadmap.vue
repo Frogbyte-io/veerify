@@ -182,6 +182,10 @@ function sortItems(items) {
 export default {
   name: 'DashboardRoadmapPage',
 
+  created() {
+    useHead({ title: 'Roadmap' })
+  },
+
   components: { VueDraggable },
 
   data() {

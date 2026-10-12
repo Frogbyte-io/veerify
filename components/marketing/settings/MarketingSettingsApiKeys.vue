@@ -1,7 +1,7 @@
 <template>
-  <Card data-testid="marketing-settings-keys">
+  <Card id="keys" class="scroll-mt-20" data-testid="marketing-settings-keys">
     <CardHeader>
-      <CardTitle>API keys</CardTitle>
+      <CardTitle role="heading" aria-level="2">API keys</CardTitle>
       <CardDescription>
         Bring your own keys. They are encrypted before they are stored and never shown again. Only the last four
         characters are displayed. Usage is billed by the provider, not by Veerify.
@@ -32,7 +32,7 @@
           role="alert"
           data-testid="marketing-keys-no-secrets"
         >
-          Keys cannot be stored on this installation yet. The server administrator must set
+          Keys cannot be stored on this installation yet. Ask your server admin to set
           <code class="font-mono">SECRETS_ENCRYPTION_KEY</code>
           (for example from <code class="font-mono">openssl rand -base64 32</code>).
         </p>
@@ -85,6 +85,7 @@
                 v-if="canManage"
                 size="sm"
                 variant="outline"
+                :aria-label="`Save ${provider.label} budget`"
                 :disabled="busy === provider.id || !budgetChanged(provider.id)"
                 @click="saveBudget(provider.id)"
               >
@@ -94,7 +95,12 @@
           </template>
 
           <div v-if="canManage" class="space-y-2">
-            <form v-if="editing === provider.id" class="flex flex-wrap gap-2" @submit.prevent="saveKey(provider.id)">
+            <form
+              v-if="editing === provider.id"
+              class="flex flex-wrap gap-2"
+              @submit.prevent="saveKey(provider.id)"
+              @keydown.esc="cancelEdit"
+            >
               <Input
                 v-model="keyDraft"
                 type="password"
@@ -114,7 +120,13 @@
               </Button>
             </form>
             <div v-else class="flex gap-2">
-              <Button size="sm" variant="outline" :disabled="!secretsConfigured" @click="startEdit(provider.id)">
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="!secretsConfigured"
+                :aria-label="`${credentialFor(provider.id) ? 'Replace' : 'Add'} ${provider.label} key`"
+                @click="startEdit(provider.id)"
+              >
                 {{ credentialFor(provider.id) ? 'Replace key' : 'Add key' }}
               </Button>
               <Button
@@ -122,6 +134,7 @@
                 size="sm"
                 variant="ghost"
                 :disabled="busy === provider.id"
+                :aria-label="`Remove ${provider.label} key`"
                 @click="remove(provider.id)"
               >
                 Remove

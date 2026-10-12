@@ -53,6 +53,10 @@
 export default {
   name: 'MarketingReviewsPage',
 
+  created() {
+    useHead({ title: 'Reviews · Marketing' })
+  },
+
   data() {
     return {
       product: null,

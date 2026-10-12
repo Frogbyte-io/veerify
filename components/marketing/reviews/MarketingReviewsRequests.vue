@@ -2,7 +2,7 @@
   <Card data-testid="reviews-requests">
     <CardHeader class="flex flex-row items-start justify-between gap-3 space-y-0">
       <div>
-        <CardTitle>Requests</CardTitle>
+        <CardTitle role="heading" aria-level="2">Requests</CardTitle>
         <CardDescription>Every request that was queued, newest first.</CardDescription>
       </div>
       <Button

@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="audit-site-files">
     <CardHeader>
-      <CardTitle class="text-base">Site files</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Site files</CardTitle>
     </CardHeader>
     <CardContent class="space-y-5">
       <div data-testid="audit-llms">

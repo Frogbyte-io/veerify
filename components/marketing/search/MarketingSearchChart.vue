@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="search-chart">
     <CardHeader>
-      <CardTitle class="text-base">Clicks and impressions</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Clicks and impressions</CardTitle>
       <CardDescription>Daily totals. Each line uses its own scale.</CardDescription>
     </CardHeader>
     <CardContent>

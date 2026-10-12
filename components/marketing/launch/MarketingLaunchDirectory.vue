@@ -16,6 +16,7 @@
             size="sm"
             class="shrink-0 gap-1"
             :disabled="saving"
+            :aria-label="`Status for ${item.name}: ${statusText}`"
             :data-testid="`launch-status-${item.id}`"
           >
             <Icon v-if="saving" name="lucide:loader-circle" class="h-3.5 w-3.5 animate-spin" />
@@ -44,7 +45,7 @@
         :href="siteUrl"
         target="_blank"
         rel="noopener noreferrer"
-        class="inline-flex items-center gap-1 underline"
+        class="inline-flex min-h-9 items-center gap-1 px-1 underline"
         :data-testid="`launch-site-${item.id}`"
       >
         <Icon name="lucide:external-link" class="h-3.5 w-3.5" />
@@ -55,7 +56,7 @@
         :href="item.submitUrl"
         target="_blank"
         rel="noopener noreferrer"
-        class="inline-flex items-center gap-1 underline"
+        class="inline-flex min-h-9 items-center gap-1 px-1 underline"
         :data-testid="`launch-submit-${item.id}`"
       >
         <Icon name="lucide:send" class="h-3.5 w-3.5" />
@@ -64,7 +65,7 @@
     </div>
 
     <div class="mt-auto space-y-2 border-t border-border pt-3">
-      <form v-if="editing" class="space-y-2" @submit.prevent="save">
+      <form v-if="editing" class="space-y-2" @submit.prevent="save" @keydown.esc="cancelEdit">
         <div class="space-y-1">
           <Label :for="`launch-url-${item.id}`" class="text-xs">
             {{ item.custom ? 'Directory link (https)' : 'Your listing URL (https)' }}

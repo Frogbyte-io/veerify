@@ -107,6 +107,10 @@ import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 export default {
   name: 'MarketingLanguagePage',
 
+  created() {
+    useHead({ title: 'Language · Marketing' })
+  },
+
   data() {
     return {
       product: null,

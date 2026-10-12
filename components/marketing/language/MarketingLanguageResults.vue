@@ -8,7 +8,7 @@
 
     <Card>
       <CardHeader>
-        <CardTitle>How customers describe things</CardTitle>
+        <CardTitle role="heading" aria-level="2">How customers describe things</CardTitle>
         <CardDescription>Recurring phrases in their own words, with approximate mention counts.</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
@@ -31,7 +31,7 @@
 
     <Card>
       <CardHeader>
-        <CardTitle>Suggestions</CardTitle>
+        <CardTitle role="heading" aria-level="2">Suggestions</CardTitle>
         <CardDescription>Tick what you want to track, then add it to your Marketing setup.</CardDescription>
       </CardHeader>
       <CardContent class="space-y-5">

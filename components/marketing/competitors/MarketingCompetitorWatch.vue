@@ -1,7 +1,7 @@
 <template>
   <Card :data-testid="`competitor-card-${competitor.id}`">
     <CardHeader class="pb-3">
-      <CardTitle class="flex flex-wrap items-center gap-2 text-lg">
+      <CardTitle role="heading" aria-level="2" class="flex flex-wrap items-center gap-2 text-lg">
         {{ competitor.label }}
         <span v-if="competitor.competitorDomain" class="text-sm font-normal text-muted-foreground">
           {{ competitor.competitorDomain }}

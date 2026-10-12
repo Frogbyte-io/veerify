@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="language-consent">
     <CardHeader>
-      <CardTitle class="flex items-center gap-2">
+      <CardTitle role="heading" aria-level="2" class="flex items-center gap-2">
         <Icon name="lucide:shield-check" class="h-5 w-5" />
         Data sent to your AI provider
       </CardTitle>

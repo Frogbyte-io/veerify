@@ -1,7 +1,13 @@
 <template>
   <DropdownMenu @update:open="handleOpenChange">
     <DropdownMenuTrigger as-child>
-      <Button variant="ghost" size="icon" class="relative h-8 w-8" data-testid="notification-bell">
+      <Button
+        variant="ghost"
+        size="icon"
+        class="relative h-8 w-8"
+        :aria-label="unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'"
+        data-testid="notification-bell"
+      >
         <Icon name="lucide:bell" class="h-4 w-4" />
         <span
           v-if="unreadCount > 0"

@@ -59,6 +59,7 @@
         <Textarea
           :model-value="texts[active]"
           rows="6"
+          :aria-label="`${activeLabel} draft for ${entry.title || 'this changelog entry'}`"
           :placeholder="`No ${activeLabel} draft yet. Generate drafts, or write your own here.`"
           :data-testid="`announcement-text-${entry.id}`"
           @update:model-value="onInput"

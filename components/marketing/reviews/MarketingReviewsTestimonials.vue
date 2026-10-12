@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="reviews-testimonials">
     <CardHeader>
-      <CardTitle>Testimonials</CardTitle>
+      <CardTitle role="heading" aria-level="2">Testimonials</CardTitle>
       <CardDescription>
         Only testimonials the author agreed to publish and you approved appear on your public wall. Others stay private.
         <template v-if="wallUrl">

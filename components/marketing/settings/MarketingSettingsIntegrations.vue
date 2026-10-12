@@ -1,7 +1,7 @@
 <template>
-  <Card data-testid="marketing-settings-integrations">
+  <Card id="integrations" class="scroll-mt-20" data-testid="marketing-settings-integrations">
     <CardHeader>
-      <CardTitle>Integration status</CardTitle>
+      <CardTitle role="heading" aria-level="2">Integration status</CardTitle>
       <CardDescription>What works on this installation, and what to set up for the rest.</CardDescription>
       <div v-if="canManage && !isLoading && !error && integrations.length > 0" class="pt-2">
         <Button
@@ -31,31 +31,34 @@
         <Button variant="outline" size="sm" @click="$emit('retry')">Retry</Button>
       </div>
 
-      <ul v-else class="divide-y rounded-lg border">
+      <ul v-else class="min-w-0 divide-y rounded-lg border">
         <li
           v-for="item in integrations"
           :key="item.id"
-          class="flex items-start gap-3 p-3"
+          class="flex flex-wrap items-start gap-x-3 gap-y-2 p-3 sm:flex-nowrap"
           :data-testid="`marketing-integration-${item.id}`"
         >
           <Icon :name="icon(item.state)" class="w-4 h-4 mt-0.5 shrink-0" :class="iconClass(item.state)" />
-          <div class="min-w-0 flex-1">
+          <div class="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]">
             <p class="text-sm font-medium">
               {{ item.label }}
               <span class="font-normal text-muted-foreground">{{ item.capability }}</span>
             </p>
-            <p class="text-xs mt-0.5" :class="item.state === 'failing' ? 'text-destructive' : 'text-muted-foreground'">
-              {{ item.detail }}
+            <p
+              class="text-xs mt-0.5 [overflow-wrap:anywhere]"
+              :class="item.state === 'failing' ? 'text-destructive' : 'text-muted-foreground'"
+            >
+              {{ fill(item.detail) }}
             </p>
             <p
               v-if="results[item.id]"
-              class="text-xs mt-1 flex items-start gap-1"
-              :class="results[item.id].ok ? 'text-green-700 dark:text-green-500' : 'text-destructive'"
+              class="text-xs mt-1 flex items-start gap-1 [overflow-wrap:anywhere]"
+              :class="resultClass(results[item.id])"
               :data-testid="`marketing-integration-result-${item.id}`"
             >
-              <Icon :name="results[item.id].ok ? 'lucide:check' : 'lucide:x'" class="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <Icon :name="resultIcon(results[item.id])" class="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
-                {{ results[item.id].ok ? 'Works' : 'Failed' }}: {{ results[item.id].detail }}
+                {{ resultLabel(results[item.id]) }}: {{ fill(results[item.id].detail) }}
                 <span v-if="results[item.id].durationMs !== undefined" class="text-muted-foreground">
                   ({{ formatDuration(results[item.id].durationMs) }})
                 </span>
@@ -67,6 +70,7 @@
             variant="outline"
             size="sm"
             :disabled="busy"
+            :aria-label="`Test ${item.label}`"
             :data-testid="`marketing-integration-test-${item.id}`"
             @click="testOne(item.id)"
           >
@@ -82,6 +86,7 @@
 
 <script>
 import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+import { toast } from 'vue-sonner'
 
 export default {
   name: 'MarketingSettingsIntegrations',
@@ -112,6 +117,31 @@ export default {
   },
 
   methods: {
+    // The server describes the redirect URI with a {BETTER_AUTH_URL} placeholder
+    fill(text) {
+      if (!import.meta.client || typeof text !== 'string') return text
+      return text.replaceAll('{BETTER_AUTH_URL}', window.location.origin)
+    },
+
+    isNotConfigured(result) {
+      return result?.notConfigured === true
+    },
+
+    resultIcon(result) {
+      if (this.isNotConfigured(result)) return 'lucide:circle-dashed'
+      return result.ok ? 'lucide:check' : 'lucide:x'
+    },
+
+    resultLabel(result) {
+      if (this.isNotConfigured(result)) return 'Not tested'
+      return result.ok ? 'Works' : 'Failed'
+    },
+
+    resultClass(result) {
+      if (this.isNotConfigured(result)) return 'text-muted-foreground'
+      return result.ok ? 'text-green-700 dark:text-green-500' : 'text-destructive'
+    },
+
     formatDuration(ms) {
       return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`
     },
@@ -124,6 +154,10 @@ export default {
           method: 'POST',
         })
         const result = response?.data
+        if (result && !result.ok && this.integrations.find((i) => i.id === id)?.state === 'not_configured') {
+          result.notConfigured = true
+          result.detail = 'not configured'
+        }
         this.results = { ...this.results, [id]: result }
         // A team key may have been marked valid or invalid
         if (result?.source === 'team') this.$emit('refresh')
@@ -148,13 +182,28 @@ export default {
     async testAll() {
       if (this.busy || !this.teamId) return
       this.runningAll = true
+      let passed = 0
+      let failed = 0
+      let skipped = 0
       try {
         // Integrations that are not configured have nothing to test
         for (const item of this.integrations) {
-          if (item.state === 'not_configured') continue
+          if (item.state === 'not_configured') {
+            skipped++
+            this.results = {
+              ...this.results,
+              [item.id]: { ok: false, notConfigured: true, detail: 'not configured' },
+            }
+            continue
+          }
           const proceed = await this.runTest(item.id)
+          if (this.results[item.id]?.ok) passed++
+          else failed++
           if (!proceed) break
         }
+        const summary = `${passed} passed, ${failed} failed, ${skipped} not configured`
+        if (failed > 0) toast.warning(summary)
+        else toast.success(summary)
       } finally {
         this.runningAll = false
       }

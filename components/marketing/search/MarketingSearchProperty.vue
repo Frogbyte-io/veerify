@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="search-property">
     <CardHeader>
-      <CardTitle class="text-base">Choose a Search Console property</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Choose a Search Console property</CardTitle>
       <CardDescription>
         We could not match {{ origin }} to a property on {{ email || 'the connected Google account' }}. Pick the one to
         read.

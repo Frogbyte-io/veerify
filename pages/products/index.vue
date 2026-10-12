@@ -113,7 +113,11 @@
               <Icon name="lucide:external-link" class="w-3 h-3" />
               View Public Board
             </span>
-            <button class="text-sm text-muted-foreground hover:text-foreground" @click.prevent="copyPublicUrl(product)">
+            <button
+              :aria-label="`Copy public URL for ${product.name}`"
+              class="text-sm text-muted-foreground hover:text-foreground"
+              @click.prevent="copyPublicUrl(product)"
+            >
               <Icon name="lucide:copy" class="w-4 h-4" />
             </button>
           </div>
@@ -205,6 +209,7 @@
                 </div>
                 <Switch
                   :model-value="form.isPublic"
+                  aria-label="Public Feedback Board"
                   class="shrink-0 ml-3 mt-0.5"
                   @click.stop="form.isPublic = !form.isPublic"
                 />
@@ -233,6 +238,7 @@
                 </div>
                 <Switch
                   :model-value="form.modules[module.key]"
+                  :aria-label="module.product.label"
                   class="shrink-0 ml-3 mt-0.5"
                   @click.stop="toggleModule(module.key)"
                 />

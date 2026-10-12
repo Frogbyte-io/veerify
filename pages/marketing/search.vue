@@ -122,6 +122,10 @@ const CALLBACK_ERRORS = {
 export default {
   name: 'MarketingSearchPage',
 
+  created() {
+    useHead({ title: 'Search · Marketing' })
+  },
+
   data() {
     return {
       product: null,
