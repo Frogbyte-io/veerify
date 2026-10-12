@@ -8,6 +8,7 @@ import { resolvePostAuthRedirectTarget } from '~/lib/auth-redirect'
 import {
   isProtectedRoute as isProtectedPath,
   legacyChangelogRedirect,
+  legacyRoadmapRedirect,
   resolvePublicHostRedirect,
 } from '~/lib/route-guard'
 
@@ -32,6 +33,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const legacyChangelog = legacyChangelogRedirect(to.path, to.fullPath.slice(to.path.length))
   if (legacyChangelog) {
     return navigateTo(legacyChangelog, { replace: true })
+  }
+
+  // Bare /roadmap is only public on team/custom domains (handled above)
+  const legacyRoadmap = legacyRoadmapRedirect(to.path, to.fullPath.slice(to.path.length))
+  if (legacyRoadmap) {
+    return navigateTo(legacyRoadmap, { replace: true })
   }
 
   // Auth routes that should redirect to dashboard if user is already logged in

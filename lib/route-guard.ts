@@ -59,6 +59,16 @@ export function legacyChangelogRedirect(path: string, search = ''): string | nul
   return `/dashboard${path}${search}`
 }
 
+/**
+ * Likewise the dashboard roadmap lives at `/dashboard/roadmap` because bare
+ * `/roadmap` is the public roadmap on custom domains. On the app host only,
+ * a bare `/roadmap` is forwarded.
+ */
+export function legacyRoadmapRedirect(path: string, search = ''): string | null {
+  if (!matchesRoute(path, '/roadmap')) return null
+  return `/dashboard${path}${search}`
+}
+
 /** Redirect target for a path on a public host, or null to render it. */
 export function resolvePublicHostRedirect(path: string): string | null {
   return isPublicHostAppRoute(path) ? '/' : null

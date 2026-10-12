@@ -5007,6 +5007,39 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/roadmap/projects/{projectId}": {
+    "get": {
+      "tags": [
+        "Roadmap"
+      ],
+      "summary": "Roadmap board of a product (team members)",
+      "description": "Feedback grouped by status, one column per status. Unlike the public roadmap this includes hidden items (flagged `isHidden`) and real titles of support-derived items.\n",
+      "operationId": "getRoadmapBoard",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Columns with items",
+          "plus the public roadmap URL when the product is public": null
+        },
+        "403": {
+          "description": "Not a team member",
+          "or Roadmap is off": null
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
   "/api/support/attachments/{id}": {
     "get": {
       "tags": [

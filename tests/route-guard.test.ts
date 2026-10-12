@@ -3,6 +3,7 @@ import {
   isProtectedRoute,
   isPublicHostAppRoute,
   legacyChangelogRedirect,
+  legacyRoadmapRedirect,
   resolvePublicHostRedirect,
 } from '~/lib/route-guard'
 
@@ -19,6 +20,7 @@ describe('public hosts (custom domains and team subdomains)', () => {
     expect(resolvePublicHostRedirect('/dashboard')).toBe('/')
     expect(resolvePublicHostRedirect('/dashboard/changelog')).toBe('/')
     expect(resolvePublicHostRedirect('/dashboard/changelog/abc')).toBe('/')
+    expect(resolvePublicHostRedirect('/dashboard/roadmap')).toBe('/')
     expect(resolvePublicHostRedirect('/marketing/reviews')).toBe('/')
     expect(isPublicHostAppRoute('/login')).toBe(true)
   })
@@ -44,5 +46,17 @@ describe('app host', () => {
     expect(legacyChangelogRedirect('/changelog/e1', '?product=acme')).toBe('/dashboard/changelog/e1?product=acme')
     expect(legacyChangelogRedirect('/changelogs')).toBeNull()
     expect(legacyChangelogRedirect('/dashboard/changelog')).toBeNull()
+  })
+
+  it('protects the dashboard roadmap and keeps bare /roadmap out of the protected set', () => {
+    expect(isProtectedRoute('/dashboard/roadmap')).toBe(true)
+    expect(isProtectedRoute('/roadmap')).toBe(false)
+  })
+
+  it('forwards bare /roadmap to /dashboard/roadmap, keeping the query', () => {
+    expect(legacyRoadmapRedirect('/roadmap', '?product=acme')).toBe('/dashboard/roadmap?product=acme')
+    expect(legacyRoadmapRedirect('/roadmaps')).toBeNull()
+    expect(legacyRoadmapRedirect('/dashboard/roadmap')).toBeNull()
+    expect(legacyRoadmapRedirect('/acme-app/roadmap')).toBeNull()
   })
 })
