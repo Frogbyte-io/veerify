@@ -23,15 +23,13 @@
  *       403: { description: Marketing not enabled or no access }
  *       404: { description: Audit not found for this product }
  */
-import { and, asc, desc, eq, isNotNull, lt } from 'drizzle-orm'
+import { and, asc, desc, eq, isNotNull, lt, lte, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { seoAudit, seoIssue } from '~/server/database/schema/marketing'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireAuditAccess } from '~/server/utils/marketing-audit-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { AUDIT_RULES } from '~/server/services/marketing/audit/rules'
-import { summarizeIssues } from '~/server/services/marketing/audit/score'
-import type { AuditIssue, IssueSeverity } from '~/server/services/marketing/audit/types'
 
 const MAX_AFFECTED_PER_RULE = 50
 const SEVERITY_ORDER: Record<string, number> = { error: 0, warning: 1, notice: 2 }
@@ -42,36 +40,50 @@ export default defineEventHandler(async (event) => {
   const auditId = getRouterParam(event, 'auditId') as string
   const { audit } = await requireAuditAccess(projectId, auditId, session.user.id)
 
-  const rows = await db
+  // Per-(rule, severity) totals in SQL, plus at most MAX_AFFECTED_PER_RULE rows per rule
+  const totals = await db
+    .select({ ruleId: seoIssue.ruleId, severity: seoIssue.severity, total: sql<number>`count(*)::int` })
+    .from(seoIssue)
+    .where(eq(seoIssue.auditId, audit.id))
+    .groupBy(seoIssue.ruleId, seoIssue.severity)
+
+  const ranked = db
     .select({
       ruleId: seoIssue.ruleId,
-      severity: seoIssue.severity,
       pageUrl: seoIssue.pageUrl,
       details: seoIssue.details,
+      rn: sql<number>`row_number() over (partition by ${seoIssue.ruleId} order by ${seoIssue.pageUrl}, ${seoIssue.id})`.as(
+        'rn'
+      ),
     })
     .from(seoIssue)
     .where(eq(seoIssue.auditId, audit.id))
-    .orderBy(asc(seoIssue.pageUrl))
-
-  const issues: AuditIssue[] = rows.map((row) => ({
-    ruleId: row.ruleId,
-    severity: row.severity as IssueSeverity,
-    pageUrl: row.pageUrl,
-    details: row.details,
-  }))
+    .as('ranked')
+  const rows = await db
+    .select({ ruleId: ranked.ruleId, pageUrl: ranked.pageUrl, details: ranked.details })
+    .from(ranked)
+    .where(lte(ranked.rn, MAX_AFFECTED_PER_RULE))
+    .orderBy(asc(ranked.ruleId), asc(ranked.pageUrl))
 
   const rulesById = new Map(AUDIT_RULES.map((rule) => [rule.id, rule]))
+  const bySeverity = { error: 0, warning: 0, notice: 0 } as Record<string, number>
+  const byRule: Record<string, number> = {}
   const groups = new Map<
     string,
     { affected: Array<{ url: string | null; details: Record<string, unknown> }>; total: number }
   >()
-  for (const issue of issues) {
-    const group = groups.get(issue.ruleId) ?? { affected: [], total: 0 }
-    group.total++
-    if (group.affected.length < MAX_AFFECTED_PER_RULE) {
-      group.affected.push({ url: issue.pageUrl, details: issue.details })
-    }
-    groups.set(issue.ruleId, group)
+  let totalIssues = 0
+  for (const row of totals) {
+    const count = Number(row.total)
+    bySeverity[row.severity] = (bySeverity[row.severity] ?? 0) + count
+    byRule[row.ruleId] = (byRule[row.ruleId] ?? 0) + count
+    totalIssues += count
+    const group = groups.get(row.ruleId) ?? { affected: [], total: 0 }
+    group.total += count
+    groups.set(row.ruleId, group)
+  }
+  for (const row of rows) {
+    groups.get(row.ruleId)?.affected.push({ url: row.pageUrl, details: row.details })
   }
 
   const grouped = [...groups.entries()]
@@ -123,7 +135,7 @@ export default defineEventHandler(async (event) => {
     pageLimit: audit.pageLimit,
     startedAt: audit.startedAt,
     finishedAt: audit.finishedAt,
-    summary: summarizeIssues(issues),
+    summary: { bySeverity, byRule, total: totalIssues },
     siteFacts: audit.status === 'done' ? siteFacts : null,
     issues: grouped,
   })
