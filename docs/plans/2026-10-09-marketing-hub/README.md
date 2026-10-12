@@ -49,7 +49,8 @@ opportunities, and growth features built on feedback, changelog and support data
   result can cause one duplicate after the 10-minute sweeper.
 - Review requests only go to verified user emails and CSAT contacts; anonymous feedback authors and
   unlinked subscribers are never asked.
-- Veerify-provided LLM keys on the cloud are not built (they need billing first).
+- Veerify-provided LLM keys on the cloud are not built (they need billing first). A proposal is in the
+  [billing design](../2026-10-11-billing/design.md) (status: Proposed, needs owner decisions).
 - Budget caps are estimates (tokens × list price + web-search fees), enforced with atomic
   reservations: each LLM call reserves an upper bound (output cap, max searches, prompt ÷ 3 chars per
   token) in `llm:<provider>:reserved_usd_micros` only if `spent + reserved + amount <= cap`, then
