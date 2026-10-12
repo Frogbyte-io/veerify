@@ -62,6 +62,29 @@
             </DropdownMenuItem>
           </div>
           <template v-else>
+            <template v-if="hasMultipleOrganizations">
+              <DropdownMenuLabel class="text-xs text-muted-foreground">Organizations</DropdownMenuLabel>
+              <DropdownMenuItem
+                v-for="org in organizations"
+                :key="org.id"
+                class="gap-2 p-2"
+                :disabled="isSwitchingOrganization"
+                @click="switchOrganization(org)"
+              >
+                <div class="flex size-6 items-center justify-center rounded-sm border">
+                  <Icon name="lucide:building-2" class="size-4 shrink-0" />
+                </div>
+                <span :data-testid="`org-switcher-item-${org.id}`" class="flex-1 truncate">{{ org.name }}</span>
+                <Icon v-if="activeOrganization?.id === org.id" name="lucide:check" class="size-4 text-primary" />
+              </DropdownMenuItem>
+              <DropdownMenuItem data-testid="org-switcher-create" class="gap-2 p-2" @click="goToCreateOrganization">
+                <div class="flex size-6 items-center justify-center rounded-md border bg-background">
+                  <Icon name="lucide:plus" class="size-4" />
+                </div>
+                <div class="font-medium text-muted-foreground">Create organization</div>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </template>
             <DropdownMenuLabel class="text-xs text-muted-foreground">Workspace</DropdownMenuLabel>
             <DropdownMenuItem class="gap-2 p-2" @click="switchToDefaultTeam">
               <div class="flex size-6 items-center justify-center rounded-sm border">
@@ -117,6 +140,7 @@
 
 <script>
 import { authClient } from '~/lib/auth-client'
+import { pickTeamForOrganization, shouldLeaveRouteOnOrgSwitch } from '~/lib/org-switch'
 import {
   clearDashboardBootstrapCache,
   fetchDashboardBootstrap,
@@ -126,8 +150,29 @@ import {
 const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
 const TEAM_SWITCHER_CACHE_MAX_AGE_MS = 5 * 60 * 1000
 
+const LAST_TEAM_STORAGE_PREFIX = 'veerify:last-team:'
+
+function readLastTeamId(organizationId) {
+  if (!import.meta.client || !organizationId) return null
+  try {
+    return window.localStorage.getItem(`${LAST_TEAM_STORAGE_PREFIX}${organizationId}`)
+  } catch {
+    return null
+  }
+}
+
+function writeLastTeamId(organizationId, teamId) {
+  if (!import.meta.client || !organizationId || !teamId) return
+  try {
+    window.localStorage.setItem(`${LAST_TEAM_STORAGE_PREFIX}${organizationId}`, teamId)
+  } catch {
+    // Storage unavailable (private mode / quota) — last-used is only a hint.
+  }
+}
+
 const teamSwitcherCache = {
   teams: [],
+  organizations: [],
   activeTeam: null,
   activeOrganization: null,
   loadedAt: 0,
@@ -144,6 +189,7 @@ function isTeamContextCacheFresh() {
 
 function clearTeamContextCache() {
   teamSwitcherCache.teams = []
+  teamSwitcherCache.organizations = []
   teamSwitcherCache.activeTeam = null
   teamSwitcherCache.activeOrganization = null
   teamSwitcherCache.loadedAt = 0
@@ -156,6 +202,8 @@ export default {
     const hasCachedData = hasCachedTeamContext()
     return {
       teams: hasCachedData ? teamSwitcherCache.teams : [],
+      organizations: hasCachedData ? teamSwitcherCache.organizations : [],
+      isSwitchingOrganization: false,
       activeTeam: hasCachedData ? teamSwitcherCache.activeTeam : null,
       activeOrganization: hasCachedData ? teamSwitcherCache.activeOrganization : null,
       isLoadingTeams: !hasCachedData,
@@ -171,8 +219,19 @@ export default {
       return false
     },
 
+    hasMultipleOrganizations() {
+      return this.organizations.length > 1
+    },
+
+    // Teams of the active organization only — the user's teams span every organization they belong to.
+    organizationTeams() {
+      const organizationId = this.activeOrganization?.id || this.activeTeam?.organizationId
+      if (!organizationId) return this.teams
+      return this.teams.filter((t) => t.organizationId === organizationId)
+    },
+
     additionalTeams() {
-      return this.teams.filter((t) => t.name !== 'Default')
+      return this.organizationTeams.filter((t) => t.name !== 'Default')
     },
 
     isOnDefaultTeam() {
@@ -217,6 +276,7 @@ export default {
 
     applyTeamContextFromCache() {
       this.teams = teamSwitcherCache.teams
+      this.organizations = teamSwitcherCache.organizations
       this.activeTeam = teamSwitcherCache.activeTeam
       this.activeOrganization = teamSwitcherCache.activeOrganization
       this.isLoadingTeams = false
@@ -232,14 +292,16 @@ export default {
       // so that the subsequent get-full-organization call sees the correct session state.
       const activeTeamResponse = await $fetch('/api/teams/active').catch(() => null)
 
-      const [teamsResponse, activeOrganizationResponse] = await Promise.all([
+      const [teamsResponse, organizationsResponse, activeOrganizationResponse] = await Promise.all([
         $fetch('/api/teams/list-user'),
+        $fetch('/api/organizations/list').catch(() => null),
         $fetch('/api/auth/organization/get-full-organization').catch(() => null),
       ])
 
       return {
         activeTeam: activeTeamResponse?.data || null,
         teams: Array.isArray(teamsResponse) ? teamsResponse : teamsResponse?.data || [],
+        organizations: organizationsResponse?.data || [],
         activeOrganization: activeOrganizationResponse || null,
       }
     },
@@ -251,6 +313,7 @@ export default {
       return {
         activeTeam: bootstrap.teamContext.activeTeam || null,
         teams: bootstrap.teamContext.teams || [],
+        organizations: bootstrap.teamContext.organizations || [],
         activeOrganization: bootstrap.teamContext.activeOrganization || null,
       }
     },
@@ -266,6 +329,7 @@ export default {
           .then((context) => {
             teamSwitcherCache.activeTeam = context.activeTeam
             teamSwitcherCache.teams = context.teams
+            teamSwitcherCache.organizations = context.organizations || []
             teamSwitcherCache.activeOrganization = context.activeOrganization
             teamSwitcherCache.loadedAt = Date.now()
             return context
@@ -323,7 +387,7 @@ export default {
     },
 
     async switchToDefaultTeam() {
-      let defaultTeam = this.teams.find((t) => t.name === 'Default')
+      let defaultTeam = this.organizationTeams.find((t) => t.name === 'Default')
       if (!defaultTeam) {
         const organizationTeamsResponse = await $fetch('/api/teams/list-organization').catch(() => null)
         const organizationTeams = Array.isArray(organizationTeamsResponse)
@@ -373,6 +437,7 @@ export default {
           })
         }
 
+        writeLastTeamId(team.organizationId, team.id)
         clearTeamContextCache()
         clearDashboardBootstrapCache()
         this.emitActiveTeamChanged()
@@ -385,6 +450,45 @@ export default {
         this.teamsError = 'Failed to switch team'
         console.error('Error setting active team:', error)
       }
+    },
+
+    // Switch organization: one server call sets the organization and a team inside it together (the
+    // Better-Auth `setActive` alone would be reverted because the session's active team still points at
+    // the old organization). Last-used team for that org is sent as a hint; the server falls back to
+    // the org's Default team, then its first team.
+    async switchOrganization(org) {
+      if (this.isSwitchingOrganization || org.id === this.activeOrganization?.id) return
+
+      this.isSwitchingOrganization = true
+      try {
+        this.teamsError = null
+        const preferred = pickTeamForOrganization(this.teams, org.id, readLastTeamId(org.id))
+        const response = await $fetch('/api/organizations/active', {
+          method: 'POST',
+          body: { organizationId: org.id, teamId: preferred?.id || null },
+        })
+        // Keep the Better-Auth client session state in sync with the server-side change.
+        await authClient.organization.setActive({ organizationId: org.id }).catch(() => null)
+        writeLastTeamId(org.id, response?.data?.id)
+
+        clearTeamContextCache()
+        clearDashboardBootstrapCache()
+        this.emitActiveTeamChanged()
+        await this.initializeTeams({ force: true, silent: true })
+
+        if (shouldLeaveRouteOnOrgSwitch(this.$route.path)) {
+          await navigateTo('/dashboard')
+        }
+      } catch (error) {
+        this.teamsError = 'Failed to switch organization'
+        console.error('Error switching organization:', error)
+      } finally {
+        this.isSwitchingOrganization = false
+      }
+    },
+
+    async goToCreateOrganization() {
+      await navigateTo('/onboarding')
     },
 
     async goToTeamSettings() {
