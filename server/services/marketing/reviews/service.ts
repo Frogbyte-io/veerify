@@ -352,6 +352,7 @@ export async function processReviewRequests(
             url: `${baseUrl}/api/marketing/r/${token}/go?p=${encodeURIComponent(platform.id)}`,
           })),
           testimonialUrl: settings.askForTestimonial ? `${baseUrl}/testimonial/${token}` : null,
+          withdrawUrl: settings.askForTestimonial ? `${baseUrl}/testimonial/${token}?withdraw=1` : null,
           unsubscribeUrl: `${baseUrl}/api/marketing/r/${token}/unsubscribe`,
         })
         // sendEmail reports transport failures as `{ accepted: false }` instead of throwing.

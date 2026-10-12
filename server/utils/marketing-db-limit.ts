@@ -8,8 +8,10 @@ import { currentPeriod } from '~/server/utils/marketing-usage'
  * Rate limits for LLM-cost and outbound-fetch endpoints that hold across
  * serverless instances. The in-memory limiter (`requireRateLimit`) is per
  * instance unless `RATE_LIMIT_STORE=redis`; these counters live in
- * `marketing_usage` (metric = the key, period = the current month), so old
- * keys age out with their period and no new table is needed.
+ * `marketing_usage` (metric = the key, period = the current month), so no new
+ * table is needed. Old keys do not expire by themselves: the daily
+ * `marketing:retention` task deletes `ratelimit:*` rows 2 days after their
+ * last update.
  */
 
 /** `YYYY-MM-DD` in UTC, for per-day keys. */

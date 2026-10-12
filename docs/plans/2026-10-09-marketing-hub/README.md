@@ -65,10 +65,43 @@ opportunities, and growth features built on feedback, changelog and support data
   cost-relevant marketing endpoints do not depend on it: visibility prompt suggestions (40/day per
   site) and announcement generation (50/day per product) are also capped by `consumeDbLimit`
   (`server/utils/marketing-db-limit.ts`, atomic guarded upsert into `marketing_usage` with
-  `ratelimit:*` metrics that age out with their month), and manual audits, manual visibility runs,
+  `ratelimit:*` metrics that the daily retention task deletes after 2 days), and manual audits, manual visibility runs,
   competitor checks (per-watch claim on `lastCheckedAt`) and manual review sends (team daily cap) are
   already counted from database rows. The remaining in-memory limits (hourly caps, per-host competitor
   day cap, site verify attempts) only add burst protection.
+
+## Data retention, erasure and export
+
+The `marketing:retention` task runs daily (`30 3 * * *`; a Nitro task on self-hosted installs, the
+`/api/cron/marketing-retention` route on Vercel).
+
+| Data                                                                       | Kept                                                                         |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Review requests (`sent`, `failed`, `skipped`): email, name, token, error   | 180 days, then deleted. `queued` and `sending` rows are never pruned         |
+| Email suppressions (`marketing_email_suppression`)                         | Indefinitely: the durable opt-out record                                     |
+| Testimonial author email                                                   | 180 days, then cleared. Name, title, company and quote stay                  |
+| Mentions                                                                   | 180 days after publication (mentions poller)                                 |
+| Competitor changes                                                         | 12 months                                                                    |
+| Usage counters (`marketing_usage`)                                         | 13 months by period                                                          |
+| Rate-limit counters (`ratelimit:*` in `marketing_usage`)                   | 2 days after the last update                                                 |
+| Customer language insights                                                 | Until consent for any source they used is switched off, then deleted at once |
+| Everything else (audits, visibility answers, terms, launch kit, and so on) | Until the product's Marketing data is deleted                                |
+
+- **Erase a person:** `POST /api/marketing/teams/{teamId}/erase-contact` (team admin) deletes all review
+  requests and testimonials for an email (case-insensitive) in the team's products and keeps or
+  creates a suppression, so the address is never contacted again.
+- **Withdraw consent:** the testimonial page and the review-request email footer link to a page that
+  calls `POST /api/marketing/r/{token}/withdraw`, which turns public consent off and un-features the
+  testimonial. It works for expired links.
+- **Export and delete a product's data:** `GET /api/marketing/projects/{projectId}/export` returns a JSON
+  file (never keys or tokens); `DELETE /api/marketing/projects/{projectId}/data` with
+  `{ "confirm": "<product slug>" }` revokes a connected Search Console token and deletes the site (with
+  everything under it), review requests, testimonials, launch kit and announcement drafts. Both are team
+  admin only and work while Marketing is switched off. All three are in the Privacy card in Marketing
+  settings. Team API keys, consent and suppressions are kept.
+- **Turning Marketing off hides data, it does not delete it.** Data stays until the retention windows
+  above pass or the product's Marketing data is deleted. Site re-verification stops for that
+  team or product while it is off.
 
 ## Durable references
 

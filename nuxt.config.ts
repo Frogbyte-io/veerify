@@ -58,6 +58,7 @@ export default defineNuxtConfig({
       '20 * * * *': ['marketing:search-sync'],
       '35 * * * *': ['marketing:competitors-check'],
       '0 8 * * *': ['marketing:mentions-digest'],
+      '30 3 * * *': ['marketing:retention'],
     },
   },
   devServer: {

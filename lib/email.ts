@@ -379,6 +379,7 @@ interface MarketingReviewRequestEmailOptions {
   feedbackTitle?: string | null
   platforms: Array<{ label: string; url: string }>
   testimonialUrl: string | null
+  withdrawUrl?: string | null
   unsubscribeUrl: string
 }
 

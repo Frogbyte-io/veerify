@@ -1,7 +1,9 @@
 import { and, eq, isNotNull, ne, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { marketingSite } from '~/server/database/schema/marketing'
-import { projectDomain } from '~/server/database/schema/feedback'
+import { project, projectDomain } from '~/server/database/schema/feedback'
+import { teamModuleSettings } from '~/server/database/schema/teams'
+import { DEFAULT_TEAM_MODULES } from '~/lib/modules'
 import {
   checkVerification,
   isCoveredByVerifiedDomain,
@@ -19,6 +21,15 @@ import {
  *   later; the second consecutive failure unverifies the site. Success resets
  *   the counter. `lastVerificationError` only carries a human message.
  */
+
+/**
+ * Sites are only re-checked while Marketing is on for both the team and the product: a switched-off module
+ * must not keep probing the site's DNS or pages. Re-enabling resumes the checks.
+ */
+const marketingOn = and(
+  sql`coalesce(${teamModuleSettings.marketingEnabled}, ${DEFAULT_TEAM_MODULES.marketingEnabled})`,
+  sql`${project.settings}->>'marketingEnabled' = 'true'`
+)
 
 export const DOMAIN_LOST_MESSAGE = 'The custom domain that verified this site is no longer active — verify again'
 export const RECHECK_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000
@@ -82,7 +93,9 @@ const defaultDeps: RecheckDeps = {
     db
       .select(siteColumns)
       .from(marketingSite)
-      .where(and(isNotNull(marketingSite.verifiedAt), eq(marketingSite.verificationMethod, 'domain'))),
+      .innerJoin(project, eq(project.id, marketingSite.projectId))
+      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
+      .where(and(isNotNull(marketingSite.verifiedAt), eq(marketingSite.verificationMethod, 'domain'), marketingOn)),
   listDueSites: (now, limit) => {
     const lastCheck = sql`coalesce(${marketingSite.verificationCheckedAt}, ${marketingSite.verifiedAt})`
     const monthAgo = new Date(now.getTime() - RECHECK_INTERVAL_MS)
@@ -90,8 +103,11 @@ const defaultDeps: RecheckDeps = {
     return db
       .select(siteColumns)
       .from(marketingSite)
+      .innerJoin(project, eq(project.id, marketingSite.projectId))
+      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
       .where(
         and(
+          marketingOn,
           isNotNull(marketingSite.verifiedAt),
           isNotNull(marketingSite.verificationMethod),
           ne(marketingSite.verificationMethod, 'domain'),

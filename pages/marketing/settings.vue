@@ -51,6 +51,7 @@
             />
             <MarketingSettingsTerms :product="product" :site-added="site !== null" />
             <MarketingSettingsApiKeys :team-id="product.teamId" @changed="loadIntegrations" />
+            <MarketingSettingsPrivacy v-if="canManage" :product="product" @changed="onSiteChanged" />
             <MarketingSettingsIntegrations
               :integrations="integrations"
               :is-loading="integrationsLoading"

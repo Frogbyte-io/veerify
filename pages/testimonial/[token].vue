@@ -32,6 +32,47 @@
             {{ done ? 'Your testimonial was received.' : 'You already sent a testimonial with this link.' }}
             The {{ info.productName }} team will review it before anything is shown publicly.
           </p>
+          <div class="pt-3" data-testid="testimonial-withdraw">
+            <p v-if="withdrawn" class="text-sm font-medium" role="status" data-testid="testimonial-withdrawn">
+              Your testimonial is no longer shown on the public page.
+            </p>
+            <template v-else>
+              <p v-if="confirmingWithdraw" class="mb-2 text-sm text-muted-foreground">
+                Remove your testimonial from the public page? You can still contact the team to have it deleted.
+              </p>
+              <div class="flex justify-center gap-2">
+                <Button
+                  v-if="confirmingWithdraw"
+                  size="sm"
+                  :disabled="withdrawing"
+                  data-testid="testimonial-withdraw-confirm"
+                  @click="withdraw"
+                >
+                  <Icon v-if="withdrawing" name="lucide:loader-circle" class="mr-2 h-4 w-4 animate-spin" />
+                  Yes, remove it
+                </Button>
+                <Button
+                  v-if="confirmingWithdraw"
+                  size="sm"
+                  variant="outline"
+                  :disabled="withdrawing"
+                  @click="confirmingWithdraw = false"
+                >
+                  Cancel
+                </Button>
+                <button
+                  v-else
+                  type="button"
+                  class="text-xs text-muted-foreground underline"
+                  data-testid="testimonial-withdraw-link"
+                  @click="confirmingWithdraw = true"
+                >
+                  Remove my testimonial from the public page
+                </button>
+              </div>
+              <p v-if="withdrawError" class="mt-2 text-sm text-destructive" role="alert">{{ withdrawError }}</p>
+            </template>
+          </div>
         </CardContent>
 
         <CardContent v-else-if="!info.canSubmit" class="space-y-2 py-10 text-center" data-testid="testimonial-closed">
@@ -119,7 +160,9 @@
                       name="lucide:star"
                       mode="svg"
                       class="h-6 w-6"
-                      :class="n <= (form.rating || 0) ? 'text-amber-500 [&_path]:fill-amber-400' : 'text-muted-foreground'"
+                      :class="
+                        n <= (form.rating || 0) ? 'text-amber-500 [&_path]:fill-amber-400' : 'text-muted-foreground'
+                      "
                     />
                   </button>
                 </div>
@@ -178,6 +221,10 @@ export default {
       submitting: false,
       submitError: null,
       done: false,
+      confirmingWithdraw: false,
+      withdrawing: false,
+      withdrawn: false,
+      withdrawError: null,
     }
   },
 
@@ -189,6 +236,8 @@ export default {
 
   async mounted() {
     await this.load()
+    // The email footer links here with ?withdraw=1; nothing is changed until the person confirms.
+    if (this.$route.query.withdraw && this.info.alreadySubmitted) this.confirmingWithdraw = true
   },
 
   methods: {
@@ -204,6 +253,19 @@ export default {
         else this.loadError = apiErrorMessage(err, 'Something went wrong. Please try again.')
       } finally {
         this.isLoading = false
+      }
+    },
+
+    async withdraw() {
+      this.withdrawing = true
+      this.withdrawError = null
+      try {
+        await $fetch(`/api/marketing/r/${encodeURIComponent(this.token)}/withdraw`, { method: 'POST' })
+        this.withdrawn = true
+      } catch (err) {
+        this.withdrawError = apiErrorMessage(err, 'Could not remove your testimonial. Please try again.')
+      } finally {
+        this.withdrawing = false
       }
     },
 

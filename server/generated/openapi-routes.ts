@@ -544,6 +544,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/marketing-retention": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Prune aged-out Marketing data",
+      "operationId": "cronMarketingRetention",
+      "responses": {
+        "200": {
+          "description": "Retention prune executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/marketing-review-requests": {
     "get": {
       "tags": [
@@ -2145,6 +2162,97 @@ export const openapiPaths = {
         "429": {
           "description": "Checked within the last hour",
           "or the daily manual check limit is reached": null
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/data": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete a product's Marketing data",
+      "description": "Team admins only; works while Marketing is switched off. Requires the product slug as confirmation. Revokes a connected Google Search Console token (best effort), then deletes the marketing site with its audits, visibility, mentions, competitors, insights and Search Console data, plus the product's review requests, testimonials, launch kit and announcement drafts. Team-level API keys, consent and email suppressions are kept.\n",
+      "operationId": "deleteMarketingData",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "confirm"
+              ],
+              "properties": {
+                "confirm": {
+                  "type": "string",
+                  "description": "The product slug"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Counts of what was deleted"
+        },
+        "400": {
+          "description": "Confirmation missing or does not match the product slug"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/export": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Export a product's Marketing data",
+      "description": "Team admins only; works while Marketing is switched off. Returns a JSON download of the product's Marketing data. Never contains encrypted keys, refresh tokens, the site verification token or review request tokens. Audit pages are reduced to url, status and title.\n",
+      "operationId": "exportMarketingData",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "JSON attachment",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "404": {
+          "description": "Product not found"
         }
       }
     }
@@ -4460,6 +4568,37 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/r/{token}/withdraw": {
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Withdraw public consent for a testimonial",
+      "description": "Public, token-gated and rate limited per IP and token. Sets public consent to off and un-features the testimonial submitted with this link, so it disappears from the public wall. Works for links older than 60 days and when Marketing is switched off. Idempotent.\n",
+      "operationId": "withdrawPublicTestimonial",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Consent withdrawn (withdrawn is the number of testimonials changed)"
+        },
+        "404": {
+          "description": "Link not found"
+        },
+        "429": {
+          "description": "Rate limited"
+        }
+      }
+    }
+  },
   "/api/marketing/teams/{teamId}/credentials": {
     "get": {
       "tags": [
@@ -4743,6 +4882,56 @@ export const openapiPaths = {
       "responses": {
         "200": {
           "description": "Updated consent"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Team admin required"
+        }
+      }
+    }
+  },
+  "/api/marketing/teams/{teamId}/erase-contact": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Erase a person's Marketing data",
+      "description": "Team admin only. Deletes every review request and testimonial for the email address (case-insensitive) across the team's products, and keeps or creates a suppression so the address is never contacted again. Works whether or not Marketing is switched on.\n",
+      "operationId": "eraseMarketingContact",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "email"
+              ],
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Counts of deleted review requests and testimonials"
         },
         "400": {
           "description": "Validation failed"
