@@ -400,6 +400,12 @@
                   <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                 </select>
               </div>
+              <FeedbackAttachmentPicker
+                ref="attachmentPicker"
+                :project-id="projectData.project.id"
+                :disabled="isSubmitting"
+                @change="attachmentState = $event"
+              />
               <div
                 v-if="currentUser"
                 class="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
@@ -425,7 +431,11 @@
               <Button variant="outline" @click="showSubmitDialog = false">Cancel</Button>
               <Button
                 :disabled="
-                  isSubmitting || !submitForm.title || !submitForm.body || (!currentUser && !submitForm.authorName)
+                  isSubmitting ||
+                  attachmentState.busy ||
+                  !submitForm.title ||
+                  !submitForm.body ||
+                  (!currentUser && !submitForm.authorName)
                 "
                 @click="submitFeedback"
               >
@@ -536,6 +546,7 @@
                     {{ selectedFeedback.body }}
                   </p>
                   <p v-else class="text-sm text-muted-foreground italic">No description provided.</p>
+                  <FeedbackAttachmentList :key="selectedFeedback.id" :feedback-id="selectedFeedback.id" />
                 </div>
 
                 <Separator />
@@ -1005,6 +1016,7 @@ export default {
       filters: { status: '', categoryId: '', tag: '', sortBy: 'voteCount' },
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
       submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
+      attachmentState: { ids: [], busy: false },
       previousColorMode: null,
       activeTheme: 'system',
       logoError: false,
@@ -1172,6 +1184,12 @@ export default {
         .slice(0, 2)
     },
   },
+  watch: {
+    showSubmitDialog(isOpen) {
+      // The picker discards unsubmitted uploads when the dialog closes.
+      if (!isOpen) this.attachmentState = { ids: [], busy: false }
+    },
+  },
   beforeUnmount() {
     if (import.meta.client) {
       if (this.previousColorMode) {
@@ -1307,6 +1325,7 @@ export default {
         title: this.submitForm.title,
         body: this.submitForm.body,
         categoryId: this.submitForm.categoryId || null,
+        ...(this.attachmentState.ids.length ? { attachmentIds: this.attachmentState.ids } : {}),
         ...(!this.currentUser && authorName ? { authorName } : {}),
         ...(!this.currentUser && authorEmail ? { authorEmail } : {}),
       }
@@ -1317,6 +1336,8 @@ export default {
           method: 'POST',
           body: payload,
         })
+        this.$refs.attachmentPicker?.clear()
+        this.attachmentState = { ids: [], busy: false }
         this.showSubmitDialog = false
         this.submitForm = { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' }
         this.pagination.page = 1

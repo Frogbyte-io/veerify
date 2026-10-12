@@ -17,14 +17,31 @@ describe('runScheduledAttachmentCleanup', () => {
     const runCleanup = vi
       .fn()
       .mockResolvedValue({ claimed: 2, expired: 1, restored: 1, consumedTempDeleted: 0, deleted: 2, retried: 0 })
-    await expect(runScheduledAttachmentCleanup({ runCleanup })).resolves.toMatchObject({ claimed: 2 })
+    const runFeedbackCleanup = vi.fn().mockResolvedValue({ claimed: 3, expired: 2, orphaned: 1, retried: 0 })
+    await expect(runScheduledAttachmentCleanup({ runCleanup, runFeedbackCleanup })).resolves.toMatchObject({
+      claimed: 2,
+      feedback: { claimed: 3, orphaned: 1 },
+    })
     expect(runCleanup).toHaveBeenCalledOnce()
+    expect(runFeedbackCleanup).toHaveBeenCalledOnce()
+  })
+
+  it('still runs feedback cleanup when the support pass fails, then reports failure', async () => {
+    const runCleanup = vi.fn().mockRejectedValue(new Error('boom'))
+    const runFeedbackCleanup = vi.fn().mockResolvedValue({ claimed: 0, expired: 0, orphaned: 0, retried: 0 })
+    await expect(runScheduledAttachmentCleanup({ runCleanup, runFeedbackCleanup })).rejects.toThrow(
+      'ATTACHMENT_CLEANUP_FAILED'
+    )
+    expect(runFeedbackCleanup).toHaveBeenCalledOnce()
   })
 
   it('rethrows a closed failure reason without provider details', async () => {
     const runCleanup = vi.fn().mockRejectedValue(new Error('secret/path/provider detail'))
-    await expect(runScheduledAttachmentCleanup({ runCleanup })).rejects.toThrow('ATTACHMENT_CLEANUP_FAILED')
-    await expect(runScheduledAttachmentCleanup({ runCleanup })).rejects.not.toThrow('secret/path')
+    const runFeedbackCleanup = vi.fn().mockResolvedValue({ claimed: 0, expired: 0, orphaned: 0, retried: 0 })
+    await expect(runScheduledAttachmentCleanup({ runCleanup, runFeedbackCleanup })).rejects.toThrow(
+      'ATTACHMENT_CLEANUP_FAILED'
+    )
+    await expect(runScheduledAttachmentCleanup({ runCleanup, runFeedbackCleanup })).rejects.not.toThrow('secret/path')
   })
 
   it('requires cron authentication before invoking a registered task', async () => {

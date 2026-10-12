@@ -464,3 +464,47 @@ export const feedbackSubscription = pgTable(
     feedbackIdx: index('sub_feedback_idx').on(table.feedbackId),
   })
 )
+
+// Feedback attachments (images, logs, PDFs). Objects live in the shared storage
+// layer under a private `feedback-attachments/` prefix and are only ever served
+// through short-lived signed URLs.
+//
+// `feedbackId` is nullable and `set null` (not cascade) on purpose: uploads are
+// created before the feedback row exists, and deleting feedback must not erase
+// the storage keys before the cleanup task has removed the objects. A row with
+// `attachedAt` set and `feedbackId` null is an orphan of a deleted feedback item.
+// `projectId` deliberately has no FK for the same reason (project deletion
+// cascades to feedback, and the objects still need collecting).
+export const feedbackAttachment = pgTable(
+  'feedback_attachment',
+  {
+    id: text('id').primaryKey(),
+    feedbackId: text('feedback_id').references(() => feedback.id, { onDelete: 'set null' }),
+    projectId: text('project_id').notNull(),
+    storageKey: text('storage_key').notNull(),
+    fileName: text('file_name').notNull(),
+    // Declared by the client at presign time; `contentType` below is the sniffed truth.
+    requestedContentType: text('requested_content_type').notNull(),
+    requestedSizeBytes: integer('requested_size_bytes').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    kind: text('kind').notNull(), // image | log | file
+    width: integer('width'),
+    height: integer('height'),
+    uploadedByUserId: text('uploaded_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    uploadedBySessionId: text('uploaded_by_session_id').references(() => anonymousSession.id, {
+      onDelete: 'set null',
+    }),
+    status: text('status').notNull(), // pending | ready
+    attachedAt: timestamp('attached_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    feedbackIdx: index('feedback_attachment_feedback_idx').on(table.feedbackId),
+    cleanupIdx: index('feedback_attachment_cleanup_idx').on(table.attachedAt, table.createdAt),
+    uploaderUserIdx: index('feedback_attachment_user_idx').on(table.uploadedByUserId),
+    uploaderSessionIdx: index('feedback_attachment_session_idx').on(table.uploadedBySessionId),
+  })
+)
