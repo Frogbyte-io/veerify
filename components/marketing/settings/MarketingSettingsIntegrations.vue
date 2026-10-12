@@ -48,7 +48,7 @@
               class="text-xs mt-0.5 [overflow-wrap:anywhere]"
               :class="item.state === 'failing' ? 'text-destructive' : 'text-muted-foreground'"
             >
-              {{ fill(item.detail) }}
+              {{ item.detail }}
             </p>
             <p
               v-if="results[item.id]"
@@ -58,7 +58,7 @@
             >
               <Icon :name="resultIcon(results[item.id])" class="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
-                {{ resultLabel(results[item.id]) }}: {{ fill(results[item.id].detail) }}
+                {{ resultLabel(results[item.id]) }}: {{ results[item.id].detail }}
                 <span v-if="results[item.id].durationMs !== undefined" class="text-muted-foreground">
                   ({{ formatDuration(results[item.id].durationMs) }})
                 </span>
@@ -117,12 +117,6 @@ export default {
   },
 
   methods: {
-    // The server describes the redirect URI with a {BETTER_AUTH_URL} placeholder
-    fill(text) {
-      if (!import.meta.client || typeof text !== 'string') return text
-      return text.replaceAll('{BETTER_AUTH_URL}', window.location.origin)
-    },
-
     isNotConfigured(result) {
       return result?.notConfigured === true
     },

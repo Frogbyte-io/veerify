@@ -67,12 +67,18 @@ export class GoogleAuthError extends GoogleApiError {
   }
 }
 
+/** The OAuth redirect URI, built from BETTER_AUTH_URL only (known even before the client id is set). */
+export function getGoogleRedirectUri(): string | null {
+  const base = process.env.BETTER_AUTH_URL?.trim().replace(/\/+$/, '')
+  return base ? `${base}/api/marketing/google/callback` : null
+}
+
 export function getGoogleOAuthConfig(): GoogleOAuthConfig | null {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim()
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim()
-  const base = process.env.BETTER_AUTH_URL?.trim().replace(/\/+$/, '')
-  if (!clientId || !clientSecret || !base) return null
-  return { clientId, clientSecret, redirectUri: `${base}/api/marketing/google/callback` }
+  const redirectUri = getGoogleRedirectUri()
+  if (!clientId || !clientSecret || !redirectUri) return null
+  return { clientId, clientSecret, redirectUri }
 }
 
 export function buildAuthorizationUrl(config: GoogleOAuthConfig, state: string): string {

@@ -554,13 +554,16 @@
                 the accurate figure.
               </li>
               <li>
-                Retention: mention excerpts are kept 180 days, review requests and testimonial email addresses 180 days,
-                competitor changes 12 months. Turning Marketing off hides your data but does not delete it.
+                Retention: mention excerpts are kept 180 days, competitor changes 12 months. After 180 days a review
+                request is anonymised (the email address and name are removed; only a keyed, irreversible fingerprint of
+                the address is kept so unsubscribe and withdraw links keep working and the person is not asked again),
+                and a testimonial author's email address is removed the same way. Requests still waiting after 30 days
+                expire. Turning Marketing off hides your data but does not delete it.
               </li>
               <li>
                 In Marketing settings, the Privacy card lets team admins erase a person's data by email, export a
                 product's Marketing data as a JSON file, and delete it permanently. People who sent a testimonial can
-                remove it from the public page with the link in their email.
+                remove it from the public page with the link in their email, also after the 180 days.
               </li>
             </ul>
           </div>

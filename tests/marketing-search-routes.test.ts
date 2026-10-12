@@ -523,6 +523,13 @@ describe('GET search/summary', () => {
     expect((await run(summary)).data.configured).toBe(false)
   })
 
+  it('returns the redirect URI built from BETTER_AUTH_URL, not the browser origin', async () => {
+    vi.stubEnv('BETTER_AUTH_URL', 'https://veerify.example.org/')
+    expect((await run(summary)).data.redirectUri).toBe('https://veerify.example.org/api/marketing/google/callback')
+    vi.stubEnv('BETTER_AUTH_URL', '')
+    expect((await run(summary)).data.redirectUri).toBeNull()
+  })
+
   it('is forbidden when marketing is off', async () => {
     state.role = 'off'
     expect((await failure(summary)).statusCode).toBe(403)

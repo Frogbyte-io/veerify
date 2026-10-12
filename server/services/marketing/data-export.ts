@@ -1,5 +1,6 @@
-import { asc, desc, eq, inArray } from 'drizzle-orm'
+import { asc, desc, eq, getTableColumns, inArray } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
+import { isRedactedEmail } from '~/server/utils/marketing-email-hash'
 import {
   aiVisibilityAnswer,
   aiVisibilityPrompt,
@@ -32,7 +33,7 @@ export const EXPORT_ROW_LIMIT = 5000
 export async function exportProductMarketingData(projectId: string, productSlug: string) {
   const [site] = await db.select().from(marketingSite).where(eq(marketingSite.projectId, projectId)).limit(1)
 
-  const reviewRequests = await db
+  const reviewRequestRows = await db
     .select({
       id: reviewRequest.id,
       email: reviewRequest.email,
@@ -48,8 +49,14 @@ export async function exportProductMarketingData(projectId: string, productSlug:
     .where(eq(reviewRequest.projectId, projectId))
     .orderBy(desc(reviewRequest.createdAt))
     .limit(EXPORT_ROW_LIMIT)
+  // Hashes are internal handles: never exported, and neither are redacted placeholders.
+  const reviewRequests = reviewRequestRows.map((row) => ({
+    ...row,
+    email: isRedactedEmail(row.email) ? null : row.email,
+  }))
+  const { authorEmailHash: _omitHash, ...testimonialColumns } = getTableColumns(testimonial)
   const testimonials = await db
-    .select()
+    .select(testimonialColumns)
     .from(testimonial)
     .where(eq(testimonial.projectId, projectId))
     .orderBy(desc(testimonial.createdAt))

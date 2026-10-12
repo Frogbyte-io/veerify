@@ -47,6 +47,11 @@ describe('M5 schema', () => {
     expect(unique).toContainEqual(['token'])
   })
 
+  it('keeps the dedupe slot of anonymised rows through the email hash, and one suppression per team and hash', () => {
+    expect(uniqueIndexColumns(reviewRequest)).toContainEqual(['project_id', 'trigger', 'source_id', 'email_hash'])
+    expect(uniqueIndexColumns(marketingEmailSuppression)).toContainEqual(['team_id', 'email_hash'])
+  })
+
   it('uses natural primary keys for settings, consent, suppression and GSC tables', () => {
     expect(pkColumns(reviewRequestSettings)).toEqual(['project_id'])
     expect(pkColumns(marketingDataConsent)).toEqual(['team_id'])

@@ -1,9 +1,10 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 import {
   launchKitItem,
   marketingAnnouncementDraft,
+  type EmailSuppressionReason,
   marketingEmailSuppression,
   marketingSite,
   reviewRequest,
@@ -11,6 +12,7 @@ import {
 } from '~/server/database/schema/marketing'
 import { revokeToken } from '~/server/services/google/search-console'
 import { findGscConnection, gscAad, removeGscConnection } from '~/server/services/marketing/search/connection'
+import { hashEmail, normalizeMarketingEmail } from '~/server/utils/marketing-email-hash'
 import { decryptSecret } from '~/server/utils/secrets'
 
 export interface EraseContactResult {
@@ -20,42 +22,73 @@ export interface EraseContactResult {
 }
 
 export function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase()
+  return normalizeMarketingEmail(email)
+}
+
+type SuppressionExecutor = Pick<typeof db, 'insert' | 'update'>
+
+/**
+ * Writes a durable per-team suppression carrying the keyed hash, and the address when it is still known.
+ * With only a hash (the row was anonymised) the `email` key is `hash:<hash>`: the address is gone, and the
+ * send-time checks match by hash. An older suppression that has the address but no hash is given its hash.
+ */
+export async function writeSuppression(
+  executor: SuppressionExecutor,
+  input: { teamId: string; email: string | null; emailHash: string; reason?: EmailSuppressionReason }
+): Promise<void> {
+  const email = input.email ?? `hash:${input.emailHash}`
+  await executor
+    .insert(marketingEmailSuppression)
+    .values({ teamId: input.teamId, email, emailHash: input.emailHash, reason: input.reason ?? 'unsubscribed' })
+    .onConflictDoNothing()
+  if (input.email) {
+    await executor
+      .update(marketingEmailSuppression)
+      .set({ emailHash: input.emailHash })
+      .where(
+        and(
+          eq(marketingEmailSuppression.teamId, input.teamId),
+          eq(marketingEmailSuppression.email, input.email),
+          isNull(marketingEmailSuppression.emailHash),
+          sql`not exists (select 1 from marketing_email_suppression s where s.team_id = ${input.teamId} and s.email_hash = ${input.emailHash})`
+        )
+      )
+  }
 }
 
 /**
  * Erases one person's Marketing data across a team: every review request and testimonial for the
- * address (case-insensitive) in the team's products. A suppression is kept (or created) so the
- * address is never contacted again; it is the only trace left, as the durable opt-out record.
+ * address in the team's products, matched case-insensitively by address OR by keyed hash (rows the
+ * retention task anonymised only have the hash). A suppression (address and hash) is kept or created so
+ * the person is never contacted again; it is the only trace left, as the durable opt-out record.
  *
- * Testimonials are matched by their own `authorEmail` and by the review request they came from
- * (the email may already have been cleared by the retention prune).
+ * Testimonials are matched by their own `authorEmail` / `authorEmailHash` and by the review request they
+ * came from. They are deleted first, so no review request is left referenced and every match is deleted.
+ * A request already claimed by the sender is deleted too; the sender re-checks right before mailing.
  */
 export async function eraseContact(teamId: string, rawEmail: string): Promise<EraseContactResult> {
   const email = normalizeEmail(rawEmail)
+  const emailHash = hashEmail(email)
 
   return db.transaction(async (tx) => {
     const teamProjects = tx.select({ id: project.id }).from(project).where(eq(project.teamId, teamId))
-    const requests = await tx
-      .select({ id: reviewRequest.id })
-      .from(reviewRequest)
-      .where(and(eq(reviewRequest.teamId, teamId), sql`lower(${reviewRequest.email}) = ${email}`))
+    const matchesRequest = and(
+      eq(reviewRequest.teamId, teamId),
+      or(sql`lower(${reviewRequest.email}) = ${email}`, eq(reviewRequest.emailHash, emailHash))
+    )
+    const requests = await tx.select({ id: reviewRequest.id }).from(reviewRequest).where(matchesRequest)
     const requestIds = requests.map((row) => row.id)
 
-    const matchesPerson = requestIds.length
-      ? sql`(lower(${testimonial.authorEmail}) = ${email} or ${inArray(testimonial.reviewRequestId, requestIds)})`
-      : sql`lower(${testimonial.authorEmail}) = ${email}`
+    const byAuthor = or(sql`lower(${testimonial.authorEmail}) = ${email}`, eq(testimonial.authorEmailHash, emailHash))
+    const matchesPerson = requestIds.length ? or(byAuthor, inArray(testimonial.reviewRequestId, requestIds)) : byAuthor
     const removedTestimonials = await tx
       .delete(testimonial)
       .where(and(sql`${testimonial.projectId} in (${teamProjects})`, matchesPerson))
       .returning({ id: testimonial.id })
 
-    const removedRequests = await tx
-      .delete(reviewRequest)
-      .where(and(eq(reviewRequest.teamId, teamId), sql`lower(${reviewRequest.email}) = ${email}`))
-      .returning({ id: reviewRequest.id })
+    const removedRequests = await tx.delete(reviewRequest).where(matchesRequest).returning({ id: reviewRequest.id })
 
-    await tx.insert(marketingEmailSuppression).values({ teamId, email, reason: 'unsubscribed' }).onConflictDoNothing()
+    await writeSuppression(tx, { teamId, email, emailHash })
 
     return {
       reviewRequestsDeleted: removedRequests.length,

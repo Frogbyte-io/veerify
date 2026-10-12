@@ -22,7 +22,12 @@ import { getCrawlProvider, resolveCrawlConfig } from '~/server/services/crawl'
 import { CrawlProviderError } from '~/server/services/crawl/types'
 import { getSocialSource, SocialSourceError } from '~/server/services/social-sources'
 import { PageSpeedError, runPageSpeed } from '~/server/services/marketing/pagespeed'
-import { getGoogleOAuthConfig, GoogleApiError, refreshAccessToken } from '~/server/services/google/search-console'
+import {
+  getGoogleOAuthConfig,
+  getGoogleRedirectUri,
+  GoogleApiError,
+  refreshAccessToken,
+} from '~/server/services/google/search-console'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('marketing:integration-test')
@@ -255,11 +260,11 @@ async function testSocial(id: 'hackernews' | 'reddit' | 'bluesky'): Promise<Outc
 async function testGoogle(teamId: string): Promise<Outcome> {
   const config = getGoogleOAuthConfig()
   if (!config) {
+    const redirectUri = getGoogleRedirectUri()
     return {
       ok: false,
       source: null,
-      detail:
-        'Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and BETTER_AUTH_URL on the server, then add {BETTER_AUTH_URL}/api/marketing/google/callback as an authorized redirect URI.',
+      detail: `Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and BETTER_AUTH_URL on the server, then add ${redirectUri ?? '<BETTER_AUTH_URL>/api/marketing/google/callback'} as an authorized redirect URI.`,
     }
   }
   const configured = `OAuth app configured; its authorized redirect URI must be ${config.redirectUri}.`

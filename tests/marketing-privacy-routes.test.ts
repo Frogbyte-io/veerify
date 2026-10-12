@@ -130,6 +130,13 @@ describe('POST r/[token]/withdraw', () => {
     expect(state.rateLimitKeys).toEqual([`public-testimonial-withdraw:${TOKEN}`])
   })
 
+  it('still withdraws through the retained token once the request was anonymised', async () => {
+    state.params = { token: TOKEN }
+    state.tokenRequest = { id: 'rr1', email: 'redacted:rr1', emailHash: 'h' } as never
+    expect((await withdraw({})).data).toEqual({ withdrawn: 1 })
+    expect(state.withdraw).toEqual(['rr1'])
+  })
+
   it('404s on an unknown token without changing anything', async () => {
     state.params = { token: TOKEN }
     state.tokenRequest = null

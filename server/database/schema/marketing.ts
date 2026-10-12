@@ -458,7 +458,10 @@ export const reviewRequest = pgTable(
     teamId: text('team_id')
       .notNull()
       .references(() => team.id, { onDelete: 'cascade' }),
+    // Replaced by `redacted:<id>` once the row is anonymised by the retention task.
     email: text('email').notNull(),
+    // Keyed HMAC of the address (see server/utils/marketing-email-hash.ts); survives anonymisation.
+    emailHash: text('email_hash'),
     name: text('name'),
     trigger: text('trigger').$type<ReviewRequestTrigger>().notNull(),
     sourceId: text('source_id'),
@@ -484,6 +487,14 @@ export const reviewRequest = pgTable(
       table.sourceId,
       table.email
     ),
+    // Anonymised rows keep their slot through the hash, so a `shipped` event is never queued twice.
+    uniqueEventHash: uniqueIndex('review_request_event_hash_idx').on(
+      table.projectId,
+      table.trigger,
+      table.sourceId,
+      table.emailHash
+    ),
+    projectEmailHashIdx: index('review_request_project_email_hash_idx').on(table.projectId, table.emailHash),
     projectEmailIdx: index('review_request_project_email_idx').on(table.projectId, table.email, table.createdAt),
     statusIdx: index('review_request_status_idx').on(table.status, table.createdAt),
     teamTriggerCreatedIdx: index('review_request_team_trigger_created_idx').on(
@@ -502,12 +513,15 @@ export const marketingEmailSuppression = pgTable(
     teamId: text('team_id')
       .notNull()
       .references(() => team.id, { onDelete: 'cascade' }),
+    // `hash:<emailHash>` for suppressions written from an anonymised row (the address is gone).
     email: text('email').notNull(),
+    emailHash: text('email_hash'),
     reason: text('reason').$type<EmailSuppressionReason>().notNull(),
     createdAt: createdAtColumn(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.teamId, table.email] }),
+    uniqueHash: uniqueIndex('marketing_email_suppression_hash_idx').on(table.teamId, table.emailHash),
   })
 )
 
@@ -524,6 +538,8 @@ export const testimonial = pgTable(
     authorTitle: text('author_title'),
     authorCompany: text('author_company'),
     authorEmail: text('author_email'),
+    // Keyed HMAC of the author's address; kept after `authorEmail` is cleared. Never returned by any API.
+    authorEmailHash: text('author_email_hash'),
     quote: text('quote').notNull(),
     rating: integer('rating'),
     consentPublic: boolean('consent_public').default(false).notNull(),

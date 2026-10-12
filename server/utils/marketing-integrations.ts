@@ -2,7 +2,7 @@ import { instanceKeysAllowed, marketingConfig } from '~/server/utils/marketing-c
 import { listTeamCredentials, type TeamCredentialSummary } from '~/server/utils/team-credentials'
 import { countOutdatedSecrets } from '~/server/services/marketing/secrets-rotation'
 import { isSecretsConfigured } from '~/server/utils/secrets'
-import { getGoogleOAuthConfig } from '~/server/services/google/search-console'
+import { getGoogleOAuthConfig, getGoogleRedirectUri } from '~/server/services/google/search-console'
 import { SOCIAL_SOURCES } from '~/server/services/social-sources'
 
 export type IntegrationId =
@@ -29,6 +29,8 @@ export interface IntegrationStatus {
   source: 'team' | 'instance' | null
   /** What is wrong or what to set; never contains key material */
   detail: string
+  /** Google only: the OAuth redirect URI as built from BETTER_AUTH_URL, or null when that is unset */
+  redirectUri?: string | null
 }
 
 type CredentialFallback = { configured: boolean; missingHint: string }
@@ -153,6 +155,7 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
   }
 
   const googleConfig = getGoogleOAuthConfig()
+  const redirectUri = getGoogleRedirectUri()
   result.push({
     id: 'google',
     label: 'Search Console',
@@ -161,7 +164,8 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
     source: googleConfig ? 'instance' : null,
     detail: googleConfig
       ? `Available. Your Google OAuth app must allow the redirect URI ${googleConfig.redirectUri}`
-      : 'Create a Google OAuth app (Web application) with the Search Console API enabled, set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server, and add {BETTER_AUTH_URL}/api/marketing/google/callback as an authorized redirect URI.',
+      : `Create a Google OAuth app (Web application) with the Search Console API enabled, set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server, and add ${redirectUri ?? '<BETTER_AUTH_URL>/api/marketing/google/callback (set BETTER_AUTH_URL first)'} as an authorized redirect URI.`,
+    redirectUri,
   })
 
   return result

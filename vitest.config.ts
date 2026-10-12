@@ -18,6 +18,8 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // Keyed email hashes (server/utils/marketing-email-hash.ts) derive their key from this.
+    env: { BETTER_AUTH_SECRET: 'vitest-better-auth-secret-0123456789' },
     include: ['tests/**/*.test.ts'],
     // e2e requires Playwright; integration requires a real Redis. Both run via
     // their own `*:if-available` guarded script, never the default `yarn test`.

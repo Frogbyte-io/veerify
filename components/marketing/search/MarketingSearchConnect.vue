@@ -19,7 +19,7 @@
           <li>In Google Cloud, enable the Search Console API and create an OAuth client of type Web application.</li>
           <li>
             Add
-            <code class="break-all rounded bg-muted px-1 py-0.5 text-xs">{{ callbackUrl }}</code>
+            <code class="break-all rounded bg-muted px-1 py-0.5 text-xs">{{ redirectUri || '<your app URL>/api/marketing/google/callback' }}</code>
             as an authorized redirect URI.
           </li>
           <li>
@@ -70,6 +70,7 @@ export default {
     configured: { type: Boolean, default: false },
     canManage: { type: Boolean, default: false },
     origin: { type: String, default: '' },
+    redirectUri: { type: String, default: null },
     reconnect: { type: Boolean, default: false },
     connecting: { type: Boolean, default: false },
     connectError: { type: String, default: null },
@@ -77,18 +78,5 @@ export default {
 
   emits: ['connect'],
 
-  data() {
-    return { appOrigin: '' }
-  },
-
-  computed: {
-    callbackUrl() {
-      return `${this.appOrigin || '<your app URL>'}/api/marketing/google/callback`
-    },
-  },
-
-  mounted() {
-    if (import.meta.client) this.appOrigin = window.location.origin
-  },
 }
 </script>
