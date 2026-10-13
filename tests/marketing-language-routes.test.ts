@@ -114,6 +114,7 @@ describe('data consent routes', () => {
 
   it('PUT records who and when, and a non-member is rejected', async () => {
     state.selectRows = [
+      [], // previous consent, read by setConsent before the upsert
       [{ allowFeedbackText: true, allowSupportText: false, consentedAt: new Date(), consentedBy: 'Ann' }],
     ]
     const res = await call(putHandler)

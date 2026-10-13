@@ -1,3 +1,4 @@
+import { marketingConfig } from '~/server/utils/marketing-config'
 import { firecrawlProvider } from './firecrawl'
 import type { CrawlProvider, CrawlProviderConfig, CrawlProviderId } from './types'
 
@@ -9,9 +10,12 @@ export function getCrawlProvider(id: CrawlProviderId): CrawlProvider {
   return provider
 }
 
-/** Team key first, then the operator's FIRECRAWL_API_KEY. Null when neither is set. */
+/**
+ * Team key first, then the operator's FIRECRAWL_API_KEY (ignored on the cloud unless
+ * MARKETING_ALLOW_INSTANCE_KEYS=true). Null when neither applies.
+ */
 export function resolveCrawlConfig(teamKey: string | null): CrawlProviderConfig | null {
-  const apiKey = teamKey?.trim() || process.env.FIRECRAWL_API_KEY?.trim() || ''
+  const apiKey = teamKey?.trim() || marketingConfig.firecrawl.apiKey || ''
   if (!apiKey) return null
   const baseUrl = (process.env.FIRECRAWL_API_URL?.trim() || 'https://api.firecrawl.dev').replace(/\/+$/, '')
   return { apiKey, baseUrl }

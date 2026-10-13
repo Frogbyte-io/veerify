@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="audit-score-card">
     <CardHeader>
-      <CardTitle class="text-base">Site score</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Site score</CardTitle>
     </CardHeader>
     <CardContent>
       <div v-if="audit.score === null" class="text-sm text-muted-foreground">

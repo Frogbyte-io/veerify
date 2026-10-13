@@ -1,10 +1,10 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6 max-w-4xl mx-auto space-y-6" data-testid="marketing-settings-page">
+    <div class="p-4 sm:p-6 max-w-4xl mx-auto min-w-0 space-y-6" data-testid="marketing-settings-page">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing settings</h1>
-          <p class="text-muted-foreground mt-1">Your site, brand terms and the keys Marketing runs on</p>
+          <p class="text-muted-foreground mt-1">Your site, brand names and the keys Marketing runs on</p>
         </div>
         <MarketingProductPicker @change="onProductChange" />
       </div>
@@ -51,6 +51,7 @@
             />
             <MarketingSettingsTerms :product="product" :site-added="site !== null" />
             <MarketingSettingsApiKeys :team-id="product.teamId" @changed="loadIntegrations" />
+            <MarketingSettingsPrivacy v-if="canManage" :product="product" @changed="onSiteChanged" />
             <MarketingSettingsIntegrations
               :integrations="integrations"
               :is-loading="integrationsLoading"
@@ -73,6 +74,10 @@ import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 export default {
   name: 'MarketingSettingsPage',
 
+  created() {
+    useHead({ title: 'Marketing settings' })
+  },
+
   data() {
     return {
       pickerReady: false,
@@ -86,7 +91,19 @@ export default {
       integrations: [],
       integrationsLoading: false,
       integrationsError: null,
+      hashToken: 0,
     }
+  },
+
+  watch: {
+    // Same-page hash changes (setup checklist links) re-focus the target section
+    '$route.hash'() {
+      this.focusHashSection()
+    },
+  },
+
+  beforeUnmount() {
+    this.hashToken++
   },
 
   methods: {
@@ -125,7 +142,38 @@ export default {
         }
       } finally {
         if (this.product?.id === productId) this.isLoading = false
+        if (!silent && this.$route.hash) this.$nextTick(() => this.focusHashSection())
       }
+    },
+
+    // Deep links from the setup checklist: /marketing/settings#terms
+    // Sections render after their data loads, so poll animation frames (up to ~2s) until the
+    // section's first enabled control exists. A newer call or a route change cancels the poll.
+    focusHashSection() {
+      if (!import.meta.client) return
+      const token = ++this.hashToken
+      let id = ''
+      try {
+        id = decodeURIComponent((this.$route.hash || '').slice(1))
+      } catch {
+        return
+      }
+      if (!id || !['site', 'terms', 'keys', 'integrations'].includes(id)) return
+      const deadline = performance.now() + 2000
+      const attempt = () => {
+        if (token !== this.hashToken) return
+        const section = document.getElementById(id)
+        const field = section?.querySelector(
+          'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href]'
+        )
+        if (section && field) {
+          section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          field.focus({ preventScroll: true })
+          return
+        }
+        if (performance.now() < deadline) requestAnimationFrame(attempt)
+      }
+      requestAnimationFrame(attempt)
     },
 
     async onSiteChanged() {

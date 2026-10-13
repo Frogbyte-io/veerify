@@ -6,7 +6,7 @@
  *     summary: List mentions for a product
  *     description: >
  *       Cursor-paginated, newest published first. Also returns counts by status
- *       (with the kind and source filters applied) and whether the site is
+ *       (with the kind and source filters applied, over the last 180 days) and whether the site is
  *       verified and has terms configured. `canEscalate` is true when Support is on and the
  *       caller can work in a support inbox; escalated items carry `conversationId` and
  *       `conversationInboxId` only when the caller can open that inbox (otherwise both are null).
@@ -37,7 +37,7 @@
  *       403: { description: Not a team member, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
-import { and, count, desc, eq, lt, or, type SQL } from 'drizzle-orm'
+import { and, count, desc, eq, gte, lt, or, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { conversation } from '~/server/database/schema/support'
@@ -49,6 +49,9 @@ import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
 import { validateQuery } from '~/server/utils/validation'
+
+// Matches the poller's retention window: older rows are deleted anyway, so counting them is wasted work.
+const COUNT_WINDOW_MS = 180 * 24 * 60 * 60 * 1000
 
 const querySchema = z.object({
   status: z.enum(['new', 'seen', 'dismissed', 'escalated']).optional(),
@@ -122,7 +125,7 @@ export default defineEventHandler(async (event) => {
     db
       .select({ status: mention.status, total: count() })
       .from(mention)
-      .where(and(...scope))
+      .where(and(...scope, gte(mention.publishedAt, new Date(Date.now() - COUNT_WINDOW_MS))))
       .groupBy(mention.status),
     db.select({ total: count() }).from(marketingTerm).where(eq(marketingTerm.siteId, site.id)),
   ])

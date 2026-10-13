@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   deletedQueryStats: 0,
   transactions: 0,
   revoked: [] as string[],
+  nonces: new Set<string>(),
   exchangeError: false,
   slug: 'acme' as string | null,
 }))
@@ -80,6 +81,17 @@ vi.mock('~/server/database/drizzle', async () => {
   const writes = {
     insert: () => ({
       values: (values: Record<string, unknown>) => {
+        if (typeof values.metric === 'string' && values.metric.startsWith('oauth-nonce:')) {
+          return {
+            onConflictDoNothing: () => ({
+              returning: async () => {
+                if (state.nonces.has(values.metric as string)) return []
+                state.nonces.add(values.metric as string)
+                return [{ metric: values.metric }]
+              },
+            }),
+          }
+        }
         state.insertValues = values
         return {
           onConflictDoUpdate: async ({ set }: { set: Record<string, unknown> }) => {
@@ -195,6 +207,7 @@ beforeEach(() => {
   state.deletedQueryStats = 0
   state.transactions = 0
   state.revoked = []
+  state.nonces = new Set()
   state.exchangeError = false
   state.slug = 'acme'
 })
@@ -283,6 +296,57 @@ describe('GET google/callback', () => {
     expect(state.deletedMetrics).toBe(1)
   })
 
+  it('rejects a replayed state: the nonce is single-use', async () => {
+    state.sites = [{ siteUrl: 'sc-domain:acme.com', permissionLevel: 'siteOwner' }]
+    const first = await run(callback)
+    expect(first.redirect).toContain('connected=1')
+    state.insertValues = null
+    state.selects = [[{ slug: 'acme' }]]
+    const second = await run(callback)
+    expect(second.redirect).toBe('/marketing/search?product=acme&error=invalid_state')
+    expect(state.insertValues).toBeNull()
+  })
+
+  it('revokes the replaced refresh token when a different Google account reconnects', async () => {
+    state.conn = {
+      siteId: 'site-1',
+      propertyUrl: 'sc-domain:acme.com',
+      encryptedRefreshToken: encryptSecret('OLD-TOKEN', 'gsc:site-1'),
+      googleAccountEmail: 'someone-else@example.com',
+    }
+    state.sites = [{ siteUrl: 'sc-domain:acme.com', permissionLevel: 'siteOwner' }]
+    await run(callback)
+    expect(state.revoked).toEqual(['OLD-TOKEN'])
+  })
+
+  it('does not revoke when the same Google account reconnects (Google revokes the whole grant)', async () => {
+    state.conn = {
+      siteId: 'site-1',
+      propertyUrl: 'sc-domain:acme.com',
+      encryptedRefreshToken: encryptSecret('OLD-TOKEN', 'gsc:site-1'),
+      googleAccountEmail: null,
+    }
+    state.sites = [{ siteUrl: 'sc-domain:acme.com', permissionLevel: 'siteOwner' }]
+    await run(callback)
+    expect(state.revoked).toEqual([])
+  })
+
+  it('does not revoke when Google returned the same token (it would kill the new connection)', async () => {
+    state.conn = {
+      siteId: 'site-1',
+      propertyUrl: 'sc-domain:acme.com',
+      encryptedRefreshToken: encryptSecret('REFRESH-TOKEN-123', 'gsc:site-1'),
+    }
+    state.sites = [{ siteUrl: 'sc-domain:acme.com', permissionLevel: 'siteOwner' }]
+    await run(callback)
+    expect(state.revoked).toEqual([])
+  })
+
+  it('does not revoke on a first connection', async () => {
+    await run(callback)
+    expect(state.revoked).toEqual([])
+  })
+
   it('rejects a bad or tampered state', async () => {
     state.query = { code: 'c', state: 'garbage' }
     expect((await run(callback)).redirect).toBe('/marketing/search?error=invalid_state')
@@ -329,6 +393,9 @@ describe('GET google/callback', () => {
     state.site = { id: 'site-2', origin: 'https://acme.com', verifiedAt: new Date() }
     expect((await run(callback)).redirect).toContain('error=site_changed')
     state.site = { id: 'site-1', origin: 'https://acme.com', verifiedAt: null }
+    // The first attempt consumed the state's nonce; a real retry starts a new flow
+    state.selects = [[{ slug: 'acme' }]]
+    state.query = { code: 'auth-code', state: goodState() }
     expect((await run(callback)).redirect).toContain('error=site_changed')
   })
 
@@ -454,6 +521,13 @@ describe('GET search/summary', () => {
   it('reports not configured without the Google app', async () => {
     vi.stubEnv('GOOGLE_CLIENT_SECRET', '')
     expect((await run(summary)).data.configured).toBe(false)
+  })
+
+  it('returns the redirect URI built from BETTER_AUTH_URL, not the browser origin', async () => {
+    vi.stubEnv('BETTER_AUTH_URL', 'https://veerify.example.org/')
+    expect((await run(summary)).data.redirectUri).toBe('https://veerify.example.org/api/marketing/google/callback')
+    vi.stubEnv('BETTER_AUTH_URL', '')
+    expect((await run(summary)).data.redirectUri).toBeNull()
   })
 
   it('is forbidden when marketing is off', async () => {

@@ -14,6 +14,14 @@ export const BOT_TOKEN = 'VeerifyBot'
 export const RECHECK_AFTER_MS = 23 * 60 * 60 * 1000
 export const HOST_SPACING_MS = 10_000
 export const MAX_FAILURES = 5
+/** Watches loaded per run (10 minute cadence x 45 s budget; the budget is the real limiter) */
+export const MAX_WATCHES_PER_RUN = 120
+/** Pages checked at the same time, always on different hosts */
+export const CHECK_CONCURRENCY = 8
+/** Share of each run reserved for watches never checked, so new watches get a baseline promptly */
+export const NEVER_CHECKED_SHARE = 0.3
+/** Distinct pages per host considered due in one run (the store applies it before the LIMIT) */
+export const MAX_PAGES_PER_HOST = 5
 export const SUMMARY_SETTING_KEY = 'marketingCompetitorSummaries'
 
 export type CheckOutcome = 'baseline' | 'changed' | 'unchanged' | 'noise' | 'blocked' | 'error' | 'skipped'
@@ -38,7 +46,21 @@ export interface RunContext {
   robots: Map<string, Promise<string | null>>
   lastPageRequestAt: Map<string, number>
   deadline: number
+  /**
+   * Fetched pages by URL for this run: watches of different teams on the same URL share one fetch
+   * (and one robots/spacing slot); each is still diffed against its own stored text.
+   */
+  pages?: Map<string, Promise<PageResult>>
+  /** Watches still queued per URL, so a cached page is dropped after its last use */
+  pageRefs?: Map<string, number>
 }
+
+/** Outcome of fetching and normalising one page, shared by every watch on that URL in a run. */
+export type PageResult =
+  | { kind: 'page'; text: string; hash: string; fetches: number }
+  | { kind: 'fail'; message: string; fetches: number }
+  | { kind: 'blocked'; fetches: number }
+  | { kind: 'skipped'; fetches: number }
 
 export interface CheckSummary {
   checked: number
@@ -52,7 +74,7 @@ export interface CheckSummary {
 class RobotsUnavailableError extends Error {}
 
 export function newRunContext(deadline: number): RunContext {
-  return { robots: new Map(), lastPageRequestAt: new Map(), deadline }
+  return { robots: new Map(), lastPageRequestAt: new Map(), deadline, pages: new Map(), pageRefs: new Map() }
 }
 
 const defaultDeps: CheckerDeps = {
@@ -134,6 +156,92 @@ function pathOf(url: URL): string {
   return `${url.pathname}${url.search}`
 }
 
+/** One fetch per URL per run: a page several teams watch is fetched once and shared. */
+function loadPage(target: URL, host: string, ctx: RunContext, deps: CheckerDeps): Promise<PageResult> {
+  const key = target.toString()
+  const cache = ctx.pages
+  const hit = cache?.get(key)
+  if (hit) return hit
+  const pending = fetchPage(target, host, ctx, deps)
+  cache?.set(key, pending)
+  return pending
+}
+
+/** Drops a URL's cached page once no queued watch needs it any more. */
+export function releasePage(ctx: RunContext, url: string): void {
+  if (!ctx.pageRefs || !ctx.pages) return
+  const left = (ctx.pageRefs.get(url) ?? 1) - 1
+  if (left > 0) ctx.pageRefs.set(url, left)
+  else {
+    ctx.pageRefs.delete(url)
+    try {
+      ctx.pages.delete(new URL(url).toString())
+    } catch {
+      ctx.pages.delete(url)
+    }
+  }
+}
+
+/**
+ * robots.txt, per-host spacing, a hand-followed redirect chain on the same host (https only, at most
+ * 5 hops, each robots-checked and spaced), then the normalised text. Never throws.
+ */
+async function fetchPage(target: URL, host: string, ctx: RunContext, deps: CheckerDeps): Promise<PageResult> {
+  let fetches = 0
+  try {
+    let current = target
+    let response: SafeFetchResult | null = null
+    for (let hop = 0; ; hop++) {
+      const currentHost = canonicalHost(current.hostname)
+      if (current.protocol !== 'https:')
+        return { kind: 'fail', message: 'Redirected to a page that is not https', fetches }
+      if (currentHost !== host) return { kind: 'fail', message: `Redirected to another host (${currentHost})`, fetches }
+
+      const robots = await loadRobots(host, ctx, deps)
+      if (robots !== null && !isAllowed(robots, BOT_TOKEN, pathOf(current))) return { kind: 'blocked', fetches }
+
+      // One page request per host every 10 seconds within a run.
+      const last = ctx.lastPageRequestAt.get(host)
+      if (last !== undefined) {
+        const wait = last + HOST_SPACING_MS - deps.now().getTime()
+        if (wait > 0) {
+          if (deps.now().getTime() + wait > ctx.deadline) return { kind: 'skipped', fetches }
+          await deps.sleep(wait)
+        }
+      }
+      ctx.lastPageRequestAt.set(host, deps.now().getTime())
+
+      response = await deps.fetchText(current.toString(), {
+        userAgent: marketingConfig.botUserAgent,
+        timeoutMs: 15_000,
+        maxBytes: 2_000_000,
+        accept: 'text/html',
+        maxRedirects: 0,
+        manualRedirects: true,
+      })
+      fetches += 1
+
+      const next = redirectTarget(response, current.toString())
+      if (!next) break
+      if (hop >= MAX_REDIRECT_HOPS) return { kind: 'fail', message: 'Too many redirects', fetches }
+      current = next
+    }
+    if (response.status < 200 || response.status >= 300) {
+      return { kind: 'fail', message: `The page returned HTTP ${response.status}`, fetches }
+    }
+    if (response.contentType && !/html|xml/i.test(response.contentType)) {
+      return { kind: 'fail', message: 'The page is not HTML', fetches }
+    }
+    const text = normalizeHtml(response.body)
+    if (!text) return { kind: 'fail', message: 'The page has no readable text', fetches }
+    return { kind: 'page', text, hash: hashText(text), fetches }
+  } catch (error) {
+    if (error instanceof RobotsUnavailableError) return { kind: 'fail', message: error.message, fetches }
+    logger.warn('Competitor page check failed', { url: target.origin, error: describeError(error) })
+    return { kind: 'fail', message: describeError(error), fetches }
+  }
+}
+
 /**
  * Checks one watch: robots.txt first (a blocked page is never fetched), then one
  * page fetch, then baseline / diff. Redirects are followed by hand, at most 5 hops, each on the
@@ -181,48 +289,13 @@ export async function checkWatch(watch: WatchContext, ctx: RunContext, deps: Che
   }
 
   try {
-    let current = target
-    let response: SafeFetchResult | null = null
-    for (let hop = 0; ; hop++) {
-      const currentHost = canonicalHost(current.hostname)
-      if (current.protocol !== 'https:') return fail('Redirected to a page that is not https')
-      if (currentHost !== host) return fail(`Redirected to another host (${currentHost})`)
-
-      const robots = await loadRobots(host, ctx, deps)
-      if (robots !== null && !isAllowed(robots, BOT_TOKEN, pathOf(current))) return block()
-
-      // One page request per host every 10 seconds within a run.
-      const last = ctx.lastPageRequestAt.get(host)
-      if (last !== undefined) {
-        const wait = last + HOST_SPACING_MS - deps.now().getTime()
-        if (wait > 0) {
-          if (deps.now().getTime() + wait > ctx.deadline) return 'skipped'
-          await deps.sleep(wait)
-        }
-      }
-      ctx.lastPageRequestAt.set(host, deps.now().getTime())
-
-      response = await deps.fetchText(current.toString(), {
-        userAgent: marketingConfig.botUserAgent,
-        timeoutMs: 15_000,
-        maxBytes: 2_000_000,
-        accept: 'text/html',
-        maxRedirects: 0,
-        manualRedirects: true,
-      })
-      await deps.recordUsage(watch.teamId, 'competitors:fetches', 1).catch(() => undefined)
-
-      const next = redirectTarget(response, current.toString())
-      if (!next) break
-      if (hop >= MAX_REDIRECT_HOPS) return fail('Too many redirects')
-      current = next
-    }
-    if (response.status < 200 || response.status >= 300) return fail(`The page returned HTTP ${response.status}`)
-    if (response.contentType && !/html|xml/i.test(response.contentType)) return fail('The page is not HTML')
-
-    const text = normalizeHtml(response.body)
-    if (!text) return fail('The page has no readable text')
-    const hash = hashText(text)
+    const page = await loadPage(target, host, ctx, deps)
+    if (page.fetches > 0)
+      await deps.recordUsage(watch.teamId, 'competitors:fetches', page.fetches).catch(() => undefined)
+    if (page.kind === 'skipped') return 'skipped'
+    if (page.kind === 'blocked') return block()
+    if (page.kind === 'fail') return fail(page.message)
+    const { text, hash } = page
 
     // A manual re-check can clear a robots block or an error state.
     const reactivate = watch.status === 'blocked_by_robots' || watch.status === 'error'
@@ -233,7 +306,7 @@ export async function checkWatch(watch: WatchContext, ctx: RunContext, deps: Che
       ...(reactivate ? { status: 'active' as const } : {}),
     }
 
-    if (watch.lastContentHash === null || watch.lastText === null) {
+    if (watch.lastContentHash === null) {
       await deps.store.save(watch.id, { ...ok, lastContentHash: hash, lastText: text })
       return 'baseline'
     }
@@ -242,7 +315,14 @@ export async function checkWatch(watch: WatchContext, ctx: RunContext, deps: Che
       return 'unchanged'
     }
 
-    const diff = diffLines(watch.lastText, text)
+    // The stored text is only needed for a diff: it is not part of the due-watch load
+    const lastText = watch.lastText ?? (await deps.store.loadLastText(watch.id))
+    if (lastText === null) {
+      await deps.store.save(watch.id, { ...ok, lastContentHash: hash, lastText: text })
+      return 'baseline'
+    }
+
+    const diff = diffLines(lastText, text)
     if (isNoise(diff)) {
       // Keep the old baseline so small edits add up until they matter.
       await deps.store.save(watch.id, ok)
@@ -340,6 +420,16 @@ export function interleaveByHost(watches: WatchContext[]): WatchContext[] {
   return out
 }
 
+/**
+ * Moves watches on the same URL (different teams) next to each other, keeping first-appearance order,
+ * so a shared page is fetched once and applied to all of them while it is still cached.
+ */
+export function groupByUrl(watches: WatchContext[]): WatchContext[] {
+  const groups = new Map<string, WatchContext[]>()
+  for (const watch of watches) groups.set(watch.url, [...(groups.get(watch.url) ?? []), watch])
+  return [...groups.values()].flat()
+}
+
 /** A manual check is refused when the watch was checked (cron or manual) this recently. */
 export const MANUAL_CHECK_MIN_INTERVAL_MS = 60 * 60 * 1000
 
@@ -368,38 +458,94 @@ export async function checkWatchNow(
   return outcome
 }
 
+function hostKey(watch: WatchContext): string {
+  try {
+    return canonicalHost(new URL(watch.url).hostname)
+  } catch {
+    return watch.url
+  }
+}
+
+/**
+ * Loads this run's watches: a reserved share (NEVER_CHECKED_SHARE) for watches never checked, the
+ * rest for rechecks ordered by `last_checked_at` (oldest first). Unused reserve flows to rechecks, so
+ * neither group can starve the other.
+ */
+export async function loadRunWatches(
+  store: CompetitorStore,
+  cutoff: Date,
+  maxWatches: number
+): Promise<WatchContext[]> {
+  const reserved = Math.max(1, Math.floor(maxWatches * NEVER_CHECKED_SHARE))
+  const fresh = await store.loadDue(cutoff, reserved, 'never')
+  const rechecks = await store.loadDue(cutoff, Math.max(0, maxWatches - fresh.length), 'recheck')
+  const seen = new Set<string>()
+  return [...fresh, ...rechecks].filter((watch) => !seen.has(watch.id) && seen.add(watch.id))
+}
+
 export async function checkCompetitorWatches(
-  options: { budgetMs?: number; maxWatches?: number } = {},
+  options: { budgetMs?: number; maxWatches?: number; concurrency?: number } = {},
   partial: Partial<CheckerDeps> = {}
 ): Promise<CheckSummary> {
   const deps = { ...defaultDeps, ...partial }
   const budgetMs = options.budgetMs ?? 45_000
-  const maxWatches = options.maxWatches ?? 30
+  const maxWatches = options.maxWatches ?? MAX_WATCHES_PER_RUN
+  const concurrency = Math.max(1, options.concurrency ?? CHECK_CONCURRENCY)
   const started = deps.now().getTime()
   const ctx = newRunContext(started + budgetMs)
   const summary: CheckSummary = { checked: 0, changes: 0, baselines: 0, blocked: 0, errors: 0, skipped: 0 }
 
   const cutoff = new Date(started - RECHECK_AFTER_MS)
-  const due = interleaveByHost(await deps.store.loadDue(cutoff, maxWatches))
+  const queue = groupByUrl(interleaveByHost(await loadRunWatches(deps.store, cutoff, maxWatches)))
+  for (const watch of queue) ctx.pageRefs?.set(watch.url, (ctx.pageRefs.get(watch.url) ?? 0) + 1)
 
-  for (const watch of due) {
-    if (deps.now().getTime() >= ctx.deadline) {
-      summary.skipped++
-      continue
-    }
-    if (!(await deps.store.claim(watch.id, cutoff, deps.now()))) continue
-    const outcome = await checkWatch(watch, ctx, deps)
-    if (outcome === 'skipped') {
-      // Not fetched: release the claim so the next run picks it up.
-      await deps.store.save(watch.id, { lastCheckedAt: watch.lastCheckedAt })
-      summary.skipped++
-      continue
-    }
-    summary.checked++
-    if (outcome === 'changed') summary.changes++
-    else if (outcome === 'baseline') summary.baselines++
-    else if (outcome === 'blocked') summary.blocked++
-    else if (outcome === 'error') summary.errors++
+  // Different hosts run in parallel; one host is never checked by two workers at once, so the
+  // per-host spacing (which reads and writes `lastPageRequestAt`) stays correct.
+  const busyHosts = new Set<string>()
+  let waiters: Array<() => void> = []
+  const wake = () => {
+    const pending = waiters
+    waiters = []
+    pending.forEach((resolve) => resolve())
   }
+
+  const worker = async () => {
+    for (;;) {
+      if (deps.now().getTime() >= ctx.deadline) return
+      if (queue.length === 0) return
+      const index = queue.findIndex((watch) => !busyHosts.has(hostKey(watch)))
+      if (index === -1) {
+        // Every remaining watch is on a host another worker is busy with
+        await new Promise<void>((resolve) => waiters.push(resolve))
+        continue
+      }
+      const [watch] = queue.splice(index, 1)
+      const host = hostKey(watch)
+      busyHosts.add(host)
+      try {
+        if (!(await deps.store.claim(watch.id, cutoff, deps.now()))) continue
+        const outcome = await checkWatch(watch, ctx, deps)
+        if (outcome === 'skipped') {
+          // Not fetched: release the claim so the next run picks it up.
+          await deps.store.save(watch.id, { lastCheckedAt: watch.lastCheckedAt })
+          summary.skipped++
+          continue
+        }
+        summary.checked++
+        if (outcome === 'changed') summary.changes++
+        else if (outcome === 'baseline') summary.baselines++
+        else if (outcome === 'blocked') summary.blocked++
+        else if (outcome === 'error') summary.errors++
+      } finally {
+        releasePage(ctx, watch.url)
+        busyHosts.delete(host)
+        wake()
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(queue.length, 1)) }, worker))
+  // Watches the budget never reached stay due for the next run
+  summary.skipped += queue.length
   return summary
 }

@@ -1,7 +1,8 @@
-import { marketingConfig } from '~/server/utils/marketing-config'
+import { instanceKeysAllowed, marketingConfig } from '~/server/utils/marketing-config'
 import { listTeamCredentials, type TeamCredentialSummary } from '~/server/utils/team-credentials'
+import { countOutdatedSecrets } from '~/server/services/marketing/secrets-rotation'
 import { isSecretsConfigured } from '~/server/utils/secrets'
-import { getGoogleOAuthConfig } from '~/server/services/google/search-console'
+import { getGoogleOAuthConfig, getGoogleRedirectUri } from '~/server/services/google/search-console'
 import { SOCIAL_SOURCES } from '~/server/services/social-sources'
 
 export type IntegrationId =
@@ -28,9 +29,16 @@ export interface IntegrationStatus {
   source: 'team' | 'instance' | null
   /** What is wrong or what to set; never contains key material */
   detail: string
+  /** Google only: the OAuth redirect URI as built from BETTER_AUTH_URL, or null when that is unset */
+  redirectUri?: string | null
 }
 
 type CredentialFallback = { configured: boolean; missingHint: string }
+
+/** On the cloud instance keys are not used (see `instanceKeysAllowed`), so the only path is the team's own key. */
+function instanceHint(selfHosted: string, byok: string): string {
+  return instanceKeysAllowed() ? selfHosted : byok
+}
 
 function fromCredential(
   base: Pick<IntegrationStatus, 'id' | 'label' | 'capability'>,
@@ -74,6 +82,11 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
   const byProvider = new Map(credentials.map((c) => [c.provider, c]))
 
   const secretsReady = isSecretsConfigured()
+  const outdated = secretsReady ? await countOutdatedSecrets() : null
+  const secretsDetail =
+    outdated && outdated > 0
+      ? `${outdated} ${outdated === 1 ? 'key is' : 'keys are'} still encrypted with the previous key — keep SECRETS_ENCRYPTION_KEY_PREVIOUS until this reaches 0`
+      : 'API keys are encrypted at rest'
   const result: IntegrationStatus[] = [
     {
       id: 'secrets',
@@ -82,7 +95,7 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
       state: secretsReady ? 'ready' : 'not_configured',
       source: secretsReady ? 'instance' : null,
       detail: secretsReady
-        ? 'API keys are encrypted at rest'
+        ? secretsDetail
         : 'Set SECRETS_ENCRYPTION_KEY (32 random bytes, for example from `openssl rand -base64 32`) on the server to store API keys.',
     },
     fromCredential(
@@ -90,8 +103,10 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
       byProvider.get('firecrawl'),
       {
         configured: Boolean(marketingConfig.firecrawl.apiKey),
-        missingHint:
+        missingHint: instanceHint(
           'Add a Firecrawl key, or set FIRECRAWL_API_KEY on the server. Without it, audits run in basic mode (home page and site files only).',
+          'Bring your own key: add your Firecrawl key. Without it, audits run in basic mode (home page and site files only).'
+        ),
       }
     ),
     fromCredential(
@@ -99,7 +114,10 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
       byProvider.get('pagespeed'),
       {
         configured: Boolean(marketingConfig.pagespeedApiKey),
-        missingHint: 'Add a PageSpeed Insights key, or set PAGESPEED_API_KEY on the server.',
+        missingHint: instanceHint(
+          'Add a PageSpeed Insights key, or set PAGESPEED_API_KEY on the server.',
+          'Bring your own key: add your PageSpeed Insights key.'
+        ),
       }
     ),
     fromCredential(
@@ -137,6 +155,7 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
   }
 
   const googleConfig = getGoogleOAuthConfig()
+  const redirectUri = getGoogleRedirectUri()
   result.push({
     id: 'google',
     label: 'Search Console',
@@ -145,7 +164,8 @@ export async function getIntegrationStatus(teamId: string): Promise<IntegrationS
     source: googleConfig ? 'instance' : null,
     detail: googleConfig
       ? `Available. Your Google OAuth app must allow the redirect URI ${googleConfig.redirectUri}`
-      : 'Create a Google OAuth app (Web application) with the Search Console API enabled, set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server, and add {BETTER_AUTH_URL}/api/marketing/google/callback as an authorized redirect URI.',
+      : `Create a Google OAuth app (Web application) with the Search Console API enabled, set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server, and add ${redirectUri ?? '<BETTER_AUTH_URL>/api/marketing/google/callback (set BETTER_AUTH_URL first)'} as an authorized redirect URI.`,
+    redirectUri,
   })
 
   return result

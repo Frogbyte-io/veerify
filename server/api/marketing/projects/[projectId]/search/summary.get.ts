@@ -25,6 +25,7 @@
 import { and, asc, desc, eq, gte } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { gscDailyMetric, gscQueryStat } from '~/server/database/schema/marketing'
+import { getGoogleRedirectUri } from '~/server/services/google/search-console'
 import { findGscConnection, isGscConfigured } from '~/server/services/marketing/search/connection'
 import { computeTotals, shiftDate, splitPeriods } from '~/server/services/marketing/search/summary'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
@@ -48,6 +49,8 @@ export default defineEventHandler(async (event) => {
   const [site, canManage] = await Promise.all([findMarketingSite(projectId), isTeamAdminOf(teamId, session.user.id)])
   const base = {
     configured: isGscConfigured(),
+    // Built server-side from BETTER_AUTH_URL; the browser origin can differ behind a proxy.
+    redirectUri: getGoogleRedirectUri(),
     canManage,
     site: site ? { origin: site.origin, verified: site.verifiedAt !== null } : null,
     days,

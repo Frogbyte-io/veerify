@@ -218,6 +218,10 @@ const DRAFT_MODES = ['reply', 'note']
 export default {
   name: 'SupportInboxPage',
 
+  created() {
+    useHead({ title: 'Support inbox' })
+  },
+
   data() {
     return {
       activeTeamId: '',

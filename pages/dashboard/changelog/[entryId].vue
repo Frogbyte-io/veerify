@@ -37,6 +37,10 @@ import { apiErrorMessage } from '~/lib/api-error'
 export default {
   name: 'ChangelogEntryPage',
 
+  created() {
+    useHead({ title: 'Changelog entry' })
+  },
+
   data() {
     return { isLoading: true, error: null, product: null, teamSlug: '' }
   },

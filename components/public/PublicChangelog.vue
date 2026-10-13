@@ -248,6 +248,9 @@ export default {
 </script>
 
 <style scoped>
+.public-changelog-prose {
+  overflow-wrap: anywhere;
+}
 .public-changelog-prose :deep(h2),
 .public-changelog-prose :deep(h3),
 .public-changelog-prose :deep(h4) {
@@ -278,6 +281,13 @@ export default {
   background: var(--muted);
   padding: 0.75rem;
   border-radius: 0.375rem;
+  overflow-x: auto;
+  max-width: 100%;
+  overflow-wrap: normal;
+}
+.public-changelog-prose :deep(table) {
+  display: block;
+  max-width: 100%;
   overflow-x: auto;
 }
 .public-changelog-prose :deep(blockquote) {

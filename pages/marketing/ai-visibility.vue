@@ -39,7 +39,7 @@
         <!-- Setup checklist -->
         <Card v-if="setupIssues.length" data-testid="visibility-setup-needed">
           <CardHeader>
-            <CardTitle>Finish setup</CardTitle>
+            <CardTitle role="heading" aria-level="2">Finish setup</CardTitle>
             <CardDescription>A few things are needed before AI visibility can run.</CardDescription>
           </CardHeader>
           <CardContent class="space-y-3">
@@ -61,7 +61,7 @@
         <Card v-if="setup.hasSite" data-testid="visibility-run">
           <CardHeader class="flex flex-row items-start justify-between gap-4 space-y-0">
             <div>
-              <CardTitle>Run</CardTitle>
+              <CardTitle role="heading" aria-level="2">Run</CardTitle>
               <CardDescription>
                 Runs happen weekly. Each prompt is sent to every connected provider several times, using your own API
                 keys.
@@ -150,6 +150,10 @@ const POLL_MS = 5000
 export default {
   name: 'MarketingAiVisibilityPage',
 
+  created() {
+    useHead({ title: 'AI visibility · Marketing' })
+  },
+
   data() {
     return {
       product: null,
@@ -186,7 +190,7 @@ export default {
       if (!s) return []
       const issues = []
       if (!s.hasSite || !s.siteVerified) issues.push('Verify your site')
-      if (s.brandTermCount === 0) issues.push('Add at least one brand term')
+      if (s.brandTermCount === 0) issues.push('Add at least one brand name')
       if (!s.hasUsableKey) issues.push('Add a valid Anthropic, OpenAI, Gemini or Perplexity API key')
       if (s.hasSite && s.activePromptCount === 0) issues.push('Add at least one active prompt below')
       return issues

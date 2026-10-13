@@ -1,7 +1,7 @@
 <template>
-  <Card data-testid="marketing-settings-terms">
+  <Card id="terms" class="scroll-mt-20" data-testid="marketing-settings-terms">
     <CardHeader>
-      <CardTitle>Brand and competitors</CardTitle>
+      <CardTitle role="heading" aria-level="2">Brand and competitors</CardTitle>
       <CardDescription>
         Names Marketing looks for in AI answers and public posts. Veerify only records whether a competitor is named; it
         never crawls their site.
@@ -35,7 +35,12 @@
 
           <ul v-else class="space-y-2">
             <li v-for="term in termsOf(group.kind)" :key="term.id" class="rounded-md border p-3">
-              <form v-if="editingId === term.id" class="space-y-3" @submit.prevent="saveEdit(term)">
+              <form
+                v-if="editingId === term.id"
+                class="space-y-3"
+                :data-inline-form="`edit-${term.id}`"
+                @submit.prevent="saveEdit(term)"
+              >
                 <div class="grid gap-3 sm:grid-cols-2">
                   <div>
                     <Label :for="`term-label-${term.id}`">Name</Label>
@@ -86,6 +91,7 @@
                     size="icon"
                     variant="ghost"
                     :aria-label="`Edit ${term.label}`"
+                    :data-inline-opener="`edit-${term.id}`"
                     :disabled="saving"
                     @click="startEdit(term)"
                   >
@@ -108,6 +114,7 @@
           <form
             v-if="adding === group.kind"
             class="space-y-3 rounded-md border border-dashed p-3"
+            :data-inline-form="`add-${group.kind}`"
             @submit.prevent="create(group.kind)"
           >
             <div class="grid gap-3 sm:grid-cols-2">
@@ -157,6 +164,7 @@
             variant="outline"
             :disabled="terms.length >= limit || saving"
             :data-testid="`marketing-terms-add-${group.kind}`"
+            :data-inline-opener="`add-${group.kind}`"
             @click="startAdd(group.kind)"
           >
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -173,6 +181,7 @@
 <script>
 import { apiErrorMessage, apiErrorDetails } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
+import inlineFormMixin from '~/lib/inline-form-mixin'
 
 const GROUPS = [
   {
@@ -203,6 +212,8 @@ const emptyDraft = () => ({ label: '', aliases: '', competitorDomain: '' })
 export default {
   name: 'MarketingSettingsTerms',
 
+  mixins: [inlineFormMixin],
+
   props: {
     product: { type: Object, required: true },
     siteAdded: { type: Boolean, default: false },
@@ -226,6 +237,14 @@ export default {
   },
 
   watch: {
+    adding(kind) {
+      if (kind) this.inlineOpen(`add-${kind}`, () => this.cancelAdd())
+      else if (!this.editingId) this.inlineClose()
+    },
+    editingId(id) {
+      if (id) this.inlineOpen(`edit-${id}`, () => this.cancelEdit())
+      else if (!this.adding) this.inlineClose()
+    },
     siteAdded: {
       immediate: true,
       handler(value) {

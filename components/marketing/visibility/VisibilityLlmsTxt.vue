@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="visibility-llms-txt">
     <CardHeader>
-      <CardTitle>llms.txt draft</CardTitle>
+      <CardTitle role="heading" aria-level="2">llms.txt draft</CardTitle>
       <CardDescription>
         A starting point for <code>/llms.txt</code> on your site, built from your product details, public pages and the
         latest site audit. Review it before publishing.

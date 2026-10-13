@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="audit-vitals">
     <CardHeader>
-      <CardTitle class="text-base">Core Web Vitals</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Core Web Vitals</CardTitle>
       <CardDescription>Home page, mobile, from Google PageSpeed Insights.</CardDescription>
     </CardHeader>
     <CardContent>

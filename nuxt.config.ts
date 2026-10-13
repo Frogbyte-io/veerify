@@ -17,7 +17,14 @@ const deploymentMode =
       ? 'cloud'
       : 'self-hosted'
 
+const onVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV)
+
 export default defineNuxtConfig({
+  app: {
+    head: {
+      htmlAttrs: { lang: 'en' },
+    },
+  },
   compatibilityDate: '2025-05-15',
   buildDir: process.env.NUXT_BUILD_DIR || '.nuxt',
   devtools: { enabled: process.env.NUXT_DEVTOOLS_ENABLED !== 'false' },
@@ -45,6 +52,7 @@ export default defineNuxtConfig({
       // Stage 06 (SLA sweeper), Stage 08 (CSAT dispatch), and Stage 09 rollups.
       '* * * * *': ['support:outbound-delivery', 'marketing:audit-advance', 'marketing:visibility-advance'],
       '*/5 * * * *': [
+        'marketing:mentions-poll',
         'support:attachment-cleanup',
         'support:automation-rules',
         'support:csat-dispatch',
@@ -52,12 +60,13 @@ export default defineNuxtConfig({
         'marketing:review-requests',
       ],
       // Marketing Hub (docs/plans/2026-10-09-marketing-hub)
-      '*/15 * * * *': ['example:ping', 'marketing:mentions-poll'],
+      '*/10 * * * *': ['marketing:competitors-check'],
+      '*/15 * * * *': ['example:ping'],
       '0 * * * *': ['marketing:visibility-schedule'],
       '5 * * * *': ['marketing:audit-schedule'],
       '20 * * * *': ['marketing:search-sync'],
-      '35 * * * *': ['marketing:competitors-check'],
-      '0 8 * * *': ['marketing:mentions-digest'],
+      '0 7-11 * * *': ['marketing:mentions-digest'],
+      '30 3 * * *': ['marketing:retention'],
     },
   },
   devServer: {
@@ -128,6 +137,7 @@ export default defineNuxtConfig({
       dashboardDomain,
       cnameTarget: process.env.CNAME_TARGET || 'cname.veerify.io',
       deploymentMode,
+      onVercel,
     },
   },
   colorMode: {

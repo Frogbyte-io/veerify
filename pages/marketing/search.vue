@@ -57,6 +57,7 @@
           :configured="data.configured"
           :can-manage="data.canManage"
           :origin="data.site.origin"
+          :redirect-uri="data.redirectUri"
           :reconnect="Boolean(data.connection)"
           :connecting="connecting"
           :connect-error="connectError"
@@ -121,6 +122,10 @@ const CALLBACK_ERRORS = {
 
 export default {
   name: 'MarketingSearchPage',
+
+  created() {
+    useHead({ title: 'Search · Marketing' })
+  },
 
   data() {
     return {

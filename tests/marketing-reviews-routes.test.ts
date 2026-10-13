@@ -152,6 +152,7 @@ const sqlOf = (condition: unknown) => new PgDialect().sqlToQuery(condition as ne
 
 const TOKEN = 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG'
 
+const { hashEmail } = await import('~/server/utils/marketing-email-hash')
 const publicInfo = (await import('~/server/api/marketing/r/[token]/index.get')).default
 const goHandler = (await import('~/server/api/marketing/r/[token]/go.get')).default
 const unsubGet = (await import('~/server/api/marketing/r/[token]/unsubscribe.get')).default
@@ -230,7 +231,13 @@ describe('GET /api/marketing/r/[token]', () => {
   it('returns product name, first name and submitted flag only', async () => {
     state.selectQueue = [[requestRow()], []]
     const response = (await publicInfo({} as never)) as { data: Record<string, unknown> }
-    expect(response.data).toEqual({ productName: 'Acme', firstName: 'Jane', alreadySubmitted: false, canSubmit: true })
+    expect(response.data).toEqual({
+      productName: 'Acme',
+      firstName: 'Jane',
+      alreadySubmitted: false,
+      withdrawn: false,
+      canSubmit: true,
+    })
     expect(JSON.stringify(response)).not.toContain('example.com')
   })
 
@@ -238,6 +245,15 @@ describe('GET /api/marketing/r/[token]', () => {
     state.selectQueue = [[requestRow()], [{ id: 't1' }]]
     const response = (await publicInfo({} as never)) as { data: { alreadySubmitted: boolean } }
     expect(response.data.alreadySubmitted).toBe(true)
+  })
+
+  it('reports a withdrawn testimonial, and not a private one', async () => {
+    state.selectQueue = [[requestRow()], [{ id: 't1', withdrawnAt: new Date('2026-10-02T10:00:00Z') }]]
+    const response = (await publicInfo({} as never)) as { data: { withdrawn: boolean } }
+    expect(response.data.withdrawn).toBe(true)
+    state.selectQueue = [[requestRow()], [{ id: 't1', withdrawnAt: null }]]
+    const privateOne = (await publicInfo({} as never)) as { data: { withdrawn: boolean } }
+    expect(privateOne.data.withdrawn).toBe(false)
   })
 
   it('404s for unknown and malformed tokens', async () => {
@@ -327,8 +343,32 @@ describe('unsubscribe', () => {
     const html = (await unsubPost({} as never)) as string
     expect(html).toContain('You are unsubscribed')
     expect(state.inserts).toHaveLength(1)
-    expect(state.inserts[0].values).toEqual({ teamId: 'team-1', email: 'jane@example.com', reason: 'unsubscribed' })
+    expect(state.inserts[0].values).toEqual({
+      teamId: 'team-1',
+      email: 'jane@example.com',
+      emailHash: hashEmail('jane@example.com'),
+      reason: 'unsubscribed',
+    })
     expect(state.inserts[0].conflict).toBe(true)
+  })
+
+  it('POST on an anonymised request writes a hash-based suppression (the address is gone)', async () => {
+    state.selectQueue = [[requestRow({ email: 'redacted:rr-1', emailHash: 'abc123' })]]
+    const html = (await unsubPost({} as never)) as string
+    expect(html).toContain('You are unsubscribed')
+    expect(state.inserts).toHaveLength(1)
+    expect(state.inserts[0].values).toEqual({
+      teamId: 'team-1',
+      email: 'hash:abc123',
+      emailHash: 'abc123',
+      reason: 'unsubscribed',
+    })
+  })
+
+  it('POST on an old row without a stored hash derives it from the address', async () => {
+    state.selectQueue = [[requestRow({ emailHash: null })]]
+    await unsubPost({} as never)
+    expect(state.inserts[0].values).toMatchObject({ emailHash: hashEmail('jane@example.com') })
   })
 
   it('POST 404s for an unknown token without writing', async () => {
@@ -359,6 +399,7 @@ describe('POST /api/marketing/r/[token]/testimonial', () => {
       status: 'pending',
       consentPublic: false,
       authorEmail: 'jane@example.com',
+      authorEmailHash: hashEmail('jane@example.com'),
       rating: 5,
     })
   })
@@ -412,6 +453,7 @@ describe('GET public testimonial wall', () => {
     state.selectQueue = [[{ id: 't1', authorName: 'Jane' }]]
     const response = (await publicWall({} as never)) as { data: { items: unknown[] } }
     expect(response.data.items).toHaveLength(1)
+    expect(state.headers['Cache-Control']).toBe('public, max-age=60, stale-while-revalidate=300')
 
     const { sql, params } = sqlOf(state.wheres[0])
     expect(sql).toContain('"testimonial"."project_id"')

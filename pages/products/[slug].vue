@@ -274,6 +274,12 @@ export default {
       }
     },
   },
+  created() {
+    useHead({
+      title: () => (this.projectData?.name ? `${this.projectData.name} · Product settings` : 'Product settings'),
+    })
+  },
+
   async mounted() {
     const hash = window.location.hash.replace('#', '')
     if (

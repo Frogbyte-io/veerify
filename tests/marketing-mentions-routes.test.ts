@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   access: 'ok' as 'ok' | 'forbidden',
   canEscalate: false,
   selectQueue: [] as unknown[][],
+  calls: [] as Array<{ op: string; args: unknown[] }>,
   reachableInboxes: [] as string[],
 }))
 
@@ -59,7 +60,12 @@ vi.mock('~/server/database/drizzle', () => ({
   db: {
     select: vi.fn(() => {
       const chain: Record<string, unknown> = {}
-      for (const name of ['from', 'leftJoin', 'where', 'orderBy', 'limit', 'groupBy']) chain[name] = () => chain
+      for (const name of ['from', 'leftJoin', 'where', 'orderBy', 'limit', 'groupBy']) {
+        chain[name] = (...args: unknown[]) => {
+          state.calls.push({ op: name, args })
+          return chain
+        }
+      }
       chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
         Promise.resolve(state.selectQueue.shift() ?? []).then(resolve, reject)
       return chain
@@ -92,6 +98,7 @@ beforeEach(() => {
   state.updateRows = [{ id: 'm1', status: 'seen' }]
   state.updateWhere = null
   state.access = 'ok'
+  state.calls = []
   state.canEscalate = false
   state.selectQueue = []
   state.reachableInboxes = []
@@ -183,6 +190,30 @@ describe('GET mentions', () => {
     expect(a).toMatchObject({ conversationId: 'conv-a', conversationInboxId: 'inbox-ok' })
     expect(b).toMatchObject({ status: 'escalated', conversationId: null, conversationInboxId: null })
     expect(c).toMatchObject({ conversationId: null, conversationInboxId: null })
+  })
+
+  it('lists newest published first (published_at, id) and counts only the last 180 days', async () => {
+    state.selectQueue = [[], [{ status: 'new', total: 2 }], [{ total: 1 }]]
+    const res = (await listHandler({} as never)) as { data: { counts: Record<string, number> } }
+    expect(res.data.counts.new).toBe(2)
+
+    const order = state.calls.find((c) => c.op === 'orderBy')!
+    const orderSql = order.args.map((a) => sqlOf(a).sql).join(' | ')
+    expect(orderSql).toContain('"mention"."published_at" desc')
+    expect(orderSql).toContain('"mention"."id" desc')
+
+    // list query has no status condition by default; the counts query has the 180-day window
+    const wheres = state.calls.filter((c) => c.op === 'where' && sqlOf(c.args[0]).sql.includes('"mention"."site_id"'))
+    const [listWhere, countWhere] = wheres.map((c) => sqlOf(c.args[0]))
+    expect(listWhere.sql).not.toContain('"mention"."status"')
+    expect(countWhere.sql).toContain('"mention"."published_at" >=')
+    const since = countWhere.params.find((p) =>
+      p instanceof Date || typeof p === 'string'
+        ? !Number.isNaN(Date.parse(String(p))) && String(p).includes('T')
+        : false
+    )
+    const age = Date.now() - new Date(String(since)).getTime()
+    expect(Math.abs(age - 180 * 24 * 60 * 60 * 1000)).toBeLessThan(60_000)
   })
 
   it('rejects an invalid cursor', async () => {

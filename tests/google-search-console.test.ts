@@ -40,7 +40,7 @@ describe('oauth state', () => {
   it('round-trips', () => {
     const state = signOAuthState(payload)
     expect(state.split('.')).toHaveLength(2)
-    expect(verifyOAuthState(state)).toEqual(payload)
+    expect(verifyOAuthState(state)).toEqual({ ...payload, nonce: expect.any(String) })
   })
   it('uses a fresh nonce each time', () => {
     expect(signOAuthState(payload)).not.toBe(signOAuthState(payload))

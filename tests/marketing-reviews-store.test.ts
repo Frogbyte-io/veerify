@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   transactions: 0,
   txExecutes: [] as unknown[],
   txInsertRows: [] as unknown[][],
+  insertedValues: [] as unknown[],
 }))
 
 vi.mock('~/server/database/drizzle', () => {
@@ -54,9 +55,9 @@ vi.mock('~/server/database/drizzle', () => {
       }),
     })),
     insert: vi.fn(() => ({
-      values: () => ({
+      values: (values: unknown) => ({
         onConflictDoNothing: () => ({
-          returning: async () => state.txInsertRows.shift() ?? [{ id: 'new' }],
+          returning: async () => (state.insertedValues.push(values), state.txInsertRows.shift() ?? [{ id: 'new' }]),
         }),
       }),
     })),
@@ -76,6 +77,7 @@ vi.mock('~/server/database/drizzle', () => {
 })
 
 const { dbReviewsStore } = await import('~/server/services/marketing/reviews/store')
+const { hashEmail } = await import('~/server/utils/marketing-email-hash')
 
 const dialect = new PgDialect()
 const sqlOf = (query: unknown) => dialect.sqlToQuery(query as never)
@@ -90,6 +92,7 @@ beforeEach(() => {
   state.transactions = 0
   state.txExecutes = []
   state.txInsertRows = []
+  state.insertedValues = []
 })
 
 describe('claimBatch', () => {
@@ -308,5 +311,58 @@ describe('countManualSince', () => {
     const { sql, params } = sqlOf(state.selects[0]!.where)
     expect(sql).toContain('"review_request"."team_id"')
     expect(params).toEqual(expect.arrayContaining(['t1', 'manual']))
+  })
+})
+
+describe('email hash matching', () => {
+  const hash = () => hashEmail('Jane@Example.com')
+
+  it('isSuppressed matches by address OR keyed hash', async () => {
+    state.selectQueue = [[{ email: 'hash:x' }]]
+    await expect(dbReviewsStore.isSuppressed('t1', 'jane@example.com')).resolves.toBe(true)
+    const { sql, params } = sqlOf(state.selects[0]!.where)
+    expect(sql).toContain('"marketing_email_suppression"."email" =')
+    expect(sql).toContain('"marketing_email_suppression"."email_hash" in (')
+    expect(sql).toContain(' or ')
+    expect(params).toEqual(expect.arrayContaining(['t1', 'jane@example.com', hash()]))
+  })
+
+  it('cooldown checks find anonymised rows through the hash', async () => {
+    await dbReviewsStore.hasRecentRequest('p1', 'jane@example.com', new Date())
+    await dbReviewsStore.hasRecentSentRequest('p1', 'jane@example.com', new Date(), 'x')
+    for (const select of state.selects) {
+      const { sql, params } = sqlOf(select.where)
+      expect(sql).toContain('"review_request"."email_hash" in (')
+      expect(params).toContain(hash())
+    }
+  })
+
+  it('insertRequest stores the keyed hash next to the address', async () => {
+    await dbReviewsStore.insertRequest({
+      id: 'rr-1',
+      projectId: 'p1',
+      teamId: 't1',
+      email: 'jane@example.com',
+      name: null,
+      trigger: 'csat',
+      sourceId: 's1',
+      token: 'tok',
+    })
+    expect(state.insertedValues[0]).toMatchObject({ email: 'jane@example.com', emailHash: hash() })
+  })
+
+  it('stillSendable is false when the row is gone or no longer sending (erased or swept)', async () => {
+    state.selectQueue = [[]]
+    await expect(dbReviewsStore.stillSendable('rr-1', 't1', 'jane@example.com')).resolves.toBe(false)
+    const { sql, params } = sqlOf(state.selects[0]!.where)
+    expect(sql).toContain('"review_request"."status" =')
+    expect(params).toEqual(expect.arrayContaining(['rr-1', 'sending']))
+  })
+
+  it('stillSendable is false when the address was suppressed after the claim, true otherwise', async () => {
+    state.selectQueue = [[{ id: 'rr-1' }], [{ email: 'jane@example.com' }]]
+    await expect(dbReviewsStore.stillSendable('rr-1', 't1', 'jane@example.com')).resolves.toBe(false)
+    state.selectQueue = [[{ id: 'rr-1' }], []]
+    await expect(dbReviewsStore.stillSendable('rr-1', 't1', 'jane@example.com')).resolves.toBe(true)
   })
 })

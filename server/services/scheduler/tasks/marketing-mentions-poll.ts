@@ -3,6 +3,6 @@ import { defineScheduledTask } from '../registry'
 
 export const MARKETING_MENTIONS_POLL_TASK_NAME = 'marketing:mentions-poll'
 
-export const marketingMentionsPollTask = defineScheduledTask(MARKETING_MENTIONS_POLL_TASK_NAME, '*/15 * * * *', () =>
+export const marketingMentionsPollTask = defineScheduledTask(MARKETING_MENTIONS_POLL_TASK_NAME, '*/5 * * * *', () =>
   pollMentions()
 )

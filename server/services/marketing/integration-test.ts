@@ -8,7 +8,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { gscConnection, marketingSite, type ApiCredentialProvider } from '~/server/database/schema/marketing'
-import { marketingConfig } from '~/server/utils/marketing-config'
+import { instanceKeysAllowed, marketingConfig } from '~/server/utils/marketing-config'
 import { SOCIAL_HINTS, type IntegrationId } from '~/server/utils/marketing-integrations'
 import { decryptSecret, encryptSecret, isSecretsConfigured } from '~/server/utils/secrets'
 import {
@@ -22,7 +22,12 @@ import { getCrawlProvider, resolveCrawlConfig } from '~/server/services/crawl'
 import { CrawlProviderError } from '~/server/services/crawl/types'
 import { getSocialSource, SocialSourceError } from '~/server/services/social-sources'
 import { PageSpeedError, runPageSpeed } from '~/server/services/marketing/pagespeed'
-import { getGoogleOAuthConfig, GoogleApiError, refreshAccessToken } from '~/server/services/google/search-console'
+import {
+  getGoogleOAuthConfig,
+  getGoogleRedirectUri,
+  GoogleApiError,
+  refreshAccessToken,
+} from '~/server/services/google/search-console'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('marketing:integration-test')
@@ -67,8 +72,17 @@ const MISSING_KEY: Record<string, string> = {
   openai: 'Add your OpenAI API key.',
   gemini: 'Add your Google Gemini API key.',
   perplexity: 'Add your Perplexity API key.',
-  firecrawl: 'Add a Firecrawl key, or set FIRECRAWL_API_KEY on the server.',
-  pagespeed: 'Add a PageSpeed Insights key, or set PAGESPEED_API_KEY on the server.',
+  // Getters: read the deployment mode at use time, not import time
+  get firecrawl() {
+    return instanceKeysAllowed()
+      ? 'Add a Firecrawl key, or set FIRECRAWL_API_KEY on the server.'
+      : 'Bring your own key: add your Firecrawl key.'
+  },
+  get pagespeed() {
+    return instanceKeysAllowed()
+      ? 'Add a PageSpeed Insights key, or set PAGESPEED_API_KEY on the server.'
+      : 'Bring your own key: add your PageSpeed Insights key.'
+  },
 }
 
 /** Fixed, key-free phrase for a failure kind from any provider adapter. */
@@ -246,11 +260,11 @@ async function testSocial(id: 'hackernews' | 'reddit' | 'bluesky'): Promise<Outc
 async function testGoogle(teamId: string): Promise<Outcome> {
   const config = getGoogleOAuthConfig()
   if (!config) {
+    const redirectUri = getGoogleRedirectUri()
     return {
       ok: false,
       source: null,
-      detail:
-        'Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and BETTER_AUTH_URL on the server, then add {BETTER_AUTH_URL}/api/marketing/google/callback as an authorized redirect URI.',
+      detail: `Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and BETTER_AUTH_URL on the server, then add ${redirectUri ?? '<BETTER_AUTH_URL>/api/marketing/google/callback'} as an authorized redirect URI.`,
     }
   }
   const configured = `OAuth app configured; its authorized redirect URI must be ${config.redirectUri}.`

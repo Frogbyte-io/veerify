@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="search-queries">
     <CardHeader>
-      <CardTitle class="text-base">Top queries</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Top queries</CardTitle>
       <CardDescription>
         <template v-if="periodEnd">The 28 days ending {{ formatDate(periodEnd) }}, by clicks.</template>
         <template v-else>The 28 days of searches that brought people to your site.</template>

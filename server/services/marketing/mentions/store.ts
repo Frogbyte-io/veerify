@@ -1,4 +1,4 @@
-import { eq, inArray, isNotNull, lt } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 import {
@@ -11,7 +11,13 @@ import {
 } from '~/server/database/schema/marketing'
 import { teamModuleSettings } from '~/server/database/schema/teams'
 import { DEFAULT_TEAM_MODULES, resolveProductModules } from '~/lib/modules'
+import { sqlTimestamp } from '~/server/utils/sql-timestamp'
 import type { MatchTerm } from '~/server/services/social-sources'
+
+// Mirrors POLL_INTERVAL_MS / FAILURE_BACKOFF_* in poller.ts (kept here to avoid a circular import)
+const POLL_INTERVAL_SECONDS = 30 * 60
+const BACKOFF_BASE_SECONDS = 15 * 60
+const BACKOFF_MAX_SECONDS = 6 * 60 * 60
 
 export interface CandidateSite {
   siteId: string
@@ -47,6 +53,10 @@ export interface SourceCursorRow {
   /** Last attempt, successful or not. Null on rows written before this column existed */
   lastAttemptAt?: Date | null
   consecutiveFailures?: number
+  /** Next query index to search; 0 (or past the end of the term list) starts a new rotation cycle */
+  queryOffset?: number
+  /** Start of the current rotation cycle (when offset 0 was searched); null when unknown */
+  cycleStartedAt?: Date | null
 }
 
 /** Both module switches must be on (D-31); a missing team row reads as the registry default. */
@@ -59,6 +69,23 @@ export function isMarketingOn(site: CandidateSite): boolean {
 export interface MentionsStore {
   /** Verified sites with their module switches; callers filter with `isMarketingOn`. */
   loadVerifiedSites(): Promise<CandidateSite[]>
+  /**
+   * Candidate sites for a poll run, selected in SQL: verified, Marketing on for team and product,
+   * at least one term, and at least one of `sourceIds` due (never polled, or past its interval or
+   * failure backoff). Least recently attempted first, at most `limit`.
+   */
+  loadDueSites(options: { now: Date; sourceIds: string[]; limit: number }): Promise<CandidateSite[]>
+  /**
+   * Atomically takes the (site, source) cursor for polling: stamps `last_attempt_at = now` only when
+   * it is unset or older than `leaseMs`, creating the row (watermark `windowStart`) if missing.
+   * Resolves false when another worker holds it.
+   */
+  claimCursor(siteId: string, source: MentionSource, now: Date, windowStart: Date, leaseMs: number): Promise<boolean>
+  /**
+   * Gives a claimed cursor back untouched (a rate-limited poll): restores `last_attempt_at` to the
+   * value before the claim, only while it is still the claim's `claimedAt`.
+   */
+  releaseClaim(siteId: string, source: MentionSource, claimedAt: Date, previousAttempt: Date | null): Promise<void>
   loadTerms(siteIds: string[]): Promise<Map<string, MatchTerm[]>>
   loadCursors(siteIds: string[]): Promise<SourceCursorRow[]>
   insertMentions(rows: MentionInsert[]): Promise<number>
@@ -67,7 +94,7 @@ export interface MentionsStore {
     source: MentionSource,
     lastPolledAt: Date,
     lastError: string | null,
-    attempt: { at: Date; consecutiveFailures: number }
+    attempt: { at: Date; consecutiveFailures: number; queryOffset: number; cycleStartedAt: Date | null }
   ): Promise<void>
   deleteOlderThan(cutoff: Date, batchSize: number): Promise<number>
 }
@@ -94,6 +121,86 @@ export const dbMentionsStore: MentionsStore = {
       projectSettings: (row.projectSettings as Record<string, unknown> | null) ?? null,
       teamMarketingEnabled: row.teamMarketingEnabled ?? null,
     }))
+  },
+
+  async loadDueSites({ now, sourceIds, limit }) {
+    if (sourceIds.length === 0) return []
+    const sources = sql.join(
+      sourceIds.map((id) => sql`${id}`),
+      sql`, `
+    )
+    const res = await db.execute<{
+      site_id: string
+      team_id: string
+      project_id: string
+      name: string
+      slug: string
+      settings: Record<string, unknown> | null
+      marketing_enabled: boolean | null
+    }>(sql`
+      SELECT s.id AS site_id, s.team_id, p.id AS project_id, p.name, p.slug, p.settings, t.marketing_enabled
+      FROM marketing_site s
+      JOIN project p ON p.id = s.project_id
+      LEFT JOIN team_module_settings t ON t.team_id = s.team_id
+      JOIN LATERAL (
+        SELECT min(CASE WHEN c.site_id IS NULL THEN '-infinity'::timestamp
+                        ELSE coalesce(c.last_attempt_at, c.last_polled_at) END) AS oldest
+        FROM unnest(ARRAY[${sources}]::text[]) AS src(id)
+        LEFT JOIN mention_source_cursor c ON c.site_id = s.id AND c.source = src.id
+        WHERE c.site_id IS NULL
+           OR coalesce(c.last_attempt_at, c.last_polled_at) + (
+                CASE WHEN c.consecutive_failures <= 0
+                     THEN ${POLL_INTERVAL_SECONDS}::float8 * interval '1 second'
+                     ELSE LEAST(power(2, LEAST(c.consecutive_failures, 10)) * ${BACKOFF_BASE_SECONDS}::float8 * interval '1 second',
+                                ${BACKOFF_MAX_SECONDS}::float8 * interval '1 second')
+                END
+              ) <= ${sqlTimestamp(now)}
+      ) due ON due.oldest IS NOT NULL
+      WHERE s.verified_at IS NOT NULL
+        AND coalesce(t.marketing_enabled, ${DEFAULT_TEAM_MODULES.marketingEnabled}::boolean) = true
+        AND p.settings ->> 'marketingEnabled' = 'true'
+        AND EXISTS (SELECT 1 FROM marketing_term mt WHERE mt.site_id = s.id)
+      ORDER BY due.oldest ASC, s.id ASC
+      LIMIT ${limit}
+    `)
+    return res.rows.map((row) => ({
+      siteId: row.site_id,
+      teamId: row.team_id,
+      projectId: row.project_id,
+      projectName: row.name,
+      projectSlug: row.slug,
+      projectSettings: row.settings ?? null,
+      teamMarketingEnabled: row.marketing_enabled ?? null,
+    }))
+  },
+
+  async claimCursor(siteId, source, now, windowStart, leaseMs) {
+    const claimed = await db
+      .insert(mentionSourceCursor)
+      .values({ siteId, source, lastPolledAt: windowStart, lastAttemptAt: now, consecutiveFailures: 0 })
+      .onConflictDoUpdate({
+        target: [mentionSourceCursor.siteId, mentionSourceCursor.source],
+        set: { lastAttemptAt: now },
+        setWhere: or(
+          isNull(mentionSourceCursor.lastAttemptAt),
+          lt(mentionSourceCursor.lastAttemptAt, new Date(now.getTime() - leaseMs))
+        ),
+      })
+      .returning({ siteId: mentionSourceCursor.siteId })
+    return claimed.length > 0
+  },
+
+  async releaseClaim(siteId, source, claimedAt, previousAttempt) {
+    await db
+      .update(mentionSourceCursor)
+      .set({ lastAttemptAt: previousAttempt })
+      .where(
+        and(
+          eq(mentionSourceCursor.siteId, siteId),
+          eq(mentionSourceCursor.source, source),
+          eq(mentionSourceCursor.lastAttemptAt, claimedAt)
+        )
+      )
   },
 
   async loadTerms(siteIds) {
@@ -128,6 +235,8 @@ export const dbMentionsStore: MentionsStore = {
         lastPolledAt: mentionSourceCursor.lastPolledAt,
         lastAttemptAt: mentionSourceCursor.lastAttemptAt,
         consecutiveFailures: mentionSourceCursor.consecutiveFailures,
+        queryOffset: mentionSourceCursor.queryOffset,
+        cycleStartedAt: mentionSourceCursor.cycleStartedAt,
       })
       .from(mentionSourceCursor)
       .where(inArray(mentionSourceCursor.siteId, siteIds))
@@ -144,7 +253,12 @@ export const dbMentionsStore: MentionsStore = {
   },
 
   async saveCursor(siteId, source, lastPolledAt, lastError, attempt) {
-    const attemptFields = { lastAttemptAt: attempt.at, consecutiveFailures: attempt.consecutiveFailures }
+    const attemptFields = {
+      lastAttemptAt: attempt.at,
+      consecutiveFailures: attempt.consecutiveFailures,
+      queryOffset: attempt.queryOffset,
+      cycleStartedAt: attempt.cycleStartedAt,
+    }
     await db
       .insert(mentionSourceCursor)
       .values({ siteId, source, lastPolledAt, lastError, ...attemptFields })

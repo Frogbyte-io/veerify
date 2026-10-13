@@ -5,7 +5,7 @@ import type { MatchTerm, SocialPost, SocialSource } from '~/server/services/soci
 vi.mock('~/server/database/drizzle', () => ({ db: {} }))
 vi.mock('~/server/utils/marketing-usage', () => ({ recordUsage: vi.fn() }))
 
-const { pollMentions, computeSince, retryDelayMs, buildExcerpt, pruneOldMentions } =
+const { pollMentions, computeSince, retryDelayMs, buildExcerpt, pruneOldMentions, selectQuerySlice, planRotation } =
   await import('~/server/services/marketing/mentions/poller')
 const { SocialSourceError } = await import('~/server/services/social-sources')
 
@@ -52,12 +52,20 @@ function makeStore(opts: {
     lastPolledAt: Date
     lastAttemptAt?: Date | null
     consecutiveFailures?: number
+    queryOffset?: number
+    cycleStartedAt?: Date | null
   }[]
 }) {
   const inserted: MentionInsert[] = []
   const cursorWrites: unknown[][] = []
+  const releases: unknown[][] = []
   const store: MentionsStore = {
     loadVerifiedSites: async () => opts.sites ?? [site()],
+    loadDueSites: async () => opts.sites ?? [site()],
+    claimCursor: async () => true,
+    releaseClaim: async (...args) => {
+      releases.push(args)
+    },
     loadTerms: async (ids) => new Map(ids.map((id) => [id, opts.terms?.[id] ?? [brand]])),
     loadCursors: async () => opts.cursors ?? [],
     insertMentions: async (rows) => {
@@ -69,7 +77,7 @@ function makeStore(opts: {
     },
     deleteOlderThan: vi.fn(async () => 0),
   }
-  return { store, inserted, cursorWrites }
+  return { store, inserted, cursorWrites, releases }
 }
 
 function source(
@@ -182,7 +190,9 @@ describe('pollMentions ingestion', () => {
       limit: 50,
     })
     expect(usage).toHaveBeenCalledWith('t1', 'mentions:hackernews:requests', 1)
-    expect(cursorWrites).toEqual([['s1', 'hackernews', NOW, null, { at: NOW, consecutiveFailures: 0 }]])
+    expect(cursorWrites).toEqual([
+      ['s1', 'hackernews', NOW, null, { at: NOW, consecutiveFailures: 0, queryOffset: 0, cycleStartedAt: null }],
+    ])
   })
 })
 
@@ -209,7 +219,7 @@ describe('pollMentions errors', () => {
       throw new SocialSourceError('reddit', 'rate_limit', 'slow down', 429)
     })
     const hn = source('hackernews')
-    await pollMentions({ now: NOW }, { store, sources: [limited, hn], recordUsage: vi.fn() })
+    await pollMentions({ now: NOW, concurrency: 1 }, { store, sources: [limited, hn], recordUsage: vi.fn() })
     expect(limited.search).toHaveBeenCalledTimes(1)
     expect(hn.search).toHaveBeenCalledTimes(2)
   })
@@ -274,7 +284,7 @@ describe('failure backoff and starvation', () => {
     })
     await pollMentions({ now: NOW }, { store, sources: [failing], recordUsage: vi.fn() })
     expect(cursorWrites[0][2]).toEqual(lastPolledAt)
-    expect(cursorWrites[0][4]).toEqual({ at: NOW, consecutiveFailures: 3 })
+    expect(cursorWrites[0][4]).toEqual({ at: NOW, consecutiveFailures: 3, queryOffset: 0, cycleStartedAt: NOW })
   })
 
   it('does not let a permanently failing site hog the maxSites slots', async () => {
@@ -350,5 +360,326 @@ describe('retention', () => {
 describe('buildExcerpt', () => {
   it('collapses whitespace', () => {
     expect(buildExcerpt('T', 'a\n\n  b')).toBe('T a b')
+  })
+})
+
+describe('pollMentions throughput and multi-replica safety', () => {
+  const sitesN = (n: number) => Array.from({ length: n }, (_, i) => site({ siteId: `s${i}` }))
+
+  it('claims each (site, source) cursor before polling and skips pairs another replica holds', async () => {
+    const { store } = makeStore({ sites: [site({ siteId: 'a' }), site({ siteId: 'b' })] })
+    const order: string[] = []
+    store.claimCursor = vi.fn(async (siteId) => {
+      order.push(`claim:${siteId}`)
+      return siteId === 'a' // replica 2 already took b
+    })
+    const hn = source('hackernews', async () => {
+      order.push('search')
+      return []
+    })
+    const summary = await pollMentions({ now: NOW, concurrency: 1 }, { store, sources: [hn], recordUsage: vi.fn() })
+    expect(hn.search).toHaveBeenCalledTimes(1)
+    expect(order.slice(0, 2)).toEqual(['claim:a', 'search'])
+    expect(summary).toMatchObject({ sitesPolled: 1, sourcesPolled: 1 })
+    // claim passes the window start and the 15 minute lease
+    expect(store.claimCursor).toHaveBeenCalledWith('a', 'hackernews', NOW, computeSince(null, NOW), 15 * 60 * 1000)
+  })
+
+  it('two workers running at once poll each pair exactly once', async () => {
+    const claimed = new Set<string>()
+    const mk = () => makeStore({ sites: sitesN(6) }).store
+    const claimCursor = async (siteId: string, src: string) => {
+      const key = `${siteId}:${src}`
+      if (claimed.has(key)) return false
+      claimed.add(key)
+      return true
+    }
+    const a = mk()
+    const b = mk()
+    a.claimCursor = claimCursor
+    b.claimCursor = claimCursor
+    const hnA = source('hackernews', async () => [])
+    const hnB = source('hackernews', async () => [])
+    await Promise.all([
+      pollMentions({ now: NOW, concurrency: 2 }, { store: a, sources: [hnA], recordUsage: vi.fn() }),
+      pollMentions({ now: NOW, concurrency: 2 }, { store: b, sources: [hnB], recordUsage: vi.fn() }),
+    ])
+    expect(hnA.search.mock.calls.length + hnB.search.mock.calls.length).toBe(6)
+  })
+
+  it('polls at most 16 sites at a time (default)', async () => {
+    const { store } = makeStore({ sites: sitesN(40) })
+    let now = 0
+    let max = 0
+    const hn = source('hackernews', async () => {
+      now++
+      max = Math.max(max, now)
+      await new Promise((r) => setTimeout(r, 5))
+      now--
+      return []
+    })
+    const summary = await pollMentions({ now: NOW }, { store, sources: [hn], recordUsage: vi.fn() })
+    expect(summary.sitesPolled).toBe(40)
+    expect(max).toBeLessThanOrEqual(16)
+    expect(max).toBeGreaterThan(1)
+  })
+
+  it('stops starting work once the wall-clock budget is spent and leaves the rest for the next run', async () => {
+    const { store, cursorWrites } = makeStore({ sites: sitesN(6) })
+    let t = 0
+    const hn = source('hackernews', async () => {
+      t += 30_000
+      return []
+    })
+    const summary = await pollMentions(
+      { now: NOW, concurrency: 1, budgetMs: 45_000 },
+      { store, sources: [hn], recordUsage: vi.fn(), clock: () => t }
+    )
+    expect(hn.search).toHaveBeenCalledTimes(2)
+    expect(summary.sitesPolled).toBe(2)
+    expect(cursorWrites).toHaveLength(2)
+  })
+
+  it('does not advance the watermark when the budget cuts a site short mid-queries', async () => {
+    const aliases = Array.from({ length: 4 }, (_, i) => `alias${i}`)
+    const { store, cursorWrites } = makeStore({ terms: { s1: [{ ...brand, aliases }] } })
+    let t = 0
+    const hn = source('hackernews', async () => {
+      t += 30_000
+      return []
+    })
+    await pollMentions({ now: NOW, budgetMs: 45_000 }, { store, sources: [hn], recordUsage: vi.fn(), clock: () => t })
+    expect(hn.search).toHaveBeenCalledTimes(2)
+    expect(cursorWrites).toHaveLength(1)
+    expect((cursorWrites[0][2] as Date).getTime()).toBe(computeSince(null, NOW).getTime())
+    expect(cursorWrites[0][3]).toBeNull()
+  })
+
+  describe('query rotation', () => {
+    const manyTerms = (n: number): MatchTerm[] =>
+      Array.from({ length: n }, (_, i) => ({ id: `t${i}`, kind: 'brand' as const, label: `Brand${i}`, aliases: [] }))
+
+    /** In-memory cursor so consecutive runs see what the previous run saved (as the DB would). */
+    function statefulStore(terms: MatchTerm[]) {
+      const base = makeStore({ terms: { s1: terms } })
+      let cursor: { lastPolledAt: Date; queryOffset: number; cycleStartedAt: Date | null } | null = null
+      base.store.loadCursors = async () =>
+        cursor
+          ? [{ siteId: 's1', source: 'hackernews' as const, lastAttemptAt: null, consecutiveFailures: 0, ...cursor }]
+          : []
+      base.store.saveCursor = async (siteId, src, lastPolledAt, err, attempt) => {
+        cursor = { lastPolledAt, queryOffset: attempt.queryOffset, cycleStartedAt: attempt.cycleStartedAt }
+        base.cursorWrites.push([siteId, src, lastPolledAt, err, attempt])
+      }
+      return { ...base, cursor: () => cursor }
+    }
+
+    it('caps queries per run at 20 and covers every slice, across irregular gaps between runs', async () => {
+      const { store } = statefulStore(manyTerms(45))
+      const seen: string[][] = []
+      const gaps = [0, 31, 400, 33, 3000, 45, 31]
+      let t = NOW.getTime()
+      for (const gapMinutes of gaps) {
+        t += gapMinutes * 60 * 1000
+        const hn = source('hackernews')
+        await pollMentions({ now: new Date(t) }, { store, sources: [hn], recordUsage: vi.fn() })
+        seen.push(hn.search.mock.calls.map((c) => (c[0] as { query: string }).query))
+      }
+      expect(seen.slice(0, 3).map((r) => r.length)).toEqual([20, 20, 5])
+      // every one of the 45 queries is covered by the first three polls, whatever the gaps
+      expect(new Set(seen.slice(0, 3).flat()).size).toBe(45)
+      // the 4th poll starts a new cycle at the first query again
+      expect(seen[3][0]).toBe(seen[0][0])
+    })
+
+    it('moves the watermark only when the offset wraps, to the start of the finished cycle', async () => {
+      const { store, cursorWrites } = statefulStore(manyTerms(45))
+      const t0 = NOW
+      const t1 = new Date(NOW.getTime() + 31 * 60 * 1000)
+      const t2 = new Date(NOW.getTime() + 5 * HOUR)
+      const since0 = computeSince(null, t0)
+      for (const now of [t0, t1, t2]) {
+        await pollMentions({ now }, { store, sources: [source('hackernews')], recordUsage: vi.fn() })
+      }
+      const written = cursorWrites.map((w) => ({
+        at: (w[2] as Date).getTime(),
+        offset: (w[4] as { queryOffset: number }).queryOffset,
+      }))
+      expect(written.map((w) => w.offset)).toEqual([20, 40, 0])
+      // the first two polls hold the watermark at the window start; the wrap moves it to the cycle start (t0)
+      expect(written[0].at).toBe(since0.getTime())
+      expect(written[1].at).toBe(since0.getTime())
+      expect(written[2].at).toBe(t0.getTime())
+    })
+
+    it('does not rotate sites with 20 queries or fewer', async () => {
+      const { store } = makeStore({ terms: { s1: manyTerms(20) } })
+      const hn = source('hackernews')
+      await pollMentions({ now: NOW }, { store, sources: [hn], recordUsage: vi.fn() })
+      expect(hn.search).toHaveBeenCalledTimes(20)
+    })
+
+    it('restarts at 0 when the offset is past the end of a shrunken term list', () => {
+      expect(selectQuerySlice([1, 2, 3], 40)).toEqual({ slice: [1, 2, 3], start: 0, slices: 1 })
+      expect(
+        selectQuerySlice(
+          Array.from({ length: 45 }, (_, i) => i),
+          20
+        ).slice
+      ).toHaveLength(20)
+    })
+
+    it('plans a single-slice site as always wrapped with the watermark at now', () => {
+      const plan = planRotation({
+        start: 0,
+        processed: 3,
+        queryCount: 3,
+        now: NOW,
+        previous: null,
+        since: new Date(0),
+        cycleStartedAt: null,
+      })
+      expect(plan).toMatchObject({ queryOffset: 0, watermark: NOW, wrapped: true })
+    })
+  })
+
+  describe('per-query failures', () => {
+    const manyTerms = (n: number): MatchTerm[] =>
+      Array.from({ length: n }, (_, i) => ({ id: `t${i}`, kind: 'brand' as const, label: `Brand${i}`, aliases: [] }))
+
+    it('saves the results of queries that succeeded and retries only from the failed one', async () => {
+      const { store, inserted, cursorWrites } = makeStore({ terms: { s1: manyTerms(5) } })
+      const hn = source('hackernews', async ({ query }) => {
+        if (query.includes('Brand2')) throw new SocialSourceError('hackernews', 'server', 'boom', 500)
+        return [post(`p-${query}`, `${query} is great`)]
+      })
+      const summary = await pollMentions({ now: NOW }, { store, sources: [hn], recordUsage: vi.fn() })
+      expect(hn.search).toHaveBeenCalledTimes(5)
+      expect(inserted.length).toBeGreaterThanOrEqual(4)
+      expect(summary.errors).toBe(1)
+      const write = cursorWrites[0]
+      expect(String(write[3])).toMatch(/^partial: server/)
+      // offset stops at the failed query; the watermark is held
+      expect((write[4] as { queryOffset: number }).queryOffset).toBe(2)
+      expect((write[4] as { consecutiveFailures: number }).consecutiveFailures).toBe(1)
+      expect((write[2] as Date).getTime()).toBe(computeSince(null, NOW).getTime())
+    })
+
+    it('rotates past a query that keeps failing while others succeed', async () => {
+      const { store, cursorWrites } = makeStore({
+        terms: { s1: manyTerms(5) },
+        cursors: [{ siteId: 's1', source: 'hackernews', lastPolledAt: NOW, consecutiveFailures: 2 }],
+      })
+      const hn = source('hackernews', async ({ query }) => {
+        if (query.includes('Brand2')) throw new SocialSourceError('hackernews', 'server', 'boom', 500)
+        return []
+      })
+      await pollMentions({ now: new Date(NOW.getTime() + 6 * HOUR) }, { store, sources: [hn], recordUsage: vi.fn() })
+      expect((cursorWrites[0][4] as { queryOffset: number }).queryOffset).toBe(0)
+    })
+  })
+
+  describe('source parallelism', () => {
+    it("polls a site's sources at the same time", async () => {
+      const { store } = makeStore({})
+      let inFlight = 0
+      let max = 0
+      const slow = (id: SocialSource['id']) =>
+        source(id, async () => {
+          inFlight += 1
+          max = Math.max(max, inFlight)
+          await new Promise((r) => setTimeout(r, 10))
+          inFlight -= 1
+          return []
+        })
+      const summary = await pollMentions(
+        { now: NOW },
+        { store, sources: [slow('hackernews'), slow('reddit'), slow('bluesky')], recordUsage: vi.fn() }
+      )
+      expect(max).toBe(3)
+      expect(summary).toMatchObject({ sitesPolled: 1, sourcesPolled: 3 })
+    })
+
+    it('reads the site concurrency from MARKETING_MENTIONS_CONCURRENCY, capped at 32', async () => {
+      const original = process.env.MARKETING_MENTIONS_CONCURRENCY
+      try {
+        for (const [env, expected] of [
+          ['4', 4],
+          ['500', 32],
+        ] as const) {
+          process.env.MARKETING_MENTIONS_CONCURRENCY = env
+          const { store } = makeStore({ sites: sitesN(60) })
+          let inFlight = 0
+          let max = 0
+          const hn = source('hackernews', async () => {
+            inFlight += 1
+            max = Math.max(max, inFlight)
+            await new Promise((r) => setTimeout(r, 5))
+            inFlight -= 1
+            return []
+          })
+          await pollMentions({ now: NOW }, { store, sources: [hn], recordUsage: vi.fn() })
+          expect(max).toBe(expected)
+        }
+      } finally {
+        if (original === undefined) delete process.env.MARKETING_MENTIONS_CONCURRENCY
+        else process.env.MARKETING_MENTIONS_CONCURRENCY = original
+      }
+    })
+  })
+
+  it('a rate limit from one site stops that source for later sites, other sources continue', async () => {
+    const { store } = makeStore({ sites: sitesN(4) })
+    const limited = source('reddit', async () => {
+      throw new SocialSourceError('reddit', 'rate_limit', 'slow down', 429)
+    })
+    const hn = source('hackernews')
+    const summary = await pollMentions(
+      { now: NOW, concurrency: 1 },
+      { store, sources: [limited, hn], recordUsage: vi.fn() }
+    )
+    expect(limited.search).toHaveBeenCalledTimes(1)
+    expect(hn.search).toHaveBeenCalledTimes(4)
+    expect(summary.errors).toBe(1)
+  })
+
+  it('releases a claimed cursor that issued no request, so it is not stuck for a full interval', async () => {
+    const lastAttemptAt = new Date(NOW.getTime() - 40 * 60 * 1000)
+    const { store, cursorWrites, releases } = makeStore({
+      cursors: [
+        {
+          siteId: 's1',
+          source: 'hackernews',
+          lastPolledAt: new Date(NOW.getTime() - 2 * HOUR),
+          lastAttemptAt,
+          consecutiveFailures: 0,
+        },
+      ],
+    })
+    let t = 0
+    // The budget runs out between claiming the cursor and the first query
+    store.claimCursor = async () => {
+      t = 100_000
+      return true
+    }
+    const hn = source('hackernews', async () => [])
+    await pollMentions({ now: NOW, budgetMs: 45_000 }, { store, sources: [hn], recordUsage: vi.fn(), clock: () => t })
+    expect(hn.search).not.toHaveBeenCalled()
+    expect(cursorWrites).toHaveLength(0)
+    expect(releases).toEqual([['s1', 'hackernews', NOW, lastAttemptAt]])
+  })
+
+  it('leaves the cursor untouched on a rate limit: no failure counted, claim released', async () => {
+    const lastPolledAt = new Date(NOW.getTime() - 2 * HOUR)
+    const lastAttemptAt = new Date(NOW.getTime() - 40 * 60 * 1000)
+    const { store, cursorWrites, releases } = makeStore({
+      cursors: [{ siteId: 's1', source: 'reddit', lastPolledAt, lastAttemptAt, consecutiveFailures: 1 }],
+    })
+    const limited = source('reddit', async () => {
+      throw new SocialSourceError('reddit', 'rate_limit', 'slow down', 429)
+    })
+    await pollMentions({ now: NOW }, { store, sources: [limited], recordUsage: vi.fn() })
+    expect(cursorWrites).toHaveLength(0)
+    expect(releases).toEqual([['s1', 'reddit', NOW, lastAttemptAt]])
   })
 })

@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, ne, sql } from 'drizzle-orm'
+import { and, count, eq, gte, inArray, ne, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { user } from '~/server/database/schema/auth'
 import { changelogEntry, changelogEntryFeedback } from '~/server/database/schema/changelog'
@@ -12,6 +12,7 @@ import {
 } from '~/server/database/schema/marketing'
 import { contact, conversation, csatResponse, supportInbox } from '~/server/database/schema/support'
 import { teamModuleSettings } from '~/server/database/schema/teams'
+import { hashEmail, hashEmailCandidates } from '~/server/utils/marketing-email-hash'
 import type { ReviewSettings, ReviewsStore } from './types'
 
 /**
@@ -32,6 +33,11 @@ export function toReviewSettings(row: typeof reviewRequestSettings.$inferSelect)
     shippedStatusValues: row.shippedStatusValues ?? [],
     cooldownDays: row.cooldownDays,
   }
+}
+
+/** Matches a request row by address or, once anonymised, by the keyed hash of it. */
+function requestEmailMatches(email: string) {
+  return or(eq(reviewRequest.email, email), inArray(reviewRequest.emailHash, hashEmailCandidates(email)))
 }
 
 export const dbReviewsStore: ReviewsStore = {
@@ -63,9 +69,27 @@ export const dbReviewsStore: ReviewsStore = {
     const [row] = await db
       .select({ email: marketingEmailSuppression.email })
       .from(marketingEmailSuppression)
-      .where(and(eq(marketingEmailSuppression.teamId, teamId), eq(marketingEmailSuppression.email, email)))
+      .where(
+        and(
+          eq(marketingEmailSuppression.teamId, teamId),
+          or(
+            eq(marketingEmailSuppression.email, email),
+            inArray(marketingEmailSuppression.emailHash, hashEmailCandidates(email))
+          )
+        )
+      )
       .limit(1)
     return Boolean(row)
+  },
+
+  async stillSendable(id, teamId, email) {
+    const [row] = await db
+      .select({ id: reviewRequest.id })
+      .from(reviewRequest)
+      .where(and(eq(reviewRequest.id, id), eq(reviewRequest.status, 'sending')))
+      .limit(1)
+    if (!row) return false
+    return !(await dbReviewsStore.isSuppressed(teamId, email))
   },
 
   async hasRecentRequest(projectId, email, since) {
@@ -75,7 +99,7 @@ export const dbReviewsStore: ReviewsStore = {
       .where(
         and(
           eq(reviewRequest.projectId, projectId),
-          eq(reviewRequest.email, email),
+          requestEmailMatches(email),
           inArray(reviewRequest.status, ACTIVE_STATUSES),
           gte(reviewRequest.createdAt, since)
         )
@@ -91,7 +115,7 @@ export const dbReviewsStore: ReviewsStore = {
       .where(
         and(
           eq(reviewRequest.projectId, projectId),
-          eq(reviewRequest.email, email),
+          requestEmailMatches(email),
           eq(reviewRequest.status, 'sent'),
           gte(reviewRequest.sentAt, since),
           ne(reviewRequest.id, excludeId)
@@ -101,7 +125,8 @@ export const dbReviewsStore: ReviewsStore = {
     return Boolean(row)
   },
 
-  async insertRequest(row, options) {
+  async insertRequest(input, options) {
+    const row = { ...input, emailHash: hashEmail(input.email) }
     const insert = (executor: Pick<typeof db, 'insert'>) =>
       executor.insert(reviewRequest).values(row).onConflictDoNothing().returning({ id: reviewRequest.id })
 
@@ -117,7 +142,7 @@ export const dbReviewsStore: ReviewsStore = {
         .where(
           and(
             eq(reviewRequest.projectId, row.projectId),
-            eq(reviewRequest.email, row.email),
+            requestEmailMatches(row.email),
             inArray(reviewRequest.status, ACTIVE_STATUSES),
             gte(reviewRequest.createdAt, options.dedupeSince!)
           )

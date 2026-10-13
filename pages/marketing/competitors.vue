@@ -127,6 +127,10 @@ import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 export default {
   name: 'MarketingCompetitorsPage',
 
+  created() {
+    useHead({ title: 'Competitors · Marketing' })
+  },
+
   data() {
     return {
       product: null,

@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="audit-pages">
     <CardHeader>
-      <CardTitle class="text-base">Pages</CardTitle>
+      <CardTitle role="heading" aria-level="2" class="text-base">Pages</CardTitle>
     </CardHeader>
     <CardContent>
       <div v-if="isLoading" class="space-y-2">

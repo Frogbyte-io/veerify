@@ -83,6 +83,7 @@ function candidate(overrides: Partial<SyncCandidate> = {}): SyncCandidate {
     siteId: 's1',
     teamId: 't1',
     projectId: 'p1',
+    origin: 'https://acme.com',
     projectName: 'Acme',
     projectSlug: 'acme',
     projectSettings: { marketingEnabled: true },
@@ -105,15 +106,20 @@ function makeStore(candidates: SyncCandidate[], commitResult = true) {
       keep: number
     }>,
     failed: [] as Array<{ siteId: string; message: string; revoked: boolean }>,
+    needsProperty: [] as string[],
   }
   const store: SearchSyncStore = {
     loadDue: async () => candidates,
+    claim: async () => true,
     commitSync: async (write) => {
       calls.writes.push(write)
       return commitResult
     },
     markFailed: async (siteId, _at, message, revoked) => {
       calls.failed.push({ siteId, message, revoked })
+    },
+    markNeedsProperty: async (siteId) => {
+      calls.needsProperty.push(siteId)
     },
   }
   return { store, calls }
@@ -142,6 +148,20 @@ const deps = (store: SearchSyncStore, overrides: Record<string, unknown> = {}) =
 })
 
 describe('syncSearchConsole', () => {
+  it('skips a connection whose property no longer matches the site origin and marks needs_property', async () => {
+    const { store, calls } = makeStore([
+      candidate({ siteId: 'moved', origin: 'https://newsite.com' }),
+      candidate({ siteId: 'ok' }),
+    ])
+    const getAccessToken = vi.fn(async () => 'access')
+    const summary = await syncSearchConsole({ now: NOW }, deps(store, { getAccessToken }))
+
+    expect(summary).toEqual({ sitesSynced: 1, sitesFailed: 0, skipped: false })
+    expect(calls.needsProperty).toEqual(['moved'])
+    expect(calls.writes.map((w) => w.siteId)).toEqual(['ok'])
+    expect(getAccessToken).toHaveBeenCalledTimes(1)
+  })
+
   it('upserts daily metrics and replaces the query snapshot', async () => {
     const { store, calls } = makeStore([candidate()])
     const summary = await syncSearchConsole({ now: NOW }, deps(store))
@@ -328,5 +348,79 @@ describe('dbSearchSyncStore', () => {
     expect(dbState.deleted).toHaveLength(0)
     expect(dbState.inserted).toHaveLength(0)
     expect(dbState.updated).toHaveLength(0)
+  })
+})
+
+describe('syncSearchConsole batching, concurrency and claims', () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => candidate({ siteId: `s${i}` }))
+
+  it('loads up to 100 sites per run and syncs them all', async () => {
+    const { store, calls } = makeStore(many(100))
+    const loadDue = vi.fn(async (_now: Date, _limit?: number) => many(100))
+    store.loadDue = loadDue
+    const summary = await syncSearchConsole({ now: NOW }, deps(store))
+    expect(loadDue).toHaveBeenCalledWith(NOW, 100)
+    expect(summary.sitesSynced).toBe(100)
+    expect(calls.writes).toHaveLength(100)
+  })
+
+  it('never syncs more than 5 sites at the same time', async () => {
+    const { store } = makeStore(many(20))
+    let now = 0
+    let max = 0
+    const query = async (_t: string, _u: string, options: SearchAnalyticsOptions) => {
+      if (options.dimensions[0] === 'date') {
+        now++
+        max = Math.max(max, now)
+        await new Promise((r) => setTimeout(r, 5))
+        now--
+      }
+      return []
+    }
+    const summary = await syncSearchConsole({ now: NOW }, deps(store, { query }))
+    expect(summary.sitesSynced).toBe(20)
+    expect(max).toBeLessThanOrEqual(5)
+    expect(max).toBeGreaterThan(1)
+  })
+
+  it('stops starting sites once the time budget is spent', async () => {
+    const { store, calls } = makeStore(many(10))
+    const query = async () => {
+      await new Promise((r) => setTimeout(r, 15))
+      return []
+    }
+    const summary = await syncSearchConsole({ now: NOW, timeBudgetMs: 20, concurrency: 1 }, deps(store, { query }))
+    expect(summary.sitesSynced).toBeGreaterThan(0)
+    expect(summary.sitesSynced).toBeLessThan(10)
+    expect(calls.writes.length).toBe(summary.sitesSynced)
+  })
+
+  it('claims each site before syncing and leaves the ones another replica took', async () => {
+    const { store, calls } = makeStore(many(4))
+    const claimed = new Set<string>(['s1', 's3'])
+    store.claim = vi.fn(async (siteId: string) => {
+      if (claimed.has(siteId)) return false
+      claimed.add(siteId)
+      return true
+    })
+    const query = vi.fn(okQuery)
+    const summary = await syncSearchConsole({ now: NOW }, deps(store, { query }))
+    expect(summary.sitesSynced).toBe(2)
+    expect(calls.writes.map((w) => w.siteId).sort()).toEqual(['s0', 's2'])
+    // 2 queries (daily + queries) per synced site only
+    expect(query).toHaveBeenCalledTimes(4)
+    // the cutoff is the 23 hour due threshold
+    expect(vi.mocked(store.claim).mock.calls[0][1]).toEqual(new Date(NOW.getTime() - 23 * 3600 * 1000))
+  })
+
+  it('two replicas running together sync each site once', async () => {
+    const claimed = new Set<string>()
+    const claim = async (siteId: string) => (claimed.has(siteId) ? false : (claimed.add(siteId), true))
+    const a = makeStore(many(12))
+    const b = makeStore(many(12))
+    a.store.claim = claim
+    b.store.claim = claim
+    await Promise.all([syncSearchConsole({ now: NOW }, deps(a.store)), syncSearchConsole({ now: NOW }, deps(b.store))])
+    expect(a.calls.writes.length + b.calls.writes.length).toBe(12)
   })
 })

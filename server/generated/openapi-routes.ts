@@ -544,6 +544,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/marketing-retention": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Prune aged-out Marketing data",
+      "operationId": "cronMarketingRetention",
+      "responses": {
+        "200": {
+          "description": "Retention prune executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/marketing-review-requests": {
     "get": {
       "tags": [
@@ -2149,6 +2166,97 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/marketing/projects/{projectId}/data": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Delete a product's Marketing data",
+      "description": "Team admins only; works while Marketing is switched off. Requires the product slug as confirmation. Revokes a connected Google Search Console token (best effort), then deletes the marketing site with its audits, visibility, mentions, competitors, insights and Search Console data, plus the product's review requests, testimonials, launch kit and announcement drafts. Team-level API keys, consent and email suppressions are kept.\n",
+      "operationId": "deleteMarketingData",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "confirm"
+              ],
+              "properties": {
+                "confirm": {
+                  "type": "string",
+                  "description": "The product slug"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Counts of what was deleted"
+        },
+        "400": {
+          "description": "Confirmation missing or does not match the product slug"
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/export": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Export a product's Marketing data",
+      "description": "Team admins only; works while Marketing is switched off. Returns a JSON download of the product's Marketing data. Never contains encrypted keys, refresh tokens, the site verification token or review request tokens. Audit pages are reduced to url, status and title.\n",
+      "operationId": "exportMarketingData",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "JSON attachment",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Team admin required"
+        },
+        "404": {
+          "description": "Product not found"
+        }
+      }
+    }
+  },
   "/api/marketing/projects/{projectId}/language/apply": {
     "post": {
       "tags": [
@@ -2547,7 +2655,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List mentions for a product",
-      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied) and whether the site is verified and has terms configured. `canEscalate` is true when Support is on and the caller can work in a support inbox; escalated items carry `conversationId` and `conversationInboxId` only when the caller can open that inbox (otherwise both are null).\n",
+      "description": "Cursor-paginated, newest published first. Also returns counts by status (with the kind and source filters applied, over the last 180 days) and whether the site is verified and has terms configured. `canEscalate` is true when Support is on and the caller can work in a support inbox; escalated items carry `conversationId` and `conversationInboxId` only when the caller can open that inbox (otherwise both are null).\n",
       "operationId": "listMarketingMentions",
       "parameters": [
         {
@@ -3360,7 +3468,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Add or change the marketing site origin",
-      "description": "Team admins only. Changing the origin resets verification and issues a new token. A site covered by one of the product's verified custom domains is verified immediately (method `domain`).\n",
+      "description": "Team admins only. Changing the origin resets verification and issues a new token. A site covered by one of the product's verified custom domains is verified immediately (method `domain`). It also disconnects Search Console (token revoked, metrics deleted) and deletes SEO audits and competitor watches on the old host; terms, AI visibility prompts and mentions are brand-level and kept.\n",
       "operationId": "putMarketingSite",
       "parameters": [
         {
@@ -4144,6 +4252,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List sampled answers of a run (optionally for one prompt)",
+      "description": "With `promptId` the answers of that prompt are returned including the full `answer` text (bounded: providers x samples). Without it only metadata is returned (no `answer` text), 100 per request; pass `nextCursor` as `cursor` for the next page and fetch single answers with `/answers/{answerId}`.\n",
       "operationId": "listVisibilityAnswers",
       "parameters": [
         {
@@ -4168,6 +4277,13 @@ export const openapiPaths = {
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "schema": {
+            "type": "string"
+          }
         }
       ],
       "responses": {
@@ -4179,6 +4295,52 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Run or prompt not found for this product"
+        }
+      }
+    }
+  },
+  "/api/marketing/projects/{projectId}/visibility/runs/{runId}/answers/{answerId}": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Get one sampled answer with its full text",
+      "operationId": "getVisibilityAnswer",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "answerId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The answer including its text"
+        },
+        "403": {
+          "description": "Marketing is not enabled or no team access"
+        },
+        "404": {
+          "description": "Run or answer not found for this product"
         }
       }
     }
@@ -4258,7 +4420,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Look up a review request link",
-      "description": "Public, token-gated. Returns the product name, the recipient's first name whether a testimonial was already submitted and whether one can still be submitted. No other personal data.\n",
+      "description": "Public, token-gated. Returns the product name, the recipient's first name whether a testimonial was already submitted, whether it was withdrawn from the public page and whether one can still be submitted. No other personal data.\n",
       "operationId": "getPublicReviewRequest",
       "parameters": [
         {
@@ -4438,7 +4600,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Unsubscribe from review requests",
-      "description": "Writes a per-team marketing email suppression for the address. Also the RFC 8058 one-click target (`List-Unsubscribe-Post`). Responds with an HTML page.\n",
+      "description": "Writes a per-team marketing email suppression for the address (by keyed hash when the request was anonymised by retention). Also the RFC 8058 one-click target (`List-Unsubscribe-Post`). Responds with an HTML page.\n",
       "operationId": "submitPublicReviewUnsubscribe",
       "parameters": [
         {
@@ -4456,6 +4618,37 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Link not found"
+        }
+      }
+    }
+  },
+  "/api/marketing/r/{token}/withdraw": {
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Withdraw public consent for a testimonial",
+      "description": "Public, token-gated and rate limited per IP and token. Sets public consent to off and un-features the testimonial submitted with this link, so it disappears from the public wall. Works for links older than 60 days and when Marketing is switched off. Idempotent.\n",
+      "operationId": "withdrawPublicTestimonial",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "token",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Consent withdrawn (withdrawn is the number of testimonials changed)"
+        },
+        "404": {
+          "description": "Link not found"
+        },
+        "429": {
+          "description": "Rate limited"
         }
       }
     }
@@ -4743,6 +4936,56 @@ export const openapiPaths = {
       "responses": {
         "200": {
           "description": "Updated consent"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Team admin required"
+        }
+      }
+    }
+  },
+  "/api/marketing/teams/{teamId}/erase-contact": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Erase a person's Marketing data",
+      "description": "Team admin only. Deletes every review request and testimonial for the email address (case-insensitive) across the team's products, and keeps or creates a suppression so the address is never contacted again. Works whether or not Marketing is switched on.\n",
+      "operationId": "eraseMarketingContact",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "email"
+              ],
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Counts of deleted review requests and testimonials"
         },
         "400": {
           "description": "Validation failed"

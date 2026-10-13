@@ -42,6 +42,8 @@ export const AUDIT_RETENTION = 10
 export const MAX_CRAWL_MINUTES = 60
 export const MAX_CONSECUTIVE_ERRORS = 10
 export const LEASE_MS = 3 * 60_000
+/** Lease taken before the long steps of finishing an audit (site files, PageSpeed) and before writing results */
+export const FINISH_LEASE_MS = 6 * 60_000
 export const SCHEDULE_INTERVAL_MS = 7 * 24 * 3_600_000
 export const MANUAL_WINDOW_MS = 24 * 3_600_000
 
@@ -226,10 +228,17 @@ function readRuntime(audit: AuditRow): Runtime {
   return { errors: typeof runtime?.errors === 'number' ? runtime.errors : 0 }
 }
 
-/** Interim siteFacts: keeps the error counter and drops the lease. */
-function interimFacts(audit: AuditRow, errors: number): Record<string, unknown> {
-  const { _runtime: _drop, ...rest } = (audit.siteFacts ?? {}) as Record<string, unknown>
-  return { ...rest, _runtime: { errors } }
+/**
+ * Interim siteFacts: keeps the error counter and drops the lease, so the next tick can claim the audit.
+ * `keepLease` preserves this worker's lease for a step that continues in the same tick (basic audits
+ * go straight from `queued` to finishing): `extendLease` only succeeds while a lease is still stored.
+ */
+function interimFacts(audit: AuditRow, errors: number, keepLease = false): Record<string, unknown> {
+  const { _runtime: previous, ...rest } = (audit.siteFacts ?? {}) as Record<string, unknown> & {
+    _runtime?: { leaseUntil?: unknown }
+  }
+  const leaseUntil = keepLease && typeof previous?.leaseUntil === 'string' ? { leaseUntil: previous.leaseUntil } : {}
+  return { ...rest, _runtime: { errors, ...leaseUntil } }
 }
 
 function emptyFacts(url: string, statusCode: number): PageFacts {
@@ -292,27 +301,47 @@ export interface AdvanceResult {
   processed: number
 }
 
+/** Audits advanced at the same time (each claims its own row with SKIP LOCKED and holds its own lease) */
+export const AUDIT_LANES = 4
+
 export async function advanceAudits(
-  options: { budgetMs?: number } = {},
+  options: { budgetMs?: number; lanes?: number } = {},
   partial?: Partial<RunnerDeps>
 ): Promise<AdvanceResult> {
   const deps = withDeps(partial)
   const budgetMs = options.budgetMs ?? 45_000
+  const lanes = Math.max(1, options.lanes ?? AUDIT_LANES)
   const deadline = deps.now().getTime() + budgetMs
   const seen: string[] = []
 
-  while (deps.now().getTime() < deadline) {
-    const now = deps.now()
-    const audit = await deps.store.claimDue(seen, now, new Date(now.getTime() + LEASE_MS))
-    if (!audit) break
-    seen.push(audit.id)
-    try {
-      await processAudit(audit, deadline, deps)
-    } catch (err) {
-      logger.error('Audit step crashed', { auditId: audit.id, error: err instanceof Error ? err.message : 'unknown' })
-      await recordTransient(deps, audit, err)
+  // Each lane claims the next due audit until none is left or the budget is spent. Claims are atomic
+  // (FOR UPDATE SKIP LOCKED), so lanes (and other replicas) never take the same audit.
+  // Claims are issued one at a time so `seen` is up to date for every claim (a lane never re-claims an
+  // audit another lane of this tick already took); processing runs in parallel.
+  let claimChain: Promise<unknown> = Promise.resolve()
+  const claimNext = (): Promise<AuditRow | null> => {
+    const next = claimChain.then(async () => {
+      const now = deps.now()
+      const audit = await deps.store.claimDue(seen, now, new Date(now.getTime() + LEASE_MS))
+      if (audit) seen.push(audit.id)
+      return audit
+    })
+    claimChain = next.catch(() => undefined)
+    return next
+  }
+  const lane = async () => {
+    while (deps.now().getTime() < deadline) {
+      const audit = await claimNext()
+      if (!audit) return
+      try {
+        await processAudit(audit, deadline, deps)
+      } catch (err) {
+        logger.error('Audit step crashed', { auditId: audit.id, error: err instanceof Error ? err.message : 'unknown' })
+        await recordTransient(deps, audit, err)
+      }
     }
   }
+  await Promise.all(Array.from({ length: lanes }, lane))
   return { processed: seen.length }
 }
 
@@ -395,7 +424,8 @@ async function runBasic(audit: AuditRow, origin: string, teamId: string, deps: R
   const moved = await deps.store.updateAudit(audit.id, {
     status: 'analyzing',
     pagesFetched: 1,
-    siteFacts: interimFacts(audit, 0),
+    // Keep the lease: finishAudit re-takes it below in this same tick
+    siteFacts: interimFacts(audit, 0, true),
   })
   if (!moved) return
   await finishAudit({ ...audit, status: 'analyzing', pagesFetched: 1 }, origin, teamId, deps)
@@ -483,11 +513,25 @@ async function pollCrawl(audit: AuditRow, teamId: string, deadline: number, deps
   }
 }
 
+/**
+ * Re-takes the lease for the next long step. False means the lease lapsed and another worker may have
+ * claimed the audit, so this one must stop: two workers finishing the same audit would interleave
+ * their delete/insert of issues.
+ */
+async function holdLease(audit: AuditRow, deps: RunnerDeps): Promise<boolean> {
+  const now = deps.now()
+  const held = await deps.store.extendLease(audit.id, now, new Date(now.getTime() + FINISH_LEASE_MS))
+  if (!held) logger.warn('Audit lease lost while finishing; leaving it to the current owner', { auditId: audit.id })
+  return held
+}
+
 async function finishAudit(audit: AuditRow, origin: string, teamId: string, deps: RunnerDeps) {
   const userAgent = marketingConfig.botUserAgent
+  if (!(await holdLease(audit, deps))) return
   const site: SiteFacts = await deps.fetchSiteFacts(origin, { userAgent })
   const stored = await deps.store.loadPages(audit.id)
 
+  if (!(await holdLease(audit, deps))) return
   const pagespeed = await collectPageSpeed(teamId, origin, deps)
 
   const analyzable = stored.filter((p) => !(p.facts as FactsWithError).error)
@@ -501,6 +545,8 @@ async function finishAudit(audit: AuditRow, origin: string, teamId: string, deps
   const score = computeScore(issues, analyzable.length)
 
   const idByUrl = new Map(stored.map((p) => [p.url, p.id]))
+  // PageSpeed can take a minute: confirm we still own the audit before the delete + insert below
+  if (!(await holdLease(audit, deps))) return
   // Re-entry (lease expiry mid-finish) must not duplicate issues
   await deps.store.deleteIssues(audit.id)
   await deps.store.insertIssues(

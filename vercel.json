@@ -44,11 +44,11 @@
     },
     {
       "path": "/api/cron/marketing-mentions-poll",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/marketing-mentions-digest",
-      "schedule": "0 8 * * *"
+      "schedule": "0 7-11 * * *"
     },
     {
       "path": "/api/cron/marketing-review-requests",
@@ -60,7 +60,11 @@
     },
     {
       "path": "/api/cron/marketing-competitors-check",
-      "schedule": "35 * * * *"
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-retention",
+      "schedule": "30 3 * * *"
     }
   ]
 }

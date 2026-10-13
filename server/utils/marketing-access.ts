@@ -63,3 +63,21 @@ export async function requireMarketingAdmin(projectId: string, userId: string) {
 
   return access
 }
+
+/**
+ * Team admin on the product's team, whether or not Marketing is currently switched on. Exporting or
+ * deleting a product's Marketing data must stay possible after the module is turned off, because
+ * switching it off hides the data but does not remove it.
+ */
+export async function requireMarketingDataAdmin(projectId: string, userId: string) {
+  const project = await requireProjectAccess(projectId, userId)
+  try {
+    await requireTeamAdmin(project.teamId, userId)
+  } catch (error) {
+    if ((error as { statusCode?: number })?.statusCode === 403) {
+      forbidden('Only team admins can export or delete Marketing data')
+    }
+    throw error
+  }
+  return { project, teamId: project.teamId }
+}

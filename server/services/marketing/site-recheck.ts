@@ -1,7 +1,9 @@
-import { and, eq, isNotNull, ne, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { marketingSite } from '~/server/database/schema/marketing'
-import { projectDomain } from '~/server/database/schema/feedback'
+import { project, projectDomain } from '~/server/database/schema/feedback'
+import { teamModuleSettings } from '~/server/database/schema/teams'
+import { DEFAULT_TEAM_MODULES } from '~/lib/modules'
 import {
   checkVerification,
   isCoveredByVerifiedDomain,
@@ -20,12 +22,23 @@ import {
  *   the counter. `lastVerificationError` only carries a human message.
  */
 
+/**
+ * Sites are only re-checked while Marketing is on for both the team and the product: a switched-off module
+ * must not keep probing the site's DNS or pages. Re-enabling resumes the checks.
+ */
+const marketingOn = and(
+  sql`coalesce(${teamModuleSettings.marketingEnabled}, ${DEFAULT_TEAM_MODULES.marketingEnabled})`,
+  sql`${project.settings}->>'marketingEnabled' = 'true'`
+)
+
 export const DOMAIN_LOST_MESSAGE = 'The custom domain that verified this site is no longer active — verify again'
 export const RECHECK_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000
 /** After a first failure the retry comes a day later, not a month later */
 export const RECHECK_RETRY_MS = 24 * 60 * 60 * 1000
 export const RECHECK_MAX_FAILURES = 2
 const BATCH = 100
+/** Wall-clock budget for the token rechecks of one run; leftovers are picked up next run (oldest check first) */
+export const RECHECK_TIME_BUDGET_MS = 2 * 60 * 1000
 
 export interface RecheckSite {
   id: string
@@ -51,7 +64,11 @@ export interface RecheckDeps {
   now: () => Date
   listDomainSites(): Promise<RecheckSite[]>
   listDueSites(now: Date, limit: number): Promise<RecheckSite[]>
-  activeDomains(projectId: string): Promise<string[]>
+  /** Active domain hostnames per project, for all given projects in one query */
+  activeDomains(projectIds: string[]): Promise<Map<string, string[]>>
+  /** Monotonic-ish clock in ms for the time budget */
+  clock: () => number
+  timeBudgetMs: number
   check: typeof checkVerification
   update(
     siteId: string,
@@ -82,7 +99,9 @@ const defaultDeps: RecheckDeps = {
     db
       .select(siteColumns)
       .from(marketingSite)
-      .where(and(isNotNull(marketingSite.verifiedAt), eq(marketingSite.verificationMethod, 'domain'))),
+      .innerJoin(project, eq(project.id, marketingSite.projectId))
+      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
+      .where(and(isNotNull(marketingSite.verifiedAt), eq(marketingSite.verificationMethod, 'domain'), marketingOn)),
   listDueSites: (now, limit) => {
     const lastCheck = sql`coalesce(${marketingSite.verificationCheckedAt}, ${marketingSite.verifiedAt})`
     const monthAgo = new Date(now.getTime() - RECHECK_INTERVAL_MS)
@@ -90,8 +109,11 @@ const defaultDeps: RecheckDeps = {
     return db
       .select(siteColumns)
       .from(marketingSite)
+      .innerJoin(project, eq(project.id, marketingSite.projectId))
+      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
       .where(
         and(
+          marketingOn,
           isNotNull(marketingSite.verifiedAt),
           isNotNull(marketingSite.verificationMethod),
           ne(marketingSite.verificationMethod, 'domain'),
@@ -101,13 +123,18 @@ const defaultDeps: RecheckDeps = {
       .orderBy(lastCheck)
       .limit(limit)
   },
-  async activeDomains(projectId) {
+  async activeDomains(projectIds) {
+    const byProject = new Map<string, string[]>()
+    if (projectIds.length === 0) return byProject
     const rows = await db
-      .select({ hostname: projectDomain.hostname })
+      .select({ projectId: projectDomain.projectId, hostname: projectDomain.hostname })
       .from(projectDomain)
-      .where(and(eq(projectDomain.projectId, projectId), eq(projectDomain.status, 'active')))
-    return rows.map((r) => r.hostname)
+      .where(and(inArray(projectDomain.projectId, projectIds), eq(projectDomain.status, 'active')))
+    for (const row of rows) byProject.set(row.projectId, [...(byProject.get(row.projectId) ?? []), row.hostname])
+    return byProject
   },
+  clock: () => Date.now(),
+  timeBudgetMs: RECHECK_TIME_BUDGET_MS,
   check: checkVerification,
   async update(siteId, patch) {
     await db.update(marketingSite).set(patch).where(eq(marketingSite.id, siteId))
@@ -122,9 +149,16 @@ export async function recheckVerifiedSites(
   let unverified = 0
   let checked = 0
 
-  for (const site of await deps.listDomainSites()) {
+  const domainSites = await deps.listDomainSites()
+  let domainsByProject: Map<string, string[]> | null = null
+  try {
+    domainsByProject = await deps.activeDomains([...new Set(domainSites.map((site) => site.projectId))])
+  } catch {
+    // Without the domain list nothing can be judged; retried next hour
+  }
+  for (const site of domainsByProject ? domainSites : []) {
     try {
-      const domains = await deps.activeDomains(site.projectId)
+      const domains = domainsByProject?.get(site.projectId) ?? []
       if (isCoveredByVerifiedDomain(site.origin, domains)) continue
       await deps.update(site.id, {
         verifiedAt: null,
@@ -139,7 +173,9 @@ export async function recheckVerifiedSites(
   }
 
   const due = (await deps.listDueSites(now, BATCH)).filter((site) => isRecheckDue(site, now))
+  const startedAt = deps.clock()
   for (const site of due) {
+    if (deps.clock() - startedAt > deps.timeBudgetMs) break
     try {
       const method = site.verificationMethod as VerificationMethod
       const result = await deps.check(site.origin, site.verificationToken, method)

@@ -41,8 +41,8 @@
 
 <script>
 const ENV_HINTS = {
-  reddit: 'Self-hosted installs need REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET set to enable Reddit.',
-  bluesky: 'Self-hosted installs need BLUESKY_IDENTIFIER and BLUESKY_APP_PASSWORD set to enable Bluesky.',
+  reddit: 'Ask your server admin to set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET to enable Reddit.',
+  bluesky: 'Ask your server admin to set BLUESKY_IDENTIFIER and BLUESKY_APP_PASSWORD to enable Bluesky.',
 }
 
 export default {

@@ -1,3 +1,4 @@
+import { getTableName, is, Table } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
@@ -8,6 +9,8 @@ const state = vi.hoisted(() => ({
   projectSettings: null as Record<string, unknown> | null,
   secretsConfigured: true,
   rows: [] as unknown[][],
+  // Per-table result queues for routes that query concurrently (empty = use `rows` in call order)
+  byTable: {} as Record<string, unknown[][]>,
   ops: [] as Array<{ op: string; args: unknown[] }>,
   validateLlm: { ok: true } as { ok: boolean; kind?: string; message?: string },
   validateCrawl: { ok: true } as { ok: boolean; kind?: string; message?: string },
@@ -19,13 +22,18 @@ const httpError = (statusCode: number, message: string) =>
 
 function chain(): unknown {
   const target = function () {}
+  let tableName: string | null = null
   const proxy: unknown = new Proxy(target, {
     get(_t, prop) {
       if (prop === 'then') {
-        return (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-          Promise.resolve(state.rows.shift() ?? []).then(resolve, reject)
+        return (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => {
+          const keyed = Object.keys(state.byTable).length > 0
+          const result = keyed ? (tableName ? state.byTable[tableName]?.shift() : undefined) : state.rows.shift()
+          return Promise.resolve(result ?? []).then(resolve, reject)
+        }
       }
       return (...args: unknown[]) => {
+        if (prop === 'from' && is(args[0], Table)) tableName = getTableName(args[0])
         state.ops.push({ op: String(prop), args })
         return proxy
       }
@@ -125,6 +133,9 @@ vi.mock('~/server/services/crawl', () => ({
   resolveCrawlConfig: (key: string | null) => (key ? { apiKey: key, baseUrl: 'https://crawl.test' } : null),
 }))
 
+const resetOrigin = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('~/server/services/marketing/site-origin', () => ({ resetOriginScopedData: resetOrigin }))
+
 vi.mock('~/server/services/marketing/site-verification', async (importActual) => {
   const actual = await importActual<typeof import('~/server/services/marketing/site-verification')>()
   return { ...actual, checkVerification: vi.fn(async () => state.checkVerification) }
@@ -156,6 +167,7 @@ beforeEach(() => {
   state.marketingOn = true
   state.secretsConfigured = true
   state.rows = []
+  state.byTable = {}
   state.ops = []
   state.validateLlm = { ok: true }
   state.validateCrawl = { ok: true }
@@ -244,6 +256,7 @@ describe('PUT site', () => {
     expect(set.verificationMethod).toBeNull()
     expect(set.verificationToken).toBeTypeOf('string')
     expect(set.verificationToken).not.toBe('old-token')
+    expect(resetOrigin).toHaveBeenCalledWith('s1', 'https://example.com')
   })
 
   it('keeps an already verified site untouched when the origin is unchanged', async () => {
@@ -254,6 +267,7 @@ describe('PUT site', () => {
     const res = await run(handler)
     expect(state.ops.some((o) => o.op === 'set' || o.op === 'values')).toBe(false)
     expect(res.data.site.verified).toBe(true)
+    expect(resetOrigin).not.toHaveBeenCalled()
   })
 
   it('verifies immediately with method domain when a verified custom domain covers the origin', async () => {
@@ -664,14 +678,17 @@ describe('overview route', () => {
   it('computes the mention rate from answers with a brand verdict', async () => {
     vi.doMock('~/server/utils/marketing-usage', () => ({ getUsage: async () => ({ 'crawl:pages': 12 }) }))
     vi.resetModules()
-    state.rows = [
-      [existingSite], // findMarketingSite
-      [{ total: 1 }], // brand terms
-      [{ id: 'a1', score: 82, mode: 'basic', status: 'done', finishedAt: new Date() }],
-      [{ id: 'r1', status: 'done', finishedAt: new Date() }],
-      [{ total: 4 }], // new mentions
-      [{ brandMentioned: true }, { brandMentioned: false }, { brandMentioned: true }, { brandMentioned: true }],
-    ]
+    // Loaders run concurrently, so results are keyed by table rather than call order
+    state.byTable = {
+      marketing_site: [[existingSite]],
+      marketing_term: [[{ total: 1 }]], // brand terms
+      seo_audit: [[{ id: 'a1', score: 82, mode: 'basic', status: 'done', finishedAt: new Date() }]],
+      ai_visibility_run: [[{ id: 'r1', status: 'done', finishedAt: new Date() }]],
+      mention: [[{ total: 4 }]], // new mentions
+      ai_visibility_answer: [
+        [{ brandMentioned: true }, { brandMentioned: false }, { brandMentioned: true }, { brandMentioned: true }],
+      ],
+    }
     const handler = await load('~/server/api/marketing/projects/[projectId]/overview.get')
     const res = await run(handler)
     expect(res.data.setup).toMatchObject({ siteAdded: true, siteVerified: true, hasBrandTerm: true })
@@ -690,23 +707,21 @@ describe('overview route', () => {
     const day = (date: string, clicks: number) => ({ date, clicks, impressions: clicks * 10, ctr: 0.1, position: 5 })
     const latestEntry = { id: 'e1', title: 'Dark mode', slug: 'dark-mode', publishedAt: new Date('2026-10-05') }
     const lastRun = new Date('2026-10-03')
-    state.rows = [
-      [existingSite],
-      [{ total: 0 }], // brand terms
-      [], // audits
-      [], // runs
-      [{ total: 0 }], // mentions
-      [{ status: 'active' }], // gsc connection
-      [{ date: '2026-10-08' }], // latest synced day
-      [day('2026-08-20', 4), day('2026-09-20', 6), day('2026-10-08', 4)], // previous + current period
-      [{ enabled: true }], // review settings
-      [{ total: 7 }], // requests sent
-      [{ total: 2 }], // pending testimonials
-      [{ total: 3 }], // published entries without drafts
-      [{ feedback: true, support: false }], // consent
-      [{ createdAt: lastRun }], // latest language insight
-      [latestEntry], // latest published entry
-    ]
+    state.byTable = {
+      marketing_site: [[existingSite]],
+      marketing_term: [[{ total: 0 }]],
+      gsc_connection: [[{ status: 'active' }]],
+      gsc_daily_metric: [
+        [{ date: '2026-10-08' }], // latest synced day
+        [day('2026-08-20', 4), day('2026-09-20', 6), day('2026-10-08', 4)], // previous + current period
+      ],
+      review_request_settings: [[{ enabled: true }]],
+      review_request: [[{ total: 7 }]], // requests sent
+      testimonial: [[{ total: 2 }]], // pending testimonials
+      changelog_entry: [[{ total: 3 }], [latestEntry]], // entries without drafts, then latest entry
+      marketing_data_consent: [[{ feedback: true, support: false }]],
+      customer_language_insight: [[{ createdAt: lastRun }]],
+    }
     const handler = await load('~/server/api/marketing/projects/[projectId]/overview.get')
     const res = await run(handler)
     state.projectSettings = null

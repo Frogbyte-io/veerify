@@ -49,6 +49,22 @@ opportunities, and growth features built on feedback, changelog and support data
   result can cause one duplicate after the 10-minute sweeper.
 - Review requests only go to verified user emails and CSAT contacts; anonymous feedback authors and
   unlinked subscribers are never asked.
+- Multiple app replicas are still unsupported (no scheduler leader election or disable flag), but the
+  Marketing tasks no longer double-send or double-spend when two processes overlap: digest has a
+  per-team-per-day ledger, mention polling and search sync claim each (site, source) / site before
+  working, and audit finishing holds its lease. Remaining: the per-host competitor spacing and the
+  Reddit/Bluesky rate-limit state are per process, the digest is at-most-once (a crash after the
+  claim loses that team's digest for the day) and search sync marks a site synced when claimed.
+- Capacity at 5,000 products with Marketing on (estimates, see "Capacity at 5,000 products" in the
+  [deployment plan](../2026-09-21-coolify-deployment.md)): mention polling runs every 5 minutes with
+  16 sites at a time (`MARKETING_MENTIONS_CONCURRENCY`, max 32), about 2,900 sites per 30 minutes, so
+  a full cycle over 5,000 sites takes about 50 minutes and Reddit's rate limit is the real ceiling;
+  sites with more than 20 search queries rotate through them with a stored offset. AI visibility
+  answers 24 at a time (8 per provider) and pauses scheduling at 5,000 pending answers
+  (`MARKETING_VISIBILITY_BACKLOG_LIMIT`). Competitor checks cover about 17,000 pages a day (a URL
+  watched by several teams is fetched once). Database pool size is `PG_POOL_MAX` (default 20).
+- On the cloud the instance Firecrawl and PageSpeed keys are ignored (bring your own key) unless
+  `MARKETING_ALLOW_INSTANCE_KEYS=true`.
 - Veerify-provided LLM keys on the cloud are not built (they need billing first). A proposal is in the
   [billing design](../2026-10-11-billing/design.md) (status: Proposed, needs owner decisions).
 - Budget caps are estimates (tokens × list price + web-search fees), enforced with atomic
@@ -65,10 +81,66 @@ opportunities, and growth features built on feedback, changelog and support data
   cost-relevant marketing endpoints do not depend on it: visibility prompt suggestions (40/day per
   site) and announcement generation (50/day per product) are also capped by `consumeDbLimit`
   (`server/utils/marketing-db-limit.ts`, atomic guarded upsert into `marketing_usage` with
-  `ratelimit:*` metrics that age out with their month), and manual audits, manual visibility runs,
+  `ratelimit:*` metrics that the daily retention task deletes after 2 days), and manual audits, manual visibility runs,
   competitor checks (per-watch claim on `lastCheckedAt`) and manual review sends (team daily cap) are
   already counted from database rows. The remaining in-memory limits (hourly caps, per-host competitor
   day cap, site verify attempts) only add burst protection.
+
+## Data retention, erasure and export
+
+The `marketing:retention` task runs daily (`30 3 * * *`; a Nitro task on self-hosted installs, the
+`/api/cron/marketing-retention` route on Vercel).
+
+| Data                                                                       | Kept                                                                                                                                 |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Review requests (`sent`, `failed`, `skipped`): email, name, error          | 180 days, then anonymised (see below). Anonymised rows are deleted after 3 years, only when no testimonial references them           |
+| Review requests still `queued`                                             | 30 days, then `skipped` (reason `expired`) and anonymised on the normal schedule. `sending` rows are left to the stale-claim sweeper |
+| Email suppressions (`marketing_email_suppression`)                         | Indefinitely: the durable opt-out record (address and/or keyed hash)                                                                 |
+| Testimonial author email                                                   | 180 days, then cleared (the keyed hash stays). Name, title, company and quote stay                                                   |
+| Mentions                                                                   | 180 days after publication (mentions poller)                                                                                         |
+| Competitor changes                                                         | 12 months                                                                                                                            |
+| Usage counters (`marketing_usage`)                                         | 13 months by period                                                                                                                  |
+| Rate-limit counters (`ratelimit:*` in `marketing_usage`)                   | 2 days after the last update                                                                                                         |
+| Digest ledger (`digest:<date>`) and OAuth nonces (`oauth-nonce:*`)         | 7 days and 1 day after the last update                                                                                               |
+| Customer language insights                                                 | Until consent for any source they used is switched off, then deleted at once                                                         |
+| Everything else (audits, visibility answers, terms, launch kit, and so on) | Until the product's Marketing data is deleted                                                                                        |
+
+- **Anonymisation, not deletion.** After 180 days a terminal review request keeps its id, token,
+  project, team, trigger, source, status, timestamps and `email_hash`; `email` becomes `redacted:<id>`
+  and `name` and `error` are cleared. `email_hash` (and `testimonial.author_email_hash`) is
+  HMAC-SHA256 of the lower-cased, trimmed address, keyed by a key derived from `MARKETING_EMAIL_HASH_KEY` (preferred) or
+  `BETTER_AUTH_SECRET` with
+  HKDF (info `marketing-email-hash`, `server/utils/marketing-email-hash.ts`). It is never exported or
+  returned by an API. Because the token stays, the unsubscribe and withdraw links keep working for old
+  emails (an unsubscribe on an anonymised row writes a hash-based suppression); suppression checks (at
+  enqueue and right before sending) match by address or hash; and the unique
+  (project, trigger, source, email_hash) index keeps a `shipped` event from being queued twice. Hashes
+  are filled lazily by the retention task before anonymising, so existing rows need no data migration.
+  Writes always use the primary key (`MARKETING_EMAIL_HASH_KEY` if set, else `BETTER_AUTH_SECRET`).
+  Lookups (suppression, cooldown, erase) match every candidate hash: the primary one, the one from
+  `BETTER_AUTH_SECRET` (so installs that add `MARKETING_EMAIL_HASH_KEY` later keep matching old rows) and
+  the one from `BETTER_AUTH_SECRET_PREV` (so a secret rotation keeps matching while the previous secret
+  is configured). Set `MARKETING_EMAIL_HASH_KEY` once and never rotate it: that makes hashes independent
+  of auth secret rotation. If you rotate `BETTER_AUTH_SECRET` without it and then drop
+  `BETTER_AUTH_SECRET_PREV`, hashes written under the old secret stop matching.
+- **Erase a person:** `POST /api/marketing/teams/{teamId}/erase-contact` (team admin) deletes all review
+  requests and testimonials for an email (case-insensitive, or its keyed hash, so anonymised rows and
+  testimonials without an address are found too) in the team's products and keeps or creates a
+  suppression (address and hash), so the address is never contacted again. A review request the sender
+  already claimed is deleted too; the sender re-checks that the row exists and the address is not
+  suppressed immediately before calling the mailer.
+- **Withdraw consent:** the testimonial page and the review-request email footer link to a page that
+  calls `POST /api/marketing/r/{token}/withdraw`, which turns public consent off and un-features the
+  testimonial. It works for expired links and after the 180-day anonymisation (the token is kept).
+- **Export and delete a product's data:** `GET /api/marketing/projects/{projectId}/export` returns a JSON
+  file (never keys or tokens); `DELETE /api/marketing/projects/{projectId}/data` with
+  `{ "confirm": "<product slug>" }` revokes a connected Search Console token and deletes the site (with
+  everything under it), review requests, testimonials, launch kit and announcement drafts. Both are team
+  admin only and work while Marketing is switched off. All three are in the Privacy card in Marketing
+  settings. Team API keys, consent and suppressions are kept.
+- **Turning Marketing off hides data, it does not delete it.** Data stays until the retention windows
+  above pass or the product's Marketing data is deleted. Site re-verification stops for that
+  team or product while it is off.
 
 ## Durable references
 

@@ -644,6 +644,8 @@ interface MarketingReviewRequestTemplateOptions {
   platforms: Array<{ label: string; url: string }>
   /** Link to the testimonial form, or null when testimonials are not requested. */
   testimonialUrl: string | null
+  /** Link to remove a submitted testimonial from the public page, or null when testimonials are not requested. */
+  withdrawUrl?: string | null
   unsubscribeUrl: string
 }
 
@@ -658,6 +660,7 @@ export function marketingReviewRequestTemplate({
   feedbackTitle,
   platforms,
   testimonialUrl,
+  withdrawUrl,
   unsubscribeUrl,
 }: MarketingReviewRequestTemplateOptions) {
   const product = oneLine(productName)
@@ -693,6 +696,10 @@ export function marketingReviewRequestTemplate({
     ? `<p style="color:#444">${platforms.length > 0 ? 'Prefer to write a few words directly?' : ''} <a href="${escapeHtml(testimonialUrl)}" style="color:#6366f1">Write a short testimonial</a></p>`
     : ''
 
+  const withdrawHtml = withdrawUrl
+    ? `<p style="color:#999;font-size:12px">Sent a testimonial already? <a href="${escapeHtml(withdrawUrl)}" style="color:#999">Remove my testimonial from the public page</a>.</p>`
+    : ''
+
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
       <p style="color:#1a1a1a">${escapeHtml(greeting)}</p>
@@ -701,6 +708,7 @@ export function marketingReviewRequestTemplate({
       <div style="margin:16px 0">${buttonsHtml}</div>
       ${testimonialHtml}
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      ${withdrawHtml}
       <p style="color:#999;font-size:12px">You are receiving this from ${escapeHtml(product)}. <a href="${escapeHtml(unsubscribeUrl)}" style="color:#999">Unsubscribe</a> from these requests. Powered by Veerify</p>
     </div>
   `
@@ -711,7 +719,7 @@ ${intro}
 
 ${ask}
 ${platforms.map((platform) => `- ${platform.label}: ${platform.url}`).join('\n')}
-${testimonialUrl ? `\nWrite a short testimonial: ${testimonialUrl}\n` : ''}
+${testimonialUrl ? `\nWrite a short testimonial: ${testimonialUrl}\n` : ''}${withdrawUrl ? `\nRemove my testimonial from the public page: ${withdrawUrl}\n` : ''}
 Unsubscribe from these requests: ${unsubscribeUrl}
 `
 

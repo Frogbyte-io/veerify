@@ -19,14 +19,24 @@ const site = (over = {}) => ({
   ...over,
 })
 
-function setup(opts: { domainSites?: unknown[]; due?: unknown[]; domains?: string[]; verified?: boolean }) {
+function setup(opts: {
+  domainSites?: unknown[]
+  due?: unknown[]
+  domains?: string[]
+  verified?: boolean
+  clock?: () => number
+}) {
   const update = vi.fn(async (_id: string, _patch: Record<string, unknown>) => {})
   const check = vi.fn(async () => ({ verified: opts.verified ?? true, detail: 'nope' }))
   const deps = {
     now: () => now,
     listDomainSites: async () => (opts.domainSites ?? []) as never,
     listDueSites: async () => (opts.due ?? []) as never,
-    activeDomains: async () => opts.domains ?? [],
+    activeDomains: vi.fn(
+      async (ids: string[]) => new Map(ids.map((id) => [id, opts.domains ?? []])) as Map<string, string[]>
+    ),
+    clock: opts.clock ?? (() => 0),
+    timeBudgetMs: 1000,
     check,
     update: update as never,
   }
@@ -38,6 +48,31 @@ describe('recheckVerifiedSites', () => {
     const { deps, update } = setup({ domainSites: [site()], domains: ['app.acme.com'] })
     expect(await recheckVerifiedSites(deps)).toEqual({ unverified: 0, checked: 0 })
     expect(update).not.toHaveBeenCalled()
+  })
+
+  it('loads active domains for all domain sites in one query', async () => {
+    const { deps } = setup({
+      domainSites: [site(), site({ id: 's2', projectId: 'p2' }), site({ id: 's3', projectId: 'p1' })],
+      domains: ['app.acme.com'],
+    })
+    await recheckVerifiedSites(deps)
+    expect(deps.activeDomains).toHaveBeenCalledTimes(1)
+    expect(deps.activeDomains).toHaveBeenCalledWith(['p1', 'p2'])
+  })
+
+  it('stops token rechecks once the time budget is spent', async () => {
+    let t = 0
+    const { deps, check } = setup({
+      due: [site({ id: 'a', verificationMethod: 'meta' }), site({ id: 'b', verificationMethod: 'meta' })],
+      clock: () => {
+        const v = t
+        t += 600
+        return v
+      },
+    })
+    // clock: start=0, first check at 600 (ok), second at 1200 (> 1000) -> skipped
+    expect((await recheckVerifiedSites(deps)).checked).toBe(1)
+    expect(check).toHaveBeenCalledTimes(1)
   })
 
   it('unverifies domain sites whose domain is gone', async () => {

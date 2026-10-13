@@ -24,6 +24,9 @@ const site: CandidateSite = {
 function storeInserting(count: (rows: MentionInsert[]) => number): MentionsStore {
   return {
     loadVerifiedSites: async () => [site],
+    loadDueSites: async () => [site],
+    claimCursor: async () => true,
+    releaseClaim: async () => undefined,
     loadTerms: async (ids) =>
       new Map(ids.map((id) => [id, [{ id: 'b', kind: 'brand' as const, label: 'Acme', aliases: [] }]])),
     loadCursors: async () => [],

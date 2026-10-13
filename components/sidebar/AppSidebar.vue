@@ -162,7 +162,9 @@ const visibleGroups = computed(() =>
       <TeamSwitcher />
     </SidebarHeader>
 
-    <SidebarContent>
+    <SidebarContent
+      class="pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)] group-data-[collapsible=icon]:[mask-image:none]"
+    >
       <SidebarGroup v-for="group in visibleGroups" :key="group.id" :data-testid="group.testId">
         <SidebarGroupLabel>{{ group.label }}</SidebarGroupLabel>
         <SidebarGroupContent>

@@ -52,4 +52,16 @@ describe('marketingReviewRequestTemplate', () => {
     const { subject } = marketingReviewRequestTemplate({ ...base, feedbackTitle: 'Line one\r\nBcc: evil@x.io' })
     expect(subject).not.toMatch(/[\r\n]/)
   })
+
+  it('appends an escaped withdraw link to the footer only when given', () => {
+    const withdrawUrl = 'https://app.test/testimonial/tok?withdraw=1&x="y"'
+    const { html, text } = marketingReviewRequestTemplate({ ...base, withdrawUrl })
+    expect(html).toContain('Remove my testimonial from the public page')
+    expect(html).toContain('href="https://app.test/testimonial/tok?withdraw=1&amp;x=&quot;y&quot;"')
+    expect(text).toContain(`Remove my testimonial from the public page: ${withdrawUrl}`)
+
+    const without = marketingReviewRequestTemplate(base)
+    expect(without.html).not.toContain('Remove my testimonial')
+    expect(without.text).not.toContain('Remove my testimonial')
+  })
 })

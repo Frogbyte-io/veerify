@@ -52,6 +52,7 @@
           <Switch
             :model-value="values[module.key]"
             :disabled="saving === module.key || !canManage"
+            :aria-label="module.label"
             class="shrink-0 ml-4 mt-0.5"
             @update:model-value="toggle(module.key, $event)"
           />
@@ -146,6 +147,13 @@ export default {
         // has no other reason to refetch - tell it explicitly.
         if (import.meta.client) {
           window.dispatchEvent(new CustomEvent('veerify:team-modules-changed'))
+        }
+
+        if (key === 'marketingEnabled' && value === true) {
+          toast.success('Marketing is on — now turn it on for each product in its Features tab', {
+            action: { label: 'Open products', onClick: () => navigateTo('/products') },
+            duration: 10000,
+          })
         }
       } catch (err) {
         this.values[key] = previous

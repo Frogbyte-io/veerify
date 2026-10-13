@@ -139,6 +139,10 @@ export const marketingUsage = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.teamId, table.period, table.metric] }),
+    // Spend-reservation sweep: only the `llm:*:reserved_usd_micros` rows.
+    reservedIdx: index('marketing_usage_reserved_idx')
+      .on(table.updatedAt)
+      .where(sql`${table.metric} LIKE 'llm:%:reserved_usd_micros'`),
   })
 )
 
@@ -210,6 +214,7 @@ export const seoIssue = pgTable(
   },
   (table) => ({
     auditRuleIdx: index('seo_issue_audit_rule_idx').on(table.auditId, table.ruleId),
+    pageIdx: index('seo_issue_page_idx').on(table.pageId),
   })
 )
 
@@ -321,6 +326,13 @@ export const aiVisibilityAnswer = pgTable(
       table.sample
     ),
     promptIdx: index('ai_visibility_answer_prompt_idx').on(table.promptId),
+    // Provider first: the runner claims per provider, oldest first, so each claim walks one provider's slice
+    pendingIdx: index('ai_visibility_answer_pending_idx')
+      .on(table.provider, table.createdAt, table.id)
+      .where(sql`${table.status} = 'pending'`),
+    runPendingIdx: index('ai_visibility_answer_run_pending_idx')
+      .on(table.runId)
+      .where(sql`${table.status} = 'pending'`),
   })
 )
 
@@ -350,6 +362,16 @@ export const mention = pgTable(
   (table) => ({
     uniqueExternal: uniqueIndex('mention_site_source_external_idx').on(table.siteId, table.source, table.externalId),
     inboxIdx: index('mention_site_status_published_idx').on(table.siteId, table.status, table.publishedAt),
+    publishedIdx: index('mention_published_idx').on(table.publishedAt),
+    sitePublishedIdx: index('mention_site_published_idx').on(
+      table.siteId,
+      sql`${table.publishedAt} DESC`,
+      sql`${table.id} DESC`
+    ),
+    siteNewCreatedIdx: index('mention_site_new_created_idx')
+      .on(table.siteId, table.createdAt)
+      .where(sql`${table.status} = 'new'`),
+    termIdx: index('mention_term_idx').on(table.termId),
   })
 )
 
@@ -367,6 +389,10 @@ export const mentionSourceCursor = pgTable(
     lastAttemptAt: timestamp('last_attempt_at'),
     consecutiveFailures: integer('consecutive_failures').default(0).notNull(),
     lastError: text('last_error'),
+    // Next query index to search (term lists above the per-run cap are polled in rotating slices)
+    queryOffset: integer('query_offset').default(0).notNull(),
+    // When the current rotation cycle (offset 0) started; becomes the watermark when the offset wraps
+    cycleStartedAt: timestamp('cycle_started_at'),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.siteId, table.source] }),
@@ -437,7 +463,10 @@ export const reviewRequest = pgTable(
     teamId: text('team_id')
       .notNull()
       .references(() => team.id, { onDelete: 'cascade' }),
+    // Replaced by `redacted:<id>` once the row is anonymised by the retention task.
     email: text('email').notNull(),
+    // Keyed HMAC of the address (see server/utils/marketing-email-hash.ts); survives anonymisation.
+    emailHash: text('email_hash'),
     name: text('name'),
     trigger: text('trigger').$type<ReviewRequestTrigger>().notNull(),
     sourceId: text('source_id'),
@@ -463,8 +492,22 @@ export const reviewRequest = pgTable(
       table.sourceId,
       table.email
     ),
+    // Anonymised rows keep their slot through the hash, so a `shipped` event is never queued twice.
+    uniqueEventHash: uniqueIndex('review_request_event_hash_idx').on(
+      table.projectId,
+      table.trigger,
+      table.sourceId,
+      table.emailHash
+    ),
+    projectEmailHashIdx: index('review_request_project_email_hash_idx').on(table.projectId, table.emailHash),
     projectEmailIdx: index('review_request_project_email_idx').on(table.projectId, table.email, table.createdAt),
     statusIdx: index('review_request_status_idx').on(table.status, table.createdAt),
+    teamTriggerCreatedIdx: index('review_request_team_trigger_created_idx').on(
+      table.teamId,
+      table.trigger,
+      table.createdAt
+    ),
+    projectSentIdx: index('review_request_project_sent_idx').on(table.projectId, table.sentAt),
   })
 )
 
@@ -475,12 +518,15 @@ export const marketingEmailSuppression = pgTable(
     teamId: text('team_id')
       .notNull()
       .references(() => team.id, { onDelete: 'cascade' }),
+    // `hash:<emailHash>` for suppressions written from an anonymised row (the address is gone).
     email: text('email').notNull(),
+    emailHash: text('email_hash'),
     reason: text('reason').$type<EmailSuppressionReason>().notNull(),
     createdAt: createdAtColumn(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.teamId, table.email] }),
+    uniqueHash: uniqueIndex('marketing_email_suppression_hash_idx').on(table.teamId, table.emailHash),
   })
 )
 
@@ -497,6 +543,8 @@ export const testimonial = pgTable(
     authorTitle: text('author_title'),
     authorCompany: text('author_company'),
     authorEmail: text('author_email'),
+    // Keyed HMAC of the author's address; kept after `authorEmail` is cleared. Never returned by any API.
+    authorEmailHash: text('author_email_hash'),
     quote: text('quote').notNull(),
     rating: integer('rating'),
     consentPublic: boolean('consent_public').default(false).notNull(),
@@ -504,6 +552,8 @@ export const testimonial = pgTable(
     featured: boolean('featured').default(false).notNull(),
     moderatedAt: timestamp('moderated_at'),
     moderatedByUserId: text('moderated_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    /** Set when the submitter withdrew public consent through their link */
+    withdrawnAt: timestamp('withdrawn_at'),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
@@ -704,5 +754,9 @@ export const competitorChange = pgTable(
   },
   (table) => ({
     siteDetectedIdx: index('competitor_change_site_detected_idx').on(table.siteId, table.detectedAt),
+    watchIdx: index('competitor_change_watch_idx').on(table.watchId),
+    siteUnseenIdx: index('competitor_change_site_unseen_idx')
+      .on(table.siteId)
+      .where(sql`${table.seenAt} IS NULL`),
   })
 )

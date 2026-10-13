@@ -57,6 +57,8 @@ interface FakeState {
   outcomes: Array<{ id: string; outcome: string; detail?: string; delayMs?: number }>
   released: string[][]
   recentSinceArg: Date | null
+  /** Rows erased or unsubscribed between the claim and the send (what `stillSendable` re-checks) */
+  withdrawnBeforeSend: Set<string>
 }
 
 function makeStore(state: FakeState): ReviewsStore {
@@ -69,6 +71,7 @@ function makeStore(state: FakeState): ReviewsStore {
       settings: state.settings,
     }),
     isSuppressed: async (_team, email) => state.suppressed.has(email),
+    stillSendable: async (id, _team, email) => !state.withdrawnBeforeSend.has(id) && !state.suppressed.has(email),
     hasRecentRequest: async (_p, _e, since) => {
       state.recentSinceArg = since
       return state.recent
@@ -136,6 +139,7 @@ beforeEach(() => {
     outcomes: [],
     released: [],
     recentSinceArg: null,
+    withdrawnBeforeSend: new Set(),
   }
   store = makeStore(state)
 })
@@ -507,6 +511,15 @@ describe('processReviewRequests', () => {
       { id: 'd', outcome: 'skipped', detail: 'disabled' },
       { id: 'e', outcome: 'skipped', detail: 'marketing_off' },
     ])
+  })
+
+  it('re-checks the row and suppression right before the mailer (erased or unsubscribed after the claim)', async () => {
+    // The first guard passes; the person is erased/unsubscribed by the time the mailer would be called.
+    state.withdrawnBeforeSend.add('gone')
+    queue(claimed({ id: 'gone' }))
+    const { sendEmail } = await run()
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(state.outcomes).toEqual([{ id: 'gone', outcome: 'skipped', detail: 'suppressed' }])
   })
 
   describe('same-batch cooldown', () => {

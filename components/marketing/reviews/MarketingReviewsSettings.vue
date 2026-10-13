@@ -1,7 +1,7 @@
 <template>
   <Card data-testid="reviews-settings">
     <CardHeader>
-      <CardTitle>Review and testimonial requests</CardTitle>
+      <CardTitle role="heading" aria-level="2">Review and testimonial requests</CardTitle>
       <CardDescription>
         Ask happy customers for a public review or a short testimonial. Off by default. Every email has an unsubscribe
         link, and an address is contacted at most once per cooldown.

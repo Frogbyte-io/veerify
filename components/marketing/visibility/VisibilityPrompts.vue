@@ -2,7 +2,7 @@
   <Card data-testid="visibility-prompts">
     <CardHeader class="flex flex-row items-start justify-between gap-4 space-y-0">
       <div>
-        <CardTitle>Prompts</CardTitle>
+        <CardTitle role="heading" aria-level="2">Prompts</CardTitle>
         <CardDescription>
           Questions a potential customer might ask an AI assistant. {{ activeCount }} of {{ maxActive }} active.
         </CardDescription>
@@ -35,11 +35,12 @@
       </div>
 
       <template v-else>
-        <form class="flex gap-2" @submit.prevent="add">
+        <form class="flex gap-2" @submit.prevent="add" @keydown.esc="newText = ''">
           <Input
             v-model="newText"
             placeholder="e.g. What is the best tool for collecting user feedback for a small SaaS?"
             maxlength="300"
+            aria-label="New AI visibility prompt"
             data-testid="visibility-prompt-input"
           />
           <Button type="submit" :disabled="saving || newText.trim().length < 10" data-testid="visibility-prompt-add"
@@ -62,7 +63,15 @@
           <div v-for="text in suggestions" :key="text" class="flex items-start justify-between gap-2 text-sm">
             <span>{{ text }}</span>
             <div class="flex shrink-0 gap-1">
-              <Button size="sm" variant="outline" :disabled="saving" @click="accept(text)">Add</Button>
+              <Button
+                size="sm"
+                variant="outline"
+                :disabled="saving"
+                :aria-label="`Add suggestion: ${text}`"
+                @click="accept(text)"
+              >
+                Add
+              </Button>
               <Button size="sm" variant="ghost" aria-label="Dismiss suggestion" @click="dismiss(text)">
                 <Icon name="lucide:x" class="h-4 w-4" />
               </Button>
@@ -88,8 +97,14 @@
               @update:model-value="(value) => toggle(prompt, value)"
             />
             <div class="min-w-0 flex-1">
-              <div v-if="editingId === prompt.id" class="flex gap-2">
-                <Input v-model="editText" maxlength="300" @keydown.enter.prevent="saveEdit(prompt)" />
+              <div v-if="editingId === prompt.id" class="flex gap-2" :data-inline-form="`edit-${prompt.id}`">
+                <Input
+                  v-model="editText"
+                  maxlength="300"
+                  aria-label="Edit prompt text"
+                  @keydown.enter.prevent="saveEdit(prompt)"
+                  @keydown.esc="editingId = null"
+                />
                 <Button size="sm" :disabled="saving || editText.trim().length < 10" @click="saveEdit(prompt)"
                   >Save</Button
                 >
@@ -98,7 +113,13 @@
               <p v-else :class="['text-sm', !prompt.active && 'text-muted-foreground']">{{ prompt.text }}</p>
             </div>
             <div v-if="editingId !== prompt.id" class="flex shrink-0 gap-1">
-              <Button size="sm" variant="ghost" aria-label="Edit prompt" @click="startEdit(prompt)">
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Edit prompt"
+                :data-inline-opener="`edit-${prompt.id}`"
+                @click="startEdit(prompt)"
+              >
                 <Icon name="lucide:pencil" class="h-4 w-4" />
               </Button>
               <Button size="sm" variant="ghost" aria-label="Delete prompt" :disabled="saving" @click="remove(prompt)">
@@ -115,9 +136,12 @@
 <script>
 import { apiErrorMessage } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
+import inlineFormMixin from '~/lib/inline-form-mixin'
 
 export default {
   name: 'VisibilityPrompts',
+
+  mixins: [inlineFormMixin],
 
   props: {
     projectId: { type: String, required: true },
@@ -152,6 +176,10 @@ export default {
   },
 
   watch: {
+    editingId(id) {
+      if (id) this.inlineOpen(`edit-${id}`, () => (this.editingId = null))
+      else this.inlineClose()
+    },
     projectId: {
       immediate: true,
       handler() {

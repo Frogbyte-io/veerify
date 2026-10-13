@@ -132,6 +132,10 @@ import { isModuleOffMessage } from '~/lib/changelog-editor'
 export default {
   name: 'ChangelogPage',
 
+  created() {
+    useHead({ title: 'Changelog' })
+  },
+
   data() {
     return {
       pickerReady: false,

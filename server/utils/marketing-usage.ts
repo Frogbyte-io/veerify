@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, notLike, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { marketingUsage } from '~/server/database/schema/marketing'
 
@@ -32,12 +32,17 @@ export async function getUsage(teamId: string, period: string = currentPeriod())
   const rows = await db
     .select({ metric: marketingUsage.metric, units: marketingUsage.units })
     .from(marketingUsage)
-    .where(and(eq(marketingUsage.teamId, teamId), eq(marketingUsage.period, period)))
+    .where(
+      and(
+        eq(marketingUsage.teamId, teamId),
+        eq(marketingUsage.period, period),
+        // `ratelimit:*` rows are request counters (marketing-db-limit.ts), not billable usage
+        // `ratelimit:*` rows are request counters (marketing-db-limit.ts) and `digest:<date>` rows the
+        // mentions-digest claim ledger (mentions/digest.ts); neither is billable usage
+        notLike(marketingUsage.metric, 'ratelimit:%'),
+        notLike(marketingUsage.metric, 'digest:%')
+      )
+    )
 
-  return Object.fromEntries(
-    rows
-      // `ratelimit:*` rows are request counters (marketing-db-limit.ts), not billable usage
-      .filter((row) => !row.metric.startsWith('ratelimit:'))
-      .map((row) => [row.metric, Number(row.units)])
-  )
+  return Object.fromEntries(rows.map((row) => [row.metric, Number(row.units)]))
 }

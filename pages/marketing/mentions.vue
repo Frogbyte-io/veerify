@@ -239,6 +239,10 @@ const SOURCE_LABELS = { all: 'All sources', hackernews: 'Hacker News', reddit: '
 export default {
   name: 'MarketingMentionsPage',
 
+  created() {
+    useHead({ title: 'Mentions · Marketing' })
+  },
+
   data() {
     return {
       pickerReady: false,

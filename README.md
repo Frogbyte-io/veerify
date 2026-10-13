@@ -290,12 +290,37 @@ PageSpeed keys in Marketing settings; to let them save keys, set `SECRETS_ENCRYP
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                      | Google Search Console data (clicks, impressions, queries). Create a Google OAuth web client with the Search Console API enabled and the redirect URI `<BETTER_AUTH_URL>/api/marketing/google/callback`; needs `SECRETS_ENCRYPTION_KEY` |
 | `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`  | Crawl limits (defaults 50 pages, 3 manual audits per product per day; hard cap 500 pages)                                                                                                                                              |
 
+To rotate `SECRETS_ENCRYPTION_KEY`, move the old value to `SECRETS_ENCRYPTION_KEY_PREVIOUS` and set a new key. Stored keys keep decrypting, but nothing re-encrypts them automatically, so keep the old key there until teams have re-saved their keys. Run exactly one app replica: the scheduled tasks run inside every app process. Deployment details are in `docs/plans/2026-09-21-coolify-deployment.md`.
+
 Hacker News mentions need nothing. Marketing settings shows an integration status panel listing what is
 configured. After setting the variables and restarting, open Marketing settings, go to Integration status and
 choose **Test all** (team admins only). Each integration runs its cheapest real check (key validation, one
 search, an encryption round trip, a Search Console token refresh) and shows what worked or what to fix;
 nothing is generated and no key is shown. Tests are limited to 10 per hour per team, and Test all skips
 integrations that are not configured.
+
+##### Rotating `SECRETS_ENCRYPTION_KEY`
+
+Team API keys and Google refresh tokens are encrypted with `SECRETS_ENCRYPTION_KEY`; each stored value records
+which key wrapped it. To rotate:
+
+1. Generate a new key (`openssl rand -base64 32`).
+2. Set `SECRETS_ENCRYPTION_KEY_PREVIOUS` to the old value (comma-separated if you have several) and
+   `SECRETS_ENCRYPTION_KEY` to the new one, then restart. Old values keep working.
+3. The hourly `marketing:visibility-schedule` task re-encrypts everything still on an old key. Marketing settings
+   > Integration status (Key encryption) shows "N keys are still encrypted with the previous key" until it reaches 0.
+4. Once nothing is left, remove `SECRETS_ENCRYPTION_KEY_PREVIOUS`. A value that cannot be decrypted (for example a
+   lost key) is reported in the server log by id and left alone; teams re-enter that key or reconnect Google.
+
+##### Search Console and site address changes
+
+- Changing a product's site address disconnects Search Console (the Google token is revoked, metrics are deleted)
+  and deletes SEO audits and any competitor watch on the old host. Terms, AI visibility prompts and mentions are
+  brand-level and kept. A connection whose property no longer matches the site address is never synced and is
+  flagged "needs property".
+- Reconnecting, disconnecting and deleting a product or organization revoke the stored Google token (best effort).
+- The Google OAuth `state` is signed, expires after 10 minutes and is single-use: its nonce is recorded in
+  `marketing_usage` (`oauth-nonce:<nonce>`) and a replayed callback is rejected.
 
 #### Bring the stack up
 

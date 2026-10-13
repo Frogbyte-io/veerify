@@ -60,10 +60,16 @@ class MemStore implements AuditStore {
   async getAudit(id: string) {
     return this.audits.find((a) => a.id === id) ?? null
   }
-  async claimDue(exclude: string[]) {
+  async claimDue(exclude: string[], _now?: Date, _leaseUntil?: Date): Promise<AuditRow | null> {
     return (
       this.audits.find((a) => ['queued', 'crawling', 'analyzing'].includes(a.status) && !exclude.includes(a.id)) ?? null
     )
+  }
+  leaseHeld = true
+  leaseExtensions = 0
+  async extendLease(_id?: string, _now?: Date, _leaseUntil?: Date): Promise<boolean> {
+    this.leaseExtensions++
+    return this.leaseHeld
   }
   async updateAudit(id: string, patch: Partial<AuditRow>) {
     const audit = this.audits.find((a) => a.id === id)
@@ -483,5 +489,162 @@ describe('scheduleAudits', () => {
     store.site.verifiedAt = null
     store.candidates = [{ siteId: 's1', lastAuditAt: null }]
     await expect(scheduleAudits(deps())).resolves.toEqual({ created: 0 })
+  })
+})
+
+describe('audit lease while finishing', () => {
+  it('extends the lease before the site-file fetch, before PageSpeed and before writing results', async () => {
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    expect(store.audits[0].status).toBe('done')
+    expect(store.leaseExtensions).toBe(3)
+  })
+
+  it('writes nothing when the lease was already lost (another worker owns the audit)', async () => {
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    store.leaseHeld = false
+    await advanceAudits({}, d)
+    expect(store.audits[0].status).not.toBe('done')
+    expect(store.issues).toHaveLength(0)
+    expect(d.fetchSiteFacts).not.toHaveBeenCalled()
+  })
+
+  it('re-checks after the slow PageSpeed step and does not double-finish when the lease lapsed meanwhile', async () => {
+    process.env.PAGESPEED_API_KEY = 'psi'
+    const d = deps()
+    ;(d.runPageSpeed as any).mockImplementation(async () => {
+      // A second worker claimed the audit while PageSpeed was running
+      store.leaseHeld = false
+      return { performanceScore: 90, lab: {}, field: null, fetchedAt: 'x' }
+    })
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    expect(d.runPageSpeed).toHaveBeenCalled()
+    expect(store.audits[0].status).not.toBe('done')
+    // no delete/insert of issues from the worker that lost the lease
+    expect(store.issues).toHaveLength(0)
+  })
+})
+
+/** Store whose lease behaves like the SQL: stored in siteFacts._runtime.leaseUntil, NULL fails extendLease */
+class LeasingStore extends MemStore {
+  override async claimDue(exclude: string[], now = new Date(), leaseUntil = new Date()): Promise<AuditRow | null> {
+    const audit = this.audits.find((a) => {
+      if (!['queued', 'crawling', 'analyzing'].includes(a.status) || exclude.includes(a.id)) return false
+      const held = (a.siteFacts as { _runtime?: { leaseUntil?: string } } | null)?._runtime?.leaseUntil
+      return !held || new Date(held).getTime() < now.getTime()
+    })
+    if (!audit) return null
+    const facts = (audit.siteFacts ?? {}) as { _runtime?: Record<string, unknown> }
+    audit.siteFacts = { ...facts, _runtime: { ...facts._runtime, leaseUntil: leaseUntil.toISOString() } } as never
+    return { ...audit }
+  }
+  override async extendLease(id?: string, now = new Date(), leaseUntil = new Date()): Promise<boolean> {
+    this.leaseExtensions++
+    const audit = this.audits.find((a) => a.id === id)
+    const facts = audit?.siteFacts as { _runtime?: { leaseUntil?: string } } | null
+    const held = facts?._runtime?.leaseUntil
+    if (!audit || !held || new Date(held).getTime() < now.getTime()) return false
+    audit.siteFacts = { ...facts, _runtime: { ...facts._runtime, leaseUntil: leaseUntil.toISOString() } } as never
+    return true
+  }
+}
+
+describe('basic audit lease', () => {
+  it('finishes in one tick: the interim facts keep the lease so finishing can extend it', async () => {
+    store = new LeasingStore()
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    expect(store.audits[0].status).toBe('done')
+    expect(store.issues.length).toBeGreaterThan(0)
+    expect(store.leaseExtensions).toBe(3)
+  })
+})
+
+describe('audit lanes', () => {
+  const seedAudits = async (d: Partial<RunnerDeps>, n: number) => {
+    for (let i = 0; i < n; i++) {
+      store.audits.push({
+        id: `a${i}`,
+        siteId: 's1',
+        projectId: 'p1',
+        mode: 'basic',
+        status: 'queued',
+        trigger: 'manual',
+        createdAt: new Date(clock + i),
+        pageLimit: 3,
+        pagesFetched: 0,
+        siteFacts: null,
+      } as unknown as AuditRow)
+    }
+    void d
+  }
+
+  it('advances up to 4 audits at the same time and never the same audit twice', async () => {
+    store = new LeasingStore()
+    const d = deps()
+    await seedAudits(d, 10)
+    let inFlight = 0
+    let max = 0
+    const calls: string[] = []
+    ;(d.fetchHomePage as any).mockImplementation(async () => {
+      inFlight++
+      max = Math.max(max, inFlight)
+      calls.push('home')
+      await new Promise((r) => setTimeout(r, 5))
+      inFlight--
+      return { url: 'https://example.com/', statusCode: 200, html: HTML('Home') }
+    })
+    const result = await advanceAudits({}, d)
+    expect(result.processed).toBe(10)
+    expect(calls).toHaveLength(10)
+    expect(max).toBe(4)
+    expect(store.audits.every((a) => a.status === 'done')).toBe(true)
+  })
+
+  it('honours a lane override', async () => {
+    store = new LeasingStore()
+    const d = deps()
+    await seedAudits(d, 5)
+    let inFlight = 0
+    let max = 0
+    ;(d.fetchHomePage as any).mockImplementation(async () => {
+      inFlight++
+      max = Math.max(max, inFlight)
+      await new Promise((r) => setTimeout(r, 5))
+      inFlight--
+      return { url: 'https://example.com/', statusCode: 200, html: HTML('Home') }
+    })
+    await advanceAudits({ lanes: 2 }, d)
+    expect(max).toBe(2)
+  })
+})
+
+describe('cloud instance-key guard in audits', () => {
+  it('ignores the instance PageSpeed key on the cloud, uses it with MARKETING_ALLOW_INSTANCE_KEYS=true', async () => {
+    process.env.APP_DEPLOYMENT_MODE = 'cloud'
+    process.env.PAGESPEED_API_KEY = 'psi'
+    const d = deps()
+    await startAudit({ siteId: 's1', trigger: 'manual' }, d)
+    await advanceAudits({}, d)
+    expect(d.runPageSpeed).not.toHaveBeenCalled()
+    expect((store.audits[0].siteFacts as any).pagespeed).toEqual({ status: 'not_configured' })
+
+    store.audits[0].status = 'done'
+    process.env.MARKETING_ALLOW_INSTANCE_KEYS = 'true'
+    ;(d.runPageSpeed as any).mockResolvedValue({ performanceScore: 90, lab: {}, field: null, fetchedAt: 'x' })
+    await startAudit({ siteId: 's1', trigger: 'schedule' }, d)
+    await advanceAudits({}, d)
+    expect(d.runPageSpeed).toHaveBeenCalledWith('https://example.com/', 'psi', { strategy: 'mobile' })
+  })
+
+  it('runs audits in basic mode on the cloud when only the instance Firecrawl key exists', async () => {
+    process.env.APP_DEPLOYMENT_MODE = 'cloud'
+    process.env.FIRECRAWL_API_KEY = 'instance'
+    const audit = await startAudit({ siteId: 's1', trigger: 'manual' }, deps())
+    expect(audit.mode).toBe('basic')
   })
 })

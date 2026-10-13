@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   credentials: [] as Array<Record<string, unknown>>,
   secrets: true,
+  outdated: 0 as number | null,
 }))
 
 vi.mock('~/server/utils/team-credentials', () => ({
   listTeamCredentials: vi.fn(async () => state.credentials),
 }))
+vi.mock('~/server/services/marketing/secrets-rotation', () => ({ countOutdatedSecrets: async () => state.outdated }))
 vi.mock('~/server/utils/secrets', () => ({ isSecretsConfigured: () => state.secrets }))
 
 const { getIntegrationStatus } = await import('~/server/utils/marketing-integrations')
@@ -27,6 +29,7 @@ beforeEach(() => {
   for (const key of ENV_KEYS) vi.stubEnv(key, '')
   state.credentials = []
   state.secrets = true
+  state.outdated = 0
 })
 
 afterEach(() => {
@@ -43,6 +46,19 @@ const credential = (provider: string, status: string, lastError: string | null =
 })
 
 describe('getIntegrationStatus', () => {
+  it('reports how many secrets are still on a previous encryption key', async () => {
+    state.outdated = 3
+    expect((await byId()).secrets.detail).toBe(
+      '3 keys are still encrypted with the previous key — keep SECRETS_ENCRYPTION_KEY_PREVIOUS until this reaches 0'
+    )
+    state.outdated = 1
+    expect((await byId()).secrets.detail).toContain('1 key is still encrypted with the previous key')
+    state.outdated = 0
+    expect((await byId()).secrets.detail).toBe('API keys are encrypted at rest')
+    state.outdated = null
+    expect((await byId()).secrets.detail).toBe('API keys are encrypted at rest')
+  })
+
   it('lists every integration with a capability', async () => {
     const all = await getIntegrationStatus('t1')
     expect(all.map((i) => i.id)).toEqual([
@@ -86,12 +102,21 @@ describe('getIntegrationStatus', () => {
     const bare = await byId()
     expect(bare.google).toMatchObject({ label: 'Search Console', state: 'not_configured' })
     expect(bare.google.detail).toContain('GOOGLE_CLIENT_ID')
+    expect(bare.google.redirectUri).toBeNull()
+    // The redirect URI is known from BETTER_AUTH_URL alone, so a self-hoster can register it first
+    vi.stubEnv('BETTER_AUTH_URL', 'https://app.example.com/')
+    const urlOnly = await byId()
+    expect(urlOnly.google.state).toBe('not_configured')
+    expect(urlOnly.google.redirectUri).toBe('https://app.example.com/api/marketing/google/callback')
+    expect(urlOnly.google.detail).toContain('https://app.example.com/api/marketing/google/callback')
+    expect(urlOnly.google.detail).not.toContain('{BETTER_AUTH_URL}')
     vi.stubEnv('GOOGLE_CLIENT_ID', 'id')
     vi.stubEnv('GOOGLE_CLIENT_SECRET', 'secret')
     vi.stubEnv('BETTER_AUTH_URL', 'https://app.example.com')
     const ready = await byId()
     expect(ready.google).toMatchObject({ state: 'ready', source: 'instance' })
     expect(ready.google.detail).toContain('https://app.example.com/api/marketing/google/callback')
+    expect(ready.google.redirectUri).toBe('https://app.example.com/api/marketing/google/callback')
     expect(ready.google.detail).not.toContain('secret')
   })
 

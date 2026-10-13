@@ -338,6 +338,10 @@ export async function processReviewRequests(
       const since = new Date(clock().getTime() - settings.cooldownDays * DAY_MS)
       if (await store.hasRecentSentRequest(row.projectId, row.email, since, row.id)) return await skip('cooldown')
 
+      // Last look right before the mailer: the row may have been erased or the address unsubscribed
+      // since the claim and the checks above.
+      if (!(await store.stillSendable(row.id, row.teamId, row.email))) return await skip('suppressed')
+
       const token = encodeURIComponent(row.token)
       let failure: { kind: FailureKind; message: string; logged: Record<string, unknown> } | null = null
       try {
@@ -352,6 +356,7 @@ export async function processReviewRequests(
             url: `${baseUrl}/api/marketing/r/${token}/go?p=${encodeURIComponent(platform.id)}`,
           })),
           testimonialUrl: settings.askForTestimonial ? `${baseUrl}/testimonial/${token}` : null,
+          withdrawUrl: settings.askForTestimonial ? `${baseUrl}/testimonial/${token}?withdraw=1` : null,
           unsubscribeUrl: `${baseUrl}/api/marketing/r/${token}/unsubscribe`,
         })
         // sendEmail reports transport failures as `{ accepted: false }` instead of throwing.

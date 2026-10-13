@@ -26,6 +26,7 @@
 import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
+import { isRedactedEmail } from '~/server/utils/marketing-email-hash'
 import { reviewRequest } from '~/server/database/schema/marketing'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
@@ -77,8 +78,10 @@ export default defineEventHandler(async (event) => {
     .limit(query.limit + 1)
 
   const hasMore = rows.length > query.limit
-  const items = hasMore ? rows.slice(0, query.limit) : rows
-  const last = items[items.length - 1]
+  const page = hasMore ? rows.slice(0, query.limit) : rows
+  const last = page[page.length - 1]
+  // Anonymised rows (older than the retention window) have no address left to show.
+  const items = page.map((row) => ({ ...row, email: isRedactedEmail(row.email) ? null : row.email }))
 
   return createSuccessResponse({
     items,

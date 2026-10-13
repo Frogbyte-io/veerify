@@ -9,6 +9,8 @@ import {
   type SocialPost,
   type SocialSource,
 } from '~/server/services/social-sources'
+import type { MentionSource } from '~/server/database/schema/marketing'
+import { marketingConfig } from '~/server/utils/marketing-config'
 import { recordUsage } from '~/server/utils/marketing-usage'
 import { publishMentionsNew } from '~/server/utils/marketing-realtime'
 import { createLogger } from '~/server/utils/logger'
@@ -23,6 +25,22 @@ export const OVERLAP_MS = 60 * 60 * 1000
 export const MAX_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
 export const RETENTION_MS = 180 * 24 * 60 * 60 * 1000
 export const QUERY_LIMIT = 50
+/** Wall-clock budget of one poll run; the task fires every 5 minutes, so a run never overlaps the next */
+export const POLL_BUDGET_MS = 45_000
+/** Default sites polled at the same time (`MARKETING_MENTIONS_CONCURRENCY`, capped at 32); a site polls its sources in parallel */
+export const POLL_CONCURRENCY = 16
+/** A source that failed this many times in a row skips past a failing query instead of retrying it forever */
+export const POISON_QUERY_FAILURES = 2
+/** Queries sent per (site, source) per run; sites with more rotate through them across runs */
+export const MAX_QUERIES_PER_RUN = 20
+/** Sites selected per run (the budget is the real limiter; this bounds the SELECT) */
+export const MAX_SITES_PER_RUN = 400
+/**
+ * A (site, source) cursor is claimed for polling by stamping `last_attempt_at`; another replica can
+ * only claim it again after this long, which is shorter than the poll interval but longer than a
+ * run's budget.
+ */
+export const CLAIM_LEASE_MS = 15 * 60 * 1000
 export const EXCERPT_LENGTH = 500
 const RETENTION_BATCH = 500
 const MAX_RETENTION_BATCHES = 20
@@ -34,7 +52,20 @@ export interface PollSummary {
   errors: number
 }
 
+export interface PollOptions {
+  now?: Date
+  maxSites?: number
+  /** Wall-clock budget; no new site/source/query is started once spent (default 45 s) */
+  budgetMs?: number
+  /** Sites polled concurrently (default MARKETING_MENTIONS_CONCURRENCY, 16) */
+  concurrency?: number
+  /** Query cap per (site, source) per run (default 20) */
+  maxQueriesPerRun?: number
+}
+
 export interface PollDeps {
+  /** Wall clock for the budget (injectable for tests) */
+  clock?: () => number
   store?: MentionsStore
   sources?: SocialSource[]
   recordUsage?: (teamId: string, metric: string, units: number) => Promise<void>
@@ -64,6 +95,56 @@ export function isDue(cursor: SourceCursorRow | undefined, now: Date): boolean {
   const attempt = lastAttemptOf(cursor)
   if (!attempt) return true
   return now.getTime() - attempt.getTime() >= retryDelayMs(cursor?.consecutiveFailures ?? 0)
+}
+
+/**
+ * Which slice of a site's queries this run covers. Sites with at most `maxPerRun` queries always
+ * poll all of them. Larger sites rotate through the list using the persisted `queryOffset` of the
+ * (site, source) cursor: each successful poll searches the next `maxPerRun` queries from the offset
+ * and advances it (see `planRotation`), so no slice is ever skipped, however irregular the gaps
+ * between runs. An offset past the end of the list (the term list shrank) restarts at 0.
+ *
+ * Very large term lists simply poll each slice less often: a site with N slices re-searches a given
+ * query every N polls of that source (N * 30 minutes at the default interval), never less.
+ */
+export function selectQuerySlice<T>(
+  queries: T[],
+  offset: number,
+  maxPerRun: number = MAX_QUERIES_PER_RUN
+): { slice: T[]; start: number; slices: number } {
+  const slices = Math.max(1, Math.ceil(queries.length / maxPerRun))
+  const start = offset > 0 && offset < queries.length ? offset : 0
+  return { slice: queries.slice(start, start + maxPerRun), start, slices }
+}
+
+/**
+ * Rotation state to store after polling one slice.
+ *
+ * `processed` is how many queries from `start` are done (searched, or deliberately skipped); the next
+ * offset is `start + processed`, so a failed query is retried first next time. The search-window
+ * watermark only moves when the offset wraps past the last query: it moves to the start of the cycle
+ * that just finished (the first slice's poll time), so every slice of the next cycle searches a
+ * window reaching back to when its query was last covered. A cycle whose start time is unknown
+ * (rows from before rotation state) holds the watermark, and the next cycle records it.
+ */
+export function planRotation(input: {
+  start: number
+  processed: number
+  queryCount: number
+  now: Date
+  previous: Date | null
+  since: Date
+  cycleStartedAt: Date | null
+}): { queryOffset: number; watermark: Date; cycleStartedAt: Date | null; wrapped: boolean } {
+  const held = input.previous ?? input.since
+  const cycleStartedAt = input.start === 0 ? input.now : input.cycleStartedAt
+  const next = input.start + input.processed
+  if (input.queryCount === 0 || next >= input.queryCount) {
+    const cycle = cycleStartedAt ?? held
+    const watermark = new Date(Math.min(input.now.getTime(), Math.max(held.getTime(), cycle.getTime())))
+    return { queryOffset: 0, watermark, cycleStartedAt: null, wrapped: true }
+  }
+  return { queryOffset: next, watermark: held, cycleStartedAt, wrapped: false }
 }
 
 export function buildExcerpt(title: string | null, text: string): string {
@@ -104,23 +185,48 @@ function describeError(error: unknown): string {
   return 'server: unexpected error'
 }
 
-export async function pollMentions(
-  options: { now?: Date; maxSites?: number } = {},
-  deps: PollDeps = {}
-): Promise<PollSummary> {
+/**
+ * Polls due (site, source) pairs within a wall-clock budget, a few sites at a time.
+ *
+ * Multi-replica safety: before polling a (site, source) the cursor is claimed atomically
+ * (`store.claimCursor`: stamp `last_attempt_at` only if it is unset or older than CLAIM_LEASE_MS), so
+ * two replicas never poll the same pair; the loser skips it.
+ *
+ * Rate limits: Reddit and Bluesky limit per app/account and Hacker News per IP, so a rate-limit
+ * response from a source is global to this instance, not specific to the site that hit it. The source
+ * is therefore skipped for the rest of the run (continuing would only burn requests against the same
+ * limit and extend the ban). Trade-off: one noisy site that trips the limit also pauses the source
+ * for sites later in the queue; those and the site that hit the limit are left untouched (the claim is
+ * released, no failure counted, watermark and offset unchanged) and go first next run.
+ * A site that fails for any other reason only backs off itself. Individual query failures are caught
+ * per query: the other queries' results are kept and only the failed query is retried next run.
+ */
+export async function pollMentions(options: PollOptions = {}, deps: PollDeps = {}): Promise<PollSummary> {
   const now = options.now ?? new Date()
-  const maxSites = options.maxSites ?? 20
+  const maxSites = options.maxSites ?? MAX_SITES_PER_RUN
+  const clock = deps.clock ?? Date.now
+  const deadline = clock() + (options.budgetMs ?? POLL_BUDGET_MS)
+  const concurrency = Math.max(1, options.concurrency ?? marketingConfig.mentionsConcurrency)
+  const maxQueries = Math.max(1, options.maxQueriesPerRun ?? MAX_QUERIES_PER_RUN)
   const store = deps.store ?? dbMentionsStore
   const sources = (deps.sources ?? SOCIAL_SOURCES).filter((source) => source.isConfigured())
   const usage = deps.recordUsage ?? recordUsage
   const publishNew = deps.publishNew ?? publishMentionsNew
   const summary: PollSummary = { sitesPolled: 0, sourcesPolled: 0, inserted: 0, errors: 0 }
 
-  const verified = (await store.loadVerifiedSites()).filter(isMarketingOn)
+  // Due selection happens in SQL (verified, both switches on, has terms, at least one source due),
+  // least recently attempted first, LIMITed; the checks below re-verify it against the loaded rows.
+  const candidates = sources.length
+    ? await store.loadDueSites({ now, sourceIds: sources.map((s) => s.id), limit: maxSites })
+    : []
+  const verified = candidates.filter(isMarketingOn)
   const terms = await store.loadTerms(verified.map((site) => site.siteId))
   const withTerms = verified.filter((site) => (terms.get(site.siteId)?.length ?? 0) > 0)
-  const cursors = await store.loadCursors(withTerms.map((site) => site.siteId))
-  const cursorRow = (siteId: string, source: string) => cursors.find((c) => c.siteId === siteId && c.source === source)
+  const cursors = new Map<string, SourceCursorRow>()
+  for (const cursor of await store.loadCursors(withTerms.map((site) => site.siteId))) {
+    cursors.set(`${cursor.siteId}:${cursor.source}`, cursor)
+  }
+  const cursorRow = (siteId: string, source: string) => cursors.get(`${siteId}:${source}`)
 
   // Least-recently-attempted sites first so a backlog drains fairly across runs. Ordering uses
   // the attempt time, not the watermark, so a failing source cannot hog the head of the queue.
@@ -135,76 +241,147 @@ export async function pollMentions(
     .slice(0, maxSites)
 
   const rateLimited = new Set<string>()
+  const expired = () => clock() >= deadline
 
-  for (const { site, dueSources } of due) {
-    const siteTerms = terms.get(site.siteId) ?? []
-    const queries = buildQueries(siteTerms)
-    let polledAny = false
-    let siteInserted = 0
+  const siteInserted = new Map<string, number>()
 
-    for (const source of dueSources) {
-      if (rateLimited.has(source.id)) continue
-      const existing = cursorRow(site.siteId, source.id)
-      const previous = existing?.lastPolledAt ?? null
-      const since = computeSince(previous, now)
-      const found = new Map<string, MentionInsert>()
-      let requests = 0
-      let failure: string | null = null
+  const pollSource = async (
+    site: (typeof due)[number]['site'],
+    source: SocialSource,
+    queries: ReturnType<typeof buildQueries>,
+    siteTerms: MatchTerm[]
+  ): Promise<number | null> => {
+    if (expired() || rateLimited.has(source.id)) return null
+    const existing = cursorRow(site.siteId, source.id)
+    const previous = existing?.lastPolledAt ?? null
+    const previousAttempt = lastAttemptOf(existing)
+    const since = computeSince(previous, now)
 
+    // Another replica (or an overlapping run) may have taken this pair since we selected it
+    let claimed = false
+    try {
+      claimed = await store.claimCursor(site.siteId, source.id as MentionSource, now, since, CLAIM_LEASE_MS)
+    } catch (error) {
+      summary.errors += 1
+      logger.error('Failed to claim mentions cursor', {
+        siteId: site.siteId,
+        source: source.id,
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+    }
+    if (!claimed) return null
+
+    const { slice, start } = selectQuerySlice(queries, existing?.queryOffset ?? 0, maxQueries)
+    const found = new Map<string, MentionInsert>()
+    let requests = 0
+    let attempted = 0
+    let succeeded = 0
+    let firstFailed: number | null = null
+    let failure: string | null = null
+    let rateLimit = false
+    const priorFailures = existing?.consecutiveFailures ?? 0
+
+    for (let i = 0; i < slice.length; i++) {
+      // Budget spent, or a concurrent site just tripped this source's (app-wide) rate limit
+      if (expired() || rateLimited.has(source.id)) break
+      requests += 1
       try {
-        for (const { query } of queries) {
-          requests += 1
-          const posts = await source.search({ query, since, limit: QUERY_LIMIT })
-          for (const post of posts) {
-            if (found.has(post.externalId)) continue
-            const row = toMentionRow(site.siteId, post, siteTerms)
-            if (row) found.set(post.externalId, row)
+        const posts = await source.search({ query: slice[i].query, since, limit: QUERY_LIMIT })
+        for (const post of posts) {
+          if (found.has(post.externalId)) continue
+          const row = toMentionRow(site.siteId, post, siteTerms)
+          if (row) found.set(post.externalId, row)
+        }
+        succeeded += 1
+        attempted = i + 1
+      } catch (error) {
+        const kind = error instanceof SocialSourceError ? error.kind : 'unknown'
+        failure ??= describeError(error)
+        logger.warn('Mentions query failed', { siteId: site.siteId, source: source.id, kind })
+        if (kind === 'rate_limit') {
+          rateLimit = true
+          rateLimited.add(source.id)
+          break
+        }
+        // Credentials / configuration problems fail every query of the source: stop early
+        if (kind === 'auth' || kind === 'not_configured') {
+          firstFailed ??= i
+          break
+        }
+        firstFailed ??= i
+        attempted = i + 1
+      }
+    }
+    // Retry from the first failed query next run. But a query that keeps failing while others succeed
+    // is query-specific (not an outage), so after a few failed polls rotate past it instead of stalling.
+    let processed = firstFailed ?? attempted
+    if (firstFailed !== null && succeeded > 0 && priorFailures >= POISON_QUERY_FAILURES) processed = attempted
+    if (failure) summary.errors += 1
+
+    try {
+      // Results of the queries that did succeed are kept even when others failed or limits hit
+      if (found.size > 0) {
+        const inserted = await store.insertMentions([...found.values()])
+        summary.inserted += inserted
+        siteInserted.set(site.siteId, (siteInserted.get(site.siteId) ?? 0) + inserted)
+      }
+      if (rateLimit || requests === 0) {
+        // Leave the cursor as it was: no failure counted, watermark and offset unchanged. Also when the
+        // claim was taken but no request was issued (budget spent / source rate limited by another site),
+        // so the pair is due again at once instead of waiting a full interval.
+        await store.releaseClaim(site.siteId, source.id as MentionSource, now, previousAttempt)
+      } else if (requests > 0) {
+        const plan = planRotation({
+          start,
+          processed,
+          queryCount: queries.length,
+          now,
+          previous,
+          since,
+          cycleStartedAt: existing?.cycleStartedAt ?? null,
+        })
+        const lastError = failure ? (succeeded > 0 ? `partial: ${failure}` : failure) : null
+        await store.saveCursor(
+          site.siteId,
+          source.id as MentionSource,
+          plan.watermark,
+          lastError?.slice(0, 200) ?? null,
+          {
+            at: now,
+            consecutiveFailures: failure ? priorFailures + 1 : 0,
+            queryOffset: plan.queryOffset,
+            cycleStartedAt: plan.cycleStartedAt,
           }
-        }
-      } catch (error) {
-        failure = describeError(error)
-        summary.errors += 1
-        if (error instanceof SocialSourceError && error.kind === 'rate_limit') rateLimited.add(source.id)
-        logger.warn('Mentions source failed', {
-          siteId: site.siteId,
-          source: source.id,
-          kind: error instanceof SocialSourceError ? error.kind : 'unknown',
-        })
+        )
       }
-
-      try {
-        if (found.size > 0) {
-          const inserted = await store.insertMentions([...found.values()])
-          summary.inserted += inserted
-          siteInserted += inserted
-        }
-        // On failure the watermark stays put (or starts at the window start), so the
-        // next run re-searches the same window; inserts are idempotent.
-        await store.saveCursor(site.siteId, source.id, failure ? (previous ?? since) : now, failure, {
-          at: now,
-          consecutiveFailures: failure ? (existing?.consecutiveFailures ?? 0) + 1 : 0,
-        })
-        if (requests > 0) await usage(site.teamId, `mentions:${source.id}:requests`, requests)
-      } catch (error) {
-        summary.errors += 1
-        logger.error('Failed to store mentions', {
-          siteId: site.siteId,
-          source: source.id,
-          error: error instanceof Error ? error.message : 'unknown',
-        })
-        continue
-      }
-
-      summary.sourcesPolled += 1
-      polledAny = true
+      if (requests > 0) await usage(site.teamId, `mentions:${source.id}:requests`, requests)
+    } catch (error) {
+      summary.errors += 1
+      logger.error('Failed to store mentions', {
+        siteId: site.siteId,
+        source: source.id,
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+      return null
     }
 
-    if (polledAny) summary.sitesPolled += 1
+    summary.sourcesPolled += 1
+    return found.size
+  }
+
+  const pollSite = async ({ site, dueSources }: (typeof due)[number]) => {
+    const siteTerms = terms.get(site.siteId) ?? []
+    const queries = buildQueries(siteTerms)
+
+    // A site's sources are independent services with separate limits: poll them in parallel
+    const results = await Promise.all(dueSources.map((source) => pollSource(site, source, queries, siteTerms)))
+    if (results.some((r) => r !== null)) summary.sitesPolled += 1
 
     // One thin event per site per run, only when rows were really inserted (conflicts excluded).
-    if (siteInserted > 0) {
+    const count = siteInserted.get(site.siteId) ?? 0
+    if (count > 0) {
       try {
-        await publishNew({ teamId: site.teamId, projectId: site.projectId, count: siteInserted })
+        await publishNew({ teamId: site.teamId, projectId: site.projectId, count })
       } catch (error) {
         logger.warn('Mentions realtime publish failed', {
           siteId: site.siteId,
@@ -213,6 +390,17 @@ export async function pollMentions(
       }
     }
   }
+
+  // Simple pool: `concurrency` workers pull the next site until the queue or the budget is exhausted
+  let next = 0
+  const worker = async () => {
+    while (!expired()) {
+      const entry = due[next++]
+      if (!entry) return
+      await pollSite(entry)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, due.length) }, worker))
 
   try {
     await pruneOldMentions(store, now)
