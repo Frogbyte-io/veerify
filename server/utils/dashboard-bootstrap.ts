@@ -1,7 +1,8 @@
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { organization, team, teamMember } from '~/server/database/schema/auth'
-import { feedback, notification, project } from '~/server/database/schema/feedback'
+import { member, organization, team, teamMember } from '~/server/database/schema/auth'
+import { feedback, project } from '~/server/database/schema/feedback'
+import { notification } from '~/server/database/schema/notifications'
 import type { AuthSession } from '~/server/utils/auth-middleware'
 import { resolveActiveTeamForSession } from '~/server/utils/team-context'
 
@@ -30,6 +31,21 @@ export async function listTeamsForUser(userId: string) {
     .innerJoin(team, eq(teamMember.teamId, team.id))
     .where(eq(teamMember.userId, userId))
     .orderBy(asc(team.createdAt), asc(team.id))
+}
+
+export async function listOrganizationsForUser(userId: string) {
+  return db
+    .select({
+      id: organization.id,
+      name: organization.name,
+      slug: organization.slug,
+      logo: organization.logo,
+      role: member.role,
+    })
+    .from(member)
+    .innerJoin(organization, eq(member.organizationId, organization.id))
+    .where(eq(member.userId, userId))
+    .orderBy(asc(organization.name), asc(organization.id))
 }
 
 export async function getWorkspaceStatsForTeam(teamId: string) {
@@ -129,7 +145,10 @@ export async function getUnreadNotificationCount(userId: string) {
 }
 
 export async function getDashboardBootstrapData(session: AuthSession) {
-  const teams = await listTeamsForUser(session.user.id)
+  const [teams, organizations] = await Promise.all([
+    listTeamsForUser(session.user.id),
+    listOrganizationsForUser(session.user.id),
+  ])
   const hasWorkspace = teams.length > 0
   const activeTeam = hasWorkspace ? await resolveActiveTeamForSession(session) : null
 
@@ -146,6 +165,7 @@ export async function getDashboardBootstrapData(session: AuthSession) {
     session,
     teamContext: {
       teams,
+      organizations,
       activeTeam,
       activeOrganization: activeOrganization[0] ?? null,
     },

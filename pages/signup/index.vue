@@ -52,7 +52,7 @@
                         type="text"
                         placeholder="John Doe"
                         required
-                        :disabled="isLoading"
+                        :disabled="isLoading || !isHydrated"
                       />
                     </div>
                     <div class="grid gap-3">
@@ -63,7 +63,7 @@
                         type="email"
                         placeholder="m@example.com"
                         required
-                        :disabled="isLoading"
+                        :disabled="isLoading || !isHydrated"
                       />
                     </div>
                     <div class="grid gap-3">
@@ -74,10 +74,10 @@
                         type="password"
                         placeholder="Create a strong password"
                         required
-                        :disabled="isLoading"
+                        :disabled="isLoading || !isHydrated"
                       />
                     </div>
-                    <Button type="submit" class="w-full" :disabled="isLoading">
+                    <Button type="submit" class="w-full" :disabled="isLoading || !isHydrated">
                       {{ isLoading ? 'Creating account...' : 'Create account' }}
                     </Button>
                   </div>
@@ -124,7 +124,14 @@ export default {
       password: '',
       isLoading: false,
       error: '',
+      // See the note in pages/login/index.vue: a click before hydration
+      // triggers a native form submit that silently reloads the page and
+      // discards what was typed.
+      isHydrated: false,
     }
+  },
+  mounted() {
+    this.isHydrated = true
   },
   computed: {
     loginLink() {

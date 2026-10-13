@@ -1,0 +1,1138 @@
+// Support platform schema.
+//
+// Stage 01 of the support platform plan: customer identity — `contact`, the
+// identifiers a contact is known by (`contactIdentity`), the companies they
+// belong to (`supportCompany`), and explicit links from a contact to other
+// Veerify entities (`contactLink`). Stage 02 adds the inbox and conversation
+// tables: `supportInbox`, `supportInboxAddress`, `supportInboxMember`,
+// `conversation`, `supportCounter`, `conversationMessage`,
+// `conversationAttachment`, `conversationParticipant`, `supportTag`,
+// `conversationTag`, and `supportEmailEvent`. Stage 04 adds
+// `supportOutboundDelivery` and `supportDeliveryEvent`.
+//
+// `contactLink` points outward at entities like `feedback` by
+// (entityType, entityId) — a loose reference, not a foreign key. Feedback
+// never references a contact; see "Why contacts and feedback stay separate"
+// in `docs/plans/2026-08-11-support-platform/design.md`.
+//
+// `conversation.projectId` and `supportInboxAddress.projectId` are real
+// foreign keys into `feedback.ts`'s `project` table (support → feedback,
+// the permitted direction — see delta D-27). `conversation.linkedFeedbackId`
+// likewise references `feedback.ts`'s `feedback` table. `feedback.ts` itself
+// is never edited to support this schema.
+//
+// See `docs/plans/2026-08-11-support-platform/design.md` → Data model →
+// Stage 01 and Stage 02, and delta D-27 in `deltas.md` for the
+// `supportInboxAddress` / `conversation.projectId` addition.
+
+import {
+  pgTable,
+  text,
+  timestamp,
+  jsonb,
+  uniqueIndex,
+  index,
+  boolean,
+  integer,
+  doublePrecision,
+  date,
+  check,
+  primaryKey,
+  foreignKey,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { user, team } from './auth'
+import { project, feedback } from './feedback'
+
+// Support companies - the Zendesk "organization" concept, named to avoid
+// collision with the existing `organization` table. Declared before `contact`
+// because `contact.companyId` references it.
+export const supportCompany = pgTable(
+  'support_company',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    domain: text('domain'),
+    attributes: jsonb('attributes').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique domain within a team (NULLs distinct - multiple domain-less companies are fine)
+    uniqueTeamDomain: uniqueIndex('support_company_team_domain_idx').on(table.teamId, table.domain),
+    // Unique name within a team
+    uniqueTeamName: uniqueIndex('support_company_team_name_idx').on(table.teamId, table.name),
+  })
+)
+
+// Contacts - a customer, scoped to a team. Deliberately separate from
+// `feedback` (see file header): joining a pseudonymous public post to a
+// private support identity would be a privacy and GDPR-erasure problem.
+export const contact = pgTable(
+  'contact',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    name: text('name'),
+    email: text('email'),
+    phone: text('phone'),
+    avatarUrl: text('avatar_url'),
+    companyId: text('company_id').references(() => supportCompany.id, { onDelete: 'set null' }),
+    // Set when the contact has a Veerify account
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
+    attributes: jsonb('attributes').$type<Record<string, any>>(),
+    blockedAt: timestamp('blocked_at'),
+    // Self-reference for contact merge: set on the loser row, which is retained as a tombstone
+    mergedIntoContactId: text('merged_into_contact_id').references((): AnyPgColumn => contact.id, {
+      onDelete: 'set null',
+    }),
+    lastSeenAt: timestamp('last_seen_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique email within a team (NULLs distinct - multiple email-less contacts are fine and intended)
+    uniqueTeamEmail: uniqueIndex('contact_team_email_idx').on(table.teamId, table.email),
+    // Index for team timelines
+    teamCreatedAtIdx: index('contact_team_created_at_idx').on(table.teamId, table.createdAt),
+    // Index for querying contacts by company
+    companyIdx: index('contact_company_idx').on(table.companyId),
+    // Index for querying contacts by linked user account
+    userIdx: index('contact_user_idx').on(table.userId),
+  })
+)
+
+// Contact identities - the identifiers a contact is known by. Separate table
+// so contact merge is repointing rows plus a tombstone, not a destructive
+// overwrite, and so new channels add identifier kinds for free.
+export const contactIdentity = pgTable(
+  'contact_identity',
+  {
+    id: text('id').primaryKey(),
+    contactId: text('contact_id')
+      .notNull()
+      .references(() => contact.id, { onDelete: 'cascade' }),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    // 'email' | 'user' | 'anon_session' | 'chat_token'
+    kind: text('kind').notNull(),
+    value: text('value').notNull(),
+    verifiedAt: timestamp('verified_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique identifier within a team - makes an email (or other identifier) resolve
+    // to at most one contact per team, and makes contact merge tractable
+    uniqueTeamKindValue: uniqueIndex('contact_identity_team_kind_value_idx').on(table.teamId, table.kind, table.value),
+    // Index for querying all identities of a contact
+    contactIdx: index('contact_identity_contact_idx').on(table.contactId),
+  })
+)
+
+// Contact links - explicit, agent-confirmed links from a contact to other
+// entities. Lives in the support schema and points outward by
+// (entityType, entityId), a loose reference - NOT a foreign key - so
+// `feedback.ts` stays untouched. Feedback must never reference a contact.
+export const contactLink = pgTable(
+  'contact_link',
+  {
+    id: text('id').primaryKey(),
+    contactId: text('contact_id')
+      .notNull()
+      .references(() => contact.id, { onDelete: 'cascade' }),
+    // 'feedback' | 'conversation'
+    entityType: text('entity_type').notNull(),
+    // Loose reference into the target entity's table - no foreign key
+    entityId: text('entity_id').notNull(),
+    // 'auto' | 'agent'
+    source: text('source').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // Unique link per contact/entity pair
+    uniqueContactEntity: uniqueIndex('contact_link_contact_entity_idx').on(
+      table.contactId,
+      table.entityType,
+      table.entityId
+    ),
+    // Index for looking up links by target entity (e.g. from a feedback item)
+    entityIdx: index('contact_link_entity_idx').on(table.entityType, table.entityId),
+  })
+)
+
+// Team-scoped support policy. This intentionally does not live in generic
+// team JSON: support privacy controls need an explicit ownership boundary.
+export const supportTeamSettings = pgTable('support_team_settings', {
+  teamId: text('team_id')
+    .primaryKey()
+    .references(() => team.id, { onDelete: 'cascade' }),
+  autoLinkFeedback: boolean('auto_link_feedback').default(false).notNull(),
+  // Reporting dates are bucketed using this team-owned calendar. UTC keeps
+  // existing teams deterministic until an administrator chooses another IANA
+  // timezone.
+  reportingTimezone: text('reporting_timezone').default('UTC').notNull(),
+  createdAt: timestamp('created_at')
+    .$defaultFn(() => new Date())
+    .notNull(),
+  updatedAt: timestamp('updated_at')
+    .$defaultFn(() => new Date())
+    .notNull(),
+})
+
+// ---------------------------------------------------------------------------
+// Stage 02 — inbox and conversations
+// See `docs/plans/2026-08-11-support-platform/design.md` → Data model →
+// Stage 02, and delta D-27 for `supportInboxAddress` / `conversation.projectId`.
+// ---------------------------------------------------------------------------
+
+// Support inboxes - one shared inbox per team ("support@acme.com" as the
+// primary sending identity). What the inbox actually *receives* on is
+// governed by `supportInboxAddress` (delta D-27), which lets one inbox map
+// several receiving addresses to different products.
+export const supportInbox = pgTable(
+  'support_inbox',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    // Optional single-product link for teams that don't need multi-address routing
+    projectId: text('project_id').references(() => project.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    // 'email' | 'chat' | 'whatsapp' | … (Stage 02 ships 'email' only)
+    type: text('type').default('email').notNull(),
+    // Provider, inbound address, credential references - never raw secrets
+    channelConfig: jsonb('channel_config').$type<Record<string, any>>(),
+    // Primary *sending* identity - distinct from the receiving addresses in supportInboxAddress
+    emailAddress: text('email_address'),
+    forwardAddress: text('forward_address'),
+    fromName: text('from_name'),
+    signature: text('signature'),
+    autoReplyEnabled: boolean('auto_reply_enabled').default(false).notNull(),
+    autoReplyTemplate: text('auto_reply_template'),
+    defaultAssigneeUserId: text('default_assignee_user_id').references(() => user.id, { onDelete: 'set null' }),
+    isEnabled: boolean('is_enabled').default(true).notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueTeamSlug: uniqueIndex('support_inbox_team_slug_idx').on(table.teamId, table.slug),
+    // Required as the referenced key for team-scoped child records. Keeping
+    // the team in the key prevents a child row from pairing this inbox with
+    // a different team's identifier.
+    uniqueTeamId: uniqueIndex('support_inbox_team_id_idx').on(table.teamId, table.id),
+    uniqueEmailAddress: uniqueIndex('support_inbox_email_address_idx').on(table.emailAddress),
+    teamIdx: index('support_inbox_team_idx').on(table.teamId),
+    projectIdx: index('support_inbox_project_idx').on(table.projectId),
+  })
+)
+
+// Receiving addresses for an inbox, and the product each maps to (delta D-27).
+// Email carries no product signal on its own; a customer mailing
+// `billing@acme.com` attributes to Billing only because that address is
+// mapped here. `projectId` null means unattributed.
+export const supportInboxAddress = pgTable(
+  'support_inbox_address',
+  {
+    id: text('id').primaryKey(),
+    inboxId: text('inbox_id')
+      .notNull()
+      .references(() => supportInbox.id, { onDelete: 'cascade' }),
+    address: text('address').notNull(),
+    projectId: text('project_id').references(() => project.id, { onDelete: 'set null' }),
+    isPrimary: boolean('is_primary').default(false).notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueAddress: uniqueIndex('support_inbox_address_address_idx').on(table.address),
+    inboxIdx: index('support_inbox_address_inbox_idx').on(table.inboxId),
+    projectIdx: index('support_inbox_address_project_idx').on(table.projectId),
+  })
+)
+
+// Support permissions live here, not on `teamMember.role` (delta D-28 -
+// `teamMember.role` semantics are unchanged).
+export const supportInboxMember = pgTable(
+  'support_inbox_member',
+  {
+    id: text('id').primaryKey(),
+    inboxId: text('inbox_id')
+      .notNull()
+      .references(() => supportInbox.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    // 'agent' | 'supervisor' | 'admin'
+    role: text('role').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueInboxUser: uniqueIndex('support_inbox_member_inbox_user_idx').on(table.inboxId, table.userId),
+    userIdx: index('support_inbox_member_user_idx').on(table.userId),
+    validRole: check('support_inbox_member_role_check', sql`${table.role} in ('agent','supervisor','admin')`),
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Stage 06 — business hours and SLA policy
+// ---------------------------------------------------------------------------
+
+export type BusinessHoursWindow = { open: string; close: string }
+export type BusinessHoursWeeklySchedule = Record<string, BusinessHoursWindow[]>
+
+export const businessHours = pgTable(
+  'business_hours',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    timezone: text('timezone').notNull(),
+    weeklySchedule: jsonb('weekly_schedule').$type<BusinessHoursWeeklySchedule>().notNull(),
+    holidays: jsonb('holidays').$type<string[]>().notNull(),
+    isDefault: boolean('is_default').default(false).notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamIdx: index('business_hours_team_idx').on(table.teamId),
+    defaultIdx: index('business_hours_default_idx').on(table.teamId, table.isDefault),
+  })
+)
+
+export type SlaConditions = {
+  inboxIds?: string[]
+  priorities?: string[]
+  tagIds?: string[]
+  companyIds?: string[]
+}
+
+export type SlaEscalation = {
+  notifyAssignee?: boolean
+  notifySupervisor?: boolean
+  raisePriority?: string | null
+}
+
+export const slaPolicy = pgTable(
+  'sla_policy',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    businessHoursId: text('business_hours_id').references(() => businessHours.id, { onDelete: 'set null' }),
+    conditions: jsonb('conditions').$type<SlaConditions>().notNull(),
+    escalation: jsonb('escalation').$type<SlaEscalation>().notNull(),
+    isDefault: boolean('is_default').default(false).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamIdx: index('sla_policy_team_idx').on(table.teamId),
+    orderIdx: index('sla_policy_team_order_idx').on(table.teamId, table.sortOrder),
+  })
+)
+
+export const slaTarget = pgTable(
+  'sla_target',
+  {
+    id: text('id').primaryKey(),
+    slaPolicyId: text('sla_policy_id')
+      .notNull()
+      .references(() => slaPolicy.id, { onDelete: 'cascade' }),
+    metric: text('metric').notNull(),
+    priority: text('priority'),
+    targetMinutes: integer('target_minutes').notNull(),
+  },
+  (table) => ({
+    // PostgreSQL treats NULLs as distinct in a unique index. Keep the
+    // priority-specific targets unique while enforcing one catch-all target
+    // per policy and metric separately.
+    uniquePolicyMetricPriority: uniqueIndex('sla_target_policy_metric_priority_idx')
+      .on(table.slaPolicyId, table.metric, table.priority)
+      .where(sql`${table.priority} is not null`),
+    uniquePolicyMetricCatchAll: uniqueIndex('sla_target_policy_metric_catch_all_idx')
+      .on(table.slaPolicyId, table.metric)
+      .where(sql`${table.priority} is null`),
+    policyIdx: index('sla_target_policy_idx').on(table.slaPolicyId),
+  })
+)
+
+// Per-team `displayId` allocation for conversations. A row per team,
+// incremented with `SELECT … FOR UPDATE` inside the same transaction as the
+// conversation insert - not a sequence, because the number must be per-team
+// and gap-free enough to read as a ticket number.
+export const supportCounter = pgTable('support_counter', {
+  teamId: text('team_id')
+    .primaryKey()
+    .references(() => team.id, { onDelete: 'cascade' }),
+  nextConversationDisplayId: integer('next_conversation_display_id').default(1).notNull(),
+})
+
+// Conversations - the core support ticket entity.
+export const conversation = pgTable(
+  'conversation',
+  {
+    id: text('id').primaryKey(),
+    inboxId: text('inbox_id')
+      .notNull()
+      .references(() => supportInbox.id, { onDelete: 'restrict' }),
+    // Denormalized for team-scoped queries and isolation checks
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    contactId: text('contact_id')
+      .notNull()
+      .references(() => contact.id, { onDelete: 'restrict' }),
+    // Resolved product - from the receiving address's mapping, or an agent override (delta D-27)
+    projectId: text('project_id').references(() => project.id, { onDelete: 'set null' }),
+    displayId: integer('display_id').notNull(),
+    subject: text('subject'),
+    // 'open' | 'pending' | 'resolved' | 'snoozed' | 'closed'
+    status: text('status').default('open').notNull(),
+    // 'low' | 'normal' | 'high' | 'urgent', nullable
+    priority: text('priority'),
+    assigneeUserId: text('assignee_user_id').references(() => user.id, { onDelete: 'set null' }),
+    linkedFeedbackId: text('linked_feedback_id').references(() => feedback.id, { onDelete: 'set null' }),
+    slaPolicyId: text('sla_policy_id').references(() => slaPolicy.id, { onDelete: 'set null' }),
+    firstResponseDueAt: timestamp('first_response_due_at'),
+    nextResponseDueAt: timestamp('next_response_due_at'),
+    resolutionDueAt: timestamp('resolution_due_at'),
+    slaPausedAt: timestamp('sla_paused_at'),
+    slaPausedMinutes: integer('sla_paused_minutes').default(0).notNull(),
+    // Root RFC Message-ID, used to thread replies onto this conversation
+    channelThreadKey: text('channel_thread_key'),
+    firstResponseAt: timestamp('first_response_at'),
+    resolvedAt: timestamp('resolved_at'),
+    snoozedUntil: timestamp('snoozed_until'),
+    lastActivityAt: timestamp('last_activity_at'),
+    lastCustomerReplyAt: timestamp('last_customer_reply_at'),
+    lastAgentReplyAt: timestamp('last_agent_reply_at'),
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueTeamDisplayId: uniqueIndex('conversation_team_display_id_idx').on(table.teamId, table.displayId),
+    teamStatusActivityIdx: index('conversation_team_status_activity_idx').on(
+      table.teamId,
+      table.status,
+      table.lastActivityAt
+    ),
+    inboxStatusIdx: index('conversation_inbox_status_idx').on(table.inboxId, table.status),
+    assigneeStatusIdx: index('conversation_assignee_status_idx').on(table.assigneeUserId, table.status),
+    contactCreatedAtIdx: index('conversation_contact_created_at_idx').on(table.contactId, table.createdAt),
+    channelThreadKeyIdx: index('conversation_channel_thread_key_idx').on(table.channelThreadKey),
+    projectStatusIdx: index('conversation_project_status_idx').on(table.projectId, table.status),
+    slaPolicyIdx: index('conversation_sla_policy_idx').on(table.slaPolicyId),
+  })
+)
+
+// Immutable conversation status transitions. The denormalized ownership
+// columns keep reporting tenant/inbox scoped without joining the mutable
+// conversation row; all references cascade with their owners.
+export const conversationStatusEvent = pgTable(
+  'conversation_status_event',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    inboxId: text('inbox_id')
+      .notNull()
+      .references(() => supportInbox.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    fromStatus: text('from_status'),
+    toStatus: text('to_status').notNull(),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'set null' }),
+    occurredAt: timestamp('occurred_at').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamOccurredAtIdx: index('conversation_status_event_team_occurred_at_idx').on(table.teamId, table.occurredAt),
+    conversationOccurredAtIdx: index('conversation_status_event_conversation_occurred_at_idx').on(
+      table.conversationId,
+      table.occurredAt
+    ),
+    statusTransitionCheck: check(
+      'conversation_status_event_status_transition_check',
+      sql`(${table.fromStatus} IS NULL OR ${table.fromStatus} IN ('open', 'pending', 'resolved', 'snoozed', 'closed')) AND ${table.toStatus} IN ('open', 'pending', 'resolved', 'snoozed', 'closed')`
+    ),
+  })
+)
+
+export const slaBreach = pgTable(
+  'sla_breach',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    metric: text('metric').notNull(),
+    breachedAt: timestamp('breached_at').notNull(),
+    notifiedAt: timestamp('notified_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueConversationMetric: uniqueIndex('sla_breach_conversation_metric_idx').on(table.conversationId, table.metric),
+    conversationIdx: index('sla_breach_conversation_idx').on(table.conversationId),
+  })
+)
+
+// Per-agent read cursor for a conversation. The row itself means "read at
+// least once"; deleting it implements an explicit mark-unread without a
+// second source of truth. The user-first primary key supports inbox list
+// joins/counts for the current agent while enforcing one cursor per pair.
+export const conversationReadState = pgTable(
+  'conversation_read_state',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    lastReadAt: timestamp('last_read_at').notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.conversationId] }),
+    conversationIdx: index('conversation_read_state_conversation_idx').on(table.conversationId),
+  })
+)
+
+// Messages within a conversation. `kind = 'activity'` stores system events
+// ("assigned to Bob", "status → resolved") as messages rather than in a side
+// table - this is what lets the Chatwoot-style thread render actions inline
+// with replies from a single ordered query.
+export const conversationMessage = pgTable(
+  'conversation_message',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    // 'incoming' | 'outgoing' | 'note' | 'activity'
+    kind: text('kind').notNull(),
+    body: text('body'),
+    // Sanitized on ingest - never render raw provider HTML
+    bodyHtml: text('body_html'),
+    // 'contact' | 'agent' | 'system'
+    senderKind: text('sender_kind').notNull(),
+    senderContactId: text('sender_contact_id').references(() => contact.id, { onDelete: 'set null' }),
+    senderUserId: text('sender_user_id').references(() => user.id, { onDelete: 'set null' }),
+    isPrivate: boolean('is_private').default(false).notNull(),
+    channelMessageId: text('channel_message_id'),
+    inReplyTo: text('in_reply_to'),
+    channelHeaders: jsonb('channel_headers').$type<Record<string, any>>(),
+    // 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced'
+    deliveryStatus: text('delivery_status').default('pending').notNull(),
+    deliveryError: text('delivery_error'),
+    metadata: jsonb('metadata').$type<Record<string, any>>(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    conversationCreatedAtIdx: index('conversation_message_conversation_created_at_idx').on(
+      table.conversationId,
+      table.createdAt
+    ),
+    channelMessageIdIdx: index('conversation_message_channel_message_id_idx').on(table.channelMessageId),
+    deliveryStatusIdx: index('conversation_message_delivery_status_idx').on(table.deliveryStatus),
+  })
+)
+
+// Attachments on a message. Reuses `server/utils/storage` and the existing
+// presign flow.
+export const conversationAttachment = pgTable(
+  'conversation_attachment',
+  {
+    id: text('id').primaryKey(),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => conversationMessage.id, { onDelete: 'cascade' }),
+    storageKey: text('storage_key').notNull(),
+    fileName: text('file_name').notNull(),
+    contentType: text('content_type'),
+    sizeBytes: integer('size_bytes'),
+    isInline: boolean('is_inline').default(false).notNull(),
+    contentId: text('content_id'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    messageIdx: index('conversation_attachment_message_idx').on(table.messageId),
+  })
+)
+
+// Server-owned outbound upload session. The temporary object is completed and
+// finalized before a canonical conversation attachment is created; cleanup
+// fields make every orphan state durable and retryable.
+export const supportAttachmentUpload = pgTable(
+  'support_attachment_upload',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    tempStorageKey: text('temp_storage_key').notNull(),
+    finalStorageKey: text('final_storage_key'),
+    fileName: text('file_name').notNull(),
+    requestedContentType: text('requested_content_type').notNull(),
+    requestedSizeBytes: integer('requested_size_bytes').notNull(),
+    storedContentType: text('stored_content_type'),
+    actualSizeBytes: integer('actual_size_bytes'),
+    objectVersion: text('object_version'),
+    status: text('status').default('pending').notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    uploadedAt: timestamp('uploaded_at'),
+    consumedAt: timestamp('consumed_at'),
+    tempDeletedAt: timestamp('temp_deleted_at'),
+    finalizeLeaseExpiresAt: timestamp('finalize_lease_expires_at'),
+    cleanupAttemptCount: integer('cleanup_attempt_count').default(0).notNull(),
+    cleanupLastError: text('cleanup_last_error'),
+    messageId: text('message_id').references(() => conversationMessage.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    conversationStatusIdx: index('support_attachment_upload_conversation_status_idx').on(
+      table.conversationId,
+      table.status
+    ),
+    userStatusIdx: index('support_attachment_upload_user_status_idx').on(table.userId, table.status),
+    statusExpiryIdx: index('support_attachment_upload_status_expiry_idx').on(table.status, table.expiresAt),
+    validStatus: check(
+      'support_attachment_upload_status_check',
+      sql`${table.status} in ('pending','uploaded','finalizing','cleanup_required','consumed','expired')`
+    ),
+  })
+)
+
+// CCs and watchers on a conversation. Either `contactId` or `userId` is set,
+// never both - a CC'd customer or an internal follower.
+export const conversationParticipant = pgTable(
+  'conversation_participant',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    contactId: text('contact_id').references(() => contact.id, { onDelete: 'cascade' }),
+    userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }),
+    // 'cc' | 'follower'
+    role: text('role').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueConversationContact: uniqueIndex('conversation_participant_conversation_contact_idx').on(
+      table.conversationId,
+      table.contactId
+    ),
+    uniqueConversationUser: uniqueIndex('conversation_participant_conversation_user_idx').on(
+      table.conversationId,
+      table.userId
+    ),
+  })
+)
+
+// Team-scoped tags. `design.md` describes this pair only as "team-scoped
+// tags and their join table" without a column list; columns below follow
+// the existing `supportCompany` (team-scoped, named entity) and
+// `contactLink` (join-style, unique compound index) conventions in this file.
+export const supportTag = pgTable(
+  'support_tag',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    color: text('color'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueTeamName: uniqueIndex('support_tag_team_name_idx').on(table.teamId, table.name),
+  })
+)
+
+// Join table between conversations and tags.
+export const conversationTag = pgTable(
+  'conversation_tag',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    tagId: text('tag_id')
+      .notNull()
+      .references(() => supportTag.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueConversationTag: uniqueIndex('conversation_tag_conversation_tag_idx').on(table.conversationId, table.tagId),
+    tagIdx: index('conversation_tag_tag_idx').on(table.tagId),
+  })
+)
+
+// Inbound idempotency and audit. A unique key on its own is not enough: a
+// failed claim must be replayable without duplicating a processed event -
+// `status` + `leaseExpiresAt` support a claim/lease pattern on top of it.
+export const supportEmailEvent = pgTable(
+  'support_email_event',
+  {
+    id: text('id').primaryKey(),
+    // Nullable, because the row is keyed on the *delivery*, not on an inbox:
+    // it is claimed as soon as the provider signature verifies, which is
+    // before parsing has revealed which address the mail was sent to, and
+    // mail to an unrecognised address never resolves to an inbox at all.
+    // Stage 03 requires recording both of those cases - "no match → record the
+    // event with an error and return 200", and the same for a team with
+    // support disabled - which a NOT NULL column makes impossible.
+    // `resultConversationId` below is nullable for exactly this reason
+    // already; this is the same category of field (delta D-35).
+    inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    providerEventId: text('provider_event_id').notNull(),
+    rawStorageKey: text('raw_storage_key'),
+    // 'processing' | 'processed' | 'failed'
+    status: text('status').default('processing').notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at'),
+    processedAt: timestamp('processed_at'),
+    resultConversationId: text('result_conversation_id').references(() => conversation.id, {
+      onDelete: 'set null',
+    }),
+    error: text('error'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueProviderEventId: uniqueIndex('support_email_event_provider_event_id_idx').on(
+      table.provider,
+      table.providerEventId
+    ),
+    inboxIdx: index('support_email_event_inbox_idx').on(table.inboxId),
+  })
+)
+
+// Durable outbound-delivery outbox (Stage 04, delta D-21). Message insertion
+// and outbox enqueue are one transaction; a worker claims and retries
+// delivery, so a request-lifetime background promise is never the only copy
+// of "this needs to be sent". `payload` carries storage/credential
+// *references* only, never resolved bytes - see `EmailAttachment` vs
+// `OutboundAttachment` in `server/utils/outbound-delivery.ts`, which resolves
+// a stored key to bytes only inside the worker.
+//
+// `kind` is 'email' for everything Stage 04 sends; the column exists so
+// later stages (CSAT, social) reuse this table rather than building their
+// own outbox, per design.md.
+export const supportOutboundDelivery = pgTable(
+  'support_outbound_delivery',
+  {
+    id: text('id').primaryKey(),
+    messageId: text('message_id')
+      .notNull()
+      .references(() => conversationMessage.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    provider: text('provider'),
+    providerAccountKey: text('provider_account_key'),
+    providerMessageId: text('provider_message_id'),
+    payload: jsonb('payload').$type<Record<string, any>>().notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    // 'pending' | 'sent' | 'failed'
+    status: text('status').default('pending').notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at'),
+    nextAttemptAt: timestamp('next_attempt_at'),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    // One queued delivery per (message, kind) - the same insert that fails on
+    // conflict here is what makes re-running the endpoint's transaction safe.
+    uniqueMessageKind: uniqueIndex('support_outbound_delivery_message_kind_idx').on(table.messageId, table.kind),
+    uniqueIdempotencyKey: uniqueIndex('support_outbound_delivery_idempotency_key_idx').on(table.idempotencyKey),
+    statusIdx: index('support_outbound_delivery_status_idx').on(table.status),
+  })
+)
+
+// Delivery/bounce webhook idempotency (Stage 04). Deliberately its own table,
+// not `supportEmailEvent`: that table's unique key collapses to one row per
+// *email*, correct for inbound (a provider retry must never become a second
+// ticket) but wrong here, because one outbound message legitimately produces
+// several delivery events (Delivery, then Open, then possibly Bounce or
+// SpamComplaint). Sharing the key would silently swallow every event after
+// the first - including the hard bounce that acceptance criterion 6 exists
+// to catch. The delivery webhook gets its own table. See delta D-35 for why
+// `messageId` below is nullable for the same reason `supportEmailEvent.inboxId` is.
+export const supportDeliveryEvent = pgTable(
+  'support_delivery_event',
+  {
+    id: text('id').primaryKey(),
+    messageId: text('message_id').references(() => conversationMessage.id, { onDelete: 'set null' }),
+    provider: text('provider').notNull(),
+    providerAccountKey: text('provider_account_key').default('legacy').notNull(),
+    providerEventId: text('provider_event_id').notNull(),
+    correlationKey: text('correlation_key'),
+    // Provider-normalized: 'delivered' | 'bounced' | 'opened' | 'spam_complaint' | …
+    recordType: text('record_type').notNull(),
+    recipient: text('recipient').notNull(),
+    // 'processing' | 'processed' | 'failed'
+    status: text('status').default('processing').notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at'),
+    processedAt: timestamp('processed_at'),
+    occurredAt: timestamp('occurred_at'),
+    error: text('error'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueProviderEventId: uniqueIndex('support_delivery_event_provider_event_id_idx').on(
+      table.provider,
+      table.providerAccountKey,
+      table.providerEventId
+    ),
+    messageIdx: index('support_delivery_event_message_idx').on(table.messageId),
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Stage 08 — CSAT surveys
+// ---------------------------------------------------------------------------
+
+export type CsatScale = 'csat_5' | 'thumbs' | 'nps_10'
+export type CsatSendTrigger = 'on_resolve' | 'on_close'
+
+export const csatSurvey = pgTable(
+  'csat_survey',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    // NULL means the survey applies to every inbox owned by the team.
+    inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    scale: text('scale').$type<CsatScale>().notNull(),
+    question: text('question').notNull(),
+    followUpQuestion: text('follow_up_question'),
+    sendTrigger: text('send_trigger').$type<CsatSendTrigger>().notNull(),
+    delayMinutes: integer('delay_minutes').default(0).notNull(),
+    // Controls the per-contact survey fatigue guard. Thirty days is the
+    // default; teams can choose a shorter or longer window in settings.
+    contactCooldownMinutes: integer('contact_cooldown_minutes').default(43200).notNull(),
+    isEnabled: boolean('is_enabled').default(false).notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamIdx: index('csat_survey_team_idx').on(table.teamId),
+    inboxIdx: index('csat_survey_inbox_idx').on(table.inboxId),
+    enabledIdx: index('csat_survey_enabled_idx').on(table.teamId, table.isEnabled),
+    validScale: check('csat_survey_scale_check', sql`${table.scale} in ('csat_5','thumbs','nps_10')`),
+    validTrigger: check('csat_survey_trigger_check', sql`${table.sendTrigger} in ('on_resolve','on_close')`),
+    validDelay: check('csat_survey_delay_check', sql`${table.delayMinutes} >= 0`),
+    validCooldown: check('csat_survey_cooldown_check', sql`${table.contactCooldownMinutes} >= 0`),
+  })
+)
+
+export const csatResponse = pgTable(
+  'csat_response',
+  {
+    id: text('id').primaryKey(),
+    surveyId: text('survey_id')
+      .notNull()
+      .references(() => csatSurvey.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    contactId: text('contact_id')
+      .notNull()
+      .references(() => contact.id, { onDelete: 'cascade' }),
+    agentUserId: text('agent_user_id').references(() => user.id, { onDelete: 'set null' }),
+    // Snapshot the survey scale at dispatch time so later survey edits cannot
+    // reinterpret a historical response.
+    scale: text('scale').$type<CsatScale>().notNull(),
+    rating: integer('rating'),
+    comment: text('comment'),
+    // Opaque token used by the public rating endpoint. The rating is carried
+    // in the URL query string, so each option has a distinct URL while one
+    // response row still enforces single-use rating semantics.
+    token: text('token').notNull(),
+    sentAt: timestamp('sent_at').notNull(),
+    respondedAt: timestamp('responded_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueConversation: uniqueIndex('csat_response_conversation_idx').on(table.conversationId),
+    uniqueToken: uniqueIndex('csat_response_token_idx').on(table.token),
+    surveyCreatedAtIdx: index('csat_response_survey_created_at_idx').on(table.surveyId, table.createdAt),
+    contactSentAtIdx: index('csat_response_contact_sent_at_idx').on(table.contactId, table.sentAt),
+    validRating: check(
+      'csat_response_rating_check',
+      sql`${table.rating} is null or (${table.rating} >= 0 and ${table.rating} <= 10)`
+    ),
+    validScale: check('csat_response_scale_check', sql`${table.scale} in ('csat_5','thumbs','nps_10')`),
+  })
+)
+
+// Team-scoped canned responses (Stage 05a). Deliberately no inboxId: the
+// approved MVP has one shared inbox per team, so inbox scope would be redundant.
+export const cannedResponse = pgTable(
+  'canned_response',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    shortcode: text('shortcode').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueTeamShortcode: uniqueIndex('canned_response_team_shortcode_idx').on(table.teamId, table.shortcode),
+  })
+)
+
+// ---------------------------------------------------------------------------
+// Stage 07 — automation rules
+// ---------------------------------------------------------------------------
+
+export type AutomationRuleTrigger = 'conversation_created' | 'conversation_updated' | 'message_created' | 'time_based'
+
+export type AutomationConditionOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'in'
+  | 'not_in'
+  | 'contains'
+  | 'not_contains'
+  | 'starts_with'
+  | 'ends_with'
+  | 'matches'
+  | 'greater_than'
+  | 'greater_than_or_equal'
+  | 'less_than'
+  | 'less_than_or_equal'
+  | (string & {})
+
+export type AutomationCondition = {
+  field: string
+  operator?: AutomationConditionOperator
+  value?: unknown
+}
+
+export type AutomationConditionGroup = {
+  all?: AutomationConditionNode[]
+  any?: AutomationConditionNode[]
+}
+
+export type AutomationConditionNode = AutomationCondition | AutomationConditionGroup
+
+export type AutomationRuleAction = {
+  type: string
+  [key: string]: unknown
+}
+
+export const automationRule = pgTable(
+  'automation_rule',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    // NULL means the rule applies to every inbox owned by the team.
+    inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    trigger: text('trigger').$type<AutomationRuleTrigger>().notNull(),
+    conditions: jsonb('conditions').$type<AutomationConditionGroup>().notNull(),
+    actions: jsonb('actions').$type<AutomationRuleAction[]>().notNull(),
+    isEnabled: boolean('is_enabled').default(true).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
+    runCount: integer('run_count').default(0).notNull(),
+    lastRunAt: timestamp('last_run_at'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    teamIdx: index('automation_rule_team_idx').on(table.teamId),
+    inboxIdx: index('automation_rule_inbox_idx').on(table.inboxId),
+    enabledOrderIdx: index('automation_rule_enabled_order_idx').on(table.teamId, table.isEnabled, table.sortOrder),
+    validTrigger: check(
+      'automation_rule_trigger_check',
+      sql`${table.trigger} in ('conversation_created','conversation_updated','message_created','time_based')`
+    ),
+  })
+)
+
+export const automationRuleRun = pgTable(
+  'automation_rule_run',
+  {
+    id: text('id').primaryKey(),
+    ruleId: text('rule_id')
+      .notNull()
+      .references(() => automationRule.id, { onDelete: 'cascade' }),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'cascade' }),
+    // 'applied' | 'skipped' | 'failed'
+    status: text('status').notNull(),
+    matchedConditions: jsonb('matched_conditions').$type<AutomationConditionGroup>().notNull(),
+    appliedActions: jsonb('applied_actions').$type<AutomationRuleAction[]>().notNull(),
+    error: text('error'),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    ruleCreatedAtIdx: index('automation_rule_run_rule_created_at_idx').on(table.ruleId, table.createdAt),
+    conversationCreatedAtIdx: index('automation_rule_run_conversation_created_at_idx').on(
+      table.conversationId,
+      table.createdAt
+    ),
+    validStatus: check('automation_rule_run_status_check', sql`${table.status} in ('applied','skipped','failed')`),
+  })
+)
+
+// Daily, mergeable reporting buckets. Agent-attributed rows deliberately
+// cascade when the agent is deleted; they must not turn into a colliding
+// team/inbox-wide (NULL agent) bucket.
+export const supportMetricDaily = pgTable(
+  'support_metric_daily',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    inboxId: text('inbox_id')
+      .notNull()
+      .references(() => supportInbox.id, { onDelete: 'cascade' }),
+    agentUserId: text('agent_user_id').references(() => user.id, { onDelete: 'cascade' }),
+    date: date('date', { mode: 'string' }).notNull(),
+    timezone: text('timezone').notNull(),
+    metric: text('metric').notNull(),
+    value: doublePrecision('value').notNull(),
+    sampleCount: integer('sample_count').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueNullAgent: uniqueIndex('support_metric_daily_team_inbox_date_tz_metric_null_idx')
+      .on(table.teamId, table.inboxId, table.date, table.timezone, table.metric)
+      .where(sql`${table.agentUserId} is null`),
+    uniqueAgent: uniqueIndex('support_metric_daily_team_inbox_agent_date_tz_metric_idx')
+      .on(table.teamId, table.inboxId, table.agentUserId, table.date, table.timezone, table.metric)
+      .where(sql`${table.agentUserId} is not null`),
+    teamDateIdx: index('support_metric_daily_team_date_idx').on(table.teamId, table.date),
+    teamInboxOwnershipFk: foreignKey({
+      columns: [table.teamId, table.inboxId],
+      foreignColumns: [supportInbox.teamId, supportInbox.id],
+      name: 'support_metric_daily_team_inbox_ownership_fk',
+    }).onDelete('cascade'),
+    sampleCountCheck: check('support_metric_daily_sample_count_check', sql`${table.sampleCount} >= 0`),
+    finiteValueCheck: check(
+      'support_metric_daily_finite_value_check',
+      sql`${table.value} = ${table.value} and ${table.value} < 'Infinity'::double precision and ${table.value} > '-Infinity'::double precision`
+    ),
+  })
+)

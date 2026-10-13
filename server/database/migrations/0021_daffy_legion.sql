@@ -1,0 +1,1 @@
+ALTER TABLE "support_team_settings" ALTER COLUMN "auto_link_feedback" SET DEFAULT false;

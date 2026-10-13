@@ -124,7 +124,7 @@ test('product settings tabs warm shared data and avoid repeated fetches on revis
 
   await categoriesTab.click()
   await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#categories$`))
-  await expect(page.getByText('Feedback Categories')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Feedback Categories' })).toBeVisible()
   await expect(page.locator('[data-testid^="product-category-item-"]').first()).toBeVisible()
 
   const categoriesRequestsAfterFirstOpen = requestCounts.categories
@@ -140,13 +140,13 @@ test('product settings tabs warm shared data and avoid repeated fetches on revis
   await expect(page.getByText('Shared Cache Category')).toBeVisible()
 
   await statusesTab.click()
-  await expect(page.getByText('Feedback Statuses')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Feedback Statuses' })).toBeVisible()
 
   const statusesRequestsAfterFirstOpen = requestCounts.statuses
   await generalTab.click()
   await expect(page.getByRole('heading', { name: 'General Settings' })).toBeVisible()
   await statusesTab.click()
-  await expect(page.getByText('Feedback Statuses')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Feedback Statuses' })).toBeVisible()
   expect(requestCounts.statuses).toBe(statusesRequestsAfterFirstOpen)
 
   await feedbackTab.click()
@@ -165,11 +165,12 @@ test('product settings tabs warm shared data and avoid repeated fetches on revis
   expect(requestCounts.feedback).toBe(feedbackRequestsAfterFirstOpen)
 
   await githubTab.click()
-  await expect(page.getByText('GitHub Integration')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'GitHub Integration' })).toBeVisible()
   await expect(page.locator('[data-testid="github-connect"]')).toHaveText(/Connected/)
   await expect.poll(() => requestCounts.githubRepos, { timeout: 10_000 }).toBe(1)
 
   await page.goto(`/products/${projectSlug}#categories`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
   await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#categories$`))
-  await expect(page.getByText('Feedback Categories')).toBeVisible()
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page.getByRole('heading', { name: 'Feedback Categories' })).toBeVisible()
 })

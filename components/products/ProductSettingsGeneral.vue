@@ -48,7 +48,7 @@
               When enabled, anyone can view and submit feedback without logging in.
             </p>
           </div>
-          <Switch v-model="form.isPublic" />
+          <Switch v-model="form.isPublic" aria-label="Public Board" />
         </div>
 
         <div v-if="publicUrl" class="rounded-md bg-muted p-3 space-y-2">

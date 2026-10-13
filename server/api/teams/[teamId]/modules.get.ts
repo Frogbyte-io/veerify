@@ -1,0 +1,58 @@
+/**
+ * @openapi
+ * /api/teams/{teamId}/modules:
+ *   get:
+ *     tags: [Teams]
+ *     summary: Get which Veerify modules a team has enabled
+ *     operationId: getTeamModuleSettings
+ *     parameters:
+ *       - in: path
+ *         name: teamId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Module settings and whether the caller may change them }
+ *       403: { description: Not a member of this team }
+ */
+import { and, eq } from 'drizzle-orm'
+import { db } from '~/server/database/drizzle'
+import { teamMember } from '~/server/database/schema/auth'
+import { teamModuleSettings } from '~/server/database/schema/teams'
+import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { DEFAULT_TEAM_MODULES, pickTeamModules } from '~/lib/modules'
+
+export default defineEventHandler(async (event) => {
+  const { session } = await requireAuthWithResolvedTeam(event)
+
+  const teamId = getRouterParam(event, 'teamId')
+  if (!teamId) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Team ID is required'),
+    })
+  }
+
+  const [membership] = await db
+    .select({ id: teamMember.id, role: teamMember.role })
+    .from(teamMember)
+    .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, session.user.id)))
+    .limit(1)
+
+  if (!membership) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden',
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You are not a member of this team'),
+    })
+  }
+
+  const [row] = await db.select().from(teamModuleSettings).where(eq(teamModuleSettings.teamId, teamId)).limit(1)
+
+  return createSuccessResponse({
+    canManage: membership.role === 'admin',
+    // A team with no row reads as the column defaults (delta D-31).
+    modules: row ? pickTeamModules(row) : { ...DEFAULT_TEAM_MODULES },
+  })
+})

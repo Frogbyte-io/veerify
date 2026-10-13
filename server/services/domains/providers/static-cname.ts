@@ -21,6 +21,24 @@ function buildPendingResult(hostname: string, target: string): DomainProviderRes
   }
 }
 
+function isLocalhostHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname.endsWith('.localhost')
+}
+
+function buildLocalhostResult(hostname: string): DomainProviderResult {
+  return {
+    hostname,
+    provider: 'static-cname',
+    verified: true,
+    status: 'active',
+    dnsRecords: [],
+    configuredBy: 'local-development',
+    expected: null,
+    resolvedTo: [hostname],
+    message: null,
+  }
+}
+
 export class StaticCnameDomainProvider implements DomainProvider {
   private getTarget() {
     const config = useRuntimeConfig()
@@ -29,11 +47,15 @@ export class StaticCnameDomainProvider implements DomainProvider {
 
   async registerProjectDomain(input: { hostname: string }) {
     const hostname = normalizeDomainHostname(input.hostname)
+    if (isLocalhostHostname(hostname)) return buildLocalhostResult(hostname)
+
     return buildPendingResult(hostname, this.getTarget())
   }
 
   async getProjectDomainStatus(input: { hostname: string }) {
     const hostname = normalizeDomainHostname(input.hostname)
+    if (isLocalhostHostname(hostname)) return buildLocalhostResult(hostname)
+
     const expected = this.getTarget()
 
     try {

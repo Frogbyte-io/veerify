@@ -1,4 +1,70 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["fra1"]
+  "regions": ["fra1"],
+  "crons": [
+    {
+      "path": "/api/cron/example-ping",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/support-outbound-delivery",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/support-attachment-cleanup",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/support-sla-breach",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/support-automation-rules",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/support-csat-dispatch",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-audit-advance",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-audit-schedule",
+      "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-visibility-advance",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-visibility-schedule",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-mentions-poll",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-mentions-digest",
+      "schedule": "0 7-11 * * *"
+    },
+    {
+      "path": "/api/cron/marketing-review-requests",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-search-sync",
+      "schedule": "20 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-competitors-check",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-retention",
+      "schedule": "30 3 * * *"
+    }
+  ]
 }

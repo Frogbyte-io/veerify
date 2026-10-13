@@ -93,7 +93,7 @@ Veerify is a feedback management and verification platform built with **Nuxt 3**
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+
 - Yarn
 - Docker (for local PostgreSQL + Mailpit)
 

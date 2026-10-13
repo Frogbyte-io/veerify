@@ -1,8 +1,10 @@
-import { eq, count } from 'drizzle-orm'
+import { and, eq, count } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory } from '~/server/database/schema/feedback'
+import { testimonial } from '~/server/database/schema/marketing'
+import { isModuleEnabledForProject } from '~/server/utils/public-modules'
 
 export default defineEventHandler(async (event) => {
   const teamSlug = getRouterParam(event, 'teamSlug')
@@ -29,7 +31,22 @@ export default defineEventHandler(async (event) => {
     statusMap[s.status] = s.count
   }
 
+  // Drives the "Testimonials" tab: Marketing on (team + product) and at least one
+  // approved, publicly consented testimonial. A single LIMIT 1 probe.
+  let hasTestimonials = false
+  if (await isModuleEnabledForProject(t.id, proj.settings as Record<string, unknown> | null, 'marketingEnabled')) {
+    const [visible] = await db
+      .select({ id: testimonial.id })
+      .from(testimonial)
+      .where(
+        and(eq(testimonial.projectId, proj.id), eq(testimonial.status, 'approved'), eq(testimonial.consentPublic, true))
+      )
+      .limit(1)
+    hasTestimonials = Boolean(visible)
+  }
+
   return createSuccessResponse({
+    hasTestimonials,
     project: {
       id: proj.id,
       name: proj.name,

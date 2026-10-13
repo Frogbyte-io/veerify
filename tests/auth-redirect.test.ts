@@ -4,6 +4,7 @@ import {
   isAppHostedRedirectHost,
   normalizeHostname,
   parseRedirectUrl,
+  supportsCrossSubdomainAuth,
 } from '../lib/auth-redirect'
 
 describe('auth redirect helpers', () => {
@@ -15,6 +16,12 @@ describe('auth redirect helpers', () => {
     expect(isAllowedRedirectProtocol('https:', 'customer.example.com')).toBe(true)
     expect(isAllowedRedirectProtocol('http:', 'preview.localhost')).toBe(true)
     expect(isAllowedRedirectProtocol('http:', 'customer.example.com')).toBe(false)
+  })
+
+  it('only shares auth cookies across non-local subdomains', () => {
+    expect(supportsCrossSubdomainAuth('localhost')).toBe(false)
+    expect(supportsCrossSubdomainAuth('127.0.0.1')).toBe(false)
+    expect(supportsCrossSubdomainAuth('veerify.io')).toBe(true)
   })
 
   it('matches app domain, dashboard domain, and app subdomains', () => {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { loginViaProgrammatic, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
+import { isBetterAuthCookie, loginViaProgrammatic, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -82,7 +82,7 @@ test('team-primary API flow persists custom domains and enforces URL conflicts',
 
 test('authenticated user can access products UI workflow', async ({ request, page }) => {
   await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
@@ -98,7 +98,7 @@ test('authenticated user can access products UI workflow', async ({ request, pag
   await expect(firstProductLink).toBeVisible()
   await firstProductLink.click()
   await expect(page).toHaveURL(/\/products\/[^/]+/)
-  await expect(page.getByText('General Settings')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'General Settings' })).toBeVisible()
   await expect(page.locator('label[for="project-domain"]')).toHaveCount(0)
   await expect(page.getByText('Point a CNAME record to Veerify to use a custom domain.')).toHaveCount(0)
 })
@@ -109,7 +109,7 @@ test('new project statuses tab shows the default starting workflow without decli
 }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
@@ -144,7 +144,7 @@ test('new project statuses tab shows the default starting workflow without decli
 
   await page.goto(`/products/${projectSlug}#statuses`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
   await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#statuses$`))
-  await expect(page.getByText('Feedback Statuses')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Feedback Statuses' })).toBeVisible()
   await expect(
     page.getByText(
       'Review the default starting workflow for feedback items. Add a custom status to start customizing it.'
@@ -167,7 +167,7 @@ test('product categories tab reorders categories through drag and drop and persi
 }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
@@ -200,7 +200,7 @@ test('product categories tab reorders categories through drag and drop and persi
 
   await page.goto(`/products/${projectSlug}#categories`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
   await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#categories$`))
-  await expect(page.getByText('Feedback Categories')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Feedback Categories' })).toBeVisible()
   await expect(page.locator('[data-testid^="product-category-item-"]')).toHaveCount(2)
 
   const readUiOrder = async () =>
@@ -239,7 +239,7 @@ test('product categories tab reorders categories through drag and drop and persi
 test('custom domain dns setup hides duplicate cname targets for the same host', async ({ request, page }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
@@ -312,7 +312,7 @@ test('custom domain status downgrades from stored verified state after a failed 
 }) => {
   await loginViaProgrammatic(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const authCookies = (await request.storageState()).cookies.filter((cookie) => cookie.name.startsWith('better-auth'))
+  const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 

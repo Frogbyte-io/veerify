@@ -2,12 +2,13 @@ import { and, asc, eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
-import { session as sessionTable, team, teamMember } from '~/server/database/schema/auth'
+import { member, session as sessionTable, team, teamMember } from '~/server/database/schema/auth'
 import { getAuthHeaders } from './auth-headers'
 import { createErrorResponse, ErrorCode } from './response'
 import type { AuthSession } from './auth-middleware'
+import { DEFAULT_TEAM_NAME, pickTeamForOrganization } from '~/lib/org-switch'
 
-export const DEFAULT_TEAM_NAME = 'Default'
+export { DEFAULT_TEAM_NAME }
 
 export async function setActiveTeamAndOrganization(params: { sessionToken: string; userId: string; teamId: string }) {
   const [selectedTeam] = await db.select().from(team).where(eq(team.id, params.teamId)).limit(1)
@@ -42,6 +43,55 @@ export async function setActiveTeamAndOrganization(params: { sessionToken: strin
     .where(eq(sessionTable.token, params.sessionToken))
 
   return selectedTeam
+}
+
+/**
+ * Switch the session to another organization and, in the same update, to a team inside it, so the
+ * session never holds a team from the previous organization. The user must be a member of the
+ * organization; `preferredTeamId` (last used) is honoured only if it is one of the user's teams in it.
+ */
+export async function setActiveOrganizationForSession(params: {
+  sessionToken: string
+  userId: string
+  organizationId: string
+  preferredTeamId?: string | null
+}) {
+  const [membership] = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(and(eq(member.organizationId, params.organizationId), eq(member.userId, params.userId)))
+    .limit(1)
+
+  if (!membership) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Forbidden',
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You are not a member of this organization'),
+    })
+  }
+
+  const userTeams = await db
+    .select({ id: team.id, name: team.name, organizationId: team.organizationId })
+    .from(teamMember)
+    .innerJoin(team, eq(teamMember.teamId, team.id))
+    .where(and(eq(teamMember.userId, params.userId), eq(team.organizationId, params.organizationId)))
+    .orderBy(asc(team.createdAt), asc(team.id))
+
+  const selected = pickTeamForOrganization(userTeams, params.organizationId, params.preferredTeamId)
+  if (!selected) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: createErrorResponse(ErrorCode.CONFLICT, 'You are not a member of any team in this organization'),
+    })
+  }
+
+  await db
+    .update(sessionTable)
+    .set({ activeTeamId: selected.id, activeOrganizationId: params.organizationId })
+    .where(eq(sessionTable.token, params.sessionToken))
+
+  return selected
 }
 
 async function getValidActiveTeam(session: AuthSession) {

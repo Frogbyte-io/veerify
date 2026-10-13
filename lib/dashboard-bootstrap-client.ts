@@ -13,6 +13,7 @@ export type DashboardBootstrap = {
   }
   teamContext?: {
     teams?: unknown[]
+    organizations?: unknown[]
     activeTeam?: Record<string, unknown> | null
     activeOrganization?: Record<string, unknown> | null
   }
@@ -36,7 +37,9 @@ const dashboardBootstrapCache: {
 }
 
 function isCacheFresh() {
-  return dashboardBootstrapCache.data && Date.now() - dashboardBootstrapCache.loadedAt < DASHBOARD_BOOTSTRAP_CACHE_MAX_AGE_MS
+  return (
+    dashboardBootstrapCache.data && Date.now() - dashboardBootstrapCache.loadedAt < DASHBOARD_BOOTSTRAP_CACHE_MAX_AGE_MS
+  )
 }
 
 export function getCachedDashboardBootstrap() {
@@ -60,7 +63,11 @@ export async function fetchDashboardBootstrap(options: { force?: boolean } = {})
   }
 
   if (!dashboardBootstrapCache.pendingRequest) {
-    dashboardBootstrapCache.pendingRequest = $fetch<{ data?: DashboardBootstrap }>('/api/dashboard/bootstrap')
+    // Called through a narrowly typed alias: Nitro's typed `$fetch` resolves the
+    // response against every API route, and with the routes Marketing adds that
+    // inference exceeds TypeScript's instantiation depth (TS2589).
+    const fetchBootstrap = $fetch as unknown as (url: string) => Promise<{ data?: DashboardBootstrap }>
+    dashboardBootstrapCache.pendingRequest = fetchBootstrap('/api/dashboard/bootstrap')
       .then((response) => {
         const data = response?.data || null
         setDashboardBootstrapCache(data)

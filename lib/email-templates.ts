@@ -8,6 +8,40 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#x27;')
 }
 
+interface CsatSurveyTemplateOptions {
+  question: string
+  followUpQuestion?: string | null
+  contactName?: string | null
+  ratingLinks: Array<{ label: string; url: string }>
+}
+
+export function getCsatSurveyTemplate({
+  question,
+  followUpQuestion,
+  contactName,
+  ratingLinks,
+}: CsatSurveyTemplateOptions) {
+  const greeting = contactName ? `Hi ${contactName},` : 'Hi,'
+  const safeGreeting = escapeHtml(greeting)
+  const safeQuestion = escapeHtml(question)
+  const safeFollowUpQuestion = followUpQuestion ? escapeHtml(followUpQuestion) : ''
+  const htmlLinks = ratingLinks
+    .map(
+      ({ label, url }) =>
+        `<a href="${escapeHtml(url)}" style="display:inline-block;margin:4px;padding:10px 14px;border:1px solid #d0d7de;border-radius:6px;color:#17202a;text-decoration:none">${escapeHtml(label)}</a>`
+    )
+    .join('')
+  const textLinks = ratingLinks.map(({ label, url }) => `${label}: ${url}`).join('\n')
+
+  return {
+    subject: 'How did we do?',
+    html: `<p>${safeGreeting}</p><p>${safeQuestion}</p><p>${htmlLinks}</p>${
+      safeFollowUpQuestion ? `<p>${safeFollowUpQuestion}</p>` : ''
+    }<p>Thanks for helping us improve.</p>`,
+    text: `${greeting}\n\n${question}\n\n${textLinks}\n\n${followUpQuestion ?? ''}\nThanks for helping us improve.`,
+  }
+}
+
 interface FeedbackConfirmationOptions {
   authorName: string
   feedbackTitle: string
@@ -395,7 +429,7 @@ interface StatusChangeNotificationOptions {
   feedbackTitle: string
   newStatus: string
   boardUrl: string
-  unsubscribeUrl: string
+  unsubscribeUrl: string | null
 }
 
 export function getStatusChangeNotificationTemplate({
@@ -408,7 +442,7 @@ export function getStatusChangeNotificationTemplate({
   const safeTitle = escapeHtml(feedbackTitle)
   const safeStatus = escapeHtml(newStatus)
   const safeBoardUrl = escapeHtml(boardUrl)
-  const safeUnsubUrl = escapeHtml(unsubscribeUrl)
+  const safeUnsubUrl = unsubscribeUrl ? escapeHtml(unsubscribeUrl) : null
 
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
@@ -421,16 +455,14 @@ export function getStatusChangeNotificationTemplate({
       <p><a href="${safeBoardUrl}" style="color:#6366f1">View on the feedback board</a></p>
       <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
       <p style="color:#999;font-size:12px">
-        <a href="${safeUnsubUrl}" style="color:#999">Unsubscribe from this feedback</a> &middot; Powered by Veerify
+        ${safeUnsubUrl ? `<a href="${safeUnsubUrl}" style="color:#999">Unsubscribe from this feedback</a> &middot; ` : ''}Powered by Veerify
       </p>
     </div>
   `
 
   const text = `Feedback status updated: "${feedbackTitle}" is now ${newStatus}.
 
-View on the board: ${boardUrl}
-
-To unsubscribe: ${unsubscribeUrl}
+View on the board: ${boardUrl}${unsubscribeUrl ? `\n\nTo unsubscribe: ${unsubscribeUrl}` : ''}
 `
 
   return { subject, html, text }
@@ -478,6 +510,217 @@ ${commentBody.length > 300 ? commentBody.slice(0, 300) + '…' : commentBody}
 View full discussion: ${boardUrl}
 
 To unsubscribe: ${unsubscribeUrl}
+`
+
+  return { subject, html, text }
+}
+
+interface MarketingMentionsDigestOptions {
+  productName: string
+  counts: { mention: number; competitor: number; opportunity: number }
+  items: Array<{
+    sourceLabel: string
+    kind: 'mention' | 'competitor' | 'opportunity'
+    title: string | null
+    excerpt: string
+    url: string
+  }>
+  mentionsUrl: string
+}
+
+const MENTION_KIND_LABELS = {
+  mention: 'Brand mentions',
+  competitor: 'Competitor mentions',
+  opportunity: 'Opportunities',
+}
+
+/** Only http(s) links from third-party posts are rendered as hrefs. */
+function safeHttpUrl(value: string): string | null {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+export function marketingMentionsDigestTemplate({
+  productName,
+  counts,
+  items,
+  mentionsUrl,
+}: MarketingMentionsDigestOptions) {
+  const total = counts.mention + counts.competitor + counts.opportunity
+  const subject = `${total} new ${total === 1 ? 'mention' : 'mentions'} for ${productName}`
+
+  const countKinds = (Object.keys(MENTION_KIND_LABELS) as Array<keyof typeof MENTION_KIND_LABELS>).filter(
+    (kind) => counts[kind] > 0
+  )
+
+  const itemsHtml = items
+    .map((item) => {
+      const heading = item.title || item.excerpt
+      const href = safeHttpUrl(item.url)
+      const headingHtml = href
+        ? `<a href="${escapeHtml(href)}" style="color:#6366f1;text-decoration:none">${escapeHtml(heading)}</a>`
+        : escapeHtml(heading)
+      const detail = item.title && item.excerpt ? escapeHtml(item.excerpt) : ''
+      return `<li style="margin:0 0 14px 0">
+        <div style="font-size:12px;color:#888">${escapeHtml(item.sourceLabel)} &middot; ${escapeHtml(MENTION_KIND_LABELS[item.kind])}</div>
+        <div style="font-weight:600;color:#1a1a1a">${headingHtml}</div>
+        ${detail ? `<div style="color:#555;font-size:14px">${detail}</div>` : ''}
+      </li>`
+    })
+    .join('')
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">New mentions for ${escapeHtml(productName)}</h2>
+      <p style="color:#444">${countKinds.map((kind) => `${counts[kind]} ${MENTION_KIND_LABELS[kind].toLowerCase()}`).join(' &middot; ')}</p>
+      <ul style="padding-left:18px;margin:16px 0">${itemsHtml}</ul>
+      <p><a href="${escapeHtml(mentionsUrl)}" style="color:#6366f1">Open the mentions inbox</a></p>
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      <p style="color:#999;font-size:12px">Powered by Veerify</p>
+    </div>
+  `
+
+  const text = `New mentions for ${productName}
+
+${countKinds.map((kind) => `${counts[kind]} ${MENTION_KIND_LABELS[kind].toLowerCase()}`).join(', ')}
+
+${items
+  .map(
+    (item) =>
+      `- [${item.sourceLabel}] ${item.title || item.excerpt}${item.title && item.excerpt ? `\n  ${item.excerpt}` : ''}\n  ${item.url}`
+  )
+  .join('\n')}
+
+Open the mentions inbox: ${mentionsUrl}
+`
+
+  return { subject, html, text }
+}
+
+interface MarketingCredentialInvalidTemplateOptions {
+  providerLabel: string
+  settingsUrl: string
+}
+
+export function marketingCredentialInvalidTemplate({
+  providerLabel,
+  settingsUrl,
+}: MarketingCredentialInvalidTemplateOptions) {
+  const subject = `Your ${providerLabel} API key was rejected`
+  const safeProvider = escapeHtml(providerLabel)
+  const safeUrl = escapeHtml(settingsUrl)
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#1a1a1a">Your ${safeProvider} API key was rejected</h2>
+      <p style="color:#444">${safeProvider} rejected the API key your team added for Marketing. AI visibility runs that use ${safeProvider} are paused until you replace the key.</p>
+      <p><a href="${safeUrl}" style="color:#6366f1">Update the key in Marketing settings</a></p>
+      <p style="color:#999;font-size:12px">You are receiving this because you are a team admin. Powered by Veerify</p>
+    </div>
+  `
+
+  const text = `Your ${providerLabel} API key was rejected
+
+${providerLabel} rejected the API key your team added for Marketing. AI visibility runs that use ${providerLabel} are paused until you replace the key.
+
+Update the key in Marketing settings: ${settingsUrl}
+`
+
+  return { subject, html, text }
+}
+
+interface MarketingReviewRequestTemplateOptions {
+  productName: string
+  /** Recipient's name, when known. Only the first name is used. */
+  name?: string | null
+  trigger: 'csat' | 'shipped' | 'manual'
+  /** Title of the shipped feedback item (`shipped` trigger) */
+  feedbackTitle?: string | null
+  /** Tracking links, one button each. */
+  platforms: Array<{ label: string; url: string }>
+  /** Link to the testimonial form, or null when testimonials are not requested. */
+  testimonialUrl: string | null
+  /** Link to remove a submitted testimonial from the public page, or null when testimonials are not requested. */
+  withdrawUrl?: string | null
+  unsubscribeUrl: string
+}
+
+function oneLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+export function marketingReviewRequestTemplate({
+  productName,
+  name,
+  trigger,
+  feedbackTitle,
+  platforms,
+  testimonialUrl,
+  withdrawUrl,
+  unsubscribeUrl,
+}: MarketingReviewRequestTemplateOptions) {
+  const product = oneLine(productName)
+  const title = feedbackTitle ? oneLine(feedbackTitle) : ''
+  const firstName = name ? oneLine(name).split(' ')[0] : ''
+  const greeting = firstName ? `Hi ${firstName},` : 'Hi,'
+
+  let subject: string
+  let intro: string
+  if (trigger === 'shipped' && title) {
+    subject = `"${title}" just shipped in ${product}`
+    intro = `Your request "${title}" shipped in ${product}. Thank you for helping us build it.`
+  } else if (trigger === 'csat') {
+    subject = `Thanks for your feedback on ${product}`
+    intro = `Thanks for your rating of our support for ${product}. It means a lot to the team.`
+  } else {
+    subject = `Would you share your experience with ${product}?`
+    intro = `Thanks for using ${product}. It means a lot to the team.`
+  }
+  const ask =
+    platforms.length > 0
+      ? 'If you have a minute, a short public review would help others find us:'
+      : 'If you have a minute, we would love a short quote from you:'
+
+  const buttonsHtml = platforms
+    .map(
+      (platform) =>
+        `<a href="${escapeHtml(platform.url)}" style="display:inline-block;margin:0 8px 8px 0;padding:10px 16px;background:#6366f1;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:600">${escapeHtml(`Review us on ${platform.label}`)}</a>`
+    )
+    .join('')
+
+  const testimonialHtml = testimonialUrl
+    ? `<p style="color:#444">${platforms.length > 0 ? 'Prefer to write a few words directly?' : ''} <a href="${escapeHtml(testimonialUrl)}" style="color:#6366f1">Write a short testimonial</a></p>`
+    : ''
+
+  const withdrawHtml = withdrawUrl
+    ? `<p style="color:#999;font-size:12px">Sent a testimonial already? <a href="${escapeHtml(withdrawUrl)}" style="color:#999">Remove my testimonial from the public page</a>.</p>`
+    : ''
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <p style="color:#1a1a1a">${escapeHtml(greeting)}</p>
+      <p style="color:#444">${escapeHtml(intro)}</p>
+      <p style="color:#444">${escapeHtml(ask)}</p>
+      <div style="margin:16px 0">${buttonsHtml}</div>
+      ${testimonialHtml}
+      <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+      ${withdrawHtml}
+      <p style="color:#999;font-size:12px">You are receiving this from ${escapeHtml(product)}. <a href="${escapeHtml(unsubscribeUrl)}" style="color:#999">Unsubscribe</a> from these requests. Powered by Veerify</p>
+    </div>
+  `
+
+  const text = `${greeting}
+
+${intro}
+
+${ask}
+${platforms.map((platform) => `- ${platform.label}: ${platform.url}`).join('\n')}
+${testimonialUrl ? `\nWrite a short testimonial: ${testimonialUrl}\n` : ''}${withdrawUrl ? `\nRemove my testimonial from the public page: ${withdrawUrl}\n` : ''}
+Unsubscribe from these requests: ${unsubscribeUrl}
 `
 
   return { subject, html, text }
