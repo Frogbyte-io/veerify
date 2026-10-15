@@ -29,6 +29,7 @@ import {
  */
 
 const DEFAULT_TOLERANCE_SECONDS = 15 * 60
+const DEFAULT_API_BASE_URL = 'https://api.mailgun.net'
 
 interface MailgunSignature {
   timestamp?: string | number
@@ -301,10 +302,13 @@ export class MailgunChannelDriver implements ChannelDriver {
     this.toleranceSeconds = options?.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS
     this.apiKey = (options?.apiKey ?? process.env.SUPPORT_MAILGUN_API_KEY ?? '').trim()
     this.accountKey = (options?.accountKey ?? process.env.SUPPORT_MAILGUN_ACCOUNT_KEY ?? '').trim()
+    // `||`, not `??`: .env.example and docker-compose set this to an empty
+    // string when unused, and an empty base URL would turn the domain lookup
+    // into a relative `/v4/domains` request.
     this.apiBaseUrl = (
-      options?.apiBaseUrl ??
-      process.env.SUPPORT_MAILGUN_API_BASE_URL ??
-      'https://api.mailgun.net'
+      options?.apiBaseUrl?.trim() ||
+      process.env.SUPPORT_MAILGUN_API_BASE_URL?.trim() ||
+      DEFAULT_API_BASE_URL
     ).replace(/\/+$/, '')
     this.fetchImpl = options?.fetchImpl ?? ((input, init) => fetch(input, init))
   }

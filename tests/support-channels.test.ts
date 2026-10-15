@@ -1,9 +1,13 @@
 import { createHmac } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { PostmarkChannelDriver } from '../server/services/support-channels/webhook/postmark'
 import { MailgunChannelDriver, parseAddressList } from '../server/services/support-channels/webhook/mailgun'
-import { getChannelDriver, isSupportChannelProvider } from '../server/services/support-channels/index'
+import {
+  getChannelDriver,
+  getConfiguredChannelProviderName,
+  isSupportChannelProvider,
+} from '../server/services/support-channels/index'
 import { normalizeMessageId, parseReferences, normalizeHeaders } from '../server/services/support-channels/types'
 
 /**
@@ -400,5 +404,23 @@ describe('driver selection', () => {
   it('recognises the supported provider set', () => {
     expect(isSupportChannelProvider('postmark')).toBe(true)
     expect(isSupportChannelProvider('imap')).toBe(false)
+  })
+
+  describe('SUPPORT_CHANNEL_PROVIDER', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('treats an empty or whitespace-only value as unset', () => {
+      vi.stubEnv('SUPPORT_CHANNEL_PROVIDER', '')
+      expect(getConfiguredChannelProviderName()).toBe('postmark')
+      vi.stubEnv('SUPPORT_CHANNEL_PROVIDER', '   ')
+      expect(getConfiguredChannelProviderName()).toBe('postmark')
+    })
+
+    it('normalizes a configured value', () => {
+      vi.stubEnv('SUPPORT_CHANNEL_PROVIDER', ' Mailgun ')
+      expect(getConfiguredChannelProviderName()).toBe('mailgun')
+    })
   })
 })

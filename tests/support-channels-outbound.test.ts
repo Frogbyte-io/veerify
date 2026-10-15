@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { PostmarkChannelDriver } from '../server/services/support-channels/webhook/postmark'
 import { MailgunChannelDriver } from '../server/services/support-channels/webhook/mailgun'
@@ -185,5 +185,53 @@ describe('checkSendingAuthorization - can this inbox send as this address', () =
     })
 
     expect((await driver.checkSendingAuthorization('support@acme.com')).status).toBe('unauthorized')
+  })
+})
+
+describe('Mailgun API base URL', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  function recordingDriver(options: { apiBaseUrl?: string } = {}) {
+    const urls: string[] = []
+    const driver = new MailgunChannelDriver({
+      signingKey: 'key',
+      apiKey: 'api-key',
+      ...options,
+      fetchImpl: async (input) => {
+        urls.push(input)
+        return new Response(JSON.stringify({ items: [] }), { status: 200 })
+      },
+    })
+    return { driver, urls }
+  }
+
+  it('treats an empty SUPPORT_MAILGUN_API_BASE_URL as unset', async () => {
+    // .env.example and docker-compose both set it to "" when unused.
+    vi.stubEnv('SUPPORT_MAILGUN_API_BASE_URL', '')
+    const { driver, urls } = recordingDriver()
+
+    await driver.checkSendingAuthorization('support@acme.com')
+
+    expect(urls).toEqual(['https://api.mailgun.net/v4/domains?limit=1000'])
+  })
+
+  it('treats a whitespace-only value or empty option as unset', async () => {
+    vi.stubEnv('SUPPORT_MAILGUN_API_BASE_URL', '   ')
+    const { driver, urls } = recordingDriver({ apiBaseUrl: '' })
+
+    await driver.checkSendingAuthorization('support@acme.com')
+
+    expect(urls).toEqual(['https://api.mailgun.net/v4/domains?limit=1000'])
+  })
+
+  it('uses a configured base URL such as a Frogmail origin, without a trailing slash', async () => {
+    vi.stubEnv('SUPPORT_MAILGUN_API_BASE_URL', ' https://mail.example.test/ ')
+    const { driver, urls } = recordingDriver()
+
+    await driver.checkSendingAuthorization('support@acme.com')
+
+    expect(urls).toEqual(['https://mail.example.test/v4/domains?limit=1000'])
   })
 })
