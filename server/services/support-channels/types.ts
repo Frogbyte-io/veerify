@@ -40,8 +40,19 @@ export interface InboundMessage {
   /** Oldest → newest, angle brackets stripped. */
   references: string[]
   from: InboundAddress
+  /** Header recipients. Display and participant data only - routing prefers `envelopeRecipients`. */
   to: InboundAddress[]
   cc: InboundAddress[]
+  /**
+   * SMTP envelope recipients (RCPT TO) the provider delivered this copy to, in
+   * the provider's order and de-duplicated. Empty when the provider does not
+   * report a trustworthy envelope.
+   *
+   * Inbox routing uses these in preference to `to`/`cc`: Bcc'd, forwarded,
+   * aliased and list mail reaches an inbox by envelope only, and routing on a
+   * header the sender wrote could pick another tenant's inbox named there.
+   */
+  envelopeRecipients: InboundAddress[]
   subject: string | null
   text: string | null
   html: string | null

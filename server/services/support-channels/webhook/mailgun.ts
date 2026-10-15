@@ -121,6 +121,16 @@ export function parseAddressList(value: string | null | undefined): InboundAddre
   return addresses
 }
 
+/** Drop repeated addresses, keeping the first occurrence so order stays the provider's. */
+function uniqueAddresses(addresses: InboundAddress[]): InboundAddress[] {
+  const seen = new Set<string>()
+  return addresses.filter((entry) => {
+    if (seen.has(entry.address)) return false
+    seen.add(entry.address)
+    return true
+  })
+}
+
 function headersToRecord(value: MailgunInboundPayload['message-headers']): Record<string, string> {
   let entries: [string, string][] = []
 
@@ -189,6 +199,16 @@ function multipartAttachments(payload: MailgunInboundPayload): InboundAttachment
     contentIds = contentIdMap
   }
 
+  // Mailgun documents `content-id-map` as `{"<content-id>": "attachment-N"}`:
+  // the value is the multipart FIELD name, not the file's name. Inverted here
+  // so each field looks its Content-ID up directly.
+  const contentIdByField = new Map<string, string>()
+  for (const [contentId, field] of Object.entries(contentIds)) {
+    if (typeof field !== 'string') continue
+    const normalized = normalizeMessageId(contentId)
+    if (normalized && !contentIdByField.has(field.trim())) contentIdByField.set(field.trim(), normalized)
+  }
+
   const attachments: InboundAttachment[] = []
   const fields = Object.keys(payload)
     .filter((name) => /^attachment-\d+$/.test(name))
@@ -201,8 +221,7 @@ function multipartAttachments(payload: MailgunInboundPayload): InboundAttachment
     if (!file || typeof file !== 'object') continue
     const fileName = file.filename?.split(/[/\\]/).pop() || 'attachment'
     const content = file.data ?? Buffer.alloc(0)
-    const contentIdEntry = Object.entries(contentIds).find(([, name]) => name === file.filename || name === fileName)
-    const contentId = normalizeMessageId(contentIdEntry?.[0])
+    const contentId = contentIdByField.get(field) ?? null
     attachments.push({
       fileName,
       contentType: file.type?.trim() || null,
@@ -398,8 +417,13 @@ export class MailgunChannelDriver implements ChannelDriver {
       throw new Error('Mailgun payload has no From address')
     }
 
-    const to = parseAddressList(typed.To ?? headers.to ?? typed.recipient)
+    const to = parseAddressList(typed.To ?? headers.to)
     const cc = parseAddressList(typed.Cc ?? headers.cc)
+    // `recipient` is the envelope recipient the route matched (Mailgun posts
+    // one callback per matched recipient; a comma list is tolerated). It is
+    // what the mail was actually delivered to, so it routes - the To/Cc
+    // headers are only what the sender chose to show.
+    const envelopeRecipients = uniqueAddresses(parseAddressList(typed.recipient))
 
     const headerDate = headers.date ? new Date(headers.date) : null
     const timestampSeconds = Number(typed.timestamp)
@@ -414,6 +438,7 @@ export class MailgunChannelDriver implements ChannelDriver {
       from,
       to,
       cc,
+      envelopeRecipients,
       subject: typed.subject?.trim() || headers.subject?.trim() || null,
       // `stripped-text` is Mailgun's own quote removal. It is deliberately not
       // used: quote stripping is SUP-03-6's job and must behave identically

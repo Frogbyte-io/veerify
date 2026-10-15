@@ -49,7 +49,7 @@ import {
   rejectInboundEvent,
 } from '~/server/utils/inbound-events'
 import { checkRateLimit } from '~/server/utils/rate-limit'
-import { resolveInboundProjectId } from '~/server/utils/inbound-routing'
+import { inboundRoutingRecipients, resolveInboundProjectId } from '~/server/utils/inbound-routing'
 import { getRateLimitStore } from '~/server/services/rate-limit'
 import { getStorageProvider } from '~/server/utils/storage'
 import {
@@ -221,10 +221,10 @@ export default defineEventHandler(async (event) => {
     // ---- 4. Parse --------------------------------------------------------
     const message: InboundMessage = driver.parse(payload)
 
-    // ---- 5. Resolve the inbox from To/Cc ---------------------------------
-    // Every recipient is tried, because the support address is frequently in
-    // Cc rather than To on a reply-all.
-    const recipients = [...message.to, ...message.cc]
+    // ---- 5. Resolve the inbox from the envelope, else To/Cc --------------
+    // The envelope recipient the provider delivered to wins (Bcc, forwarding,
+    // aliases); To/Cc are only consulted when the provider reported none.
+    const recipients = inboundRoutingRecipients(message)
     let matched: Awaited<ReturnType<typeof resolveInboxByAddress>> = null
     for (const recipient of recipients) {
       matched = await resolveInboxByAddress(recipient.address)
