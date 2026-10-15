@@ -35,7 +35,11 @@ import {
   completeDeliveryEvent,
   failDeliveryEvent,
 } from '~/server/utils/delivery-events'
-import { publishDeliveryStatusChanged, resolveDeliveryCorrelation } from '~/server/utils/outbound-delivery'
+import {
+  publishDeliveryStatusChanged,
+  recordProviderChannelMessageId,
+  resolveDeliveryCorrelation,
+} from '~/server/utils/outbound-delivery'
 import { checkRateLimit } from '~/server/utils/rate-limit'
 import { recordSupportMetric } from '~/server/utils/support-observability'
 import { db } from '~/server/database/drizzle'
@@ -157,6 +161,13 @@ export default defineEventHandler(async (event) => {
       })
       await db.transaction((tx) => completeDeliveryEvent(eventId, attemptCount, tx))
       return accepted('unmatched-message')
+    }
+
+    // ---- 3b. Provider Message-ID -------------------------------------------
+    // Only after correlation through the outbox: the id is recorded on the
+    // message the event was proven to belong to, never used to find it.
+    if (deliveryEvent.rfcMessageId) {
+      await recordProviderChannelMessageId(db, resolvedMessage.id, deliveryEvent.rfcMessageId)
     }
 
     // ---- 4. Map onto conversationMessage.deliveryStatus --------------------

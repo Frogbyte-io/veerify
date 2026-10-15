@@ -575,6 +575,10 @@ export const conversationMessage = pgTable(
     senderUserId: text('sender_user_id').references(() => user.id, { onDelete: 'set null' }),
     isPrivate: boolean('is_private').default(false).notNull(),
     channelMessageId: text('channel_message_id'),
+    // The Message-ID the provider actually sent this message under, when it
+    // differs from `channelMessageId` (a relay such as SES rewrites it).
+    // Replies that reference only this id still thread.
+    providerChannelMessageId: text('provider_channel_message_id'),
     inReplyTo: text('in_reply_to'),
     channelHeaders: jsonb('channel_headers').$type<Record<string, any>>(),
     // 'pending' | 'sent' | 'delivered' | 'failed' | 'bounced'
@@ -591,6 +595,9 @@ export const conversationMessage = pgTable(
       table.createdAt
     ),
     channelMessageIdIdx: index('conversation_message_channel_message_id_idx').on(table.channelMessageId),
+    providerChannelMessageIdIdx: index('conversation_message_provider_channel_message_id_idx').on(
+      table.providerChannelMessageId
+    ),
     deliveryStatusIdx: index('conversation_message_delivery_status_idx').on(table.deliveryStatus),
   })
 )

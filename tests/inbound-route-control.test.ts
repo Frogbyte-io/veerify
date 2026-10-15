@@ -20,6 +20,8 @@ const attachInboundEventInbox = vi.fn(async () => false)
 const rejectInboundEvent = vi.fn(async () => false)
 const failInboundEvent = vi.fn(async () => true)
 const checkRateLimit = vi.fn(async () => true)
+const completeInboundEvent = vi.fn(async () => true)
+const findInboxIncomingMessage = vi.fn(async (): Promise<{ conversationId: string } | null> => null)
 
 vi.mock('h3', () => ({
   createError: (input: Record<string, unknown>) => Object.assign(new Error(String(input.statusMessage)), input),
@@ -43,6 +45,7 @@ vi.mock('~/server/services/support-channels', () => ({
         from: { address: 'customer@example.com', name: null },
         to: [{ address: 'support@example.com', name: null }],
         cc: [],
+        envelopeRecipients: [],
         subject: 'Subject',
         text: 'Body',
         html: '<p>Body</p>',
@@ -55,8 +58,10 @@ vi.mock('~/server/services/support-channels', () => ({
 vi.mock('~/server/utils/inbound-events', () => ({
   attachInboundEventInbox,
   claimInboundEvent: vi.fn(async () => claim),
-  completeInboundEvent: vi.fn(async () => true),
+  completeInboundEvent,
   failInboundEvent,
+  findInboxIncomingMessage,
+  lockInboxMessageId: vi.fn(async () => undefined),
   recordInboundRawKey: vi.fn(async () => true),
   rejectInboundEvent,
 }))
@@ -121,6 +126,8 @@ describe('inbound route claim-loss control', () => {
     failInboundEvent.mockClear()
     checkRateLimit.mockClear()
     checkRateLimit.mockResolvedValue(true)
+    completeInboundEvent.mockClear()
+    findInboxIncomingMessage.mockClear()
   })
 
   it('applies a high-capacity provider-IP edge bucket before reading the body', async () => {
@@ -143,7 +150,7 @@ describe('inbound route claim-loss control', () => {
       { name: 'signature', data: Buffer.from('mailgun-signature') },
       { name: 'sender', data: Buffer.from('ada@example.com') },
       { name: 'attachment-count', data: Buffer.from('1') },
-      { name: 'content-id-map', data: Buffer.from('{"logo@acme.com":"logo.png"}') },
+      { name: 'content-id-map', data: Buffer.from('{"<logo@acme.com>":"attachment-1"}') },
       { name: 'attachment-1', filename: 'logo.png', type: 'image/png', data: Buffer.from('binary image') },
     ]
     const verifySignature = vi.fn(() => true)
@@ -168,13 +175,89 @@ describe('inbound route claim-loss control', () => {
         signature: 'mailgun-signature',
         sender: 'ada@example.com',
         'attachment-count': '1',
-        'content-id-map': '{"logo@acme.com":"logo.png"}',
+        'content-id-map': '{"<logo@acme.com>":"attachment-1"}',
         'attachment-1': {
           filename: 'logo.png',
           type: 'image/png',
           data: Buffer.from('binary image'),
         },
       },
+    })
+  })
+
+  describe('inbox routing', () => {
+    function mailgunParsed(envelopeRecipients: { address: string }[]) {
+      inboundDriver.current = {
+        name: 'mailgun',
+        verifySignature: () => true,
+        extractEventId: () => 'provider-1',
+        parse: () => ({
+          messageId: 'message-1',
+          inReplyTo: null,
+          references: [],
+          from: { address: 'customer@example.com' },
+          to: [{ address: 'other-team@example.com' }],
+          cc: [{ address: 'support@example.com' }],
+          envelopeRecipients,
+          subject: 'Subject',
+          text: 'Body',
+          html: null,
+          rawHeaders: {},
+          attachments: [],
+          receivedAt: new Date(),
+        }),
+      }
+      inboundRequest.provider = 'mailgun'
+      inboundRequest.headers = { 'content-type': 'application/json' }
+    }
+
+    async function resolveInboxMock() {
+      const access = await import('~/server/utils/support-access')
+      const resolve = access.resolveInboxByAddress as unknown as ReturnType<typeof vi.fn>
+      resolve.mockClear()
+      return resolve
+    }
+
+    it('routes a Bcc copy by its envelope recipient and never consults To/Cc', async () => {
+      mailgunParsed([{ address: 'hidden-alias@example.com' }])
+      const resolveInbox = await resolveInboxMock()
+
+      await expect(handler({} as Parameters<Handler>[0])).rejects.toMatchObject({ statusCode: 500 })
+
+      expect(resolveInbox.mock.calls).toEqual([['hidden-alias@example.com']])
+    })
+
+    it('records no-matching-inbox rather than falling back to headers when the envelope matches nothing', async () => {
+      mailgunParsed([{ address: 'unknown@example.com' }])
+      const resolveInbox = await resolveInboxMock()
+      resolveInbox.mockResolvedValueOnce(null)
+      rejectInboundEvent.mockResolvedValueOnce(true)
+
+      await expect(handler({} as Parameters<Handler>[0])).resolves.toMatchObject({
+        data: { reason: 'no-matching-inbox' },
+      })
+
+      expect(resolveInbox.mock.calls).toEqual([['unknown@example.com']])
+    })
+
+    it('tries several envelope recipients in order until one matches', async () => {
+      mailgunParsed([{ address: 'first@example.com' }, { address: 'second@example.com' }])
+      const resolveInbox = await resolveInboxMock()
+      resolveInbox.mockResolvedValueOnce(null)
+
+      await expect(handler({} as Parameters<Handler>[0])).rejects.toMatchObject({ statusCode: 500 })
+
+      expect(resolveInbox.mock.calls).toEqual([['first@example.com'], ['second@example.com']])
+    })
+
+    it('falls back to To then Cc when the provider reported no envelope recipient', async () => {
+      mailgunParsed([])
+      const resolveInbox = await resolveInboxMock()
+      resolveInbox.mockResolvedValueOnce(null)
+
+      await expect(handler({} as Parameters<Handler>[0])).rejects.toMatchObject({ statusCode: 500 })
+
+      expect(resolveInbox.mock.calls).toEqual([['other-team@example.com'], ['support@example.com']])
     })
   })
 
@@ -202,5 +285,26 @@ describe('inbound route claim-loss control', () => {
       { eventId: claim.eventId, attemptCount: claim.attemptCount },
       expect.any(Error)
     )
+  })
+
+  it('files an email already in this inbox under another delivery key once, as a duplicate', async () => {
+    // Two aliases of one inbox: one email, two provider callbacks.
+    attachInboundEventInbox.mockResolvedValueOnce(true)
+    const db = await import('../server/database/drizzle')
+    ;(db.db as unknown as { select: ReturnType<typeof vi.fn> }).select = vi.fn(() => ({
+      from: () => ({ where: () => ({ limit: async () => [{ supportEnabled: true }] }) }),
+    }))
+    findInboxIncomingMessage.mockResolvedValueOnce({ conversationId: 'conversation-1' })
+
+    await expect(handler({} as Parameters<Handler>[0])).resolves.toMatchObject({
+      data: { reason: 'duplicate-in-inbox' },
+    })
+
+    expect(findInboxIncomingMessage).toHaveBeenCalledWith(expect.anything(), 'inbox-1', 'message-1')
+    expect(completeInboundEvent).toHaveBeenCalledWith(
+      { eventId: claim.eventId, attemptCount: claim.attemptCount },
+      'conversation-1'
+    )
+    expect(failInboundEvent).not.toHaveBeenCalled()
   })
 })

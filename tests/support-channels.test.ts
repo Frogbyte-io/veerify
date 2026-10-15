@@ -1,9 +1,13 @@
 import { createHmac } from 'node:crypto'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { PostmarkChannelDriver } from '../server/services/support-channels/webhook/postmark'
 import { MailgunChannelDriver, parseAddressList } from '../server/services/support-channels/webhook/mailgun'
-import { getChannelDriver, isSupportChannelProvider } from '../server/services/support-channels/index'
+import {
+  getChannelDriver,
+  getConfiguredChannelProviderName,
+  isSupportChannelProvider,
+} from '../server/services/support-channels/index'
 import { normalizeMessageId, parseReferences, normalizeHeaders } from '../server/services/support-channels/types'
 
 /**
@@ -129,6 +133,13 @@ describe('PostmarkChannelDriver', () => {
     expect(message.receivedAt.toISOString()).toBe('2026-08-12T10:04:00.000Z')
   })
 
+  it('reports no envelope recipients, so Postmark keeps routing on To/Cc', () => {
+    // OriginalRecipient is Postmark's own hash address for forwarded mail.
+    const message = driver.parse({ ...POSTMARK_FIXTURE, OriginalRecipient: 'hash@inbound.postmarkapp.com' })
+    expect(message.envelopeRecipients).toEqual([])
+    expect(message.to).toEqual([{ address: 'support@acme.com', name: 'Acme Support' }])
+  })
+
   it('decodes attachments and refuses path traversal in filenames', () => {
     const message = driver.parse(POSTMARK_FIXTURE)
 
@@ -234,10 +245,40 @@ describe('MailgunChannelDriver', () => {
     expect(driver.verifySignature({ rawBody: 'not json', headers: {} })).toBe(false)
   })
 
-  it('keys idempotency on Message-Id, not the per-retry token', () => {
-    expect(driver.extractEventId(mailgunFixture())).toBe('mg-1@acme.com')
-    // Falls back to the header block when the top-level field is absent.
+  it('keys idempotency on Message-Id plus envelope recipient, not the per-retry token', () => {
+    expect(driver.extractEventId(mailgunFixture())).toBe('mg-1@acme.com rcpt:support@acme.com')
+    // Falls back to the header block when the top-level field is absent, and
+    // to the bare Message-Id when there is no envelope recipient.
     expect(driver.extractEventId({ 'message-headers': [['Message-Id', '<hdr-1@acme.com>']] })).toBe('hdr-1@acme.com')
+  })
+
+  it('gives a retry of the same recipient callback the same key', () => {
+    const first = mailgunFixture()
+    const retry = { ...mailgunFixture(), token: 'tok-retry', signature: 'different', timestamp: '1' }
+    expect(driver.extractEventId(retry)).toBe(driver.extractEventId(first))
+    // Case of the recipient does not matter.
+    expect(driver.extractEventId(mailgunFixture({ recipient: 'SUPPORT@acme.com' }))).toBe(driver.extractEventId(first))
+  })
+
+  it('gives each envelope recipient of one email its own key', () => {
+    // Mailgun and Frogmail post one callback per recipient with the same
+    // Message-Id; keyed on Message-Id alone, only the first inbox got the mail.
+    const first = driver.extractEventId(mailgunFixture({ recipient: 'support@acme.com' }))
+    const second = driver.extractEventId(mailgunFixture({ recipient: 'billing@other.com' }))
+    expect(first).not.toBe(second)
+  })
+
+  it('keys a comma-separated recipient list independently of its order', () => {
+    expect(driver.extractEventId(mailgunFixture({ recipient: 'b@acme.com, a@acme.com, b@acme.com' }))).toBe(
+      'mg-1@acme.com rcpt:a@acme.com,b@acme.com'
+    )
+    expect(driver.extractEventId(mailgunFixture({ recipient: 'a@acme.com,b@acme.com' }))).toBe(
+      'mg-1@acme.com rcpt:a@acme.com,b@acme.com'
+    )
+  })
+
+  it('has no key without a Message-Id, whatever the recipient', () => {
+    expect(driver.extractEventId({ recipient: 'support@acme.com' })).toBeNull()
   })
 
   it('normalizes a captured payload into InboundMessage', () => {
@@ -252,12 +293,19 @@ describe('MailgunChannelDriver', () => {
     expect(message.text).toBe('I cannot sign in.')
   })
 
-  it('normalizes multipart forward attachment fields and their content-id map', () => {
+  it('maps content-id-map entries to attachment-N field names, as Mailgun documents', () => {
+    // Mailgun (and Frogmail) send `{"<content-id>": "attachment-N"}`: the
+    // value is the multipart field name, never the file name.
     const message = driver.parse({
       ...mailgunFixture(),
-      'content-id-map': JSON.stringify({ 'logo@acme.com': 'logo.png' }),
-      'attachment-count': '1',
+      'content-id-map': JSON.stringify({ '<logo@acme.com>': 'attachment-2' }),
+      'attachment-count': '2',
       'attachment-1': {
+        filename: 'report.pdf',
+        type: 'application/pdf',
+        data: Buffer.from('pdf bytes'),
+      },
+      'attachment-2': {
         filename: 'logo.png',
         type: 'image/png',
         data: Buffer.from('provider attachment bytes'),
@@ -265,6 +313,14 @@ describe('MailgunChannelDriver', () => {
     })
 
     expect(message.attachments).toEqual([
+      {
+        fileName: 'report.pdf',
+        contentType: 'application/pdf',
+        content: Buffer.from('pdf bytes'),
+        size: 9,
+        contentId: null,
+        isInline: false,
+      },
       {
         fileName: 'logo.png',
         contentType: 'image/png',
@@ -274,6 +330,80 @@ describe('MailgunChannelDriver', () => {
         isInline: true,
       },
     ])
+  })
+
+  it('accepts an already-parsed content-id-map object', () => {
+    const message = driver.parse({
+      ...mailgunFixture(),
+      'content-id-map': { '<chart@acme.com>': 'attachment-1' },
+      'attachment-1': { filename: 'chart.png', type: 'image/png', data: Buffer.from('png') },
+    })
+
+    expect(message.attachments[0]).toMatchObject({ contentId: 'chart@acme.com', isInline: true })
+  })
+
+  it('does not treat a content-id-map value that only matches the file name as a mapping', () => {
+    // The old, wrong reading of the map. A value is a field name, so a value
+    // equal to the file name maps nothing.
+    const message = driver.parse({
+      ...mailgunFixture(),
+      'content-id-map': JSON.stringify({ '<logo@acme.com>': 'logo.png' }),
+      'attachment-1': { filename: 'logo.png', type: 'image/png', data: Buffer.from('png') },
+    })
+
+    expect(message.attachments[0]).toMatchObject({ contentId: null, isInline: false })
+  })
+
+  it('reports the envelope recipient separately from the To/Cc headers', () => {
+    const message = driver.parse(mailgunFixture())
+
+    expect(message.envelopeRecipients).toEqual([{ address: 'support@acme.com' }])
+    expect(message.to).toEqual([{ address: 'support@acme.com', name: 'Acme Support' }, { address: 'ops@acme.com' }])
+  })
+
+  it('keeps an envelope-only (Bcc) recipient that appears in no header', () => {
+    const message = driver.parse(
+      mailgunFixture({ recipient: 'Support@Acme.com', To: 'someone@else.com', Cc: undefined, 'message-headers': [] })
+    )
+
+    expect(message.envelopeRecipients).toEqual([{ address: 'support@acme.com' }])
+    expect(message.to).toEqual([{ address: 'someone@else.com' }])
+    expect(message.cc).toEqual([])
+  })
+
+  it('splits a comma-separated recipient list in order, dropping repeats', () => {
+    const message = driver.parse(mailgunFixture({ recipient: 'b@acme.com, A@acme.com,b@acme.com' }))
+
+    expect(message.envelopeRecipients).toEqual([{ address: 'b@acme.com' }, { address: 'a@acme.com' }])
+  })
+
+  it('reports no envelope recipients when the payload has none, leaving headers to route', () => {
+    const message = driver.parse(mailgunFixture({ recipient: undefined }))
+
+    expect(message.envelopeRecipients).toEqual([])
+    expect(message.to.map((entry) => entry.address)).toEqual(['support@acme.com', 'ops@acme.com'])
+  })
+
+  it('reads the original Message-ID Frogmail adds to References after an SES id', () => {
+    // From Frogmail's inbound-forward.ses-reply.json: the client replied with
+    // only In-Reply-To <ses-id>; Frogmail appends the app's own id.
+    const sesId = '0100019b-fixture-0000-0000-000000000000-000000@email.amazonses.com'
+    const message = driver.parse(
+      mailgunFixture({
+        'Message-Id': '<reply-2001@example.org>',
+        'In-Reply-To': `<${sesId}>`,
+        References: `<${sesId}> <ticket-2001-1@example.com>`,
+        'frogmail-original-message-ids': JSON.stringify({ [`<${sesId}>`]: '<ticket-2001-1@example.com>' }),
+        'message-headers': JSON.stringify([
+          ['Message-Id', '<reply-2001@example.org>'],
+          ['In-Reply-To', `<${sesId}>`],
+          ['References', `<${sesId}> <ticket-2001-1@example.com>`],
+        ]),
+      })
+    )
+
+    expect(message.inReplyTo).toBe(sesId)
+    expect(message.references).toEqual([sesId, 'ticket-2001-1@example.com'])
   })
 
   it('hands over the full body rather than the provider stripped version', () => {
@@ -326,5 +456,23 @@ describe('driver selection', () => {
   it('recognises the supported provider set', () => {
     expect(isSupportChannelProvider('postmark')).toBe(true)
     expect(isSupportChannelProvider('imap')).toBe(false)
+  })
+
+  describe('SUPPORT_CHANNEL_PROVIDER', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('treats an empty or whitespace-only value as unset', () => {
+      vi.stubEnv('SUPPORT_CHANNEL_PROVIDER', '')
+      expect(getConfiguredChannelProviderName()).toBe('postmark')
+      vi.stubEnv('SUPPORT_CHANNEL_PROVIDER', '   ')
+      expect(getConfiguredChannelProviderName()).toBe('postmark')
+    })
+
+    it('normalizes a configured value', () => {
+      vi.stubEnv('SUPPORT_CHANNEL_PROVIDER', ' Mailgun ')
+      expect(getConfiguredChannelProviderName()).toBe('mailgun')
+    })
   })
 })

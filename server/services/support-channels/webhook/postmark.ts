@@ -295,6 +295,11 @@ export class PostmarkChannelDriver implements ChannelDriver {
       from,
       to: toAddressList(typed.ToFull),
       cc: toAddressList(typed.CcFull),
+      // Deliberately empty: Postmark's `OriginalRecipient` is its own
+      // `<hash>@inbound.postmarkapp.com` address whenever mail is forwarded to
+      // Postmark rather than MX-routed, which would never match an inbox.
+      // Postmark therefore keeps routing on To/Cc.
+      envelopeRecipients: [],
       subject: typed.Subject?.trim() || null,
       text: typed.TextBody ?? null,
       html: typed.HtmlBody ?? null,
@@ -349,6 +354,8 @@ export class PostmarkChannelDriver implements ChannelDriver {
       providerAccountKey: typed.ServerID === undefined ? this.accountKey : String(typed.ServerID),
       correlationKey: typed.Metadata?.['veerify-delivery-id']?.trim() || null,
       providerMessageId,
+      // Postmark's MessageID is its own UUID, not an RFC Message-ID.
+      rfcMessageId: null,
       recordType,
       recipient,
       occurredAt: Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt,

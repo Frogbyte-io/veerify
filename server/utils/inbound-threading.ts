@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, or } from 'drizzle-orm'
 import type { db } from '~/server/database/drizzle'
 import { conversation, conversationMessage } from '~/server/database/schema/support'
 
@@ -94,6 +94,10 @@ export async function resolveThread(
   //    different contact on the same thread, and dropping to the subject
   //    heuristic there would be strictly worse. It IS scoped to the inbox, so a
   //    Message-ID cannot pull a message into another team's conversation.
+  //
+  //    Both the Message-ID Veerify generated and the one the provider reports
+  //    having sent under are matched: SES (behind Frogmail) rewrites it, and a
+  //    reply carrying only `In-Reply-To` then references the rewritten id.
   const referenced = [message.inReplyTo, ...message.references].filter((id): id is string => Boolean(id))
 
   if (referenced.length > 0) {
@@ -101,7 +105,15 @@ export async function resolveThread(
       .select({ conversationId: conversationMessage.conversationId })
       .from(conversationMessage)
       .innerJoin(conversation, eq(conversationMessage.conversationId, conversation.id))
-      .where(and(inArray(conversationMessage.channelMessageId, referenced), eq(conversation.inboxId, inbox.id)))
+      .where(
+        and(
+          or(
+            inArray(conversationMessage.channelMessageId, referenced),
+            inArray(conversationMessage.providerChannelMessageId, referenced)
+          ),
+          eq(conversation.inboxId, inbox.id)
+        )
+      )
       .orderBy(desc(conversationMessage.createdAt))
       .limit(2)
 

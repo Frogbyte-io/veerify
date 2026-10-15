@@ -164,6 +164,10 @@ runtime. Set the other `NUXT_NODEMAILER_*` overrides at runtime too. Use a full 
 as `Veerify <noreply@example.com>` for `from`; `MAIL_FROM_NAME` is not mapped by the current app.
 Verify effective settings without printing credentials. Also set direct `MAIL_FROM` to the same
 sender mailbox: support message fallbacks read it outside Nuxt's Nodemailer runtime configuration.
+The optional `SYSTEM_SMTP_*` transport for sign-in, verification, reset and other system mail is
+read directly from the runtime environment (no `NUXT_` mapping or build-time placeholder needed).
+Moving support mail to Frogmail while keeping account mail on Resend is described in
+[Using Frogmail](../deployment-mail.md#using-frogmail).
 
 An APP_DEPLOYMENT_MODE of cloud selects the Vercel
 backend; do not use it to disable scheduling in a self-hosted replica. The dedicated scheduler switch
