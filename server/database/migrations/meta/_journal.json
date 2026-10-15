@@ -379,6 +379,13 @@
       "when": 1791847066338,
       "tag": "0053_fat_silver_samurai",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792090897711,
+      "tag": "0054_majestic_purifiers",
+      "breakpoints": true
     }
   ]
 }

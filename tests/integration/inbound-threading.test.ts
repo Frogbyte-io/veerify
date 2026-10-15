@@ -6,6 +6,7 @@ import { db } from '../../server/database/drizzle'
 import { organization, team } from '../../server/database/schema/auth'
 import { contact, conversation, conversationMessage, supportInbox } from '../../server/database/schema/support'
 import { resolveThread } from '../../server/utils/inbound-threading'
+import { recordProviderChannelMessageId } from '../../server/utils/outbound-delivery'
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -300,5 +301,77 @@ describe('resolveThread (real Postgres)', () => {
     const result = await resolve({ messageId: null, inReplyTo: null, references: [], subject: null }, contactId)
 
     expect(result).toEqual({ conversationId: null, matchedBy: null })
+  })
+
+  describe('provider-assigned Message-IDs', () => {
+    // SES (behind Frogmail) rewrites the Message-ID Veerify generated, so a
+    // reply carrying only In-Reply-To references an id we never generated.
+    const ownMessageId = `own-${randomUUID()}@acme.com`
+    const sesMessageId = `0100019a-${randomUUID()}@email.amazonses.com`
+    const sentMessageRowId = `msg_thread_provider_${randomUUID()}`
+
+    beforeAll(async () => {
+      await db.insert(conversationMessage).values({
+        id: sentMessageRowId,
+        conversationId: threadedConversationId,
+        kind: 'outgoing',
+        body: 'Reply relayed through SES',
+        senderKind: 'agent',
+        channelMessageId: ownMessageId,
+        createdAt: now,
+      })
+    })
+
+    it('stores nothing when the provider kept our Message-ID', async () => {
+      expect(await recordProviderChannelMessageId(db, sentMessageRowId, `<${ownMessageId}>`)).toBe(false)
+
+      const [row] = await db
+        .select({ providerChannelMessageId: conversationMessage.providerChannelMessageId })
+        .from(conversationMessage)
+        .where(eq(conversationMessage.id, sentMessageRowId))
+      expect(row.providerChannelMessageId).toBeNull()
+    })
+
+    it('stores a rewritten Message-ID alongside the original, once', async () => {
+      expect(await recordProviderChannelMessageId(db, sentMessageRowId, `<${sesMessageId}>`)).toBe(true)
+      expect(await recordProviderChannelMessageId(db, sentMessageRowId, sesMessageId)).toBe(false)
+
+      const [row] = await db
+        .select({
+          channelMessageId: conversationMessage.channelMessageId,
+          providerChannelMessageId: conversationMessage.providerChannelMessageId,
+        })
+        .from(conversationMessage)
+        .where(eq(conversationMessage.id, sentMessageRowId))
+      expect(row).toEqual({ channelMessageId: ownMessageId, providerChannelMessageId: sesMessageId })
+    })
+
+    it('threads a reply whose only In-Reply-To is the provider-assigned id', async () => {
+      const result = await resolve(
+        { messageId: 'customer-reply@x.com', inReplyTo: sesMessageId, references: [], subject: 'Unrelated subject' },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: threadedConversationId, matchedBy: 'message-id' })
+    })
+
+    it('still threads on the original Message-ID', async () => {
+      const result = await resolve(
+        { messageId: 'customer-reply@x.com', inReplyTo: ownMessageId, references: [], subject: 'Unrelated subject' },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: threadedConversationId, matchedBy: 'message-id' })
+    })
+
+    it('does not thread the provider-assigned id into another inbox', async () => {
+      const result = await resolve(
+        { messageId: 'customer-reply@x.com', inReplyTo: sesMessageId, references: [], subject: 'Unrelated subject' },
+        contactId,
+        { id: otherInboxId, teamId }
+      )
+
+      expect(result.matchedBy).not.toBe('message-id')
+    })
   })
 })

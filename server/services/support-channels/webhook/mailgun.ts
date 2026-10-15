@@ -486,6 +486,7 @@ export class MailgunChannelDriver implements ChannelDriver {
       providerAccountKey: domain?.trim().toLowerCase() || this.accountKey,
       correlationKey: data['user-variables']?.['veerify-delivery-id']?.trim() || null,
       providerMessageId: messageId,
+      rfcMessageId: messageId,
       recordType,
       recipient,
       occurredAt,

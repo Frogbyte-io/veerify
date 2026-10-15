@@ -53,6 +53,8 @@ describe('PostmarkChannelDriver delivery events', () => {
       providerAccountKey: '42',
       correlationKey: 'delivery-1',
       providerMessageId: 'reply-abc@acme.com',
+      // Postmark's MessageID is its own id, not an RFC Message-ID.
+      rfcMessageId: null,
       recordType: 'delivered',
       recipient: 'customer@example.com',
       occurredAt: new Date('2026-08-20T10:00:00Z'),
@@ -150,6 +152,7 @@ describe('MailgunChannelDriver delivery events', () => {
       providerAccountKey: 'mg.acme.com',
       correlationKey: 'delivery-1',
       providerMessageId: 'reply-abc@acme.com',
+      rfcMessageId: 'reply-abc@acme.com',
       recordType: 'delivered',
       recipient: 'customer@example.com',
       occurredAt: new Date(1788256800 * 1000),

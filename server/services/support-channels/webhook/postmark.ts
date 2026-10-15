@@ -354,6 +354,8 @@ export class PostmarkChannelDriver implements ChannelDriver {
       providerAccountKey: typed.ServerID === undefined ? this.accountKey : String(typed.ServerID),
       correlationKey: typed.Metadata?.['veerify-delivery-id']?.trim() || null,
       providerMessageId,
+      // Postmark's MessageID is its own UUID, not an RFC Message-ID.
+      rfcMessageId: null,
       recordType,
       recipient,
       occurredAt: Number.isNaN(occurredAt.getTime()) ? new Date() : occurredAt,
