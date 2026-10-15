@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { PostmarkChannelDriver } from '../server/services/support-channels/webhook/postmark'
 import { MailgunChannelDriver } from '../server/services/support-channels/webhook/mailgun'
+import { authorizationForDomains, matchVerifiedDomain } from '../server/services/support-channels/types'
 
 /**
  * SUP-04-1's second half: `ChannelDriver` had no outbound surface at all
@@ -185,6 +186,72 @@ describe('checkSendingAuthorization - can this inbox send as this address', () =
     })
 
     expect((await driver.checkSendingAuthorization('support@acme.com')).status).toBe('unauthorized')
+  })
+})
+
+describe('sending authorization on subdomains of a verified domain', () => {
+  const mailgunWithDomains = (items: { name: string; state: string }[]) =>
+    new MailgunChannelDriver({
+      signingKey: 'key',
+      apiKey: 'api-key',
+      fetchImpl: async () => new Response(JSON.stringify({ items }), { status: 200 }),
+    })
+
+  it('authorizes a Mailgun sender on a subdomain of a verified domain', async () => {
+    // Frogmail (and Mailgun) accept a From on mail.acme.com once acme.com is verified.
+    const driver = mailgunWithDomains([{ name: 'acme.com', state: 'active' }])
+
+    expect(await driver.checkSendingAuthorization('support@mail.acme.com')).toEqual({ status: 'authorized' })
+    expect(await driver.checkSendingAuthorization('support@a.b.Acme.com')).toEqual({ status: 'authorized' })
+  })
+
+  it('matches on a label boundary only', async () => {
+    const driver = mailgunWithDomains([{ name: 'acme.com', state: 'active' }])
+
+    expect(await driver.checkSendingAuthorization('support@badacme.com')).toEqual({
+      status: 'unauthorized',
+      verifiedDomains: ['acme.com'],
+    })
+    expect((await driver.checkSendingAuthorization('support@acme.com.evil.io')).status).toBe('unauthorized')
+    expect((await driver.checkSendingAuthorization('support@com')).status).toBe('unauthorized')
+  })
+
+  it('does not let an unverified parent authorize a subdomain', async () => {
+    const driver = mailgunWithDomains([{ name: 'acme.com', state: 'unverified' }])
+
+    expect((await driver.checkSendingAuthorization('support@mail.acme.com')).status).toBe('unauthorized')
+  })
+
+  it('keeps Postmark on exact-domain matching', async () => {
+    const driver = new PostmarkChannelDriver({
+      apiToken: 'token',
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({ Domains: [{ Name: 'acme.com', DKIMVerified: true, ReturnPathDomainVerified: true }] }),
+          { status: 200 }
+        ),
+    })
+
+    expect((await driver.checkSendingAuthorization('support@mail.acme.com')).status).toBe('unauthorized')
+  })
+
+  it('picks the most specific verified domain', () => {
+    const verified = ['acme.com', 'eu.mail.acme.com', 'mail.acme.com']
+
+    expect(matchVerifiedDomain('x.eu.mail.acme.com', verified, { includeSubdomains: true })).toBe('eu.mail.acme.com')
+    expect(matchVerifiedDomain('us.mail.acme.com', verified, { includeSubdomains: true })).toBe('mail.acme.com')
+    expect(matchVerifiedDomain('acme.com', verified, { includeSubdomains: true })).toBe('acme.com')
+    expect(matchVerifiedDomain('badacme.com', verified, { includeSubdomains: true })).toBeNull()
+    expect(matchVerifiedDomain('mail.acme.com.', ['ACME.com.'], { includeSubdomains: true })).toBe('acme.com')
+    expect(matchVerifiedDomain('mail.acme.com', verified)).toBe('mail.acme.com')
+    expect(matchVerifiedDomain('x.mail.acme.com', verified)).toBeNull()
+  })
+
+  it('leaves exact matching as the default for authorizationForDomains', () => {
+    expect(authorizationForDomains('a@mail.acme.com', ['acme.com']).status).toBe('unauthorized')
+    expect(authorizationForDomains('a@mail.acme.com', ['acme.com'], { includeSubdomains: true }).status).toBe(
+      'authorized'
+    )
   })
 })
 

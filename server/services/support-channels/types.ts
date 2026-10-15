@@ -120,6 +120,36 @@ export function emailDomain(address: string): string | null {
   return domain.length > 0 ? domain : null
 }
 
+function normalizeDomain(value: string): string {
+  return value.trim().toLowerCase().replace(/\.+$/, '')
+}
+
+/**
+ * The most specific verified domain `domain` sits on, or null.
+ *
+ * With `includeSubdomains`, a verified `example.com` also covers
+ * `mail.example.com`, matched on a label boundary only - `badexample.com` is
+ * not a subdomain of `example.com`. This mirrors how Mailgun-compatible
+ * providers such as Frogmail authorize senders (most specific verified domain
+ * wins); providers that only authorize the exact domain leave it off.
+ */
+export function matchVerifiedDomain(
+  domain: string,
+  verifiedDomains: string[],
+  options: { includeSubdomains?: boolean } = {}
+): string | null {
+  const target = normalizeDomain(domain)
+  if (!target) return null
+
+  let best: string | null = null
+  for (const candidate of verifiedDomains.map(normalizeDomain)) {
+    if (!candidate) continue
+    const matches = target === candidate || (options.includeSubdomains === true && target.endsWith(`.${candidate}`))
+    if (matches && (best === null || candidate.length > best.length)) best = candidate
+  }
+  return best
+}
+
 /**
  * Shared verdict logic: does `address` sit on one of `verifiedDomains`?
  *
@@ -127,13 +157,19 @@ export function emailDomain(address: string): string | null {
  * comparison itself is kept in one place - a case-sensitivity slip here would
  * warn about a perfectly good From address.
  */
-export function authorizationForDomains(address: string, verifiedDomains: string[]): SendingAuthorization {
+export function authorizationForDomains(
+  address: string,
+  verifiedDomains: string[],
+  options: { includeSubdomains?: boolean } = {}
+): SendingAuthorization {
   const domain = emailDomain(address)
   if (!domain) {
     return { status: 'unknown', reason: `Could not read a domain from "${address}"` }
   }
 
-  return verifiedDomains.includes(domain) ? { status: 'authorized' } : { status: 'unauthorized', verifiedDomains }
+  return matchVerifiedDomain(domain, verifiedDomains, options)
+    ? { status: 'authorized' }
+    : { status: 'unauthorized', verifiedDomains }
 }
 
 export interface ChannelDriver {

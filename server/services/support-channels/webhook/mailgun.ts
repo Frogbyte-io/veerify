@@ -355,7 +355,9 @@ export class MailgunChannelDriver implements ChannelDriver {
       return { status: 'unknown', reason: error instanceof Error ? error.message : 'Mailgun lookup failed' }
     }
 
-    return authorizationForDomains(address, verified)
+    // Mailgun-compatible providers (Mailgun, Frogmail) authorize a sender on a
+    // subdomain of a verified domain, so the verdict has to as well.
+    return authorizationForDomains(address, verified, { includeSubdomains: true })
   }
 
   verifySignature(input: InboundVerificationInput): boolean {
