@@ -15,6 +15,13 @@ import {
 } from './email-templates'
 import type { Readable } from 'node:stream'
 import { createConsola } from 'consola'
+import type { Transporter } from 'nodemailer'
+import {
+  parseSubmissionMessageId,
+  resolveMailTransportConfig,
+  type MailChannel,
+  type SmtpTransportConfig,
+} from './mail-transport'
 
 const logger = createConsola().withTag('veerify').withTag('email')
 
@@ -54,10 +61,19 @@ export interface SendEmailOptions {
   /** Message-ID, In-Reply-To and References are lifted out - see below. */
   headers?: Record<string, string>
   attachments?: EmailAttachment[]
+  /**
+   * Which transport to use - see `lib/mail-transport.ts`. Defaults to
+   * `system`; only the support outbox sends as `support`.
+   */
+  channel?: MailChannel
 }
 
 export interface SendEmailResult {
   accepted: boolean
+  /**
+   * The Message-ID the submission gateway says it queued, when it reports
+   * one (Frogmail does, in its 250 reply). Absent otherwise.
+   */
   providerMessageId?: string
   response: string
 }
@@ -186,18 +202,42 @@ interface CustomDomainEmailOptions {
   domain: string
 }
 
+const dedicatedTransports = new Map<string, Transporter>()
+
+/** One pooled transporter per distinct dedicated config, built on first use. */
+async function dedicatedTransport(config: SmtpTransportConfig): Promise<Transporter> {
+  const key = JSON.stringify(config)
+  const cached = dedicatedTransports.get(key)
+  if (cached) return cached
+
+  // Imported lazily: this module also has a browser branch, and the dedicated
+  // transport is opt-in.
+  const nodemailer = await import('nodemailer')
+  const { from, ...smtp } = config
+  const transport = nodemailer.createTransport(smtp, from ? { from } : {})
+  dedicatedTransports.set(key, transport)
+  return transport
+}
+
 export async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult | Response> {
   // Check if we're on the server side
   if (import.meta.server) {
-    // Directly use NodeMailer on server side
-    const { sendMail } = useNodeMailer()
+    const dedicated = resolveMailTransportConfig(options.channel ?? 'system')
 
     try {
-      const result = await sendMail(buildMailPayload(options))
+      const payload = buildMailPayload(options)
+      // No dedicated transport configured: the primary nuxt-nodemailer one,
+      // exactly as before the channel split.
+      const result = dedicated
+        ? await (await dedicatedTransport(dedicated)).sendMail(payload)
+        : await useNodeMailer().sendMail(payload)
+      const response = typeof result.response === 'string' ? result.response : 'Email accepted by transport'
+      const providerMessageId = parseSubmissionMessageId(response)
 
       return {
         accepted: true,
-        response: typeof result.response === 'string' ? result.response : 'Email accepted by transport',
+        ...(providerMessageId ? { providerMessageId } : {}),
+        response,
       }
     } catch (error) {
       logger.error('Email sending failed', { error: error instanceof Error ? error.message : error })

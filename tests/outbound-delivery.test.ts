@@ -76,6 +76,8 @@ describe('processOutboundDelivery', () => {
     expect(onFailed).not.toHaveBeenCalled()
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
+        // Support mail never uses the optional dedicated system transport.
+        channel: 'support',
         to: 'customer@example.com',
         subject: 'Re: Invoice',
         headers: {

@@ -154,6 +154,16 @@ services:
       SMTP_SECURE: ${SMTP_SECURE:-true}
       MAIL_FROM: ${MAIL_FROM}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME}
+      # Optional dedicated transport for sign-in/verification/reset and other
+      # system mail; empty SYSTEM_SMTP_HOST sends it through SMTP_* above.
+      # Using Frogmail: SMTP_* -> Frogmail's submission gateway (587, user
+      # `api`), SYSTEM_SMTP_* -> Resend. See docs/deployment-mail.md.
+      SYSTEM_SMTP_HOST: ${SYSTEM_SMTP_HOST:-}
+      SYSTEM_SMTP_PORT: ${SYSTEM_SMTP_PORT:-}
+      SYSTEM_SMTP_SECURE: ${SYSTEM_SMTP_SECURE:-false}
+      SYSTEM_SMTP_USER: ${SYSTEM_SMTP_USER:-}
+      SYSTEM_SMTP_PASS: ${SYSTEM_SMTP_PASS:-}
+      SYSTEM_MAIL_FROM: ${SYSTEM_MAIL_FROM:-}
 
       # --- Storage (MinIO, fronted publicly by Caddy at STORAGE_DOMAIN —
       # presigned upload URLs must be browser-reachable, not just

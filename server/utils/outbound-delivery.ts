@@ -599,6 +599,9 @@ export async function processOutboundDelivery(
     }
 
     const result = await send({
+      // Support mail always uses the primary transport (`SMTP_*`), never the
+      // optional dedicated system transport.
+      channel: 'support',
       to: claim.payload.to,
       cc: claim.payload.cc,
       subject: claim.payload.subject,
