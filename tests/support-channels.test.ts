@@ -245,10 +245,40 @@ describe('MailgunChannelDriver', () => {
     expect(driver.verifySignature({ rawBody: 'not json', headers: {} })).toBe(false)
   })
 
-  it('keys idempotency on Message-Id, not the per-retry token', () => {
-    expect(driver.extractEventId(mailgunFixture())).toBe('mg-1@acme.com')
-    // Falls back to the header block when the top-level field is absent.
+  it('keys idempotency on Message-Id plus envelope recipient, not the per-retry token', () => {
+    expect(driver.extractEventId(mailgunFixture())).toBe('mg-1@acme.com rcpt:support@acme.com')
+    // Falls back to the header block when the top-level field is absent, and
+    // to the bare Message-Id when there is no envelope recipient.
     expect(driver.extractEventId({ 'message-headers': [['Message-Id', '<hdr-1@acme.com>']] })).toBe('hdr-1@acme.com')
+  })
+
+  it('gives a retry of the same recipient callback the same key', () => {
+    const first = mailgunFixture()
+    const retry = { ...mailgunFixture(), token: 'tok-retry', signature: 'different', timestamp: '1' }
+    expect(driver.extractEventId(retry)).toBe(driver.extractEventId(first))
+    // Case of the recipient does not matter.
+    expect(driver.extractEventId(mailgunFixture({ recipient: 'SUPPORT@acme.com' }))).toBe(driver.extractEventId(first))
+  })
+
+  it('gives each envelope recipient of one email its own key', () => {
+    // Mailgun and Frogmail post one callback per recipient with the same
+    // Message-Id; keyed on Message-Id alone, only the first inbox got the mail.
+    const first = driver.extractEventId(mailgunFixture({ recipient: 'support@acme.com' }))
+    const second = driver.extractEventId(mailgunFixture({ recipient: 'billing@other.com' }))
+    expect(first).not.toBe(second)
+  })
+
+  it('keys a comma-separated recipient list independently of its order', () => {
+    expect(driver.extractEventId(mailgunFixture({ recipient: 'b@acme.com, a@acme.com, b@acme.com' }))).toBe(
+      'mg-1@acme.com rcpt:a@acme.com,b@acme.com'
+    )
+    expect(driver.extractEventId(mailgunFixture({ recipient: 'a@acme.com,b@acme.com' }))).toBe(
+      'mg-1@acme.com rcpt:a@acme.com,b@acme.com'
+    )
+  })
+
+  it('has no key without a Message-Id, whatever the recipient', () => {
+    expect(driver.extractEventId({ recipient: 'support@acme.com' })).toBeNull()
   })
 
   it('normalizes a captured payload into InboundMessage', () => {

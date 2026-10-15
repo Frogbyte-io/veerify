@@ -34,6 +34,13 @@ prebuilt image switches transports with an environment change and a restart.
   tried in the order given. The `To`, then `Cc`, headers are used only when a callback has no
   `recipient` (and always for Postmark, whose `OriginalRecipient` is its own hash address for
   forwarded mail).
+- **Deduplication.** Mailgun-format providers post one callback per envelope recipient, all with
+  the same `Message-Id`. The inbound event key is the `Message-Id` plus the envelope recipient, so a
+  provider retry of one recipient's callback is still dropped while every recipient gets through.
+  Each inbox then files a given `Message-Id` once (under a per-inbox lock), so one email sent to two
+  inboxes creates two tickets, and one sent to two aliases of the same inbox creates one. Postmark's
+  event key is its own per-delivery `MessageID` and is unchanged; the per-inbox check applies to it
+  too.
 - **Inline images.** `content-id-map` maps each `<Content-ID>` to its `attachment-N` field, as
   Mailgun documents; those parts are stored as inline and their `cid:` references rewritten.
 - **Provider Message-IDs.** When the provider reports sending a reply under a different Message-ID
@@ -117,6 +124,3 @@ undone: `provider_channel_message_id` is additive and unused by the previous pro
   carries only an `In-Reply-To` with the SES id still threads only through the `References` chain
   or the subject fallback. Veerify picks up the rewritten id automatically once Frogmail reports it
   on either surface.
-- Frogmail posts one inbound callback per envelope recipient with the same `Message-Id`. Veerify
-  deduplicates inbound mail on `Message-Id`, so a single message addressed to two different Veerify
-  inboxes creates a ticket in the first one only (as with Mailgun).

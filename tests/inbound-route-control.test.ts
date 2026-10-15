@@ -20,6 +20,8 @@ const attachInboundEventInbox = vi.fn(async () => false)
 const rejectInboundEvent = vi.fn(async () => false)
 const failInboundEvent = vi.fn(async () => true)
 const checkRateLimit = vi.fn(async () => true)
+const completeInboundEvent = vi.fn(async () => true)
+const findInboxIncomingMessage = vi.fn(async (): Promise<{ conversationId: string } | null> => null)
 
 vi.mock('h3', () => ({
   createError: (input: Record<string, unknown>) => Object.assign(new Error(String(input.statusMessage)), input),
@@ -56,8 +58,10 @@ vi.mock('~/server/services/support-channels', () => ({
 vi.mock('~/server/utils/inbound-events', () => ({
   attachInboundEventInbox,
   claimInboundEvent: vi.fn(async () => claim),
-  completeInboundEvent: vi.fn(async () => true),
+  completeInboundEvent,
   failInboundEvent,
+  findInboxIncomingMessage,
+  lockInboxMessageId: vi.fn(async () => undefined),
   recordInboundRawKey: vi.fn(async () => true),
   rejectInboundEvent,
 }))
@@ -122,6 +126,8 @@ describe('inbound route claim-loss control', () => {
     failInboundEvent.mockClear()
     checkRateLimit.mockClear()
     checkRateLimit.mockResolvedValue(true)
+    completeInboundEvent.mockClear()
+    findInboxIncomingMessage.mockClear()
   })
 
   it('applies a high-capacity provider-IP edge bucket before reading the body', async () => {
@@ -279,5 +285,26 @@ describe('inbound route claim-loss control', () => {
       { eventId: claim.eventId, attemptCount: claim.attemptCount },
       expect.any(Error)
     )
+  })
+
+  it('files an email already in this inbox under another delivery key once, as a duplicate', async () => {
+    // Two aliases of one inbox: one email, two provider callbacks.
+    attachInboundEventInbox.mockResolvedValueOnce(true)
+    const db = await import('../server/database/drizzle')
+    ;(db.db as unknown as { select: ReturnType<typeof vi.fn> }).select = vi.fn(() => ({
+      from: () => ({ where: () => ({ limit: async () => [{ supportEnabled: true }] }) }),
+    }))
+    findInboxIncomingMessage.mockResolvedValueOnce({ conversationId: 'conversation-1' })
+
+    await expect(handler({} as Parameters<Handler>[0])).resolves.toMatchObject({
+      data: { reason: 'duplicate-in-inbox' },
+    })
+
+    expect(findInboxIncomingMessage).toHaveBeenCalledWith(expect.anything(), 'inbox-1', 'message-1')
+    expect(completeInboundEvent).toHaveBeenCalledWith(
+      { eventId: claim.eventId, attemptCount: claim.attemptCount },
+      'conversation-1'
+    )
+    expect(failInboundEvent).not.toHaveBeenCalled()
   })
 })

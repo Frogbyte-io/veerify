@@ -404,11 +404,22 @@ export class MailgunChannelDriver implements ChannelDriver {
     // Mailgun's inbound routes carry no delivery id of their own, so the
     // Message-ID is the idempotency key. The signing token is deliberately not
     // used: it changes per retry, which would defeat duplicate suppression.
-    const messageId = normalizeMessageId(typed?.['Message-Id'] ?? typed?.['message-id'])
-    if (messageId) return messageId
+    const messageId =
+      normalizeMessageId(typed?.['Message-Id'] ?? typed?.['message-id']) ??
+      normalizeMessageId(headersToRecord(typed?.['message-headers'])['message-id'])
+    if (!messageId) return null
 
-    const headers = headersToRecord(typed?.['message-headers'])
-    return normalizeMessageId(headers['message-id'])
+    // Mailgun and Frogmail post one callback per matched envelope recipient,
+    // all with the same Message-ID. Keyed on the Message-ID alone, the second
+    // recipient's callback was suppressed as a duplicate and only the first
+    // inbox got the mail. Keying on Message-ID + envelope recipient keeps a
+    // retry of the same recipient's callback a duplicate while letting each
+    // recipient through. The recipients are sorted so the key does not depend
+    // on list order. Two aliases of ONE inbox are collapsed later, per inbox.
+    const recipients = uniqueAddresses(parseAddressList(typed?.recipient))
+      .map((entry) => entry.address)
+      .sort()
+    return recipients.length > 0 ? `${messageId} rcpt:${recipients.join(',')}` : messageId
   }
 
   parse(payload: unknown): InboundMessage {
