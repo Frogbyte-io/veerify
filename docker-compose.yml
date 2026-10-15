@@ -135,7 +135,8 @@ services:
       VERCEL_TEAM_ID: ${VERCEL_TEAM_ID:-}
       VERCEL_TEAM_SLUG: ${VERCEL_TEAM_SLUG:-}
 
-      # --- Inbound support mail ---
+      # --- Inbound support mail (Frogmail: SUPPORT_CHANNEL_PROVIDER=mailgun,
+      # SUPPORT_MAILGUN_API_BASE_URL=<Frogmail origin>; empty = api.mailgun.net) ---
       SUPPORT_CHANNEL_PROVIDER: ${SUPPORT_CHANNEL_PROVIDER:-postmark}
       SUPPORT_POSTMARK_WEBHOOK_USER: ${SUPPORT_POSTMARK_WEBHOOK_USER:-}
       SUPPORT_POSTMARK_WEBHOOK_PASSWORD: ${SUPPORT_POSTMARK_WEBHOOK_PASSWORD:-}
