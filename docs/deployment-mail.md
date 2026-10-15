@@ -43,11 +43,15 @@ prebuilt image switches transports with an environment change and a restart.
   too.
 - **Inline images.** `content-id-map` maps each `<Content-ID>` to its `attachment-N` field, as
   Mailgun documents; those parts are stored as inline and their `cid:` references rewritten.
-- **Provider Message-IDs.** When the provider reports sending a reply under a different Message-ID
-  than Veerify generated (from the SMTP `250 … queued as … <message-id>` reply or the delivery
-  event's `message.headers.message-id`), it is stored in
-  `conversation_message.provider_channel_message_id`. A customer reply whose `In-Reply-To` or
-  `References` names either id threads onto the conversation.
+- **Provider Message-IDs.** When a reply goes out under a different Message-ID than Veerify
+  generated (SES behind Frogmail replaces it), the provider's id is stored in
+  `conversation_message.provider_channel_message_id`. Veerify reads it from Frogmail's
+  `event-data.frogmail.provider-message-id` on delivery events and from the SMTP
+  `250 … queued as … <message-id>` reply; real Mailgun keeps the sent id, so nothing extra is
+  stored there. A customer reply whose `In-Reply-To` or `References` names either id threads onto
+  the conversation. Independently, Frogmail appends Veerify's own Message-ID after an SES id in the
+  `References` of inbound callbacks (and reports the mapping in `frogmail-original-message-ids`),
+  so such replies thread through `References` even before the provider id is known.
 
 ## Using Frogmail
 
@@ -115,12 +119,3 @@ inbound stage, `SUPPORT_CHANNEL_PROVIDER` and `SUPPORT_MAILGUN_*`) values. Keep 
 provider's values in the secret store under rollback names until the cutover is decommissioned.
 Messages Frogmail already accepted are still delivered and reported. No database change needs to be
 undone: `provider_channel_message_id` is additive and unused by the previous providers.
-
-### Known limitations
-
-- Frogmail currently reports the Message-ID Veerify submitted, both in its SMTP reply and in
-  `event-data.message.headers.message-id`, not the id SES rewrites it to. Veerify stores a provider
-  Message-ID only when one differs, so with today's Frogmail nothing is stored, and a reply that
-  carries only an `In-Reply-To` with the SES id still threads only through the `References` chain
-  or the subject fallback. Veerify picks up the rewritten id automatically once Frogmail reports it
-  on either surface.

@@ -255,6 +255,13 @@ interface MailgunEventPayload {
     'user-variables'?: Record<string, string>
     'delivery-status'?: { description?: string; message?: string }
     message?: { headers?: { 'message-id'?: string } }
+    /**
+     * Frogmail extension, absent on real Mailgun. `provider-message-id` is the
+     * Message-ID recipients actually saw (SES replaces the sent one with
+     * `<id>@<region>.amazonses.com`); `message.headers.message-id` stays the
+     * id returned at send time.
+     */
+    frogmail?: { 'provider-message-id'?: string }
   }
 }
 
@@ -496,8 +503,16 @@ export class MailgunChannelDriver implements ChannelDriver {
       providerEventId: this.extractDeliveryEventId(typed),
       providerAccountKey: domain?.trim().toLowerCase() || this.accountKey,
       correlationKey: data['user-variables']?.['veerify-delivery-id']?.trim() || null,
+      // Correlation stays on the send-time id: it is what the SMTP reply
+      // reported and the outbox stored.
       providerMessageId: messageId,
-      rfcMessageId: messageId,
+      // The id the message actually went out under. Real Mailgun keeps the
+      // sent Message-ID, so without Frogmail's extension it is the same id
+      // and nothing extra is stored.
+      rfcMessageId:
+        normalizeMessageId(
+          typeof data.frogmail?.['provider-message-id'] === 'string' ? data.frogmail['provider-message-id'] : null
+        ) ?? messageId,
       recordType,
       recipient,
       occurredAt,

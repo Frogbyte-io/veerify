@@ -256,9 +256,10 @@ export interface DeliveryEvent {
   providerMessageId: string | null
   /**
    * The RFC 5322 Message-ID the provider reports the message went out with,
-   * angle brackets stripped, when the provider exposes one (Mailgun-format
-   * `event-data.message.headers.message-id`). Null for providers whose ids are
-   * not RFC Message-IDs (Postmark).
+   * angle brackets stripped, when the provider exposes one: Frogmail's
+   * `event-data.frogmail.provider-message-id`, else Mailgun's
+   * `event-data.message.headers.message-id` (Mailgun keeps the sent id). Null
+   * for providers whose ids are not RFC Message-IDs (Postmark).
    *
    * Unlike the correlation fields above this IS a Message-ID: when it differs
    * from the one Veerify generated (a relay such as SES rewrote it), it is

@@ -364,6 +364,37 @@ describe('resolveThread (real Postgres)', () => {
       expect(result).toEqual({ conversationId: threadedConversationId, matchedBy: 'message-id' })
     })
 
+    it('threads through the original id Frogmail appends to References, with no provider id stored', async () => {
+      // A reply to a message whose SES id Veerify never learned: In-Reply-To
+      // names only the SES id, Frogmail adds our own id after it.
+      const unknownSesId = `0100019b-${randomUUID()}@email.amazonses.com`
+      const result = await resolve(
+        {
+          messageId: 'customer-reply@x.com',
+          inReplyTo: unknownSesId,
+          references: [unknownSesId, ownMessageId],
+          subject: 'Unrelated subject',
+        },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: threadedConversationId, matchedBy: 'message-id' })
+    })
+
+    it('does not call it ambiguous when References names both ids of one stored message', async () => {
+      const result = await resolve(
+        {
+          messageId: 'customer-reply@x.com',
+          inReplyTo: sesMessageId,
+          references: [sesMessageId, ownMessageId],
+          subject: 'Unrelated subject',
+        },
+        contactId
+      )
+
+      expect(result).toEqual({ conversationId: threadedConversationId, matchedBy: 'message-id' })
+    })
+
     it('does not thread the provider-assigned id into another inbox', async () => {
       const result = await resolve(
         { messageId: 'customer-reply@x.com', inReplyTo: sesMessageId, references: [], subject: 'Unrelated subject' },

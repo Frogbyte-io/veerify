@@ -384,6 +384,28 @@ describe('MailgunChannelDriver', () => {
     expect(message.to.map((entry) => entry.address)).toEqual(['support@acme.com', 'ops@acme.com'])
   })
 
+  it('reads the original Message-ID Frogmail adds to References after an SES id', () => {
+    // From Frogmail's inbound-forward.ses-reply.json: the client replied with
+    // only In-Reply-To <ses-id>; Frogmail appends the app's own id.
+    const sesId = '0100019b-fixture-0000-0000-000000000000-000000@email.amazonses.com'
+    const message = driver.parse(
+      mailgunFixture({
+        'Message-Id': '<reply-2001@example.org>',
+        'In-Reply-To': `<${sesId}>`,
+        References: `<${sesId}> <ticket-2001-1@example.com>`,
+        'frogmail-original-message-ids': JSON.stringify({ [`<${sesId}>`]: '<ticket-2001-1@example.com>' }),
+        'message-headers': JSON.stringify([
+          ['Message-Id', '<reply-2001@example.org>'],
+          ['In-Reply-To', `<${sesId}>`],
+          ['References', `<${sesId}> <ticket-2001-1@example.com>`],
+        ]),
+      })
+    )
+
+    expect(message.inReplyTo).toBe(sesId)
+    expect(message.references).toEqual([sesId, 'ticket-2001-1@example.com'])
+  })
+
   it('hands over the full body rather than the provider stripped version', () => {
     // Quote stripping is SUP-03-6 and must behave identically for every
     // provider, so `stripped-text` must not leak through as `text`.

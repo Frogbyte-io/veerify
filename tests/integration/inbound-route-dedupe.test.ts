@@ -65,7 +65,12 @@ describe('inbound deduplication per inbox (real Postgres)', () => {
   const raceAliasesA = Array.from({ length: 6 }, (_, index) => `alias${index}-${runId}@a.example.test`)
   const now = new Date()
 
-  function callback(recipient: string, messageId: string, to = `${addressA}, ${addressB}`): FakeEvent {
+  function callback(
+    recipient: string,
+    messageId: string,
+    to = `${addressA}, ${addressB}`,
+    threading: { inReplyTo?: string; references?: string[] } = {}
+  ): FakeEvent {
     const timestamp = String(Math.floor(Date.now() / 1000))
     // A fresh token per callback, as providers sign every attempt afresh.
     const token = randomUUID().replace(/-/g, '')
@@ -85,6 +90,8 @@ describe('inbound deduplication per inbox (real Postgres)', () => {
       'message-headers': JSON.stringify([
         ['Message-Id', `<${messageId}>`],
         ['Date', now.toUTCString()],
+        ...(threading.inReplyTo ? [['In-Reply-To', `<${threading.inReplyTo}>`]] : []),
+        ...(threading.references ? [['References', threading.references.map((id) => `<${id}>`).join(' ')]] : []),
       ]),
     }
     return { headers: { 'content-type': 'application/json' }, rawBody: Buffer.from(JSON.stringify(payload)) }
@@ -186,5 +193,33 @@ describe('inbound deduplication per inbox (real Postgres)', () => {
     const raceEvents = events.filter((event) => event.providerEventId.startsWith(`${messageId} `))
     // One event per envelope recipient; the concurrent retry shares B's.
     expect(raceEvents).toHaveLength(recipientsA.length + 1)
+  })
+
+  it('threads a reply to an SES-rewritten Message-ID onto the ticket through References', async () => {
+    // Frogmail's ses-reply shape: the client quotes only the SES id, and
+    // Frogmail appends the Message-ID Veerify sent to References.
+    const firstId = `ses-thread-${runId}@example.test`
+    const opened = await handler(callback(addressA, firstId))
+    const conversationId = opened.data.conversationId as string
+    const ownReplyId = `agent-reply-${runId}@a.example.test`
+    await db.insert(conversationMessage).values({
+      id: `msg_agent_${runId}`,
+      conversationId,
+      kind: 'outgoing',
+      body: 'We fixed it.',
+      senderKind: 'agent',
+      channelMessageId: ownReplyId,
+      createdAt: new Date(),
+    })
+    const sesId = `0100019b-${runId}@email.amazonses.com`
+
+    const reply = await handler(
+      callback(addressA, `customer-reply-${runId}@example.test`, addressA, {
+        inReplyTo: sesId,
+        references: [sesId, ownReplyId],
+      })
+    )
+
+    expect(reply.data).toMatchObject({ accepted: true, created: false, conversationId })
   })
 })
