@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { and, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { supportEmailEvent } from '~/server/database/schema/support'
+import { conversation, conversationMessage, supportEmailEvent } from '~/server/database/schema/support'
 
 /**
  * Claim/replay state for inbound webhook deliveries.
@@ -255,4 +255,54 @@ export function sanitizeEventError(error: unknown): string {
     error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown inbound processing error'
 
   return raw.replace(/\s+/g, ' ').trim().slice(0, MAX_ERROR_LENGTH)
+}
+
+type InboundTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/**
+ * The conversation an inbox already filed this RFC Message-ID under as
+ * incoming mail, or null.
+ *
+ * The event claim above is keyed per provider delivery, and one email can
+ * legitimately arrive as several deliveries: Mailgun-format providers post one
+ * callback per envelope recipient, so a message to two aliases of one inbox
+ * arrives twice under different event keys, and a callback retried across a
+ * change of key format does too. Each inbox must file one copy - a second
+ * inbox addressed by the same email files its own.
+ */
+export async function findInboxIncomingMessage(
+  executor: Pick<InboundTx, 'select'>,
+  inboxId: string,
+  channelMessageId: string
+): Promise<{ conversationId: string } | null> {
+  const [existing] = await executor
+    .select({ conversationId: conversationMessage.conversationId })
+    .from(conversationMessage)
+    .innerJoin(conversation, eq(conversationMessage.conversationId, conversation.id))
+    .where(
+      and(
+        eq(conversation.inboxId, inboxId),
+        eq(conversationMessage.channelMessageId, channelMessageId),
+        eq(conversationMessage.kind, 'incoming')
+      )
+    )
+    .limit(1)
+  return existing ?? null
+}
+
+/**
+ * Serialize filing of one Message-ID into one inbox for the rest of the
+ * transaction.
+ *
+ * Two deliveries of the same email to the same inbox (two aliases, posted
+ * concurrently) each hold their own event claim, so the claim cannot stop
+ * both from inserting. Under this transaction-scoped advisory lock the second
+ * waits for the first to commit, then sees its message through
+ * `findInboxIncomingMessage` (READ COMMITTED takes a fresh snapshot per
+ * statement). Different inboxes or Message-IDs never contend.
+ */
+export async function lockInboxMessageId(tx: Pick<InboundTx, 'execute'>, inboxId: string, channelMessageId: string) {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`support-inbound:${inboxId}:${channelMessageId}`}, 0))`
+  )
 }

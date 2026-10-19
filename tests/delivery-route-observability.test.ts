@@ -21,7 +21,11 @@ vi.stubGlobal('createError', (input: Record<string, unknown>) =>
 )
 
 const logs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }))
-const state = vi.hoisted(() => ({ correlated: null as { id: string; conversationId: string } | null }))
+const state = vi.hoisted(() => ({
+  correlated: null as { id: string; conversationId: string } | null,
+  rfcMessageId: null as string | null,
+}))
+const recordProviderChannelMessageId = vi.hoisted(() => vi.fn(async () => true))
 
 type TransactionCallback = (tx: unknown) => unknown
 
@@ -49,7 +53,7 @@ vi.mock('~/server/services/support-channels', () => ({
   getChannelDriver: () => ({
     name: 'postmark',
     verifySignature: () => true,
-    parseDeliveryEvent: () => deliveryEvent,
+    parseDeliveryEvent: () => ({ ...deliveryEvent, rfcMessageId: state.rfcMessageId }),
   }),
 }))
 vi.mock('~/server/utils/delivery-events', () => ({
@@ -60,6 +64,7 @@ vi.mock('~/server/utils/delivery-events', () => ({
 }))
 vi.mock('~/server/utils/outbound-delivery', () => ({
   publishDeliveryStatusChanged: vi.fn(async () => undefined),
+  recordProviderChannelMessageId,
   resolveDeliveryCorrelation: vi.fn(async () => state.correlated),
 }))
 vi.mock('~/server/utils/rate-limit', () => ({ checkRateLimit: vi.fn(async () => true) }))
@@ -83,6 +88,8 @@ describe('delivery route observability', () => {
     logs.info.mockClear()
     logs.warn.mockClear()
     state.correlated = null
+    state.rfcMessageId = null
+    recordProviderChannelMessageId.mockClear()
   })
 
   it('counts a signature-valid event that correlates to nothing', async () => {
@@ -127,5 +134,26 @@ describe('delivery route observability', () => {
 
     expect(response).toEqual({ success: true, data: { accepted: true, reason: 'processed' } })
     expect(metricCalls('support.delivery.uncorrelated')).toEqual([])
+  })
+
+  it('records the provider-reported Message-ID on the correlated message', async () => {
+    state.correlated = { id: 'message-1', conversationId: 'conversation-1' }
+    state.rfcMessageId = '0100019a-abc@email.amazonses.com'
+
+    await handler({} as never)
+
+    expect(recordProviderChannelMessageId).toHaveBeenCalledWith(
+      expect.anything(),
+      'message-1',
+      '0100019a-abc@email.amazonses.com'
+    )
+  })
+
+  it('never records a provider Message-ID for an event that correlates to nothing', async () => {
+    state.rfcMessageId = '0100019a-abc@email.amazonses.com'
+
+    await handler({} as never)
+
+    expect(recordProviderChannelMessageId).not.toHaveBeenCalled()
   })
 })

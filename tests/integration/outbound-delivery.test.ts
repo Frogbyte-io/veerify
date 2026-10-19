@@ -263,6 +263,61 @@ describe('outbound delivery outbox (real Postgres)', () => {
     expect(message.deliveryError).toBeNull()
   })
 
+  it('completeOutboundDelivery stores a provider-reported Message-ID that differs from ours', async () => {
+    const messageId = newMessage()
+    await db.insert(conversationMessage).values({
+      id: messageId,
+      conversationId,
+      kind: 'outgoing',
+      body: 'Reply body',
+      senderKind: 'agent',
+      channelMessageId: `own-${messageId}@acme.com`,
+      createdAt: now,
+    })
+    await db.transaction((tx: Tx) =>
+      enqueueOutboundDelivery(tx, { messageId, payload: { to: 'customer@example.com', subject: 'Provider id' } })
+    )
+    const claim = await claimNextOutboundDelivery()
+
+    await completeOutboundDelivery(claim!.id, messageId, claim!.attemptCount, {
+      provider: 'mailgun',
+      providerAccountKey: 'acme.com',
+      providerMessageId: `relay-${messageId}@email.amazonses.com`,
+    })
+
+    const [message] = await db.select().from(conversationMessage).where(eq(conversationMessage.id, messageId))
+    expect(message.channelMessageId).toBe(`own-${messageId}@acme.com`)
+    expect(message.providerChannelMessageId).toBe(`relay-${messageId}@email.amazonses.com`)
+    const [row] = await db.select().from(supportOutboundDelivery).where(eq(supportOutboundDelivery.id, claim!.id))
+    expect(row.providerMessageId).toBe(`relay-${messageId}@email.amazonses.com`)
+  })
+
+  it('completeOutboundDelivery stores no provider Message-ID when the gateway echoed ours', async () => {
+    const messageId = newMessage()
+    await db.insert(conversationMessage).values({
+      id: messageId,
+      conversationId,
+      kind: 'outgoing',
+      body: 'Reply body',
+      senderKind: 'agent',
+      channelMessageId: `own-${messageId}@acme.com`,
+      createdAt: now,
+    })
+    await db.transaction((tx: Tx) =>
+      enqueueOutboundDelivery(tx, { messageId, payload: { to: 'customer@example.com', subject: 'Echoed id' } })
+    )
+    const claim = await claimNextOutboundDelivery()
+
+    await completeOutboundDelivery(claim!.id, messageId, claim!.attemptCount, {
+      provider: 'mailgun',
+      providerAccountKey: 'acme.com',
+      providerMessageId: `own-${messageId}@acme.com`,
+    })
+
+    const [message] = await db.select().from(conversationMessage).where(eq(conversationMessage.id, messageId))
+    expect(message.providerChannelMessageId).toBeNull()
+  })
+
   it('failOutboundDelivery below the attempt cap stays pending but is not reclaimable before its due time', async () => {
     const messageId = newMessage()
     await insertMessage(messageId)

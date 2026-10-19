@@ -364,6 +364,40 @@ export async function publishDeliveryStatusChanged(messageId: string): Promise<v
   }
 }
 
+/**
+ * Remember the Message-ID the provider reports a sent message went out
+ * under, when it is not the one Veerify generated.
+ *
+ * SES (behind Frogmail) replaces the Message-ID header, so a customer reply
+ * carrying only `In-Reply-To` references an id that is not in
+ * `channelMessageId`. Storing the provider's id next to the original lets
+ * `resolveThread` match either. A no-op when the ids agree, so providers that
+ * keep the Message-ID (Mailgun, Frogmail without a rewrite) store nothing.
+ *
+ * Returns whether a row changed.
+ */
+export async function recordProviderChannelMessageId(
+  executor: Pick<Tx, 'update'>,
+  messageId: string,
+  providerChannelMessageId: string | null | undefined
+): Promise<boolean> {
+  const value = providerChannelMessageId?.trim().replace(/^<|>$/g, '').trim()
+  if (!value) return false
+
+  const updated = await executor
+    .update(conversationMessage)
+    .set({ providerChannelMessageId: value })
+    .where(
+      and(
+        eq(conversationMessage.id, messageId),
+        sql`${conversationMessage.channelMessageId} IS DISTINCT FROM ${value}`,
+        sql`${conversationMessage.providerChannelMessageId} IS DISTINCT FROM ${value}`
+      )
+    )
+    .returning({ id: conversationMessage.id })
+  return updated.length > 0
+}
+
 /** Mark a delivery sent. Terminal - never claimed again. */
 export async function completeOutboundDelivery(
   id: string,
@@ -391,6 +425,18 @@ export async function completeOutboundDelivery(
     },
     messagePatch: { deliveryStatus: 'sent', deliveryError: null },
   })
+  if (completed && diagnostics?.providerMessageId) {
+    // Outside the outcome transaction: the send is already durably recorded,
+    // and a later delivery event carries the same id as a second chance.
+    try {
+      await recordProviderChannelMessageId(db, messageId, diagnostics.providerMessageId)
+    } catch (error) {
+      logger.error('Failed to record the provider Message-ID of a sent message', {
+        messageId,
+        error: error instanceof Error ? error.message : error,
+      })
+    }
+  }
   if (completed) {
     // Guarded on `completed`: a worker that lost its lease to a newer attempt
     // must not count a send the newer attempt owns.
@@ -599,6 +645,9 @@ export async function processOutboundDelivery(
     }
 
     const result = await send({
+      // Support mail always uses the primary transport (`SMTP_*`), never the
+      // optional dedicated system transport.
+      channel: 'support',
       to: claim.payload.to,
       cc: claim.payload.cc,
       subject: claim.payload.subject,

@@ -29,6 +29,7 @@ import {
  */
 
 const DEFAULT_TOLERANCE_SECONDS = 15 * 60
+const DEFAULT_API_BASE_URL = 'https://api.mailgun.net'
 
 interface MailgunSignature {
   timestamp?: string | number
@@ -121,6 +122,16 @@ export function parseAddressList(value: string | null | undefined): InboundAddre
   return addresses
 }
 
+/** Drop repeated addresses, keeping the first occurrence so order stays the provider's. */
+function uniqueAddresses(addresses: InboundAddress[]): InboundAddress[] {
+  const seen = new Set<string>()
+  return addresses.filter((entry) => {
+    if (seen.has(entry.address)) return false
+    seen.add(entry.address)
+    return true
+  })
+}
+
 function headersToRecord(value: MailgunInboundPayload['message-headers']): Record<string, string> {
   let entries: [string, string][] = []
 
@@ -189,6 +200,16 @@ function multipartAttachments(payload: MailgunInboundPayload): InboundAttachment
     contentIds = contentIdMap
   }
 
+  // Mailgun documents `content-id-map` as `{"<content-id>": "attachment-N"}`:
+  // the value is the multipart FIELD name, not the file's name. Inverted here
+  // so each field looks its Content-ID up directly.
+  const contentIdByField = new Map<string, string>()
+  for (const [contentId, field] of Object.entries(contentIds)) {
+    if (typeof field !== 'string') continue
+    const normalized = normalizeMessageId(contentId)
+    if (normalized && !contentIdByField.has(field.trim())) contentIdByField.set(field.trim(), normalized)
+  }
+
   const attachments: InboundAttachment[] = []
   const fields = Object.keys(payload)
     .filter((name) => /^attachment-\d+$/.test(name))
@@ -201,8 +222,7 @@ function multipartAttachments(payload: MailgunInboundPayload): InboundAttachment
     if (!file || typeof file !== 'object') continue
     const fileName = file.filename?.split(/[/\\]/).pop() || 'attachment'
     const content = file.data ?? Buffer.alloc(0)
-    const contentIdEntry = Object.entries(contentIds).find(([, name]) => name === file.filename || name === fileName)
-    const contentId = normalizeMessageId(contentIdEntry?.[0])
+    const contentId = contentIdByField.get(field) ?? null
     attachments.push({
       fileName,
       contentType: file.type?.trim() || null,
@@ -235,6 +255,13 @@ interface MailgunEventPayload {
     'user-variables'?: Record<string, string>
     'delivery-status'?: { description?: string; message?: string }
     message?: { headers?: { 'message-id'?: string } }
+    /**
+     * Frogmail extension, absent on real Mailgun. `provider-message-id` is the
+     * Message-ID recipients actually saw (SES replaces the sent one with
+     * `<id>@<region>.amazonses.com`); `message.headers.message-id` stays the
+     * id returned at send time.
+     */
+    frogmail?: { 'provider-message-id'?: string }
   }
 }
 
@@ -282,10 +309,13 @@ export class MailgunChannelDriver implements ChannelDriver {
     this.toleranceSeconds = options?.toleranceSeconds ?? DEFAULT_TOLERANCE_SECONDS
     this.apiKey = (options?.apiKey ?? process.env.SUPPORT_MAILGUN_API_KEY ?? '').trim()
     this.accountKey = (options?.accountKey ?? process.env.SUPPORT_MAILGUN_ACCOUNT_KEY ?? '').trim()
+    // `||`, not `??`: .env.example and docker-compose set this to an empty
+    // string when unused, and an empty base URL would turn the domain lookup
+    // into a relative `/v4/domains` request.
     this.apiBaseUrl = (
-      options?.apiBaseUrl ??
-      process.env.SUPPORT_MAILGUN_API_BASE_URL ??
-      'https://api.mailgun.net'
+      options?.apiBaseUrl?.trim() ||
+      process.env.SUPPORT_MAILGUN_API_BASE_URL?.trim() ||
+      DEFAULT_API_BASE_URL
     ).replace(/\/+$/, '')
     this.fetchImpl = options?.fetchImpl ?? ((input, init) => fetch(input, init))
   }
@@ -332,7 +362,9 @@ export class MailgunChannelDriver implements ChannelDriver {
       return { status: 'unknown', reason: error instanceof Error ? error.message : 'Mailgun lookup failed' }
     }
 
-    return authorizationForDomains(address, verified)
+    // Mailgun-compatible providers (Mailgun, Frogmail) authorize a sender on a
+    // subdomain of a verified domain, so the verdict has to as well.
+    return authorizationForDomains(address, verified, { includeSubdomains: true })
   }
 
   verifySignature(input: InboundVerificationInput): boolean {
@@ -379,11 +411,22 @@ export class MailgunChannelDriver implements ChannelDriver {
     // Mailgun's inbound routes carry no delivery id of their own, so the
     // Message-ID is the idempotency key. The signing token is deliberately not
     // used: it changes per retry, which would defeat duplicate suppression.
-    const messageId = normalizeMessageId(typed?.['Message-Id'] ?? typed?.['message-id'])
-    if (messageId) return messageId
+    const messageId =
+      normalizeMessageId(typed?.['Message-Id'] ?? typed?.['message-id']) ??
+      normalizeMessageId(headersToRecord(typed?.['message-headers'])['message-id'])
+    if (!messageId) return null
 
-    const headers = headersToRecord(typed?.['message-headers'])
-    return normalizeMessageId(headers['message-id'])
+    // Mailgun and Frogmail post one callback per matched envelope recipient,
+    // all with the same Message-ID. Keyed on the Message-ID alone, the second
+    // recipient's callback was suppressed as a duplicate and only the first
+    // inbox got the mail. Keying on Message-ID + envelope recipient keeps a
+    // retry of the same recipient's callback a duplicate while letting each
+    // recipient through. The recipients are sorted so the key does not depend
+    // on list order. Two aliases of ONE inbox are collapsed later, per inbox.
+    const recipients = uniqueAddresses(parseAddressList(typed?.recipient))
+      .map((entry) => entry.address)
+      .sort()
+    return recipients.length > 0 ? `${messageId} rcpt:${recipients.join(',')}` : messageId
   }
 
   parse(payload: unknown): InboundMessage {
@@ -398,8 +441,13 @@ export class MailgunChannelDriver implements ChannelDriver {
       throw new Error('Mailgun payload has no From address')
     }
 
-    const to = parseAddressList(typed.To ?? headers.to ?? typed.recipient)
+    const to = parseAddressList(typed.To ?? headers.to)
     const cc = parseAddressList(typed.Cc ?? headers.cc)
+    // `recipient` is the envelope recipient the route matched (Mailgun posts
+    // one callback per matched recipient; a comma list is tolerated). It is
+    // what the mail was actually delivered to, so it routes - the To/Cc
+    // headers are only what the sender chose to show.
+    const envelopeRecipients = uniqueAddresses(parseAddressList(typed.recipient))
 
     const headerDate = headers.date ? new Date(headers.date) : null
     const timestampSeconds = Number(typed.timestamp)
@@ -414,6 +462,7 @@ export class MailgunChannelDriver implements ChannelDriver {
       from,
       to,
       cc,
+      envelopeRecipients,
       subject: typed.subject?.trim() || headers.subject?.trim() || null,
       // `stripped-text` is Mailgun's own quote removal. It is deliberately not
       // used: quote stripping is SUP-03-6's job and must behave identically
@@ -454,7 +503,16 @@ export class MailgunChannelDriver implements ChannelDriver {
       providerEventId: this.extractDeliveryEventId(typed),
       providerAccountKey: domain?.trim().toLowerCase() || this.accountKey,
       correlationKey: data['user-variables']?.['veerify-delivery-id']?.trim() || null,
+      // Correlation stays on the send-time id: it is what the SMTP reply
+      // reported and the outbox stored.
       providerMessageId: messageId,
+      // The id the message actually went out under. Real Mailgun keeps the
+      // sent Message-ID, so without Frogmail's extension it is the same id
+      // and nothing extra is stored.
+      rfcMessageId:
+        normalizeMessageId(
+          typeof data.frogmail?.['provider-message-id'] === 'string' ? data.frogmail['provider-message-id'] : null
+        ) ?? messageId,
       recordType,
       recipient,
       occurredAt,

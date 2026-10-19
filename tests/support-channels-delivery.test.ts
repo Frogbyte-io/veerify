@@ -53,6 +53,8 @@ describe('PostmarkChannelDriver delivery events', () => {
       providerAccountKey: '42',
       correlationKey: 'delivery-1',
       providerMessageId: 'reply-abc@acme.com',
+      // Postmark's MessageID is its own id, not an RFC Message-ID.
+      rfcMessageId: null,
       recordType: 'delivered',
       recipient: 'customer@example.com',
       occurredAt: new Date('2026-08-20T10:00:00Z'),
@@ -150,6 +152,7 @@ describe('MailgunChannelDriver delivery events', () => {
       providerAccountKey: 'mg.acme.com',
       correlationKey: 'delivery-1',
       providerMessageId: 'reply-abc@acme.com',
+      rfcMessageId: 'reply-abc@acme.com',
       recordType: 'delivered',
       recipient: 'customer@example.com',
       occurredAt: new Date(1788256800 * 1000),
@@ -169,6 +172,48 @@ describe('MailgunChannelDriver delivery events', () => {
   it('parses a temporary failure as bounced/soft', () => {
     const event = driver.parseDeliveryEvent(MAILGUN_SOFT_FAILED)
     expect(event.bounceType).toBe('soft')
+  })
+
+  it("reads Frogmail's provider-assigned Message-ID, keeping correlation on the sent one", () => {
+    // Shape from Frogmail's MailgunEventData: message.headers.message-id stays
+    // the send-time id, frogmail.provider-message-id is what SES sent it as.
+    const event = driver.parseDeliveryEvent(
+      mailgunEventFixture({
+        event: 'delivered',
+        recipient: 'customer@example.com',
+        message: { headers: { 'message-id': 'reply-abc@acme.com' } },
+        frogmail: { 'provider-message-id': '0100019b-provider-000000@eu-west-1.amazonses.com' },
+      })
+    )
+
+    expect(event.providerMessageId).toBe('reply-abc@acme.com')
+    expect(event.rfcMessageId).toBe('0100019b-provider-000000@eu-west-1.amazonses.com')
+  })
+
+  it('falls back to the sent Message-ID when the Frogmail extension is absent or empty', () => {
+    // Real Mailgun has no `frogmail` object and keeps the sent Message-ID.
+    expect(driver.parseDeliveryEvent(MAILGUN_DELIVERED).rfcMessageId).toBe('reply-abc@acme.com')
+    for (const frogmail of [{}, { 'provider-message-id': '' }, { 'provider-message-id': 42 }, null]) {
+      const event = driver.parseDeliveryEvent(
+        mailgunEventFixture({
+          event: 'delivered',
+          message: { headers: { 'message-id': '<reply-abc@acme.com>' } },
+          frogmail,
+        })
+      )
+      expect(event.rfcMessageId).toBe('reply-abc@acme.com')
+    }
+  })
+
+  it('strips angle brackets from the provider-assigned Message-ID', () => {
+    const event = driver.parseDeliveryEvent(
+      mailgunEventFixture({
+        event: 'delivered',
+        message: { headers: { 'message-id': 'reply-abc@acme.com' } },
+        frogmail: { 'provider-message-id': '<ses-1@email.amazonses.com>' },
+      })
+    )
+    expect(event.rfcMessageId).toBe('ses-1@email.amazonses.com')
   })
 
   it('keys every event by event-data.id', () => {

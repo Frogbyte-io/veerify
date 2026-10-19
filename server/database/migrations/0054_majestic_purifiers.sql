@@ -1,0 +1,2 @@
+ALTER TABLE "conversation_message" ADD COLUMN "provider_channel_message_id" text;--> statement-breakpoint
+CREATE INDEX "conversation_message_provider_channel_message_id_idx" ON "conversation_message" USING btree ("provider_channel_message_id");

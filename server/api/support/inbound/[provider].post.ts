@@ -45,11 +45,13 @@ import {
   claimInboundEvent,
   completeInboundEvent,
   failInboundEvent,
+  findInboxIncomingMessage,
+  lockInboxMessageId,
   recordInboundRawKey,
   rejectInboundEvent,
 } from '~/server/utils/inbound-events'
 import { checkRateLimit } from '~/server/utils/rate-limit'
-import { resolveInboundProjectId } from '~/server/utils/inbound-routing'
+import { inboundRoutingRecipients, resolveInboundProjectId } from '~/server/utils/inbound-routing'
 import { getRateLimitStore } from '~/server/services/rate-limit'
 import { getStorageProvider } from '~/server/utils/storage'
 import {
@@ -221,10 +223,10 @@ export default defineEventHandler(async (event) => {
     // ---- 4. Parse --------------------------------------------------------
     const message: InboundMessage = driver.parse(payload)
 
-    // ---- 5. Resolve the inbox from To/Cc ---------------------------------
-    // Every recipient is tried, because the support address is frequently in
-    // Cc rather than To on a reply-all.
-    const recipients = [...message.to, ...message.cc]
+    // ---- 5. Resolve the inbox from the envelope, else To/Cc --------------
+    // The envelope recipient the provider delivered to wins (Bcc, forwarding,
+    // aliases); To/Cc are only consulted when the provider reported none.
+    const recipients = inboundRoutingRecipients(message)
     let matched: Awaited<ReturnType<typeof resolveInboxByAddress>> = null
     for (const recipient of recipients) {
       matched = await resolveInboxByAddress(recipient.address)
@@ -285,6 +287,21 @@ export default defineEventHandler(async (event) => {
       return accepted('auto-response')
     }
 
+    // ---- Per-inbox duplicate --------------------------------------------
+    // The same email delivered again to this inbox under a different event
+    // key (another alias of the inbox, or a retry across a key change). Checked
+    // here without a lock so the common case writes no attachments; the
+    // locked re-check inside the transaction below is the authoritative one.
+    if (message.messageId) {
+      const alreadyFiled = await findInboxIncomingMessage(db, inbox.id, message.messageId)
+      if (alreadyFiled) {
+        if (!(await completeInboundEvent(claimToken, alreadyFiled.conversationId))) {
+          throw new Error('Inbound claim lost before duplicate completion')
+        }
+        return accepted('duplicate-in-inbox')
+      }
+    }
+
     const stripped = stripQuotedReply({ text: message.text, html: message.html })
 
     // The inbox's own addresses, so a support address in Cc never becomes a
@@ -313,6 +330,17 @@ export default defineEventHandler(async (event) => {
     const safeHtml = sanitizeInboundHtml(rewriteInlineCidReferences(message.html, attachments.inlineByContentId))
 
     const result = await db.transaction(async (tx) => {
+      if (message.messageId) {
+        await lockInboxMessageId(tx, inbox.id, message.messageId)
+        const alreadyFiled = await findInboxIncomingMessage(tx, inbox.id, message.messageId)
+        if (alreadyFiled) {
+          if (!(await completeInboundEvent(claimToken, alreadyFiled.conversationId, tx))) {
+            throw new Error('Inbound claim lost before duplicate completion')
+          }
+          return { duplicateOfConversationId: alreadyFiled.conversationId }
+        }
+      }
+
       // ---- 6. Contact ----------------------------------------------------
       const { contactId } = await resolveOrCreateContact(tx, inbox.teamId, message.from)
 
@@ -638,6 +666,23 @@ export default defineEventHandler(async (event) => {
 
       return { conversationId, messageId, isNewConversation, autoReplyMessageId }
     })
+
+    if ('duplicateOfConversationId' in result) {
+      // Lost the race to a concurrent delivery of the same email to this
+      // inbox. The attachments stored above belong to no row; remove them,
+      // best effort - a leftover object is harmless, only unreferenced.
+      for (const file of attachments.stored) {
+        await getStorageProvider()
+          .deleteObject(file.storageKey)
+          .catch((error: unknown) => {
+            logger.warn('Failed to delete an attachment of a duplicate inbound delivery', {
+              eventId,
+              error: error instanceof Error ? error.message : error,
+            })
+          })
+      }
+      return accepted('duplicate-in-inbox')
+    }
 
     await publishConversationEvent({
       type: result.isNewConversation ? 'conversation.created' : 'message.created',

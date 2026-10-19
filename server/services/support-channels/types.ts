@@ -40,8 +40,19 @@ export interface InboundMessage {
   /** Oldest → newest, angle brackets stripped. */
   references: string[]
   from: InboundAddress
+  /** Header recipients. Display and participant data only - routing prefers `envelopeRecipients`. */
   to: InboundAddress[]
   cc: InboundAddress[]
+  /**
+   * SMTP envelope recipients (RCPT TO) the provider delivered this copy to, in
+   * the provider's order and de-duplicated. Empty when the provider does not
+   * report a trustworthy envelope.
+   *
+   * Inbox routing uses these in preference to `to`/`cc`: Bcc'd, forwarded,
+   * aliased and list mail reaches an inbox by envelope only, and routing on a
+   * header the sender wrote could pick another tenant's inbox named there.
+   */
+  envelopeRecipients: InboundAddress[]
   subject: string | null
   text: string | null
   html: string | null
@@ -109,6 +120,36 @@ export function emailDomain(address: string): string | null {
   return domain.length > 0 ? domain : null
 }
 
+function normalizeDomain(value: string): string {
+  return value.trim().toLowerCase().replace(/\.+$/, '')
+}
+
+/**
+ * The most specific verified domain `domain` sits on, or null.
+ *
+ * With `includeSubdomains`, a verified `example.com` also covers
+ * `mail.example.com`, matched on a label boundary only - `badexample.com` is
+ * not a subdomain of `example.com`. This mirrors how Mailgun-compatible
+ * providers such as Frogmail authorize senders (most specific verified domain
+ * wins); providers that only authorize the exact domain leave it off.
+ */
+export function matchVerifiedDomain(
+  domain: string,
+  verifiedDomains: string[],
+  options: { includeSubdomains?: boolean } = {}
+): string | null {
+  const target = normalizeDomain(domain)
+  if (!target) return null
+
+  let best: string | null = null
+  for (const candidate of verifiedDomains.map(normalizeDomain)) {
+    if (!candidate) continue
+    const matches = target === candidate || (options.includeSubdomains === true && target.endsWith(`.${candidate}`))
+    if (matches && (best === null || candidate.length > best.length)) best = candidate
+  }
+  return best
+}
+
 /**
  * Shared verdict logic: does `address` sit on one of `verifiedDomains`?
  *
@@ -116,13 +157,19 @@ export function emailDomain(address: string): string | null {
  * comparison itself is kept in one place - a case-sensitivity slip here would
  * warn about a perfectly good From address.
  */
-export function authorizationForDomains(address: string, verifiedDomains: string[]): SendingAuthorization {
+export function authorizationForDomains(
+  address: string,
+  verifiedDomains: string[],
+  options: { includeSubdomains?: boolean } = {}
+): SendingAuthorization {
   const domain = emailDomain(address)
   if (!domain) {
     return { status: 'unknown', reason: `Could not read a domain from "${address}"` }
   }
 
-  return verifiedDomains.includes(domain) ? { status: 'authorized' } : { status: 'unauthorized', verifiedDomains }
+  return matchVerifiedDomain(domain, verifiedDomains, options)
+    ? { status: 'authorized' }
+    : { status: 'unauthorized', verifiedDomains }
 }
 
 export interface ChannelDriver {
@@ -207,6 +254,20 @@ export interface DeliveryEvent {
   providerAccountKey: string
   correlationKey: string | null
   providerMessageId: string | null
+  /**
+   * The RFC 5322 Message-ID the provider reports the message went out with,
+   * angle brackets stripped, when the provider exposes one: Frogmail's
+   * `event-data.frogmail.provider-message-id`, else Mailgun's
+   * `event-data.message.headers.message-id` (Mailgun keeps the sent id). Null
+   * for providers whose ids are not RFC Message-IDs (Postmark).
+   *
+   * Unlike the correlation fields above this IS a Message-ID: when it differs
+   * from the one Veerify generated (a relay such as SES rewrote it), it is
+   * stored as `conversationMessage.providerChannelMessageId` so a reply that
+   * only references the rewritten id still threads. Never used to resolve
+   * which message an event belongs to.
+   */
+  rfcMessageId: string | null
   /** Provider-normalized: 'delivered' | 'bounced' | 'opened' | 'clicked' | 'spam_complaint'. */
   recordType: string
   recipient: string | null

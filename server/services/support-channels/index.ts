@@ -50,7 +50,8 @@ export function getChannelDriver(name: string | null | undefined): ChannelDriver
 
 /** The provider named by `SUPPORT_CHANNEL_PROVIDER`, defaulting to Postmark. */
 export function getConfiguredChannelProviderName(): string {
-  return (process.env.SUPPORT_CHANNEL_PROVIDER || 'postmark').trim().toLowerCase()
+  // Empty or whitespace-only means unset, as for every other channel variable.
+  return (process.env.SUPPORT_CHANNEL_PROVIDER?.trim() || 'postmark').toLowerCase()
 }
 
 export function getConfiguredChannelDriver(): ChannelDriver | null {
