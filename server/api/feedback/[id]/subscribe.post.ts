@@ -74,10 +74,7 @@ export default defineEventHandler(async (event) => {
   if (existing) {
     // Update channel preference if it changed
     if (existing.notifyChannel !== notifyChannel) {
-      await db
-        .update(feedbackSubscription)
-        .set({ notifyChannel })
-        .where(eq(feedbackSubscription.id, existing.id))
+      await db.update(feedbackSubscription).set({ notifyChannel }).where(eq(feedbackSubscription.id, existing.id))
     }
     return createSuccessResponse({ subscribed: true, email: subscriberEmail, channel: notifyChannel })
   }
@@ -101,7 +98,12 @@ export default defineEventHandler(async (event) => {
       to: subscriberEmail,
       feedbackTitle: fb.title,
       unsubscribeUrl,
-    }).catch((err) => logger.error('Failed to send subscription confirmation email', { feedbackId: id, error: err instanceof Error ? err.message : err }))
+    }).catch((err) =>
+      logger.error('Failed to send subscription confirmation email', {
+        feedbackId: id,
+        error: err instanceof Error ? err.message : err,
+      })
+    )
   }
 
   setResponseStatus(event, 201)

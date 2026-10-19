@@ -93,7 +93,7 @@ Veerify is a feedback management and verification platform built with **Nuxt 3**
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+
 - Yarn
 - Docker (for local PostgreSQL + Mailpit)
 
@@ -255,12 +255,15 @@ Never edit migration files manually. Never use `db:push` in production.
 lib/email.ts
   ├── sendEmail()           ← detects server vs client
   │     ├── Server:  useNodeMailer().sendMail()     (direct nodemailer)
+  │     │            or the dedicated SYSTEM_SMTP_* transport (lib/mail-transport.ts)
   │     └── Client:  POST /api/mail/send-mail       (HTTP to server)
   ├── sendEmailVerificationEmail()  ← wraps sendEmail with verification template
   └── sendPasswordResetEmail()      ← wraps sendEmail with reset template
 ```
 
 Templates live in `lib/email-templates.ts`. Each template function returns `{ subject, html, text }`.
+
+`sendEmail` defaults to the `system` channel, which uses `SYSTEM_SMTP_*` when `SYSTEM_SMTP_HOST` is set and the primary `SMTP_*` transport otherwise. Only the support outbox sends with `channel: 'support'`, which always uses `SMTP_*`. See `docs/deployment-mail.md`.
 
 - Verification link expires in **24 hours**
 - Password reset link expires in **1 hour**

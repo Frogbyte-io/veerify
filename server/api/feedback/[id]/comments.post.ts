@@ -196,11 +196,18 @@ export default defineEventHandler(async (event) => {
 
       for (const [index, result] of notificationResults.entries()) {
         if (result.status === 'rejected') {
-          logger.error('Failed to send comment notification', { feedbackId: id, email: emailRecipients[index]?.email, error: result.reason instanceof Error ? result.reason.message : result.reason })
+          logger.error('Failed to send comment notification', {
+            feedbackId: id,
+            email: emailRecipients[index]?.email,
+            error: result.reason instanceof Error ? result.reason.message : result.reason,
+          })
         }
       }
     } catch (err) {
-      logger.error('Failed to fetch subscribers for comment notification', { feedbackId: id, error: err instanceof Error ? err.message : err })
+      logger.error('Failed to fetch subscribers for comment notification', {
+        feedbackId: id,
+        error: err instanceof Error ? err.message : err,
+      })
     }
   }
 
@@ -208,5 +215,8 @@ export default defineEventHandler(async (event) => {
   return createSuccessResponse({
     ...created,
     author,
+    canEdit: Boolean(isTeamMember || session?.user || anonSessionId),
+    canDelete: Boolean(isTeamMember || session?.user || anonSessionId),
+    isEdited: false,
   })
 })

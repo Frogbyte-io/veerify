@@ -19,6 +19,9 @@ import { sendFeedbackConfirmationEmail } from '~/lib/email'
 import { buildIssueLabels, ensureGitHubLabels } from '~/server/utils/github'
 import { createLogger } from '~/server/utils/logger'
 import { notifyProjectTeam } from '~/server/utils/notifications'
+import { createAutomaticFeedbackLink } from '~/server/utils/support-auto-link'
+import { FEEDBACK_ATTACHMENT_MAX_COUNT } from '~/server/utils/feedback-attachments'
+import { attachUploadsToFeedback } from '~/server/utils/feedback-attachment-access'
 
 const logger = createLogger('feedback')
 
@@ -30,6 +33,8 @@ const createFeedbackSchema = z.object({
   feedbackType: z.enum(['feature_request', 'bug_report', 'improvement', 'question', 'other']).optional(),
   authorName: optionalTrimmedString(100),
   authorEmail: optionalTrimmedEmail(),
+  // Ids of finalized, unattached uploads from POST /api/feedback-attachments/presign
+  attachmentIds: z.array(z.string().min(1)).max(FEEDBACK_ATTACHMENT_MAX_COUNT).optional(),
 })
 
 function createGitHubHeaders(accessToken: string) {
@@ -62,7 +67,9 @@ async function rollbackCreatedGitHubIssue(params: {
 
   if (!response.ok) {
     const rollbackError = (await response.json().catch(() => null)) as { message?: string } | null
-    logger.error('Failed to rollback auto-created GitHub issue', { error: rollbackError?.message || response.statusText })
+    logger.error('Failed to rollback auto-created GitHub issue', {
+      error: rollbackError?.message || response.statusText,
+    })
   }
 }
 
@@ -176,7 +183,11 @@ export default defineEventHandler(async (event) => {
 
       if (!issueResponse.ok) {
         const issueError = (await issueResponse.json().catch(() => null)) as { message?: string } | null
-        logger.error('Failed to auto-create GitHub issue', { feedbackId, projectId: body.projectId, error: issueError?.message || issueResponse.statusText })
+        logger.error('Failed to auto-create GitHub issue', {
+          feedbackId,
+          projectId: body.projectId,
+          error: issueError?.message || issueResponse.statusText,
+        })
       } else {
         createdIssue = (await issueResponse.json()) as {
           number: number
@@ -185,7 +196,11 @@ export default defineEventHandler(async (event) => {
         }
       }
     } catch (error) {
-      logger.error('Auto-create GitHub issue failed', { feedbackId, projectId: body.projectId, error: error instanceof Error ? error.message : error })
+      logger.error('Auto-create GitHub issue failed', {
+        feedbackId,
+        projectId: body.projectId,
+        error: error instanceof Error ? error.message : error,
+      })
     }
   }
 
@@ -228,6 +243,25 @@ export default defineEventHandler(async (event) => {
           createdAt: now,
         })
 
+        if (session?.user) {
+          await createAutomaticFeedbackLink(tx, {
+            teamId: proj.teamId,
+            feedbackId: created.id,
+            authorUserId: session.user.id,
+            createdAt: now,
+          })
+        }
+
+        if (body.attachmentIds?.length) {
+          await attachUploadsToFeedback(tx, {
+            attachmentIds: body.attachmentIds,
+            feedbackId: created.id,
+            projectId: body.projectId,
+            actor: { userId: session?.user?.id ?? null, anonSessionId },
+            now,
+          })
+        }
+
         if (createdIssue && integration) {
           await tx.insert(githubIssueLink).values({
             id: crypto.randomUUID(),
@@ -257,7 +291,10 @@ export default defineEventHandler(async (event) => {
             accessToken: integration.accessToken,
           })
         } catch (rollbackError) {
-          logger.error('GitHub issue rollback request failed', { feedbackId, error: rollbackError instanceof Error ? rollbackError.message : rollbackError })
+          logger.error('GitHub issue rollback request failed', {
+            feedbackId,
+            error: rollbackError instanceof Error ? rollbackError.message : rollbackError,
+          })
         }
       }
 
@@ -281,7 +318,12 @@ export default defineEventHandler(async (event) => {
       feedbackTitle: createdFeedback.title,
       projectName: proj.name,
       editUrl,
-    }).catch((err) => logger.error('Failed to send feedback confirmation email', { feedbackId: createdFeedback.id, error: err instanceof Error ? err.message : err }))
+    }).catch((err) =>
+      logger.error('Failed to send feedback confirmation email', {
+        feedbackId: createdFeedback.id,
+        error: err instanceof Error ? err.message : err,
+      })
+    )
   }
 
   // Create in-app notifications for team members about the new feedback

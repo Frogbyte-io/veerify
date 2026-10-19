@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { Client, type ClientConfig } from 'pg'
+import { Client } from 'pg'
+import { createDatabaseConnectionConfig } from '../server/database/connection-config'
 import 'dotenv/config'
 
 type LegacyProjectDomain = {
@@ -14,24 +15,6 @@ type DnsRecord = {
   type: string
   name: string
   value: string
-}
-
-function createClientConfig(): ClientConfig {
-  if (process.env.DATABASE_URL) {
-    return {
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    }
-  }
-
-  return {
-    host: process.env.PGHOST || 'localhost',
-    port: Number(process.env.PGPORT) || 5432,
-    user: process.env.PGUSER || 'veerify',
-    password: process.env.PGPASSWORD || 'veerifypassword',
-    database: process.env.PGDATABASE || 'veerifydb',
-    ssl: false,
-  }
 }
 
 function readString(settings: Record<string, unknown> | null, key: string) {
@@ -58,59 +41,75 @@ function domainId(projectId: string, hostname: string) {
 }
 
 async function main() {
-  const client = new Client(createClientConfig())
+  const clientConfig = { ...createDatabaseConnectionConfig() }
+  delete clientConfig.connectionString
+  const client = new Client(clientConfig)
   await client.connect()
 
   try {
-    const result = await client.query<LegacyProjectDomain>(`
-      SELECT
-        id AS "projectId",
-        lower(trim(trailing '.' from custom_domain)) AS hostname,
-        settings,
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM project
-      WHERE custom_domain IS NOT NULL AND custom_domain <> ''
-    `)
-
+    const batchSize = Math.max(1, Math.min(Number(process.env.DOMAIN_BACKFILL_BATCH_SIZE) || 100, 1000))
+    let afterProjectId = process.env.DOMAIN_BACKFILL_AFTER_ID || ''
     let inserted = 0
-    for (const legacy of result.rows) {
-      const provider = readString(legacy.settings, 'domainProvider') || 'static-cname'
-      const status = readString(legacy.settings, 'domainStatus') || 'dns_required'
-      const verifiedAt = readString(legacy.settings, 'domainVerifiedAt')
-      const dnsRecords = readDnsRecords(legacy.settings)
-      const verificationPayload = {
-        configuredBy: readString(legacy.settings, 'domainConfiguredBy'),
-        expected: readString(legacy.settings, 'domainExpected'),
-        resolvedTo: Array.isArray(legacy.settings?.domainResolvedTo) ? legacy.settings.domainResolvedTo : [],
-      }
-
-      const writeResult = await client.query(
+    while (true) {
+      const result = await client.query<LegacyProjectDomain>(
         `
-          INSERT INTO domain (
-            id, project_id, hostname, kind, provider, status, is_primary,
-            verification_payload, dns_records, last_checked_at, activated_at,
-            error_message, created_at, updated_at
-          )
-          VALUES ($1, $2, $3, 'custom_subdomain', $4, $5, true, $6, $7, $8, $9, $10, $11, $12)
-          ON CONFLICT (hostname) DO NOTHING
+          SELECT
+            id AS "projectId",
+            lower(trim(trailing '.' from custom_domain)) AS hostname,
+            settings,
+            created_at AS "createdAt",
+            updated_at AS "updatedAt"
+          FROM project
+          WHERE custom_domain IS NOT NULL AND custom_domain <> ''
+            AND id > $1
+          ORDER BY id
+          LIMIT $2
         `,
-        [
-          domainId(legacy.projectId, legacy.hostname),
-          legacy.projectId,
-          legacy.hostname,
-          provider,
-          status,
-          JSON.stringify(verificationPayload),
-          JSON.stringify(dnsRecords),
-          legacy.updatedAt,
-          status === 'active' ? verifiedAt || legacy.updatedAt : null,
-          readString(legacy.settings, 'domainMessage'),
-          legacy.createdAt,
-          legacy.updatedAt,
-        ]
+        [afterProjectId, batchSize]
       )
-      inserted += writeResult.rowCount || 0
+      if (result.rows.length === 0) break
+
+      for (const legacy of result.rows) {
+        const provider = readString(legacy.settings, 'domainProvider') || 'static-cname'
+        const status = readString(legacy.settings, 'domainStatus') || 'dns_required'
+        const verifiedAt = readString(legacy.settings, 'domainVerifiedAt')
+        const dnsRecords = readDnsRecords(legacy.settings)
+        const verificationPayload = {
+          configuredBy: readString(legacy.settings, 'domainConfiguredBy'),
+          expected: readString(legacy.settings, 'domainExpected'),
+          resolvedTo: Array.isArray(legacy.settings?.domainResolvedTo) ? legacy.settings.domainResolvedTo : [],
+        }
+
+        const writeResult = await client.query(
+          `
+            INSERT INTO domain (
+              id, project_id, hostname, kind, provider, status, is_primary,
+              verification_payload, dns_records, last_checked_at, activated_at,
+              error_message, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, 'custom_subdomain', $4, $5, true, $6, $7, $8, $9, $10, $11, $12)
+            ON CONFLICT (hostname) DO NOTHING
+          `,
+          [
+            domainId(legacy.projectId, legacy.hostname),
+            legacy.projectId,
+            legacy.hostname,
+            provider,
+            status,
+            JSON.stringify(verificationPayload),
+            JSON.stringify(dnsRecords),
+            legacy.updatedAt,
+            status === 'active' ? verifiedAt || legacy.updatedAt : null,
+            readString(legacy.settings, 'domainMessage'),
+            legacy.createdAt,
+            legacy.updatedAt,
+          ]
+        )
+        inserted += writeResult.rowCount || 0
+        afterProjectId = legacy.projectId
+      }
+      console.log(`[domains] processed through project ${afterProjectId}`)
+      if (result.rows.length < batchSize) break
     }
 
     console.log(`[domains] backfilled ${inserted} project domain record(s)`)

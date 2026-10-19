@@ -136,6 +136,22 @@
             <Icon name="lucide:map" class="w-4 h-4 inline mr-1.5" />
             Roadmap
           </NuxtLink>
+          <NuxtLink
+            v-if="changelogEnabled"
+            :to="changelogPath"
+            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
+          >
+            <Icon name="lucide:newspaper" class="w-4 h-4 inline mr-1.5" />
+            Changelog
+          </NuxtLink>
+          <NuxtLink
+            v-if="hasTestimonials"
+            :to="testimonialsPath"
+            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
+          >
+            <Icon name="lucide:message-square-quote" class="w-4 h-4 inline mr-1.5" />
+            Testimonials
+          </NuxtLink>
         </div>
 
         <!-- Stats -->
@@ -164,6 +180,7 @@
             <select
               v-model="filters.status"
               data-testid="public-feedback-filter-status"
+              aria-label="Filter by status"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -177,6 +194,7 @@
             <select
               v-model="filters.categoryId"
               data-testid="public-feedback-filter-category"
+              aria-label="Filter by category"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -189,6 +207,7 @@
             <select
               v-model="filters.tag"
               data-testid="public-feedback-filter-tag"
+              aria-label="Filter by tag"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -201,6 +220,7 @@
             <select
               v-model="filters.sortBy"
               data-testid="public-feedback-filter-sort"
+              aria-label="Sort feedback"
               class="px-3 py-2 rounded-md border bg-background text-sm"
               @change="resetFeedback"
             >
@@ -257,6 +277,7 @@
                   class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
                   :class="item.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
                   :title="item.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
+                  :aria-label="`${item.voteType === 'upvote' ? 'Remove upvote from' : 'Upvote'}: ${item.title}`"
                   :disabled="votingIds.has(item.id)"
                   @click.stop="handleVote(item, 'upvote')"
                 >
@@ -269,6 +290,7 @@
                     item.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
                   "
                   :title="item.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
+                  :aria-label="`${item.voteType === 'downvote' ? 'Remove downvote from' : 'Downvote'}: ${item.title}`"
                   :disabled="votingIds.has(item.id)"
                   @click.stop="handleVote(item, 'downvote')"
                 >
@@ -384,6 +406,12 @@
                   <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                 </select>
               </div>
+              <FeedbackAttachmentPicker
+                ref="attachmentPicker"
+                :project-id="projectData.project.id"
+                :disabled="isSubmitting"
+                @change="attachmentState = $event"
+              />
               <div
                 v-if="currentUser"
                 class="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
@@ -409,7 +437,11 @@
               <Button variant="outline" @click="showSubmitDialog = false">Cancel</Button>
               <Button
                 :disabled="
-                  isSubmitting || !submitForm.title || !submitForm.body || (!currentUser && !submitForm.authorName)
+                  isSubmitting ||
+                  attachmentState.busy ||
+                  !submitForm.title ||
+                  !submitForm.body ||
+                  (!currentUser && !submitForm.authorName)
                 "
                 @click="submitFeedback"
               >
@@ -422,6 +454,8 @@
 
         <Dialog :open="showDetailsDialog" @update:open="handleDetailsDialogChange">
           <DialogContent class="sm:max-w-[900px] p-0 gap-0 overflow-hidden max-h-[90vh] flex flex-col">
+            <DialogTitle class="sr-only">Feedback details</DialogTitle>
+
             <!-- Loading -->
             <div v-if="detailsLoading" class="p-6 space-y-4">
               <Skeleton class="h-7 w-3/4" />
@@ -518,6 +552,7 @@
                     {{ selectedFeedback.body }}
                   </p>
                   <p v-else class="text-sm text-muted-foreground italic">No description provided.</p>
+                  <FeedbackAttachmentList :key="selectedFeedback.id" :feedback-id="selectedFeedback.id" />
                 </div>
 
                 <Separator />
@@ -987,6 +1022,7 @@ export default {
       filters: { status: '', categoryId: '', tag: '', sortBy: 'voteCount' },
       pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
       submitForm: { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' },
+      attachmentState: { ids: [], busy: false },
       previousColorMode: null,
       activeTheme: 'system',
       logoError: false,
@@ -1091,6 +1127,24 @@ export default {
     roadmapEnabled() {
       return this.projectData?.project?.settings?.roadmapEnabled === true
     },
+    changelogPath() {
+      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
+        return '/changelog'
+      }
+      return `/${this.projectSlug}/changelog`
+    },
+    changelogEnabled() {
+      return this.projectData?.project?.settings?.changelogEnabled === true
+    },
+    hasTestimonials() {
+      return this.projectData?.hasTestimonials === true
+    },
+    testimonialsPath() {
+      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
+        return '/testimonials'
+      }
+      return `/${this.projectSlug}/testimonials`
+    },
     customFooterBranding() {
       return this.projectData?.project?.settings?.customFooterBranding?.trim() || ''
     },
@@ -1136,6 +1190,12 @@ export default {
         .slice(0, 2)
     },
   },
+  watch: {
+    showSubmitDialog(isOpen) {
+      // The picker discards unsubmitted uploads when the dialog closes.
+      if (!isOpen) this.attachmentState = { ids: [], busy: false }
+    },
+  },
   beforeUnmount() {
     if (import.meta.client) {
       if (this.previousColorMode) {
@@ -1147,6 +1207,12 @@ export default {
       }
     }
   },
+  created() {
+    useHead(() => ({
+      title: [this.projectData?.project?.name, 'Feedback'].filter(Boolean).join(' · ') || 'Feedback',
+    }))
+  },
+
   async mounted() {
     if (import.meta.client) {
       this.previousColorMode = this.$colorMode.preference
@@ -1271,6 +1337,7 @@ export default {
         title: this.submitForm.title,
         body: this.submitForm.body,
         categoryId: this.submitForm.categoryId || null,
+        ...(this.attachmentState.ids.length ? { attachmentIds: this.attachmentState.ids } : {}),
         ...(!this.currentUser && authorName ? { authorName } : {}),
         ...(!this.currentUser && authorEmail ? { authorEmail } : {}),
       }
@@ -1281,6 +1348,8 @@ export default {
           method: 'POST',
           body: payload,
         })
+        this.$refs.attachmentPicker?.clear()
+        this.attachmentState = { ids: [], busy: false }
         this.showSubmitDialog = false
         this.submitForm = { title: '', body: '', categoryId: '', authorName: '', authorEmail: '' }
         this.pagination.page = 1

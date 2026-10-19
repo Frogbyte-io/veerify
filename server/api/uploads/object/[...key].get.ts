@@ -33,6 +33,16 @@ export default defineEventHandler(async (event) => {
     .map((segment) => decodeURIComponent(segment))
     .join('/')
 
+  // Only public-read branding assets are served here. Private objects (feedback
+  // and support attachments) must go through their signed-URL routes.
+  if (!objectKey.startsWith('projects/')) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Asset not found'),
+    })
+  }
+
   try {
     const buffer = await storage.getObject(objectKey)
     setHeader(event, 'content-type', getContentTypeFromKey(objectKey))

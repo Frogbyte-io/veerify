@@ -14,6 +14,9 @@ export default (async () => {
   return [
     // shadcn-vue generated components — do not lint
     { ignores: ['components/ui/**'] },
+    // Agent git worktrees are full checkouts of this repo nested inside it.
+    // Without this, ESLint lints every worktree copy as if it were project source.
+    { ignores: ['.claude/worktrees/**'] },
     ...nuxtConfigs,
   ]
 })()

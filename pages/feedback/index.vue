@@ -193,7 +193,7 @@
           </div>
 
           <div class="flex items-center gap-2 w-full sm:w-auto">
-            <!-- Search — always visible in both views -->
+            <!-- Search is always visible in both views -->
             <div class="relative flex-1 sm:w-[200px]">
               <Icon
                 name="lucide:search"
@@ -212,7 +212,9 @@
               class="relative flex-1 sm:w-[180px]"
               :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }"
             >
+              <label for="feedback-status-filter" class="sr-only">Filter feedback by status</label>
               <select
+                id="feedback-status-filter"
                 v-model="statusFilter"
                 data-testid="feedback-status-filter"
                 class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
@@ -225,6 +227,28 @@
                 <option value="completed">Completed</option>
                 <option value="closed">Closed</option>
                 <option value="declined">Declined</option>
+              </select>
+              <Icon
+                name="lucide:chevron-down"
+                class="absolute right-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none"
+              />
+            </div>
+            <div
+              class="relative flex-1 sm:w-[180px]"
+              :class="{ 'invisible pointer-events-none': viewMode === 'kanban' }"
+            >
+              <label for="feedback-sort-filter" class="sr-only">Sort feedback</label>
+              <select
+                id="feedback-sort-filter"
+                v-model="sortBy"
+                data-testid="feedback-sort-filter"
+                class="w-full h-9 pl-3 pr-8 text-sm bg-background border rounded-md appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label="Sort feedback"
+                @change="onSortFilterChange"
+              >
+                <option value="voteCount">Most votes</option>
+                <option value="updatedAt">Recently updated</option>
+                <option value="title">Title</option>
               </select>
               <Icon
                 name="lucide:chevron-down"
@@ -1295,6 +1319,11 @@ export default {
       if (this.viewMode !== 'table') return
       this.pagination.page = 1
       await this.loadFeedback()
+    },
+
+    async onSortFilterChange() {
+      this.sortOrder = 'desc'
+      await this.onFilterChange()
     },
 
     async onSortBy(field) {

@@ -1,0 +1,304 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { PostmarkChannelDriver } from '../server/services/support-channels/webhook/postmark'
+import { MailgunChannelDriver } from '../server/services/support-channels/webhook/mailgun'
+import { authorizationForDomains, matchVerifiedDomain } from '../server/services/support-channels/types'
+
+/**
+ * SUP-04-1's second half: `ChannelDriver` had no outbound surface at all
+ * (name / verifySignature / extractEventId / parse), so SUP-04-6's
+ * "warn when the From address is not provider-authorized" had nothing to call.
+ *
+ * `isConfigured()` also closes delta D-34, which flagged that
+ * `channel-status.get.ts` hard-codes each provider's env vars in a REQUIRED_ENV
+ * map because the driver could not answer the question itself.
+ */
+describe('isConfigured - which credentials a provider is missing', () => {
+  it('reports Postmark configured when both webhook credentials are present', () => {
+    const driver = new PostmarkChannelDriver({ user: 'hook', password: 'secret', accountKey: 'server-main' })
+
+    expect(driver.isConfigured()).toEqual({ configured: true, missing: [] })
+  })
+
+  it('names the missing Postmark variable without leaking the one that is set', () => {
+    const driver = new PostmarkChannelDriver({ user: 'hook', password: '', accountKey: 'server-main' })
+    const status = driver.isConfigured()
+
+    expect(status.configured).toBe(false)
+    expect(status.missing).toEqual(['SUPPORT_POSTMARK_WEBHOOK_PASSWORD'])
+    // The card built in SUP-03-13 shows these to any team member, so it must
+    // report names and never values.
+    expect(JSON.stringify(status)).not.toContain('hook')
+  })
+
+  it('names both Postmark variables when neither is set', () => {
+    const driver = new PostmarkChannelDriver({ user: '', password: '', accountKey: 'server-main' })
+
+    expect(driver.isConfigured().missing).toEqual([
+      'SUPPORT_POSTMARK_WEBHOOK_USER',
+      'SUPPORT_POSTMARK_WEBHOOK_PASSWORD',
+    ])
+  })
+
+  it('names the missing Mailgun signing key', () => {
+    expect(new MailgunChannelDriver({ signingKey: '', accountKey: 'domain-main' }).isConfigured()).toEqual({
+      configured: false,
+      missing: ['SUPPORT_MAILGUN_SIGNING_KEY'],
+    })
+  })
+
+  it('reports Mailgun configured when the signing key is present', () => {
+    expect(new MailgunChannelDriver({ signingKey: 'key-123', accountKey: 'domain-main' }).isConfigured()).toEqual({
+      configured: true,
+      missing: [],
+    })
+  })
+})
+
+describe('delivery correlation headers', () => {
+  it('builds exact Postmark metadata headers', () => {
+    const driver = new PostmarkChannelDriver({ accountKey: 'server-main' })
+    expect(driver.buildDeliveryCorrelationHeaders('delivery-1')).toEqual({
+      'X-PM-KeepID': 'true',
+      'X-PM-Metadata-veerify-delivery-id': 'delivery-1',
+    })
+  })
+
+  it('builds exact Mailgun variables', () => {
+    const driver = new MailgunChannelDriver({ accountKey: 'domain-main' })
+    const headers = driver.buildDeliveryCorrelationHeaders('delivery-1')
+    expect(JSON.parse(headers['X-Mailgun-Variables']!)).toEqual({ 'veerify-delivery-id': 'delivery-1' })
+  })
+
+  it('reports account identity as required configuration', () => {
+    expect(new PostmarkChannelDriver({ user: 'u', password: 'p', accountKey: '' }).isConfigured().missing).toContain(
+      'SUPPORT_POSTMARK_ACCOUNT_KEY'
+    )
+    expect(new MailgunChannelDriver({ signingKey: 'key', accountKey: '' }).isConfigured().missing).toContain(
+      'SUPPORT_MAILGUN_ACCOUNT_KEY'
+    )
+  })
+})
+
+describe('checkSendingAuthorization - can this inbox send as this address', () => {
+  /**
+   * The distinction that matters: "not authorized" and "could not check" are
+   * different answers. A settings warning that says the address is
+   * unauthorized when we simply had no API credential would be a false alarm
+   * on every deployment that has not set one - worse than staying quiet.
+   */
+  const postmarkReturning = (body: unknown, status = 200) =>
+    new PostmarkChannelDriver({
+      apiToken: 'token',
+      fetchImpl: async () => new Response(JSON.stringify(body), { status }),
+    })
+
+  it('returns unknown, naming the variable to set, when no API credential is configured', async () => {
+    const driver = new PostmarkChannelDriver({ user: 'hook', password: 'secret', apiToken: '' })
+
+    const result = await driver.checkSendingAuthorization('support@acme.com')
+
+    expect(result.status).toBe('unknown')
+    expect(result.status === 'unknown' && result.reason).toContain('SUPPORT_POSTMARK_ACCOUNT_TOKEN')
+  })
+
+  it('authorizes an address whose domain the provider has verified', async () => {
+    const driver = postmarkReturning({
+      Domains: [{ Name: 'acme.com', DKIMVerified: true, ReturnPathDomainVerified: true }],
+    })
+
+    expect(await driver.checkSendingAuthorization('support@acme.com')).toEqual({ status: 'authorized' })
+  })
+
+  it('reports unauthorized and lists what IS verified, so settings can say what to fix', async () => {
+    const driver = postmarkReturning({
+      Domains: [{ Name: 'acme.com', DKIMVerified: true, ReturnPathDomainVerified: true }],
+    })
+
+    expect(await driver.checkSendingAuthorization('support@other.com')).toEqual({
+      status: 'unauthorized',
+      verifiedDomains: ['acme.com'],
+    })
+  })
+
+  it('treats an unverified domain as not authorized even though it is listed', async () => {
+    // Postmark lists domains that exist on the account but have not passed
+    // DKIM. Sending as one of those fails at send time, which is exactly what
+    // this check exists to catch before it happens.
+    const driver = postmarkReturning({
+      Domains: [{ Name: 'acme.com', DKIMVerified: false, ReturnPathDomainVerified: false }],
+    })
+
+    expect((await driver.checkSendingAuthorization('support@acme.com')).status).toBe('unauthorized')
+  })
+
+  it('returns unknown rather than unauthorized when the provider call fails', async () => {
+    const driver = new PostmarkChannelDriver({
+      apiToken: 'token',
+      fetchImpl: async () => new Response('nope', { status: 500 }),
+    })
+
+    expect((await driver.checkSendingAuthorization('support@acme.com')).status).toBe('unknown')
+  })
+
+  it('returns unknown rather than unauthorized when the network throws', async () => {
+    const driver = new PostmarkChannelDriver({
+      apiToken: 'token',
+      fetchImpl: async () => {
+        throw new Error('ECONNREFUSED')
+      },
+    })
+
+    expect((await driver.checkSendingAuthorization('support@acme.com')).status).toBe('unknown')
+  })
+
+  it('matches the domain case-insensitively', async () => {
+    const driver = postmarkReturning({
+      Domains: [{ Name: 'Acme.COM', DKIMVerified: true, ReturnPathDomainVerified: true }],
+    })
+
+    expect(await driver.checkSendingAuthorization('Support@ACME.com')).toEqual({ status: 'authorized' })
+  })
+
+  it('returns unknown for an address it cannot parse a domain from', async () => {
+    const driver = postmarkReturning({ Domains: [] })
+
+    expect((await driver.checkSendingAuthorization('not-an-address')).status).toBe('unknown')
+  })
+
+  it('authorizes against Mailgun verified domains', async () => {
+    const driver = new MailgunChannelDriver({
+      signingKey: 'key',
+      apiKey: 'api-key',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ items: [{ name: 'acme.com', state: 'active' }] }), { status: 200 }),
+    })
+
+    expect(await driver.checkSendingAuthorization('support@acme.com')).toEqual({ status: 'authorized' })
+  })
+
+  it('does not authorize a Mailgun domain that is not active', async () => {
+    const driver = new MailgunChannelDriver({
+      signingKey: 'key',
+      apiKey: 'api-key',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ items: [{ name: 'acme.com', state: 'unverified' }] }), { status: 200 }),
+    })
+
+    expect((await driver.checkSendingAuthorization('support@acme.com')).status).toBe('unauthorized')
+  })
+})
+
+describe('sending authorization on subdomains of a verified domain', () => {
+  const mailgunWithDomains = (items: { name: string; state: string }[]) =>
+    new MailgunChannelDriver({
+      signingKey: 'key',
+      apiKey: 'api-key',
+      fetchImpl: async () => new Response(JSON.stringify({ items }), { status: 200 }),
+    })
+
+  it('authorizes a Mailgun sender on a subdomain of a verified domain', async () => {
+    // Frogmail (and Mailgun) accept a From on mail.acme.com once acme.com is verified.
+    const driver = mailgunWithDomains([{ name: 'acme.com', state: 'active' }])
+
+    expect(await driver.checkSendingAuthorization('support@mail.acme.com')).toEqual({ status: 'authorized' })
+    expect(await driver.checkSendingAuthorization('support@a.b.Acme.com')).toEqual({ status: 'authorized' })
+  })
+
+  it('matches on a label boundary only', async () => {
+    const driver = mailgunWithDomains([{ name: 'acme.com', state: 'active' }])
+
+    expect(await driver.checkSendingAuthorization('support@badacme.com')).toEqual({
+      status: 'unauthorized',
+      verifiedDomains: ['acme.com'],
+    })
+    expect((await driver.checkSendingAuthorization('support@acme.com.evil.io')).status).toBe('unauthorized')
+    expect((await driver.checkSendingAuthorization('support@com')).status).toBe('unauthorized')
+  })
+
+  it('does not let an unverified parent authorize a subdomain', async () => {
+    const driver = mailgunWithDomains([{ name: 'acme.com', state: 'unverified' }])
+
+    expect((await driver.checkSendingAuthorization('support@mail.acme.com')).status).toBe('unauthorized')
+  })
+
+  it('keeps Postmark on exact-domain matching', async () => {
+    const driver = new PostmarkChannelDriver({
+      apiToken: 'token',
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({ Domains: [{ Name: 'acme.com', DKIMVerified: true, ReturnPathDomainVerified: true }] }),
+          { status: 200 }
+        ),
+    })
+
+    expect((await driver.checkSendingAuthorization('support@mail.acme.com')).status).toBe('unauthorized')
+  })
+
+  it('picks the most specific verified domain', () => {
+    const verified = ['acme.com', 'eu.mail.acme.com', 'mail.acme.com']
+
+    expect(matchVerifiedDomain('x.eu.mail.acme.com', verified, { includeSubdomains: true })).toBe('eu.mail.acme.com')
+    expect(matchVerifiedDomain('us.mail.acme.com', verified, { includeSubdomains: true })).toBe('mail.acme.com')
+    expect(matchVerifiedDomain('acme.com', verified, { includeSubdomains: true })).toBe('acme.com')
+    expect(matchVerifiedDomain('badacme.com', verified, { includeSubdomains: true })).toBeNull()
+    expect(matchVerifiedDomain('mail.acme.com.', ['ACME.com.'], { includeSubdomains: true })).toBe('acme.com')
+    expect(matchVerifiedDomain('mail.acme.com', verified)).toBe('mail.acme.com')
+    expect(matchVerifiedDomain('x.mail.acme.com', verified)).toBeNull()
+  })
+
+  it('leaves exact matching as the default for authorizationForDomains', () => {
+    expect(authorizationForDomains('a@mail.acme.com', ['acme.com']).status).toBe('unauthorized')
+    expect(authorizationForDomains('a@mail.acme.com', ['acme.com'], { includeSubdomains: true }).status).toBe(
+      'authorized'
+    )
+  })
+})
+
+describe('Mailgun API base URL', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  function recordingDriver(options: { apiBaseUrl?: string } = {}) {
+    const urls: string[] = []
+    const driver = new MailgunChannelDriver({
+      signingKey: 'key',
+      apiKey: 'api-key',
+      ...options,
+      fetchImpl: async (input) => {
+        urls.push(input)
+        return new Response(JSON.stringify({ items: [] }), { status: 200 })
+      },
+    })
+    return { driver, urls }
+  }
+
+  it('treats an empty SUPPORT_MAILGUN_API_BASE_URL as unset', async () => {
+    // .env.example and docker-compose both set it to "" when unused.
+    vi.stubEnv('SUPPORT_MAILGUN_API_BASE_URL', '')
+    const { driver, urls } = recordingDriver()
+
+    await driver.checkSendingAuthorization('support@acme.com')
+
+    expect(urls).toEqual(['https://api.mailgun.net/v4/domains?limit=1000'])
+  })
+
+  it('treats a whitespace-only value or empty option as unset', async () => {
+    vi.stubEnv('SUPPORT_MAILGUN_API_BASE_URL', '   ')
+    const { driver, urls } = recordingDriver({ apiBaseUrl: '' })
+
+    await driver.checkSendingAuthorization('support@acme.com')
+
+    expect(urls).toEqual(['https://api.mailgun.net/v4/domains?limit=1000'])
+  })
+
+  it('uses a configured base URL such as a Frogmail origin, without a trailing slash', async () => {
+    vi.stubEnv('SUPPORT_MAILGUN_API_BASE_URL', ' https://mail.example.test/ ')
+    const { driver, urls } = recordingDriver()
+
+    await driver.checkSendingAuthorization('support@acme.com')
+
+    expect(urls).toEqual(['https://mail.example.test/v4/domains?limit=1000'])
+  })
+})

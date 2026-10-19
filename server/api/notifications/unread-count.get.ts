@@ -2,7 +2,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { db } from '~/server/database/drizzle'
-import { notification } from '~/server/database/schema/feedback'
+import { notification } from '~/server/database/schema/notifications'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)

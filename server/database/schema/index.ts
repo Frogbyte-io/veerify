@@ -1,2 +1,7 @@
 export * from './auth'
 export * from './feedback'
+export * from './notifications'
+export * from './support'
+export * from './teams'
+export * from './changelog'
+export * from './marketing'

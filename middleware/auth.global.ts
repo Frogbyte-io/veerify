@@ -5,6 +5,12 @@ import {
   getCachedDashboardBootstrap,
 } from '~/lib/dashboard-bootstrap-client'
 import { resolvePostAuthRedirectTarget } from '~/lib/auth-redirect'
+import {
+  isProtectedRoute as isProtectedPath,
+  legacyChangelogRedirect,
+  legacyRoadmapRedirect,
+  resolvePublicHostRedirect,
+} from '~/lib/route-guard'
 
 export default defineNuxtRouteMiddleware(async (to) => {
   // Skip middleware on server-side during generation/build
@@ -12,49 +18,35 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return
   }
 
-  // On team subdomains, all routes are public. Redirect app routes to team root.
+  // On team subdomains and custom domains, all routes are public. Redirect app
+  // routes to the root. `/changelog` is deliberately not an app route: it is the
+  // public changelog here (the dashboard one is `/dashboard/changelog`).
   const teamSubdomain = useState('teamSubdomain')
   if (teamSubdomain.value) {
-    const appRoutes = [
-      '/dashboard',
-      '/settings',
-      '/reports',
-      '/feedback',
-      '/help',
-      '/products',
-      '/login',
-      '/signup',
-      '/auth',
-      '/onboarding',
-      '/submissions',
-      '/get-started',
-    ]
-    if (appRoutes.some((r) => to.path.startsWith(r))) {
+    if (resolvePublicHostRedirect(to.path)) {
       return navigateTo('/')
     }
     return
   }
 
-  // Protected routes that require authentication
-  const protectedRoutes = [
-    '/dashboard',
-    '/settings',
-    '/reports',
-    '/feedback',
-    '/help',
-    '/products',
-    '/onboarding',
-    '/submissions',
-  ]
+  // Old dashboard changelog links (the page now lives at /dashboard/changelog)
+  const legacyChangelog = legacyChangelogRedirect(to.path, to.fullPath.slice(to.path.length))
+  if (legacyChangelog) {
+    return navigateTo(legacyChangelog, { replace: true })
+  }
+
+  // Bare /roadmap is only public on team/custom domains (handled above)
+  const legacyRoadmap = legacyRoadmapRedirect(to.path, to.fullPath.slice(to.path.length))
+  if (legacyRoadmap) {
+    return navigateTo(legacyRoadmap, { replace: true })
+  }
 
   // Auth routes that should redirect to dashboard if user is already logged in
   const authRoutes = ['/login', '/signup', '/auth']
 
-  // Token-based feedback edit page is public even though /feedback is a protected prefix
-  const isFeedbackEditPage = /^\/feedback\/[^/]+\/edit$/.test(to.path)
-  const isProtectedRoute = !isFeedbackEditPage && protectedRoutes.some((route) => to.path.startsWith(route))
+  const isProtectedRoute = isProtectedPath(to.path)
 
-  const isAuthRoute = authRoutes.some((route) => to.path.startsWith(route))
+  const isAuthRoute = authRoutes.some((route) => to.path === route || to.path.startsWith(`${route}/`))
 
   try {
     if (isProtectedRoute) {

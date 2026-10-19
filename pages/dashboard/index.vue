@@ -366,6 +366,10 @@ export default {
     }
   },
 
+  created() {
+    useHead({ title: 'Dashboard' })
+  },
+
   async mounted() {
     await this.initialize()
   },

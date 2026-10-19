@@ -29,7 +29,7 @@ A modern feedback management platform built with Nuxt 3, TypeScript, and shadcn-
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.12+
 - Yarn package manager
 
 ### Installation
@@ -131,7 +131,21 @@ yarn db:studio
 yarn build
 ```
 
-The build automatically runs migrations and seeds test data via the `postbuild` script. Seed is skipped on production (`VERCEL_ENV=production`).
+`yarn build` compiles only; it never connects to or mutates a database. Run deployment migrations explicitly before starting a new release:
+
+```bash
+yarn db:migrate:deploy
+```
+
+Migration history is append-only: never edit a migration that may already have
+been applied. If a constraint or index needs phased validation, add a new
+forward migration and schedule the validation separately. This keeps existing
+Drizzle journals valid and avoids making a deploy replay or skip an unrelated
+range of migrations. For large installations, run the migration command as a
+single controlled deployment job and monitor long-running backfills before
+starting application replicas.
+
+Preview/test data is always an explicit operation (`yarn db:seed` or `yarn db:seed:e2e`) and must never be part of a build or package-install hook. Vercel's `vercel-build` command runs deployment migration first and compilation second, without seeding.
 
 #### Configure the PostgreSQL database
 
@@ -228,6 +242,108 @@ For local development, start the database with Docker Compose:
 ```bash
 docker compose up -d
 ```
+
+### Self-hosting on a VM
+
+`docker-compose.yml` runs the full stack — the app, Postgres, [Valkey](https://valkey.io/) (Redis-protocol
+broker for realtime + rate limiting), MinIO (S3-compatible object storage), and [Caddy](https://caddyserver.com/)
+(reverse proxy + automatic HTTPS) — on a single machine. No other setup is required beyond Docker and DNS.
+
+#### Prerequisites
+
+- A VM (or bare-metal host) with Docker Engine and the Compose plugin installed.
+- DNS `A`/`AAAA` records pointed at the VM's public IP:
+  - `APP_DASHBOARD_DOMAIN` (e.g. `app.veerify.io`) — the dashboard/login/API host.
+  - `APP_DOMAIN` (e.g. `veerify.io`) — the base host for team public boards.
+  - `*.APP_DOMAIN` (e.g. `*.veerify.io`) — a wildcard record required for
+    team public boards at `<team-slug>.APP_DOMAIN`; the base `APP_DOMAIN` record
+    is still needed for the root host.
+- A third record for `STORAGE_DOMAIN` (e.g. `assets.veerify.io`) pointed at the same IP. Uploads (logos,
+  banners) are presigned directly against MinIO, so this host must be reachable from customers' browsers —
+  it is proxied by Caddy, not exposed on its own port.
+- Ports `80` and `443` open and free on the host (Caddy binds both; port 80 is required for ACME's HTTP-01
+  challenge as well as HTTP→HTTPS redirects).
+- Do not publish PostgreSQL, Valkey, or MinIO ports to the public host. The production Compose file keeps them
+  on its private network; use a temporary SSH tunnel or an authenticated admin network when direct access is needed.
+
+#### Environment
+
+Copy `.env.example` to `.env` and fill in every value used by `docker-compose.yml` — at minimum:
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `APP_DOMAIN`,
+`APP_DASHBOARD_DOMAIN`, SMTP settings pointed at a real relay (Mailpit is dev-only and is not part of the
+production stack), `STORAGE_BUCKET`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`, `STORAGE_DOMAIN`,
+and `UPLOAD_TOKEN_SECRET`. `STORAGE_ACCESS_KEY_ID`/`STORAGE_SECRET_ACCESS_KEY` double as the MinIO root
+credentials — there is no separate MinIO admin password to set.
+
+#### Marketing (optional)
+
+The Marketing module works on self-hosted installs. Teams bring their own Claude, OpenAI, Firecrawl and
+PageSpeed keys in Marketing settings; to let them save keys, set `SECRETS_ENCRYPTION_KEY`
+(`openssl rand -base64 32`). Everything else is optional and only unlocks one capability:
+
+| Variable                                                        | Unlocks                                                                                                                                                                                                                                |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`                        | Full site crawl for every team (point the URL at a self-hosted Firecrawl if you run one). Without it, teams without their own key get a basic audit of robots.txt, llms.txt, sitemap and home page                                     |
+| `PAGESPEED_API_KEY`                                             | Core Web Vitals in site audits                                                                                                                                                                                                         |
+| `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | Reddit mentions (register your own Reddit app; you are bound by Reddit's API terms)                                                                                                                                                    |
+| `BLUESKY_IDENTIFIER`, `BLUESKY_APP_PASSWORD`                    | Bluesky mentions (use an app password)                                                                                                                                                                                                 |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                      | Google Search Console data (clicks, impressions, queries). Create a Google OAuth web client with the Search Console API enabled and the redirect URI `<BETTER_AUTH_URL>/api/marketing/google/callback`; needs `SECRETS_ENCRYPTION_KEY` |
+| `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`  | Crawl limits (defaults 50 pages, 3 manual audits per product per day; hard cap 500 pages)                                                                                                                                              |
+
+To rotate `SECRETS_ENCRYPTION_KEY`, move the old value to `SECRETS_ENCRYPTION_KEY_PREVIOUS` and set a new key. Stored keys keep decrypting, but nothing re-encrypts them automatically, so keep the old key there until teams have re-saved their keys. Run exactly one app replica: the scheduled tasks run inside every app process. Deployment details are in `docs/plans/2026-09-21-coolify-deployment.md`.
+
+Hacker News mentions need nothing. Marketing settings shows an integration status panel listing what is
+configured. After setting the variables and restarting, open Marketing settings, go to Integration status and
+choose **Test all** (team admins only). Each integration runs its cheapest real check (key validation, one
+search, an encryption round trip, a Search Console token refresh) and shows what worked or what to fix;
+nothing is generated and no key is shown. Tests are limited to 10 per hour per team, and Test all skips
+integrations that are not configured.
+
+##### Rotating `SECRETS_ENCRYPTION_KEY`
+
+Team API keys and Google refresh tokens are encrypted with `SECRETS_ENCRYPTION_KEY`; each stored value records
+which key wrapped it. To rotate:
+
+1. Generate a new key (`openssl rand -base64 32`).
+2. Set `SECRETS_ENCRYPTION_KEY_PREVIOUS` to the old value (comma-separated if you have several) and
+   `SECRETS_ENCRYPTION_KEY` to the new one, then restart. Old values keep working.
+3. The hourly `marketing:visibility-schedule` task re-encrypts everything still on an old key. Marketing settings
+   > Integration status (Key encryption) shows "N keys are still encrypted with the previous key" until it reaches 0.
+4. Once nothing is left, remove `SECRETS_ENCRYPTION_KEY_PREVIOUS`. A value that cannot be decrypted (for example a
+   lost key) is reported in the server log by id and left alone; teams re-enter that key or reconnect Google.
+
+##### Search Console and site address changes
+
+- Changing a product's site address disconnects Search Console (the Google token is revoked, metrics are deleted)
+  and deletes SEO audits and any competitor watch on the old host. Terms, AI visibility prompts and mentions are
+  brand-level and kept. A connection whose property no longer matches the site address is never synced and is
+  flagged "needs property".
+- Reconnecting, disconnecting and deleting a product or organization revoke the stored Google token (best effort).
+- The Google OAuth `state` is signed, expires after 10 minutes and is single-use: its nonce is recorded in
+  `marketing_usage` (`oauth-nonce:<nonce>`) and a replayed callback is rejected.
+
+#### Bring the stack up
+
+```bash
+docker compose up -d --build
+```
+
+This builds the app image, starts Postgres/Valkey/MinIO, creates the MinIO bucket, clears bucket-wide anonymous
+access, and allows anonymous downloads only under `projects/` for public branding assets. Support mail and
+attachment objects remain private even though the MinIO endpoint is reachable through Caddy. It then runs the
+single migration/backfill service before the app begins serving and brings Caddy up in front of everything.
+`docker compose logs -f migrate` shows migration output; `docker compose logs -f app` shows server startup.
+
+#### Custom domains (`project.customDomain`)
+
+When a team points a customer-owned domain at a project's public board, Caddy issues that domain's TLS
+certificate automatically on first request (on-demand TLS) — no manual cert management, no restart. The
+customer only needs a `CNAME`/`A` record pointing their domain at this VM; verification and DNS-target
+guidance is the same as on the CNAME/Vercel-based flow (see `CNAME_TARGET` above).
+
+Certificate issuance for arbitrary hosts is gated by an `ask` check in `Caddyfile` so the proxy can't be
+abused as an open certificate-issuance relay — see the comments in `Caddyfile` and D-07 in
+`docs/plans/2026-08-11-support-platform/deltas.md` for what that endpoint needs to validate.
 
 #### Preview the production build locally:
 

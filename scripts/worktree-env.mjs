@@ -25,7 +25,12 @@ export function deriveWorktreePort(worktreePath = process.cwd()) {
 
 export function getWorktreeRuntimeContext(worktreePath = process.cwd()) {
   const port = deriveWorktreePort(worktreePath)
-  const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`
+  // `localhost`, not `127.0.0.1`. Better Auth issues session cookies scoped to
+  // `Domain=.<APP_DOMAIN>`, which is `.localhost` by default, and a client
+  // correctly discards such a cookie when the host is a bare IP. Sign-in then
+  // returns 200 while every following request is unauthenticated, so
+  // auth-dependent E2E specs fail with a misleading "session did not persist".
+  const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${port}`
   return {
     cwd: resolve(worktreePath),
     port,
