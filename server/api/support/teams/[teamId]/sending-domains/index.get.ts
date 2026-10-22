@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
     limits,
     providerConfigured: configured.configured,
     missingEnvVars: configured.missing,
-    domains: rows.map((row) => toSendingDomainView(row, provider)),
+    domains: rows.map((row) => toSendingDomainView(row, provider ?? undefined)),
   }
   return createSuccessResponse(data)
 })

@@ -47,5 +47,5 @@ export default defineEventHandler(async (event) => {
     siblings.map((other) => other.domain)
   )
 
-  return createSuccessResponse({ ...toSendingDomainView(row, provider), inboxes })
+  return createSuccessResponse({ ...toSendingDomainView(row, provider ?? undefined), inboxes })
 })
