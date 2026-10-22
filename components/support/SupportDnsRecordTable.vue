@@ -5,6 +5,19 @@
       control it.
     </p>
 
+    <p
+      v-if="zone && sortedRecords.length > 0"
+      class="text-sm text-muted-foreground"
+      data-testid="support-dns-zone-note"
+    >
+      Add these in the DNS zone for <strong>{{ zone }}</strong
+      >. The <em>Host</em> column is relative to that zone; the full record name is shown under it.
+      <template v-if="domain && domain !== zone">
+        If <code>{{ domain }}</code> has its own separate DNS zone, use the full name with that zone's own suffix
+        removed instead.
+      </template>
+    </p>
+
     <div v-if="sortedRecords.length === 0" class="text-sm text-muted-foreground">No DNS records to publish yet.</div>
 
     <div v-else class="overflow-x-auto rounded-md border">
@@ -38,7 +51,9 @@
             <td class="px-3 py-2 whitespace-nowrap font-mono text-xs">{{ record.type }}</td>
             <td class="px-3 py-2">
               <div class="flex items-center gap-1">
-                <code class="break-all text-xs" :title="record.name">{{ relativeHost(record.name) }}</code>
+                <code class="break-all text-xs" data-testid="support-dns-record-host">{{
+                  relativeHost(record.name)
+                }}</code>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -48,6 +63,19 @@
                   @click="copy(relativeHost(record.name))"
                 >
                   <Icon name="lucide:copy" class="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div class="mt-1 flex items-center gap-1 text-muted-foreground">
+                <code class="break-all text-[11px]" data-testid="support-dns-record-fqdn">{{ record.name }}</code>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-5 w-5 shrink-0 p-0"
+                  aria-label="Copy full record name"
+                  data-testid="support-dns-record-copy-fqdn"
+                  @click="copy(record.name)"
+                >
+                  <Icon name="lucide:copy" class="h-3 w-3" />
                 </Button>
               </div>
             </td>
@@ -131,7 +159,12 @@ export default {
       type: Array,
       default: () => [],
     },
-    /** The claimed domain; used to show hosts relative to the DNS zone. */
+    /** The claimed domain (may be a subdomain such as mail.acme.com). */
+    domain: {
+      type: String,
+      default: '',
+    },
+    /** The DNS zone the records live in: the registrable domain (acme.com). Hosts are shown relative to it. */
     zone: {
       type: String,
       default: '',
