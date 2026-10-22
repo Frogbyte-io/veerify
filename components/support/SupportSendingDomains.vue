@@ -1,5 +1,5 @@
 <template>
-  <Card v-if="isVisible" data-testid="support-sending-domains">
+  <Card v-if="isCardVisible" data-testid="support-sending-domains">
     <CardHeader>
       <div class="flex items-start justify-between gap-3">
         <div>
@@ -169,7 +169,12 @@
             </p>
 
             <div v-if="isExpanded(row.id)" class="mt-3">
-              <SupportDnsRecordTable :records="row.records" :zone="row.domain" :operator-managed="isOperatorManaged" />
+              <SupportDnsRecordTable
+                :records="row.records"
+                :domain="row.domain"
+                :zone="row.registrableDomain ?? row.domain"
+                :operator-managed="isOperatorManaged"
+              />
             </div>
           </li>
         </ul>
@@ -249,11 +254,26 @@
       </DialogContent>
     </Dialog>
   </Card>
+
+  <!-- Feature state not known yet (first GET failed): a quiet inline retry, not a full error card. -->
+  <div
+    v-else-if="showInlineError"
+    class="flex items-center gap-2 text-sm text-muted-foreground"
+    data-testid="support-sending-domains-error"
+  >
+    <span>Couldn't load sending domains.</span>
+    <Button variant="link" size="sm" class="h-auto p-0" @click="load()">Retry</Button>
+  </div>
 </template>
 
 <script>
 import { toast } from 'vue-sonner'
 import { normalizeSendingDomain, validateSendingDomain } from '~/lib/support-sending-domains'
+
+// Whether the deployment has the feature on is a deployment-wide fact, so remember the answer for the page
+// session: a "disabled" answer must not flash a skeleton on every later load, and an "enabled" one keeps
+// the card (with a skeleton) across team switches. null = not known yet.
+let featureEnabledForSession = null
 
 const POLL_INTERVAL_MS = 30_000
 const VERIFY_COOLDOWN_MS = 20_000
@@ -292,6 +312,7 @@ export default {
     },
   },
 
+  /** `loaded` carries the list response (or null) plus the team it belongs to. */
   emits: ['loaded'],
 
   data() {
@@ -299,7 +320,9 @@ export default {
       /** @type {import('~/lib/support-sending-domains').SendingDomainListResponse | null} */
       data: null,
       isLoading: true,
+      isUnmounted: false,
       error: null,
+      featureEnabled: featureEnabledForSession,
       expanded: {},
       busy: {},
       cooldowns: {},
@@ -320,9 +343,14 @@ export default {
   },
 
   computed: {
-    isVisible() {
-      // Hidden entirely once we know the feature is off; shown while loading or on error.
-      return !(this.data && this.data.enabled === false)
+    /** The card only renders once we know the feature is on; off or unknown renders nothing. */
+    isCardVisible() {
+      return this.featureEnabled === true
+    },
+
+    /** The first GET failed and we still do not know if the feature is on. */
+    showInlineError() {
+      return this.featureEnabled === null && Boolean(this.error)
     },
 
     canManage() {
@@ -346,6 +374,11 @@ export default {
   watch: {
     teamId() {
       this.expanded = {}
+      this.busy = {}
+      this.cooldowns = {}
+      this.data = null
+      this.isAddDialogOpen = false
+      this.isDeleteDialogOpen = false
       this.load()
     },
   },
@@ -356,6 +389,7 @@ export default {
   },
 
   beforeUnmount() {
+    this.isUnmounted = true
     if (this.pollTimer) clearInterval(this.pollTimer)
     this.pollTimer = null
     this.requestToken += 1
@@ -378,28 +412,38 @@ export default {
     },
 
     async load({ silent = false } = {}) {
-      if (!this.teamId) return
+      if (!this.teamId || this.isUnmounted) return
       const token = ++this.requestToken
       const teamId = this.teamId
       if (!silent) {
-        this.isLoading = true
+        // Known-off deployments never show a loading state.
+        if (this.featureEnabled !== false) this.isLoading = true
         this.error = null
       }
       try {
         const response = await $fetch(this.basePath())
-        if (token !== this.requestToken || teamId !== this.teamId) return
+        if (this.isStale(token, teamId)) return
         this.data = response?.data || null
+        if (this.data) {
+          featureEnabledForSession = this.data.enabled === true
+          this.featureEnabled = featureEnabledForSession
+        }
         this.error = null
-        this.$emit('loaded', this.data)
+        this.$emit('loaded', this.data, teamId)
       } catch (err) {
-        if (token !== this.requestToken) return
+        if (this.isStale(token, teamId)) return
         if (!silent) {
-          this.error = this.errorInfo(err).message || 'Failed to load sending domains'
-          this.$emit('loaded', null)
+          if (this.featureEnabled !== false)
+            this.error = this.errorInfo(err).message || 'Failed to load sending domains'
+          this.$emit('loaded', null, teamId)
         }
       } finally {
-        if (token === this.requestToken) this.isLoading = false
+        if (!this.isUnmounted && token === this.requestToken) this.isLoading = false
       }
+    },
+
+    isStale(token, teamId) {
+      return this.isUnmounted || token !== this.requestToken || teamId !== this.teamId
     },
 
     pollTick() {
@@ -490,12 +534,14 @@ export default {
       this.isAdding = true
       try {
         const response = await $fetch(this.basePath(), { method: 'POST', body: { domain } })
-        this.isAddDialogOpen = false
         toast.success(`Added ${domain}. Publish the DNS records to verify it.`)
+        if (this.isUnmounted) return
+        this.isAddDialogOpen = false
         const created = response?.data
         if (created?.id) this.expanded = { ...this.expanded, [created.id]: true }
         await this.load({ silent: true })
       } catch (err) {
+        if (this.isUnmounted) return
         const info = this.errorInfo(err)
         if (info.status === 429) {
           this.addError = info.message || 'Too many attempts. Try again in a little while.'
@@ -503,7 +549,7 @@ export default {
           this.addError = info.message || 'Could not add this domain'
         }
       } finally {
-        this.isAdding = false
+        if (!this.isUnmounted) this.isAdding = false
       }
     },
 
@@ -514,14 +560,17 @@ export default {
       this.busy = { ...this.busy, [row.id]: 'verify' }
       try {
         await $fetch(`${this.basePath()}/${encodeURIComponent(row.id)}/verify`, { method: 'POST' })
+        if (this.isUnmounted) return
         this.startCooldown(row.id)
         await this.load({ silent: true })
       } catch (err) {
+        if (this.isUnmounted) return
         const info = this.errorInfo(err)
         if (info.status === 429) this.startCooldown(row.id)
         toast.error(info.message || 'Could not verify this domain')
       } finally {
-        this.busy = Object.fromEntries(Object.entries(this.busy).filter(([key]) => key !== row.id))
+        if (!this.isUnmounted)
+          this.busy = Object.fromEntries(Object.entries(this.busy).filter(([key]) => key !== row.id))
       }
     },
 
@@ -557,10 +606,12 @@ export default {
           method: 'DELETE',
           params: force ? { force: 'true' } : undefined,
         })
-        this.isDeleteDialogOpen = false
         const result = response?.data || {}
+        // A 202 with deleted:false means the provider removal is still being retried in the background.
         if (result.deleted === false) {
-          toast.info(`Removal of ${row.domain} is in progress and will be retried automatically.`)
+          toast.info('Removal in progress', {
+            description: `${row.domain} is being removed and will be retried automatically until it is gone.`,
+          })
         } else if (result.operatorCleanupRequired) {
           toast.warning(
             'Veerify released this domain. Your operator must remove it from the mail provider because it receives mail there.'
@@ -568,8 +619,11 @@ export default {
         } else {
           toast.success(`Deleted ${row.domain}`)
         }
+        if (this.isUnmounted) return
+        this.isDeleteDialogOpen = false
         await this.load({ silent: true })
       } catch (err) {
+        if (this.isUnmounted) return
         const info = this.errorInfo(err)
         if (info.status === 409 && info.code === 'DOMAIN_IN_USE') {
           this.deleteInUseInboxes = info.details?.inboxes ?? []
@@ -577,7 +631,7 @@ export default {
           this.deleteError = info.message || 'Could not delete this domain'
         }
       } finally {
-        this.isDeleting = false
+        if (!this.isUnmounted) this.isDeleting = false
       }
     },
   },

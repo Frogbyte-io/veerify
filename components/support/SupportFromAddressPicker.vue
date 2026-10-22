@@ -87,8 +87,13 @@
         <Label for="support-from-picker-use-subdomain" class="text-sm text-muted-foreground">Use a subdomain</Label>
       </div>
 
+      <p v-if="validationMessage" class="text-sm text-destructive" role="alert" data-testid="support-from-picker-error">
+        {{ validationMessage }}
+      </p>
+
       <p v-if="!hasOptions" class="text-sm text-muted-foreground" data-testid="support-from-picker-empty">
-        Add and verify a sending domain above to choose a From address.
+        <template v-if="domainsEnabled">Add and verify a sending domain above to choose a From address.</template>
+        <template v-else>No sending addresses are available to your team yet. Ask your operator for help.</template>
       </p>
     </div>
   </div>
@@ -127,6 +132,11 @@ export default {
       type: Array,
       default: () => [],
     },
+    /** False when the sending-domains card is not available (feature off), so the empty hint cannot point at it. */
+    domainsEnabled: {
+      type: Boolean,
+      default: true,
+    },
     inputId: {
       type: String,
       default: 'general-from-address',
@@ -141,10 +151,12 @@ export default {
     },
   },
 
-  emits: ['update:modelValue'],
+  // `update:valid` is false while the picker holds a partial address (the previous value is kept).
+  emits: ['update:modelValue', 'update:valid'],
 
   data() {
     return {
+      validationMessage: '',
       localPart: '',
       selectedKey: '',
       subdomainEnabled: false,
@@ -196,8 +208,9 @@ export default {
     domains() {
       if (this.lastEmitted === null) this.syncFromValue(this.modelValue)
     },
-    platformAddresses() {
-      if (this.lastEmitted === null) this.syncFromValue(this.modelValue)
+    platformAddresses(list) {
+      const staleSelection = this.isPlatformSelected && !list.includes(this.selectedKey.slice('platform:'.length))
+      if (this.lastEmitted === null || staleSelection) this.syncFromValue(this.modelValue)
     },
   },
 
@@ -208,6 +221,7 @@ export default {
   methods: {
     /** Derive the picker state from a full address. */
     syncFromValue(value) {
+      this.setValidation('')
       const address = String(value || '').trim()
       const at = address.lastIndexOf('@')
       const local = at >= 0 ? address.slice(0, at) : address
@@ -260,24 +274,48 @@ export default {
       this.emitValue()
     },
 
-    emitValue() {
-      let next = ''
+    setValidation(message) {
+      const wasValid = !this.validationMessage
+      this.validationMessage = message
+      if (wasValid !== !message) this.$emit('update:valid', !message)
+    },
+
+    /** The complete address for the current selection, or a reason it is not complete yet. */
+    compose() {
       if (this.selectedKey.startsWith('platform:')) {
-        next = this.selectedKey.slice('platform:'.length)
-      } else {
-        const local = this.localPart.trim()
-        let host = ''
-        if (this.selectedKey.startsWith('domain:')) {
-          host = this.selectedKey.slice('domain:'.length)
-          const prefix = this.subPrefix.trim().replace(/^\.+|\.+$/g, '')
-          if (this.subdomainEnabled && this.selectedVerifiedParent && prefix) host = `${prefix}.${host}`
-        } else if (this.selectedKey.startsWith('custom:')) {
-          host = this.selectedKey.slice('custom:'.length)
-        }
-        next = local && host ? `${local}@${host}` : local && !host ? local : ''
+        return { address: this.selectedKey.slice('platform:'.length) }
       }
-      this.lastEmitted = next
-      this.$emit('update:modelValue', next)
+      const local = this.localPart.trim()
+      if (!this.selectedKey) return { error: 'Choose a sending domain.' }
+      if (!local) return { error: 'Enter the part before the @.' }
+      if (!/^[^\s@]+$/.test(local)) return { error: 'The part before the @ cannot contain spaces or @.' }
+      let host = ''
+      if (this.selectedKey.startsWith('domain:')) {
+        host = this.selectedKey.slice('domain:'.length)
+        if (this.subdomainEnabled && this.selectedVerifiedParent) {
+          const prefix = this.subPrefix.trim().replace(/^\.+|\.+$/g, '')
+          if (!prefix) return { error: 'Enter the subdomain, or turn off "Use a subdomain".' }
+          if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*$/i.test(prefix))
+            return { error: 'Enter a valid subdomain, for example "mail".' }
+          host = `${prefix}.${host}`
+        }
+      } else if (this.selectedKey.startsWith('custom:')) {
+        host = this.selectedKey.slice('custom:'.length)
+      }
+      if (!host) return { error: 'Choose a sending domain.' }
+      return { address: `${local}@${host}` }
+    },
+
+    /** Emits only complete addresses; otherwise keeps the previous value and shows why. */
+    emitValue() {
+      const result = this.compose()
+      if (result.error) {
+        this.setValidation(result.error)
+        return
+      }
+      this.setValidation('')
+      this.lastEmitted = result.address
+      this.$emit('update:modelValue', result.address)
     },
   },
 }

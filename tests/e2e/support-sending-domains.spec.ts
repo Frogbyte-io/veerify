@@ -10,7 +10,13 @@ import {
 } from './helpers/support-permissions'
 import { getPlaywrightBaseURL, loginViaProgrammaticPage, withOriginHeaders } from './helpers/auth'
 import { account, session, team, teamMember, user, verification } from '../../server/database/schema/auth'
-import { supportInbox, supportInboxMember, supportSendingDomain } from '../../server/database/schema/support'
+import {
+  contact,
+  conversation,
+  supportInbox,
+  supportInboxMember,
+  supportSendingDomain,
+} from '../../server/database/schema/support'
 
 /**
  * Customer sending domains (design §12).
@@ -490,7 +496,7 @@ test.describe('support sending domains', () => {
                   data: { success: false, error: { code: 'INTERNAL_ERROR', message: 'boom' } },
                 }),
               }
-            : ok(listPayload({ enabled: false, domains: [] })),
+            : ok(listPayload({ enabled: false, policy: 'legacy', domains: [] })),
       })
       await expect(page.getByTestId('support-sending-domains-error')).toBeVisible({ timeout: 20_000 })
       failing = false
@@ -634,6 +640,264 @@ test.describe('support sending domains', () => {
       await expect
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
         .toBe('acme-support-k3m9qz@veerifymail.test')
+    })
+
+    const stubChannelStatus = async (page: Page, patch: Record<string, unknown>) => {
+      await page.route(/\/api\/support\/channel-status(\?.*)?$/, async (route) => {
+        const response = await route.fetch()
+        const payload = await response.json()
+        payload.data = { ...payload.data, ...patch }
+        await route.fulfill({ response, json: payload })
+      })
+    }
+
+    test('a subdomain claim shows hosts relative to the registrable domain and the full name', async ({ browser }) => {
+      const page = await openStubbed(browser, {
+        list: () =>
+          ok(
+            listPayload({
+              domains: [
+                domainRow({
+                  id: 'd-sub',
+                  domain: 'mail.stub.example.com',
+                  registrableDomain: 'stub.example.com',
+                  records: [record({ name: '_veerify-mail.mail.stub.example.com' })],
+                }),
+              ],
+            })
+          ),
+      })
+      const row = rowFor(page, 'mail.stub.example.com')
+      await row.getByTestId('support-sending-domain-expand').click({ timeout: 20_000 })
+      await expect(row.getByTestId('support-dns-zone-note')).toContainText('stub.example.com')
+      await expect(row.getByTestId('support-dns-record-host')).toHaveText('_veerify-mail.mail')
+      await expect(row.getByTestId('support-dns-record-fqdn')).toHaveText('_veerify-mail.mail.stub.example.com')
+    })
+
+    test('a response without registrableDomain falls back to the claimed domain as the zone', async ({ browser }) => {
+      const page = await openStubbed(browser, { list: () => ok(listPayload()) })
+      const row = rowFor(page, 'stub.example.com')
+      await row.getByTestId('support-sending-domain-expand').click({ timeout: 20_000 })
+      await expect(row.getByTestId('support-dns-record-host')).toHaveText('_veerify-mail')
+    })
+
+    test('a 202 delete answer says the removal is in progress', async ({ browser }) => {
+      const page = await openStubbed(browser, {
+        list: () => ok(listPayload({ domains: [domainRow({ status: 'verified' })] })),
+        onItem: (method) => (method === 'DELETE' ? ok({ deleted: false }, 202) : null),
+      })
+      await rowFor(page, 'stub.example.com').getByTestId('support-sending-domain-delete').click({ timeout: 20_000 })
+      await page.getByTestId('support-sending-domain-delete-confirm').click()
+      await expect(page.getByText('Removal in progress')).toBeVisible()
+    })
+
+    test('team policy with the feature off still renders the picker and the forwarding button', async ({ browser }) => {
+      const page = await openStubbed(browser, {
+        list: () => ok(listPayload({ enabled: false, policy: 'team', domains: [] })),
+      })
+      await stubChannelStatus(page, { platformForwardingEnabled: true, platformAddress: null })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await expect(page.getByTestId('support-sending-domains')).toHaveCount(0)
+      await expect(page.getByTestId('support-from-picker')).toHaveAttribute('data-policy', 'team', {
+        timeout: 20_000,
+      })
+      await expect(page.getByTestId('support-settings-platform-create')).toBeVisible()
+    })
+
+    test('the forwarding button follows platformForwardingEnabled, not the sending-domains flag', async ({
+      browser,
+    }) => {
+      const page = await openStubbed(browser, { list: () => ok(listPayload()) })
+      await stubChannelStatus(page, { platformForwardingEnabled: false, platformAddress: null })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await expect(page.getByTestId('support-sending-domains')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByTestId('support-settings-channel-webhook')).toBeVisible()
+      await expect(page.getByTestId('support-settings-platform-create')).toHaveCount(0)
+    })
+
+    test('platform rows cannot be removed and regenerating asks first', async ({ browser }) => {
+      const page = await openStubbed(browser, { list: () => ok(listPayload()) })
+      await stubChannelStatus(page, {
+        platformForwardingEnabled: true,
+        platformAddress: 'acme-support-k3m9qz@veerifymail.test',
+      })
+      await page.route(/\/api\/support\/inboxes\/[^/]+\/addresses(\?.*)?$/, (route) =>
+        route.request().method() === 'GET'
+          ? route.fulfill(
+              ok({
+                addresses: [
+                  {
+                    id: 'addr-platform',
+                    address: 'acme-support-k3m9qz@veerifymail.test',
+                    kind: 'platform',
+                    isPrimary: false,
+                    projectId: null,
+                  },
+                  {
+                    id: 'addr-own',
+                    address: 'help@stub.example.com',
+                    kind: 'custom',
+                    isPrimary: true,
+                    projectId: null,
+                  },
+                ],
+              }) as never
+            )
+          : route.fallback()
+      )
+      let body: unknown = null
+      await page.route(/\/api\/support\/inboxes\/[^/]+\/addresses\/platform(\?.*)?$/, (route) => {
+        body = route.request().postDataJSON()
+        return route.fulfill(
+          ok({
+            address: { id: 'addr-platform-2', address: 'acme-support-n3w0aa@veerifymail.test' },
+            created: true,
+          }) as never
+        )
+      })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await expect(page.getByRole('button', { name: 'Remove receiving address help@stub.example.com' })).toBeVisible({
+        timeout: 20_000,
+      })
+      await expect(
+        page.getByRole('button', { name: 'Remove receiving address acme-support-k3m9qz@veerifymail.test' })
+      ).toHaveCount(0)
+
+      await page.getByTestId('support-settings-platform-regenerate').click()
+      await expect(page.getByRole('dialog', { name: 'Regenerate forwarding address' })).toContainText(
+        'old address stops working'
+      )
+      expect(body).toBeNull()
+      await page.getByTestId('support-regenerate-platform-confirm').click()
+      await expect.poll(() => body).toEqual({ regenerate: true })
+    })
+
+    test('the picker never emits a partial address and Save stays disabled while it is incomplete', async ({
+      browser,
+    }) => {
+      const page = await openStubbed(browser, {
+        list: () =>
+          ok(listPayload({ domains: [domainRow({ id: 'd-v', domain: 'verified.example.com', status: 'verified' })] })),
+      })
+      await stubChannelStatus(page, {
+        platformForwardingEnabled: true,
+        platformAddress: 'acme-support-k3m9qz@veerifymail.test',
+      })
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      const picker = page.getByTestId('support-from-picker')
+      const select = picker.getByTestId('support-from-picker-select')
+      await expect(picker).toHaveAttribute('data-policy', 'team', { timeout: 20_000 })
+
+      let saved: Record<string, unknown> | null = null
+      await page.route(/\/api\/support\/inboxes\/[^/]+(\?.*)?$/, async (route) => {
+        if (route.request().method() === 'PUT') saved = route.request().postDataJSON()
+        return route.fallback()
+      })
+
+      // Start with an empty local part so the state does not depend on the inbox's saved address.
+      await picker.getByTestId('support-from-picker-local').fill('')
+      // Platform option, then a domain with no local part: the platform address is kept and Save is blocked.
+      await select.selectOption({ value: 'platform:acme-support-k3m9qz@veerifymail.test' })
+      const save = page.getByTestId('support-inbox-settings-save')
+      await expect(save).toBeEnabled()
+      await select.selectOption({ value: 'domain:verified.example.com' })
+      await expect(picker.getByTestId('support-from-picker-error')).toBeVisible()
+      await expect(save).toBeDisabled()
+
+      await picker.getByTestId('support-from-picker-local').fill('help')
+      await expect(picker.getByTestId('support-from-picker-error')).toHaveCount(0)
+      await expect(save).toBeEnabled()
+      await save.click()
+      await expect.poll(() => saved?.emailAddress).toBe('help@verified.example.com')
+    })
+
+    test('an outbox message blocked by the sender check explains itself and skips the duplicate prompt', async ({
+      browser,
+    }) => {
+      const page = await openStubbed(browser, { list: () => ok(listPayload()) })
+      const customerEmail = `blocked-sender-${suffix}@example.com`
+      let conversationId = ''
+      try {
+        const post = (url: string, data: unknown) =>
+          page.request.post(url, { headers: withOriginHeaders('/support'), data })
+        const contactResponse = await post('/api/support/contacts', {
+          teamId: fixture.teamId,
+          name: 'Blocked Sender Customer',
+          email: customerEmail,
+        })
+        expect(contactResponse.ok()).toBeTruthy()
+        const contactId = (await contactResponse.json()).data.contact.id as string
+        const conversationResponse = await post('/api/support/conversations', {
+          inboxId: fixture.primaryInboxId,
+          contactId,
+          subject: 'Blocked sender',
+        })
+        expect(conversationResponse.ok()).toBeTruthy()
+        conversationId = (await conversationResponse.json()).data.conversation.id as string
+
+        const blocked = (extra: Record<string, unknown>) => ({
+          id: 'blocked-msg',
+          conversationId,
+          kind: 'outgoing',
+          body: 'Hello',
+          bodyHtml: null,
+          senderKind: 'agent',
+          senderUserId: null,
+          senderContactId: null,
+          isPrivate: false,
+          deliveryStatus: 'failed',
+          attachments: [],
+          createdAt: new Date().toISOString(),
+          ...extra,
+        })
+        let messages = [blocked({ lastError: 'SENDER_DOMAIN_NOT_AUTHORIZED' })]
+        let retries = 0
+        await page.route(`**/api/support/conversations/${conversationId}/messages`, (route) =>
+          route.request().method() === 'GET'
+            ? route.fulfill(ok({ messages, hasMore: false }) as never)
+            : route.fallback()
+        )
+        await page.route(`**/api/support/conversations/${conversationId}/messages/blocked-msg/retry`, (route) => {
+          retries += 1
+          return route.fulfill({
+            status: 409,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              statusCode: 409,
+              statusMessage: 'Conflict',
+              data: { success: false, error: { code: 'SENDER_NOT_VERIFIED', message: 'Sender not verified' } },
+            }),
+          })
+        })
+        let dialogs = 0
+        page.on('dialog', async (dialog) => {
+          dialogs += 1
+          await dialog.dismiss()
+        })
+
+        await page.goto(`/support?inboxId=${fixture.primaryInboxId}&conversationId=${conversationId}`, {
+          waitUntil: 'domcontentloaded',
+        })
+        const notice = page.getByTestId('support-message-sender-blocked')
+        await expect(notice).toContainText("this inbox's From address isn't verified for your team", {
+          timeout: 30_000,
+        })
+        await expect(page.getByTestId('support-message-sender-link')).toHaveAttribute('href', '/support/settings')
+        await page.getByTestId('support-message-retry').click()
+        await expect.poll(() => retries).toBe(1)
+        expect(dialogs).toBe(0)
+
+        // retryable:false hides Retry, and a plain failure keeps the generic label.
+        messages = [blocked({ lastError: null, retryable: false })]
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        await expect(page.getByTestId('support-message-delivery-failed')).toContainText('Failed to send', {
+          timeout: 30_000,
+        })
+        await expect(page.getByTestId('support-message-retry')).toHaveCount(0)
+      } finally {
+        if (conversationId) await db.delete(conversation).where(eq(conversation.id, conversationId))
+        await db.delete(contact).where(eq(contact.email, customerEmail))
+      }
     })
   })
 })
