@@ -100,6 +100,9 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   await saveSendingDomainPatch(claim, {
     nextCheckAt: new Date(now.getTime() + PROVISIONING_SAFETY_NET_MS),
+    // Held while the provider call is in flight so an admin delete cannot leak the
+    // provider domain (409 DOMAIN_BUSY); every outcome patch clears it.
+    leaseExpiresAt: new Date(now.getTime() + PROVISIONING_SAFETY_NET_MS),
     updatedAt: now,
   })
 

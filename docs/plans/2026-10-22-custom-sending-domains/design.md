@@ -165,6 +165,14 @@ any --admin delete--> deleting --provider ok/permanent refusal--> (row deleted)
 deleting --transient error--> deleting (poller retries)
 ```
 
+Details added after review:
+
+- `suspended --SUSPENDED_TTL_DAYS (30) elapsed--> (row deleted like an expired pending claim)`. The clock starts at the suspension (`expiresAt`), is not restarted by the daily checks, and is cleared when the claim recovers to `verified`.
+- A `suspended` (or manually verified) claim whose provider domain is gone (`not_found`) is registered again (`provisioning`), not counted as a synthetic `unverified`. Providers without `capabilities.register` (Postmark list-only) treat "not listed" as `unverified`, so the TXT and DMARC checks run and the claim stays `pending`.
+- `deleting --permanent provider refusal, or MAX_REMOVE_ATTEMPTS (12) failures--> (row deleted, metric operator_cleanup_required)`. Credential failures count as attempts too, so a row cannot stay `deleting` and block the domain for every team.
+- An admin delete during an in-flight register or poll pass is refused with 409 `DOMAIN_BUSY` while `leaseExpiresAt > now`.
+- A send refused by the provider with 553 / `sender_not_authorized` suspends the verified claim (`suspendClaimForSenderRejection`, reason `sender_rejected`).
+
 ## 6. Provider abstraction (WP2; new module `server/services/sending-domains/`)
 
 This is kept separate from `ChannelDriver`, which handles inbound plus the authorization verdict. Domain management has its own lifecycle and credentials, and a separate module keeps file ownership clear for parallel work. The provider is chosen from `SUPPORT_CHANNEL_PROVIDER`. A non-production-only `SUPPORT_SENDING_DOMAIN_PROVIDER=fake` override exists for dev and e2e; it is refused when `NODE_ENV=production`.

@@ -5,6 +5,8 @@ import {
   findHierarchyConflict,
   getRegistrableDomain,
   normalizeSendingDomain,
+  PENDING_TTL_DAYS,
+  SUSPENDED_TTL_DAYS,
   relativeRecordHost,
   sendingDomainEnvIssues,
   validateSendingDomain,
@@ -214,11 +216,71 @@ describe('applyProviderResult', () => {
   })
 
   it('schedules pending polls 5 minutes, 15 minutes, then hourly', () => {
+    // The period start is derived from the expiry (start + TTL), so move both together.
     const at = (ageMs: number) =>
-      applyProviderResult(row({ createdAt: new Date(now.getTime() - ageMs) }), unverified, 'invalid', now).nextCheckAt!
+      applyProviderResult(
+        row({
+          createdAt: new Date(now.getTime() - ageMs),
+          expiresAt: new Date(now.getTime() - ageMs + PENDING_TTL_DAYS * 24 * 3_600_000),
+        }),
+        unverified,
+        'invalid',
+        now
+      ).nextCheckAt!
     expect(at(10 * 60_000).getTime() - now.getTime()).toBe(5 * 60_000)
     expect(at(2 * 3_600_000).getTime() - now.getTime()).toBe(15 * 60_000)
     expect(at(30 * 3_600_000).getTime() - now.getTime()).toBe(3_600_000)
+  })
+
+  it('derives the pending cadence from the current pending period, not from createdAt', () => {
+    // Created 30 days ago, re-registered now: the fresh expiry restarts the 5 minute cadence.
+    const out = applyProviderResult(
+      row({ createdAt: new Date(now.getTime() - 30 * 24 * 3_600_000) }),
+      unverified,
+      'invalid',
+      now
+    )
+    expect(out.nextCheckAt!.getTime() - now.getTime()).toBe(5 * 60_000)
+  })
+
+  it('starts the suspension clock at the suspension and does not restart it', () => {
+    const lost = applyProviderResult(
+      row({ status: 'verified', verifiedAt: created, expiresAt: null, providerFailures: 1 }),
+      unverified,
+      'valid',
+      now
+    )
+    expect(lost.status).toBe('suspended')
+    expect(lost.expiresAt).toEqual(new Date(now.getTime() + SUSPENDED_TTL_DAYS * 24 * 3_600_000))
+
+    const later = new Date(now.getTime() + 24 * 3_600_000)
+    const again = applyProviderResult(
+      row({ status: 'suspended', verifiedAt: created, expiresAt: lost.expiresAt }),
+      unverified,
+      'valid',
+      later
+    )
+    expect(again.expiresAt).toEqual(lost.expiresAt)
+
+    // A legacy suspended row without a clock gets one on its next check.
+    const legacy = applyProviderResult(
+      row({ status: 'suspended', verifiedAt: created, expiresAt: null }),
+      unverified,
+      'valid',
+      later
+    )
+    expect(legacy.expiresAt).toEqual(new Date(later.getTime() + SUSPENDED_TTL_DAYS * 24 * 3_600_000))
+  })
+
+  it('clears the suspension clock when the claim recovers', () => {
+    const out = applyProviderResult(
+      row({ status: 'suspended', verifiedAt: created, expiresAt: new Date(now.getTime() + 1000) }),
+      active,
+      'valid',
+      now
+    )
+    expect(out.status).toBe('verified')
+    expect(out.expiresAt).toBeNull()
   })
 
   const verified = (o: Partial<SendingDomainTransitionRow> = {}) =>

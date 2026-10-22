@@ -1,7 +1,7 @@
-import { and, eq, like, or } from 'drizzle-orm'
+import { and, eq, isNull, like, lt, or } from 'drizzle-orm'
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
-import { supportInbox } from '~/server/database/schema/support'
+import { supportInbox, supportSendingDomain } from '~/server/database/schema/support'
 import type { SendingDomainProvider } from '~/server/services/sending-domains/types'
 import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { isSendingDomainsEnabled } from '~/server/utils/sending-domains'
@@ -38,6 +38,49 @@ export async function requireSendingDomainReader(teamId: string, userId: string)
     })
   }
   return access
+}
+
+/** How long an in-flight register / verify / delete keeps other writers away. */
+export const SENDING_DOMAIN_REQUEST_LEASE_MS = 2 * 60 * 1000
+
+export function domainBusyError() {
+  return createError({
+    statusCode: 409,
+    statusMessage: 'Conflict',
+    data: createErrorResponse('DOMAIN_BUSY', 'This domain is being processed right now. Try again in a moment.'),
+  })
+}
+
+/**
+ * Take the row's lease for an in-flight request (atomic). The lease is what stops
+ * an admin delete from racing a register that is still talking to the provider
+ * (the delete would otherwise leak the provider domain). Returns false when
+ * someone else holds an unexpired lease. Every result patch clears the lease.
+ */
+export async function acquireSendingDomainLease(
+  row: Pick<SendingDomainRow, 'id' | 'teamId'>,
+  now: Date = new Date()
+): Promise<boolean> {
+  const taken = await db
+    .update(supportSendingDomain)
+    .set({ leaseExpiresAt: new Date(now.getTime() + SENDING_DOMAIN_REQUEST_LEASE_MS) })
+    .where(
+      and(
+        eq(supportSendingDomain.id, row.id),
+        eq(supportSendingDomain.teamId, row.teamId),
+        or(isNull(supportSendingDomain.leaseExpiresAt), lt(supportSendingDomain.leaseExpiresAt, now))
+      )
+    )
+    .returning({ id: supportSendingDomain.id })
+  return taken.length > 0
+}
+
+export async function releaseSendingDomainLease(row: Pick<SendingDomainRow, 'id'>): Promise<void> {
+  await db
+    .update(supportSendingDomain)
+    .set({ leaseExpiresAt: null })
+    .where(eq(supportSendingDomain.id, row.id))
+    .catch(() => undefined)
 }
 
 /** The configured provider, or a 503 that names missing settings only (D-34). */

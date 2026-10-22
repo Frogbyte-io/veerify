@@ -89,6 +89,8 @@ export interface SendingStatusResponse {
 export const MAX_DOMAINS_PER_TEAM = 10
 export const MAX_PENDING_PER_TEAM = 3
 export const PENDING_TTL_DAYS = 7
+/** A suspended claim that nobody repairs is released after this long (design §5.3). */
+export const SUSPENDED_TTL_DAYS = 30
 /** DNS label that carries the per-claim ownership TXT record. */
 export const OWNERSHIP_RECORD_LABEL = '_veerify-mail'
 export const OWNERSHIP_RECORD_PREFIX = 'veerify-mail-verification='
@@ -356,6 +358,19 @@ export interface SendingDomainTransition {
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 
+const DAY = 24 * HOUR
+
+/**
+ * When the current pending period began. A pending claim's expiry is always
+ * `periodStart + PENDING_TTL_DAYS` (a re-registration restarts it), so the start
+ * is derived from `expiresAt` and falls back to `createdAt`. This keeps the
+ * re-check cadence tied to the current period without a schema column.
+ */
+export function pendingPeriodStart(row: { createdAt?: Date | null; expiresAt?: Date | null }): Date | null | undefined {
+  if (row.expiresAt) return new Date(row.expiresAt.getTime() - PENDING_TTL_DAYS * DAY)
+  return row.createdAt
+}
+
 /** Next poll for a claim that is being checked (design §8.2). */
 export function nextSendingDomainCheckAt(
   status: SupportSendingDomainStatus,
@@ -426,7 +441,7 @@ export function applyProviderResult(
 
   const setStatus = (status: SupportSendingDomainStatus) => {
     out.status = status
-    out.nextCheckAt = nextSendingDomainCheckAt(status, row.createdAt, now)
+    out.nextCheckAt = nextSendingDomainCheckAt(status, pendingPeriodStart(row), now)
   }
 
   const markVerified = () => {
@@ -459,6 +474,10 @@ export function applyProviderResult(
   const providerLost = out.providerFailures >= SUSPEND_AFTER_PROVIDER_MISSES
   if (current === 'suspended' || ownershipLost || providerLost) {
     setStatus('suspended')
+    // A suspended claim nobody repairs is released after SUSPENDED_TTL_DAYS. The
+    // clock starts at the suspension and is not restarted by the daily checks.
+    out.expiresAt =
+      current === 'suspended' && row.expiresAt ? row.expiresAt : new Date(now.getTime() + SUSPENDED_TTL_DAYS * DAY)
     const ownershipCause = ownershipLost || (current === 'suspended' && ownership === 'invalid')
     out.lastErrorCode = ownershipCause ? 'ownership_missing' : 'provider_unverified'
     out.lastError = suspensionMessage(ownershipCause)

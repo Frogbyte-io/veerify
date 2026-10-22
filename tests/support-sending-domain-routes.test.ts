@@ -14,6 +14,12 @@ const state = vi.hoisted(() => ({
   responseStatus: undefined as number | undefined,
   responseHeaders: {} as Record<string, string>,
   markedRows: [] as Record<string, unknown>[],
+  updateSets: [] as Record<string, unknown>[],
+}))
+
+const lease = vi.hoisted(() => ({
+  acquireSendingDomainLease: vi.fn(async () => true),
+  releaseSendingDomainLease: vi.fn(async () => undefined),
 }))
 
 const provider = vi.hoisted(() => ({
@@ -101,7 +107,10 @@ vi.mock('~/server/utils/support-observability', () => metrics)
 vi.mock('~/server/database/drizzle', () => {
   const chain = (): Record<string, unknown> => {
     const fluent: Record<string, unknown> = {
-      set: () => fluent,
+      set: (patch: Record<string, unknown>) => {
+        state.updateSets.push(patch)
+        return fluent
+      },
       where: () => fluent,
       returning: () => Promise.resolve(state.markedRows),
     }
@@ -154,7 +163,7 @@ vi.mock('~/server/utils/sending-domain-api', async () => {
   const actual = await vi.importActual<typeof import('~/server/utils/sending-domain-api')>(
     '~/server/utils/sending-domain-api'
   )
-  return { ...actual, listInboxesUsingDomain: vi.fn(async () => state.inboxes) }
+  return { ...actual, ...lease, listInboxesUsingDomain: vi.fn(async () => state.inboxes) }
 })
 
 const { SendingDomainProviderError } = await import('~/server/services/sending-domains/types')
@@ -187,6 +196,8 @@ beforeEach(() => {
   state.row = { ...NOW_ROW }
   state.rows = []
   state.markedRows = []
+  state.updateSets = []
+  lease.acquireSendingDomainLease.mockResolvedValue(true)
   provider.isConfigured.mockReturnValue({ configured: true, missing: [] })
   provider.register.mockResolvedValue({ ...activeResult, state: 'unverified', ownership: 'created' })
   provider.get.mockResolvedValue(activeResult)
@@ -326,6 +337,16 @@ describe('POST sending-domains', () => {
     expect(poller.deleteSendingDomainRow).not.toHaveBeenCalled()
   })
 
+  it('holds the row lease while registering so an admin delete cannot leak the provider domain', async () => {
+    await call(create)
+    const calls = poller.saveSendingDomainPatch.mock.calls as unknown as [unknown, Record<string, unknown>][]
+    const first = calls[0]![1]
+    expect(first.leaseExpiresAt).toBeInstanceOf(Date)
+    expect((first.leaseExpiresAt as Date).getTime()).toBeGreaterThan(Date.now())
+    // The outcome patch clears it again.
+    expect(calls[calls.length - 1]![1]).toMatchObject({ leaseExpiresAt: null })
+  })
+
   it('propagates claim-rule errors from the claim helper (e.g. DOMAIN_CLAIMED)', async () => {
     claims.createSendingDomainClaim.mockRejectedValueOnce(
       Object.assign(new Error('Conflict'), { statusCode: 409, data: { error: { code: 'DOMAIN_CLAIMED' } } })
@@ -431,6 +452,60 @@ describe('POST sending-domains/[id]/verify', () => {
     )
   })
 
+  it('keeps a created domain created when Register again finds it already at the provider', async () => {
+    // An earlier attempt of ours (attemptCount > 0) may have created it before the answer was lost.
+    state.row = { ...NOW_ROW, status: 'failed', attemptCount: 3, providerOwnership: null }
+    provider.register.mockResolvedValueOnce({ ...activeResult, state: 'unverified', ownership: 'adopted' })
+    await call(verify)
+    expect(poller.saveSendingDomainPatch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'pending', providerOwnership: 'created' })
+    )
+  })
+
+  it('never relabels a created domain as adopted on Register again', async () => {
+    state.row = { ...NOW_ROW, status: 'failed', attemptCount: 0, providerOwnership: 'created' }
+    provider.register.mockResolvedValueOnce({ ...activeResult, state: 'unverified', ownership: 'adopted' })
+    await call(verify)
+    expect(poller.saveSendingDomainPatch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ providerOwnership: 'created' })
+    )
+  })
+
+  it('registers a suspended claim again when the provider domain is gone', async () => {
+    state.row = {
+      ...NOW_ROW,
+      status: 'suspended',
+      providerOwnership: 'created',
+      verifiedAt: new Date(),
+      expiresAt: null,
+    }
+    provider.verify.mockRejectedValueOnce(new SendingDomainProviderError('not_found', 'gone', false))
+    provider.register.mockResolvedValueOnce({ ...activeResult, state: 'unverified', ownership: 'adopted' })
+    await call(verify)
+    expect(provider.register).toHaveBeenCalledTimes(1)
+    expect(poller.saveSendingDomainPatch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ status: 'pending', providerOwnership: 'created' })
+    )
+  })
+
+  it('is 409 DOMAIN_BUSY while a register or poll pass holds the row, and does not touch the provider', async () => {
+    state.row = { ...NOW_ROW, status: 'pending' }
+    lease.acquireSendingDomainLease.mockResolvedValueOnce(false)
+    await expect(call(verify)).rejects.toMatchObject({ statusCode: 409, data: { error: { code: 'DOMAIN_BUSY' } } })
+    expect(provider.verify).not.toHaveBeenCalled()
+    expect(provider.register).not.toHaveBeenCalled()
+  })
+
+  it('releases the lease even when the provider call fails', async () => {
+    state.row = { ...NOW_ROW, status: 'pending' }
+    provider.verify.mockRejectedValueOnce(new SendingDomainProviderError('provider_unavailable', 'down', true))
+    await expect(call(verify)).rejects.toMatchObject({ statusCode: 503 })
+    expect(lease.releaseSendingDomainLease).toHaveBeenCalledTimes(1)
+  })
+
   it('runs register again when the claim belongs to a different provider project', async () => {
     state.row = { ...NOW_ROW, status: 'verified', providerAccountKey: 'old-project' }
     await call(verify)
@@ -520,6 +595,47 @@ describe('DELETE sending-domains/[id]', () => {
     expect(res.data).toEqual({ deleted: true, operatorCleanupRequired: false })
     expect(provider.remove).toHaveBeenCalledWith('acme.com')
     expect(poller.deleteSendingDomainRow).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses with 409 DOMAIN_BUSY while a register holds the row lease (the provider domain would leak)', async () => {
+    state.row = { ...NOW_ROW, status: 'provisioning', leaseExpiresAt: new Date(Date.now() + 60_000) }
+    await expect(call(remove)).rejects.toMatchObject({ statusCode: 409, data: { error: { code: 'DOMAIN_BUSY' } } })
+    expect(provider.remove).not.toHaveBeenCalled()
+    expect(poller.deleteSendingDomainRow).not.toHaveBeenCalled()
+    expect(state.updateSets).toEqual([])
+  })
+
+  it('allows the delete once the lease has lapsed', async () => {
+    state.row = {
+      ...NOW_ROW,
+      status: 'verified',
+      providerOwnership: 'created',
+      leaseExpiresAt: new Date(Date.now() - 1000),
+    }
+    const res = await call(remove)
+    expect(res.data).toMatchObject({ deleted: true })
+  })
+
+  it('answers 409 DOMAIN_BUSY when a register took the lease between the lookup and the mark', async () => {
+    state.markedRows = []
+    await expect(call(remove)).rejects.toMatchObject({ statusCode: 409, data: { error: { code: 'DOMAIN_BUSY' } } })
+    expect(provider.remove).not.toHaveBeenCalled()
+  })
+
+  it('starts the removal retry budget when it marks the row deleting', async () => {
+    await call(remove)
+    expect(state.updateSets[0]).toMatchObject({ status: 'deleting', attemptCount: 0 })
+  })
+
+  it('releases the row with an operator cleanup request on a permanent provider refusal', async () => {
+    provider.remove.mockRejectedValueOnce(new SendingDomainProviderError('owned_elsewhere', 'not yours', false))
+    const res = await call(remove)
+    expect(res.data).toEqual({ deleted: true, operatorCleanupRequired: true })
+    expect(poller.deleteSendingDomainRow).toHaveBeenCalledTimes(1)
+    expect(metrics.recordSupportMetric).toHaveBeenCalledWith(
+      'support.sending_domain.operator_cleanup_required',
+      expect.objectContaining({ domainId: 'sd-1' })
+    )
   })
 
   it('never deletes an adopted provider domain', async () => {
