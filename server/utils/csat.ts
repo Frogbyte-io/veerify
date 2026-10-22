@@ -13,6 +13,10 @@ import {
 import { onCsatRatingRecorded } from '~/server/services/marketing/reviews/hooks'
 import { enqueueOutboundDelivery } from '~/server/utils/outbound-delivery'
 import { publishConversationEvent } from '~/server/utils/support-realtime'
+import { createLogger } from '~/server/utils/logger'
+import { isSenderAllowedOrRecordBlock } from '~/server/utils/sender-enforcement'
+
+const logger = createLogger('csat')
 
 export const DEFAULT_CSAT_CONTACT_COOLDOWN_MINUTES = 43_200
 export const CSAT_COMMENT_WINDOW_MINUTES = 10_080
@@ -249,6 +253,18 @@ async function dispatchCandidate(candidate: CsatCandidate, now: Date): Promise<b
   const senderAddress = candidate.inbox.emailAddress
   if (hasCsatOptedOut(candidate.contact.attributes)) return false
   if (!(await hasAgentReply(candidate.conversation.id))) return false
+
+  // Same sender rule as an agent reply: no survey from an address this team
+  // may not send as. Skipped rather than failed - a survey is optional, and
+  // the conversation is picked up again on a later sweep once the domain is
+  // verified. No-op under the legacy sender policy.
+  if (!(await isSenderAllowedOrRecordBlock(candidate.conversation.teamId, senderAddress, 'csat'))) {
+    logger.warn('CSAT survey skipped: sender address is not authorized for this team', {
+      inboxId: candidate.inbox.id,
+      conversationId: candidate.conversation.id,
+    })
+    return false
+  }
 
   const cooldown = candidate.survey.contactCooldownMinutes ?? DEFAULT_CSAT_CONTACT_COOLDOWN_MINUTES
 
