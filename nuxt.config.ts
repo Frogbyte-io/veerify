@@ -56,6 +56,7 @@ export default defineNuxtConfig({
         'support:attachment-cleanup',
         'support:automation-rules',
         'support:csat-dispatch',
+        'support:sending-domains-poll',
         'support:sla-breach',
         'marketing:review-requests',
       ],
