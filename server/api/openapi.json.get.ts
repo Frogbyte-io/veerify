@@ -309,6 +309,44 @@ export default defineEventHandler(() => {
             createdAt: { type: 'string', format: 'date-time' },
           },
         },
+        SupportSendingDomainDnsRecord: {
+          type: 'object',
+          properties: {
+            purpose: { type: 'string', enum: ['ownership', 'sending', 'receiving', 'recommended'] },
+            type: { type: 'string', enum: ['TXT', 'CNAME', 'MX'] },
+            name: { type: 'string', description: 'Fully qualified host name' },
+            value: { type: 'string' },
+            priority: { type: 'string' },
+            status: { type: 'string', enum: ['valid', 'invalid', 'unknown'] },
+          },
+        },
+        SupportSendingDomain: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            domain: { type: 'string' },
+            status: {
+              type: 'string',
+              enum: ['provisioning', 'pending', 'verified', 'suspended', 'failed', 'deleting'],
+            },
+            providerState: { type: 'string', enum: ['active', 'unverified'], nullable: true },
+            ownershipVerified: { type: 'boolean' },
+            receivesViaProvider: { type: 'boolean' },
+            records: { type: 'array', items: { $ref: '#/components/schemas/SupportSendingDomainDnsRecord' } },
+            lastCheckedAt: { type: 'string', format: 'date-time', nullable: true },
+            nextCheckAt: { type: 'string', format: 'date-time', nullable: true },
+            expiresAt: { type: 'string', format: 'date-time', nullable: true },
+            verifiedAt: { type: 'string', format: 'date-time', nullable: true },
+            lastErrorCode: { type: 'string', nullable: true },
+            lastError: { type: 'string', nullable: true },
+            providerOwnership: { type: 'string', enum: ['created', 'adopted'], nullable: true },
+            providerMismatch: {
+              type: 'boolean',
+              description:
+                'True when the claim was registered with a different provider project than is configured now',
+            },
+          },
+        },
         SupportTag: {
           type: 'object',
           properties: {

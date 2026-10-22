@@ -27,6 +27,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/support-sending-domains-poll",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/marketing-audit-advance",
       "schedule": "* * * * *"
     },

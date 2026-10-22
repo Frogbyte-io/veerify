@@ -1,0 +1,189 @@
+/**
+ * @openapi
+ * /api/support/teams/{teamId}/sending-domains/{id}/verify:
+ *   post:
+ *     tags: [Support]
+ *     summary: Re-check a sending domain now
+ *     description: >
+ *       Team administrators only. For failed, provisioning or provider-mismatched claims
+ *       this registers the domain again; otherwise it asks the provider to re-verify and
+ *       re-checks the Veerify ownership TXT record and DMARC. Returns the updated claim.
+ *     operationId: verifySupportSendingDomain
+ *     parameters:
+ *       - in: path
+ *         name: teamId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Updated sending domain }
+ *       202: { description: Provider temporarily unavailable; registration will be retried }
+ *       403: { description: Team administrator required }
+ *       404: { description: Feature disabled, or the domain does not belong to this team }
+ *       409: { description: Domain is being removed, or is owned by another service }
+ *       422: { description: Domain rejected by the provider }
+ *       429: { description: Rate limit exceeded }
+ *       502: { description: Provider error }
+ *       503: { description: Provider not configured, misconfigured, or unavailable }
+ */
+import { createError, setResponseHeader, setResponseStatus } from 'h3'
+import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { requireAuth } from '~/server/utils/auth-middleware'
+import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireRateLimit } from '~/server/utils/rate-limit'
+import { createLogger } from '~/server/utils/logger'
+import { recordSupportMetric } from '~/server/utils/support-observability'
+import { getTeamSendingDomain, toSendingDomainView } from '~/server/utils/sending-domains'
+import {
+  checkSendingDomainClaim,
+  pendingExpiryFrom,
+  isProviderMismatch,
+  registerSendingDomainClaim,
+  saveSendingDomainPatch,
+  type SendingDomainRow,
+} from '~/server/utils/sending-domain-poller'
+import {
+  providerMisconfiguredError,
+  registerOutcomeToError,
+  requireConfiguredSendingDomainProvider,
+  requireSendingDomainsEnabled,
+} from '~/server/utils/sending-domain-api'
+
+const logger = createLogger('sending-domains')
+
+export default defineEventHandler(async (event) => {
+  const session = await requireAuth(event)
+  const teamId = getRouterParam(event, 'teamId') as string
+  const id = getRouterParam(event, 'id') as string
+  await requireTeamAdmin(teamId, session.user.id)
+  requireSendingDomainsEnabled()
+
+  const claim = await getTeamSendingDomain(teamId, id)
+
+  await requireRateLimit(event, {
+    maxRequests: 1,
+    windowSeconds: 20,
+    identifier: 'sending-domain-verify',
+    subject: `domain:${claim.id}`,
+  })
+  await requireRateLimit(event, {
+    maxRequests: 60,
+    windowSeconds: 60 * 60,
+    identifier: 'sending-domain-verify-team',
+    subject: `team:${teamId}`,
+  })
+
+  if (claim.status === 'deleting') {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: createErrorResponse(ErrorCode.CONFLICT, 'This domain is being removed'),
+    })
+  }
+
+  const provider = requireConfiguredSendingDomainProvider()
+  const now = new Date()
+  const reload = () => getTeamSendingDomain(teamId, claim.id)
+
+  const mustRegister =
+    claim.status === 'failed' || claim.status === 'provisioning' || isProviderMismatch(claim, provider)
+  if (mustRegister) {
+    // An admin click restarts the attempt budget.
+    const outcome = await registerSendingDomainClaim({ ...claim, attemptCount: 0 }, provider, { now })
+    return respondToRegister(event, claim, outcome, reload)
+  }
+
+  const outcome = await checkSendingDomainClaim(claim, provider, { now, manual: true })
+
+  if (outcome.kind === 'needs_register') {
+    const registered = await registerSendingDomainClaim({ ...claim, attemptCount: 0 }, provider, { now })
+    return respondToRegister(event, claim, registered, reload)
+  }
+
+  if (outcome.kind === 'provider_error') {
+    const { error } = outcome
+    if (outcome.patch) await saveSendingDomainPatch(claim, outcome.patch)
+    if (error.code === 'missing_scope' || error.code === 'unauthorized') {
+      logger.error('Sending-domain provider rejected our credentials', { provider: provider.name, code: error.code })
+      recordSupportMetric('support.sending_domain.provider_misconfigured', { provider: provider.name })
+      throw providerMisconfiguredError()
+    }
+    if (error.code === 'rate_limited') {
+      if (error.retryAfterSeconds) setResponseHeader(event, 'Retry-After', error.retryAfterSeconds)
+      throw createError({
+        statusCode: 429,
+        statusMessage: 'Too Many Requests',
+        data: createErrorResponse(
+          ErrorCode.RATE_LIMITED,
+          'The mail provider is rate limiting requests. Try again shortly.'
+        ),
+      })
+    }
+    throw createError({
+      statusCode: error.code === 'provider_unavailable' ? 503 : 502,
+      statusMessage: error.code === 'provider_unavailable' ? 'Service Unavailable' : 'Bad Gateway',
+      data: createErrorResponse('PROVIDER_UNAVAILABLE', 'The mail provider could not be reached. Try again shortly.'),
+    })
+  }
+
+  await saveSendingDomainPatch(claim, outcome.patch)
+  if (outcome.transition === 'verified') {
+    recordSupportMetric('support.sending_domain.verified', {
+      domainId: claim.id,
+      provider: provider.name,
+      status: 'verified',
+    })
+  } else if (outcome.transition === 'suspended') {
+    recordSupportMetric('support.sending_domain.suspended', {
+      domainId: claim.id,
+      provider: provider.name,
+      status: 'suspended',
+    })
+  }
+  return createSuccessResponse(toSendingDomainView(await reload(), provider))
+})
+
+async function respondToRegister(
+  event: Parameters<typeof setResponseStatus>[0],
+  claim: SendingDomainRow,
+  outcome: Awaited<ReturnType<typeof registerSendingDomainClaim>>,
+  reload: () => Promise<SendingDomainRow>
+) {
+  const provider = requireConfiguredSendingDomainProvider()
+
+  if (outcome.kind === 'ok') {
+    await saveSendingDomainPatch(claim, outcome.patch)
+    return createSuccessResponse(toSendingDomainView(await reload(), provider))
+  }
+
+  if (outcome.kind === 'transient') {
+    await saveSendingDomainPatch(claim, outcome.patch)
+    setResponseStatus(event, 202)
+    return createSuccessResponse(toSendingDomainView(await reload(), provider))
+  }
+
+  if (outcome.kind === 'misconfigured') {
+    logger.error('Sending-domain provider rejected our credentials', { provider: provider.name, code: outcome.code })
+    recordSupportMetric('support.sending_domain.provider_misconfigured', { provider: provider.name })
+    throw providerMisconfiguredError()
+  }
+
+  // A permanent refusal on an existing claim: keep it visible as failed (no more
+  // automatic attempts) so the admin sees why, and answer with the error.
+  const now = new Date()
+  const expiresAt = claim.expiresAt ?? pendingExpiryFrom(now)
+  await saveSendingDomainPatch(claim, {
+    status: 'failed',
+    expiresAt,
+    lastErrorCode: outcome.code,
+    lastError: outcome.message,
+    lastCheckedAt: now,
+    nextCheckAt: expiresAt,
+    leaseExpiresAt: null,
+    updatedAt: now,
+  })
+  throw registerOutcomeToError(outcome)
+}

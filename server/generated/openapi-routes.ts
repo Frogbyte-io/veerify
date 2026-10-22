@@ -646,6 +646,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/support-sending-domains-poll": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Poll customer sending domains",
+      "operationId": "cronSupportSendingDomainsPoll",
+      "responses": {
+        "200": {
+          "description": "Sending-domain poll pass executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/support-sla-breach": {
     "get": {
       "tags": [
@@ -7810,6 +7827,266 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Survey not found"
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/sending-domains": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "List the team's customer sending domains",
+      "description": "Returns the team's domain claims with their DNS records, plus the provider capabilities, limits and whether the caller may manage domains. When the feature is disabled the response is `{ enabled: false }` with an empty list.\n",
+      "operationId": "listSupportSendingDomains",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Sending domains and provider status"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "No support access to this team"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Claim a sending domain and register it with the mail provider",
+      "description": "Team administrators only. Returns 201 once the domain is registered and waiting for DNS, or 202 when the provider was temporarily unavailable and registration will be retried in the background.\n",
+      "operationId": "createSupportSendingDomain",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "domain"
+              ],
+              "properties": {
+                "domain": {
+                  "type": "string",
+                  "example": "acme.com"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Domain claimed and registered"
+        },
+        "202": {
+          "description": "Domain claimed; registration will be retried"
+        },
+        "400": {
+          "description": "Invalid request"
+        },
+        "403": {
+          "description": "Team administrator required"
+        },
+        "404": {
+          "description": "Feature disabled"
+        },
+        "409": {
+          "description": "Domain claimed by another workspace",
+          "owned elsewhere": null,
+          "or a limit was reached": null
+        },
+        "422": {
+          "description": "Domain rejected by validation or the provider"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        },
+        "503": {
+          "description": "Provider not configured or misconfigured"
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/sending-domains/{id}": {
+    "delete": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Release a sending domain",
+      "description": "Team administrators only. Marks the claim as removing (it stops authorizing at once), removes the provider domain when Veerify created it, then deletes the claim. Adopted domains are never deleted at the provider. When inboxes still send from the domain the request is refused unless `force=true`.\n",
+      "operationId": "deleteSupportSendingDomain",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "force",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Domain released"
+        },
+        "202": {
+          "description": "Removal at the provider failed temporarily and will be retried"
+        },
+        "400": {
+          "description": "Invalid query"
+        },
+        "403": {
+          "description": "Team administrator required"
+        },
+        "404": {
+          "description": "Feature disabled",
+          "or the domain does not belong to this team": null
+        },
+        "409": {
+          "description": "Inboxes still use this domain and force was not set"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    },
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Get one sending domain with the inboxes that use it",
+      "operationId": "getSupportSendingDomain",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Sending domain detail"
+        },
+        "401": {
+          "description": "Authentication required"
+        },
+        "403": {
+          "description": "No support access to this team"
+        },
+        "404": {
+          "description": "Feature disabled",
+          "or the domain does not belong to this team": null
+        }
+      }
+    }
+  },
+  "/api/support/teams/{teamId}/sending-domains/{id}/verify": {
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Re-check a sending domain now",
+      "description": "Team administrators only. For failed, provisioning or provider-mismatched claims this registers the domain again; otherwise it asks the provider to re-verify and re-checks the Veerify ownership TXT record and DMARC. Returns the updated claim.\n",
+      "operationId": "verifySupportSendingDomain",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "teamId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Updated sending domain"
+        },
+        "202": {
+          "description": "Provider temporarily unavailable; registration will be retried"
+        },
+        "403": {
+          "description": "Team administrator required"
+        },
+        "404": {
+          "description": "Feature disabled",
+          "or the domain does not belong to this team": null
+        },
+        "409": {
+          "description": "Domain is being removed",
+          "or is owned by another service": null
+        },
+        "422": {
+          "description": "Domain rejected by the provider"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        },
+        "502": {
+          "description": "Provider error"
+        },
+        "503": {
+          "description": "Provider not configured",
+          "misconfigured": null,
+          "or unavailable": null
         }
       }
     }

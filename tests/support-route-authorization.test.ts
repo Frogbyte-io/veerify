@@ -107,6 +107,24 @@ vi.mock('~/server/utils/support-access', () => access)
 
 vi.mock('~/server/utils/contact-link-transaction', () => contactLinkTransaction)
 
+// Sending-domain routes: only the authorization boundary is under test here, so the
+// provider, claim helpers and DNS checks are inert. Behaviour has its own suite
+// (tests/support-sending-domain-routes.test.ts).
+vi.mock('~/server/services/sending-domains', () => ({ getSendingDomainProvider: vi.fn(() => null) }))
+vi.mock('~/server/services/sending-domains/ownership', () => ({
+  checkOwnershipTxt: vi.fn(),
+  checkDmarc: vi.fn(),
+  ownershipRecord: vi.fn(),
+}))
+vi.mock('~/server/utils/sending-domains', () => ({
+  isSendingDomainsEnabled: vi.fn(() => true),
+  resolveSenderPolicy: vi.fn(() => 'team'),
+  toSendingDomainView: vi.fn(),
+  createSendingDomainClaim: vi.fn(),
+  getTeamSendingDomain: vi.fn(),
+  listTeamSendingDomains: vi.fn(),
+}))
+
 vi.mock('~/server/services/support-channels', () => ({
   SUPPORT_CHANNEL_PROVIDERS: ['postmark', 'mailgun'],
   getConfiguredChannelDriver: vi.fn(() => null),
@@ -239,6 +257,12 @@ const supportSettingsGet = (await import('~/server/api/support/teams/[teamId]/se
 const slaSettingsGet = (await import('~/server/api/support/teams/[teamId]/sla.get')).default
 const slaSettingsPut = (await import('~/server/api/support/teams/[teamId]/sla.put')).default
 const teamModulesGet = (await import('~/server/api/teams/[teamId]/modules.get')).default
+const sendingDomainList = (await import('~/server/api/support/teams/[teamId]/sending-domains/index.get')).default
+const sendingDomainCreate = (await import('~/server/api/support/teams/[teamId]/sending-domains/index.post')).default
+const sendingDomainGet = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id].get')).default
+const sendingDomainVerify = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id]/verify.post'))
+  .default
+const sendingDomainDelete = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id].delete')).default
 
 const contactList = (await import('~/server/api/support/contacts/index.get')).default
 const contactCreate = (await import('~/server/api/support/contacts/index.post')).default
@@ -650,6 +674,35 @@ const executableBoundaryCases: BoundaryCase[] = [
     }),
   },
   {
+    name: 'teams/[teamId]/sending-domains/index.get',
+    ...boundary(sendingDomainList, 'resolveSupportTeamRole', ['team-1', 'user-1'], { params: { teamId: 'team-1' } }),
+  },
+  {
+    name: 'teams/[teamId]/sending-domains/index.post',
+    ...boundary(sendingDomainCreate, 'requireTeamAdmin', ['team-1', 'user-1'], {
+      params: { teamId: 'team-1' },
+      body: { domain: 'acme.com' },
+    }),
+  },
+  {
+    name: 'teams/[teamId]/sending-domains/[id].get',
+    ...boundary(sendingDomainGet, 'resolveSupportTeamRole', ['team-1', 'user-1'], {
+      params: { teamId: 'team-1', id: 'sd-1' },
+    }),
+  },
+  {
+    name: 'teams/[teamId]/sending-domains/[id]/verify.post',
+    ...boundary(sendingDomainVerify, 'requireTeamAdmin', ['team-1', 'user-1'], {
+      params: { teamId: 'team-1', id: 'sd-1' },
+    }),
+  },
+  {
+    name: 'teams/[teamId]/sending-domains/[id].delete',
+    ...boundary(sendingDomainDelete, 'requireTeamAdmin', ['team-1', 'user-1'], {
+      params: { teamId: 'team-1', id: 'sd-1' },
+    }),
+  },
+  {
     name: 'contacts/index.get',
     ...boundary(contactList, 'requireTeamMembership', ['team-1', 'user-1'], { query: { teamId: 'team-1' } }),
   },
@@ -878,7 +931,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(54)
+    expect(executableBoundaryCases).toHaveLength(59)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}
