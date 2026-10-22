@@ -171,6 +171,32 @@ Veerify deletes the Frogmail domain only if it created it. Frogmail refuses whil
 dashboard, which shows the MX and Email Routing changes first. The domain can be claimed again, and the TXT
 proof still protects it.
 
+### Backfill before enabling team policy
+
+Teams that already send from their own domain would lose sending when `team` policy turns on. Before setting
+`SUPPORT_SENDING_DOMAINS_ENABLED=true`, run the backfill against the production database:
+
+```bash
+yarn db:backfill-sending-domains                  # dry run: a report, nothing written
+yarn db:backfill-sending-domains --json           # the same, machine readable
+yarn db:backfill-sending-domains --apply          # create the claims
+```
+
+It collects every From domain in use (`support_inbox.email_address` and custom `support_inbox_address` rows),
+grouped by team, and skips platform, reserved and mailbox-provider domains. Per domain:
+
+- Used by one team and `active` on the provider: creates an adopted `pending` claim through the normal claim rules.
+  The team only has to publish the `_veerify-mail.<domain>` TXT record, which the report prints per team. Email
+  those teams their record. A subdomain whose parent the same team also uses is covered by the parent claim.
+- Not on the provider (or not yet active there): nothing is created; the team must add the domain first.
+- Already claimed: reported and left alone. Claimed by another team: reported as a conflict.
+- Used by several teams: reported for an operator to resolve. Never assigned automatically.
+
+The run is idempotent and calls the provider one domain at a time (`--delay-ms`, default 600) to stay under the
+120 requests per minute limit. `--apply` refuses to run when `NODE_ENV` or `VERCEL_ENV` is `production` or the
+database host is not local, unless you add `--i-know-this-is-production`. A team at its claim limits (10 domains,
+3 pending) shows as `BLOCKED`. The closing summary lists claims created, conflicts and teams needing DNS action.
+
 ### Frogmail error codes
 
 Veerify reads `X-Frogmail-Error` on domain calls: `domain_taken` (adopt), `domain_owned_elsewhere` (409),
