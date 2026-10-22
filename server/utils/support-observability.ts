@@ -37,6 +37,16 @@ export const SUPPORT_METRIC_NAMES = [
   'support.delivery.uncorrelated',
   'support.attachment.expired',
   'support.attachment.cleanup_failed',
+  // Customer sending domains (design §4.5, §8.2, §8.4).
+  'support.sending_domain.verified',
+  'support.sending_domain.suspended',
+  'support.sending_domain.expired',
+  'support.sending_domain.failed',
+  'support.sending_domain.deleted',
+  'support.sending_domain.blocked',
+  'support.sending_domain.provider_misconfigured',
+  'support.sending_domain.address_detached',
+  'support.sending_domain.operator_cleanup_required',
 ] as const
 
 export type SupportMetricName = (typeof SUPPORT_METRIC_NAMES)[number]
@@ -59,6 +69,7 @@ export const SUPPORT_METRIC_FIELDS = [
   'eventId',
   'uploadId',
   'providerMessageId',
+  'domainId',
   // Closed vocabularies. Provider and account key are non-secret routing
   // identity (Task 12); the rest are enum-like columns.
   'provider',
@@ -89,7 +100,29 @@ export type SupportMetricField = (typeof SUPPORT_METRIC_FIELDS)[number]
  * whole point of excluding `recipient`. The full provider text is still stored on
  * the delivery row, which is the right place for it; a counter needs a category.
  */
-export const SUPPORT_METRIC_REASONS = ['send-failed', 'abandoned', 'storage-delete-failed'] as const
+export const SUPPORT_METRIC_REASONS = [
+  'send-failed',
+  'abandoned',
+  'storage-delete-failed',
+  // Customer sending domains: where a send was blocked, and why a claim moved.
+  'auto_reply',
+  'csat',
+  'reply',
+  'outbox',
+  'not_owned',
+  'suspended',
+  'pending',
+  'provider_mismatch',
+  'ttl_elapsed',
+  'ownership_missing',
+  'provider_unverified',
+  'recovered',
+  'admin_delete',
+  'register_failed',
+  'receiving_enabled',
+  'provider_unavailable',
+  'sender_rejected',
+] as const
 
 export type SupportMetricReason = (typeof SUPPORT_METRIC_REASONS)[number]
 
