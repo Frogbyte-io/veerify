@@ -140,7 +140,15 @@
             </p>
 
             <p
-              v-if="row.status === 'suspended'"
+              v-if="row.lastErrorCode === 'owned_elsewhere' && row.lastError"
+              class="mt-2 text-xs text-amber-700 dark:text-amber-400"
+              data-testid="support-sending-domain-contested"
+            >
+              {{ row.lastError }} Publishing the DNS records will not change this. Use a subdomain, or ask the other
+              service to release the domain.
+            </p>
+            <p
+              v-else-if="row.status === 'suspended'"
               class="mt-2 text-xs text-amber-700 dark:text-amber-400"
               data-testid="support-sending-domain-reason"
             >

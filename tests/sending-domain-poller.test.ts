@@ -254,6 +254,36 @@ describe('checkSendingDomainClaim', () => {
     expect(outcome.patch.dnsRecords?.[0]).toMatchObject({ purpose: 'ownership', status: 'valid' })
   })
 
+  it('keeps a contested domain pending and records why, even when TXT passes', async () => {
+    const contested = {
+      ...activeResult,
+      state: 'unverified',
+      contested: true,
+      message: 'Another service already sends from this domain.',
+    }
+    const outcome = await checkSendingDomainClaim(row(), makeProvider({ get: vi.fn(async () => contested) }), {
+      now: NOW,
+    })
+    if (outcome.kind !== 'checked') throw new Error('expected checked')
+    expect(outcome.transition).toBeNull()
+    expect(outcome.patch).toMatchObject({
+      status: 'pending',
+      providerState: 'unverified',
+      lastErrorCode: 'owned_elsewhere',
+      lastError: 'Another service already sends from this domain.',
+    })
+  })
+
+  it('clears the contested reason once the provider reports the domain as ours', async () => {
+    const outcome = await checkSendingDomainClaim(
+      row({ lastErrorCode: 'owned_elsewhere', lastError: 'Another service already sends from this domain.' }),
+      makeProvider(),
+      { now: NOW }
+    )
+    if (outcome.kind !== 'checked') throw new Error('expected checked')
+    expect(outcome.patch).toMatchObject({ status: 'verified', lastErrorCode: null, lastError: null })
+  })
+
   it('uses get() for polls and verify() only for a manual check', async () => {
     const provider = makeProvider()
     await checkSendingDomainClaim(row(), provider, { now: NOW })

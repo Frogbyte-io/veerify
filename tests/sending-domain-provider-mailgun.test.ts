@@ -175,6 +175,33 @@ describe('get, verify and remove', () => {
     expect(init.body).toBeUndefined()
   })
 
+  it('reports a domain another project owns as unverified with a clear message', async () => {
+    const contested = {
+      ...detail,
+      message: 'Domain DNS records have been updated',
+      domain: { name: 'acme.com', state: 'unverified', frogmail_sending_owner: 'other_project' },
+    }
+    const result = await make(vi.fn(async () => json(contested))).get('acme.com')
+    expect(result).toMatchObject({
+      state: 'unverified',
+      contested: true,
+      message: 'Another service already sends from this domain.',
+    })
+  })
+
+  it('never trusts an active state next to frogmail_sending_owner', async () => {
+    const body = { domain: { name: 'acme.com', state: 'active', frogmail_sending_owner: 'other_project' } }
+    const verified = await make(vi.fn(async () => json(body))).verify('acme.com')
+    expect(verified.state).toBe('unverified')
+    expect(verified.contested).toBe(true)
+  })
+
+  it('leaves uncontested results without the contested flag', async () => {
+    const result = await make(vi.fn(async () => json(detail))).get('acme.com')
+    expect(result).not.toHaveProperty('contested')
+    expect(result?.message).toBe('Domain DNS records have been created')
+  })
+
   it('verify issues PUT .../verify', async () => {
     const fetchImpl = vi.fn(async () => json({ ...detail, domain: { name: 'acme.com', state: 'active' } }))
     const result = await make(fetchImpl).verify('acme.com')

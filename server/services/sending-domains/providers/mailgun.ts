@@ -18,6 +18,9 @@ import { normalizeDomainName, parseRetryAfter, sanitizeProviderMessage } from '.
 const DEFAULT_API_BASE_URL = 'https://api.mailgun.net'
 const REQUEST_TIMEOUT_MS = 10_000
 
+/** Shown when Frogmail reports another project as the sending owner of the domain. */
+export const CONTESTED_DOMAIN_MESSAGE = 'Another service already sends from this domain.'
+
 interface MailgunDnsRecord {
   name?: string
   record_type?: string
@@ -28,7 +31,7 @@ interface MailgunDnsRecord {
 
 interface MailgunResponseBody {
   message?: string
-  domain?: { name?: string; state?: string }
+  domain?: { name?: string; state?: string; frogmail_sending_owner?: string }
   receiving_dns_records?: MailgunDnsRecord[]
   sending_dns_records?: MailgunDnsRecord[]
   frogmail_dns_cleanup?: { removed?: string[]; restored?: string[]; kept?: string[]; failed?: string[] }
@@ -206,13 +209,17 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
   private toResult(domain: string, body: MailgunResponseBody): ProviderDomainResult {
     const sending = (body.sending_dns_records ?? []).map((record) => mapRecord(record, 'sending', domain))
     const receiving = (body.receiving_dns_records ?? []).map((record) => mapRecord(record, 'receiving', domain))
-    const message = sanitizeProviderMessage(body.message, [this.apiKey])
+    // Frogmail reports a contested domain as `unverified` plus this extension; never
+    // trust `active` next to it.
+    const contested = body.domain?.frogmail_sending_owner === 'other_project'
+    const message = contested ? CONTESTED_DOMAIN_MESSAGE : sanitizeProviderMessage(body.message, [this.apiKey])
     return {
       domain: normalizeDomainName(body.domain?.name ?? domain),
-      state: body.domain?.state === 'active' ? 'active' : 'unverified',
+      state: body.domain?.state === 'active' && !contested ? 'active' : 'unverified',
       receivesMail: receiving.length > 0,
       records: [...sending, ...receiving],
       message: message || null,
+      ...(contested ? { contested: true } : {}),
     }
   }
 

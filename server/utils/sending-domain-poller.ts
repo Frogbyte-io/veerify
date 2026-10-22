@@ -112,6 +112,15 @@ function toProviderError(error: unknown): SendingDomainProviderError {
   return new SendingDomainProviderError('provider_unavailable', sanitizeSendingDomainError(error), true)
 }
 
+/** Row columns that carry the "another service sends from this domain" explanation. */
+function contestedFields(result: Pick<ProviderDomainResult, 'contested' | 'message'>) {
+  return result.contested
+    ? { lastErrorCode: 'owned_elsewhere', lastError: sanitizeSendingDomainError(result.message ?? CONTESTED_FALLBACK) }
+    : { lastErrorCode: null, lastError: null }
+}
+
+const CONTESTED_FALLBACK = 'Another service already sends from this domain.'
+
 function buildRecords(
   row: Pick<SendingDomainRow, 'domain' | 'ownershipToken'>,
   providerRecords: SendingDomainDnsRecord[],
@@ -231,8 +240,7 @@ export async function registerSendingDomainClaim(
       attemptCount: 0,
       ownershipFailures: 0,
       providerFailures: 0,
-      lastErrorCode: null,
-      lastError: null,
+      ...contestedFields(registration),
       lastCheckedAt: now,
       nextCheckAt: computePendingNextCheckAt(row.createdAt, expiresAt, now),
       expiresAt,
@@ -340,8 +348,7 @@ export async function checkSendingDomainClaim(
     receivesViaProvider: result.receivesMail,
     dnsRecords: buildRecords(row, result.records, ownership, dmarc),
     attemptCount: 0,
-    lastErrorCode: null,
-    lastError: null,
+    ...contestedFields(result),
     lastCheckedAt: now,
     nextCheckAt:
       status === 'verified' || status === 'suspended'

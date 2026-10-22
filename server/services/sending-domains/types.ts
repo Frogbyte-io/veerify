@@ -14,6 +14,12 @@ export interface ProviderDomainResult {
   /** Records with purpose `sending` or `receiving`. */
   records: SendingDomainDnsRecord[]
   message: string | null
+  /**
+   * Another project of the same provider account owns sending for this domain
+   * (Frogmail `frogmail_sending_owner: "other_project"`). `state` is `unverified`
+   * and `message` explains it; DNS alone cannot fix this.
+   */
+  contested?: boolean
 }
 
 export type SendingDomainErrorCode =
@@ -33,7 +39,7 @@ export class SendingDomainProviderError extends Error {
     public code: SendingDomainErrorCode,
     message: string,
     public retryable: boolean,
-    public retryAfterSeconds?: number,
+    public retryAfterSeconds?: number
   ) {
     super(message)
     this.name = 'SendingDomainProviderError'
@@ -58,10 +64,6 @@ export interface SendingDomainProvider {
   remove(domain: string): Promise<{
     cleanup: { removed: string[]; kept: string[]; failed: string[] } | null
   }>
-  createInboundRoute?(input: {
-    address: string
-    forwardUrl: string
-    description: string
-  }): Promise<{ routeId: string }>
+  createInboundRoute?(input: { address: string; forwardUrl: string; description: string }): Promise<{ routeId: string }>
   deleteInboundRoute?(routeId: string): Promise<void>
 }
