@@ -45,6 +45,10 @@ export default defineConfig({
           BETTER_AUTH_URL: baseURL,
           BETTER_AUTH_TRUSTED_ORIGINS: trustedOrigins.join(','),
           NUXT_DEVTOOLS_ENABLED: 'false',
+          // Customer sending domains run against the in-memory fake provider (never in production).
+          // `??` keeps any value the caller already exported, including an explicit empty string.
+          SUPPORT_SENDING_DOMAINS_ENABLED: process.env.SUPPORT_SENDING_DOMAINS_ENABLED ?? 'true',
+          SUPPORT_SENDING_DOMAIN_PROVIDER: process.env.SUPPORT_SENDING_DOMAIN_PROVIDER ?? 'fake',
         },
       },
   projects: [
