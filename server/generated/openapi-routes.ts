@@ -5801,7 +5801,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Report how inbound mail is configured for this deployment",
-      "description": "Read-only. The provider and its webhook credentials are deployment environment configuration, not per-team settings, so this reports whether they are set - never their values.\n",
+      "description": "Read-only. The provider and its webhook credentials are deployment environment configuration, not per-team settings, so this reports whether they are set - never their values. `platformAddress` is the inbox's platform forwarding address (customers forward their support address to it), or null when none exists yet. `platformForwardingEnabled` is true when the deployment sets `SUPPORT_PLATFORM_MAIL_DOMAIN`, so the UI can offer to create one for an inbox that predates it.\n",
       "operationId": "getSupportChannelStatus",
       "responses": {
         "200": {
@@ -6711,8 +6711,7 @@ export const openapiPaths = {
           "description": "Conversation not found"
         },
         "409": {
-          "description": "The inbox has no sending address",
-          "or the contact has no email address": null
+          "description": "The inbox has no sending address, the contact has no email address, or (team sender policy) the inbox's From address is on a domain the team has not verified (SENDER_NOT_VERIFIED)"
         }
       }
     }
@@ -7066,7 +7065,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Create an inbox",
-      "description": "The creator is added as a supportInboxMember with role \"admin\" in the same transaction - otherwise a team member who isn't a team admin could create an inbox they have no access to afterward.\n",
+      "description": "The creator is added as a supportInboxMember with role \"admin\" in the same transaction - otherwise a team member who isn't a team admin could create an inbox they have no access to afterward. When `SUPPORT_PLATFORM_MAIL_DOMAIN` is set, a platform forwarding address is generated in the same transaction and returned as `platformAddress` (null when the feature is off).\n",
       "operationId": "createSupportInbox",
       "responses": {
         "200": {
@@ -7177,6 +7176,9 @@ export const openapiPaths = {
         },
         "409": {
           "description": "Another inbox already uses this slug or email address"
+        },
+        "422": {
+          "description": "Team sender policy: the email address is not on one of the team's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)"
         }
       }
     }
@@ -7215,7 +7217,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Add a receiving address to an inbox",
-      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction (not specified in design.md - a self-consistent reading of \"primary\" implying one).\n",
+      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction (not specified in design.md - a self-consistent reading of \"primary\" implying one). Under the team sender policy, an address on a domain (or subdomain of one) claimed by another team is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the address is on one of the team's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort.\n",
       "operationId": "createSupportInboxAddress",
       "parameters": [
         {
@@ -7241,7 +7243,10 @@ export const openapiPaths = {
           "description": "Inbox not found"
         },
         "409": {
-          "description": "This address is already in use"
+          "description": "This address is already in use, or its domain is claimed by another team (ADDRESS_DOMAIN_CLAIMED)"
+        },
+        "422": {
+          "description": "The address is on the platform mail domain and was not system-generated"
         }
       }
     }
@@ -7252,6 +7257,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Remove a receiving address from an inbox",
+      "description": "Platform forwarding addresses cannot be deleted (409); regenerate them through the platform address endpoint instead. Deleting a custom address also removes its provider inbound route, best-effort.\n",
       "operationId": "deleteSupportInboxAddress",
       "parameters": [
         {
@@ -7280,6 +7286,59 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Inbox or address not found"
+        },
+        "409": {
+          "description": "Platform addresses cannot be deleted - regenerate instead"
+        }
+      }
+    }
+  },
+  "/api/support/inboxes/{id}/addresses/platform": {
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Get or create the inbox's platform forwarding address",
+      "description": "Idempotent. Returns the inbox's existing platform address, or creates one (`<team>-<inbox>-<random>@SUPPORT_PLATFORM_MAIL_DOMAIN`) for inboxes that predate the feature. Customers forward their own support address to it. Platform addresses cannot be deleted; send `regenerate: true` to replace the address with a fresh one (the old address stops receiving). Inbox admins only. Returns 404 when no platform mail domain is configured for this deployment.\n",
+      "operationId": "createSupportInboxPlatformAddress",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "regenerate": {
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "The inbox's platform address (existing or newly created)"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not an admin of this inbox"
+        },
+        "404": {
+          "description": "Inbox not found, or platform forwarding addresses are not enabled"
         }
       }
     }
@@ -7399,7 +7458,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Whether this inbox's From address is authorized to send with the configured provider",
-      "description": "`supportInbox.emailAddress` is free text - nothing stops a team from setting a From the provider will reject at send time. This surfaces that in settings instead. `authorization` is null when no address is set yet (there is nothing to check); otherwise it is the driver's three-state verdict - `unknown` is not a failure, it is what every deployment reports until a provider account credential is set, and must not be rendered as \"not authorized\".\n",
+      "description": "`supportInbox.emailAddress` is free text - nothing stops a team from setting a From the provider will reject at send time. This surfaces that in settings instead. `authorization` is null when no address is set yet (there is nothing to check). `policy` is the deployment's sender policy. Under `team`, the verdict is scoped to this inbox's team: `authorized`, `pending` (domain claimed but not yet verified), `unauthorized` (with a `reason` and only this team's own verified domains in `teamDomains`) or `unknown`. Under `legacy`, it is the provider's verdict for the address. Provider-wide domain lists are never returned - the provider account is shared by every team. `unknown` is not a failure and must not be rendered as \"not authorized\".\n",
       "operationId": "getSupportInboxSendingStatus",
       "parameters": [
         {

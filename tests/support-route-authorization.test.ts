@@ -115,6 +115,20 @@ vi.mock('~/server/services/support-channels', () => ({
   emailDomain: vi.fn(() => null),
 }))
 
+// WP1/WP2 modules (customer sending domains). Mocked so routes that consult the
+// sender policy run without a database; `legacy` is the default policy.
+vi.mock('~/server/utils/sending-domains', () => ({
+  resolveSenderPolicy: vi.fn(() => 'legacy'),
+  isSendingDomainsEnabled: vi.fn(() => false),
+  resolveTeamSenderAuthorization: vi.fn(),
+  assertSenderAddressAllowedForInbox: vi.fn(),
+  assertReceivingAddressAllowed: vi.fn(),
+}))
+
+vi.mock('~/server/services/sending-domains', () => ({
+  getSendingDomainProvider: vi.fn(() => null),
+}))
+
 vi.mock('~/server/utils/rate-limit', () => ({
   checkRateLimit: vi.fn(async () => true),
 }))
@@ -206,6 +220,7 @@ const inboxUpdate = (await import('~/server/api/support/inboxes/[id].put')).defa
 const inboxDelete = (await import('~/server/api/support/inboxes/[id].delete')).default
 const addressCreate = (await import('~/server/api/support/inboxes/[id]/addresses/index.post')).default
 const addressDelete = (await import('~/server/api/support/inboxes/[id]/addresses/[addressId].delete')).default
+const platformAddressCreate = (await import('~/server/api/support/inboxes/[id]/addresses/platform.post')).default
 const memberCreate = (await import('~/server/api/support/inboxes/[id]/members/index.post')).default
 const memberDelete = (await import('~/server/api/support/inboxes/[id]/members/[memberId].delete')).default
 const sendingStatus = (await import('~/server/api/support/inboxes/[id]/sending-status.get')).default
@@ -315,6 +330,7 @@ describe('support route authorization inventory', () => {
     ['inbox deletion', inboxDelete, 'requireInboxRole', 'inbox-1', 'admin'],
     ['address creation', addressCreate, 'requireInboxRole', 'inbox-1', 'admin'],
     ['address deletion', addressDelete, 'requireInboxRole', 'inbox-1', 'admin'],
+    ['platform address creation', platformAddressCreate, 'requireInboxRole', 'inbox-1', 'admin'],
     ['member creation', memberCreate, 'requireInboxRole', 'inbox-1', 'admin'],
     ['member deletion', memberDelete, 'requireInboxRole', 'inbox-1', 'admin'],
     ['sending status', sendingStatus, 'requireInboxRole', 'inbox-1', 'agent'],
@@ -331,11 +347,13 @@ describe('support route authorization inventory', () => {
       state.body =
         _name === 'address creation'
           ? { address: 'support@example.com' }
-          : _name === 'member creation'
-            ? { userId: 'user-2', role: 'agent' }
-            : scope === 'inbox-1' && role === 'admin'
-              ? { name: 'Support' }
-              : {}
+          : _name === 'platform address creation'
+            ? {}
+            : _name === 'member creation'
+              ? { userId: 'user-2', role: 'agent' }
+              : scope === 'inbox-1' && role === 'admin'
+                ? { name: 'Support' }
+                : {}
     } else {
       access.requireSupportTeamRole.mockImplementationOnce(() => forbidden())
       state.body = { teamId: 'team-1', name: 'vip' }
@@ -552,6 +570,13 @@ const executableBoundaryCases: BoundaryCase[] = [
     name: 'inboxes/[id]/addresses/[addressId].delete',
     ...boundary(addressDelete, 'requireInboxRole', ['inbox-1', 'user-1', 'admin'], {
       params: { id: 'inbox-1', addressId: 'address-1' },
+    }),
+  },
+  {
+    name: 'inboxes/[id]/addresses/platform.post',
+    ...boundary(platformAddressCreate, 'requireInboxRole', ['inbox-1', 'user-1', 'admin'], {
+      params: { id: 'inbox-1' },
+      body: {},
     }),
   },
   {
@@ -853,7 +878,7 @@ function collectSupportRouteFiles(directory: string, prefix = ''): string[] {
 
 describe('executable support route authorization inventory', () => {
   it('invokes every authenticated support route at its intended access boundary', async () => {
-    expect(executableBoundaryCases).toHaveLength(53)
+    expect(executableBoundaryCases).toHaveLength(54)
 
     for (const route of executableBoundaryCases) {
       state.body = route.body ?? {}
