@@ -68,7 +68,6 @@ Veerify is a feedback management and verification platform built with **Nuxt 3**
 ├── server/
 │   ├── api/
 │   │   ├── auth/[...all].ts     # Catch-all Better-Auth handler
-│   │   ├── mail/send-mail.post.ts
 │   │   └── user/profile.put.ts
 │   └── database/
 │       ├── drizzle.ts           # pg Client + drizzle() instance export
@@ -164,7 +163,6 @@ Browser
 Nuxt Server
   ├─ server/api/auth/[...all].ts   → Better-Auth handles all /api/auth/* requests
   ├─ server/api/user/profile.put.ts → session check → Drizzle query
-  ├─ server/api/mail/send-mail.post.ts → nodemailer
   │
   ▼
 Better-Auth (lib/auth.ts)
@@ -256,7 +254,7 @@ lib/email.ts
   ├── sendEmail()           ← detects server vs client
   │     ├── Server:  useNodeMailer().sendMail()     (direct nodemailer)
   │     │            or the dedicated SYSTEM_SMTP_* transport (lib/mail-transport.ts)
-  │     └── Client:  POST /api/mail/send-mail       (HTTP to server)
+  │     └── Client:  throws (mail is server-only; there is no send endpoint)
   ├── sendEmailVerificationEmail()  ← wraps sendEmail with verification template
   └── sendPasswordResetEmail()      ← wraps sendEmail with reset template
 ```
@@ -364,7 +362,6 @@ Nuxt maps files under `server/api/` directly to routes. Method-specific files us
 | File                                | Route                 | Method                      |
 | ----------------------------------- | --------------------- | --------------------------- |
 | `server/api/auth/[...all].ts`       | `/api/auth/*`         | All (Better-Auth catch-all) |
-| `server/api/mail/send-mail.post.ts` | `/api/mail/send-mail` | POST                        |
 | `server/api/user/profile.put.ts`    | `/api/user/profile`   | PUT                         |
 
 ### Protected Route Template

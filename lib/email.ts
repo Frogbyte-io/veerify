@@ -247,15 +247,10 @@ export async function sendEmail(options: SendEmailOptions): Promise<SendEmailRes
       }
     }
   } else {
-    // Use API endpoint on client side
-    const result = await fetch('/api/mail/send-mail', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(options),
-    })
-    return result
+    // Mail is only ever sent server-side. There is deliberately no HTTP
+    // endpoint for browsers to send mail through: an unauthenticated one would
+    // let anyone send arbitrary mail from MAIL_FROM.
+    throw new Error('sendEmail can only be called on the server')
   }
 }
 

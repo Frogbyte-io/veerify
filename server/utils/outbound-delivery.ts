@@ -588,12 +588,8 @@ export async function processOutboundDelivery(
   claim: OutboundClaim,
   deps: ProcessOutboundDeliveryDeps = {}
 ): Promise<{ outcome: 'sent' } | { outcome: 'failed'; error: string }> {
-  // `sendEmail`'s inferred return type includes `Response`, from its
-  // `import.meta.client` branch that fetches `/api/mail/send-mail` instead of
-  // calling nodemailer directly. This worker only ever runs server-side
-  // (Nitro scheduled task or API route), so that branch is unreachable here -
-  // the cast narrows to the branch that actually runs, it does not paper over
-  // a real mismatch.
+  // This worker only ever runs server-side (Nitro scheduled task or API
+  // route); `sendEmail` throws on the client.
   const send = deps.sendEmail ?? (defaultSendEmail as SendEmailFn)
   const getObject = deps.getObject ?? ((key: string) => getStorageProvider().getObject(key))
   const getAttachmentSizes =
