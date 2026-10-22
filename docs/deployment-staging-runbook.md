@@ -1,7 +1,7 @@
 # Staging setup runbook: manual steps
 
 These are the operator steps for standing up Veerify staging on Coolify. They can't be done with a
-Coolify API token, because they need other accounts (Vercel DNS, S3, Frogmail, Resend, GitHub,
+Coolify API token, because they need other accounts (Cloudflare DNS, S3, Frogmail, Resend, GitHub,
 Tailscale) or a human decision. The Coolify side (project, environment, Postgres, Valkey, app,
 environment variables, migration run) is done through the Coolify API and recorded in
 [Coolify staging and cutover plan](plans/2026-09-21-coolify-deployment.md#staging-execution-and-evidence).
@@ -48,26 +48,29 @@ staging.
 
 **Hand back:** the public IP(s). Never use the Tailscale `100.x` address in public DNS.
 
-## 2. DNS for staging (Vercel DNS)
+## 2. DNS for staging (Cloudflare)
 
-`veerify.io` uses Vercel DNS. Production records stay as they are.
+`veerify.io` uses Cloudflare DNS (name servers `anita`/`mustafa.ns.cloudflare.com`; checked
+2026-10-22). Production records stay as they are.
 
-1. In Vercel → Domains → `veerify.io` → DNS records, add:
+1. In Cloudflare → `veerify.io` → DNS, add these records as **DNS only** (grey cloud) for now, so
+   Coolify's proxy can issue certificates directly:
 
-   | Name          | Type | Value       | TTL |
-   | ------------- | ---- | ----------- | --- |
-   | `staging`     | A    | `<public-ip>` | 300 |
-   | `app.staging` | A    | `<public-ip>` | 300 |
-   | `*.staging`   | A    | `<public-ip>` | 300 |
-   | `cname.staging` | A  | `<public-ip>` | 300 |
+   | Name            | Type | Value         | TTL  |
+   | --------------- | ---- | ------------- | ---- |
+   | `staging`       | A    | `<public-ip>` | Auto |
+   | `app.staging`   | A    | `<public-ip>` | Auto |
+   | `*.staging`     | A    | `<public-ip>` | Auto |
+   | `cname.staging` | A    | `<public-ip>` | Auto |
 
-   Add matching AAAA records if the server has public IPv6.
+   Add matching AAAA records if the server has public IPv6. Cloudflare's free proxy (orange cloud)
+   doesn't cover two-level wildcards like `*.staging.veerify.io`, so keep these grey.
 2. Wildcard TLS needs a DNS-01 challenge. Choose one:
-   - **Wildcard certificate (recommended):** create a Vercel API token limited to the `veerify.io`
-     team. In Coolify → Servers → `bergen` → Proxy, add a Traefik certificate resolver using the
-     `vercel` DNS provider (`VERCEL_API_TOKEN` in the proxy environment). The guide is at
-     https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs. Hand the resolver name
-     back; the app's domain settings will reference it.
+   - **Wildcard certificate (recommended):** create a Cloudflare API token with `Zone → DNS → Edit`
+     on `veerify.io` only. In Coolify → Servers → `bergen` → Proxy, add a Traefik certificate
+     resolver using the `cloudflare` DNS provider (`CF_DNS_API_TOKEN` in the proxy environment).
+     The guide is at https://coolify.io/docs/knowledge-base/proxy/traefik/wildcard-certs. Hand back
+     the resolver name; the app's domain settings will reference it.
    - **No wildcard for now:** skip the token. Staging then tests one fixed team subdomain (for
      example `demo.staging.veerify.io`) with a normal HTTP-01 certificate.
 
@@ -101,7 +104,7 @@ staging acceptance plan is `frogmail/docs/acceptance/staging-acceptance-plan.md`
 1. Create the project `veerify-staging` with an SES source. SES sandbox is fine for staging, but
    then only verified recipient addresses receive mail.
 2. Add and verify the staging sending domain, for example `staging.veerify.io`, in the Frogmail
-   dashboard. Publish the DNS records it shows in Vercel DNS (DKIM, MAIL FROM, DMARC). Don't touch
+   dashboard. Publish the DNS records it shows in Cloudflare (DKIM, MAIL FROM, DMARC). Don't touch
    existing records.
 3. Create **two** API keys:
    - **Sending key**, `emails:send` only. This becomes `SMTP_PASS`.
@@ -116,9 +119,14 @@ staging acceptance plan is `frogmail/docs/acceptance/staging-acceptance-plan.md`
    - Frogmail can only receive at the **apex** of a Cloudflare zone, so a subdomain such as
      `in.veerify.io` won't work today (see `frogmail/docs/dns-onboarding.md`, "Apex and subdomain
      receiving").
-   - Register a dedicated domain (for example `veerifymail.com`, or `veerifymail-staging.com` for
-     staging), add it to Cloudflare, and connect it to the Frogmail project.
-   - Enable receiving for it in the Frogmail dashboard. Add one catch-all route:
+   - `veerify.io` is on Cloudflare and has **no MX records** (checked 2026-10-22), so it can be
+     the platform domain itself. Forwarding addresses then look like
+     `acme-support-k3j9x2@veerify.io`. The catch: any mailbox you later want at `@veerify.io`
+     (for example `hello@veerify.io`) has to be routed through Frogmail as well.
+   - For staging, prefer a separate apex (for example `veerify-staging-mail.com` on Cloudflare) so
+     staging never receives production mail.
+   - Connect the zone to the Frogmail project and enable receiving for it in the Frogmail
+     dashboard. Add one catch-all route:
      `match_recipient(".*@<platform domain>")` → `forward("https://app.staging.veerify.io/api/support/inbound/mailgun")`, `stop()`.
    - Also verify it for sending, so replies can come from the forwarding address.
 
