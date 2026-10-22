@@ -14,7 +14,11 @@
  *       Under the team sender policy, an address on a domain (or subdomain of
  *       one) claimed by another team is refused, and addresses on the platform
  *       mail domain cannot be added by hand - use the platform address
- *       endpoint. When the address is on one of the team's verified sending
+ *       endpoint. When the deployment's provider routes inbound mail by the To/Cc
+ *       header (Postmark), an address is only accepted on one of the team's own
+ *       verified sending domains, because a header address on someone else's
+ *       domain would capture that mail. Mailgun and Frogmail route by envelope
+ *       recipient, so unclaimed domains stay allowed there. When the address is on one of the team's verified sending
  *       domains that receives mail through the provider, a provider inbound
  *       route is created best-effort.
  *     operationId: createSupportInboxAddress
@@ -29,7 +33,7 @@
  *       403: { description: Not a member of this inbox or a team admin }
  *       404: { description: Inbox not found }
  *       409: { description: "This address is already in use, or its domain is claimed by another team (ADDRESS_DOMAIN_CLAIMED)" }
- *       422: { description: The address is on the platform mail domain and was not system-generated }
+ *       422: { description: "The address is on the platform mail domain (ADDRESS_DOMAIN_RESERVED), or the provider routes inbound mail by header (Postmark) and the address domain is not on this team's verified sending domain (ADDRESS_DOMAIN_UNVERIFIED)" }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -43,7 +47,7 @@ import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportInboxAddress } from '~/server/database/schema/support'
 import { project } from '~/server/database/schema/feedback'
-import { assertReceivingAddressAllowed, resolveSenderPolicy } from '~/server/utils/sending-domains'
+import { assertReceivingAddressAllowed } from '~/server/utils/sending-domains'
 import { createDirectRouteForAddress } from '~/server/utils/inbound-routes'
 
 const bodySchema = z.object({
@@ -75,10 +79,10 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Team sender policy (design §9.3). Throws 409 ADDRESS_DOMAIN_CLAIMED / 422.
-  if (resolveSenderPolicy() === 'team') {
-    await assertReceivingAddressAllowed(inbox.teamId, body.address)
-  }
+  // Team sender policy (design §9.3; a no-op under the effective legacy policy).
+  // Throws 409 ADDRESS_DOMAIN_CLAIMED, or 422 ADDRESS_DOMAIN_RESERVED /
+  // ADDRESS_DOMAIN_UNVERIFIED.
+  await assertReceivingAddressAllowed(inbox.teamId, body.address)
 
   let created: typeof supportInboxAddress.$inferSelect
   try {

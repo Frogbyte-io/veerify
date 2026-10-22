@@ -4,8 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // how the shared enforcement helper uses them, not about their own logic.
 const sendingDomains = vi.hoisted(() => ({
   resolveSenderPolicy: vi.fn<() => 'legacy' | 'team'>(() => 'legacy'),
+  resolveEffectiveSenderPolicy: vi.fn(async (): Promise<'legacy' | 'team'> => 'legacy'),
+  isDomainClaimedByOtherTeam: vi.fn(async () => false),
   resolveTeamSenderAuthorization: vi.fn(),
 }))
+sendingDomains.resolveEffectiveSenderPolicy.mockImplementation(async () => sendingDomains.resolveSenderPolicy())
 const provider = vi.hoisted(() => ({ current: null as null | Record<string, unknown> }))
 const metrics = vi.hoisted(() => ({ recordSupportMetric: vi.fn() }))
 

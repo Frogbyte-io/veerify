@@ -33,6 +33,8 @@ export type SenderPolicy = 'legacy' | 'team'
 export interface SendingDomainView {
   id: string
   domain: string
+  /** The registrable domain (eTLD+1) the claim sits under, e.g. `acme.com` for `mail.acme.com`. */
+  registrableDomain: string
   status: SupportSendingDomainStatus
   providerState: 'active' | 'unverified' | null
   ownershipVerified: boolean

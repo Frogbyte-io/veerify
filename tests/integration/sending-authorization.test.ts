@@ -8,6 +8,7 @@ import { supportInbox, supportInboxAddress, supportSendingDomain } from '../../s
 import {
   assertReceivingAddressAllowed,
   assertSenderAddressAllowedForInbox,
+  resetSenderPolicyCache,
   resolveSenderPolicy,
   resolveTeamSenderAuthorization,
 } from '../../server/utils/sending-domains'
@@ -263,10 +264,13 @@ describe('assertSenderAddressAllowedForInbox', () => {
     }
   })
 
-  it('is a no-op under the legacy policy', async () => {
+  it('keeps enforcing the team policy with the flag off while claims exist (rollback is not a bypass)', async () => {
     process.env.SUPPORT_SENDING_DOMAINS_ENABLED = 'false'
+    resetSenderPolicyCache()
     try {
-      await expect(assertSenderAddressAllowedForInbox(ids.teamA, `support@${fresh()}`)).resolves.toBeUndefined()
+      await expect(assertSenderAddressAllowedForInbox(ids.teamA, `support@${fresh()}`)).rejects.toMatchObject({
+        statusCode: 422,
+      })
     } finally {
       process.env.SUPPORT_SENDING_DOMAINS_ENABLED = 'true'
     }
@@ -310,12 +314,15 @@ describe('assertReceivingAddressAllowed', () => {
     }
   })
 
-  it('is a no-op under the legacy policy', async () => {
+  it('keeps refusing another team claim with the flag off while claims exist', async () => {
     const domain = fresh()
     await addClaim(ids.teamB, domain, 'verified')
     process.env.SUPPORT_SENDING_DOMAINS_ENABLED = 'false'
+    resetSenderPolicyCache()
     try {
-      await expect(assertReceivingAddressAllowed(ids.teamA, `support@${domain}`)).resolves.toBeUndefined()
+      await expect(assertReceivingAddressAllowed(ids.teamA, `support@${domain}`)).rejects.toMatchObject({
+        statusCode: 409,
+      })
     } finally {
       process.env.SUPPORT_SENDING_DOMAINS_ENABLED = 'true'
     }

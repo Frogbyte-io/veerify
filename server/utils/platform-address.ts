@@ -1,7 +1,7 @@
 import { randomInt, randomUUID } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { supportInboxAddress } from '~/server/database/schema/support'
+import { supportInbox, supportInboxAddress } from '~/server/database/schema/support'
 
 /**
  * Platform forwarding addresses (design §9.1).
@@ -13,7 +13,7 @@ import { supportInboxAddress } from '~/server/database/schema/support'
  * is set.
  */
 
-type Executor = Pick<typeof db, 'select' | 'insert' | 'delete' | 'execute'>
+type Executor = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete' | 'execute'>
 
 const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567'
 const SUFFIX_LENGTH = 6
@@ -76,7 +76,9 @@ export async function findPlatformAddress(
 /**
  * Create the inbox's platform address unless it already has one (idempotent).
  * With `regenerate`, the existing row is removed and a fresh address issued.
- * Returns null when no platform domain is configured.
+ * Returns null when no platform domain is configured. When regenerating, an
+ * inbox whose From (`emailAddress`) is the old platform address is moved to the
+ * new one in the same transaction, so its replies keep authorizing.
  *
  * Must run inside a transaction (the caller's `tx`): a transaction-scoped
  * advisory lock per inbox serializes concurrent requests, since the schema has
@@ -94,10 +96,12 @@ export async function ensurePlatformAddress(
 
   await executor.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`platform_address:${inbox.id}`}, 0))`)
 
+  let replaced: string | null = null
   if (!options.regenerate) {
     const existing = await findPlatformAddress(inbox.id, executor)
     if (existing) return existing
   } else {
+    replaced = (await findPlatformAddress(inbox.id, executor))?.address ?? null
     await executor
       .delete(supportInboxAddress)
       .where(and(eq(supportInboxAddress.inboxId, inbox.id), eq(supportInboxAddress.kind, 'platform')))
@@ -117,7 +121,17 @@ export async function ensurePlatformAddress(
       })
       .onConflictDoNothing()
       .returning()
-    if (created) return created
+    if (created) {
+      if (replaced) {
+        await executor
+          .update(supportInbox)
+          .set({ emailAddress: created.address, updatedAt: new Date() })
+          .where(
+            and(eq(supportInbox.id, inbox.id), sql`lower(${supportInbox.emailAddress}) = ${replaced.toLowerCase()}`)
+          )
+      }
+      return created
+    }
 
     // The random address collided with an existing one: try another suffix.
   }
