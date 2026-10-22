@@ -386,6 +386,13 @@
       "when": 1792090897711,
       "tag": "0054_majestic_purifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792665098992,
+      "tag": "0055_luxuriant_wrecker",
+      "breakpoints": true
     }
   ]
 }
