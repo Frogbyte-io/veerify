@@ -46,6 +46,9 @@ import {
   type SendingDomainRow,
 } from '~/server/utils/sending-domain-poller'
 import {
+  acquireSendingDomainLease,
+  domainBusyError,
+  releaseSendingDomainLease,
   providerMisconfiguredError,
   registerOutcomeToError,
   requireConfiguredSendingDomainProvider,
@@ -88,18 +91,36 @@ export default defineEventHandler(async (event) => {
   const now = new Date()
   const reload = () => getTeamSendingDomain(teamId, claim.id)
 
+  // Hold the row while talking to the provider: an admin delete (or a poll pass)
+  // must not interleave with a register in flight, or the provider domain leaks.
+  if (!(await acquireSendingDomainLease(claim, now))) throw domainBusyError()
+  try {
+    return await verifyClaim(event, claim, provider, now, reload)
+  } finally {
+    await releaseSendingDomainLease(claim)
+  }
+})
+
+async function verifyClaim(
+  event: Parameters<typeof setResponseStatus>[0],
+  claim: SendingDomainRow,
+  provider: ReturnType<typeof requireConfiguredSendingDomainProvider>,
+  now: Date,
+  reload: () => Promise<SendingDomainRow>
+) {
   const mustRegister =
     claim.status === 'failed' || claim.status === 'provisioning' || isProviderMismatch(claim, provider)
   if (mustRegister) {
-    // An admin click restarts the attempt budget.
-    const outcome = await registerSendingDomainClaim({ ...claim, attemptCount: 0 }, provider, { now })
+    // An admin click restarts the attempt budget (the attempt count itself is kept:
+    // it records that an earlier attempt of ours may have created the domain).
+    const outcome = await registerSendingDomainClaim(claim, provider, { now, restartBudget: true })
     return respondToRegister(event, claim, outcome, reload)
   }
 
   const outcome = await checkSendingDomainClaim(claim, provider, { now, manual: true })
 
   if (outcome.kind === 'needs_register') {
-    const registered = await registerSendingDomainClaim({ ...claim, attemptCount: 0 }, provider, { now })
+    const registered = await registerSendingDomainClaim(claim, provider, { now, restartBudget: true })
     return respondToRegister(event, claim, registered, reload)
   }
 
@@ -144,7 +165,7 @@ export default defineEventHandler(async (event) => {
     })
   }
   return createSuccessResponse(toSendingDomainView(await reload(), provider))
-})
+}
 
 async function respondToRegister(
   event: Parameters<typeof setResponseStatus>[0],

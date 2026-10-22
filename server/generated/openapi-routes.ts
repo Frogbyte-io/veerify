@@ -7982,7 +7982,8 @@ export const openapiPaths = {
           "or the domain does not belong to this team": null
         },
         "409": {
-          "description": "Inboxes still use this domain and force was not set"
+          "description": "Inboxes still use this domain and force was not set (DOMAIN_IN_USE)",
+          "or the domain is being registered or processed right now (DOMAIN_BUSY)": null
         },
         "429": {
           "description": "Rate limit exceeded"

@@ -29,10 +29,10 @@
  *       400: { description: Invalid query }
  *       403: { description: Team administrator required }
  *       404: { description: Feature disabled, or the domain does not belong to this team }
- *       409: { description: Inboxes still use this domain and force was not set }
+ *       409: { description: Inboxes still use this domain and force was not set (DOMAIN_IN_USE), or the domain is being registered or processed right now (DOMAIN_BUSY) }
  *       429: { description: Rate limit exceeded }
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, lt, or } from 'drizzle-orm'
 import { createError, setResponseStatus } from 'h3'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
@@ -51,7 +51,11 @@ import {
   removeSendingDomainClaim,
   saveSendingDomainPatch,
 } from '~/server/utils/sending-domain-poller'
-import { listInboxesUsingDomain, requireSendingDomainsEnabled } from '~/server/utils/sending-domain-api'
+import {
+  domainBusyError,
+  listInboxesUsingDomain,
+  requireSendingDomainsEnabled,
+} from '~/server/utils/sending-domain-api'
 
 const logger = createLogger('sending-domains')
 
@@ -86,6 +90,11 @@ export default defineEventHandler(async (event) => {
 
   const provider = getSendingDomainProvider()
 
+  // A register (or poll pass) holds the row's lease while it talks to the
+  // provider. Deleting now would drop the row before the provider domain is
+  // recorded, leaking it, so ask the admin to retry.
+  if (claim.leaseExpiresAt && claim.leaseExpiresAt > new Date()) throw domainBusyError()
+
   if (!force && claim.status !== 'deleting') {
     const siblings = (await listTeamSendingDomains(teamId)).filter((other) => other.id !== claim.id)
     const inboxes = await listInboxesUsingDomain(
@@ -113,14 +122,29 @@ export default defineEventHandler(async (event) => {
     .update(supportSendingDomain)
     .set({
       status: 'deleting',
+      // The removal retry budget starts here.
+      attemptCount: 0,
       leaseExpiresAt: new Date(now.getTime() + INLINE_REMOVE_LEASE_MS),
       nextCheckAt: new Date(now.getTime() + INLINE_REMOVE_LEASE_MS),
       updatedAt: now,
     })
-    .where(and(eq(supportSendingDomain.id, claim.id), eq(supportSendingDomain.teamId, teamId)))
+    .where(
+      and(
+        eq(supportSendingDomain.id, claim.id),
+        eq(supportSendingDomain.teamId, teamId),
+        // Atomic with the lease check above: a register that took the lease since
+        // the lookup wins, and the delete is refused.
+        or(isNull(supportSendingDomain.leaseExpiresAt), lt(supportSendingDomain.leaseExpiresAt, now))
+      )
+    )
     .returning()
   if (!marked) {
-    // Another request deleted it between the lookup and now.
+    const stillThere = await getTeamSendingDomain(teamId, claim.id).then(
+      () => true,
+      () => false
+    )
+    // Gone: another request deleted it between the lookup and now.
+    if (stillThere) throw domainBusyError()
     return createSuccessResponse({ deleted: true, operatorCleanupRequired: false })
   }
 
