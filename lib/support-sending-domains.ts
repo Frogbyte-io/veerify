@@ -3,6 +3,8 @@
  * and client code. Design: docs/plans/2026-10-22-custom-sending-domains/design.md.
  */
 
+import { parse as parseDomain } from 'tldts'
+
 export const SUPPORT_SENDING_DOMAIN_STATUSES = [
   'provisioning',
   'pending',
@@ -90,3 +92,378 @@ export const PENDING_TTL_DAYS = 7
 /** DNS label that carries the per-claim ownership TXT record. */
 export const OWNERSHIP_RECORD_LABEL = '_veerify-mail'
 export const OWNERSHIP_RECORD_PREFIX = 'veerify-mail-verification='
+
+// ---------------------------------------------------------------------------
+// Pure rules (design §4.2, §5.3, §7.4). No Node-only imports: this file is
+// bundled into the browser as well.
+// ---------------------------------------------------------------------------
+
+export interface SendingDomainEnvIssue {
+  level: 'warn' | 'error' | 'info'
+  message: string
+}
+
+/**
+ * Misconfiguration checks for the sending-domain env (design §11.1). Pure so it
+ * can be unit tested; `server/plugins/validate-env.ts` logs the result. Only
+ * names are reported, never values (D-34).
+ */
+export function sendingDomainEnvIssues(env: Record<string, string | undefined>): SendingDomainEnvIssue[] {
+  const get = (name: string) => (env[name] ?? '').trim()
+  const issues: SendingDomainEnvIssue[] = []
+  const enabled = get('SUPPORT_SENDING_DOMAINS_ENABLED').toLowerCase() === 'true'
+  const fake = get('SUPPORT_SENDING_DOMAIN_PROVIDER').toLowerCase() === 'fake'
+  const production = get('NODE_ENV') === 'production'
+  const policy = get('SUPPORT_SENDER_POLICY').toLowerCase()
+
+  if (fake && production) {
+    issues.push({
+      level: 'error',
+      message: 'SUPPORT_SENDING_DOMAIN_PROVIDER=fake is refused in production and will be ignored.',
+    })
+  }
+  if (policy && policy !== 'legacy' && policy !== 'team') {
+    issues.push({ level: 'warn', message: 'SUPPORT_SENDER_POLICY must be "legacy" or "team"; the value is ignored.' })
+  }
+  if (!enabled) return issues
+
+  if (policy === 'legacy') {
+    issues.push({
+      level: 'error',
+      message:
+        'SUPPORT_SENDER_POLICY=legacy is set together with SUPPORT_SENDING_DOMAINS_ENABLED=true. Self-serve domains are unsafe without team scope, so the "team" policy applies.',
+    })
+  }
+
+  const provider = (get('SUPPORT_CHANNEL_PROVIDER') || 'postmark').toLowerCase()
+  if (fake && !production) return issues
+
+  if (provider === 'mailgun') {
+    const missing = ['SUPPORT_MAILGUN_API_KEY'].filter((name) => !get(name))
+    if (missing.length) {
+      issues.push({
+        level: 'warn',
+        message: `SUPPORT_SENDING_DOMAINS_ENABLED=true but the Mailgun/Frogmail provider is not configured. Missing: ${missing.join(', ')}.`,
+      })
+    }
+  } else if (provider === 'postmark') {
+    if (!get('SUPPORT_POSTMARK_ACCOUNT_TOKEN')) {
+      issues.push({
+        level: 'warn',
+        message:
+          'SUPPORT_SENDING_DOMAINS_ENABLED=true but the Postmark provider is not configured. Missing: SUPPORT_POSTMARK_ACCOUNT_TOKEN.',
+      })
+    }
+    issues.push({
+      level: 'info',
+      message:
+        'Postmark runs sending domains in list-only mode: teams can claim and prove a domain, but an operator adds it in Postmark.',
+    })
+  } else {
+    issues.push({
+      level: 'warn',
+      message: `SUPPORT_SENDING_DOMAINS_ENABLED=true but provider "${provider}" cannot register sending domains.`,
+    })
+  }
+
+  return issues
+}
+
+/** Consecutive provider `unverified` answers that suspend a verified claim. */
+export const SUSPEND_AFTER_PROVIDER_MISSES = 2
+/** Consecutive missing ownership TXT lookups that suspend a verified claim. */
+export const SUSPEND_AFTER_OWNERSHIP_MISSES = 3
+
+/**
+ * Mailbox providers nobody may claim as a sending domain. `gmx.*` is handled by
+ * `isMailboxProviderDomain` because GMX runs on many country suffixes.
+ */
+export const MAILBOX_PROVIDER_DOMAINS: readonly string[] = [
+  'gmail.com',
+  'googlemail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'yahoo.com',
+  'icloud.com',
+  'me.com',
+  'proton.me',
+  'protonmail.com',
+  'aol.com',
+]
+
+const MAX_DOMAIN_LENGTH = 253
+const MAX_LABEL_LENGTH = 63
+const LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
+
+/**
+ * Trim, lowercase, drop one trailing dot, convert IDN to ASCII. Never throws:
+ * input that cannot be converted is returned lowercased so `validateSendingDomain`
+ * reports it.
+ */
+export function normalizeSendingDomain(input: string): string {
+  const value = String(input ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\.$/, '')
+  // Only non-ASCII input needs IDNA conversion. Skipping the URL parser for
+  // plain ASCII keeps "acme.com/path" from being silently reduced to "acme.com".
+  // eslint-disable-next-line no-control-regex
+  if (/^[\x00-\x7f]*$/.test(value)) return value
+  try {
+    const host = new URL(`http://${value}`).hostname
+    return host.includes('/') || host.includes('@') || host.includes(':') ? value : host.replace(/\.$/, '')
+  } catch {
+    return value
+  }
+}
+
+/** Is `candidate` equal to, or a label-boundary descendant of, `ancestor`? */
+export function isSameOrSubdomain(candidate: string, ancestor: string): boolean {
+  return candidate === ancestor || candidate.endsWith(`.${ancestor}`)
+}
+
+/**
+ * Registrable domain (eTLD+1) of an already-normalized name, or null when the
+ * name has no ICANN public suffix. `.test` is treated as a two-label zone when
+ * `allowTestTld` is set (fake provider / e2e only).
+ */
+export function getRegistrableDomain(domain: string, allowTestTld = false): string | null {
+  if (allowTestTld && domain.endsWith('.test')) {
+    const labels = domain.split('.')
+    return labels.length >= 2 ? labels.slice(-2).join('.') : null
+  }
+  const parsed = parseDomain(domain, { allowPrivateDomains: false })
+  if (parsed.isIp || !parsed.isIcann || !parsed.domain) return null
+  return parsed.domain
+}
+
+export function isMailboxProviderDomain(domain: string): boolean {
+  for (const listed of MAILBOX_PROVIDER_DOMAINS) {
+    if (isSameOrSubdomain(domain, listed)) return true
+  }
+  const registrable = getRegistrableDomain(domain)
+  return registrable !== null && /^gmx\.[a-z.]+$/.test(registrable)
+}
+
+/**
+ * Validate an already-normalized domain. Returns a user-facing message, or null
+ * when the domain may be claimed.
+ */
+export function validateSendingDomain(
+  domain: string,
+  opts: { reserved: string[]; allowTestTld: boolean }
+): string | null {
+  if (!domain) return 'Enter a domain name.'
+  if (domain.length > MAX_DOMAIN_LENGTH) return 'This domain name is too long.'
+  if (/^[0-9.]+$/.test(domain) || domain.includes(':') || domain.startsWith('[')) {
+    return 'Enter a domain name, not an IP address.'
+  }
+
+  for (const label of domain.split('.')) {
+    if (!label || label.length > MAX_LABEL_LENGTH || !LABEL_PATTERN.test(label)) {
+      return 'This is not a valid domain name. Use letters, digits and hyphens, for example acme.com.'
+    }
+  }
+
+  if (!getRegistrableDomain(domain, opts.allowTestTld)) {
+    return 'Enter a domain under a public suffix, for example acme.com.'
+  }
+
+  if (isMailboxProviderDomain(domain)) {
+    return 'Mailbox provider domains cannot be used as a sending domain.'
+  }
+
+  for (const entry of opts.reserved) {
+    const reserved = normalizeSendingDomain(entry)
+    if (!reserved) continue
+    if (isSameOrSubdomain(domain, reserved) || isSameOrSubdomain(reserved, domain)) {
+      return 'This domain is reserved for the platform and cannot be claimed.'
+    }
+  }
+
+  return null
+}
+
+/**
+ * The first claim of another team that equals, sits under, or sits over
+ * `domain` (matched on label boundaries, so `badacme.com` never conflicts with
+ * `acme.com`). Nesting within the same team is allowed.
+ */
+export function findHierarchyConflict(
+  domain: string,
+  teamId: string,
+  claims: { domain: string; teamId: string }[]
+): { domain: string } | null {
+  for (const claim of claims) {
+    if (claim.teamId === teamId) continue
+    if (isSameOrSubdomain(domain, claim.domain) || isSameOrSubdomain(claim.domain, domain)) {
+      return { domain: claim.domain }
+    }
+  }
+  return null
+}
+
+/** Host as DNS UIs that append the zone want it: "_veerify-mail", or "@" for the apex. */
+export function relativeRecordHost(fqdn: string, zone: string): string {
+  const host = String(fqdn).trim().toLowerCase().replace(/\.$/, '')
+  const apex = String(zone).trim().toLowerCase().replace(/\.$/, '')
+  if (host === apex) return '@'
+  if (host.endsWith(`.${apex}`)) return host.slice(0, -(apex.length + 1))
+  return host
+}
+
+export type OwnershipCheckResult = 'valid' | 'invalid' | 'unknown'
+
+/** The slice of a `support_sending_domain` row `applyProviderResult` reads. */
+export interface SendingDomainTransitionRow {
+  status: string
+  createdAt?: Date | null
+  ownershipFailures: number
+  providerFailures: number
+  ownershipVerifiedAt: Date | null
+  verifiedAt: Date | null
+  expiresAt: Date | null
+  dnsRecords: SendingDomainDnsRecord[]
+}
+
+/** The slice of a provider answer `applyProviderResult` reads. */
+export interface SendingDomainProviderResultInput {
+  state: 'active' | 'unverified'
+  receivesMail: boolean
+  records: SendingDomainDnsRecord[]
+  message?: string | null
+}
+
+/** Columns `applyProviderResult` may change (spread into a drizzle `.set()`). */
+export interface SendingDomainTransition {
+  status: SupportSendingDomainStatus
+  providerState: 'active' | 'unverified'
+  receivesViaProvider: boolean
+  dnsRecords: SendingDomainDnsRecord[]
+  ownershipFailures: number
+  providerFailures: number
+  ownershipVerifiedAt: Date | null
+  verifiedAt: Date | null
+  expiresAt: Date | null
+  lastCheckedAt: Date
+  nextCheckAt: Date | null
+  lastErrorCode: string | null
+  lastError: string | null
+  updatedAt: Date
+}
+
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+
+/** Next poll for a claim that is being checked (design §8.2). */
+export function nextSendingDomainCheckAt(
+  status: SupportSendingDomainStatus,
+  createdAt: Date | null | undefined,
+  now: Date
+): Date | null {
+  if (status === 'verified' || status === 'suspended') return new Date(now.getTime() + 24 * HOUR)
+  if (status !== 'pending') return null
+  const ageMs = createdAt ? now.getTime() - createdAt.getTime() : 0
+  const delay = ageMs < HOUR ? 5 * MINUTE : ageMs < 24 * HOUR ? 15 * MINUTE : HOUR
+  return new Date(now.getTime() + delay)
+}
+
+const RECORD_ORDER: Record<SendingDomainDnsRecord['purpose'], number> = {
+  ownership: 0,
+  sending: 1,
+  receiving: 2,
+  recommended: 3,
+}
+
+function suspensionMessage(ownershipLost: boolean): string {
+  return ownershipLost
+    ? 'The Veerify ownership TXT record is no longer found in DNS.'
+    : 'The mail provider no longer reports this domain as verified.'
+}
+
+/**
+ * The pure status transition for one provider + ownership check (design §5.3).
+ *
+ * - provisioning/failed + provider answer: becomes `pending` (the retry worked).
+ * - pending: `verified` once the TXT is valid and the provider is `active`.
+ * - verified: suspended after 2 consecutive provider `unverified` answers or 3
+ *   consecutive missing TXT lookups; an `unknown` TXT lookup (DNS trouble)
+ *   neither counts as a miss nor resets the counter.
+ * - suspended: back to `verified` when both checks pass.
+ * - deleting: status untouched.
+ */
+export function applyProviderResult(
+  row: SendingDomainTransitionRow,
+  result: SendingDomainProviderResultInput,
+  ownership: OwnershipCheckResult,
+  now: Date
+): SendingDomainTransition {
+  const bothPass = ownership === 'valid' && result.state === 'active'
+  const current = row.status as SupportSendingDomainStatus
+
+  const kept = row.dnsRecords
+    .filter((r) => r.purpose === 'ownership' || r.purpose === 'recommended')
+    .map((r) => (r.purpose === 'ownership' ? { ...r, status: ownership } : r))
+  const dnsRecords = [...kept, ...result.records].sort((a, b) => RECORD_ORDER[a.purpose] - RECORD_ORDER[b.purpose])
+
+  const out: SendingDomainTransition = {
+    status: current,
+    providerState: result.state,
+    receivesViaProvider: result.receivesMail,
+    dnsRecords,
+    ownershipFailures: row.ownershipFailures,
+    providerFailures: row.providerFailures,
+    ownershipVerifiedAt: ownership === 'valid' ? (row.ownershipVerifiedAt ?? now) : row.ownershipVerifiedAt,
+    verifiedAt: row.verifiedAt,
+    expiresAt: row.expiresAt,
+    lastCheckedAt: now,
+    nextCheckAt: null,
+    lastErrorCode: null,
+    lastError: null,
+    updatedAt: now,
+  }
+
+  const setStatus = (status: SupportSendingDomainStatus) => {
+    out.status = status
+    out.nextCheckAt = nextSendingDomainCheckAt(status, row.createdAt, now)
+  }
+
+  const markVerified = () => {
+    setStatus('verified')
+    out.verifiedAt = row.verifiedAt ?? now
+    out.expiresAt = null
+    out.ownershipFailures = 0
+    out.providerFailures = 0
+  }
+
+  if (current === 'deleting') return out
+
+  if (current === 'pending' || current === 'provisioning' || current === 'failed') {
+    if (bothPass && current === 'pending') markVerified()
+    else setStatus('pending')
+    return out
+  }
+
+  // verified | suspended: track consecutive misses.
+  out.providerFailures = result.state === 'unverified' ? row.providerFailures + 1 : 0
+  out.ownershipFailures =
+    ownership === 'invalid' ? row.ownershipFailures + 1 : ownership === 'valid' ? 0 : row.ownershipFailures
+
+  if (current === 'suspended' && bothPass) {
+    markVerified()
+    return out
+  }
+
+  const ownershipLost = out.ownershipFailures >= SUSPEND_AFTER_OWNERSHIP_MISSES
+  const providerLost = out.providerFailures >= SUSPEND_AFTER_PROVIDER_MISSES
+  if (current === 'suspended' || ownershipLost || providerLost) {
+    setStatus('suspended')
+    const ownershipCause = ownershipLost || (current === 'suspended' && ownership === 'invalid')
+    out.lastErrorCode = ownershipCause ? 'ownership_missing' : 'provider_unverified'
+    out.lastError = suspensionMessage(ownershipCause)
+  } else {
+    setStatus('verified')
+  }
+  return out
+}

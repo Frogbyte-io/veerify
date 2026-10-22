@@ -37,6 +37,15 @@ describe('support metric names', () => {
       'support.delivery.uncorrelated',
       'support.attachment.expired',
       'support.attachment.cleanup_failed',
+      'support.sending_domain.verified',
+      'support.sending_domain.suspended',
+      'support.sending_domain.expired',
+      'support.sending_domain.failed',
+      'support.sending_domain.deleted',
+      'support.sending_domain.blocked',
+      'support.sending_domain.provider_misconfigured',
+      'support.sending_domain.address_detached',
+      'support.sending_domain.operator_cleanup_required',
     ])
   })
 

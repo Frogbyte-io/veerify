@@ -1,0 +1,518 @@
+/**
+ * Customer sending domains: claim rules and team-scoped sender authorization
+ * (design: docs/plans/2026-10-22-custom-sending-domains/design.md §4, §7.4, §9.3).
+ *
+ * Everything here is a database read or a rule check. Provider calls live in
+ * `server/services/sending-domains/`, and the pure transition logic in
+ * `lib/support-sending-domains.ts`.
+ */
+import { randomBytes, randomUUID } from 'node:crypto'
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm'
+// Imported explicitly rather than relying on Nuxt's auto-import, so this module
+// can be unit tested outside the Nitro runtime.
+import { createError } from 'h3'
+import { db } from '~/server/database/drizzle'
+import { supportInbox, supportInboxAddress, supportSendingDomain } from '~/server/database/schema/support'
+import {
+  MAX_DOMAINS_PER_TEAM,
+  MAX_PENDING_PER_TEAM,
+  OWNERSHIP_RECORD_LABEL,
+  OWNERSHIP_RECORD_PREFIX,
+  PENDING_TTL_DAYS,
+  applyProviderResult,
+  findHierarchyConflict,
+  getRegistrableDomain,
+  isSameOrSubdomain,
+  normalizeSendingDomain,
+  validateSendingDomain,
+  type SendingDomainDnsRecord,
+  type SendingDomainProviderOwnership,
+  type SendingDomainView,
+  type SenderPolicy,
+  type SupportSendingDomainStatus,
+  type TeamSenderVerdict,
+} from '~/lib/support-sending-domains'
+import { emailDomain, matchVerifiedDomain } from '~/server/services/support-channels/types'
+import { isUniqueViolation } from './support-errors'
+import { createErrorResponse } from './response'
+import { createLogger } from './logger'
+
+const log = createLogger('sending-domains')
+
+// `applyProviderResult` is specified under the server helpers (design §7.4) but
+// lives in lib/ so it can be unit tested without a database.
+export { applyProviderResult }
+
+export type SupportSendingDomainRow = typeof supportSendingDomain.$inferSelect
+
+/** The deployment's sending provider identity, as stored on a claim. */
+export interface SendingProviderIdentity {
+  name: string
+  accountKey: string
+  authorizesSubdomains: boolean
+}
+
+const UNVERIFIED_STATUSES: SupportSendingDomainStatus[] = ['provisioning', 'pending', 'failed']
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+
+function envValue(name: string): string {
+  return (process.env[name] ?? '').trim()
+}
+
+export function isSendingDomainsEnabled(): boolean {
+  return envValue('SUPPORT_SENDING_DOMAINS_ENABLED').toLowerCase() === 'true'
+}
+
+/**
+ * `team` whenever management is enabled (a shared provider project is unsafe
+ * without team scope, even if `legacy` is set), otherwise whatever
+ * `SUPPORT_SENDER_POLICY` asks for, defaulting to `legacy`.
+ */
+export function resolveSenderPolicy(): SenderPolicy {
+  if (isSendingDomainsEnabled()) return 'team'
+  return envValue('SUPPORT_SENDER_POLICY').toLowerCase() === 'team' ? 'team' : 'legacy'
+}
+
+/** The domain part of `Name <a@b.example>`, `a@b.example`, or a bare host. */
+function domainFromEnvAddress(value: string): string | null {
+  const match = value.match(/<([^>]+)>/)
+  const address = (match ? match[1] : value).trim()
+  const at = address.lastIndexOf('@')
+  const host = at >= 0 ? address.slice(at + 1) : address
+  const normalized = normalizeSendingDomain(host.replace(/:\d+$/, ''))
+  return normalized || null
+}
+
+/** Domains no team may claim (design §4.2 rule 2), excluding the static mailbox-provider list. */
+export function reservedSendingDomains(): string[] {
+  const reserved = new Set<string>()
+  const add = (value: string | null) => {
+    if (value) reserved.add(value)
+  }
+
+  add(domainFromEnvAddress(envValue('MAIL_FROM')))
+  add(domainFromEnvAddress(envValue('SYSTEM_MAIL_FROM')))
+  // The Mailgun account key is an identity label that is usually a domain; ignore it when it is not.
+  const accountKey = envValue('SUPPORT_MAILGUN_ACCOUNT_KEY')
+  if (accountKey.includes('.')) add(domainFromEnvAddress(accountKey))
+  add(domainFromEnvAddress(envValue('APP_DOMAIN')))
+  add(domainFromEnvAddress(envValue('SUPPORT_PLATFORM_MAIL_DOMAIN')))
+  for (const entry of envValue('SUPPORT_SENDING_DOMAINS_RESERVED').split(',')) {
+    add(domainFromEnvAddress(entry))
+  }
+
+  return [...reserved]
+}
+
+/**
+ * Identity of the provider this deployment sends through now. Claims remember
+ * the identity they were registered under, so a switch shows as a mismatch.
+ */
+export function currentSendingProviderIdentity(): SendingProviderIdentity {
+  if (envValue('SUPPORT_SENDING_DOMAIN_PROVIDER').toLowerCase() === 'fake' && process.env.NODE_ENV !== 'production') {
+    return { name: 'fake', accountKey: '', authorizesSubdomains: true }
+  }
+  const name = (envValue('SUPPORT_CHANNEL_PROVIDER') || 'postmark').toLowerCase()
+  return {
+    name,
+    accountKey: envValue(name === 'mailgun' ? 'SUPPORT_MAILGUN_ACCOUNT_KEY' : 'SUPPORT_POSTMARK_ACCOUNT_KEY'),
+    authorizesSubdomains: name === 'mailgun',
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+function sendingDomainError(statusCode: number, statusMessage: string, code: string, message: string) {
+  return createError({
+    statusCode,
+    statusMessage,
+    // `data.error.code` follows the repo's response envelope; `data.code` is the
+    // flat form the sending-domain API contract (design §4.2/§4.3) names.
+    data: { ...createErrorResponse(code, message), code },
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Claims
+// ---------------------------------------------------------------------------
+
+export interface CreateSendingDomainClaimInput {
+  teamId: string
+  domain: string
+  userId: string
+  provider: string
+  providerAccountKey: string
+  /** Test seam. */
+  now?: Date
+}
+
+/**
+ * Claim `domain` for `teamId` as a `provisioning` row (design §4.2).
+ *
+ * Takes an advisory lock on the registrable domain so every claim under
+ * `acme.com` is serialized and the ancestor/descendant check cannot race. The
+ * unique index on `domain` remains the final guarantee.
+ */
+export async function createSendingDomainClaim(input: CreateSendingDomainClaimInput): Promise<SupportSendingDomainRow> {
+  const now = input.now ?? new Date()
+  const domain = normalizeSendingDomain(input.domain)
+  const allowTestTld = input.provider === 'fake'
+
+  const invalid = validateSendingDomain(domain, { reserved: reservedSendingDomains(), allowTestTld })
+  const registrableDomain = getRegistrableDomain(domain, allowTestTld)
+  if (invalid || !registrableDomain) {
+    throw sendingDomainError(
+      422,
+      'Unprocessable Entity',
+      'DOMAIN_REJECTED',
+      invalid ?? 'This is not a valid domain name.'
+    )
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain:${registrableDomain}`}, 0))`
+      )
+
+      const related = await tx
+        .select({
+          domain: supportSendingDomain.domain,
+          teamId: supportSendingDomain.teamId,
+        })
+        .from(supportSendingDomain)
+        .where(eq(supportSendingDomain.registrableDomain, registrableDomain))
+
+      if (findHierarchyConflict(domain, input.teamId, related)) {
+        throw sendingDomainError(
+          409,
+          'Conflict',
+          'DOMAIN_CLAIMED',
+          'This domain, or a parent or subdomain of it, is already registered by another Veerify workspace.'
+        )
+      }
+      if (related.some((claim) => claim.teamId === input.teamId && claim.domain === domain)) {
+        throw sendingDomainError(
+          409,
+          'Conflict',
+          'DOMAIN_ALREADY_REGISTERED',
+          'Your team has already registered this domain.'
+        )
+      }
+
+      const own = await tx
+        .select({ status: supportSendingDomain.status })
+        .from(supportSendingDomain)
+        .where(and(eq(supportSendingDomain.teamId, input.teamId), ne(supportSendingDomain.status, 'deleting')))
+      if (own.length >= MAX_DOMAINS_PER_TEAM) {
+        throw sendingDomainError(
+          409,
+          'Conflict',
+          'DOMAIN_LIMIT_REACHED',
+          `A team can register at most ${MAX_DOMAINS_PER_TEAM} sending domains.`
+        )
+      }
+      if (
+        own.filter((claim) => UNVERIFIED_STATUSES.includes(claim.status as SupportSendingDomainStatus)).length >=
+        MAX_PENDING_PER_TEAM
+      ) {
+        throw sendingDomainError(
+          409,
+          'Conflict',
+          'PENDING_LIMIT_REACHED',
+          `A team can have at most ${MAX_PENDING_PER_TEAM} domains waiting for verification. Verify or delete one first.`
+        )
+      }
+
+      const ownershipToken = randomBytes(24).toString('base64url')
+      const ownershipRecord: SendingDomainDnsRecord = {
+        purpose: 'ownership',
+        type: 'TXT',
+        name: `${OWNERSHIP_RECORD_LABEL}.${domain}`,
+        value: `${OWNERSHIP_RECORD_PREFIX}${ownershipToken}`,
+        status: 'unknown',
+      }
+
+      const [row] = await tx
+        .insert(supportSendingDomain)
+        .values({
+          id: randomUUID(),
+          teamId: input.teamId,
+          domain,
+          registrableDomain,
+          status: 'provisioning',
+          provider: input.provider,
+          providerAccountKey: input.providerAccountKey,
+          ownershipToken,
+          dnsRecords: [ownershipRecord],
+          nextCheckAt: now,
+          expiresAt: new Date(now.getTime() + PENDING_TTL_DAYS * 24 * 60 * 60 * 1000),
+          createdByUserId: input.userId,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning()
+
+      return row
+    })
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw sendingDomainError(
+        409,
+        'Conflict',
+        'DOMAIN_CLAIMED',
+        'This domain, or a parent or subdomain of it, is already registered by another Veerify workspace.'
+      )
+    }
+    if (error && typeof error === 'object' && 'statusCode' in error) throw error
+    log.error('Could not create a sending domain claim', {
+      teamId: input.teamId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
+}
+
+export async function listTeamSendingDomains(teamId: string): Promise<SupportSendingDomainRow[]> {
+  return db
+    .select()
+    .from(supportSendingDomain)
+    .where(eq(supportSendingDomain.teamId, teamId))
+    .orderBy(asc(supportSendingDomain.createdAt), asc(supportSendingDomain.domain))
+}
+
+/** 404 (never 403) across teams, so claim ids stay opaque. */
+export async function getTeamSendingDomain(teamId: string, id: string): Promise<SupportSendingDomainRow> {
+  const [row] = await db
+    .select()
+    .from(supportSendingDomain)
+    .where(and(eq(supportSendingDomain.id, id), eq(supportSendingDomain.teamId, teamId)))
+    .limit(1)
+
+  if (!row) {
+    throw sendingDomainError(404, 'Not Found', 'NOT_FOUND', 'Sending domain not found')
+  }
+  return row
+}
+
+const RECORD_ORDER: Record<SendingDomainDnsRecord['purpose'], number> = {
+  ownership: 0,
+  sending: 1,
+  receiving: 2,
+  recommended: 3,
+}
+
+export function toSendingDomainView(
+  row: SupportSendingDomainRow,
+  current: Pick<SendingProviderIdentity, 'name' | 'accountKey'> = currentSendingProviderIdentity()
+): SendingDomainView {
+  const iso = (value: Date | null) => (value ? value.toISOString() : null)
+  return {
+    id: row.id,
+    domain: row.domain,
+    status: row.status as SupportSendingDomainStatus,
+    providerState: row.providerState === 'active' || row.providerState === 'unverified' ? row.providerState : null,
+    ownershipVerified: row.ownershipVerifiedAt !== null,
+    receivesViaProvider: row.receivesViaProvider,
+    records: [...(row.dnsRecords ?? [])].sort((a, b) => RECORD_ORDER[a.purpose] - RECORD_ORDER[b.purpose]),
+    lastCheckedAt: iso(row.lastCheckedAt),
+    nextCheckAt: iso(row.nextCheckAt),
+    expiresAt: iso(row.expiresAt),
+    verifiedAt: iso(row.verifiedAt),
+    lastErrorCode: row.lastErrorCode,
+    lastError: row.lastError,
+    providerOwnership:
+      row.providerOwnership === 'created' || row.providerOwnership === 'adopted'
+        ? (row.providerOwnership as SendingDomainProviderOwnership)
+        : null,
+    providerMismatch: row.provider !== current.name || row.providerAccountKey !== current.accountKey,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sender authorization
+// ---------------------------------------------------------------------------
+
+export interface ResolveTeamSenderOptions {
+  executor?: Pick<typeof db, 'select'>
+  provider?: { name: string; accountKey: string; authorizesSubdomains: boolean }
+}
+
+function isPlatformAddressOfTeam(executor: Pick<typeof db, 'select'>, teamId: string, address: string) {
+  return executor
+    .select({ id: supportInboxAddress.id })
+    .from(supportInboxAddress)
+    .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
+    .where(
+      and(
+        eq(supportInbox.teamId, teamId),
+        eq(supportInboxAddress.kind, 'platform'),
+        eq(supportInboxAddress.address, address)
+      )
+    )
+    .limit(1)
+}
+
+/**
+ * Team-scoped verdict for using `address` as From (design §4.4, §7.3). A pure
+ * database read: it never calls the provider.
+ *
+ * Authorized only for the team's own `verified` claims that were registered
+ * under the provider currently configured, or the team's own platform
+ * addresses. Subdomains follow `matchVerifiedDomain` when the provider
+ * authorizes them.
+ */
+export async function resolveTeamSenderAuthorization(
+  teamId: string,
+  address: string,
+  opts: ResolveTeamSenderOptions = {}
+): Promise<TeamSenderVerdict> {
+  const executor = opts.executor ?? db
+  const provider = opts.provider ?? currentSendingProviderIdentity()
+  const normalizedAddress = address.trim().toLowerCase()
+  const domain = emailDomain(normalizedAddress)
+  if (!domain) {
+    return { status: 'unknown', reason: `Could not read a domain from "${address}"` }
+  }
+
+  const [platform] = await isPlatformAddressOfTeam(executor, teamId, normalizedAddress)
+  if (platform) return { status: 'authorized', domain: null, platform: true }
+
+  const claims = await executor
+    .select({
+      id: supportSendingDomain.id,
+      domain: supportSendingDomain.domain,
+      status: supportSendingDomain.status,
+      provider: supportSendingDomain.provider,
+      providerAccountKey: supportSendingDomain.providerAccountKey,
+    })
+    .from(supportSendingDomain)
+    .where(eq(supportSendingDomain.teamId, teamId))
+
+  const options = { includeSubdomains: provider.authorizesSubdomains }
+  const matching = (rows: typeof claims) => {
+    const best = matchVerifiedDomain(
+      domain,
+      rows.map((c) => c.domain),
+      options
+    )
+    return best ? (rows.find((c) => c.domain === best) ?? null) : null
+  }
+  const live = claims.filter((c) => c.status !== 'deleting')
+  const sameProvider = (c: (typeof claims)[number]) =>
+    c.provider === provider.name && c.providerAccountKey === provider.accountKey
+
+  const authorized = matching(live.filter((c) => c.status === 'verified' && sameProvider(c)))
+  if (authorized) return { status: 'authorized', domain: { id: authorized.id, domain: authorized.domain } }
+
+  const pending = matching(live.filter((c) => UNVERIFIED_STATUSES.includes(c.status as SupportSendingDomainStatus)))
+  if (pending) {
+    return {
+      status: 'pending',
+      domain: { id: pending.id, domain: pending.domain, status: pending.status as SupportSendingDomainStatus },
+    }
+  }
+
+  const teamDomains = live
+    .filter((c) => c.status === 'verified' && sameProvider(c))
+    .map((c) => c.domain)
+    .sort()
+
+  if (matching(live.filter((c) => c.status === 'suspended'))) {
+    return { status: 'unauthorized', reason: 'suspended', teamDomains }
+  }
+  if (matching(live.filter((c) => c.status === 'verified' && !sameProvider(c)))) {
+    return { status: 'unauthorized', reason: 'provider_mismatch', teamDomains }
+  }
+  return { status: 'unauthorized', reason: 'not_owned', teamDomains }
+}
+
+/**
+ * The inbox-save rule (design §4.5): under `team` policy the From address must
+ * sit on one of the team's own claims (any status except `deleting`; a pending
+ * domain is allowed so teams can set up ahead of verification) or be one of its
+ * platform addresses. A no-op under `legacy` policy.
+ */
+export async function assertSenderAddressAllowedForInbox(teamId: string, address: string): Promise<void> {
+  if (resolveSenderPolicy() !== 'team') return
+
+  const normalizedAddress = address.trim().toLowerCase()
+  const domain = emailDomain(normalizedAddress)
+  const denied = () =>
+    sendingDomainError(
+      422,
+      'Unprocessable Entity',
+      'SENDER_DOMAIN_NOT_OWNED',
+      domain
+        ? `${domain} is not a sending domain of this team. Add and verify it in Support settings first.`
+        : 'Enter a valid From address.'
+    )
+  if (!domain) throw denied()
+
+  const [platform] = await isPlatformAddressOfTeam(db, teamId, normalizedAddress)
+  if (platform) return
+
+  const provider = currentSendingProviderIdentity()
+  const claims = await db
+    .select({ domain: supportSendingDomain.domain })
+    .from(supportSendingDomain)
+    .where(and(eq(supportSendingDomain.teamId, teamId), ne(supportSendingDomain.status, 'deleting')))
+
+  const owned = matchVerifiedDomain(
+    domain,
+    claims.map((c) => c.domain),
+    { includeSubdomains: provider.authorizesSubdomains }
+  )
+  if (!owned) throw denied()
+}
+
+/** `acme.com`, `a.acme.com` -> every suffix at a label boundary, longest first. */
+function domainAndAncestors(domain: string): string[] {
+  const labels = domain.split('.')
+  return labels.map((_, index) => labels.slice(index).join('.')).filter((name) => name.includes('.'))
+}
+
+/**
+ * The receiving-address rule (design §9.3): under `team` policy, an address may
+ * not sit on or under another team's claim (any status), and may not use the
+ * platform domain (those addresses are system-generated). Addresses on
+ * unclaimed domains stay allowed. A no-op under `legacy` policy.
+ */
+export async function assertReceivingAddressAllowed(teamId: string, address: string): Promise<void> {
+  if (resolveSenderPolicy() !== 'team') return
+
+  const domain = emailDomain(address.trim().toLowerCase())
+  if (!domain) return
+
+  const platformDomain = domainFromEnvAddress(envValue('SUPPORT_PLATFORM_MAIL_DOMAIN'))
+  if (platformDomain && isSameOrSubdomain(domain, platformDomain)) {
+    throw sendingDomainError(
+      422,
+      'Unprocessable Entity',
+      'ADDRESS_DOMAIN_RESERVED',
+      'Addresses on the platform mail domain are generated by Veerify and cannot be added by hand.'
+    )
+  }
+
+  const [other] = await db
+    .select({ id: supportSendingDomain.id })
+    .from(supportSendingDomain)
+    .where(
+      and(inArray(supportSendingDomain.domain, domainAndAncestors(domain)), ne(supportSendingDomain.teamId, teamId))
+    )
+    .limit(1)
+
+  if (other) {
+    throw sendingDomainError(
+      409,
+      'Conflict',
+      'ADDRESS_DOMAIN_CLAIMED',
+      'This domain is registered by another Veerify workspace, so it cannot receive mail for this inbox.'
+    )
+  }
+}
