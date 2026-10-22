@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
+import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import { contact, conversation, supportInbox, supportInboxMember } from '../../server/database/schema/support'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
@@ -28,6 +29,7 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
   request,
 }) => {
   const { teamId, userId } = await activeTeamAndUser(request)
+  await ensureVerifiedSendingDomain(teamId)
   const suffix = randomUUID().slice(0, 8)
   const inboxId = `shortcut-e2e-inbox-${suffix}`
   const membershipId = `shortcut-e2e-member-${suffix}`

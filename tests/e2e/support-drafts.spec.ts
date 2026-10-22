@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
+import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import { contact, conversation, supportInbox, supportInboxMember } from '../../server/database/schema/support'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
@@ -26,6 +27,7 @@ async function activeTeamAndUser(request: Parameters<typeof signInAndGetSessionC
 test.describe.serial('support local drafts', () => {
   test('reply and note drafts coexist and restore the last edited composer mode', async ({ page, request }) => {
     const { teamId, userId } = await activeTeamAndUser(request)
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `draft-e2e-inbox-${suffix}`
     const membershipId = `draft-e2e-member-${suffix}`
@@ -120,6 +122,7 @@ test.describe.serial('support local drafts', () => {
 
   test('successful send clears only the matching draft and updates the row indicator', async ({ page, request }) => {
     const { teamId, userId } = await activeTeamAndUser(request)
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `draft-send-e2e-inbox-${suffix}`
     const membershipId = `draft-send-e2e-member-${suffix}`
@@ -216,6 +219,7 @@ test.describe.serial('support local drafts', () => {
     request,
   }) => {
     const { teamId, userId } = await activeTeamAndUser(request)
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `draft-stale-e2e-inbox-${suffix}`
     const membershipId = `draft-stale-e2e-member-${suffix}`
@@ -321,6 +325,7 @@ test.describe.serial('support local drafts', () => {
 
   test('failed send keeps the draft and row indicator', async ({ page, request }) => {
     const { teamId, userId } = await activeTeamAndUser(request)
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `draft-fail-e2e-inbox-${suffix}`
     const membershipId = `draft-fail-e2e-member-${suffix}`

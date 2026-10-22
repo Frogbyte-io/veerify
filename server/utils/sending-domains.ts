@@ -33,6 +33,7 @@ import {
   type TeamSenderVerdict,
 } from '~/lib/support-sending-domains'
 import { emailDomain, matchVerifiedDomain } from '~/server/services/support-channels/types'
+import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { isUniqueViolation } from './support-errors'
 import { createErrorResponse } from './response'
 import { createLogger } from './logger'
@@ -142,8 +143,15 @@ export function reservedSendingDomains(): string[] {
  * the identity they were registered under, so a switch shows as a mismatch.
  */
 export function currentSendingProviderIdentity(): SendingProviderIdentity {
-  if (envValue('SUPPORT_SENDING_DOMAIN_PROVIDER').toLowerCase() === 'fake' && process.env.NODE_ENV !== 'production') {
-    return { name: 'fake', accountKey: '', authorizesSubdomains: true }
+  // Claims store the provider object's name and account key, so authorization
+  // must compare against the same object, not a separately derived identity.
+  const provider = getSendingDomainProvider()
+  if (provider) {
+    return {
+      name: provider.name,
+      accountKey: provider.accountKey,
+      authorizesSubdomains: provider.capabilities.authorizesSubdomains,
+    }
   }
   const name = (envValue('SUPPORT_CHANNEL_PROVIDER') || 'postmark').toLowerCase()
   return {
@@ -565,7 +573,9 @@ function domainAndAncestors(domain: string): string[] {
  * capture that mail. Mailgun and Frogmail route by envelope recipient.
  */
 export function providerRoutesInboundByHeader(): boolean {
-  return currentSendingProviderIdentity().name === 'postmark'
+  // Inbound routing depends on the channel driver, not the sending-domain
+  // provider (which may be the fake one in development).
+  return (envValue('SUPPORT_CHANNEL_PROVIDER') || 'postmark').toLowerCase() === 'postmark'
 }
 
 /**

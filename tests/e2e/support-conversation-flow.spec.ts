@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
+import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import { contact, conversation, supportInbox } from '../../server/database/schema/support'
 import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
@@ -36,6 +37,7 @@ test.describe.serial('support conversation flow', () => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie, '/support')
     const teamId = await activeTeamId(request, sessionCookie)
+    await ensureVerifiedSendingDomain(teamId)
 
     const suffix = randomUUID().slice(0, 8)
     const adminCredentials = { email: `support-flow-admin-${suffix}@example.com`, password: TEST_PASSWORD }

@@ -850,7 +850,7 @@ test.describe('support sending domains', () => {
           createdAt: new Date().toISOString(),
           ...extra,
         })
-        let messages = [blocked({ lastError: 'SENDER_DOMAIN_NOT_AUTHORIZED' })]
+        let messages = [blocked({ deliveryError: 'SENDER_DOMAIN_NOT_AUTHORIZED', senderBlocked: true })]
         let retries = 0
         await page.route(`**/api/support/conversations/${conversationId}/messages`, (route) =>
           route.request().method() === 'GET'
@@ -888,7 +888,7 @@ test.describe('support sending domains', () => {
         expect(dialogs).toBe(0)
 
         // retryable:false hides Retry, and a plain failure keeps the generic label.
-        messages = [blocked({ lastError: null, retryable: false })]
+        messages = [blocked({ deliveryError: null, senderBlocked: false, retryable: false })]
         await page.reload({ waitUntil: 'domcontentloaded' })
         await expect(page.getByTestId('support-message-delivery-failed')).toContainText('Failed to send', {
           timeout: 30_000,

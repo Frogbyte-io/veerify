@@ -326,6 +326,7 @@ describe('H2: receiving addresses on a provider that routes by header (Postmark)
     vi.stubEnv('SUPPORT_CHANNEL_PROVIDER', 'postmark')
     vi.stubEnv('SUPPORT_POSTMARK_ACCOUNT_KEY', 'pm')
     vi.stubEnv('SUPPORT_SENDING_DOMAINS_ENABLED', 'true')
+    provider.current = { name: 'postmark', accountKey: 'pm', capabilities: { authorizesSubdomains: false } }
   })
 
   it('refuses an unclaimed domain with 422 ADDRESS_DOMAIN_UNVERIFIED', async () => {
@@ -365,6 +366,7 @@ describe('H2: receiving addresses on a provider that routes by header (Postmark)
   it('keeps unclaimed domains allowed on Mailgun/Frogmail (envelope routing)', async () => {
     vi.stubEnv('SUPPORT_CHANNEL_PROVIDER', 'mailgun')
     vi.stubEnv('SUPPORT_MAILGUN_ACCOUNT_KEY', 'acct')
+    provider.current = { name: 'mailgun', accountKey: 'acct', capabilities: { authorizesSubdomains: true } }
     await expect(
       sendingDomains.assertReceivingAddressAllowed(teamB.teamId, `support@${unclaimed}`)
     ).resolves.toBeUndefined()

@@ -184,15 +184,13 @@ export default {
       return this.message.bodyHtml || null
     },
 
-    /** The delivery row's last error, under whichever name the messages API exposes it. */
-    deliveryLastError() {
-      const message = this.message
-      return message.lastError ?? message.deliveryLastError ?? message.delivery?.lastError ?? null
-    },
-
     /** The outbox refused to send because the From address is not authorized for the team. */
     isSenderBlocked() {
-      return this.senderRetryBlocked || this.deliveryLastError === SENDER_DOMAIN_NOT_AUTHORIZED
+      return (
+        this.senderRetryBlocked ||
+        this.message.senderBlocked === true ||
+        this.message.deliveryError === SENDER_DOMAIN_NOT_AUTHORIZED
+      )
     },
 
     messageBody() {

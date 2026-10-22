@@ -1276,7 +1276,7 @@
               This replaces "{{ platformAddress }}" with a new address. The old address stops working immediately, so
               any forwarding rule that still points at it will lose mail until you update it.
               <template v-if="selectedInbox?.emailAddress === platformAddress">
-                This inbox also sends from it, so you will need to choose a new From address afterwards.
+                This inbox also sends from it, so its From address moves to the new address.
               </template>
             </DialogDescription>
           </DialogHeader>
