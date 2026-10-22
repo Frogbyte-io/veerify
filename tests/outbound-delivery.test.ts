@@ -5,13 +5,23 @@ import type { OutboundClaim } from '../server/utils/outbound-delivery'
 // the final sender check consults them, so they are mocked.
 const sendingDomains = vi.hoisted(() => ({
   resolveSenderPolicy: vi.fn(() => 'legacy' as 'legacy' | 'team'),
+  resolveEffectiveSenderPolicy: vi.fn(async (): Promise<'legacy' | 'team'> => 'legacy'),
+  isDomainClaimedByOtherTeam: vi.fn(async () => false),
   resolveTeamSenderAuthorization: vi.fn(),
 }))
+sendingDomains.resolveEffectiveSenderPolicy.mockImplementation(async () => sendingDomains.resolveSenderPolicy())
 vi.mock('~/server/utils/sending-domains', () => sendingDomains)
 vi.mock('~/server/services/sending-domains', () => ({ getSendingDomainProvider: vi.fn(() => null) }))
+const metrics = vi.hoisted(() => ({ recordSupportMetric: vi.fn() }))
+vi.mock('~/server/utils/support-observability', () => metrics)
 
-const { computeNextAttemptAt, processOutboundDelivery, runOutboundDeliveryWorker, sanitizeDeliveryError } =
-  await import('../server/utils/outbound-delivery')
+const {
+  computeNextAttemptAt,
+  isProviderSenderRejection,
+  processOutboundDelivery,
+  runOutboundDeliveryWorker,
+  sanitizeDeliveryError,
+} = await import('../server/utils/outbound-delivery')
 
 describe('sanitizeDeliveryError', () => {
   it('extracts the message from an Error', () => {
@@ -242,6 +252,85 @@ describe('processOutboundDelivery', () => {
       expect(result).toEqual({ outcome: 'sent' })
       expect(authorizeSender).toHaveBeenCalledWith(expect.objectContaining({ id: 'delivery-1' }))
       expect(sendEmail).toHaveBeenCalledTimes(1)
+    })
+
+    it('records the outbox block metric when the final check refuses', async () => {
+      metrics.recordSupportMetric.mockClear()
+      await processOutboundDelivery(withFrom(), {
+        sendEmail: vi.fn(),
+        getObject: vi.fn(),
+        onSent: vi.fn(),
+        onFailed: vi.fn().mockResolvedValue(undefined),
+        authorizeSender: vi.fn().mockResolvedValue(false),
+      })
+
+      expect(metrics.recordSupportMetric).toHaveBeenCalledWith('support.sending_domain.blocked', { reason: 'outbox' })
+    })
+
+    describe('provider sender rejection', () => {
+      it.each([
+        ['an SMTP 553 reply', { accepted: false, response: 'Message failed: 553 5.7.1 Sender address rejected' }],
+        ['a sender_not_authorized code', { accepted: false, response: '{"code":"sender_not_authorized"}' }],
+      ])('suspends the claim and fails terminally on %s', async (_label, outcome) => {
+        const onFailed = vi.fn().mockResolvedValue(undefined)
+        const onSenderRejected = vi.fn().mockResolvedValue(undefined)
+
+        const result = await processOutboundDelivery(withFrom(), {
+          sendEmail: vi.fn().mockResolvedValue(outcome),
+          getObject: vi.fn(),
+          onSent: vi.fn(),
+          onFailed,
+          authorizeSender: vi.fn().mockResolvedValue(true),
+          onSenderRejected,
+        })
+
+        expect(result).toEqual({ outcome: 'failed', error: 'SENDER_DOMAIN_NOT_AUTHORIZED' })
+        expect(onSenderRejected).toHaveBeenCalledWith(expect.objectContaining({ id: 'delivery-1' }), expect.any(String))
+        expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', 'SENDER_DOMAIN_NOT_AUTHORIZED', 1, {
+          terminal: true,
+        })
+      })
+
+      it('also recognizes a thrown rejection, and still fails when suspending throws', async () => {
+        const onFailed = vi.fn().mockResolvedValue(undefined)
+
+        const result = await processOutboundDelivery(withFrom(), {
+          sendEmail: vi.fn().mockRejectedValue(new Error('553 sender not allowed')),
+          getObject: vi.fn(),
+          onSent: vi.fn(),
+          onFailed,
+          authorizeSender: vi.fn().mockResolvedValue(true),
+          onSenderRejected: vi.fn().mockRejectedValue(new Error('db down')),
+        })
+
+        expect(result).toEqual({ outcome: 'failed', error: 'SENDER_DOMAIN_NOT_AUTHORIZED' })
+        expect(onFailed).toHaveBeenCalledTimes(1)
+      })
+
+      it('leaves other failures retryable and does not suspend anything', async () => {
+        const onFailed = vi.fn().mockResolvedValue(undefined)
+        const onSenderRejected = vi.fn()
+
+        await processOutboundDelivery(withFrom(), {
+          sendEmail: vi.fn().mockResolvedValue({ accepted: false, response: '451 try again later' }),
+          getObject: vi.fn(),
+          onSent: vi.fn(),
+          onFailed,
+          authorizeSender: vi.fn().mockResolvedValue(true),
+          onSenderRejected,
+        })
+
+        expect(onSenderRejected).not.toHaveBeenCalled()
+        expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', '451 try again later', 1)
+      })
+
+      it('matches 553 and sender_not_authorized, not digits inside other numbers', () => {
+        expect(isProviderSenderRejection('553 5.7.1 nope')).toBe(true)
+        expect(isProviderSenderRejection(new Error('Message failed: 553-5.7.1 nope'))).toBe(true)
+        expect(isProviderSenderRejection('Sender_Not_Authorized')).toBe(true)
+        expect(isProviderSenderRejection('queued as 1553.22 id 5530')).toBe(false)
+        expect(isProviderSenderRejection('421 busy')).toBe(false)
+      })
     })
 
     it('treats a throwing check as a retryable failure, not as authorization', async () => {

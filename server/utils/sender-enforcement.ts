@@ -1,7 +1,7 @@
 import type { TeamSenderVerdict } from '~/lib/support-sending-domains'
 import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { recordSupportMetric } from '~/server/utils/support-observability'
-import { resolveSenderPolicy, resolveTeamSenderAuthorization } from '~/server/utils/sending-domains'
+import { resolveEffectiveSenderPolicy, resolveTeamSenderAuthorization } from '~/server/utils/sending-domains'
 
 /**
  * Shared enforcement helper for the `team` sender policy (design §4.4-4.5).
@@ -20,7 +20,7 @@ export async function evaluateTeamSender(
   address: string,
   opts: Partial<Pick<AuthorizationOptions, 'executor'>> = {}
 ): Promise<TeamSenderVerdict | null> {
-  if (resolveSenderPolicy() !== 'team') return null
+  if ((await resolveEffectiveSenderPolicy()) !== 'team') return null
 
   const sendingProvider = getSendingDomainProvider()
   return resolveTeamSenderAuthorization(teamId, address, {

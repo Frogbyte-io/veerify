@@ -6662,7 +6662,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Get a conversation's message thread",
-      "description": "Returns the most recent window of messages in ascending (oldest-first) order, ready to render as a chat thread. `hasMore: true` means older history exists above the returned window - this endpoint always anchors to the newest messages, never to an arbitrary page. All kinds (`incoming`, `outgoing`, `note`, `activity`) are included, private notes too, since this is the agent-facing thread pane.\n",
+      "description": "Returns the most recent window of messages in ascending (oldest-first) order, ready to render as a chat thread. `hasMore: true` means older history exists above the returned window - this endpoint always anchors to the newest messages, never to an arbitrary page. All kinds (`incoming`, `outgoing`, `note`, `activity`) are included, private notes too, since this is the agent-facing thread pane. Outgoing messages carry delivery detail for the retry UI: `deliveryError` (short sanitized text or null), `senderBlocked` (true when the failure is `SENDER_DOMAIN_NOT_AUTHORIZED`: the message was never submitted to the provider) and `retryable` (true only for a failed reply that has an email outbox entry; CSAT survey deliveries are never retryable).\n",
       "operationId": "listSupportConversationMessages",
       "parameters": [
         {
@@ -6739,7 +6739,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Retry a failed outgoing reply",
-      "description": "Only a message whose `deliveryStatus` is `failed` can be retried - an agent-initiated retry is a deliberate decision to try again from scratch (`resetOutboundDeliveryForRetry`), not one more of the outbox worker's own automatic attempts. Triggers a worker pass immediately rather than waiting for the next unrelated reply to piggyback on.\n",
+      "description": "Only a message whose `deliveryStatus` is `failed` can be retried - an agent-initiated retry is a deliberate decision to try again from scratch (`resetOutboundDeliveryForRetry`), not one more of the outbox worker's own automatic attempts. Triggers a worker pass immediately rather than waiting for the next unrelated reply to piggyback on. The sender is checked first: when the From stored on the delivery is still not authorized for the team, the retry is refused with 409 `SENDER_NOT_VERIFIED` and nothing is reset. Deliveries that are not replies (`kind: csat` surveys) have no retry; the thread API marks them `retryable: false` and this endpoint answers 404. `previousSubmissionAttempted` is false when the previous failure was the sender block (`SENDER_DOMAIN_NOT_AUTHORIZED`): nothing was ever submitted to the provider, so there is no duplicate risk.\n",
       "operationId": "retrySupportConversationMessage",
       "parameters": [
         {
@@ -6772,7 +6772,7 @@ export const openapiPaths = {
           "or its outbox row not found": null
         },
         "409": {
-          "description": "The message is not in a failed delivery state"
+          "description": "The message is not in a failed delivery state, or its sender is still not verified (SENDER_NOT_VERIFIED)"
         }
       }
     }
@@ -7183,7 +7183,7 @@ export const openapiPaths = {
           "description": "Inbox updated"
         },
         "400": {
-          "description": "projectId or defaultAssigneeUserId does not belong to this team"
+          "description": "projectId or defaultAssigneeUserId does not belong to this team, or fromName contains @, <, >, a double quote or a control character"
         },
         "403": {
           "description": "Not a member of this inbox or a team admin"
@@ -7195,7 +7195,7 @@ export const openapiPaths = {
           "description": "Another inbox already uses this slug or email address"
         },
         "422": {
-          "description": "Team sender policy: the email address is not on one of the team's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)"
+          "description": "The email address is on another team's sending domain, or under the team sender policy not on one of this team's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)"
         }
       }
     }
@@ -7234,7 +7234,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Add a receiving address to an inbox",
-      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction (not specified in design.md - a self-consistent reading of \"primary\" implying one). Under the team sender policy, an address on a domain (or subdomain of one) claimed by another team is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the address is on one of the team's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort.\n",
+      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction (not specified in design.md - a self-consistent reading of \"primary\" implying one). Under the team sender policy, an address on a domain (or subdomain of one) claimed by another team is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the deployment's provider routes inbound mail by the To/Cc header (Postmark), an address is only accepted on one of the team's own verified sending domains, because a header address on someone else's domain would capture that mail. Mailgun and Frogmail route by envelope recipient, so unclaimed domains stay allowed there. When the address is on one of the team's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort.\n",
       "operationId": "createSupportInboxAddress",
       "parameters": [
         {
@@ -7263,7 +7263,7 @@ export const openapiPaths = {
           "description": "This address is already in use, or its domain is claimed by another team (ADDRESS_DOMAIN_CLAIMED)"
         },
         "422": {
-          "description": "The address is on the platform mail domain and was not system-generated"
+          "description": "The address is on the platform mail domain (ADDRESS_DOMAIN_RESERVED), or the provider routes inbound mail by header (Postmark) and the address domain is not on this team's verified sending domain (ADDRESS_DOMAIN_UNVERIFIED)"
         }
       }
     }
@@ -7475,7 +7475,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Whether this inbox's From address is authorized to send with the configured provider",
-      "description": "`supportInbox.emailAddress` is free text - nothing stops a team from setting a From the provider will reject at send time. This surfaces that in settings instead. `authorization` is null when no address is set yet (there is nothing to check). `policy` is the deployment's sender policy. Under `team`, the verdict is scoped to this inbox's team: `authorized`, `pending` (domain claimed but not yet verified), `unauthorized` (with a `reason` and only this team's own verified domains in `teamDomains`) or `unknown`. Under `legacy`, it is the provider's verdict for the address. Provider-wide domain lists are never returned - the provider account is shared by every team. `unknown` is not a failure and must not be rendered as \"not authorized\".\n",
+      "description": "`supportInbox.emailAddress` is free text - nothing stops a team from setting a From the provider will reject at send time. This surfaces that in settings instead. `authorization` is null when no address is set yet (there is nothing to check). `policy` is the deployment's sender policy. Under `team`, the verdict is scoped to this inbox's team: `authorized`, `pending` (domain claimed but not yet verified), `unauthorized` (with a `reason` and only this team's own verified domains in `teamDomains`) or `unknown`. Under `legacy`, it is the provider's verdict for the address. Provider-wide domain lists are never returned - the provider account is shared by every team. A From on another team's domain is always `unauthorized` / `not_owned` under every policy, verified or not, and the provider is not asked. `unknown` is not a failure and must not be rendered as \"not authorized\".\n",
       "operationId": "getSupportInboxSendingStatus",
       "parameters": [
         {

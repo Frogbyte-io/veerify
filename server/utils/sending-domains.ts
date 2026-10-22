@@ -76,6 +76,36 @@ export function resolveSenderPolicy(): SenderPolicy {
   return envValue('SUPPORT_SENDER_POLICY').toLowerCase() === 'team' ? 'team' : 'legacy'
 }
 
+const CLAIMS_EXIST_TTL_MS = 30_000
+let claimsExistCache: { value: boolean; at: number } | null = null
+
+/** Drop the cached "any claim exists" answer (tests only; claim creation refreshes it itself). */
+export function resetSenderPolicyCache(): void {
+  claimsExistCache = null
+}
+
+/** True when at least one `support_sending_domain` row exists. Cached per process for 30 seconds. */
+export async function anySendingDomainClaimsExist(): Promise<boolean> {
+  const now = Date.now()
+  if (claimsExistCache && now - claimsExistCache.at < CLAIMS_EXIST_TTL_MS) return claimsExistCache.value
+  const [row] = await db.select({ id: supportSendingDomain.id }).from(supportSendingDomain).limit(1)
+  claimsExistCache = { value: Boolean(row), at: now }
+  return claimsExistCache.value
+}
+
+/**
+ * The policy enforcement points must use. Like `resolveSenderPolicy()`, but
+ * also `team` whenever any claim exists, even with the flag off or `legacy`
+ * set: rolling management back must not reopen cross-team sending in a shared
+ * provider project. A database read (cached briefly), hence async; the
+ * synchronous `resolveSenderPolicy()` stays for callers that only need the
+ * configured policy.
+ */
+export async function resolveEffectiveSenderPolicy(): Promise<SenderPolicy> {
+  if (resolveSenderPolicy() === 'team') return 'team'
+  return (await anySendingDomainClaimsExist()) ? 'team' : 'legacy'
+}
+
 /** The domain part of `Name <a@b.example>`, `a@b.example`, or a bare host. */
 function domainFromEnvAddress(value: string): string | null {
   const match = value.match(/<([^>]+)>/)
@@ -175,7 +205,12 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
   }
 
   try {
-    return await db.transaction(async (tx) => {
+    const created = await db.transaction(async (tx) => {
+      // Per-team lock first (then per-domain), so the per-team limits below
+      // cannot be raced by concurrent claims for different domains.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain_team:${input.teamId}`}, 0))`
+      )
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain:${registrableDomain}`}, 0))`
       )
@@ -260,6 +295,9 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
 
       return row
     })
+    // This process now knows a claim exists; other processes learn within the cache TTL.
+    claimsExistCache = { value: true, at: Date.now() }
+    return created
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw sendingDomainError(
@@ -315,6 +353,7 @@ export function toSendingDomainView(
   return {
     id: row.id,
     domain: row.domain,
+    registrableDomain: row.registrableDomain,
     status: row.status as SupportSendingDomainStatus,
     providerState: row.providerState === 'active' || row.providerState === 'unverified' ? row.providerState : null,
     ownershipVerified: row.ownershipVerifiedAt !== null,
@@ -359,6 +398,27 @@ function isPlatformAddressOfTeam(executor: Pick<typeof db, 'select'>, teamId: st
 }
 
 /**
+ * Whether `domain`, or a parent of it at a label boundary, sits on another
+ * team's claim in any status (including `deleting`). Applies under every
+ * policy: a shared provider project would make such a From usable by the
+ * wrong team.
+ */
+export async function isDomainClaimedByOtherTeam(
+  teamId: string,
+  domain: string,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<boolean> {
+  const names = domainAndAncestors(domain.trim().toLowerCase())
+  if (names.length === 0) return false
+  const [other] = await executor
+    .select({ id: supportSendingDomain.id })
+    .from(supportSendingDomain)
+    .where(and(inArray(supportSendingDomain.domain, names), ne(supportSendingDomain.teamId, teamId)))
+    .limit(1)
+  return Boolean(other)
+}
+
+/**
  * Team-scoped verdict for using `address` as From (design §4.4, §7.3). A pure
  * database read: it never calls the provider.
  *
@@ -394,6 +454,19 @@ export async function resolveTeamSenderAuthorization(
     .from(supportSendingDomain)
     .where(eq(supportSendingDomain.teamId, teamId))
 
+  const sameProvider = (c: (typeof claims)[number]) =>
+    c.provider === provider.name && c.providerAccountKey === provider.accountKey
+
+  // Another team's claim on this domain or a parent always wins, whatever the
+  // flags or this team's own rows say.
+  if (await isDomainClaimedByOtherTeam(teamId, domain, executor)) {
+    const own = claims
+      .filter((c) => c.status === 'verified' && sameProvider(c))
+      .map((c) => c.domain)
+      .sort()
+    return { status: 'unauthorized', reason: 'not_owned', teamDomains: own }
+  }
+
   const options = { includeSubdomains: provider.authorizesSubdomains }
   const matching = (rows: typeof claims) => {
     const best = matchVerifiedDomain(
@@ -404,8 +477,6 @@ export async function resolveTeamSenderAuthorization(
     return best ? (rows.find((c) => c.domain === best) ?? null) : null
   }
   const live = claims.filter((c) => c.status !== 'deleting')
-  const sameProvider = (c: (typeof claims)[number]) =>
-    c.provider === provider.name && c.providerAccountKey === provider.accountKey
 
   const authorized = matching(live.filter((c) => c.status === 'verified' && sameProvider(c)))
   if (authorized) return { status: 'authorized', domain: { id: authorized.id, domain: authorized.domain } }
@@ -436,13 +507,24 @@ export async function resolveTeamSenderAuthorization(
  * The inbox-save rule (design §4.5): under `team` policy the From address must
  * sit on one of the team's own claims (any status except `deleting`; a pending
  * domain is allowed so teams can set up ahead of verification) or be one of its
- * platform addresses. A no-op under `legacy` policy.
+ * platform addresses. Under `legacy` policy only another team's claim is refused.
  */
 export async function assertSenderAddressAllowedForInbox(teamId: string, address: string): Promise<void> {
-  if (resolveSenderPolicy() !== 'team') return
-
   const normalizedAddress = address.trim().toLowerCase()
   const domain = emailDomain(normalizedAddress)
+  if ((await resolveEffectiveSenderPolicy()) !== 'team') {
+    // Legacy keeps free-text From addresses, except on another team's claim
+    // (uncached read: a rare write, and a stale cache must not let it through).
+    if (domain && (await isDomainClaimedByOtherTeam(teamId, domain))) {
+      throw sendingDomainError(
+        422,
+        'Unprocessable Entity',
+        'SENDER_DOMAIN_NOT_OWNED',
+        `${domain} is not a sending domain of this team.`
+      )
+    }
+    return
+  }
   const denied = () =>
     sendingDomainError(
       422,
@@ -478,13 +560,24 @@ function domainAndAncestors(domain: string): string[] {
 }
 
 /**
+ * Postmark routes inbound mail by the To/Cc header (its payload has no
+ * envelope recipient), so a header address on someone else's domain would
+ * capture that mail. Mailgun and Frogmail route by envelope recipient.
+ */
+export function providerRoutesInboundByHeader(): boolean {
+  return currentSendingProviderIdentity().name === 'postmark'
+}
+
+/**
  * The receiving-address rule (design §9.3): under `team` policy, an address may
  * not sit on or under another team's claim (any status), and may not use the
- * platform domain (those addresses are system-generated). Addresses on
- * unclaimed domains stay allowed. A no-op under `legacy` policy.
+ * platform domain (those addresses are system-generated). On a provider that
+ * routes by header (Postmark) the domain must also be on the team's own
+ * verified claim (`422 ADDRESS_DOMAIN_UNVERIFIED`); elsewhere unclaimed
+ * domains stay allowed. A no-op under `legacy` policy.
  */
 export async function assertReceivingAddressAllowed(teamId: string, address: string): Promise<void> {
-  if (resolveSenderPolicy() !== 'team') return
+  if ((await resolveEffectiveSenderPolicy()) !== 'team') return
 
   const domain = emailDomain(address.trim().toLowerCase())
   if (!domain) return
@@ -514,5 +607,28 @@ export async function assertReceivingAddressAllowed(teamId: string, address: str
       'ADDRESS_DOMAIN_CLAIMED',
       'This domain is registered by another Veerify workspace, so it cannot receive mail for this inbox.'
     )
+  }
+
+  if (providerRoutesInboundByHeader()) {
+    const provider = currentSendingProviderIdentity()
+    const own = await db
+      .select({ domain: supportSendingDomain.domain })
+      .from(supportSendingDomain)
+      .where(
+        and(
+          eq(supportSendingDomain.teamId, teamId),
+          eq(supportSendingDomain.status, 'verified'),
+          eq(supportSendingDomain.provider, provider.name),
+          eq(supportSendingDomain.providerAccountKey, provider.accountKey)
+        )
+      )
+    if (!own.some((claim) => isSameOrSubdomain(domain, claim.domain))) {
+      throw sendingDomainError(
+        422,
+        'Unprocessable Entity',
+        'ADDRESS_DOMAIN_UNVERIFIED',
+        'With this mail provider, a receiving address must be on one of your verified sending domains. Verify the domain in Support settings, or forward to the inbox platform address instead.'
+      )
+    }
   }
 }

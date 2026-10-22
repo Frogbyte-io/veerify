@@ -334,7 +334,7 @@ describe('inbound routes', () => {
     expect(url).toBe('https://frogmail.test/v3/routes')
     expect(init.method).toBe('POST')
     const form = new URLSearchParams(init.body as string)
-    expect(form.get('expression')).toBe('match_recipient("help\\-desk\\_1\\.team@acme\\.com")')
+    expect(form.get('expression')).toBe('match_recipient("^help\\-desk\\_1\\.team@acme\\.com$")')
     expect(form.getAll('action')).toEqual(['forward("https://veerify.test/api/support/inbound/mailgun")', 'stop()'])
     expect(form.get('priority')).toBe('10')
     expect(form.get('description')).toBe('veerify:inbox1:addr1')

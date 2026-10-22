@@ -387,9 +387,14 @@ When a claim moves to `suspended` or `deleting`, nothing is changed on inbox row
 Under `team` policy, `POST /api/support/inboxes/[id]/addresses` refuses an address in these cases:
 
 - its domain sits on or under another team's claim (`409 ADDRESS_DOMAIN_CLAIMED`), or
-- its domain is the platform domain and the address was not system-generated (`422`).
+- its domain is the platform domain, or under it, and the address was not system-generated (`422 ADDRESS_DOMAIN_RESERVED`). This holds when the operator sets `SUPPORT_PLATFORM_MAIL_DOMAIN` equal to `APP_DOMAIN`: platform addresses still work, and customers can neither claim the domain or a subdomain of it nor enter an address on it by hand, or
+- the provider routes inbound mail by the To/Cc header and the domain is not on the team's own verified claim (`422 ADDRESS_DOMAIN_UNVERIFIED`).
 
-Addresses on unclaimed domains are still allowed. Forwarding depends on them, and they cannot capture mail that does not reach Veerify by envelope.
+Postmark routes by header: its inbound payload has no envelope recipient, so `envelopeRecipients` is empty and `resolveInboxByAddress` falls back to To/Cc. A team could otherwise add `support@other-team.com` and capture that team's mail. On such a provider the address must therefore be on (or under) one of the team's own `verified` claims of the current provider. Forwarding to the platform address needs no custom address, so it is unaffected.
+
+On Mailgun and Frogmail, which route by envelope recipient, addresses on unclaimed domains are still allowed. Forwarding depends on them, and they cannot capture mail that does not reach Veerify by envelope.
+
+Under any policy (including `legacy` with the flag off), a From address on or under another team's claim in any status is refused at the inbox PUT, reply, auto-reply, CSAT and the outbox final check. `resolveEffectiveSenderPolicy()` also returns `team` whenever at least one claim row exists, so rolling management back cannot reopen cross-team sending. It reads the table once and caches the answer for 30 seconds per process; claim creation in the same process refreshes it. The synchronous `resolveSenderPolicy()` keeps returning the configured policy only.
 
 ## 10. UI (WP5, `/support/settings`, Options API only)
 

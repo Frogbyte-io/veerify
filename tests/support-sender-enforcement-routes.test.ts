@@ -19,11 +19,14 @@ const state = vi.hoisted(() => ({
 
 const sendingDomains = vi.hoisted(() => ({
   resolveSenderPolicy: vi.fn<() => 'legacy' | 'team'>(() => 'legacy'),
+  resolveEffectiveSenderPolicy: vi.fn(async (): Promise<'legacy' | 'team'> => 'legacy'),
+  isDomainClaimedByOtherTeam: vi.fn(async () => false),
   isSendingDomainsEnabled: vi.fn(() => false),
   resolveTeamSenderAuthorization: vi.fn(),
   assertSenderAddressAllowedForInbox: vi.fn(async () => undefined),
   assertReceivingAddressAllowed: vi.fn(async () => undefined),
 }))
+sendingDomains.resolveEffectiveSenderPolicy.mockImplementation(async () => sendingDomains.resolveSenderPolicy())
 const provider = vi.hoisted(() => ({ current: null as null | Record<string, unknown> }))
 const platform = vi.hoisted(() => ({
   findPlatformAddress: vi.fn(),
@@ -181,13 +184,33 @@ describe('sending-status', () => {
 })
 
 describe('inbox update', () => {
-  it('does not run the ownership check under legacy policy', async () => {
+  it.each(['Acme <ceo@acme.com>', 'ceo@acme.com', 'Say "hi"', 'Line\nbreak', 'Tab\there', 'a>b'])(
+    'rejects the sender name %j with a 400 before writing',
+    async (fromName) => {
+      state.body = { fromName }
+      state.queuedRows = [[{ id: 'inbox-1' }]]
+
+      await expect(inboxUpdate(event)).rejects.toMatchObject({ statusCode: 400 })
+
+      expect(state.queuedRows).toHaveLength(1)
+    }
+  )
+
+  it('accepts an ordinary sender name and null', async () => {
+    for (const fromName of ["Acme Support (EU) - O'Neil & Co.", null]) {
+      state.body = { fromName }
+      state.queuedRows = [[{ id: 'inbox-1' }]]
+      await expect(inboxUpdate(event)).resolves.toMatchObject({ success: true })
+    }
+  })
+
+  it('leaves the legacy decision to the ownership helper', async () => {
     state.body = { emailAddress: 'anything@other.com' }
     state.queuedRows = [[{ id: 'inbox-1' }]]
 
     await inboxUpdate(event)
 
-    expect(sendingDomains.assertSenderAddressAllowedForInbox).not.toHaveBeenCalled()
+    expect(sendingDomains.assertSenderAddressAllowedForInbox).toHaveBeenCalledWith('team-1', 'anything@other.com')
   })
 
   it('under team policy refuses an address the team does not own, before writing', async () => {
@@ -235,13 +258,13 @@ describe('receiving address creation', () => {
     expect(state.queuedRows).toHaveLength(1)
   })
 
-  it('under legacy policy applies no receiving rule', async () => {
+  it('leaves the legacy decision to the receiving-address helper', async () => {
     state.body = { address: 'support@teamb.com' }
     state.queuedRows = [[{ id: 'a1', address: 'support@teamb.com' }]]
 
     await expect(addressCreate(event)).resolves.toMatchObject({ success: true })
 
-    expect(sendingDomains.assertReceivingAddressAllowed).not.toHaveBeenCalled()
+    expect(sendingDomains.assertReceivingAddressAllowed).toHaveBeenCalledWith('team-1', 'support@teamb.com')
   })
 })
 

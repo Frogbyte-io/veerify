@@ -184,7 +184,7 @@ export class MailgunSendingDomainProvider implements SendingDomainProvider {
     const form = new URLSearchParams()
     form.append('priority', '10')
     form.append('description', input.description)
-    form.append('expression', `match_recipient("${pattern}")`)
+    form.append('expression', `match_recipient("^${pattern}$")`)
     form.append('action', `forward("${input.forwardUrl.replace(/["\\]/g, '')}")`)
     form.append('action', 'stop()')
 
