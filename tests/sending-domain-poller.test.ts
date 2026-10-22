@@ -652,7 +652,7 @@ describe('removeSendingDomainClaim', () => {
     ['owned_elsewhere', false],
     ['invalid_domain', false],
     ['unknown', false],
-  ] as const)('releases the row with an operator cleanup request on a permanent %s refusal', async (code) => {
+  ] as const)('releases the row with an operator cleanup request on a permanent %s refusal', async (code, _retryable) => {
     const provider = makeProvider({
       remove: vi.fn(async () => {
         throw new SendingDomainProviderError(code, 'refused', false)

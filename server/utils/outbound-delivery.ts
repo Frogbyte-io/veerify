@@ -651,13 +651,9 @@ async function defaultOnSenderRejected(claim: OutboundClaim, reason: string): Pr
   if (!address) return
   const teamId = await resolveDeliveryTeamId(claim.messageId)
   if (!teamId) return
-  // Dynamic import: the poller module is optional on this branch and heavy to load otherwise.
-  const mod = (await import('~/server/utils/sending-domain-poller')) as {
-    suspendClaimForSenderRejection?: (teamId: string, address: string, reason: string) => Promise<void>
-  }
-  if (typeof mod.suspendClaimForSenderRejection === 'function') {
-    await mod.suspendClaimForSenderRejection(teamId, address, reason)
-  }
+  // Dynamic import keeps the poller out of this module's load path.
+  const { suspendClaimForSenderRejection } = await import('~/server/utils/sending-domain-poller')
+  await suspendClaimForSenderRejection(teamId, address, reason)
 }
 
 /**
