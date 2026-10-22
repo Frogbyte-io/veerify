@@ -11,6 +11,12 @@
  *       isPrimary is exclusive: setting it clears the flag on the inbox's
  *       other addresses in the same transaction (not specified in
  *       design.md - a self-consistent reading of "primary" implying one).
+ *       Under the team sender policy, an address on a domain (or subdomain of
+ *       one) claimed by another team is refused, and addresses on the platform
+ *       mail domain cannot be added by hand - use the platform address
+ *       endpoint. When the address is on one of the team's verified sending
+ *       domains that receives mail through the provider, a provider inbound
+ *       route is created best-effort.
  *     operationId: createSupportInboxAddress
  *     parameters:
  *       - in: path
@@ -22,7 +28,8 @@
  *       400: { description: projectId does not belong to this team }
  *       403: { description: Not a member of this inbox or a team admin }
  *       404: { description: Inbox not found }
- *       409: { description: This address is already in use }
+ *       409: { description: "This address is already in use, or its domain is claimed by another team (ADDRESS_DOMAIN_CLAIMED)" }
+ *       422: { description: The address is on the platform mail domain and was not system-generated }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -36,6 +43,8 @@ import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportInboxAddress } from '~/server/database/schema/support'
 import { project } from '~/server/database/schema/feedback'
+import { assertReceivingAddressAllowed, resolveSenderPolicy } from '~/server/utils/sending-domains'
+import { createDirectRouteForAddress } from '~/server/utils/inbound-routes'
 
 const bodySchema = z.object({
   address: z.string().trim().toLowerCase().email().max(320),
@@ -66,13 +75,19 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // Team sender policy (design §9.3). Throws 409 ADDRESS_DOMAIN_CLAIMED / 422.
+  if (resolveSenderPolicy() === 'team') {
+    await assertReceivingAddressAllowed(inbox.teamId, body.address)
+  }
+
+  let created: typeof supportInboxAddress.$inferSelect
   try {
-    return await db.transaction(async (tx) => {
+    created = await db.transaction(async (tx) => {
       if (body.isPrimary) {
         await tx.update(supportInboxAddress).set({ isPrimary: false }).where(eq(supportInboxAddress.inboxId, inboxId))
       }
 
-      const [created] = await tx
+      const [row] = await tx
         .insert(supportInboxAddress)
         .values({
           id: randomUUID(),
@@ -84,7 +99,7 @@ export default defineEventHandler(async (event) => {
         })
         .returning()
 
-      return createSuccessResponse({ address: created })
+      return row
     })
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -96,4 +111,14 @@ export default defineEventHandler(async (event) => {
     }
     throw error
   }
+
+  // Direct receiving (design §9.2): after commit, best-effort, never fails the
+  // request. The response reflects the stored route state.
+  const routeStatus = await createDirectRouteForAddress({ teamId: inbox.teamId, inboxId, address: created }).catch(
+    () => null
+  )
+
+  return createSuccessResponse({
+    address: routeStatus ? { ...created, providerRouteStatus: routeStatus } : created,
+  })
 })

@@ -22,6 +22,7 @@
  *       403: { description: Not a member of this inbox or a team admin }
  *       404: { description: Inbox not found }
  *       409: { description: Another inbox already uses this slug or email address }
+ *       422: { description: "Team sender policy: the email address is not on one of the team's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)" }
  */
 import { z } from 'zod'
 import { and, eq } from 'drizzle-orm'
@@ -35,6 +36,7 @@ import { db } from '~/server/database/drizzle'
 import { supportInbox } from '~/server/database/schema/support'
 import { project } from '~/server/database/schema/feedback'
 import { teamMember } from '~/server/database/schema/auth'
+import { resolveSenderPolicy, assertSenderAddressAllowedForInbox } from '~/server/utils/sending-domains'
 
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
@@ -87,6 +89,19 @@ export default defineEventHandler(async (event) => {
         data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'defaultAssigneeUserId is not a member of this team'),
       })
     }
+  }
+
+  // Team sender policy (design §4.5): the From must sit on one of this team's
+  // own claims or be one of its platform addresses. Throws 422
+  // SENDER_DOMAIN_NOT_OWNED. Clearing the address (null) is always allowed.
+  // Unchanged addresses are not re-checked, so saving other fields never fails
+  // because of a domain that was removed later.
+  if (
+    resolveSenderPolicy() === 'team' &&
+    body.emailAddress &&
+    body.emailAddress.toLowerCase() !== (inbox.emailAddress ?? '').toLowerCase()
+  ) {
+    await assertSenderAddressAllowedForInbox(inbox.teamId, body.emailAddress)
   }
 
   try {

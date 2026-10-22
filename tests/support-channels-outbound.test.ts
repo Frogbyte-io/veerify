@@ -80,6 +80,13 @@ describe('delivery correlation headers', () => {
   })
 })
 
+describe('driver subdomain capability', () => {
+  it('exposes authorizesSubdomains per provider', () => {
+    expect(new MailgunChannelDriver({ apiKey: 'k' } as never).authorizesSubdomains).toBe(true)
+    expect(new PostmarkChannelDriver({ apiToken: 't' }).authorizesSubdomains).toBe(false)
+  })
+})
+
 describe('checkSendingAuthorization - can this inbox send as this address', () => {
   /**
    * The distinction that matters: "not authorized" and "could not check" are
@@ -110,15 +117,14 @@ describe('checkSendingAuthorization - can this inbox send as this address', () =
     expect(await driver.checkSendingAuthorization('support@acme.com')).toEqual({ status: 'authorized' })
   })
 
-  it('reports unauthorized and lists what IS verified, so settings can say what to fix', async () => {
+  it('reports unauthorized without listing other domains from the provider account', async () => {
     const driver = postmarkReturning({
       Domains: [{ Name: 'acme.com', DKIMVerified: true, ReturnPathDomainVerified: true }],
     })
 
-    expect(await driver.checkSendingAuthorization('support@other.com')).toEqual({
-      status: 'unauthorized',
-      verifiedDomains: ['acme.com'],
-    })
+    // The verdict must never carry the provider-wide domain list: the account
+    // is shared by every team, so it would leak other customers' domains.
+    expect(await driver.checkSendingAuthorization('support@other.com')).toEqual({ status: 'unauthorized' })
   })
 
   it('treats an unverified domain as not authorized even though it is listed', async () => {
@@ -208,10 +214,7 @@ describe('sending authorization on subdomains of a verified domain', () => {
   it('matches on a label boundary only', async () => {
     const driver = mailgunWithDomains([{ name: 'acme.com', state: 'active' }])
 
-    expect(await driver.checkSendingAuthorization('support@badacme.com')).toEqual({
-      status: 'unauthorized',
-      verifiedDomains: ['acme.com'],
-    })
+    expect(await driver.checkSendingAuthorization('support@badacme.com')).toEqual({ status: 'unauthorized' })
     expect((await driver.checkSendingAuthorization('support@acme.com.evil.io')).status).toBe('unauthorized')
     expect((await driver.checkSendingAuthorization('support@com')).status).toBe('unauthorized')
   })

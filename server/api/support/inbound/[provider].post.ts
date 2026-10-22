@@ -26,7 +26,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { createError, getHeaders, getRouterParam, readMultipartFormData, readRawBody, setResponseStatus } from 'h3'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { createLogger } from '~/server/utils/logger'
 import { createSuccessResponse } from '~/server/utils/response'
 import { emailDomain, getChannelDriver, type InboundMessage } from '~/server/services/support-channels'
@@ -61,6 +61,7 @@ import {
   shouldSendAutoReply,
 } from '~/server/utils/auto-reply'
 import { enqueueOutboundDelivery, runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
+import { isSenderAllowedOrRecordBlock } from '~/server/utils/sender-enforcement'
 import { reMarkConversationUnreadForIncoming } from '~/server/utils/conversation-read-state'
 import { db } from '~/server/database/drizzle'
 import {
@@ -243,6 +244,17 @@ export default defineEventHandler(async (event) => {
     }
 
     const { inbox, address } = matched
+
+    // Forwarded mail arrives on a platform address that names the inbox but
+    // not the product; the inbox's own custom addresses recover it from the
+    // To/Cc headers (see `resolveInboundProjectId`). Only loaded when needed.
+    const platformSiblingAddresses =
+      address.kind === 'platform'
+        ? await db
+            .select({ address: supportInboxAddress.address, projectId: supportInboxAddress.projectId })
+            .from(supportInboxAddress)
+            .where(and(eq(supportInboxAddress.inboxId, inbox.id), eq(supportInboxAddress.kind, 'custom')))
+        : []
     if (!(await attachInboundEventInbox(claimToken, inbox.id))) {
       throw new Error('Inbound claim lost before inbox attachment')
     }
@@ -390,6 +402,9 @@ export default defineEventHandler(async (event) => {
           projectId: resolveInboundProjectId({
             addressProjectId: address.projectId,
             inboxProjectId: inbox.projectId,
+            addressKind: address.kind,
+            inboxCustomAddresses: platformSiblingAddresses,
+            headerRecipients: [...message.to, ...message.cc],
           }),
           displayId,
           subject: message.subject,
@@ -589,6 +604,14 @@ export default defineEventHandler(async (event) => {
           // No agent is present to show a 409 to - this is a webhook. Log and
           // still ticket the customer's message normally.
           logger.warn('Auto-reply is enabled but the inbox has no sending address', { inboxId: inbox.id })
+        } else if (!(await isSenderAllowedOrRecordBlock(inbox.teamId, inbox.emailAddress, 'auto_reply'))) {
+          // Team sender policy: this team may not send as the inbox address
+          // (domain unverified, suspended or deleted). Skip the auto-reply;
+          // the ticket is still created. Never true under the legacy policy.
+          logger.warn('Auto-reply skipped: sender address is not authorized for this team', {
+            inboxId: inbox.id,
+            conversationId,
+          })
         } else if (message.messageId === null) {
           // Cannot thread a reply with nothing to set In-Reply-To to, and an
           // unthreaded acknowledgment risks becoming its own new "ticket" if

@@ -289,6 +289,7 @@ function readSignature(payload: MailgunInboundPayload | null): Required<MailgunS
 export class MailgunChannelDriver implements ChannelDriver {
   readonly name = 'mailgun'
   readonly accountKey: string
+  readonly authorizesSubdomains = true
 
   private readonly signingKey: string
   private readonly toleranceSeconds: number

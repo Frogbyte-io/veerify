@@ -22,6 +22,72 @@ describe('resolveInboundProjectId', () => {
   })
 })
 
+describe('resolveInboundProjectId - platform forwarding addresses', () => {
+  const custom = [
+    { address: 'billing@acme.com', projectId: 'project-billing' },
+    { address: 'support@acme.com', projectId: 'project-app' },
+    { address: 'unmapped@acme.com', projectId: null },
+  ]
+  const base = { addressProjectId: null, inboxProjectId: 'legacy', addressKind: 'platform' as const }
+
+  it('recovers the product from the To header against the same inbox custom addresses', () => {
+    expect(
+      resolveInboundProjectId({
+        ...base,
+        inboxCustomAddresses: custom,
+        headerRecipients: [{ address: 'Billing@Acme.com' }],
+      })
+    ).toBe('project-billing')
+  })
+
+  it('tries To before Cc, in header order', () => {
+    expect(
+      resolveInboundProjectId({
+        ...base,
+        inboxCustomAddresses: custom,
+        headerRecipients: [
+          { address: 'someone@else.com' },
+          { address: 'support@acme.com' },
+          { address: 'billing@acme.com' },
+        ],
+      })
+    ).toBe('project-app')
+  })
+
+  it('leaves the conversation unattributed when no header names a mapped custom address', () => {
+    expect(
+      resolveInboundProjectId({
+        ...base,
+        inboxCustomAddresses: custom,
+        headerRecipients: [{ address: 'other-tenant@else.com' }, { address: 'unmapped@acme.com' }],
+      })
+    ).toBeNull()
+  })
+
+  it('never reads headers for a custom address (the envelope alone decides)', () => {
+    expect(
+      resolveInboundProjectId({
+        addressProjectId: null,
+        inboxProjectId: null,
+        addressKind: 'custom',
+        inboxCustomAddresses: custom,
+        headerRecipients: [{ address: 'billing@acme.com' }],
+      })
+    ).toBeNull()
+  })
+
+  it('prefers a project mapped on the platform row itself', () => {
+    expect(
+      resolveInboundProjectId({
+        ...base,
+        addressProjectId: 'platform-project',
+        inboxCustomAddresses: custom,
+        headerRecipients: [{ address: 'billing@acme.com' }],
+      })
+    ).toBe('platform-project')
+  })
+})
+
 describe('inboundRoutingRecipients', () => {
   const headers = {
     to: [{ address: 'someone@else.com' }, { address: 'support@acme.com', name: 'Acme Support' }],

@@ -164,6 +164,7 @@ function toAttachments(values: PostmarkAttachment[] | undefined): InboundAttachm
 export class PostmarkChannelDriver implements ChannelDriver {
   readonly name = 'postmark'
   readonly accountKey: string
+  readonly authorizesSubdomains = false
 
   private readonly user: string
   private readonly password: string
