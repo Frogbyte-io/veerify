@@ -105,6 +105,7 @@
 
 <script>
 import { toast } from 'vue-sonner'
+import { relativeRecordHost } from '~/lib/support-sending-domains'
 
 const PURPOSE_ORDER = ['ownership', 'sending', 'receiving', 'recommended']
 
@@ -185,13 +186,8 @@ export default {
       this.expanded = { ...this.expanded, [key]: !this.expanded[key] }
     },
 
-    /** "_veerify-mail.acme.com" -> "_veerify-mail" for DNS UIs that append the zone. */
     relativeHost(fqdn) {
-      const name = String(fqdn || '').replace(/\.$/, '')
-      const zone = String(this.zone || '').replace(/\.$/, '')
-      if (!zone) return name
-      if (name === zone) return '@'
-      return name.endsWith(`.${zone}`) ? name.slice(0, -(zone.length + 1)) : name
+      return this.zone ? relativeRecordHost(fqdn, this.zone) : fqdn
     },
 
     async copy(value) {

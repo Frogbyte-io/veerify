@@ -1506,9 +1506,7 @@ export default {
 
     /** The inbox's Veerify forwarding address (kind 'platform'), from channel-status or the address list. */
     platformAddress() {
-      const fromChannel = this.channel?.platformAddress
-      const value = typeof fromChannel === 'string' ? fromChannel : fromChannel?.address
-      return value || (this.addresses || []).find((a) => a.kind === 'platform')?.address || ''
+      return this.channel?.platformAddress || (this.addresses || []).find((a) => a.kind === 'platform')?.address || ''
     },
 
     platformAddresses() {

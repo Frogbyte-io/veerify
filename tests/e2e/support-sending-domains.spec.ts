@@ -165,8 +165,16 @@ test.describe('support sending domains', () => {
       await expect(row).toBeVisible()
       await expect(row.getByTestId('support-sending-domain-status')).toContainText('Waiting for DNS')
 
+      // A freshly added domain opens its DNS table so the records can be published right away.
+      // The toggle still collapses and re-opens it.
+      const expand = row.getByTestId('support-sending-domain-expand')
+      await expect(expand).toHaveAttribute('aria-expanded', 'true')
+      await expand.click()
+      await expect(expand).toHaveAttribute('aria-expanded', 'false')
+      await expect(row.getByTestId('support-dns-record-row')).toHaveCount(0)
+      await expand.click()
+
       // The ownership row comes first in the DNS table.
-      await row.getByTestId('support-sending-domain-expand').click()
       const records = row.getByTestId('support-dns-record-row')
       await expect(records.first()).toHaveAttribute('data-purpose', 'ownership')
       const ownershipValue = (await records.first().getByTestId('support-dns-record-value').innerText()).trim()
@@ -446,12 +454,17 @@ test.describe('support sending domains', () => {
             ? {
                 status: 409,
                 contentType: 'application/json',
+                // The H3 error body: our createErrorResponse() envelope sits under `data`.
                 body: JSON.stringify({
-                  success: false,
-                  error: {
-                    code: 'DOMAIN_IN_USE',
-                    message: 'In use',
-                    details: { inboxes: [{ id: 'i1', name: 'Billing', emailAddress: 'billing@stub.example.com' }] },
+                  statusCode: 409,
+                  statusMessage: 'Conflict',
+                  data: {
+                    success: false,
+                    error: {
+                      code: 'DOMAIN_IN_USE',
+                      message: 'In use',
+                      details: { inboxes: [{ id: 'i1', name: 'Billing', emailAddress: 'billing@stub.example.com' }] },
+                    },
                   },
                 }),
               }
@@ -471,7 +484,11 @@ test.describe('support sending domains', () => {
             ? {
                 status: 500,
                 contentType: 'application/json',
-                body: JSON.stringify({ success: false, error: { code: 'INTERNAL_ERROR', message: 'boom' } }),
+                body: JSON.stringify({
+                  statusCode: 500,
+                  statusMessage: 'Internal Server Error',
+                  data: { success: false, error: { code: 'INTERNAL_ERROR', message: 'boom' } },
+                }),
               }
             : ok(listPayload({ enabled: false, domains: [] })),
       })

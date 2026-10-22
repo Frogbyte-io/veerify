@@ -245,6 +245,7 @@
 
 <script>
 import { toast } from 'vue-sonner'
+import { normalizeSendingDomain, validateSendingDomain } from '~/lib/support-sending-domains'
 
 const POLL_INTERVAL_MS = 30_000
 const VERIFY_COOLDOWN_MS = 20_000
@@ -272,8 +273,6 @@ const STATUS_META = {
 }
 
 const PROVIDER_LABELS = { mailgun: 'Mailgun / Frogmail', postmark: 'Postmark', fake: 'Fake (development)' }
-
-const DOMAIN_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/
 
 export default {
   name: 'SupportSendingDomains',
@@ -360,9 +359,10 @@ export default {
     },
 
     errorInfo(err) {
-      const payload = err?.data?.data?.error || err?.data?.error || {}
+      // $fetch error bodies are the H3 error, whose `data` is our createErrorResponse() envelope.
+      const payload = err?.data?.data?.error || {}
       return {
-        status: err?.statusCode || err?.status || err?.response?.status || 0,
+        status: err?.statusCode || 0,
         code: payload.code || '',
         message: payload.message || '',
         details: payload.details || null,
@@ -462,20 +462,17 @@ export default {
       this.isAddDialogOpen = open
     },
 
-    /** Basic client-side check; the server is authoritative. Returns an error message or ''. */
+    /**
+     * Client-side check with the shared rules. The reserved list is server-only, so it is
+     * empty here and the server stays authoritative. `.test` names are fake-provider only.
+     */
     validateDomainInput(value) {
-      if (!value) return 'Enter a domain'
-      if (value.includes('@') || value.includes('/') || value.includes(' ')) {
-        return 'Enter only the domain name, for example acme.com'
-      }
-      if (/^\d+(\.\d+){3}$/.test(value)) return 'IP addresses cannot be used as a sending domain'
-      if (!DOMAIN_PATTERN.test(value)) return 'Enter a valid domain name, for example acme.com'
-      return ''
+      return validateSendingDomain(value, { reserved: [], allowTestTld: !import.meta.env.PROD }) || ''
     },
 
     async addDomain() {
       if (this.isAdding) return
-      const domain = this.newDomain.trim().toLowerCase().replace(/\.$/, '')
+      const domain = normalizeSendingDomain(this.newDomain)
       const invalid = this.validateDomainInput(domain)
       if (invalid) {
         this.addError = invalid
@@ -554,7 +551,9 @@ export default {
         })
         this.isDeleteDialogOpen = false
         const result = response?.data || {}
-        if (result.operatorCleanupRequired || result.receivingEnabled) {
+        if (result.deleted === false) {
+          toast.info(`Removal of ${row.domain} is in progress and will be retried automatically.`)
+        } else if (result.operatorCleanupRequired) {
           toast.warning(
             'Veerify released this domain. Your operator must remove it from the mail provider because it receives mail there.'
           )
@@ -565,8 +564,7 @@ export default {
       } catch (err) {
         const info = this.errorInfo(err)
         if (info.status === 409 && info.code === 'DOMAIN_IN_USE') {
-          const inboxes = info.details?.inboxes || err?.data?.data?.inboxes || []
-          this.deleteInUseInboxes = Array.isArray(inboxes) ? inboxes : []
+          this.deleteInUseInboxes = info.details?.inboxes ?? []
         } else {
           this.deleteError = info.message || 'Could not delete this domain'
         }
