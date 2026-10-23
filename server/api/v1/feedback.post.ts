@@ -24,7 +24,7 @@
  *     responses:
  *       201: { description: Feedback created }
  *       400: { description: Validation failed }
- *       401: { description: Missing, unknown, or revoked app key }
+ *       401: { description: "Missing, unknown, or revoked app key" }
  *       429: { description: Rate limit exceeded }
  */
 import { z } from 'zod'

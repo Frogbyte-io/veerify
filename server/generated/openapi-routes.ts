@@ -8344,9 +8344,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "401": {
-          "description": "Missing",
-          "unknown": null,
-          "or revoked app key": null
+          "description": "Missing, unknown, or revoked app key"
         },
         "429": {
           "description": "Rate limit exceeded"
