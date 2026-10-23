@@ -75,6 +75,10 @@
 
 <script>
 import { cn } from '~/lib/utils'
+import FeedbackSettingsDefaults from '~/components/feedback/settings/FeedbackSettingsDefaults.vue'
+import FeedbackSettingsCategories from '~/components/feedback/settings/FeedbackSettingsCategories.vue'
+import FeedbackSettingsStatuses from '~/components/feedback/settings/FeedbackSettingsStatuses.vue'
+import FeedbackSettingsGithub from '~/components/feedback/settings/FeedbackSettingsGithub.vue'
 import { apiErrorMessage } from '~/lib/api-error'
 
 const DEFAULT_FEEDBACK_QUERY = {
@@ -133,6 +137,13 @@ function createResources() {
  */
 export default {
   name: 'FeedbackSettingsPanel',
+  // Registered locally so `<component :is>` can resolve each section by name.
+  components: {
+    FeedbackSettingsDefaults,
+    FeedbackSettingsCategories,
+    FeedbackSettingsStatuses,
+    FeedbackSettingsGithub,
+  },
 
   props: {
     // Slug of the active project (settings endpoints are /api/projects/[slug]/...)

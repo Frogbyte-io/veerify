@@ -105,11 +105,30 @@
 
 <script>
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
+import ProjectSettingsGeneral from '~/components/project/ProjectSettingsGeneral.vue'
+import ProjectSettingsProducts from '~/components/project/ProjectSettingsProducts.vue'
+import ProjectSettingsAccess from '~/components/project/ProjectSettingsAccess.vue'
+import ProjectSettingsTools from '~/components/project/ProjectSettingsTools.vue'
+import ProjectSettingsAppearance from '~/components/project/ProjectSettingsAppearance.vue'
+import ProjectSettingsDomain from '~/components/project/ProjectSettingsDomain.vue'
+import ProjectSettingsEmbed from '~/components/project/ProjectSettingsEmbed.vue'
+import ProjectSettingsDanger from '~/components/project/ProjectSettingsDanger.vue'
 
 const TAB_IDS = ['general', 'products', 'access', 'tools', 'appearance', 'domain', 'embed', 'danger']
 
 export default {
   name: 'ProjectSettingsPage',
+  // Registered locally so `<component :is>` can resolve the tab by name.
+  components: {
+    ProjectSettingsGeneral,
+    ProjectSettingsProducts,
+    ProjectSettingsAccess,
+    ProjectSettingsTools,
+    ProjectSettingsAppearance,
+    ProjectSettingsDomain,
+    ProjectSettingsEmbed,
+    ProjectSettingsDanger,
+  },
   data() {
     return {
       context: null,
