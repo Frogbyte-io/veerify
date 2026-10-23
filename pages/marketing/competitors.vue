@@ -20,7 +20,7 @@
         The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a project to watch competitors.</div>
+      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to watch competitors.</div>
 
       <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 

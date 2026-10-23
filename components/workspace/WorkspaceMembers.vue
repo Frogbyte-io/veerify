@@ -104,7 +104,7 @@
     </Card>
 
     <!-- Pending Invitations -->
-    <Card v-if="canManageMembers && pendingInvitations.length > 0">
+    <Card v-if="canManageMembers && pendingInvitations.length > 0" data-testid="workspace-pending-invitations">
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:mail" class="h-5 w-5" />
@@ -117,6 +117,7 @@
           <div
             v-for="inv in pendingInvitations"
             :key="inv.id"
+            data-testid="workspace-pending-invitation-row"
             class="flex items-center justify-between rounded-lg border p-3"
           >
             <div class="min-w-0">

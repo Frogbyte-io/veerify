@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { loginViaProgrammaticPage } from './helpers/auth'
-import { selectors } from './helpers/selectors'
+import { loginViaProgrammaticPage, withOriginHeaders } from './helpers/auth'
+import { selectors, workspaceTabSelector } from './helpers/selectors'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -23,6 +23,36 @@ async function createOrganization(request: APIRequestContext, name: string, slug
   expect(payload?.success).toBeTruthy()
   expect(payload?.data?.slug).toBe(slug)
   return payload.data
+}
+
+/**
+ * Makes the new workspace the active one (also for Better-Auth's cached session) and gives it a first
+ * project, which a workspace needs before the app treats it as usable. Verifies the switch took effect so
+ * the tests below can never edit or delete the seeded workspace by accident.
+ */
+async function activateOrganizationWithProject(request: APIRequestContext, organization: { id: string; slug: string }) {
+  const setActive = await request.post('/api/auth/organization/set-active', {
+    headers: withOriginHeaders('/workspace'),
+    data: { organizationId: organization.id },
+  })
+  expect(setActive.ok()).toBeTruthy()
+
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/auth/organization/get-full-organization')
+        const payload = await response.json().catch(() => null)
+        return payload?.slug || null
+      },
+      { timeout: 20_000 }
+    )
+    .toBe(organization.slug)
+
+  const project = await request.post('/api/projects', { data: { name: `Project ${organization.slug}` } })
+  expect(project.status()).toBe(201)
+  const projectId = (await project.json()).data.project.id as string
+  const activate = await request.post('/api/projects/active', { data: { projectId } })
+  expect(activate.ok()).toBeTruthy()
 }
 
 function parseOrganizations(payload: any): Array<{ id: string; name: string; slug?: string | null }> {
@@ -67,38 +97,38 @@ async function cleanupTemporaryOrganizations(request: APIRequestContext) {
   }
 }
 
-test('owner can view, update, and delete organization from settings tab', async ({ page }) => {
+test('owner can view, update, and delete the workspace from workspace settings', async ({ page }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
   await cleanupTemporaryOrganizations(page.request)
 
   const baseSlug = `org-e2e-${Date.now()}`
   const originalName = `Org E2E ${Date.now()}`
-  await createOrganization(page.request, originalName, baseSlug)
-  await expect
-    .poll(
-      async () => {
-        const response = await page.request.get('/api/org-context/active-org')
-        return response.status()
-      },
-      { timeout: 20_000 }
-    )
-    .toBe(200)
+  const created = await createOrganization(page.request, originalName, baseSlug)
+  await activateOrganizationWithProject(page.request, created)
 
-  await page.goto('/settings')
-  await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
-  await expect(page.locator(selectors.settingsTabOrganization)).toBeVisible({ timeout: 20_000 })
+  await page.goto('/workspace')
+  await expect(page.getByTestId('workspace-page')).toHaveAttribute('data-hydrated', 'true')
+  await expect(page.locator(workspaceTabSelector('general'))).toBeVisible({ timeout: 20_000 })
 
-  await page.locator(selectors.settingsTabOrganization).click()
-  await expect(page).toHaveURL(/#organization/)
+  await page.locator(workspaceTabSelector('general')).click()
+  await expect(page).toHaveURL(/#general/)
   await expect(page.locator(selectors.organizationTitle)).toBeVisible()
+
+  await page.locator(workspaceTabSelector('members')).click()
+  await expect(page).toHaveURL(/#members/)
   await expect(page.locator(selectors.organizationMembersCount)).toHaveText(/\d+\s+member(s)?/)
   await expect(page.locator('[data-testid="organization-member-role"]').first()).toHaveText(/owner|admin|member/i)
+
+  await page.locator(workspaceTabSelector('general')).click()
+  await expect(page).toHaveURL(/#general/)
 
   const updatedName = `${originalName} Updated`
   const updatedSlug = `${baseSlug}-updated`
   const logoPngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2m7w0AAAAASUVORK5CYII='
 
+  // Safety net: only ever edit the temporary workspace, never the seeded one.
+  await expect(page.locator(selectors.organizationNameInput)).toHaveValue(originalName)
   await page.locator(selectors.organizationNameInput).fill(updatedName)
   await page.locator(selectors.organizationSlugInput).fill(updatedSlug)
   await page.locator(selectors.organizationLogoUploadInput).setInputFiles({
@@ -170,7 +200,8 @@ test('owner can view, update, and delete organization from settings tab', async 
   await page.locator(selectors.organizationDeleteConfirmInput).fill(baseSlug)
   await page.locator(selectors.organizationDeleteSubmit).click()
 
-  await expect(page).toHaveURL(/#team/)
+  // The owner still has the seeded workspace, so deleting this one lands them back in a project.
+  await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 })
 
   await expect
     .poll(
@@ -185,7 +216,7 @@ test('owner can view, update, and delete organization from settings tab', async 
   await expect
     .poll(
       async () => {
-        const response = await page.request.get('/api/teams/active')
+        const response = await page.request.get('/api/projects/active')
         return response.status()
       },
       { timeout: 20_000 }
@@ -199,36 +230,28 @@ test('owner can add billing contact emails for receipt copy', async ({ page }) =
   await cleanupTemporaryOrganizations(page.request)
 
   const orgSlug = `org-e2e-billing-${Date.now()}`
-  await createOrganization(page.request, `Org Billing ${Date.now()}`, orgSlug)
+  const created = await createOrganization(page.request, `Org Billing ${Date.now()}`, orgSlug)
 
   try {
-    await expect
-      .poll(
-        async () => {
-          const response = await page.request.get('/api/org-context/active-org')
-          return response.status()
-        },
-        { timeout: 20_000 }
-      )
-      .toBe(200)
+    await activateOrganizationWithProject(page.request, created)
 
     if (deploymentMode === 'self-hosted') {
-      await page.goto('/settings#status')
-      await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
-      await expect(page.locator(selectors.settingsTabStatus)).toBeVisible({ timeout: 20_000 })
+      await page.goto('/workspace#status')
+      await expect(page.getByTestId('workspace-page')).toHaveAttribute('data-hydrated', 'true')
+      await expect(page.locator(workspaceTabSelector('status'))).toBeVisible({ timeout: 20_000 })
 
-      await page.locator(selectors.settingsTabStatus).click()
+      await page.locator(workspaceTabSelector('status')).click()
       await expect(page).toHaveURL(/#status/)
       await expect(page.locator(selectors.settingsStatusPanel)).toBeVisible()
       await expect(page.locator(selectors.statusServiceDatabase)).toBeVisible()
       await expect(page.locator(selectors.statusServiceStorage)).toBeVisible()
       await expect(page.locator(selectors.statusServiceEmail)).toBeVisible()
     } else {
-      await page.goto('/settings#billing')
-      await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
-      await expect(page.locator(selectors.settingsTabBilling)).toBeVisible({ timeout: 20_000 })
+      await page.goto('/workspace#billing')
+      await expect(page.getByTestId('workspace-page')).toHaveAttribute('data-hydrated', 'true')
+      await expect(page.locator(workspaceTabSelector('billing'))).toBeVisible({ timeout: 20_000 })
 
-      await page.locator(selectors.settingsTabBilling).click()
+      await page.locator(workspaceTabSelector('billing')).click()
       await expect(page).toHaveURL(/#billing/)
       await expect(page.locator(selectors.settingsBillingPanel)).toBeVisible()
 

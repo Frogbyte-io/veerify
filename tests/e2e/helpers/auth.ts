@@ -178,5 +178,6 @@ export async function loginViaUi(page: Page, credentials: LoginCredentials) {
   }
 
   await expect(page).toHaveURL(/\/dashboard/)
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  // The dashboard heading is the active project's name now, so wait for the shell's project switcher.
+  await expect(page.locator(selectors.projectSwitcherTrigger)).toBeVisible({ timeout: 20_000 })
 }
