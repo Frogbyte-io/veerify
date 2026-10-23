@@ -414,6 +414,13 @@
       "when": 1792789345978,
       "tag": "0058_projects_products_drop_teams",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1792792841594,
+      "tag": "0059_drop_session_team_trigger",
+      "breakpoints": true
     }
   ]
 }
