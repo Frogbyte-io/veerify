@@ -12,7 +12,7 @@ describe('projectPaths', () => {
     })
   })
 
-  it('prefixes the product slug on team subdomains', () => {
+  it('prefixes the project slug on workspace subdomains', () => {
     expect(projectPaths('acme', false)).toEqual({
       feedback: '/acme',
       roadmap: '/acme/roadmap',
@@ -32,8 +32,7 @@ describe('shellTitle', () => {
 
 describe('isModuleOffMessage', () => {
   it('separates "module off" from a non-member 403', () => {
-    expect(isModuleOffMessage('Changelog is not enabled for this team')).toBe(true)
-    expect(isModuleOffMessage('Changelog is not enabled for this product')).toBe(true)
+    expect(isModuleOffMessage('Changelog is not enabled for this project')).toBe(true)
     expect(isModuleOffMessage('You do not have access to this project')).toBe(false)
     expect(isModuleOffMessage('')).toBe(false)
   })

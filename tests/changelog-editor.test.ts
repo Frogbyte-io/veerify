@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasUnsavedChanges, resolveLinkedFeedback, snapshotPayload } from '~/lib/changelog-editor'
+import { hasUnsavedChanges, isModuleOffMessage, resolveLinkedFeedback, snapshotPayload } from '~/lib/changelog-editor'
 
 const linked = [{ id: 'f1', title: 'One' }]
 
@@ -16,7 +16,14 @@ describe('resolveLinkedFeedback', () => {
 })
 
 describe('unsaved changes', () => {
-  const base = { title: 'T', summary: null, body: 'b', labels: ['new', 'fixed'], feedbackIds: ['a', 'b'] }
+  const base = {
+    title: 'T',
+    summary: null,
+    body: 'b',
+    labels: ['new', 'fixed'],
+    productIds: ['p1', 'p2'],
+    feedbackIds: ['a', 'b'],
+  }
 
   it('is clean before a snapshot exists and right after saving', () => {
     expect(hasUnsavedChanges(base, null)).toBe(false)
@@ -25,7 +32,9 @@ describe('unsaved changes', () => {
 
   it('ignores label and link ordering', () => {
     const snap = snapshotPayload(base)
-    expect(hasUnsavedChanges({ ...base, labels: ['fixed', 'new'], feedbackIds: ['b', 'a'] }, snap)).toBe(false)
+    expect(
+      hasUnsavedChanges({ ...base, labels: ['fixed', 'new'], productIds: ['p2', 'p1'], feedbackIds: ['b', 'a'] }, snap)
+    ).toBe(false)
   })
 
   it('detects edits to any field', () => {
@@ -33,5 +42,13 @@ describe('unsaved changes', () => {
     expect(hasUnsavedChanges({ ...base, title: 'T2' }, snap)).toBe(true)
     expect(hasUnsavedChanges({ ...base, body: 'x' }, snap)).toBe(true)
     expect(hasUnsavedChanges({ ...base, feedbackIds: ['a'] }, snap)).toBe(true)
+    expect(hasUnsavedChanges({ ...base, productIds: [] }, snap)).toBe(true)
+  })
+})
+
+describe('isModuleOffMessage', () => {
+  it('matches the project-level module switch message only', () => {
+    expect(isModuleOffMessage('Changelog is not enabled for this project')).toBe(true)
+    expect(isModuleOffMessage('Forbidden')).toBe(false)
   })
 })

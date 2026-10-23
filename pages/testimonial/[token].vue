@@ -38,7 +38,7 @@
               role="status"
               data-testid="testimonial-withdrawn"
             >
-              The {{ info.productName }} team still holds it privately. Contact them if you would like it deleted.
+              {{ info.productName }} still holds it privately. Contact them if you would like it deleted.
             </p>
           </template>
           <template v-else>
@@ -46,11 +46,11 @@
             <h1 class="text-xl font-semibold">Thank you{{ info.firstName ? `, ${info.firstName}` : '' }}!</h1>
             <p class="text-sm text-muted-foreground">
               {{ done ? 'Your testimonial was received.' : 'You already sent a testimonial with this link.' }}
-              The {{ info.productName }} team will review it before anything is shown publicly.
+              {{ info.productName }} will review it before anything is shown publicly.
             </p>
             <div class="pt-3" data-testid="testimonial-withdraw">
               <p v-if="confirmingWithdraw" class="mb-2 text-sm text-muted-foreground">
-                Remove your testimonial from the public page? You can still contact the team to have it deleted.
+                Remove your testimonial from the public page? You can still contact us to have it deleted.
               </p>
               <div class="flex justify-center gap-2">
                 <Button
@@ -91,7 +91,7 @@
           <Icon name="lucide:clock" class="mx-auto h-8 w-8 text-muted-foreground" />
           <h1 class="text-xl font-semibold">This link is no longer accepting testimonials</h1>
           <p class="text-sm text-muted-foreground">
-            It may have expired. You are welcome to contact the {{ info.productName }} team directly.
+            It may have expired. You are welcome to contact {{ info.productName }} directly.
           </p>
         </CardContent>
 

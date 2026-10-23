@@ -8,7 +8,7 @@
               <Icon name="lucide:message-square" class="h-5 w-5" />
               Feedback
             </CardTitle>
-            <CardDescription>Browse and manage all feedback submitted to this product.</CardDescription>
+            <CardDescription>Browse and manage all feedback submitted to this project.</CardDescription>
           </div>
           <div v-if="!isBusy && pagination.total > 0" class="text-sm text-muted-foreground">
             {{ pagination.total }} item{{ pagination.total !== 1 ? 's' : '' }}
@@ -229,7 +229,7 @@ function createPaginationState() {
 }
 
 export default {
-  name: 'ProductSettingsFeedback',
+  name: 'FeedbackSettingsDefaults',
 
   props: {
     project: {

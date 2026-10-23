@@ -1,5 +1,5 @@
 <template>
-  <PublicProjectShell :team-slug="teamSlug" :project-slug="projectSlug" active="testimonials" @loaded="load">
+  <PublicProjectShell :org-slug="orgSlug" :project-slug="projectSlug" active="testimonials" @loaded="load">
     <section data-testid="public-testimonials">
       <div v-if="isLoading" class="grid gap-4 sm:grid-cols-2">
         <Skeleton v-for="n in 3" :key="n" class="h-40 w-full" />
@@ -11,7 +11,7 @@
         data-testid="public-testimonials-unavailable"
       >
         <Icon name="lucide:message-square-quote" class="mx-auto mb-3 h-8 w-8" />
-        Testimonials are not available for this product.
+        Testimonials are not available for this project.
       </div>
 
       <div v-else-if="error" class="flex items-center justify-center gap-2 py-10 text-sm text-destructive">
@@ -65,7 +65,7 @@ export default {
   name: 'PublicTestimonials',
 
   props: {
-    teamSlug: { type: String, required: true },
+    orgSlug: { type: String, required: true },
     projectSlug: { type: String, required: true },
   },
 
@@ -79,23 +79,23 @@ export default {
     },
 
     async load() {
-      const key = `${this.teamSlug}/${this.projectSlug}`
+      const key = `${this.orgSlug}/${this.projectSlug}`
       this.isLoading = true
       this.error = null
       this.notAvailable = false
       try {
         const response = await $fetch(
-          `/api/public/t/${encodeURIComponent(this.teamSlug)}/${encodeURIComponent(this.projectSlug)}/testimonials`
+          `/api/public/o/${encodeURIComponent(this.orgSlug)}/${encodeURIComponent(this.projectSlug)}/testimonials`
         )
-        if (key !== `${this.teamSlug}/${this.projectSlug}`) return
+        if (key !== `${this.orgSlug}/${this.projectSlug}`) return
         this.items = response.data.items
       } catch (err) {
-        if (key !== `${this.teamSlug}/${this.projectSlug}`) return
-        // 404: Marketing is off for this product (or nothing to show): not an error
+        if (key !== `${this.orgSlug}/${this.projectSlug}`) return
+        // 404: Marketing is off for this project (or nothing to show): not an error
         if (apiErrorStatus(err) === 404) this.notAvailable = true
         else this.error = apiErrorMessage(err, 'Failed to load testimonials')
       } finally {
-        if (key === `${this.teamSlug}/${this.projectSlug}`) this.isLoading = false
+        if (key === `${this.orgSlug}/${this.projectSlug}`) this.isLoading = false
       }
     },
   },

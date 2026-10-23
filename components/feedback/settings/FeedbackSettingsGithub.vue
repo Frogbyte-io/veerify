@@ -100,7 +100,7 @@
 import { toast } from 'vue-sonner'
 
 export default {
-  name: 'ProductSettingsGithub',
+  name: 'FeedbackSettingsGithub',
   props: {
     project: {
       type: Object,

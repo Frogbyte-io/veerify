@@ -18,17 +18,7 @@
       </div>
 
       <template v-if="pickerReady">
-        <Card v-if="!product">
-          <CardContent class="py-10 text-center">
-            <p class="font-medium mb-1">No products yet</p>
-            <p class="text-sm text-muted-foreground mb-4">The roadmap works on a product. Create one first.</p>
-            <Button as-child variant="outline">
-              <NuxtLink to="/products">Go to products</NuxtLink>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card v-else-if="disabledMessage !== null" data-testid="roadmap-disabled">
+        <Card v-if="disabledMessage !== null" data-testid="roadmap-disabled">
           <CardContent class="py-10 text-center space-y-4">
             <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <Icon name="lucide:map" class="w-6 h-6 text-muted-foreground" />
@@ -36,19 +26,14 @@
             <div class="space-y-1">
               <p class="font-medium">Roadmap is switched off</p>
               <p class="text-sm text-muted-foreground max-w-md mx-auto">
-                {{ disabledMessage || 'The roadmap needs to be enabled for your team and for this product.' }}
-              </p>
-              <p class="text-sm text-muted-foreground max-w-md mx-auto">
-                Both switches have to be on: the team switch under Settings, Tools, and the product switch under the
-                product's Features tab.
+                {{
+                  isAdmin ? 'Switch it on under Project settings, Tools.' : 'Project admins can switch the roadmap on.'
+                }}
               </p>
             </div>
-            <div class="flex flex-wrap items-center justify-center gap-2">
+            <div v-if="isAdmin" class="flex flex-wrap items-center justify-center gap-2">
               <Button as-child variant="outline">
-                <NuxtLink to="/settings#tools">Settings: Tools</NuxtLink>
-              </Button>
-              <Button as-child variant="outline">
-                <NuxtLink :to="`/products/${product.slug}#features`">{{ product.name }}: Features</NuxtLink>
+                <NuxtLink to="/project/settings#tools">Project settings: Tools</NuxtLink>
               </Button>
             </div>
           </CardContent>
@@ -135,6 +120,13 @@
                       <CardContent class="p-3 space-y-2">
                         <p class="text-sm font-medium line-clamp-3">{{ item.title }}</p>
                         <div class="flex flex-wrap items-center gap-1.5">
+                          <Badge
+                            v-if="productName(item)"
+                            variant="outline"
+                            :data-testid="`roadmap-product-badge-${item.id}`"
+                          >
+                            {{ productName(item) }}
+                          </Badge>
                           <Badge v-if="item.category" variant="secondary">{{ item.category.name }}</Badge>
                           <Badge v-if="item.isPinned" variant="outline" class="gap-1">
                             <Icon name="lucide:pin" class="w-3 h-3" />
@@ -191,7 +183,9 @@ export default {
   data() {
     return {
       pickerReady: false,
-      product: null,
+      project: null,
+      products: [],
+      productId: '',
       // Source of truth: columns as returned by the API (all items, incl. hidden)
       columns: [],
       // Filtered per-column views bound to the draggable lists
@@ -207,6 +201,9 @@ export default {
   },
 
   computed: {
+    isAdmin() {
+      return this.project?.role === 'admin'
+    },
     categories() {
       const seen = new Map()
       for (const column of this.columns) {
@@ -252,39 +249,57 @@ export default {
       this.lists = lists
     },
 
-    async onProductChange(product) {
+    // Product tag on a card; only shown when the project has more than one product
+    productName(item) {
+      if (this.products.length < 2) return ''
+      if (item.product?.name) return item.product.name
+      return this.products.find((p) => p.id === item.productId)?.name || ''
+    },
+
+    async onProductChange(context, productId) {
       this.pickerReady = true
-      this.product = product
+      this.project = context?.project || null
+      this.products = context?.products || []
+      this.productId = productId || ''
       this.columns = []
       this.lists = {}
       this.publicUrl = null
       this.disabledMessage = null
       this.error = null
       this.categoryFilter = ''
-      if (product) await this.load()
+      if (!this.project) return
+      if (context.modules?.roadmapEnabled !== true) {
+        this.disabledMessage = ''
+        return
+      }
+      await this.load()
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
+      const productId = this.productId
       const requestId = ++this.requestId
-      const isCurrent = () => this.requestId === requestId && this.product?.id === productId
+      const isCurrent = () => this.requestId === requestId
       this.isLoading = true
       this.error = null
       this.disabledMessage = null
       try {
-        const response = await $fetch(`/api/roadmap/projects/${productId}`)
+        const response = await $fetch(`/api/roadmap/projects/${projectId}`, {
+          query: productId ? { productId } : {},
+        })
         if (!isCurrent()) return
         this.columns = response?.data?.columns || []
         this.publicUrl = response?.data?.publicUrl || null
+        if (response?.data?.products?.length) this.products = response.data.products
         this.rebuildLists()
       } catch (err) {
         if (!isCurrent()) return
         const message = apiErrorMessage(err, '')
-        if (apiErrorStatus(err) === 403 && /^Roadmap is not enabled for this (team|product)$/.test(message)) {
+        if (apiErrorStatus(err) === 403 && /^Roadmap is not enabled for this project$/.test(message)) {
           this.disabledMessage = message
         } else if (apiErrorStatus(err) === 403) {
-          this.error = message || 'You do not have access to this product'
+          this.error = message || 'You do not have access to this project'
         } else {
           this.error = apiErrorMessage(err, 'Failed to load the roadmap')
         }
@@ -316,7 +331,7 @@ export default {
       const itemId = evt.item?.dataset?.id
       if (!fromStatus || !toStatus || !itemId || fromStatus === toStatus) return
 
-      const productId = this.product?.id
+      const requestId = this.requestId
       // Optimistic move
       if (!this.moveItem(itemId, fromStatus, toStatus)) {
         this.rebuildLists()
@@ -327,7 +342,7 @@ export default {
         // Existing status endpoint: it fires subscriber notifications, GitHub sync and marketing hooks.
         await $fetch(`/api/feedback/${itemId}/status`, { method: 'PATCH', body: { status: toStatus } })
       } catch (err) {
-        if (this.product?.id === productId) {
+        if (this.requestId === requestId) {
           this.moveItem(itemId, toStatus, fromStatus)
         }
         toast.error(apiErrorMessage(err, 'Failed to update the status'))
