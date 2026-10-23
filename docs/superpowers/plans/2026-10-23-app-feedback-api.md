@@ -56,9 +56,9 @@ tab; the source label renders in the dashboard and public board.
 
 **Interfaces:**
 
-- Produces: `projectApiKey` table export with columns `id, projectId, name, keyPrefix, keyHash,
-createdByUserId, createdAt, lastUsedAt, revokedAt` (see spec §1; `keyHash` unique index,
-  `projectId` index; FK project cascade, FK user set null). `feedback.apiKeyId`
+- Produces: `projectApiKey` table export with columns `id`, `projectId`, `name`, `keyPrefix`,
+  `keyHash`, `createdByUserId`, `createdAt`, `lastUsedAt`, `revokedAt` (see spec §1; `keyHash`
+  unique index, `projectId` index; FK project cascade, FK user set null). `feedback.apiKeyId`
   (`api_key_id`, FK → projectApiKey, set null) and `feedback.sourceLabel` (`source_label`, text,
   nullable).
 
@@ -120,9 +120,21 @@ createdByUserId, createdAt, lastUsedAt, revokedAt` (see spec §1; `keyHash` uniq
 
 **Interfaces:**
 
-- Consumes: Task 2 exports; `requireRateLimit`, `rateLimits`; `validateBody`;
-  `notifyProjectTeam(projectId, null, { type: 'new_feedback', title: \`New feedback: "${title}"\`,
-  body: \`Added from ${key.name}\`, link: \`/feedback?id=${id}\`, feedbackId: id, actorName: authorName })`(not awaited, same as`server/api/feedback/index.post.ts:331`).
+- Consumes: Task 2 exports; `requireRateLimit`, `rateLimits`; `validateBody`; and this call:
+
+  ```ts
+  notifyProjectTeam(projectId, null, {
+    type: 'new_feedback',
+    title: `New feedback: "${title}"`,
+    body: `Added from ${key.name}`,
+    link: `/feedback?id=${id}`,
+    feedbackId: id,
+    actorName: authorName,
+  })
+  ```
+
+  (not awaited, same as `server/api/feedback/index.post.ts:331`).
+
 - Produces: `201 { success: true, data: { id } }`.
 
 Middleware: for paths starting `/api/v1/`, set the CORS headers from Global Constraints on every
