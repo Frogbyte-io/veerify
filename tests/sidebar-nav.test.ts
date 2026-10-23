@@ -45,7 +45,7 @@ describe('sidebar nav visibility', () => {
 
   it('gates support and marketing groups on their tools', () => {
     const on = visible(true, { supportEnabled: true, marketingEnabled: true })
-    expect(on.support).toEqual(['Inbox', 'Contacts'])
+    expect(on.support).toEqual(['Inbox', 'Contacts', 'Settings'])
     expect(on.marketing?.[0]).toBe('Overview')
     expect(visible(true, { supportEnabled: true }).marketing).toBeUndefined()
   })

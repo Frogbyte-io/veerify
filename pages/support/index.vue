@@ -1,7 +1,8 @@
 <template>
   <NuxtLayout name="dashboard">
     <div
-      class="h-[calc(100vh-6rem)] min-h-[560px]"
+      ref="pageRoot"
+      class="h-[calc(100dvh-6rem)] min-h-[480px]"
       data-testid="support-inbox-page"
       :data-active-project-listener-ready="activeProjectListenerReady ? 'true' : 'false'"
     >
@@ -49,94 +50,176 @@
         </CardContent>
       </Card>
 
-      <!-- Three-pane layout -->
-      <div v-else class="h-full flex rounded-lg border overflow-hidden bg-card">
-        <div
-          v-if="inboxAccessError"
-          data-testid="support-inbox-access-error"
-          class="absolute z-10 left-4 top-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm"
-          role="alert"
-        >
-          {{ inboxAccessError }}
-        </div>
-        <!-- Left: inbox switcher + fixed views -->
-        <div class="w-[220px] shrink-0 border-r bg-muted/20">
-          <SupportInboxSidebar
-            :inboxes="inboxes"
-            :active-inbox-id="activeInboxId"
-            :is-loading="isLoadingInboxes"
-            :error="inboxesError"
-            :capabilities="activeInbox?.capabilities"
-            :active-view="activeView"
-            :unread-counts="unreadCounts"
-            @select-inbox="selectInbox"
-            @select-view="selectView"
-            @retry="loadInboxes"
-            @create-tag="createTag"
-          />
-        </div>
-
-        <!-- Middle: conversation list -->
-        <div class="w-[340px] shrink-0 border-r">
-          <SupportConversationList
-            :conversations="conversationsEnriched"
-            :selected-conversation-id="selectedConversationId"
-            :is-loading="isLoadingConversations"
-            :is-loading-more="isLoadingMoreConversations"
-            :error="conversationsError"
-            :has-more="hasMoreConversations"
-            :search-query="conversationSearch"
-            :csat-filter="csatFilter"
-            :csat-summary="csatSummary"
-            :active-inbox-id="activeInboxId"
-            :unread-counts="unreadCounts"
-            @select="selectConversation"
-            @search="handleConversationSearch"
-            @clear-search="clearConversationSearch"
-            @csat-filter="handleCsatFilter"
-            @retry="() => loadConversations(true)"
-            @load-more="() => loadConversations(false)"
-          />
-        </div>
-
-        <!-- Right: thread -->
-        <div class="flex-1 min-w-0">
-          <SupportConversationThread
-            :conversation-id="selectedConversationId"
-            :conversation="conversationDetail"
-            :contact="conversationContact"
-            :current-user-id="currentUserId"
-            :members="inboxMembers"
-            :messages="messages"
-            :is-loading-detail="isLoadingDetail"
-            :detail-error="detailError"
-            :is-loading-messages="isLoadingMessages"
-            :messages-error="messagesError"
-            :is-updating="isUpdatingConversation"
-            @retry-detail="loadConversationDetail"
-            @retry-messages="loadMessages"
-            @update-conversation="patchConversation"
-            @claim-conversation="claimConversation"
-            @mark-unread="markConversationUnread"
-            @convert-to-feedback="openFeedbackBridgeDialog"
-            @toggle-contact-panel="showContactPanel = !showContactPanel"
+      <!-- No inbox yet: point to settings, where managers create one -->
+      <Card
+        v-else-if="!isLoadingInboxes && !inboxesError && inboxes.length === 0"
+        data-testid="support-inbox-empty"
+        class="max-w-md mx-auto mt-12"
+      >
+        <CardContent class="text-center py-8">
+          <div
+            v-if="inboxAccessError"
+            data-testid="support-inbox-access-error"
+            class="text-sm text-destructive mb-4"
+            role="alert"
           >
-            <template #composer>
-              <SupportComposer
-                v-if="selectedConversationId"
-                ref="composer"
-                :conversation-id="selectedConversationId"
-                :project-id="activeProjectId"
-                :contact="conversationContact"
-                :current-user-name="currentUserName"
-                @posted="handleMessagePosted"
-                @draft-state-changed="handleDraftStateChanged"
-              />
-            </template>
-          </SupportConversationThread>
+            {{ inboxAccessError }}
+          </div>
+          <Icon name="lucide:inbox" class="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <p class="font-medium mb-2" data-testid="support-no-assignment">No support inboxes are assigned to you.</p>
+          <p class="text-sm text-muted-foreground mb-4">
+            Admins can create an inbox and set up domains, addresses and agents in support settings. Otherwise, ask a
+            support administrator to add you to an inbox.
+          </p>
+          <Button as-child>
+            <NuxtLink to="/support/settings" data-testid="support-inbox-empty-settings">
+              <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
+              Open support settings
+            </NuxtLink>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <!-- Responsive pane layout. Sized by the container (not the viewport)
+           so it adapts when the app sidebar opens or collapses:
+           narrow = one pane (list or thread), @2xl = list + thread,
+           @4xl = inbox sidebar + list + thread. -->
+      <div v-else class="@container/panes relative h-full flex flex-col rounded-lg border overflow-hidden bg-card">
+        <div v-if="isCompactPanes" class="flex h-11 shrink-0 items-center gap-2 border-b px-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="support-open-inboxes"
+            aria-label="Open inboxes and views"
+            @click="showInboxSheet = true"
+          >
+            <Icon name="lucide:panel-left" class="w-4 h-4" />
+          </Button>
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium">{{ activeInbox?.name || 'Support' }}</p>
+          </div>
+          <Button variant="ghost" size="sm" as-child>
+            <NuxtLink to="/support/settings" aria-label="Support settings" data-testid="support-settings-link">
+              <Icon name="lucide:settings" class="w-4 h-4" />
+            </NuxtLink>
+          </Button>
+        </div>
+
+        <div class="flex min-h-0 flex-1">
+          <div
+            v-if="inboxAccessError"
+            data-testid="support-inbox-access-error"
+            class="absolute z-10 left-4 top-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive shadow-sm"
+            role="alert"
+          >
+            {{ inboxAccessError }}
+          </div>
+          <!-- Left: inbox switcher + fixed views -->
+          <div class="hidden w-[220px] shrink-0 border-r bg-muted/20 @4xl/panes:block">
+            <SupportInboxSidebar
+              :inboxes="inboxes"
+              :active-inbox-id="activeInboxId"
+              :is-loading="isLoadingInboxes"
+              :error="inboxesError"
+              :capabilities="activeInbox?.capabilities"
+              :active-view="activeView"
+              :unread-counts="unreadCounts"
+              @select-inbox="selectInbox"
+              @select-view="selectView"
+              @retry="loadInboxes"
+              @create-tag="createTag"
+            />
+          </div>
+
+          <!-- Middle: conversation list -->
+          <div
+            class="w-full min-w-0 shrink-0 @2xl/panes:block @2xl/panes:w-[300px] @2xl/panes:border-r @6xl/panes:w-[340px]"
+            :class="selectedConversationId ? 'hidden' : 'block'"
+          >
+            <SupportConversationList
+              :conversations="conversationsEnriched"
+              :selected-conversation-id="selectedConversationId"
+              :is-loading="isLoadingConversations"
+              :is-loading-more="isLoadingMoreConversations"
+              :error="conversationsError"
+              :has-more="hasMoreConversations"
+              :search-query="conversationSearch"
+              :csat-filter="csatFilter"
+              :csat-summary="csatSummary"
+              :active-inbox-id="activeInboxId"
+              :unread-counts="unreadCounts"
+              @select="selectConversation"
+              @search="handleConversationSearch"
+              @clear-search="clearConversationSearch"
+              @csat-filter="handleCsatFilter"
+              @retry="() => loadConversations(true)"
+              @load-more="() => loadConversations(false)"
+            />
+          </div>
+
+          <!-- Right: thread -->
+          <div class="flex-1 min-w-0 @2xl/panes:block" :class="selectedConversationId ? 'block' : 'hidden'">
+            <SupportConversationThread
+              :conversation-id="selectedConversationId"
+              :conversation="conversationDetail"
+              :contact="conversationContact"
+              :current-user-id="currentUserId"
+              :members="inboxMembers"
+              :messages="messages"
+              :is-loading-detail="isLoadingDetail"
+              :detail-error="detailError"
+              :is-loading-messages="isLoadingMessages"
+              :messages-error="messagesError"
+              :is-updating="isUpdatingConversation"
+              @retry-detail="loadConversationDetail"
+              @retry-messages="loadMessages"
+              @update-conversation="patchConversation"
+              @claim-conversation="claimConversation"
+              @mark-unread="markConversationUnread"
+              @convert-to-feedback="openFeedbackBridgeDialog"
+              @toggle-contact-panel="showContactPanel = !showContactPanel"
+              @back="unselectConversation"
+            >
+              <template #composer>
+                <SupportComposer
+                  v-if="selectedConversationId"
+                  ref="composer"
+                  :conversation-id="selectedConversationId"
+                  :project-id="activeProjectId"
+                  :contact="conversationContact"
+                  :current-user-name="currentUserName"
+                  @posted="handleMessagePosted"
+                  @draft-state-changed="handleDraftStateChanged"
+                />
+              </template>
+            </SupportConversationThread>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Inbox switcher + views as a drawer when the panes are too narrow -->
+    <Sheet v-if="isCompactPanes" :open="showInboxSheet" @update:open="showInboxSheet = $event">
+      <SheetContent side="left" class="w-[85vw] max-w-xs p-0" data-testid="support-inbox-sheet">
+        <SheetHeader class="sr-only">
+          <SheetTitle>Inboxes</SheetTitle>
+          <SheetDescription>Switch inbox or conversation view</SheetDescription>
+        </SheetHeader>
+        <SupportInboxSidebar
+          :inboxes="inboxes"
+          :active-inbox-id="activeInboxId"
+          :is-loading="isLoadingInboxes"
+          :error="inboxesError"
+          :capabilities="activeInbox?.capabilities"
+          :active-view="activeView"
+          :unread-counts="unreadCounts"
+          @select-inbox="(id) => closeInboxSheetAfter(selectInbox(id))"
+          @select-view="(view) => closeInboxSheetAfter(selectView(view))"
+          @retry="loadInboxes"
+          @create-tag="createTag"
+        />
+      </SheetContent>
+    </Sheet>
 
     <SupportConversationFeedbackDialog
       :open="showFeedbackBridgeDialog"
@@ -327,10 +410,21 @@ export default {
       unsubscribeConversationChannel: null,
       unregisterReconnectHook: null,
       showShortcutHelp: false,
+      showInboxSheet: false,
+      pageWidth: null,
+      pageResizeObserver: null,
     }
   },
 
   computed: {
+    // Mirrors the @4xl/panes container query (56rem): below it the inbox
+    // sidebar moves into a drawer opened from a compact toolbar. Rendered
+    // with v-if so the desktop DOM carries no hidden duplicates. The extra
+    // 2px is the pane card's border, which the container query excludes.
+    isCompactPanes() {
+      return this.pageWidth !== null && this.pageWidth < 898
+    },
+
     activeInbox() {
       return this.inboxes.find((inbox) => inbox.id === this.activeInboxId) || null
     },
@@ -351,6 +445,13 @@ export default {
 
   async mounted() {
     if (import.meta.client) {
+      this.pageWidth = this.$refs.pageRoot?.clientWidth ?? null
+      if (typeof ResizeObserver !== 'undefined' && this.$refs.pageRoot) {
+        this.pageResizeObserver = new ResizeObserver(([entry]) => {
+          this.pageWidth = entry.contentRect.width
+        })
+        this.pageResizeObserver.observe(this.$refs.pageRoot)
+      }
       window.addEventListener('keydown', this.handleKeyboardShortcut)
       window.addEventListener(SUPPORT_DRAFT_STATE_CHANGED_EVENT, this.handleDraftStateWindowEvent)
     }
@@ -364,6 +465,7 @@ export default {
   },
 
   beforeUnmount() {
+    this.pageResizeObserver?.disconnect()
     if (import.meta.client) {
       window.removeEventListener('keydown', this.handleKeyboardShortcut)
       window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.handleActiveProjectChanged)
@@ -919,6 +1021,11 @@ export default {
           }
         })
       )
+    },
+
+    async closeInboxSheetAfter(pending) {
+      this.showInboxSheet = false
+      await pending
     },
 
     unselectConversation() {
