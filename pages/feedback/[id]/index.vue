@@ -93,6 +93,10 @@
                 </Badge>
                 <Badge v-if="item.category" variant="outline">{{ item.category.name }}</Badge>
                 <Badge v-if="item.tag" variant="secondary">{{ feedbackTypeLabel(item.tag) || item.tag }}</Badge>
+                <Badge v-if="item.sourceLabel" variant="secondary" class="gap-1">
+                  <Icon name="lucide:app-window" class="h-3 w-3" />
+                  Added from {{ item.sourceLabel }}
+                </Badge>
                 <Badge v-if="item.isPinned" variant="outline">Pinned</Badge>
                 <Badge v-if="item.isHidden" variant="outline">Hidden</Badge>
                 <Badge v-if="item.isLocked" variant="outline">Comments locked</Badge>
@@ -165,6 +169,14 @@
                     <div class="rounded-xl bg-background/80 p-4">
                       <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Updated</div>
                       <div class="mt-2 text-sm font-medium">{{ formatDate(item.updatedAt) }}</div>
+                    </div>
+                    <div v-if="appVersionLabel" class="rounded-xl bg-background/80 p-4">
+                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">App version</div>
+                      <div class="mt-2 text-sm font-medium">{{ appVersionLabel }}</div>
+                    </div>
+                    <div v-if="osLabel" class="rounded-xl bg-background/80 p-4">
+                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">OS</div>
+                      <div class="mt-2 text-sm font-medium">{{ osLabel }}</div>
                     </div>
                     <div
                       v-if="canManageFeedback && item.linkedConversationCount !== null"
@@ -643,6 +655,13 @@ export default {
   computed: {
     feedbackId() {
       return this.$route.params.id
+    },
+    appVersionLabel() {
+      return this.item?.metadata?.client?.appVersion || ''
+    },
+    osLabel() {
+      const client = this.item?.metadata?.client
+      return [client?.os, client?.osVersion].filter(Boolean).join(' ')
     },
     canEditFeedback() {
       return Boolean(this.item?.canEdit)

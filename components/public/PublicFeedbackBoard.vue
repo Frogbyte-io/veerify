@@ -337,6 +337,15 @@
                     >
                       {{ feedbackTypeLabel(item.tag) }}
                     </span>
+                    <Badge
+                      v-if="item.sourceLabel"
+                      variant="secondary"
+                      class="gap-1 font-normal"
+                      :data-testid="`public-feedback-source-${item.id}`"
+                    >
+                      <Icon name="lucide:app-window" class="w-3 h-3" />
+                      Added from {{ item.sourceLabel }}
+                    </Badge>
                   </div>
                 </div>
                 <p v-if="item.body" class="text-sm text-muted-foreground line-clamp-2 mb-2">
@@ -692,6 +701,15 @@
                   <p class="text-sm text-muted-foreground">Tag</p>
                   <Badge variant="secondary">
                     {{ feedbackTypeLabel(selectedFeedback.tag) || selectedFeedback.tag }}
+                  </Badge>
+                </div>
+
+                <!-- Source -->
+                <div v-if="selectedFeedback.sourceLabel" class="space-y-1.5">
+                  <p class="text-sm text-muted-foreground">Source</p>
+                  <Badge variant="secondary" class="gap-1">
+                    <Icon name="lucide:app-window" class="w-3 h-3" />
+                    Added from {{ selectedFeedback.sourceLabel }}
                   </Badge>
                 </div>
 

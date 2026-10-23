@@ -360,6 +360,14 @@
                           <p v-if="item.body" class="text-xs text-muted-foreground mb-4 line-clamp-2">
                             {{ item.body }}
                           </p>
+                          <Badge
+                            v-if="item.sourceLabel"
+                            variant="secondary"
+                            class="mb-3 gap-1 text-[10px] px-1.5 py-0 font-normal"
+                          >
+                            <Icon name="lucide:app-window" class="w-3 h-3" />
+                            Added from {{ item.sourceLabel }}
+                          </Badge>
                           <div class="flex items-center justify-between mt-auto">
                             <div class="flex items-center gap-3 text-xs text-muted-foreground">
                               <div class="flex items-center gap-1 bg-muted px-1.5 py-0.5 rounded-md">
@@ -465,6 +473,10 @@
                           {{ item.title }}
                         </NuxtLink>
                         <p v-if="item.body" class="text-xs text-muted-foreground mt-1 line-clamp-1">{{ item.body }}</p>
+                        <Badge v-if="item.sourceLabel" variant="secondary" class="mt-1.5 gap-1 font-normal">
+                          <Icon name="lucide:app-window" class="h-3 w-3" />
+                          Added from {{ item.sourceLabel }}
+                        </Badge>
                       </td>
                       <td class="px-4 py-3 align-top">
                         <span class="text-muted-foreground">{{ item.project?.name || 'Unknown' }}</span>
