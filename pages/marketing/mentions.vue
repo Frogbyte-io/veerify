@@ -8,28 +8,28 @@
             Posts on Hacker News, Reddit and Bluesky that name your brand, your competitors or the problem you solve.
           </p>
         </div>
-        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
       </div>
 
-      <!-- Waiting for the product picker -->
+      <!-- Waiting for the active project -->
       <div v-if="!pickerReady" class="space-y-3" data-testid="mentions-picking">
         <Skeleton class="h-9 w-80" />
         <Skeleton v-for="n in 4" :key="n" class="h-24 w-full" />
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <!-- No product -->
+      <!-- No project -->
       <Card v-else-if="!product">
         <CardContent class="py-10 text-center text-sm text-muted-foreground">
-          Create a product first, then switch Marketing on for it.
+          Create a project, then switch Marketing on for it.
         </CardContent>
       </Card>
 
       <!-- Marketing off -->
-      <MarketingDisabled v-else-if="forbidden" :product="product" :message="forbiddenMessage" />
+      <MarketingDisabled v-else-if="forbidden" :project="project" :message="forbiddenMessage" />
 
       <!-- Initial loading -->
       <div v-else-if="isInitialLoading" class="space-y-3" data-testid="mentions-loading">
@@ -77,7 +77,7 @@
         </CardContent>
       </Card>
 
-      <template v-else-if="product">
+      <template v-else-if="project">
         <!-- Filters -->
         <div class="flex flex-wrap items-center gap-2" data-testid="mentions-filters">
           <Button
@@ -246,7 +246,7 @@ export default {
   data() {
     return {
       pickerReady: false,
-      product: null,
+      project: null,
       isLoading: false,
       hasLoaded: false,
       pickerError: false,
@@ -287,10 +287,10 @@ export default {
 
   computed: {
     basePath() {
-      return `/api/marketing/projects/${this.product?.id}/mentions`
+      return `/api/marketing/projects/${this.project?.id}/mentions`
     },
     settingsLink() {
-      return { path: '/marketing/settings', query: { product: this.product?.slug } }
+      return { path: '/marketing/settings' }
     },
     kindLabel() {
       return KIND_LABELS[this.kind]
@@ -332,12 +332,12 @@ export default {
     // Envelopes carry ids and a count only; the list is refetched through the authorized endpoint.
     startListening() {
       this.stopListening()
-      if (!import.meta.client || !this.product?.teamId || !this.$realtime) return
-      const productId = this.product.id
-      this.unsubscribeMentions = this.$realtime.subscribe(`team:${this.product.teamId}`, {
+      if (!import.meta.client || !this.project?.id || !this.$realtime) return
+      const projectId = this.project.id
+      this.unsubscribeMentions = this.$realtime.subscribe(`project:${projectId}`, {
         onEvent: (envelope) => {
-          if (envelope.type !== 'marketing.mentions.new' || envelope.projectId !== productId) return
-          if (this.product?.id !== productId) return
+          if (envelope.type !== 'marketing.mentions.new' || envelope.projectId !== projectId) return
+          if (this.project?.id !== projectId) return
           this.newArrivals += Number.isInteger(envelope.count) && envelope.count > 0 ? envelope.count : 1
         },
         onSubscribeError: (reason) => {
@@ -348,7 +348,7 @@ export default {
 
     // Events published during a reconnect gap are lost, so prompt a refetch.
     handleRealtimeReconnect() {
-      if (!this.product) return
+      if (!this.project) return
       this.newArrivals = Math.max(this.newArrivals, 1)
     },
 
@@ -374,16 +374,16 @@ export default {
       this.stopListening()
       this.newArrivals = 0
       this.requestToken++
-      this.product = null
+      this.project = null
       this.pickerError = true
       this.pickerReady = true
       this.isLoading = false
     },
 
-    async onProductChange(product) {
+    async onProjectChange(project) {
       this.pickerReady = true
       this.pickerError = false
-      this.product = product
+      this.project = project
       this.newArrivals = 0
       this.canEscalate = false
       this.stopListening()
@@ -398,7 +398,7 @@ export default {
       this.sourcesError = null
       this.sourcesLoading = false
       this.requestToken++
-      if (!product) {
+      if (!project) {
         this.isLoading = false
         return
       }
@@ -415,7 +415,7 @@ export default {
     },
 
     async reload() {
-      if (!this.product) return
+      if (!this.project) return
       const token = ++this.requestToken
       this.isLoading = true
       this.error = null
@@ -466,23 +466,23 @@ export default {
     },
 
     async loadSources() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       const token = ++this.sourcesToken
       this.sourcesLoading = true
       this.sourcesError = null
       try {
         const response = await $fetch(`${this.basePath}/sources`)
-        if (this.product?.id !== productId || token !== this.sourcesToken) return
+        if (this.project?.id !== projectId || token !== this.sourcesToken) return
         this.sources = response.data.sources
       } catch (err) {
-        if (this.product?.id !== productId || token !== this.sourcesToken) return
+        if (this.project?.id !== projectId || token !== this.sourcesToken) return
         // Marketing-off is already explained by the list state.
         if (apiErrorStatus(err) !== 403) {
           this.sourcesError = apiErrorMessage(err, 'Failed to load source status')
         }
       } finally {
-        if (this.product?.id === productId && token === this.sourcesToken) this.sourcesLoading = false
+        if (this.project?.id === projectId && token === this.sourcesToken) this.sourcesLoading = false
       }
     },
 

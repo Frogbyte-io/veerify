@@ -201,7 +201,7 @@ test.describe('support sending domains', () => {
 
       await page.reload({ waitUntil: 'domcontentloaded' })
       const picker = page.getByTestId('support-from-picker')
-      await expect(picker).toHaveAttribute('data-policy', 'team', { timeout: 20_000 })
+      await expect(picker).toHaveAttribute('data-policy', 'project', { timeout: 20_000 })
       await picker.getByTestId('support-from-picker-local').fill('support')
       await picker.getByTestId('support-from-picker-select').selectOption({ value: `domain:${domainA}` })
       await page.getByTestId('support-inbox-settings-save').click()
@@ -588,7 +588,7 @@ test.describe('support sending domains', () => {
           ),
       })
       const picker = page.getByTestId('support-from-picker')
-      await expect(picker).toHaveAttribute('data-policy', 'team', { timeout: 20_000 })
+      await expect(picker).toHaveAttribute('data-policy', 'project', { timeout: 20_000 })
       const options = picker.getByTestId('support-from-picker-select').locator('option')
       await expect(options.filter({ hasText: 'pending.example.com (waiting for DNS)' })).toHaveCount(1)
 
@@ -698,7 +698,7 @@ test.describe('support sending domains', () => {
       await stubChannelStatus(page, { platformForwardingEnabled: true, platformAddress: null })
       await page.reload({ waitUntil: 'domcontentloaded' })
       await expect(page.getByTestId('support-sending-domains')).toHaveCount(0)
-      await expect(page.getByTestId('support-from-picker')).toHaveAttribute('data-policy', 'team', {
+      await expect(page.getByTestId('support-from-picker')).toHaveAttribute('data-policy', 'project', {
         timeout: 20_000,
       })
       await expect(page.getByTestId('support-settings-platform-create')).toBeVisible()
@@ -786,7 +786,7 @@ test.describe('support sending domains', () => {
       await page.reload({ waitUntil: 'domcontentloaded' })
       const picker = page.getByTestId('support-from-picker')
       const select = picker.getByTestId('support-from-picker-select')
-      await expect(picker).toHaveAttribute('data-policy', 'team', { timeout: 20_000 })
+      await expect(picker).toHaveAttribute('data-policy', 'project', { timeout: 20_000 })
 
       let saved: Record<string, unknown> | null = null
       await page.route(/\/api\/support\/inboxes\/[^/]+(\?.*)?$/, async (route) => {

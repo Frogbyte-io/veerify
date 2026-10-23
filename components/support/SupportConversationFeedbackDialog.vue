@@ -4,7 +4,7 @@
       <DialogHeader>
         <DialogTitle>Convert to feedback</DialogTitle>
         <DialogDescription>
-          Create a product feedback item from this conversation. The contact remains private to the support team.
+          Create a feedback item from this conversation. The contact remains private to the project.
         </DialogDescription>
       </DialogHeader>
 
@@ -56,27 +56,19 @@
           />
         </div>
 
-        <div class="space-y-2">
+        <div v-if="products.length > 1" class="space-y-2">
           <Label for="support-feedback-product">Product</Label>
-          <div v-if="isLoadingProjects" class="flex h-10 items-center gap-2 text-sm text-muted-foreground">
-            <Icon name="lucide:loader-2" class="h-4 w-4 animate-spin" />
-            Loading products…
-          </div>
           <select
-            v-else
             id="support-feedback-product"
-            v-model="form.projectId"
+            v-model="form.productId"
             data-testid="support-feedback-product"
             class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            @change="loadCategories"
           >
-            <option value="">Select a product</option>
-            <option v-for="item in projects" :key="item.id" :value="item.id">{{ item.name }}</option>
+            <option v-for="item in products" :key="item.id" :value="item.id">{{ item.name }}</option>
           </select>
-          <p v-if="projectsError" class="text-xs text-destructive">{{ projectsError }}</p>
         </div>
 
-        <div v-if="form.projectId" class="space-y-2">
+        <div class="space-y-2">
           <Label for="support-feedback-category">Category</Label>
           <div v-if="isLoadingCategories" class="flex h-10 items-center gap-2 text-sm text-muted-foreground">
             <Icon name="lucide:loader-2" class="h-4 w-4 animate-spin" />
@@ -94,7 +86,11 @@
               {{ category.name }}
             </option>
           </select>
-          <p v-else class="text-xs text-muted-foreground">No categories configured for this product.</p>
+          <p v-else-if="categoriesError" class="text-xs text-destructive">
+            {{ categoriesError }}
+            <button type="button" class="underline" @click="loadCategories">Retry</button>
+          </p>
+          <p v-else class="text-xs text-muted-foreground">No categories configured for this project.</p>
         </div>
       </div>
 
@@ -154,10 +150,7 @@
         </Button>
         <Button
           data-testid="support-feedback-submit"
-          :disabled="
-            isSubmitting ||
-            (mode === 'create' ? isLoadingProjects || !form.title.trim() || !form.projectId : !selectedFeedbackId)
-          "
+          :disabled="isSubmitting || (mode === 'create' ? !form.title.trim() || !form.productId : !selectedFeedbackId)"
           @click="mode === 'create' ? submit() : linkSelected()"
         >
           <Icon v-if="isSubmitting" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
@@ -176,7 +169,9 @@ export default {
     open: { type: Boolean, default: false },
     conversation: { type: Object, default: null },
     messages: { type: Array, default: () => [] },
-    teamId: { type: String, default: '' },
+    projectId: { type: String, default: '' },
+    projectSlug: { type: String, default: '' },
+    products: { type: Array, default: () => [] },
     isSubmitting: { type: Boolean, default: false },
   },
 
@@ -184,7 +179,6 @@ export default {
 
   data() {
     return {
-      projects: [],
       categories: [],
       mode: 'create',
       searchQuery: '',
@@ -192,13 +186,12 @@ export default {
       selectedFeedbackId: null,
       isSearching: false,
       searchError: null,
-      isLoadingProjects: false,
       isLoadingCategories: false,
-      projectsError: null,
+      categoriesError: null,
       form: {
         title: '',
         body: '',
-        projectId: '',
+        productId: '',
         categoryId: null,
       },
     }
@@ -216,7 +209,7 @@ export default {
       this.form = {
         title: this.conversation?.subject?.trim() || 'Support request',
         body: firstIncoming?.body?.trim() || '',
-        projectId: this.conversation?.projectId || '',
+        productId: this.products[0]?.id || '',
         categoryId: null,
       }
       this.mode = 'create'
@@ -225,8 +218,8 @@ export default {
       this.selectedFeedbackId = null
       this.searchError = null
       this.categories = []
-      this.projectsError = null
-      void this.loadProjects()
+      this.categoriesError = null
+      void this.loadCategories()
     },
 
     setMode(mode) {
@@ -234,37 +227,19 @@ export default {
       if (mode === 'existing' && this.searchResults.length === 0) void this.searchFeedback()
     },
 
-    async loadProjects() {
-      if (!this.teamId) return
-      this.isLoadingProjects = true
-      this.projectsError = null
-      try {
-        const response = await $fetch(`/api/teams/${this.teamId}/projects`)
-        this.projects = response?.data || []
-        if (this.form.projectId && !this.projects.some((project) => project.id === this.form.projectId)) {
-          this.form.projectId = ''
-        }
-        if (this.form.projectId) await this.loadCategories()
-      } catch {
-        this.projects = []
-        this.projectsError = 'Could not load products. Please close and try again.'
-      } finally {
-        this.isLoadingProjects = false
-      }
-    },
-
     async loadCategories() {
       this.form.categoryId = null
       this.categories = []
-      const selected = this.projects.find((project) => project.id === this.form.projectId)
-      if (!selected?.slug) return
+      this.categoriesError = null
+      if (!this.projectSlug) return
 
       this.isLoadingCategories = true
       try {
-        const response = await $fetch(`/api/projects/${encodeURIComponent(selected.slug)}/categories`)
+        const response = await $fetch(`/api/projects/${encodeURIComponent(this.projectSlug)}/categories`)
         this.categories = response?.data || []
       } catch {
         this.categories = []
+        this.categoriesError = 'Could not load categories.'
       } finally {
         this.isLoadingCategories = false
       }
@@ -287,11 +262,11 @@ export default {
     },
 
     submit() {
-      if (this.isSubmitting || !this.form.title.trim() || !this.form.projectId) return
+      if (this.isSubmitting || !this.form.title.trim() || !this.form.productId) return
       this.$emit('submit', {
         title: this.form.title.trim(),
         body: this.form.body.trim() || null,
-        projectId: this.form.projectId,
+        productId: this.form.productId,
         categoryId: this.form.categoryId || null,
       })
     },

@@ -34,7 +34,7 @@
       <template v-else-if="data">
         <p v-if="providerLabel" class="text-sm text-muted-foreground">
           Provider: <strong>{{ providerLabel }}</strong>
-          <span v-if="!canManage"> · Only team admins can add or remove domains.</span>
+          <span v-if="!canManage"> · Only project admins can add or remove domains.</span>
         </p>
 
         <div
@@ -272,7 +272,7 @@ import { normalizeSendingDomain, validateSendingDomain } from '~/lib/support-sen
 
 // Whether the deployment has the feature on is a deployment-wide fact, so remember the answer for the page
 // session: a "disabled" answer must not flash a skeleton on every later load, and an "enabled" one keeps
-// the card (with a skeleton) across team switches. null = not known yet.
+// the card (with a skeleton) across project switches. null = not known yet.
 let featureEnabledForSession = null
 
 const POLL_INTERVAL_MS = 30_000
@@ -306,13 +306,13 @@ export default {
   name: 'SupportSendingDomains',
 
   props: {
-    teamId: {
+    projectId: {
       type: String,
       required: true,
     },
   },
 
-  /** `loaded` carries the list response (or null) plus the team it belongs to. */
+  /** `loaded` carries the list response (or null) plus the project it belongs to. */
   emits: ['loaded'],
 
   data() {
@@ -372,7 +372,7 @@ export default {
   },
 
   watch: {
-    teamId() {
+    projectId() {
       this.expanded = {}
       this.busy = {}
       this.cooldowns = {}
@@ -397,7 +397,7 @@ export default {
 
   methods: {
     basePath() {
-      return `/api/support/teams/${encodeURIComponent(this.teamId)}/sending-domains`
+      return `/api/support/projects/${encodeURIComponent(this.projectId)}/sending-domains`
     },
 
     errorInfo(err) {
@@ -412,9 +412,9 @@ export default {
     },
 
     async load({ silent = false } = {}) {
-      if (!this.teamId || this.isUnmounted) return
+      if (!this.projectId || this.isUnmounted) return
       const token = ++this.requestToken
-      const teamId = this.teamId
+      const projectId = this.projectId
       if (!silent) {
         // Known-off deployments never show a loading state.
         if (this.featureEnabled !== false) this.isLoading = true
@@ -422,28 +422,28 @@ export default {
       }
       try {
         const response = await $fetch(this.basePath())
-        if (this.isStale(token, teamId)) return
+        if (this.isStale(token, projectId)) return
         this.data = response?.data || null
         if (this.data) {
           featureEnabledForSession = this.data.enabled === true
           this.featureEnabled = featureEnabledForSession
         }
         this.error = null
-        this.$emit('loaded', this.data, teamId)
+        this.$emit('loaded', this.data, projectId)
       } catch (err) {
-        if (this.isStale(token, teamId)) return
+        if (this.isStale(token, projectId)) return
         if (!silent) {
           if (this.featureEnabled !== false)
             this.error = this.errorInfo(err).message || 'Failed to load sending domains'
-          this.$emit('loaded', null, teamId)
+          this.$emit('loaded', null, projectId)
         }
       } finally {
         if (!this.isUnmounted && token === this.requestToken) this.isLoading = false
       }
     },
 
-    isStale(token, teamId) {
-      return this.isUnmounted || token !== this.requestToken || teamId !== this.teamId
+    isStale(token, projectId) {
+      return this.isUnmounted || token !== this.requestToken || projectId !== this.projectId
     },
 
     pollTick() {

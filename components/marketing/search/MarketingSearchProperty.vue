@@ -8,7 +8,7 @@
       </CardDescription>
     </CardHeader>
     <CardContent class="space-y-3">
-      <p v-if="!canManage" class="text-sm text-muted-foreground">Only team admins can choose the property.</p>
+      <p v-if="!canManage" class="text-sm text-muted-foreground">Only project admins can choose the property.</p>
 
       <div v-else-if="isLoading" class="space-y-2">
         <Skeleton class="h-10 w-full" />

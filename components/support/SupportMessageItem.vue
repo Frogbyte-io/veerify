@@ -27,7 +27,7 @@
       <span class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400"
         >Internal note</span
       >
-      <span class="text-xs text-amber-700/70 dark:text-amber-400/70">· only visible to your team</span>
+      <span class="text-xs text-amber-700/70 dark:text-amber-400/70">· only visible to your project</span>
       <span class="ml-auto text-xs text-muted-foreground">{{ formattedTime }}</span>
     </div>
     <SupportMessageHtml v-if="renderableHtml" :html="renderableHtml" />
@@ -99,7 +99,7 @@
           >
             <Icon name="lucide:alert-circle" class="w-3 h-3 text-destructive shrink-0" />
             <span v-if="isSenderBlocked" class="text-xs text-destructive" data-testid="support-message-sender-blocked">
-              Not sent: this inbox's From address isn't verified for your team.
+              Not sent: this inbox's From address isn't verified for your project.
               <NuxtLink
                 to="/support/settings"
                 class="underline hover:no-underline"
@@ -184,7 +184,7 @@ export default {
       return this.message.bodyHtml || null
     },
 
-    /** The outbox refused to send because the From address is not authorized for the team. */
+    /** The outbox refused to send because the From address is not authorized for the project. */
     isSenderBlocked() {
       return (
         this.senderRetryBlocked ||
