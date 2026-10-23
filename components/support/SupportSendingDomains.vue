@@ -516,10 +516,12 @@ export default {
 
     /**
      * Client-side check with the shared rules. The reserved list is server-only, so it is
-     * empty here and the server stays authoritative. `.test` names are fake-provider only.
+     * empty here and the server stays authoritative. `.test` names are fake-provider only,
+     * matching the server's rule.
      */
     validateDomainInput(value) {
-      return validateSendingDomain(value, { reserved: [], allowTestTld: !import.meta.env.PROD }) || ''
+      const allowTestTld = this.data?.provider === 'fake'
+      return validateSendingDomain(value, { reserved: [], allowTestTld }) || ''
     },
 
     async addDomain() {
