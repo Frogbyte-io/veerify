@@ -5324,6 +5324,128 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/projects/{slug}/api-keys": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List app keys for a project",
+      "description": "Returns key metadata newest first. The key secret and hash are never returned.",
+      "operationId": "listProjectApiKeys",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "App key summaries"
+        },
+        "403": {
+          "description": "Not a team member"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Create an app key",
+      "description": "The full key is returned once in this response and cannot be retrieved later.",
+      "operationId": "createProjectApiKey",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Key created; includes the full key once"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a team member"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/api-keys/{keyId}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Revoke an app key",
+      "description": "Revoked keys are rejected immediately and the row is kept for audit.",
+      "operationId": "revokeProjectApiKey",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "keyId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Key revoked"
+        },
+        "403": {
+          "description": "Not a team member"
+        },
+        "404": {
+          "description": "Project or key not found"
+        }
+      }
+    }
+  },
   "/api/public/csat/{token}": {
     "get": {
       "tags": [
