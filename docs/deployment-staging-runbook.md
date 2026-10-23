@@ -12,11 +12,11 @@ or the secret store.
 
 Staging host names used below (change them if you prefer):
 
-| Purpose               | Host                      |
-| --------------------- | ------------------------- |
-| Root / public boards  | `staging.veerify.io`      |
-| Dashboard             | `app.staging.veerify.io`  |
-| Team subdomains       | `*.staging.veerify.io`    |
+| Purpose               | Host                       |
+| --------------------- | -------------------------- |
+| Root / public boards  | `staging.veerify.io`       |
+| Dashboard             | `app.staging.veerify.io`   |
+| Team subdomains       | `*.staging.veerify.io`     |
 | Customer CNAME target | `cname.staging.veerify.io` |
 
 ---
@@ -65,6 +65,7 @@ staging.
 
    Add matching AAAA records if the server has public IPv6. Cloudflare's free proxy (orange cloud)
    doesn't cover two-level wildcards like `*.staging.veerify.io`, so keep these grey.
+
 2. Wildcard TLS needs a DNS-01 challenge. Choose one:
    - **Wildcard certificate (recommended):** create a Cloudflare API token with `Zone → DNS → Edit`
      on `veerify.io` only. In Coolify → Servers → `bergen` → Proxy, add a Traefik certificate

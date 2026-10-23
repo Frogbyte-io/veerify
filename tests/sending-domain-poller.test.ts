@@ -652,15 +652,18 @@ describe('removeSendingDomainClaim', () => {
     ['owned_elsewhere', false],
     ['invalid_domain', false],
     ['unknown', false],
-  ] as const)('releases the row with an operator cleanup request on a permanent %s refusal', async (code, _retryable) => {
-    const provider = makeProvider({
-      remove: vi.fn(async () => {
-        throw new SendingDomainProviderError(code, 'refused', false)
-      }),
-    })
-    const outcome = await removeSendingDomainClaim(row({ status: 'deleting' }), provider, { now: NOW, deleteRoutes })
-    expect(outcome).toEqual({ kind: 'deleted', operatorCleanupRequired: true })
-  })
+  ] as const)(
+    'releases the row with an operator cleanup request on a permanent %s refusal',
+    async (code, _retryable) => {
+      const provider = makeProvider({
+        remove: vi.fn(async () => {
+          throw new SendingDomainProviderError(code, 'refused', false)
+        }),
+      })
+      const outcome = await removeSendingDomainClaim(row({ status: 'deleting' }), provider, { now: NOW, deleteRoutes })
+      expect(outcome).toEqual({ kind: 'deleted', operatorCleanupRequired: true })
+    }
+  )
 
   it('stops retrying a removal after the budget and asks the operator to clean up', async () => {
     for (const code of ['provider_unavailable', 'missing_scope'] as const) {

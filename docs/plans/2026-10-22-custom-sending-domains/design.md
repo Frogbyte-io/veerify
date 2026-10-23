@@ -19,7 +19,7 @@ Inbound mail on customer domains has two paths:
 1. **The current check is project-wide and leaks data.** `MailgunChannelDriver.checkSendingAuthorization` (`server/services/support-channels/webhook/mailgun.ts`) passes for any `active` domain in the Frogmail project. Its `unauthorized` verdict also returns `verifiedDomains`, which is every domain in the project. `server/api/support/inboxes/[id]/sending-status.get.ts` sends that list to any inbox agent. Once customers add domains, every team could read every other customer's domain list. This has to be fixed whatever else is decided.
 2. **Nothing checks authorization at send time.** `checkSendingAuthorization` has one caller, the settings endpoint. `processOutboundDelivery` (`server/utils/outbound-delivery.ts`) sends whatever `payload.from` holds. Team A could set its From to `support@teamb.com` today, and Frogmail would accept it because the domain is verified for the project.
 3. **DKIM verification does not prove which team owns a domain.** Frogmail never deletes the SES identity (`docs/dns-onboarding.md`, "Removing a domain"), so a domain's DKIM CNAMEs never change. If a previous owner left them published, any team that claims the domain would pass verification without touching DNS. Each claim therefore needs its own Veerify TXT challenge. `server/services/marketing/site-verification.ts` already does this with `resolveTxt`.
-4. **Frogmail can report `active` for a domain it will not let us send from.** `POST /v4/domains` (`app/Services/DomainOnboarding.php::add`) only refuses a domain that another project has already *verified*. If both projects have it pending, both can verify. `SenderAuthorization::owningDomain` then gives sending to whichever verified first, but our `GET /v4/domains` still says `active` (see F-3).
+4. **Frogmail can report `active` for a domain it will not let us send from.** `POST /v4/domains` (`app/Services/DomainOnboarding.php::add`) only refuses a domain that another project has already _verified_. If both projects have it pending, both can verify. `SenderAuthorization::owningDomain` then gives sending to whichever verified first, but our `GET /v4/domains` still says `active` (see F-3).
 5. **Frogmail re-checks pending domains on its own** every 10 minutes (`RecheckPendingDomains`, `routes/console.php:43`). Veerify can poll with the cheap `GET /v4/domains/{domain}` (`domains:read`) and save `PUT …/verify` for the user's "Verify now" click.
 6. **Frogmail cannot receive mail on subdomains** (`docs/dns-onboarding.md`, "Apex and subdomain receiving"). Receiving requires Cloudflare MX at the zone apex. Most customers keep their apex MX on Google Workspace or Microsoft 365, so forwarding has to be the default. `match_recipient` routes only work on zones the project receives for, and that can only be enabled in the dashboard.
 7. **Frogmail's Mailgun-adapter errors are `{message}` text only**, with no code. Auth errors are the exception and carry `X-Frogmail-Error`. Veerify needs to match on message text until F-2 ships.
@@ -48,7 +48,7 @@ Inbound mail on customer domains has two paths:
 All values are normalized first: trimmed, lowercased, trailing dot removed, IDN converted to ASCII. `normalizeDomainHostname` in `server/services/domains/provider.ts` already does this.
 
 1. The name must be valid. Each label matches `[a-z0-9-]`, up to 63 characters; the whole name is at most 253. `tldts.parse` must find an ICANN public suffix and a registrable domain. IP addresses are rejected. The `fake` provider also accepts `*.test` for e2e.
-2. The name is not on the reserved list, and is neither an ancestor nor a descendant of a reserved entry. The list is: the domains of `MAIL_FROM`, `SYSTEM_MAIL_FROM` and `SUPPORT_MAILGUN_ACCOUNT_KEY`; `APP_DOMAIN`; `SUPPORT_PLATFORM_MAIL_DOMAIN`; and any extra entries in `SUPPORT_SENDING_DOMAINS_RESERVED`. Common mailbox providers are also refused (gmail.com, googlemail.com, outlook.com, hotmail.com, live.com, yahoo.com, icloud.com, me.com, proton.me, protonmail.com, gmx.*, aol.com), using a constant list in `lib/support-sending-domains.ts`.
+2. The name is not on the reserved list, and is neither an ancestor nor a descendant of a reserved entry. The list is: the domains of `MAIL_FROM`, `SYSTEM_MAIL_FROM` and `SUPPORT_MAILGUN_ACCOUNT_KEY`; `APP_DOMAIN`; `SUPPORT_PLATFORM_MAIL_DOMAIN`; and any extra entries in `SUPPORT_SENDING_DOMAINS_RESERVED`. Common mailbox providers are also refused (gmail.com, googlemail.com, outlook.com, hotmail.com, live.com, yahoo.com, icloud.com, me.com, proton.me, protonmail.com, gmx.\*, aol.com), using a constant list in `lib/support-sending-domains.ts`.
 3. **Across teams:** the new domain may not equal, sit under, or sit over any claim of another team in any status. `badacme.com` does not conflict with `acme.com`. The response is `409 DOMAIN_CLAIMED`, with the message "This domain, or a parent or subdomain of it, is already registered by another Veerify workspace." This tells the caller the domain exists elsewhere. Frogmail's dashboard discloses the same thing, and the owning team is never named.
 4. **Within a team:** nested claims are allowed. `mail.acme.com` alongside `acme.com` is useful for separate DKIM keys or reputation.
 5. **Limits:** at most `MAX_DOMAINS_PER_TEAM = 10` claims, of which at most `MAX_PENDING_PER_TEAM = 3` may be unverified. This limits squatting.
@@ -58,14 +58,14 @@ Concurrency: the create transaction takes `pg_advisory_xact_lock(hashtext('suppo
 
 ### 4.3 When the domain already exists on the provider
 
-| Provider answer to `POST /v4/domains` | Meaning | Veerify behaviour |
-| --- | --- | --- |
-| `200` | Registered | `providerOwnership = 'created'`, status `pending` |
-| `400 This domain name is already taken` | It is already in *our* Frogmail project: added by an operator before self-serve, left over from an interrupted delete, or a legacy manual setup | **Adopt it:** `GET /v4/domains/{domain}`, set `providerOwnership = 'adopted'`, status `pending`. The team still has to pass the TXT proof. Veerify never deletes an adopted domain from the provider (§8.4). |
-| `400 … verified sending domain of another project` | Another Frogmail project (another Frogbyte app) owns sending | Delete the Veerify row and return `409 DOMAIN_OWNED_ELSEWHERE`: "This domain is already used to send mail by another service. Remove it there first or use a subdomain." Nothing stays claimed. |
-| `400`, any other message | Invalid name or a provider-side refusal | Delete the row and return `422 DOMAIN_REJECTED` with the sanitized provider message |
-| `401` with `X-Frogmail-Error: missing_scope` | Operator misconfiguration | Delete the row, return `503 PROVIDER_MISCONFIGURED`, log an error |
-| `429`, `5xx`, network error or timeout | Transient | Keep the row as `failed` with `nextCheckAt` from backoff. The poller retries; the admin can click Verify to retry immediately. Return `202` with the row. |
+| Provider answer to `POST /v4/domains`              | Meaning                                                                                                                                         | Veerify behaviour                                                                                                                                                                                            |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `200`                                              | Registered                                                                                                                                      | `providerOwnership = 'created'`, status `pending`                                                                                                                                                            |
+| `400 This domain name is already taken`            | It is already in _our_ Frogmail project: added by an operator before self-serve, left over from an interrupted delete, or a legacy manual setup | **Adopt it:** `GET /v4/domains/{domain}`, set `providerOwnership = 'adopted'`, status `pending`. The team still has to pass the TXT proof. Veerify never deletes an adopted domain from the provider (§8.4). |
+| `400 … verified sending domain of another project` | Another Frogmail project (another Frogbyte app) owns sending                                                                                    | Delete the Veerify row and return `409 DOMAIN_OWNED_ELSEWHERE`: "This domain is already used to send mail by another service. Remove it there first or use a subdomain." Nothing stays claimed.              |
+| `400`, any other message                           | Invalid name or a provider-side refusal                                                                                                         | Delete the row and return `422 DOMAIN_REJECTED` with the sanitized provider message                                                                                                                          |
+| `401` with `X-Frogmail-Error: missing_scope`       | Operator misconfiguration                                                                                                                       | Delete the row, return `503 PROVIDER_MISCONFIGURED`, log an error                                                                                                                                            |
+| `429`, `5xx`, network error or timeout             | Transient                                                                                                                                       | Keep the row as `failed` with `nextCheckAt` from backoff. The poller retries; the admin can click Verify to retry immediately. Return `202` with the row.                                                    |
 
 ### 4.4 Sender policy (outbound)
 
@@ -80,57 +80,80 @@ Concurrency: the create transaction takes `pg_advisory_xact_lock(hashtext('suppo
 
 ### 4.5 Where `team` policy is enforced
 
-| Point | File | Behaviour |
-| --- | --- | --- |
-| Settings verdict | `server/api/support/inboxes/[id]/sending-status.get.ts` | Team-scoped verdict (§7.3). Never returns provider-wide lists. |
-| Saving an inbox | `server/api/support/inboxes/[id].put.ts` | `emailAddress` must be on one of the team's own claims (any status except `deleting`) or be one of its platform addresses. Otherwise `422 SENDER_DOMAIN_NOT_OWNED`. A pending domain is allowed so teams can set things up ahead of time; replies stay blocked until it is verified. |
-| Agent reply | `server/api/support/conversations/[id]/messages/index.post.ts` | Before the transaction: if not authorized, `409 SENDER_NOT_VERIFIED` ("Replies from support@acme.com are blocked until acme.com is verified in Support settings"). |
-| Auto-reply | `server/api/support/inbound/[provider].post.ts` | If not authorized, skip the auto-reply, log it, and record metric `support.sending_domain.blocked` with `reason: 'auto_reply'`. The ticket is still created. |
-| CSAT | `server/utils/csat.ts` | Same: skip and log. |
-| Outbox worker (final check) | `server/utils/outbound-delivery.ts` `processOutboundDelivery` | Find the team (delivery → message → conversation → `teamId`) and re-check `payload.from.address`. If not authorized, fail the delivery as terminal immediately with `lastError = 'SENDER_DOMAIN_NOT_AUTHORIZED'`, without calling `sendEmail`. This covers code paths that enqueue directly, and domains deleted or suspended while mail was queued. The existing retry endpoint can resend once the domain is verified again. |
+| Point                       | File                                                           | Behaviour                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Settings verdict            | `server/api/support/inboxes/[id]/sending-status.get.ts`        | Team-scoped verdict (§7.3). Never returns provider-wide lists.                                                                                                                                                                                                                                                                                                                                                                 |
+| Saving an inbox             | `server/api/support/inboxes/[id].put.ts`                       | `emailAddress` must be on one of the team's own claims (any status except `deleting`) or be one of its platform addresses. Otherwise `422 SENDER_DOMAIN_NOT_OWNED`. A pending domain is allowed so teams can set things up ahead of time; replies stay blocked until it is verified.                                                                                                                                           |
+| Agent reply                 | `server/api/support/conversations/[id]/messages/index.post.ts` | Before the transaction: if not authorized, `409 SENDER_NOT_VERIFIED` ("Replies from support@acme.com are blocked until acme.com is verified in Support settings").                                                                                                                                                                                                                                                             |
+| Auto-reply                  | `server/api/support/inbound/[provider].post.ts`                | If not authorized, skip the auto-reply, log it, and record metric `support.sending_domain.blocked` with `reason: 'auto_reply'`. The ticket is still created.                                                                                                                                                                                                                                                                   |
+| CSAT                        | `server/utils/csat.ts`                                         | Same: skip and log.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Outbox worker (final check) | `server/utils/outbound-delivery.ts` `processOutboundDelivery`  | Find the team (delivery → message → conversation → `teamId`) and re-check `payload.from.address`. If not authorized, fail the delivery as terminal immediately with `lastError = 'SENDER_DOMAIN_NOT_AUTHORIZED'`, without calling `sendEmail`. This covers code paths that enqueue directly, and domains deleted or suspended while mail was queued. The existing retry endpoint can resend once the domain is verified again. |
 
 ## 5. Schema (WP1; `server/database/schema/support.ts`, then `yarn db:generate`)
 
 ### 5.1 New table `support_sending_domain`
 
 ```ts
-export const SUPPORT_SENDING_DOMAIN_STATUSES = ['provisioning','pending','verified','suspended','failed','deleting'] as const
+export const SUPPORT_SENDING_DOMAIN_STATUSES = [
+  'provisioning',
+  'pending',
+  'verified',
+  'suspended',
+  'failed',
+  'deleting',
+] as const
 
-export const supportSendingDomain = pgTable('support_sending_domain', {
-  id: text('id').primaryKey(),
-  teamId: text('team_id').notNull().references(() => team.id, { onDelete: 'cascade' }),
-  domain: text('domain').notNull(),                       // normalized ASCII
-  registrableDomain: text('registrable_domain').notNull(), // tldts getDomain(); lock + hierarchy query key
-  status: text('status').default('provisioning').notNull(),
-  provider: text('provider').notNull(),                   // 'mailgun' | 'postmark' | 'fake'
-  providerAccountKey: text('provider_account_key').notNull().default(''),
-  providerOwnership: text('provider_ownership'),          // 'created' | 'adopted' | null (not yet registered)
-  providerState: text('provider_state'),                  // 'active' | 'unverified' | null
-  receivesViaProvider: boolean('receives_via_provider').default(false).notNull(),
-  ownershipToken: text('ownership_token').notNull(),
-  ownershipVerifiedAt: timestamp('ownership_verified_at'),
-  ownershipFailures: integer('ownership_failures').default(0).notNull(),
-  providerFailures: integer('provider_failures').default(0).notNull(),
-  dnsRecords: jsonb('dns_records').$type<SendingDomainDnsRecord[]>().default([]).notNull(),
-  verifiedAt: timestamp('verified_at'),
-  lastCheckedAt: timestamp('last_checked_at'),
-  nextCheckAt: timestamp('next_check_at'),
-  leaseExpiresAt: timestamp('lease_expires_at'),
-  attemptCount: integer('attempt_count').default(0).notNull(),
-  lastErrorCode: text('last_error_code'),
-  lastError: text('last_error'),                          // sanitized, <= 500 chars
-  expiresAt: timestamp('expires_at'),                     // pending-claim TTL; null once verified
-  createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
-  createdAt: timestamp('created_at').$defaultFn(() => new Date()).notNull(),
-  updatedAt: timestamp('updated_at').$defaultFn(() => new Date()).notNull(),
-}, (t) => ({
-  uniqueDomain: uniqueIndex('support_sending_domain_domain_idx').on(t.domain),
-  teamIdx: index('support_sending_domain_team_idx').on(t.teamId),
-  registrableIdx: index('support_sending_domain_registrable_idx').on(t.registrableDomain),
-  dueIdx: index('support_sending_domain_due_idx').on(t.status, t.nextCheckAt),
-  validStatus: check('support_sending_domain_status_check', sql`${t.status} in ('provisioning','pending','verified','suspended','failed','deleting')`),
-  validOwnership: check('support_sending_domain_ownership_check', sql`${t.providerOwnership} is null or ${t.providerOwnership} in ('created','adopted')`),
-}))
+export const supportSendingDomain = pgTable(
+  'support_sending_domain',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    domain: text('domain').notNull(), // normalized ASCII
+    registrableDomain: text('registrable_domain').notNull(), // tldts getDomain(); lock + hierarchy query key
+    status: text('status').default('provisioning').notNull(),
+    provider: text('provider').notNull(), // 'mailgun' | 'postmark' | 'fake'
+    providerAccountKey: text('provider_account_key').notNull().default(''),
+    providerOwnership: text('provider_ownership'), // 'created' | 'adopted' | null (not yet registered)
+    providerState: text('provider_state'), // 'active' | 'unverified' | null
+    receivesViaProvider: boolean('receives_via_provider').default(false).notNull(),
+    ownershipToken: text('ownership_token').notNull(),
+    ownershipVerifiedAt: timestamp('ownership_verified_at'),
+    ownershipFailures: integer('ownership_failures').default(0).notNull(),
+    providerFailures: integer('provider_failures').default(0).notNull(),
+    dnsRecords: jsonb('dns_records').$type<SendingDomainDnsRecord[]>().default([]).notNull(),
+    verifiedAt: timestamp('verified_at'),
+    lastCheckedAt: timestamp('last_checked_at'),
+    nextCheckAt: timestamp('next_check_at'),
+    leaseExpiresAt: timestamp('lease_expires_at'),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    lastErrorCode: text('last_error_code'),
+    lastError: text('last_error'), // sanitized, <= 500 chars
+    expiresAt: timestamp('expires_at'), // pending-claim TTL; null once verified
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (t) => ({
+    uniqueDomain: uniqueIndex('support_sending_domain_domain_idx').on(t.domain),
+    teamIdx: index('support_sending_domain_team_idx').on(t.teamId),
+    registrableIdx: index('support_sending_domain_registrable_idx').on(t.registrableDomain),
+    dueIdx: index('support_sending_domain_due_idx').on(t.status, t.nextCheckAt),
+    validStatus: check(
+      'support_sending_domain_status_check',
+      sql`${t.status} in ('provisioning','pending','verified','suspended','failed','deleting')`
+    ),
+    validOwnership: check(
+      'support_sending_domain_ownership_check',
+      sql`${t.providerOwnership} is null or ${t.providerOwnership} in ('created','adopted')`
+    ),
+  })
+)
 ```
 
 `SendingDomainDnsRecord` (exported from `lib/support-sending-domains.ts` so the UI can use it):
@@ -139,7 +162,7 @@ export const supportSendingDomain = pgTable('support_sending_domain', {
 interface SendingDomainDnsRecord {
   purpose: 'ownership' | 'sending' | 'receiving' | 'recommended'
   type: 'TXT' | 'CNAME' | 'MX'
-  name: string            // FQDN
+  name: string // FQDN
   value: string
   priority?: string
   status: 'valid' | 'invalid' | 'unknown'
@@ -182,8 +205,8 @@ This is kept separate from `ChannelDriver`, which handles inbound plus the autho
 ```ts
 // server/services/sending-domains/types.ts
 export interface SendingDomainCapabilities {
-  register: boolean         // can create the domain at the provider
-  verifyNow: boolean        // has an on-demand re-check
+  register: boolean // can create the domain at the provider
+  verifyNow: boolean // has an on-demand re-check
   remove: boolean
   inboundRoutes: boolean
   authorizesSubdomains: boolean
@@ -191,24 +214,38 @@ export interface SendingDomainCapabilities {
 export interface ProviderDomainResult {
   domain: string
   state: 'active' | 'unverified'
-  receivesMail: boolean                  // Frogmail: receiving_dns_records non-empty
-  records: SendingDomainDnsRecord[]      // purpose 'sending' | 'receiving'
+  receivesMail: boolean // Frogmail: receiving_dns_records non-empty
+  records: SendingDomainDnsRecord[] // purpose 'sending' | 'receiving'
   message: string | null
 }
 export type SendingDomainErrorCode =
-  | 'already_exists' | 'owned_elsewhere' | 'invalid_domain' | 'not_found' | 'receiving_enabled'
-  | 'rate_limited' | 'unauthorized' | 'missing_scope' | 'provider_unavailable' | 'unknown'
+  | 'already_exists'
+  | 'owned_elsewhere'
+  | 'invalid_domain'
+  | 'not_found'
+  | 'receiving_enabled'
+  | 'rate_limited'
+  | 'unauthorized'
+  | 'missing_scope'
+  | 'provider_unavailable'
+  | 'unknown'
 export class SendingDomainProviderError extends Error {
-  constructor(public code: SendingDomainErrorCode, message: string,
-              public retryable: boolean, public retryAfterSeconds?: number) { super(message) }
+  constructor(
+    public code: SendingDomainErrorCode,
+    message: string,
+    public retryable: boolean,
+    public retryAfterSeconds?: number
+  ) {
+    super(message)
+  }
 }
 export interface SendingDomainProvider {
   readonly name: string
   readonly accountKey: string
   readonly capabilities: SendingDomainCapabilities
-  isConfigured(): { configured: boolean; missing: string[] }   // names only (D-34)
-  register(domain: string): Promise<ProviderDomainResult>      // adopts on already_exists
-  get(domain: string): Promise<ProviderDomainResult | null>    // null = not_found
+  isConfigured(): { configured: boolean; missing: string[] } // names only (D-34)
+  register(domain: string): Promise<ProviderDomainResult> // adopts on already_exists
+  get(domain: string): Promise<ProviderDomainResult | null> // null = not_found
   verify(domain: string): Promise<ProviderDomainResult>
   remove(domain: string): Promise<{ cleanup: { removed: string[]; kept: string[]; failed: string[] } | null }>
   createInboundRoute?(input: { address: string; forwardUrl: string; description: string }): Promise<{ routeId: string }>
@@ -218,8 +255,11 @@ export function getSendingDomainProvider(): SendingDomainProvider | null
 
 // server/services/sending-domains/ownership.ts
 export function ownershipRecord(domain: string, token: string): SendingDomainDnsRecord
-export async function checkOwnershipTxt(domain: string, token: string,
-  deps?: { resolveTxt?: typeof import('node:dns/promises').resolveTxt }): Promise<'valid' | 'invalid' | 'unknown'>
+export async function checkOwnershipTxt(
+  domain: string,
+  token: string,
+  deps?: { resolveTxt?: typeof import('node:dns/promises').resolveTxt }
+): Promise<'valid' | 'invalid' | 'unknown'>
 export async function checkDmarc(domain: string, deps?): Promise<SendingDomainDnsRecord | null> // 'recommended' row when missing
 ```
 
@@ -272,25 +312,38 @@ All routes live under `server/api/support/teams/[teamId]/sending-domains/` and u
 
 ### 7.1 Endpoints
 
-| Method and path | Who may call | Purpose | Rate limit (`requireRateLimit`, `subject`) |
-| --- | --- | --- | --- |
-| `GET …/sending-domains` | `resolveSupportTeamRole` non-null (any support role) or team admin | List the team's claims with records, plus `{ enabled, policy, provider, capabilities, canManage, limits, providerConfigured, missingEnvVars }` | none |
-| `POST …/sending-domains` `{ domain }` | `requireTeamAdmin` | Claim and register (§4.2, §4.3). `201` for pending, `202` for failed but retrying. | `sending-domain-create`: 10 per hour per team; 5 per minute per user |
-| `GET …/sending-domains/[id]` | as list | Detail, including the inboxes using this domain (`inboxes: {id,name,emailAddress}[]`) | none |
-| `POST …/sending-domains/[id]/verify` | `requireTeamAdmin` | `failed`/`provisioning`: run register again. Otherwise: provider `verify()` (or `get()` without `verifyNow`), then TXT and DMARC checks, then save. Returns the row. | `sending-domain-verify`: 1 per 20 seconds per domain; 60 per hour per team |
-| `DELETE …/sending-domains/[id]?force=true` | `requireTeamAdmin` | If inboxes use the domain and `force` is not set, `409 DOMAIN_IN_USE` with the inbox list. Otherwise delete per §8.4. | 20 per hour per team |
+| Method and path                            | Who may call                                                       | Purpose                                                                                                                                                              | Rate limit (`requireRateLimit`, `subject`)                                 |
+| ------------------------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `GET …/sending-domains`                    | `resolveSupportTeamRole` non-null (any support role) or team admin | List the team's claims with records, plus `{ enabled, policy, provider, capabilities, canManage, limits, providerConfigured, missingEnvVars }`                       | none                                                                       |
+| `POST …/sending-domains` `{ domain }`      | `requireTeamAdmin`                                                 | Claim and register (§4.2, §4.3). `201` for pending, `202` for failed but retrying.                                                                                   | `sending-domain-create`: 10 per hour per team; 5 per minute per user       |
+| `GET …/sending-domains/[id]`               | as list                                                            | Detail, including the inboxes using this domain (`inboxes: {id,name,emailAddress}[]`)                                                                                | none                                                                       |
+| `POST …/sending-domains/[id]/verify`       | `requireTeamAdmin`                                                 | `failed`/`provisioning`: run register again. Otherwise: provider `verify()` (or `get()` without `verifyNow`), then TXT and DMARC checks, then save. Returns the row. | `sending-domain-verify`: 1 per 20 seconds per domain; 60 per hour per team |
+| `DELETE …/sending-domains/[id]?force=true` | `requireTeamAdmin`                                                 | If inboxes use the domain and `force` is not set, `409 DOMAIN_IN_USE` with the inbox list. Otherwise delete per §8.4.                                                | 20 per hour per team                                                       |
 
 Every route checks that the claim belongs to `teamId` (`and(eq(id), eq(teamId))`) and returns 404 otherwise, never 403, so claim ids stay opaque. Mutations are admin-only because a domain affects every inbox of the team. This follows the D-28 reasoning that changes with team-wide effect need `teamMember.role === 'admin'`. Inbox admins still choose their inbox's From address, but only from the team's own domains (§4.5).
 
 ### 7.2 Response shape for a claim
 
 ```json
-{ "id": "…", "domain": "acme.com", "status": "pending",
-  "providerState": "unverified", "ownershipVerified": false, "receivesViaProvider": false,
-  "records": [ /* ownership row first, then sending, receiving, recommended */ ],
-  "lastCheckedAt": "…", "nextCheckAt": "…", "expiresAt": "…", "verifiedAt": null,
-  "lastErrorCode": null, "lastError": null, "providerOwnership": "created",
-  "providerMismatch": false }
+{
+  "id": "…",
+  "domain": "acme.com",
+  "status": "pending",
+  "providerState": "unverified",
+  "ownershipVerified": false,
+  "receivesViaProvider": false,
+  "records": [
+    /* ownership row first, then sending, receiving, recommended */
+  ],
+  "lastCheckedAt": "…",
+  "nextCheckAt": "…",
+  "expiresAt": "…",
+  "verifiedAt": null,
+  "lastErrorCode": null,
+  "lastError": null,
+  "providerOwnership": "created",
+  "providerMismatch": false
+}
 ```
 
 `providerMismatch` is true when the claim's `provider`/`providerAccountKey` differ from the current configuration, for example after switching Frogmail projects. The UI then offers "Register again" (the verify endpoint calls `register`).
@@ -314,26 +367,45 @@ Every route checks that the claim belongs to `teamId` (`and(eq(id), eq(teamId))`
 export function resolveSenderPolicy(): 'legacy' | 'team'
 export function isSendingDomainsEnabled(): boolean
 export function reservedSendingDomains(): string[]
-export async function createSendingDomainClaim(input: { teamId; domain; userId; provider; providerAccountKey }):
-  Promise<typeof supportSendingDomain.$inferSelect>            // lock + rules + insert 'provisioning'
+export async function createSendingDomainClaim(input: {
+  teamId
+  domain
+  userId
+  provider
+  providerAccountKey
+}): Promise<typeof supportSendingDomain.$inferSelect> // lock + rules + insert 'provisioning'
 export async function listTeamSendingDomains(teamId: string)
-export async function getTeamSendingDomain(teamId: string, id: string)   // 404 on cross-team
-export async function resolveTeamSenderAuthorization(teamId: string, address: string,
-  opts?: { executor?: Pick<typeof db,'select'>; provider?: { name: string; accountKey: string; authorizesSubdomains: boolean } }):
-  Promise<TeamSenderVerdict>                                    // §7.3 union, pure DB read
+export async function getTeamSendingDomain(teamId: string, id: string) // 404 on cross-team
+export async function resolveTeamSenderAuthorization(
+  teamId: string,
+  address: string,
+  opts?: {
+    executor?: Pick<typeof db, 'select'>
+    provider?: { name: string; accountKey: string; authorizesSubdomains: boolean }
+  }
+): Promise<TeamSenderVerdict> // §7.3 union, pure DB read
 export async function assertSenderAddressAllowedForInbox(teamId: string, address: string): Promise<void> // §4.5 PUT rule
-export async function assertReceivingAddressAllowed(teamId: string, address: string): Promise<void>      // §9.3
-export function applyProviderResult(row, result, ownership: 'valid'|'invalid'|'unknown', now): Partial<Row> // pure status transition
+export async function assertReceivingAddressAllowed(teamId: string, address: string): Promise<void> // §9.3
+export function applyProviderResult(row, result, ownership: 'valid' | 'invalid' | 'unknown', now): Partial<Row> // pure status transition
 ```
 
 `applyProviderResult` and the hierarchy rules are pure functions in `lib/support-sending-domains.ts`, so they can be unit tested without a database:
 
 ```ts
 export function normalizeSendingDomain(input: string): string
-export function validateSendingDomain(domain: string, opts: { reserved: string[]; allowTestTld: boolean }): string | null
-export function findHierarchyConflict(domain: string, teamId: string, claims: { domain: string; teamId: string }[]): { domain: string } | null
-export function relativeRecordHost(fqdn: string, zone: string): string   // "_veerify-mail" for UIs that append the zone
-export const MAX_DOMAINS_PER_TEAM = 10, MAX_PENDING_PER_TEAM = 3, PENDING_TTL_DAYS = 7
+export function validateSendingDomain(
+  domain: string,
+  opts: { reserved: string[]; allowTestTld: boolean }
+): string | null
+export function findHierarchyConflict(
+  domain: string,
+  teamId: string,
+  claims: { domain: string; teamId: string }[]
+): { domain: string } | null
+export function relativeRecordHost(fqdn: string, zone: string): string // "_veerify-mail" for UIs that append the zone
+export const MAX_DOMAINS_PER_TEAM = 10,
+  MAX_PENDING_PER_TEAM = 3,
+  PENDING_TTL_DAYS = 7
 ```
 
 ## 8. Background polling, failures and retries (WP3)
@@ -360,7 +432,7 @@ export const MAX_DOMAINS_PER_TEAM = 10, MAX_PENDING_PER_TEAM = 3, PENDING_TTL_DA
 
 ### 8.3 Interaction with inboxes
 
-When a claim moves to `suspended` or `deleting`, nothing is changed on inbox rows. Enforcement is evaluated at read and send time, so recovery needs no backfill. On a move to `verified`, the poller looks for `support_inbox_address` rows of *other* teams on that domain or its subdomains (they could only exist from before enforcement). It detaches them (deletes the row) and logs `support.sending_domain.address_detached`. This only happens under `team` policy (Q4).
+When a claim moves to `suspended` or `deleting`, nothing is changed on inbox rows. Enforcement is evaluated at read and send time, so recovery needs no backfill. On a move to `verified`, the poller looks for `support_inbox_address` rows of _other_ teams on that domain or its subdomains (they could only exist from before enforcement). It detaches them (deletes the row) and logs `support.sending_domain.address_detached`. This only happens under `team` policy (Q4).
 
 ### 8.4 Deletion
 
@@ -379,12 +451,12 @@ When a claim moves to `suspended` or `deleting`, nothing is changed on inbox row
 - On inbox create (`server/api/support/inboxes/index.post.ts`), and lazily for existing inboxes through `POST /api/support/inboxes/[id]/addresses/platform` (inbox admin, idempotent), Veerify creates a `support_inbox_address` row with `kind='platform'`. The address is `<teamSlug>-<inboxSlug>-<6 random base32>@<platform domain>`, trimmed to 64 characters in the local part. The random suffix stops people guessing addresses to spam. Users cannot delete platform rows; they can regenerate one (the old address is removed).
 - The channel card shows "Forward support@acme.com to `<platform address>`" with a copy button, plus notes for Google Workspace and Microsoft 365. Gmail's forwarding confirmation email arrives as a ticket, so the code is visible inside Veerify.
 - Under `team` policy, the platform address is also an authorized From (§4.4). Teams without a custom domain can still reply, and nobody can impersonate a platform domain.
-- **Product attribution with forwarding.** The envelope recipient is the platform address, which identifies the inbox. To keep the per-product mapping from D-27, once the inbox is resolved through a `kind='platform'` address, `server/utils/inbound-routing.ts` also tries the `To`/`Cc` headers against *that same inbox's* custom addresses to pick `projectId`. There is no cross-tenant risk because the inbox is already fixed by the envelope.
+- **Product attribution with forwarding.** The envelope recipient is the platform address, which identifies the inbox. To keep the per-product mapping from D-27, once the inbox is resolved through a `kind='platform'` address, `server/utils/inbound-routing.ts` also tries the `To`/`Cc` headers against _that same inbox's_ custom addresses to pick `projectId`. There is no cross-tenant risk because the inbox is already fixed by the envelope.
 
 ### 9.2 Direct receiving through provider routes (optional, WP4)
 
 - The poller sets `receivesViaProvider = result.receivesMail`. This is the Frogmail `receiving_dns_records` non-empty signal, which appears only after an operator enabled receiving for the apex in the Frogmail dashboard. Veerify never enables MX.
-- When a `custom` receiving address is added on a team's *verified* claim that has `receivesViaProvider`, and the provider supports `inboundRoutes`, Veerify creates a route. The forward URL is `SUPPORT_INBOUND_WEBHOOK_URL` or `${BETTER_AUTH_URL}/api/support/inbound/<provider>`. The route id and status are stored on the address row.
+- When a `custom` receiving address is added on a team's _verified_ claim that has `receivesViaProvider`, and the provider supports `inboundRoutes`, Veerify creates a route. The forward URL is `SUPPORT_INBOUND_WEBHOOK_URL` or `${BETTER_AUTH_URL}/api/support/inbound/<provider>`. The route id and status are stored on the address row.
   - A route failure does not fail the address create. The status becomes `failed` and the poller retries on its daily pass.
   - Deleting the address deletes the route on a best-effort basis.
   - Deleting the domain deletes all its routes first.
@@ -430,15 +502,15 @@ New components; `pages/support/settings.vue` only gets small insertions:
 
 ### 11.1 Veerify environment (add to `.env.example`, `docker-compose.yml` with `${VAR:-}`, and `docs/deployment-mail.md`)
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `SUPPORT_SENDING_DOMAINS_ENABLED` | `false` | Turns on self-serve domains (card and mutating endpoints). Forces the `team` policy. |
-| `SUPPORT_SENDER_POLICY` | empty | `legacy` or `team`. Empty means `team` when the above is enabled, otherwise `legacy`. |
-| `SUPPORT_MAILGUN_API_KEY` | existing | Scope widened: `domains:read`, `domains:manage`, and `routes:manage` if direct receiving is used. Must be a **different key** from `SMTP_PASS`, which keeps only `emails:send`. |
-| `SUPPORT_PLATFORM_MAIL_DOMAIN` | empty | The apex receiving and sending zone for platform forwarding addresses. Empty means no platform addresses. |
-| `SUPPORT_SENDING_DOMAINS_RESERVED` | empty | Comma list of extra domains no team may claim. |
-| `SUPPORT_INBOUND_WEBHOOK_URL` | empty | Forward URL for created routes. Empty means `${BETTER_AUTH_URL}/api/support/inbound/<provider>`. |
-| `SUPPORT_SENDING_DOMAIN_PROVIDER` | empty | `fake` for dev and e2e only. Refused in production. |
+| Variable                           | Default  | Meaning                                                                                                                                                                         |
+| ---------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUPPORT_SENDING_DOMAINS_ENABLED`  | `false`  | Turns on self-serve domains (card and mutating endpoints). Forces the `team` policy.                                                                                            |
+| `SUPPORT_SENDER_POLICY`            | empty    | `legacy` or `team`. Empty means `team` when the above is enabled, otherwise `legacy`.                                                                                           |
+| `SUPPORT_MAILGUN_API_KEY`          | existing | Scope widened: `domains:read`, `domains:manage`, and `routes:manage` if direct receiving is used. Must be a **different key** from `SMTP_PASS`, which keeps only `emails:send`. |
+| `SUPPORT_PLATFORM_MAIL_DOMAIN`     | empty    | The apex receiving and sending zone for platform forwarding addresses. Empty means no platform addresses.                                                                       |
+| `SUPPORT_SENDING_DOMAINS_RESERVED` | empty    | Comma list of extra domains no team may claim.                                                                                                                                  |
+| `SUPPORT_INBOUND_WEBHOOK_URL`      | empty    | Forward URL for created routes. Empty means `${BETTER_AUTH_URL}/api/support/inbound/<provider>`.                                                                                |
+| `SUPPORT_SENDING_DOMAIN_PROVIDER`  | empty    | `fake` for dev and e2e only. Refused in production.                                                                                                                             |
 
 `server/plugins/validate-env.ts` gains warnings (not crashes) for these cases:
 
@@ -454,16 +526,16 @@ New components; `pages/support/settings.vue` only gets small insertions:
 
 ### 11.2 Frogmail-side requirements
 
-| # | Need | Required? | Where in Frogmail |
-| --- | --- | --- | --- |
-| F-1 | Issue a Veerify project key with `domains:read`, `domains:manage` (and `routes:manage` if direct receiving is used), separate from the SMTP `emails:send` key, so the 120/min per-key budget is not shared | Config only, required | Scopes exist in `app/Support/ApiScope.php` |
-| F-2 | Machine-readable codes on domain endpoint errors: `X-Frogmail-Error: domain_taken \| domain_owned_elsewhere \| invalid_domain \| provider_unavailable \| domain_receives_mail`. Veerify matches message text until then. | Required (small) | `app/Http/Controllers/Mailgun/DomainController.php` (`store`, `destroy`), `app/Services/DomainOnboarding.php::add` (the `RuntimeException`); `app/Exceptions/MailgunApiException.php` already accepts headers |
-| F-3 | `GET /v4/domains[/{domain}]` must not report `active` when another project owns sending for the domain (two projects with it pending, the other verified first). Either report `unverified` or add an extension such as `frogmail_sending_owner: "other_project"`. Without this Veerify shows Verified and sends fail with `sender_not_authorized`/553. Veerify's outbox records those as failures, so the impact is limited, but the status would be wrong. | Required for correct status | `app/Services/Mailgun/MailgunDomains.php::present`/`detail`, using `app/Services/SenderAuthorization.php::owningDomain` |
-| F-4 | Confirm that `DomainOnboarding::add` repointing `$source->domain_id` to each newly added domain has no side effects when one project adds many customer domains. Otherwise skip that assignment for API-created domains. | Verify; change only if needed | `app/Services/DomainOnboarding.php` (the line `$source->forceFill(['domain_id' => …])`) |
-| F-5 | Contract fixtures for domain create, detail, verify and delete, and for route create/delete as Veerify sends them, plus `tests/Fixtures/Contract/veerify/sending-domains.json` covered by `VeerifyContractTest`, matching how `domains-list.json` pins the current check | Required | `tests/Fixtures/Contract/mailgun/`, `tests/Fixtures/Contract/veerify/` |
-| F-6 | A domain state-change webhook (`domain.verified` / `domain.unverified`) to replace polling | Nice to have | event pipeline |
-| F-7 | Receiving on subdomains (`docs/dns-onboarding.md`, "Addresses at a subdomain … are not supported") | Not needed for v1; forwarding covers it | inbound provisioning |
-| F-8 | One-time operator setup of the platform receiving zone and its catch-all `match_recipient(".*@<zone>")` route | Operator step, existing capability | dashboard |
+| #   | Need                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Required?                               | Where in Frogmail                                                                                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F-1 | Issue a Veerify project key with `domains:read`, `domains:manage` (and `routes:manage` if direct receiving is used), separate from the SMTP `emails:send` key, so the 120/min per-key budget is not shared                                                                                                                                                                                                                                                   | Config only, required                   | Scopes exist in `app/Support/ApiScope.php`                                                                                                                                                                    |
+| F-2 | Machine-readable codes on domain endpoint errors: `X-Frogmail-Error: domain_taken \| domain_owned_elsewhere \| invalid_domain \| provider_unavailable \| domain_receives_mail`. Veerify matches message text until then.                                                                                                                                                                                                                                     | Required (small)                        | `app/Http/Controllers/Mailgun/DomainController.php` (`store`, `destroy`), `app/Services/DomainOnboarding.php::add` (the `RuntimeException`); `app/Exceptions/MailgunApiException.php` already accepts headers |
+| F-3 | `GET /v4/domains[/{domain}]` must not report `active` when another project owns sending for the domain (two projects with it pending, the other verified first). Either report `unverified` or add an extension such as `frogmail_sending_owner: "other_project"`. Without this Veerify shows Verified and sends fail with `sender_not_authorized`/553. Veerify's outbox records those as failures, so the impact is limited, but the status would be wrong. | Required for correct status             | `app/Services/Mailgun/MailgunDomains.php::present`/`detail`, using `app/Services/SenderAuthorization.php::owningDomain`                                                                                       |
+| F-4 | Confirm that `DomainOnboarding::add` repointing `$source->domain_id` to each newly added domain has no side effects when one project adds many customer domains. Otherwise skip that assignment for API-created domains.                                                                                                                                                                                                                                     | Verify; change only if needed           | `app/Services/DomainOnboarding.php` (the line `$source->forceFill(['domain_id' => …])`)                                                                                                                       |
+| F-5 | Contract fixtures for domain create, detail, verify and delete, and for route create/delete as Veerify sends them, plus `tests/Fixtures/Contract/veerify/sending-domains.json` covered by `VeerifyContractTest`, matching how `domains-list.json` pins the current check                                                                                                                                                                                     | Required                                | `tests/Fixtures/Contract/mailgun/`, `tests/Fixtures/Contract/veerify/`                                                                                                                                        |
+| F-6 | A domain state-change webhook (`domain.verified` / `domain.unverified`) to replace polling                                                                                                                                                                                                                                                                                                                                                                   | Nice to have                            | event pipeline                                                                                                                                                                                                |
+| F-7 | Receiving on subdomains (`docs/dns-onboarding.md`, "Addresses at a subdomain … are not supported")                                                                                                                                                                                                                                                                                                                                                           | Not needed for v1; forwarding covers it | inbound provisioning                                                                                                                                                                                          |
+| F-8 | One-time operator setup of the platform receiving zone and its catch-all `match_recipient(".*@<zone>")` route                                                                                                                                                                                                                                                                                                                                                | Operator step, existing capability      | dashboard                                                                                                                                                                                                     |
 
 ## 12. Tests (repo patterns)
 
@@ -517,6 +589,7 @@ UI-only states (Suspended, Removing, `receiving_enabled`) are covered with `page
 The contracts in §6.1 and §7.4 are fixed by this design. WP1 and WP2 start together; WP3, WP4 and WP5 can start against the contracts (stubs or `page.route`) and merge in order WP1 → WP2 → WP3 → WP4 → WP5. Only WP1 touches the schema or runs `yarn db:generate`.
 
 **WP1: data model, rules and authorization core**
+
 - Owns:
   - `server/database/schema/support.ts` (new table, and the `support_inbox_address` columns);
   - the generated `server/database/migrations/0055_*.sql` and `meta/`;
@@ -528,11 +601,13 @@ The contracts in §6.1 and §7.4 are fixed by this design. WP1 and WP2 start tog
 - Done when: the migration applies cleanly and `resolveTeamSenderAuthorization` / `assertReceivingAddressAllowed` pass their integration tests.
 
 **WP2: provider adapters**
+
 - Owns all of `server/services/sending-domains/` (`types.ts`, `index.ts`, `ownership.ts`, `providers/mailgun.ts`, `providers/postmark.ts`, `providers/fake.ts`).
 - Tests: `tests/sending-domain-provider-*.test.ts`, `tests/sending-domain-ownership.test.ts`.
 - No DB access. It imports `SendingDomainDnsRecord` from `lib/support-sending-domains.ts`; WP1 lands that type first, or it is temporarily duplicated and swapped on merge.
 
 **WP3: team API and the background poller**
+
 - Owns:
   - `server/api/support/teams/[teamId]/sending-domains/**`;
   - `server/utils/sending-domain-poller.ts`;
@@ -545,6 +620,7 @@ The contracts in §6.1 and §7.4 are fixed by this design. WP1 and WP2 start tog
 - Tests: `tests/sending-domain-poller.test.ts`, route authorization and validation cases, and the poller concurrency case in the integration suite.
 
 **WP4: enforcement and inbound wiring**
+
 - Owns:
   - `server/api/support/inboxes/[id]/sending-status.get.ts`, `[id].put.ts`, `index.post.ts`;
   - `server/api/support/inboxes/[id]/addresses/index.post.ts`, `[addressId].delete.ts`, new `platform.post.ts`;
@@ -558,6 +634,7 @@ The contracts in §6.1 and §7.4 are fixed by this design. WP1 and WP2 start tog
 - Tests: the existing outbound, sending-status and inbound-routing tests extended, plus the integration enforcement cases.
 
 **WP5: settings UI and e2e**
+
 - Owns:
   - `components/support/SupportSendingDomains.vue`, `SupportDnsRecordTable.vue`, `SupportFromAddressPicker.vue`;
   - the three insertions in `pages/support/settings.vue`;
@@ -582,13 +659,13 @@ The contracts in §6.1 and §7.4 are fixed by this design. WP1 and WP2 start tog
 
 ## 14. Risks
 
-| Risk | Mitigation |
-| --- | --- |
-| Turning on `team` policy breaks teams already sending from manually onboarded domains | Backfill script plus the TXT-only step. The settings warning shows before the flip. The flag can be reverted. |
-| Provider says active but Frogmail refuses (F-3) | The outbox records the failure. The status is corrected when F-3 ships. Until then Veerify also maps a 553 / `sender_not_authorized` send failure to suspending the claim. |
-| Polling uses up the provider budget | Separate key, batch of 25 every 5 minutes, Retry-After handling, circuit breaker. |
-| Forwarded mail fails SPF or DMARC checks at Cloudflare Email Routing | Google and Microsoft keep DKIM and add ARC. Covered in staging acceptance; documented. |
-| Squatting | Per-claim TXT proof, 3 pending claims per team, 7-day expiry. |
+| Risk                                                                                  | Mitigation                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Turning on `team` policy breaks teams already sending from manually onboarded domains | Backfill script plus the TXT-only step. The settings warning shows before the flip. The flag can be reverted.                                                              |
+| Provider says active but Frogmail refuses (F-3)                                       | The outbox records the failure. The status is corrected when F-3 ships. Until then Veerify also maps a 553 / `sender_not_authorized` send failure to suspending the claim. |
+| Polling uses up the provider budget                                                   | Separate key, batch of 25 every 5 minutes, Retry-After handling, circuit breaker.                                                                                          |
+| Forwarded mail fails SPF or DMARC checks at Cloudflare Email Routing                  | Google and Microsoft keep DKIM and add ARC. Covered in staging acceptance; documented.                                                                                     |
+| Squatting                                                                             | Per-claim TXT proof, 3 pending claims per team, 7-day expiry.                                                                                                              |
 
 ## 15. Open questions for the product owner (recommended default in bold)
 
