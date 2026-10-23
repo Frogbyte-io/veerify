@@ -6,18 +6,18 @@
           <Icon name="lucide:settings" class="h-5 w-5" />
           General Settings
         </CardTitle>
-        <CardDescription>Configure your product's basic information.</CardDescription>
+        <CardDescription>Configure your project's basic information.</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="space-y-2">
-          <Label for="project-name">Product Name</Label>
-          <Input id="project-name" v-model="form.name" placeholder="My Product" />
+          <Label for="project-name">Project Name</Label>
+          <Input id="project-name" v-model="form.name" placeholder="My Project" />
         </div>
 
         <div class="space-y-2">
           <Label for="project-slug">URL Slug</Label>
-          <Input id="project-slug" v-model="form.slug" placeholder="my-product" />
-          <p class="text-xs text-muted-foreground">Used in your public feedback URL.</p>
+          <Input id="project-slug" v-model="form.slug" placeholder="my-project" />
+          <p class="text-xs text-muted-foreground">Used in your public site URL.</p>
         </div>
 
         <div class="space-y-2">
@@ -25,7 +25,7 @@
           <Textarea
             id="project-description"
             v-model="form.description"
-            placeholder="A brief description of your product"
+            placeholder="A brief description of your project"
             rows="3"
           />
         </div>
@@ -38,17 +38,20 @@
           <Icon name="lucide:eye" class="h-5 w-5" />
           Visibility
         </CardTitle>
-        <CardDescription>Control who can see and submit feedback to your product.</CardDescription>
+        <CardDescription
+          >Control whether this project has a public site. Each product also has its own public or private
+          setting.</CardDescription
+        >
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="flex items-center justify-between">
           <div>
-            <p class="font-medium">Public Board</p>
+            <p class="font-medium">Public site</p>
             <p class="text-sm text-muted-foreground">
-              When enabled, anyone can view and submit feedback without logging in.
+              When enabled, anyone can visit the project's public pages (public products only) without logging in.
             </p>
           </div>
-          <Switch v-model="form.isPublic" aria-label="Public Board" />
+          <Switch v-model="form.isPublic" aria-label="Public site" />
         </div>
 
         <div v-if="publicUrl" class="rounded-md bg-muted p-3 space-y-2">
@@ -86,11 +89,19 @@ import { toast } from 'vue-sonner'
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
 
 export default {
-  name: 'ProductSettingsGeneral',
+  name: 'ProjectSettingsGeneral',
   props: {
     project: {
       type: Object,
       required: true,
+    },
+    organization: {
+      type: Object,
+      default: null,
+    },
+    products: {
+      type: Array,
+      default: () => [],
     },
   },
   emits: ['updated'],
@@ -115,10 +126,12 @@ export default {
       )
     },
     publicUrl() {
-      if (!import.meta.client) return ''
+      if (!import.meta.client || !this.organization?.slug) return ''
+      const hasActiveDomain = this.project.customDomain && this.project.settings?.domainStatus === 'active'
       return buildPublicBoardUrl({
-        project: this.project,
+        orgSlug: this.organization.slug,
         projectSlug: this.form.slug || this.project.slug || '...',
+        customDomain: hasActiveDomain ? this.project.customDomain : undefined,
         appDomain: useRuntimeConfig().public.appDomain || 'localhost',
         protocol: window.location.protocol,
         port: window.location.port,

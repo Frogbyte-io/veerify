@@ -124,7 +124,7 @@
                 v-model="form.customFooterText"
                 data-testid="appearance-custom-footer-text"
                 rows="2"
-                placeholder="Built with care by the Acme product team."
+                placeholder="Built with care by the Acme design team."
                 class="flex min-h-[64px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               />
             </div>
@@ -279,7 +279,7 @@
                   <Icon name="lucide:x" class="w-2.5 h-2.5" />
                 </button>
               </div>
-              <span class="text-xs text-muted-foreground">{{ project.team?.name || 'Your Team' }}</span>
+              <span class="text-xs text-muted-foreground">{{ project.organization?.name || 'Your Workspace' }}</span>
             </div>
             <h2 class="text-xl font-bold text-foreground">{{ project.name }}</h2>
             <p v-if="project.description" class="text-xs text-muted-foreground mt-1">{{ project.description }}</p>
@@ -446,7 +446,7 @@ const IMAGE_RULES = {
 }
 
 export default {
-  name: 'ProductSettingsAppearance',
+  name: 'ProjectSettingsAppearance',
   props: {
     project: {
       type: Object,

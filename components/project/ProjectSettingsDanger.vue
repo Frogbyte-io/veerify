@@ -6,18 +6,18 @@
           <Icon name="lucide:alert-triangle" class="h-5 w-5" />
           Danger Zone
         </CardTitle>
-        <CardDescription> Irreversible and destructive actions for this product. </CardDescription>
+        <CardDescription> Irreversible and destructive actions for this project. </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="flex items-center justify-between rounded-lg border border-destructive/30 p-4">
           <div>
-            <p class="font-medium text-sm">Delete this product</p>
+            <p class="font-medium text-sm">Delete this project</p>
             <p class="text-xs text-muted-foreground">
-              Permanently delete "{{ project.name }}" and all its feedback, categories, and roadmap items. This cannot
-              be undone.
+              Permanently delete "{{ project.name }}" with all its products, feedback, categories, and roadmap items.
+              This cannot be undone.
             </p>
           </div>
-          <Button variant="destructive" @click="showDeleteDialog = true"> Delete Product </Button>
+          <Button variant="destructive" @click="showDeleteDialog = true"> Delete Project </Button>
         </div>
       </CardContent>
     </Card>
@@ -26,10 +26,10 @@
     <Dialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
       <DialogContent class="sm:max-w-[450px]">
         <DialogHeader>
-          <DialogTitle class="text-destructive">Delete Product</DialogTitle>
+          <DialogTitle class="text-destructive">Delete Project</DialogTitle>
           <DialogDescription>
             This will permanently delete <span class="font-semibold">{{ project.name }}</span> and all associated data
-            including feedback, votes, categories, and roadmap items.
+            including its products, feedback, votes, categories, and roadmap items.
           </DialogDescription>
         </DialogHeader>
         <div class="py-4 space-y-3">
@@ -58,7 +58,7 @@
 import { toast } from 'vue-sonner'
 
 export default {
-  name: 'ProductSettingsDanger',
+  name: 'ProjectSettingsDanger',
   props: {
     project: {
       type: Object,
@@ -79,15 +79,15 @@ export default {
       this.isDeleting = true
 
       try {
-        await $fetch(`/api/teams/${this.project.teamId}/projects/${this.project.id}`, {
+        await $fetch(`/api/projects/${this.project.slug}`, {
           method: 'DELETE',
         })
 
-        toast.success('Product deleted')
+        toast.success('Project deleted')
         this.$emit('deleted')
       } catch (err) {
         console.error('Error deleting project:', err)
-        toast.error(err?.data?.error?.message || 'Failed to delete product')
+        toast.error(err?.data?.error?.message || 'Failed to delete project')
       } finally {
         this.isDeleting = false
       }

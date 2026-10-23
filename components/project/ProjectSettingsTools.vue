@@ -1,10 +1,10 @@
 <template>
   <div class="rounded-lg border bg-card">
     <div class="p-6 border-b">
-      <h2 class="text-lg font-semibold">Features</h2>
+      <h2 class="text-lg font-semibold">Tools</h2>
       <p class="text-sm text-muted-foreground mt-1">
-        Enable or disable features for this product. Disabled features will be hidden from both the settings and the
-        public product board.
+        Switch tools on or off for this project. Switched-off tools are hidden from the sidebar and the public site.
+        Your data is kept.
       </p>
     </div>
     <div class="p-6 space-y-3">
@@ -22,14 +22,14 @@
             <Icon :name="feature.icon" class="w-4 h-4" />
           </div>
           <div class="min-w-0">
-            <p class="text-sm font-medium">{{ feature.product.label }}</p>
-            <p class="text-xs text-muted-foreground mt-0.5">{{ feature.product.description }}</p>
+            <p class="text-sm font-medium">{{ feature.label }}</p>
+            <p class="text-xs text-muted-foreground mt-0.5">{{ feature.description }}</p>
           </div>
         </div>
         <Switch
           :model-value="localFeatures[feature.key]"
           :disabled="savingFeature === feature.key"
-          :aria-label="feature.product.label"
+          :aria-label="feature.label"
           class="shrink-0 ml-4 mt-0.5"
           @update:model-value="toggleFeature(feature.key, $event)"
         />
@@ -42,8 +42,8 @@
         <DialogHeader>
           <DialogTitle>Disable {{ disableFeatureLabel }}?</DialogTitle>
           <DialogDescription>
-            Your data will not be deleted, but the public and private {{ disableFeatureLabel.toLowerCase() }} will be
-            hidden. There will be no way to view the {{ disableFeatureDataLabel }} until this feature is re-enabled.
+            Your data will not be deleted, but {{ disableFeatureLabel }} will be hidden from the sidebar and the public
+            site. There will be no way to view the {{ disableFeatureDataLabel }} until this tool is switched back on.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter class="flex-row justify-end gap-2 sm:gap-2">
@@ -57,10 +57,10 @@
 
 <script>
 import { toast } from 'vue-sonner'
-import { PRODUCT_MODULES, resolveProductModules } from '~/lib/modules'
+import { MODULES, resolveProjectModules } from '~/lib/modules'
 
 export default {
-  name: 'ProductSettingsFeatures',
+  name: 'ProjectSettingsTools',
 
   props: {
     project: {
@@ -73,29 +73,29 @@ export default {
 
   data() {
     return {
-      features: PRODUCT_MODULES,
+      features: MODULES,
       savingFeature: null,
       showDisableDialog: false,
       pendingDisableFeature: null,
-      localFeatures: resolveProductModules(this.project?.settings),
+      localFeatures: resolveProjectModules(this.project?.settings),
     }
   },
 
   computed: {
     pendingDisableModule() {
-      return PRODUCT_MODULES.find((module) => module.key === this.pendingDisableFeature) || null
+      return MODULES.find((module) => module.key === this.pendingDisableFeature) || null
     },
     disableFeatureLabel() {
-      return this.pendingDisableModule?.product.label || ''
+      return this.pendingDisableModule?.label || ''
     },
     disableFeatureDataLabel() {
-      return this.pendingDisableModule?.product.dataLabel || ''
+      return this.pendingDisableModule?.dataLabel || ''
     },
   },
 
   watch: {
     project(newProject) {
-      this.localFeatures = resolveProductModules(newProject?.settings)
+      this.localFeatures = resolveProjectModules(newProject?.settings)
     },
   },
 
@@ -137,10 +137,11 @@ export default {
         })
 
         this.$emit('updated', response?.data || response)
+        if (import.meta.client) window.dispatchEvent(new CustomEvent('veerify:project-modules-changed'))
       } catch (err) {
         // Revert optimistic update
         this.localFeatures[feature] = !value
-        toast.error(err?.data?.error?.message || 'Failed to save feature settings')
+        toast.error(err?.data?.error?.message || 'Failed to save tool settings')
       } finally {
         this.savingFeature = null
       }

@@ -4,16 +4,26 @@
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
           <Icon name="lucide:code-2" class="h-5 w-5" />
-          Embed Your Feedback Board
+          Embed Your Public Board
         </CardTitle>
-        <CardDescription> Add your public feedback board to any website using an iframe snippet. </CardDescription>
+        <CardDescription> Add your public board to any website using an iframe snippet. </CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div v-if="!publicBoardUrl" class="rounded-md bg-muted p-4 text-sm text-muted-foreground">
-          The public board URL could not be determined. Make sure this project has a team slug configured.
+          The public board URL could not be determined. Make sure the project is public and its workspace has a slug.
         </div>
 
         <template v-else>
+          <div v-if="products.length > 1" class="space-y-2">
+            <Label for="embed-product">Product</Label>
+            <select
+              id="embed-product"
+              v-model="selectedProductSlug"
+              class="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+            >
+              <option v-for="p in publicProducts" :key="p.id" :value="p.slug">{{ p.name }}</option>
+            </select>
+          </div>
           <!-- Snippet -->
           <div class="space-y-2">
             <Label>Embed Snippet</Label>
@@ -83,15 +93,24 @@
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
 
 export default {
-  name: 'ProductSettingsEmbed',
+  name: 'ProjectSettingsEmbed',
   props: {
     project: {
       type: Object,
       required: true,
     },
+    organization: {
+      type: Object,
+      default: null,
+    },
+    products: {
+      type: Array,
+      default: () => [],
+    },
   },
   data() {
     return {
+      selectedProductSlug: '',
       copied: false,
       options: {
         width: '100%',
@@ -100,10 +119,21 @@ export default {
     }
   },
   computed: {
+    publicProducts() {
+      return this.products.filter((p) => p.isPublic)
+    },
+    productSlug() {
+      if (this.products.length <= 1) return undefined
+      return this.selectedProductSlug || this.publicProducts[0]?.slug
+    },
     publicBoardUrl() {
-      if (!import.meta.client || !this.project) return ''
+      if (!import.meta.client || !this.project || !this.organization?.slug) return ''
+      const hasActiveDomain = this.project.customDomain && this.project.settings?.domainStatus === 'active'
       return buildPublicBoardUrl({
-        project: this.project,
+        orgSlug: this.organization.slug,
+        projectSlug: this.project.slug,
+        productSlug: this.productSlug,
+        customDomain: hasActiveDomain ? this.project.customDomain : undefined,
         appDomain: useRuntimeConfig().public.appDomain || 'localhost',
         protocol: window.location.protocol,
         port: window.location.port,
@@ -112,7 +142,7 @@ export default {
     iframeSnippet() {
       const width = this.options.width || '100%'
       const height = this.options.height || '600'
-      return `<iframe\n  src="${this.publicBoardUrl}"\n  width="${width}"\n  height="${height}"\n  frameborder="0"\n  title="${this.project.name} Feedback"\n></iframe>`
+      return `<iframe\n  src="${this.publicBoardUrl}"\n  width="${width}"\n  height="${height}"\n  frameborder="0"\n  title="${this.project.name}"\n></iframe>`
     },
     previewHeight() {
       const h = parseInt(this.options.height, 10)

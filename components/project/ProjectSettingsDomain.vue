@@ -162,7 +162,7 @@
 import { toast } from 'vue-sonner'
 
 export default {
-  name: 'ProductSettingsDomain',
+  name: 'ProjectSettingsDomain',
   props: {
     project: {
       type: Object,
