@@ -16,7 +16,11 @@ test.setTimeout(60_000)
 
 type TestProject = { id: string; slug: string; name: string; productId: string; productSlug: string }
 
-async function createTestProject(request: APIRequestContext, sessionCookie: string, slug: string): Promise<TestProject> {
+async function createTestProject(
+  request: APIRequestContext,
+  sessionCookie: string,
+  slug: string
+): Promise<TestProject> {
   const response = await request.post('/api/projects', {
     headers: withAuthHeaders(sessionCookie, '/workspace'),
     data: {

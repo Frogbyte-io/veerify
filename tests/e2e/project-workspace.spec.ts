@@ -1,106 +1,152 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type APIRequestContext } from '@playwright/test'
 import { isBetterAuthCookie, loginViaProgrammatic, signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
-const TEAM_SLUG = process.env.E2E_TEAM_SLUG || 'preview-org'
+const ORG_SLUG = process.env.E2E_ORG_SLUG || 'preview-org'
 const PORT = process.env.PLAYWRIGHT_PORT || '4173'
 
 test.setTimeout(60_000)
 
-test('team-primary API flow persists custom domains and enforces URL conflicts', async ({ request, page }) => {
+async function activateProject(request: APIRequestContext, slug: string) {
+  const projectResponse = await request.get(`/api/projects/${slug}`)
+  expect(projectResponse.ok()).toBeTruthy()
+  const projectId = (await projectResponse.json())?.data?.id as string
+  const activeResponse = await request.post('/api/projects/active', { data: { projectId } })
+  expect(activeResponse.ok()).toBeTruthy()
+}
+
+/** Creates a project (with its default product) in the active workspace and makes it the active project. */
+async function createActiveProject(
+  request: APIRequestContext,
+  input: { name: string; slug: string; description?: string | null }
+) {
+  const createResponse = await request.post('/api/projects', {
+    data: { ...input, description: input.description ?? null },
+  })
+  const createPayload = await createResponse.json()
+  expect(createResponse.status(), JSON.stringify(createPayload)).toBe(201)
+  const project = createPayload.data.project as { id: string; slug: string }
+
+  const activeResponse = await request.post('/api/projects/active', { data: { projectId: project.id } })
+  expect(activeResponse.ok()).toBeTruthy()
+  return { project, product: createPayload.data.product as { id: string; slug: string } }
+}
+
+test('project API flow persists custom domains and enforces URL conflicts', async ({ request, page }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const activeTeamResponse = await request.get('/api/teams/active', {
-    headers: withAuthHeaders(sessionCookie),
-  })
-  const activeTeamPayload = await activeTeamResponse.json()
-  expect(activeTeamResponse.ok()).toBeTruthy()
-  expect(activeTeamPayload?.success).toBeTruthy()
-  expect(activeTeamPayload?.data?.id).toBeTruthy()
-  const teamId = activeTeamPayload.data.id as string
-
-  const uniqueSlug = `e2e-team-${Date.now()}`
+  const uniqueSlug = `e2e-project-${Date.now()}`
   const customDomain = `${uniqueSlug}.customer.localhost`
 
-  const createResponse = await request.post(`/api/teams/${teamId}/projects`, {
+  const createResponse = await request.post('/api/projects', {
     headers: withAuthHeaders(sessionCookie),
     data: {
-      name: 'E2E Team Product',
+      name: 'E2E Project',
       slug: uniqueSlug,
       description: 'Created by Playwright API test',
-      customDomain,
     },
   })
   const createPayload = await createResponse.json()
   expect(createResponse.status()).toBe(201)
   expect(createPayload?.success).toBeTruthy()
-  expect(createPayload?.data?.slug).toBe(uniqueSlug)
-  expect(createPayload?.data?.customDomain).toBe(customDomain)
+  expect(createPayload?.data?.project?.slug).toBe(uniqueSlug)
+  // Every project is created with one default product sharing its name and slug.
+  expect(createPayload?.data?.product?.slug).toBe(uniqueSlug)
 
-  await page.goto(`http://${customDomain}:${PORT}`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
-  await expect(page.getByRole('heading', { name: 'E2E Team Product' })).toBeVisible()
+  try {
+    const setDomainResponse = await request.put(`/api/projects/${uniqueSlug}`, {
+      headers: withAuthHeaders(sessionCookie),
+      data: { customDomain },
+    })
+    expect(setDomainResponse.ok(), await setDomainResponse.text()).toBeTruthy()
+    const setDomainPayload = await setDomainResponse.json()
+    expect(setDomainPayload?.data?.customDomain).toBe(customDomain)
 
-  // Public contract stays orgSlug + projectSlug; team ownership is internal.
-  const publicProjectResponse = await request.get(`/api/public/t/${TEAM_SLUG}/${uniqueSlug}`)
-  const publicProjectPayload = await publicProjectResponse.json()
-  expect(publicProjectResponse.ok()).toBeTruthy()
-  expect(publicProjectPayload?.data?.project?.slug).toBe(uniqueSlug)
-  expect(publicProjectPayload?.data?.team?.slug).toBe(TEAM_SLUG)
+    await page.goto(`http://${customDomain}:${PORT}`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+    await expect(page.getByRole('heading', { name: 'E2E Project' })).toBeVisible()
 
-  const duplicateResponse = await request.post(`/api/teams/${teamId}/projects`, {
-    headers: withAuthHeaders(sessionCookie),
-    data: {
-      name: 'E2E Team Product Duplicate',
-      slug: uniqueSlug,
-      description: null,
-      customDomain: null,
-    },
-  })
-  const duplicatePayload = await duplicateResponse.json().catch(() => ({}))
-  expect(duplicateResponse.status()).toBe(409)
-  const duplicateMessage = String(
-    duplicatePayload?.error?.message ||
-      duplicatePayload?.message ||
-      duplicatePayload?.data?.message ||
-      duplicatePayload?.statusMessage ||
-      JSON.stringify(duplicatePayload)
-  )
-  expect(duplicateMessage).toMatch(/workspace URL namespace|conflict/i)
+    // Public contract is orgSlug + projectSlug.
+    const publicProjectResponse = await request.get(`/api/public/o/${ORG_SLUG}/${uniqueSlug}`)
+    const publicProjectPayload = await publicProjectResponse.json()
+    expect(publicProjectResponse.ok()).toBeTruthy()
+    expect(publicProjectPayload?.data?.project?.slug).toBe(uniqueSlug)
+    expect(publicProjectPayload?.data?.organization?.slug).toBe(ORG_SLUG)
+    expect(publicProjectPayload?.data?.products).toHaveLength(1)
 
-  const duplicateDomainResponse = await request.post(`/api/teams/${teamId}/projects`, {
-    headers: withAuthHeaders(sessionCookie),
-    data: {
-      name: 'E2E Duplicate Domain Product',
-      slug: `${uniqueSlug}-domain-conflict`,
-      description: null,
-      customDomain,
-    },
-  })
-  expect(duplicateDomainResponse.status()).toBe(409)
+    const duplicateResponse = await request.post('/api/projects', {
+      headers: withAuthHeaders(sessionCookie),
+      data: {
+        name: 'E2E Project Duplicate',
+        slug: uniqueSlug,
+        description: null,
+      },
+    })
+    const duplicatePayload = await duplicateResponse.json().catch(() => ({}))
+    expect(duplicateResponse.status()).toBe(409)
+    const duplicateMessage = String(
+      duplicatePayload?.error?.message ||
+        duplicatePayload?.message ||
+        duplicatePayload?.data?.message ||
+        duplicatePayload?.statusMessage ||
+        JSON.stringify(duplicatePayload)
+    )
+    expect(duplicateMessage).toMatch(/workspace|URL|conflict|taken|exists/i)
+
+    const otherSlug = `${uniqueSlug}-domain-conflict`
+    const otherResponse = await request.post('/api/projects', {
+      headers: withAuthHeaders(sessionCookie),
+      data: { name: 'E2E Duplicate Domain Project', slug: otherSlug, description: null },
+    })
+    expect(otherResponse.status()).toBe(201)
+    try {
+      const duplicateDomainResponse = await request.put(`/api/projects/${otherSlug}`, {
+        headers: withAuthHeaders(sessionCookie),
+        data: { customDomain },
+      })
+      expect(duplicateDomainResponse.status()).toBe(409)
+    } finally {
+      await request.delete(`/api/projects/${otherSlug}`, { headers: withAuthHeaders(sessionCookie) })
+    }
+  } finally {
+    await request.delete(`/api/projects/${uniqueSlug}`, { headers: withAuthHeaders(sessionCookie) })
+  }
 })
 
-test('authenticated user can access products UI workflow', async ({ request, page }) => {
+test('authenticated user can open project settings and switch tabs', async ({ request, page }) => {
   await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const authCookies = (await request.storageState()).cookies.filter((cookie) => isBetterAuthCookie(cookie.name))
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
-  await page.goto('/products', { waitUntil: 'commit', timeout: 180_000 })
-  await expect(page).toHaveURL(/\/products/)
-  await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'New Product' })).toBeVisible()
-  await expect(page.getByText('Manage your products and their public feedback pages')).toBeVisible()
-  await expect(page.getByText('Custom Domain (optional)')).toHaveCount(0)
-  await expect(page.getByText('Point a CNAME record to veerify to use a custom domain.')).toHaveCount(0)
+  const slug = `e2e-settings-${Date.now()}`
+  await createActiveProject(request, { name: 'Settings Tabs Project', slug })
 
-  const firstProductLink = page.locator('a[href^="/products/"]').first()
-  await expect(firstProductLink).toBeVisible()
-  await firstProductLink.click()
-  await expect(page).toHaveURL(/\/products\/[^/]+/)
-  await expect(page.getByRole('heading', { name: 'General Settings' })).toBeVisible()
-  await expect(page.locator('label[for="project-domain"]')).toHaveCount(0)
-  await expect(page.getByText('Point a CNAME record to Veerify to use a custom domain.')).toHaveCount(0)
+  try {
+    await page.goto('/project/settings', { waitUntil: 'commit', timeout: 180_000 })
+    await expect(page).toHaveURL(/\/project\/settings/)
+    await expect(page.getByRole('heading', { name: 'Project settings' })).toBeVisible()
+    await expect(page.getByText('Settings Tabs Project').first()).toBeVisible()
+
+    for (const tab of ['general', 'products', 'access', 'tools', 'appearance', 'domain', 'embed']) {
+      await expect(page.locator(`[data-testid="project-settings-tab-${tab}"]`)).toBeVisible()
+    }
+    // Teams are gone; there is no team tab.
+    await expect(page.locator('[data-testid="project-settings-tab-team"]')).toHaveCount(0)
+
+    // General does not host domain settings; those live in the Domain tab.
+    await expect(page.locator('label[for="project-domain"]')).toHaveCount(0)
+
+    await page.locator('[data-testid="project-settings-tab-domain"]').click()
+    await expect(page).toHaveURL(/\/project\/settings#domain$/)
+    await expect(page.locator('#custom-domain')).toBeVisible()
+
+    await page.locator('[data-testid="project-settings-tab-products"]').click()
+    await expect(page).toHaveURL(/\/project\/settings#products$/)
+    await expect(page.getByText('Settings Tabs Project').first()).toBeVisible()
+  } finally {
+    await request.delete(`/api/projects/${slug}`)
+  }
 })
 
 test('new project statuses tab shows the default starting workflow without declined or drag affordances', async ({
@@ -113,18 +159,12 @@ test('new project statuses tab shows the default starting workflow without decli
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
-  const activeTeamResponse = await request.get('/api/teams/active')
-  const activeTeamPayload = await activeTeamResponse.json()
-  expect(activeTeamResponse.ok()).toBeTruthy()
-  const teamId = activeTeamPayload.data.id as string
-
   const projectSlug = `e2e-statuses-${Date.now()}`
-  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+  const createProjectResponse = await request.post('/api/projects', {
     data: {
-      name: 'Statuses Product',
+      name: 'Statuses Project',
       slug: projectSlug,
       description: null,
-      customDomain: null,
     },
   })
   expect(createProjectResponse.status()).toBe(201)
@@ -142,8 +182,9 @@ test('new project statuses tab shows the default starting workflow without decli
   ])
   expect(initialStatuses.map((status) => status.value)).not.toContain('declined')
 
-  await page.goto(`/products/${projectSlug}#statuses`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
-  await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#statuses$`))
+  await activateProject(request, projectSlug)
+  await page.goto(`/feedback?view=settings&section=statuses`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page).toHaveURL(/section=statuses/)
   await expect(page.getByRole('heading', { name: 'Feedback Statuses' })).toBeVisible()
   await expect(
     page.getByText(
@@ -161,7 +202,7 @@ test('new project statuses tab shows the default starting workflow without decli
   await expect(page.locator('[data-testid^="product-status-drag-handle-"]')).toHaveCount(0)
 })
 
-test('product categories tab reorders categories through drag and drop and persists the new order', async ({
+test('feedback settings categories tab reorders categories through drag and drop and persists the new order', async ({
   request,
   page,
 }) => {
@@ -171,18 +212,12 @@ test('product categories tab reorders categories through drag and drop and persi
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
-  const activeTeamResponse = await request.get('/api/teams/active')
-  const activeTeamPayload = await activeTeamResponse.json()
-  expect(activeTeamResponse.ok()).toBeTruthy()
-  const teamId = activeTeamPayload.data.id as string
-
   const projectSlug = `e2e-categories-ui-${Date.now()}`
-  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+  const createProjectResponse = await request.post('/api/projects', {
     data: {
-      name: 'Categories UI Product',
+      name: 'Categories UI Project',
       slug: projectSlug,
       description: null,
-      customDomain: null,
     },
   })
   expect(createProjectResponse.status()).toBe(201)
@@ -198,8 +233,9 @@ test('product categories tab reorders categories through drag and drop and persi
   expect(bugCategory?.id).toBeTruthy()
   expect(featureCategory?.id).toBeTruthy()
 
-  await page.goto(`/products/${projectSlug}#categories`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
-  await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#categories$`))
+  await activateProject(request, projectSlug)
+  await page.goto(`/feedback?view=settings&section=categories`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page).toHaveURL(/section=categories/)
   await expect(page.getByRole('heading', { name: 'Feedback Categories' })).toBeVisible()
   await expect(page.locator('[data-testid^="product-category-item-"]')).toHaveCount(2)
 
@@ -243,18 +279,12 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
-  const activeTeamResponse = await request.get('/api/teams/active')
-  const activeTeamPayload = await activeTeamResponse.json()
-  expect(activeTeamResponse.ok()).toBeTruthy()
-  const teamId = activeTeamPayload.data.id as string
-
   const projectSlug = `e2e-domain-${Date.now()}`
-  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+  const createProjectResponse = await request.post('/api/projects', {
     data: {
-      name: 'Domain Product',
+      name: 'Domain Project',
       slug: projectSlug,
       description: null,
-      customDomain: null,
     },
   })
   expect(createProjectResponse.status()).toBe(201)
@@ -293,8 +323,9 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
     })
   })
 
-  await page.goto(`/products/${projectSlug}#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
-  await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#domain$`))
+  await activateProject(request, projectSlug)
+  await page.goto(`/project/settings#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page).toHaveURL(/\/project\/settings#domain$/)
   await expect(page.getByText('Required DNS records', { exact: true })).toBeVisible()
 
   await page.locator('#custom-domain').fill('feedback.example.com')
@@ -316,18 +347,12 @@ test('custom domain status downgrades from stored verified state after a failed 
   expect(authCookies.length).toBeGreaterThan(0)
   await page.context().addCookies(authCookies)
 
-  const activeTeamResponse = await request.get('/api/teams/active')
-  const activeTeamPayload = await activeTeamResponse.json()
-  expect(activeTeamResponse.ok()).toBeTruthy()
-  const teamId = activeTeamPayload.data.id as string
-
   const projectSlug = `e2e-domain-status-${Date.now()}`
-  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+  const createProjectResponse = await request.post('/api/projects', {
     data: {
-      name: 'Domain Status Product',
+      name: 'Domain Status Project',
       slug: projectSlug,
       description: null,
-      customDomain: null,
     },
   })
   expect(createProjectResponse.status()).toBe(201)
@@ -388,8 +413,9 @@ test('custom domain status downgrades from stored verified state after a failed 
     })
   })
 
-  await page.goto(`/products/${projectSlug}#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
-  await expect(page).toHaveURL(new RegExp(`/products/${projectSlug}#domain$`))
+  await activateProject(request, projectSlug)
+  await page.goto(`/project/settings#domain`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
+  await expect(page).toHaveURL(/\/project\/settings#domain$/)
   await expect(page.getByTestId('product-domain-status-title')).toHaveText('Domain verified')
 
   await page.getByRole('button', { name: 'Check DNS' }).click()
@@ -430,26 +456,18 @@ test('custom domain status downgrades from stored verified state after a failed 
 test('project categories API supports create/update/reorder/delete with reassignment rules', async ({ request }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-  const activeTeamResponse = await request.get('/api/teams/active', {
-    headers: withAuthHeaders(sessionCookie),
-  })
-  const activeTeamPayload = await activeTeamResponse.json()
-  expect(activeTeamResponse.ok()).toBeTruthy()
-  const teamId = activeTeamPayload.data.id as string
-
   const projectSlug = `e2e-cats-${Date.now()}`
-  const createProjectResponse = await request.post(`/api/teams/${teamId}/projects`, {
+  const createProjectResponse = await request.post('/api/projects', {
     headers: withAuthHeaders(sessionCookie),
     data: {
-      name: 'Categories Product',
+      name: 'Categories Project',
       slug: projectSlug,
       description: null,
-      customDomain: null,
     },
   })
   expect(createProjectResponse.status()).toBe(201)
   const createProjectPayload = await createProjectResponse.json()
-  const projectId = createProjectPayload?.data?.id as string
+  const projectId = createProjectPayload?.data?.project?.id as string
 
   const listDefaultsResponse = await request.get(`/api/projects/${projectSlug}/categories`, {
     headers: withAuthHeaders(sessionCookie),
@@ -508,7 +526,7 @@ test('project categories API supports create/update/reorder/delete with reassign
   const categoriesAfterReorder = listAfterReorderPayload.data as Array<{ name: string }>
   expect(categoriesAfterReorder.map((category) => category.name)).toEqual(['User Experience', 'Bug', 'Feature'])
 
-  const publicProjectResponse = await request.get(`/api/public/t/${TEAM_SLUG}/${projectSlug}`)
+  const publicProjectResponse = await request.get(`/api/public/o/${ORG_SLUG}/${projectSlug}`)
   const publicProjectPayload = await publicProjectResponse.json()
   expect(publicProjectResponse.ok()).toBeTruthy()
   const publicCategoryNames = (publicProjectPayload?.data?.categories ?? []).map(

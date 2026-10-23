@@ -187,6 +187,8 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.getByText(bugTitle)).toHaveCount(0)
 
     await tagFilter.selectOption('')
+    // The seeded demo board accumulates items across runs; look at the newest page.
+    await sortFeedbackByNewest(page)
     await expect(page.getByText(bugTitle)).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText(featureTitle)).toBeVisible({ timeout: 10_000 })
   })
