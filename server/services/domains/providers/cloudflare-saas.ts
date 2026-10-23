@@ -307,7 +307,10 @@ export class CloudflareSaasDomainProvider implements DomainProvider {
   async registerProjectDomain(input: DomainProviderInput) {
     const hostname = normalizeDomainHostname(input.hostname)
     const { cnameTarget } = this.getConfig()
-    return mapCloudflareHostname(hostname, await this.register(hostname), cnameTarget)
+    // Look up first: Cloudflare documents no stable "duplicate hostname" error,
+    // so adopting an existing hostname must not depend on parsing one.
+    const record = (await this.find(hostname, input.providerDomainId)) || (await this.register(hostname))
+    return mapCloudflareHostname(hostname, record, cnameTarget)
   }
 
   async getProjectDomainStatus(input: DomainProviderInput) {

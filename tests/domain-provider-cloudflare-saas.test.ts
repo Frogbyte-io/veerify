@@ -62,23 +62,28 @@ describe('CloudflareSaasDomainProvider', () => {
   })
 
   it('registers a hostname with http DV and returns the CNAME plus the id', async () => {
-    const { fn, calls } = mockFetch(() => ({
-      result: hostnameRecord({
-        ownership_verification: { name: '_cf-custom-hostname.feedback.acme.com', type: 'txt', value: 'abc-123' },
-        ssl: {
-          status: 'pending_validation',
-          validation_records: [{ txt_name: '_acme-challenge.feedback.acme.com', txt_value: 'xyz' }],
-        },
-      }),
-    }))
+    const { fn, calls } = mockFetch((call) =>
+      call.method === 'GET'
+        ? { result: [] }
+        : {
+            result: hostnameRecord({
+              ownership_verification: { name: '_cf-custom-hostname.feedback.acme.com', type: 'txt', value: 'abc-123' },
+              ssl: {
+                status: 'pending_validation',
+                validation_records: [{ txt_name: '_acme-challenge.feedback.acme.com', txt_value: 'xyz' }],
+              },
+            }),
+          }
+    )
 
     const result = await provider(fn).registerProjectDomain({ hostname: 'Feedback.Acme.com.' })
 
-    expect(calls).toHaveLength(1)
-    expect(calls[0].method).toBe('POST')
-    expect(calls[0].url).toBe(BASE)
-    expect(calls[0].auth).toBe(`Bearer ${TOKEN}`)
-    expect(calls[0].body).toMatchObject({
+    // Looks the hostname up first, then creates it.
+    expect(calls.map((c) => c.method)).toEqual(['GET', 'POST'])
+    expect(calls[0].url).toBe(`${BASE}?hostname=feedback.acme.com&per_page=50`)
+    expect(calls[1].url).toBe(BASE)
+    expect(calls[1].auth).toBe(`Bearer ${TOKEN}`)
+    expect(calls[1].body).toMatchObject({
       hostname: 'feedback.acme.com',
       ssl: { method: 'http', type: 'dv', settings: { min_tls_version: '1.2' } },
     })
@@ -96,19 +101,34 @@ describe('CloudflareSaasDomainProvider', () => {
     ])
   })
 
-  it('adopts an existing hostname when the create call reports a duplicate', async () => {
-    const { fn, calls } = mockFetch((call) =>
-      call.method === 'POST'
-        ? { status: 409, errors: [{ code: 1406, message: 'Duplicate custom hostname found.' }] }
-        : { result: [{ ...activeRecord, id: 'existing-id', hostname: 'feedback.acme.com' }] }
-    )
+  it('adopts an existing hostname without creating a duplicate', async () => {
+    const { fn, calls } = mockFetch(() => ({
+      result: [{ ...activeRecord, id: 'existing-id', hostname: 'feedback.acme.com' }],
+    }))
 
     const result = await provider(fn).registerProjectDomain({ hostname: 'feedback.acme.com' })
 
-    expect(calls.map((c) => c.method)).toEqual(['POST', 'GET'])
-    expect(calls[1].url).toBe(`${BASE}?hostname=feedback.acme.com&per_page=50`)
+    expect(calls.map((c) => c.method)).toEqual(['GET'])
+    expect(calls[0].url).toBe(`${BASE}?hostname=feedback.acme.com&per_page=50`)
     expect(result).toMatchObject({ status: 'active', verified: true, providerDomainId: 'existing-id' })
     expect(result.dnsRecords).toEqual([{ type: 'CNAME', name: 'feedback.acme.com', value: TARGET }])
+  })
+
+  it('adopts the hostname when another request created it between lookup and create', async () => {
+    let lookups = 0
+    const { fn, calls } = mockFetch((call) => {
+      if (call.method === 'POST')
+        return { status: 409, errors: [{ code: 1406, message: 'Duplicate custom hostname found.' }] }
+      lookups += 1
+      return lookups === 1
+        ? { result: [] }
+        : { result: [{ ...activeRecord, id: 'raced-id', hostname: 'feedback.acme.com' }] }
+    })
+
+    const result = await provider(fn).registerProjectDomain({ hostname: 'feedback.acme.com' })
+
+    expect(calls.map((c) => c.method)).toEqual(['GET', 'POST', 'GET'])
+    expect(result).toMatchObject({ status: 'active', providerDomainId: 'raced-id' })
   })
 
   it('treats a duplicate message as a duplicate even without the code', async () => {
