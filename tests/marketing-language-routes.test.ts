@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({
   selectRows: [] as unknown[][],
   runCalls: 0,
   marketingAdmin: true,
-  teamMismatch: false,
+  orgMismatch: false,
 }))
 
 const httpError = (statusCode: number, message: string) =>
@@ -20,27 +20,36 @@ vi.stubGlobal('createError', (i: { statusCode: number; statusMessage: string }) 
 )
 
 vi.mock('h3', () => ({
-  getRouterParam: (_e: unknown, n: string) => ({ teamId: 't1', projectId: 'p1' })[n],
+  getRouterParam: (_e: unknown, n: string) => ({ projectId: 'p1' })[n],
   createError: (i: { statusCode: number; statusMessage: string }) => Object.assign(new Error(i.statusMessage), i),
 }))
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: async () => ({ session: { user: { id: 'u1' } } }),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: async () => ({ user: { id: 'u1' } }),
+}))
+vi.mock('~/server/utils/project-context', () => ({
+  requireAuthWithOrganization: async () => ({
+    session: { user: { id: 'u1' } },
+    organizationId: 'o1',
+    organizationRole: state.role ?? 'member',
+  }),
 }))
 vi.mock('~/server/utils/marketing-site', () => ({
-  requireRouteParam: (_e: unknown, n: string) => ({ teamId: 't1', projectId: 'p1' })[n],
+  requireRouteParam: (_e: unknown, n: string) => ({ projectId: 'p1' })[n],
 }))
 vi.mock('~/server/utils/validation', () => ({
   validateBody: async (_e: unknown, schema: { parse: (v: unknown) => unknown }) => schema.parse(state.body),
 }))
-vi.mock('~/server/utils/support-access', () => ({
-  requireTeamMembership: async (teamId: string) => {
-    if (!state.role || teamId !== 't1' || state.teamMismatch) throw httpError(403, 'Forbidden')
-    return { id: 'm1', role: state.role }
+vi.mock('~/server/utils/project-access', () => ({
+  requireOrganizationMember: async (organizationId: string) => {
+    if (!state.role || organizationId !== 'o1' || state.orgMismatch) throw httpError(403, 'Forbidden')
+    return state.role
   },
-  requireTeamAdmin: async (teamId: string) => {
-    if (!state.role || teamId !== 't1' || state.teamMismatch) throw httpError(403, 'Forbidden')
+  requireOrganizationAdmin: async (organizationId: string) => {
+    if (!state.role || organizationId !== 'o1' || state.orgMismatch) throw httpError(403, 'Forbidden')
     if (state.role !== 'admin') throw httpError(403, 'Forbidden')
+    return state.role
   },
+  isOrganizationAdminRole: (role: string | null) => role === 'admin' || role === 'owner',
 }))
 vi.mock('~/server/utils/response', () => ({
   createSuccessResponse: (data: unknown) => ({ success: true, data }),
@@ -72,14 +81,14 @@ vi.mock('~/server/services/marketing/visibility/access', () => ({
   requireVisibilityRequest: async () => ({
     site: { id: 's1' },
     project: { id: 'p1', name: 'Acme' },
-    teamId: 't1',
+    organizationId: 'o1',
     userId: 'u1',
     projectId: 'p1',
   }),
 }))
 vi.mock('~/server/utils/marketing-access', () => ({
   requireMarketingAdmin: async () => {
-    if (!state.marketingAdmin) throw httpError(403, 'Only team admins can manage Marketing settings')
+    if (!state.marketingAdmin) throw httpError(403, 'Only project admins can manage Marketing settings')
   },
 }))
 vi.mock('~/server/services/marketing/customer-language/service', () => ({
@@ -89,8 +98,8 @@ vi.mock('~/server/services/marketing/customer-language/service', () => ({
   },
 }))
 
-const getHandler = (await import('~/server/api/marketing/teams/[teamId]/data-consent.get')).default
-const putHandler = (await import('~/server/api/marketing/teams/[teamId]/data-consent.put')).default
+const getHandler = (await import('~/server/api/workspace/data-consent.get')).default
+const putHandler = (await import('~/server/api/workspace/data-consent.put')).default
 const runHandler = (await import('~/server/api/marketing/projects/[projectId]/language/runs.post')).default
 
 const call = (h: unknown) => (h as (e: unknown) => Promise<{ data: Record<string, unknown> }>)({} as never)
@@ -102,7 +111,7 @@ beforeEach(() => {
   state.selectRows = []
   state.runCalls = 0
   state.marketingAdmin = true
-  state.teamMismatch = false
+  state.orgMismatch = false
 })
 
 describe('data consent routes', () => {
@@ -119,7 +128,7 @@ describe('data consent routes', () => {
     ]
     const res = await call(putHandler)
     expect(state.upserts[0]).toMatchObject({
-      teamId: 't1',
+      organizationId: 'o1',
       allowFeedbackText: true,
       allowSupportText: false,
       consentedByUserId: 'u1',
@@ -134,7 +143,7 @@ describe('data consent routes', () => {
     expect(state.upserts).toHaveLength(0)
   })
 
-  it('cross-team: a user outside the team gets 403 on GET and PUT', async () => {
+  it('cross-workspace: a user outside the workspace gets 403 on GET and PUT', async () => {
     state.role = null
     await expect(call(getHandler)).rejects.toMatchObject({ statusCode: 403 })
     await expect(call(putHandler)).rejects.toMatchObject({ statusCode: 403 })

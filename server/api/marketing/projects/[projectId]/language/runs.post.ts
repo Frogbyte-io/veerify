@@ -6,8 +6,8 @@
  *     summary: Analyze customer language for a product
  *     description: >
  *       Project admin only. Sends PII-stripped feedback and/or support text from the
- *       last 90 days (at most 300 items) to the team's own AI provider key, but
- *       only for sources the team has consented to. At most 5 runs per product per day.
+ *       last 90 days (at most 300 items) to the workspace's own AI provider key, but
+ *       only for sources the workspace has consented to. At most 5 runs per product per day.
  *     operationId: runCustomerLanguage
  *     parameters:
  *       - in: path

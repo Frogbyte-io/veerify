@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
   if (!request || typeof platformId !== 'string') notFound('This link is not valid')
 
   const platform = request.platforms.find((candidate) => candidate.id === platformId)
-  // Re-check the scheme: only https URLs configured by the team are ever redirected to.
+  // Re-check the scheme: only https URLs configured by the project are ever redirected to.
   if (!platform || !/^https:\/\//i.test(platform.url)) notFound('This link is not valid')
 
   // Expired links still redirect (the customer is reading an old email) but no longer record a click.

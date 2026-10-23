@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Turn AI summaries of competitor changes on or off
  *     description: >
- *       Marketing admin only. Summaries use the team's own LLM key and its monthly budget.
+ *       Marketing admin only. Summaries use the workspace's own LLM key and its monthly budget.
  *       Stored in the product settings (no extra table).
  *     operationId: updateMarketingCompetitorSettings
  *     parameters:

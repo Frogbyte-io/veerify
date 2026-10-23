@@ -60,7 +60,7 @@ describe('recordUsage', () => {
     await recordUsage('team-1', 'crawl:pages', 7)
 
     expect(state.insertValues).toMatchObject({
-      teamId: 'team-1',
+      organizationId: 'team-1',
       metric: 'crawl:pages',
       units: 7,
       period: currentPeriod(),

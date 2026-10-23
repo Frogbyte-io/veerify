@@ -25,15 +25,15 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage?: strin
 )
 vi.stubGlobal('readBody', async () => state.body)
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: 'u1' } })),
 }))
 vi.mock('~/server/utils/marketing-access', () => ({
   requireMarketingAdmin: vi.fn(async () => {
     if (state.adminError) throw httpError(state.adminError)
-    return { project: { id: 'p1' }, teamId: 't1' }
+    return { project: { id: 'p1' }, organizationId: 'o1' }
   }),
-  requireMarketingAccess: vi.fn(async () => ({ project: { id: 'p1' }, teamId: 't1' })),
+  requireMarketingAccess: vi.fn(async () => ({ project: { id: 'p1' }, organizationId: 'o1' })),
 }))
 vi.mock('~/server/utils/marketing-site', () => ({
   requireRouteParam: (_e: unknown, name: string) => (name === 'projectId' ? 'p1' : 'w1'),

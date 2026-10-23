@@ -12,7 +12,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: insight (or null), consent summary, canRun and a reason when not }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: No marketing site is set up }
  */
 import { and, desc, eq, gt } from 'drizzle-orm'

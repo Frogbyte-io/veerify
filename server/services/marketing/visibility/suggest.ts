@@ -1,5 +1,5 @@
 /**
- * Suggests starter prompts with the team's own LLM key. Only the product name,
+ * Suggests starter prompts with the workspace's own LLM key. Only the product name,
  * description and feedback category names are sent; never feedback or support
  * text (design.md, security constraints).
  */

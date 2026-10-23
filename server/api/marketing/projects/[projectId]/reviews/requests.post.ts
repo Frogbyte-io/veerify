@@ -9,7 +9,7 @@
  *       guards as automatic requests apply (enabled, suppression list, cooldown).
  *       Each address gets its own result (invalid addresses and skipped addresses
  *       are reported per address, not queued). Limited to 10 calls per hour per
- *       product and 100 manually queued requests per team per day
+ *       product and 100 manually queued requests per project per day
  *       (reason `daily_limit`).
  *     operationId: createMarketingReviewRequests
  *     parameters:
@@ -29,7 +29,7 @@
  *     responses:
  *       200: { description: Per-address results }
  *       400: { description: Validation failed }
- *       403: { description: Not a team admin, or Marketing is not enabled }
+ *       403: { description: Not a project admin, or Marketing is not enabled }
  *       404: { description: Product not found }
  *       429: { description: Rate limited }
  */

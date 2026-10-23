@@ -7,7 +7,7 @@
  *     description: >
  *       Returns the product's settings (defaults when never saved: disabled) and
  *       the product's feedback statuses, for the "shipped" trigger picker, and
- *       `canManage` (true for team admins) so the UI can show a read-only view.
+ *       `canManage` (true for project admins) so the UI can show a read-only view.
  *     operationId: getMarketingReviewSettings
  *     parameters:
  *       - in: path
@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Settings and available statuses }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
 import { dbReviewsStore } from '~/server/services/marketing/reviews/store'

@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Custom directory deleted, or catalog directory reset }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  *       404: { description: Unknown directory }
  */
 import { and, eq } from 'drizzle-orm'

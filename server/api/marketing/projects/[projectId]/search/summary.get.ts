@@ -20,7 +20,7 @@
  *         schema: { type: integer, minimum: 7, maximum: 45, default: 28 }
  *     responses:
  *       200: { description: Summary; `connection` is null when Search Console is not connected }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  */
 import { and, asc, desc, eq, gte } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'

@@ -24,7 +24,7 @@
  *     responses:
  *       200: { description: Number of mentions updated }
  *       400: { description: Validation failed }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  */
 import { and, eq, inArray } from 'drizzle-orm'
 import { z } from 'zod'

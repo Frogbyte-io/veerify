@@ -4,7 +4,7 @@
  *   post:
  *     tags: [Marketing]
  *     summary: Mark competitor changes as seen
- *     description: Any team member with Marketing access. Marks every unseen change when `ids` is omitted.
+ *     description: Any project member with Marketing access. Marks every unseen change when `ids` is omitted.
  *     operationId: markMarketingCompetitorChangesSeen
  *     parameters:
  *       - in: path
@@ -21,7 +21,7 @@
  *               ids: { type: array, maxItems: 100, items: { type: string } }
  *     responses:
  *       200: { description: Changes marked as seen }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'

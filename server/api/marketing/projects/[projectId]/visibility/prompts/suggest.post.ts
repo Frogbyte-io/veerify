@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Suggest AI visibility prompts (not saved)
  *     description: >
- *       Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Only the product
+ *       Uses the workspace's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Only the product
  *       name, description and feedback category names are sent to the provider.
  *     operationId: suggestVisibilityPrompts
  *     parameters:
@@ -15,7 +15,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Up to 8 suggested prompts }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       409: { description: No usable LLM key or monthly budget reached or provider out of credit }
  *       429: { description: Rate limit (10 per hour and 40 per day per site) or provider rate limit }
  *       502: { description: Provider error }
@@ -31,7 +31,7 @@ const SUGGESTIONS_PER_DAY = 40
 export default defineEventHandler(async (event) => {
   const { site, project, organizationId } = await requireVisibilityRequest(event)
 
-  // Each call spends the team's own provider credit: 10 per hour per site
+  // Each call spends the workspace's own provider credit: 10 per hour per site
   await requireRateLimit(event, {
     maxRequests: 10,
     windowSeconds: 3600,

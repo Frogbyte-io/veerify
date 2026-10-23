@@ -20,7 +20,7 @@
  *     responses:
  *       200: { description: Requests page }
  *       400: { description: Invalid query or cursor }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
 import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm'

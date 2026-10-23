@@ -6,7 +6,7 @@
  *     summary: Start a manual site audit
  *     description: >
  *       Queues an audit of the product's verified site. Runs a full crawl when
- *       a Firecrawl key is available (team key or instance key), otherwise a
+ *       a Firecrawl key is available (workspace key or instance key), otherwise a
  *       basic audit of robots.txt, llms.txt, sitemap and the home page.
  *       Fails with 409 while another audit is running and 429 after the daily
  *       manual limit. Unverified sites are never fetched (403).

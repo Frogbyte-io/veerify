@@ -17,7 +17,7 @@ class MemStore implements AuditStore {
   site: AuditSite = {
     id: 's1',
     projectId: 'p1',
-    teamId: 't1',
+    organizationId: 't1',
     origin: 'https://example.com',
     verifiedAt: new Date('2026-01-01'),
     marketingEnabled: true,

@@ -24,8 +24,8 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string
   Object.assign(new Error(input.statusMessage), input)
 )
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: 'u1' } })),
 }))
 
 vi.mock('~/server/utils/marketing-access', () => ({
@@ -33,7 +33,7 @@ vi.mock('~/server/utils/marketing-access', () => ({
     if (state.access === 'forbidden') {
       throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
     }
-    return { project: {}, teamId: 't1' }
+    return { project: {}, organizationId: 'o1' }
   }),
 }))
 

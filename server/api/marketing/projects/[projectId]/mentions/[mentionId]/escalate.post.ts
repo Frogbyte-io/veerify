@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Escalate a mention to a support conversation
  *     description: >
- *       Creates a conversation in the team's support inbox whose first message is an internal
+ *       Creates a conversation in the project's support inbox whose first message is an internal
  *       note (never sent to anyone) describing the mention, and marks the mention escalated.
  *       Idempotent: escalating again returns the existing conversation. Requires the Support
  *       module and access to a support inbox.
@@ -21,7 +21,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: "escalated: true. Conversation id, inbox id and display id are included only when the caller can open that inbox" }
- *       403: { description: Not a team member, Marketing is off, or no access to a support inbox }
+ *       403: { description: No access to this project, Marketing is off, or no access to a support inbox }
  *       404: { description: Mention not found for this product }
  *       409: { description: Support is not enabled for this project }
  */

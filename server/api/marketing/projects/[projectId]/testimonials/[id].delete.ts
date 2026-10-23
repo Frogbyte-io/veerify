@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Testimonial deleted }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  *       404: { description: Testimonial not found for this product }
  */
 import { and, eq } from 'drizzle-orm'

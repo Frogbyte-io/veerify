@@ -177,7 +177,7 @@ describe('insertRequest', () => {
   const row = {
     id: 'rr-1',
     projectId: 'p1',
-    teamId: 't1',
+    organizationId: 't1',
     email: 'a@x.io',
     name: null,
     trigger: 'manual' as const,
@@ -305,11 +305,11 @@ describe('loadFeedbackRecipients only returns verified addresses', () => {
 })
 
 describe('countManualSince', () => {
-  it('counts manual requests per team', async () => {
+  it('counts manual requests per project', async () => {
     state.selectQueue = [[{ total: 7 }]]
     await expect(dbReviewsStore.countManualSince('t1', new Date())).resolves.toBe(7)
     const { sql, params } = sqlOf(state.selects[0]!.where)
-    expect(sql).toContain('"review_request"."team_id"')
+    expect(sql).toContain('"review_request"."project_id"')
     expect(params).toEqual(expect.arrayContaining(['t1', 'manual']))
   })
 })
@@ -341,7 +341,7 @@ describe('email hash matching', () => {
     await dbReviewsStore.insertRequest({
       id: 'rr-1',
       projectId: 'p1',
-      teamId: 't1',
+      organizationId: 't1',
       email: 'jane@example.com',
       name: null,
       trigger: 'csat',

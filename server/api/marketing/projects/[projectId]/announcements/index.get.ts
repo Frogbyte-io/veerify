@@ -7,7 +7,7 @@
  *     description: >
  *       Published entries of the product, newest first, each with its drafts per channel
  *       (entries without drafts included). Also reports whether the changelog is on and
- *       whether the team has a usable LLM key.
+ *       whether the workspace has a usable LLM key.
  *     operationId: listMarketingAnnouncements
  *     parameters:
  *       - in: path
@@ -20,7 +20,7 @@
  *     responses:
  *       200: { description: Entries with drafts and a next cursor }
  *       400: { description: Invalid cursor }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Project not found }
  */
 import { requireAuth } from '~/server/utils/auth-middleware'

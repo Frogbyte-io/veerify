@@ -30,7 +30,7 @@ const isSupportDerived = sql`coalesce(${feedback.metadata}->>'source', '') = ${S
 export interface CollectFeedbackOptions {
   /**
    * Include feedback derived from support conversations (and its comments),
-   * labelled as support text. Only true when the team consented to support text.
+   * labelled as support text. Only true when the workspace consented to support text.
    */
   includeSupportDerived?: boolean
 }

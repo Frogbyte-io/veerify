@@ -54,10 +54,10 @@ beforeEach(() => {
   state.updates = []
 })
 
-describe('team credentials', () => {
+describe('organization credentials', () => {
   it('stores only an encrypted envelope and a hint', async () => {
     const summary = await saveOrgCredential({
-      teamId: 'team-1',
+      organizationId: 'team-1',
       provider: 'anthropic',
       apiKey: 'sk-ant-secret-value-1234',
       userId: 'user-1',
@@ -73,7 +73,7 @@ describe('team credentials', () => {
 
   it('decrypts for the same team and provider only', async () => {
     await saveOrgCredential({
-      teamId: 'team-1',
+      organizationId: 'team-1',
       provider: 'openai',
       apiKey: 'sk-openai-abcdef',
       userId: 'u',

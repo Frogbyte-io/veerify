@@ -5,8 +5,8 @@
  *     tags: [Marketing]
  *     summary: Get the marketing site and its verification instructions
  *     description: >
- *       Requires Marketing to be enabled for the team and the product. Returns
- *       `site: null` until a site is added. `canManage` is true for team admins.
+ *       Requires Marketing to be enabled for the project. Returns
+ *       `site: null` until a site is added. `canManage` is true for project admins.
  *     operationId: getMarketingSite
  *     parameters:
  *       - in: path
@@ -15,7 +15,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Site, verification instructions and whether the caller can manage it }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  *       404: { description: Product not found }
  */
 import { requireAuth } from '~/server/utils/auth-middleware'

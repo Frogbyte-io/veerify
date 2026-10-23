@@ -15,7 +15,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Directories, custom directories and progress }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  *       404: { description: Product not found }
  */
 import { asc, eq } from 'drizzle-orm'

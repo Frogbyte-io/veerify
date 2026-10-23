@@ -28,7 +28,7 @@
  *     responses:
  *       200: { description: Term updated }
  *       400: { description: Validation failed }
- *       403: { description: Not a team member, Marketing is off, or the competitor domain of a term with watched pages is changed by a non-admin }
+ *       403: { description: No access to this project, Marketing is off, or the competitor domain of a term with watched pages is changed by a non-admin }
  *       404: { description: Term or site not found }
  */
 import { and, eq, sql } from 'drizzle-orm'

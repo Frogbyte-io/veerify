@@ -47,7 +47,7 @@ export interface RunContext {
   lastPageRequestAt: Map<string, number>
   deadline: number
   /**
-   * Fetched pages by URL for this run: watches of different teams on the same URL share one fetch
+   * Fetched pages by URL for this run: watches of different projects on the same URL share one fetch
    * (and one robots/spacing slot); each is still diffed against its own stored text.
    */
   pages?: Map<string, Promise<PageResult>>
@@ -156,7 +156,7 @@ function pathOf(url: URL): string {
   return `${url.pathname}${url.search}`
 }
 
-/** One fetch per URL per run: a page several teams watch is fetched once and shared. */
+/** One fetch per URL per run: a page several projects watch is fetched once and shared. */
 function loadPage(target: URL, host: string, ctx: RunContext, deps: CheckerDeps): Promise<PageResult> {
   const key = target.toString()
   const cache = ctx.pages
@@ -378,7 +378,7 @@ export function buildSummaryInput(competitor: string, url: string, added: string
   ].join('\n\n')
 }
 
-/** Summary with the team's own LLM key. Null when nothing usable came back; throws when no key or over budget. */
+/** Summary with the workspace's own LLM key. Null when nothing usable came back; throws when no key or over budget. */
 export async function summarizeChange(
   watch: WatchContext,
   added: string[],
@@ -421,7 +421,7 @@ export function interleaveByHost(watches: WatchContext[]): WatchContext[] {
 }
 
 /**
- * Moves watches on the same URL (different teams) next to each other, keeping first-appearance order,
+ * Moves watches on the same URL (different projects) next to each other, keeping first-appearance order,
  * so a shared page is fetched once and applied to all of them while it is still cached.
  */
 export function groupByUrl(watches: WatchContext[]): WatchContext[] {

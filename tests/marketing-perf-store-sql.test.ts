@@ -65,7 +65,7 @@ describe('mentions store: due selection in SQL', () => {
       [
         {
           site_id: 's1',
-          team_id: 't1',
+          organization_id: 't1',
           project_id: 'p1',
           name: 'Acme',
           slug: 'acme',
@@ -78,12 +78,11 @@ describe('mentions store: due selection in SQL', () => {
     expect(sites).toEqual([
       {
         siteId: 's1',
-        teamId: 't1',
+        organizationId: 't1',
         projectId: 'p1',
         projectName: 'Acme',
         projectSlug: 'acme',
         projectSettings: { marketingEnabled: true },
-        teamMarketingEnabled: true,
       },
     ])
     expect(captured.executed).toHaveLength(1)
@@ -136,7 +135,7 @@ describe('audit store: scheduler gates in SQL', () => {
     const result = await drizzleAuditStore.scheduleCandidates(new Date('2026-10-05T10:00:00Z'), 200)
     expect(result).toEqual([{ siteId: 's1', lastAuditAt: null }])
     const where = render(captured.where[0]).sql
-    expect(where).toMatch(/coalesce\("team_module_settings"\."marketing_enabled", \$\d+\) = true/)
+    expect(where).not.toContain('team_module_settings')
     expect(where).toMatch(/"settings"->>'marketingEnabled' = 'true'/)
     expect(where).toMatch(/NOT EXISTS/)
     const order = render((captured.orderBy[0] as unknown[])[0]).sql

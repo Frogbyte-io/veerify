@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Competitors with their watched pages and recent changes
  *     description: >
- *       Any team member with Marketing access. Lists the competitor terms of the site
+ *       Any project member with Marketing access. Lists the competitor terms of the site
  *       with their watched pages, the 50 most recent detected changes (newest first)
  *       and the number of unseen changes.
  *     operationId: getMarketingCompetitors
@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Competitors, watches and changes }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  */
 import { desc, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'

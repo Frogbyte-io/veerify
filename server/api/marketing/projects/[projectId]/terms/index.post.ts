@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Add a brand, competitor or keyword term
  *     description: >
- *       Any team member with Marketing access. At most 50 terms per site and 10
+ *       Any project member with Marketing access. At most 50 terms per site and 10
  *       aliases per term. `competitorDomain` is only allowed on competitors.
  *     operationId: createMarketingTerm
  *     parameters:
@@ -28,7 +28,7 @@
  *     responses:
  *       200: { description: Term created }
  *       400: { description: Validation failed or the 50 term limit is reached }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  *       404: { description: No site added yet }
  */
 import { randomUUID } from 'node:crypto'

@@ -1,6 +1,6 @@
 /**
  * Customer language runs. Privacy rule (design.md, security constraints): no
- * feedback or support text reaches an LLM provider unless the team has an
+ * feedback or support text reaches an LLM provider unless the workspace has an
  * explicit consent for that source, re-read at run time. Message text is never
  * logged.
  */
@@ -269,7 +269,7 @@ export async function runCustomerLanguage(
 
   const existingLabels = await deps.termLabels(input.siteId)
 
-  // 4. Reserve a run atomically (race-safe daily limit), then call the provider with the team's own key
+  // 4. Reserve a run atomically (race-safe daily limit), then call the provider with the workspace's own key
   const runId = await deps.claimRun(input.siteId, input.userId, now)
   if (!runId) limitReached()
 

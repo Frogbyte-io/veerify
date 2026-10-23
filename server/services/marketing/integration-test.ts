@@ -151,7 +151,7 @@ function testSecrets(organizationId: string): Outcome {
         'SECRETS_ENCRYPTION_KEY is not set or invalid. Set 32 random bytes (for example from `openssl rand -base64 32`) on the server.',
     }
   }
-  const aad = `team:${organizationId}:integration-test`
+  const aad = `org:${organizationId}:integration-test`
   const probe = `probe-${Date.now()}-${Math.random()}`
   try {
     const envelope = encryptSecret(probe, aad)
@@ -168,7 +168,7 @@ function testSecrets(organizationId: string): Outcome {
     return {
       ok: true,
       source: 'instance',
-      detail: 'Encrypted and decrypted a test value bound to this team (no network used).',
+      detail: 'Encrypted and decrypted a test value bound to this workspace (no network used).',
     }
   } catch {
     return { ok: false, source: 'instance', detail: 'Encryption round trip failed. Check SECRETS_ENCRYPTION_KEY.' }

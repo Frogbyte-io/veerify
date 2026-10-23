@@ -19,7 +19,14 @@ const state = vi.hoisted(() => ({
 vi.mock('~/server/database/drizzle', () => ({
   db: {
     select: () => ({
-      from: () => ({ innerJoin: () => ({ where: () => ({ limit: async () => state.google.rows }) }) }),
+      from: () => {
+        const chain: Record<string, unknown> = {
+          innerJoin: () => chain,
+          where: () => chain,
+          limit: async () => state.google.rows,
+        }
+        return chain
+      },
     }),
   },
 }))

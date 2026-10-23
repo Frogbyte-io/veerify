@@ -17,7 +17,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Overview }
- *       403: { description: Not a team member, or Marketing is off for the team or product }
+ *       403: { description: No access to this project, or Marketing is off for the project }
  *       404: { description: Product not found }
  */
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm'

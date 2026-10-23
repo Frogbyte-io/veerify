@@ -41,8 +41,8 @@ const createError = (input: { statusCode: number; statusMessage: string; data?: 
 vi.stubGlobal('createError', createError)
 vi.mock('h3', async (importOriginal) => ({ ...(await importOriginal<typeof import('h3')>()), createError }))
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: state.userId } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: state.userId } })),
 }))
 vi.mock('~/server/utils/auth-middleware', () => ({
   requireAuth: vi.fn(async () => {
@@ -55,18 +55,18 @@ vi.mock('~/server/utils/marketing-access', () => {
   return {
     requireMarketingAccess: vi.fn(async () => {
       if (state.role === 'off') throw forbid()
-      return { project: {}, teamId: 't1' }
+      return { project: {}, organizationId: 'o1' }
     }),
     requireMarketingAdmin: vi.fn(async () => {
       if (state.role !== 'admin') throw forbid()
-      return { project: {}, teamId: 't1' }
+      return { project: {}, organizationId: 'o1' }
     }),
   }
 })
 vi.mock('~/server/utils/marketing-site', async (importOriginal) => ({
   ...(await importOriginal<typeof import('~/server/utils/marketing-site')>()),
   findMarketingSite: vi.fn(async () => state.site),
-  isTeamAdminOf: vi.fn(async () => state.role === 'admin'),
+  isMarketingAdminOf: vi.fn(async () => state.role === 'admin'),
 }))
 
 vi.mock('~/server/database/drizzle', async () => {

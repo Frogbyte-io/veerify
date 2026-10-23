@@ -83,7 +83,7 @@ export interface OrgApiKey {
 /**
  * Decrypts a workspace's key for one provider. Returns null when none is stored or
  * when the stored envelope cannot be decrypted (wrong/rotated-away instance
- * key) — the latter is logged without key material and surfaces to the team
+ * key) — the latter is logged without key material and surfaces to the workspace
  * as a missing key rather than a crash in a scheduled task.
  */
 export async function getOrgApiKey(organizationId: string, provider: ApiCredentialProvider): Promise<OrgApiKey | null> {

@@ -140,7 +140,7 @@ export async function getAuditStartStatus(
   return { canStart: true, reason: null, message: null, resetsAt: null }
 }
 
-/** Team key first (unless known invalid), then the instance key. Null means basic mode. */
+/** Workspace key first (unless known invalid), then the instance key. Null means basic mode. */
 async function resolveConfigFor(
   organizationId: string,
   deps: RunnerDeps

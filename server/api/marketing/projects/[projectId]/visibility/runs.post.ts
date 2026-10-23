@@ -15,7 +15,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Run created }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       409: { description: Setup incomplete or a run is already in progress }
  *       429: { description: Daily manual run limit reached }
  */

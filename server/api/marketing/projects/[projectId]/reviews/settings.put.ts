@@ -42,7 +42,7 @@
  *     responses:
  *       200: { description: Settings saved }
  *       400: { description: Validation failed }
- *       403: { description: Not a team admin, or Marketing is not enabled }
+ *       403: { description: Not a project admin, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
 import { randomUUID } from 'node:crypto'

@@ -13,7 +13,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Setup state }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Project not found }
  */
 import { and, eq, sql } from 'drizzle-orm'

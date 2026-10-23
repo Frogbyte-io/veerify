@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
   body: {} as Record<string, unknown>,
-  params: { projectId: 'p1', teamId: 't1', provider: 'anthropic', termId: 'term1' } as Record<string, string>,
+  params: { projectId: 'p1', provider: 'anthropic', termId: 'term1' } as Record<string, string>,
   role: 'member' as 'member' | 'admin',
   marketingOn: true,
   projectSettings: null as Record<string, unknown> | null,
@@ -62,28 +62,42 @@ vi.mock('~/server/database/drizzle', () => {
   return { db }
 })
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: 'u1' } })),
+}))
+
+vi.mock('~/server/utils/project-context', () => ({
+  requireAuthWithOrganization: vi.fn(async () => ({
+    session: { user: { id: 'u1' } },
+    organizationId: 'o1',
+    organizationRole: state.role,
+  })),
 }))
 
 vi.mock('~/server/utils/marketing-access', () => ({
   requireMarketingAccess: vi.fn(async () => {
-    if (!state.marketingOn) throw httpError(403, 'Marketing is not enabled for this team')
-    return { project: { id: 'p1', teamId: 't1', settings: state.projectSettings }, teamId: 't1' }
+    if (!state.marketingOn) throw httpError(403, 'Marketing is not enabled for this project')
+    return {
+      project: { id: 'p1', organizationId: 'o1', settings: state.projectSettings },
+      organizationId: 'o1',
+      role: state.role,
+    }
   }),
   requireMarketingAdmin: vi.fn(async () => {
-    if (!state.marketingOn) throw httpError(403, 'Marketing is not enabled for this team')
-    if (state.role !== 'admin') throw httpError(403, 'Only team admins can manage Marketing settings')
-    return { project: { id: 'p1', teamId: 't1' }, teamId: 't1' }
+    if (!state.marketingOn) throw httpError(403, 'Marketing is not enabled for this project')
+    if (state.role !== 'admin') throw httpError(403, 'Only project admins can manage Marketing settings')
+    return { project: { id: 'p1', organizationId: 'o1' }, organizationId: 'o1', role: 'admin' }
   }),
 }))
 
-vi.mock('~/server/utils/support-access', () => ({
-  requireTeamAdmin: vi.fn(async () => {
+vi.mock('~/server/utils/project-access', () => ({
+  requireOrganizationAdmin: vi.fn(async () => {
     if (state.role !== 'admin') throw httpError(403, 'Forbidden')
-    return { id: 'm1', role: 'admin' }
+    return 'admin'
   }),
-  requireTeamMembership: vi.fn(async () => ({ id: 'm1', role: state.role })),
+  requireOrganizationMember: vi.fn(async () => state.role),
+  isOrganizationAdminRole: (role: string | null) => role === 'admin' || role === 'owner',
+  isProjectAdmin: vi.fn(async () => state.role === 'admin'),
 }))
 
 vi.mock('~/server/utils/rate-limit', () => ({ requireRateLimit: vi.fn(async () => undefined) }))
@@ -141,7 +155,7 @@ vi.mock('~/server/services/marketing/site-verification', async (importActual) =>
   return { ...actual, checkVerification: vi.fn(async () => state.checkVerification) }
 })
 
-const teamCredentials = await import('~/server/utils/org-credentials')
+const orgCredentials = await import('~/server/utils/org-credentials')
 const rateLimit = await import('~/server/utils/rate-limit')
 
 const event = {} as never
@@ -151,7 +165,6 @@ const load = async (path: string) => (await import(path)).default
 const existingSite = {
   id: 's1',
   projectId: 'p1',
-  teamId: 't1',
   origin: 'https://example.com',
   verificationMethod: 'dns',
   verificationToken: 'old-token',
@@ -162,7 +175,7 @@ const existingSite = {
 beforeEach(() => {
   vi.clearAllMocks()
   state.body = {}
-  state.params = { projectId: 'p1', teamId: 't1', provider: 'anthropic', termId: 'term1' }
+  state.params = { projectId: 'p1', provider: 'anthropic', termId: 'term1' }
   state.role = 'member'
   state.marketingOn = true
   state.secretsConfigured = true
@@ -345,7 +358,7 @@ describe('credentials routes', () => {
   const KEY = 'sk-ant-secret-key-1234'
 
   it('lists for members without exposing key material', async () => {
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/index.get')
+    const handler = await load('~/server/api/workspace/api-keys/index.get')
     const res = await run(handler)
     expect(res.data.canManage).toBe(false)
     expect(res.data.secretsConfigured).toBe(true)
@@ -355,32 +368,32 @@ describe('credentials routes', () => {
   it('admin sees canManage and secretsConfigured false when no encryption key is set', async () => {
     state.role = 'admin'
     state.secretsConfigured = false
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/index.get')
+    const handler = await load('~/server/api/workspace/api-keys/index.get')
     const res = await run(handler)
     expect(res.data).toMatchObject({ canManage: true, secretsConfigured: false })
   })
 
   it('PUT rejects non-admins', async () => {
     state.body = { apiKey: KEY }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 403 })
-    expect(teamCredentials.saveOrgCredential).not.toHaveBeenCalled()
+    expect(orgCredentials.saveOrgCredential).not.toHaveBeenCalled()
   })
 
   it('PUT returns 503 when secrets are not configured', async () => {
     state.role = 'admin'
     state.secretsConfigured = false
     state.body = { apiKey: KEY }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 503 })
-    expect(teamCredentials.saveOrgCredential).not.toHaveBeenCalled()
+    expect(orgCredentials.saveOrgCredential).not.toHaveBeenCalled()
   })
 
   it('PUT rejects an unknown provider', async () => {
     state.role = 'admin'
     state.params.provider = 'mistral'
     state.body = { apiKey: KEY }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
   })
 
@@ -388,20 +401,20 @@ describe('credentials routes', () => {
     state.role = 'admin'
     state.body = { apiKey: KEY }
     state.validateLlm = { ok: false, kind: 'auth', message: `Invalid key ${KEY}` }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     const error = await run(handler).catch((e) => e)
     expect(error.statusCode).toBe(400)
     expect(JSON.stringify(error.data)).not.toContain(KEY)
-    expect(teamCredentials.saveOrgCredential).not.toHaveBeenCalled()
+    expect(orgCredentials.saveOrgCredential).not.toHaveBeenCalled()
   })
 
   it('PUT saves a valid key as valid and never returns it', async () => {
     state.role = 'admin'
     state.body = { apiKey: KEY, monthlyBudgetCents: 2500 }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     const res = await run(handler)
-    expect(teamCredentials.saveOrgCredential).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'valid', lastError: null, monthlyBudgetCents: 2500, teamId: 't1' })
+    expect(orgCredentials.saveOrgCredential).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'valid', lastError: null, monthlyBudgetCents: 2500, organizationId: 'o1' })
     )
     expect(JSON.stringify(res)).not.toContain(KEY)
     expect(res.data.credential.keyHint).toBe('1234')
@@ -411,9 +424,9 @@ describe('credentials routes', () => {
     state.role = 'admin'
     state.params.provider = provider
     state.body = { apiKey: KEY, monthlyBudgetCents: 500 }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     await run(handler)
-    expect(teamCredentials.saveOrgCredential).toHaveBeenCalledWith(
+    expect(orgCredentials.saveOrgCredential).toHaveBeenCalledWith(
       expect.objectContaining({ provider, status: 'valid', monthlyBudgetCents: 500 })
     )
   })
@@ -422,9 +435,9 @@ describe('credentials routes', () => {
     state.role = 'admin'
     state.body = { apiKey: KEY }
     state.validateLlm = { ok: false, kind: 'server', message: 'Provider is down' }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     await run(handler)
-    expect(teamCredentials.saveOrgCredential).toHaveBeenCalledWith(
+    expect(orgCredentials.saveOrgCredential).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'unchecked', lastError: 'Provider is down' })
     )
   })
@@ -434,30 +447,30 @@ describe('credentials routes', () => {
     state.params.provider = 'firecrawl'
     state.body = { apiKey: 'fc-abcdefgh' }
     state.validateCrawl = { ok: false, kind: 'auth', message: 'Unauthorized' }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
-    expect(teamCredentials.saveOrgCredential).not.toHaveBeenCalled()
+    expect(orgCredentials.saveOrgCredential).not.toHaveBeenCalled()
   })
 
   it('PUT saves pagespeed keys unchecked', async () => {
     state.role = 'admin'
     state.params.provider = 'pagespeed'
     state.body = { apiKey: 'AIza-abcdefgh' }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     await run(handler)
-    expect(teamCredentials.saveOrgCredential).toHaveBeenCalledWith(expect.objectContaining({ status: 'unchecked' }))
+    expect(orgCredentials.saveOrgCredential).toHaveBeenCalledWith(expect.objectContaining({ status: 'unchecked' }))
   })
 
   it('PUT rejects a budget on non-LLM providers', async () => {
     state.role = 'admin'
     state.params.provider = 'firecrawl'
     state.body = { apiKey: 'fc-abcdefgh', monthlyBudgetCents: 100 }
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
   })
 
   it('PATCH requires admin, LLM providers and an existing key', async () => {
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].patch')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].patch')
     state.body = { monthlyBudgetCents: 500 }
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 403 })
 
@@ -466,7 +479,7 @@ describe('credentials routes', () => {
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
 
     state.params.provider = 'openai'
-    vi.mocked(teamCredentials.updateCredentialBudget).mockResolvedValueOnce(false)
+    vi.mocked(orgCredentials.updateCredentialBudget).mockResolvedValueOnce(false)
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 404 })
 
     const res = await run(handler)
@@ -476,11 +489,11 @@ describe('credentials routes', () => {
   })
 
   it('DELETE requires admin and removes the key', async () => {
-    const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].delete')
+    const handler = await load('~/server/api/workspace/api-keys/[provider].delete')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 403 })
     state.role = 'admin'
     await run(handler)
-    expect(teamCredentials.deleteOrgCredential).toHaveBeenCalledWith('t1', 'anthropic')
+    expect(orgCredentials.deleteOrgCredential).toHaveBeenCalledWith('o1', 'anthropic')
   })
 })
 

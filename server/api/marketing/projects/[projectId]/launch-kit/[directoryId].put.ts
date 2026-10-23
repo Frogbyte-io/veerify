@@ -33,7 +33,7 @@
  *     responses:
  *       200: { description: Item saved }
  *       400: { description: Validation failed }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  *       404: { description: Unknown directory }
  */
 import { randomUUID } from 'node:crypto'

@@ -8,7 +8,7 @@
  *       Returns the 20 most recent audits plus whether a new audit can be
  *       started now (`canStart`, with the `reason` when not: `not_verified`,
  *       `active_audit` or `daily_limit`). Requires Marketing enabled for the
- *       team and the product.
+ *       the project.
  *     operationId: listMarketingAudits
  *     parameters:
  *       - in: path

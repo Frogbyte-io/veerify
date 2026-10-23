@@ -5,7 +5,7 @@
  *     tags: [Public]
  *     summary: Unsubscribe from review requests
  *     description: >
- *       Writes a per-team marketing email suppression for the address (by keyed hash when the request was anonymised by retention). Also the
+ *       Writes a per-workspace marketing email suppression for the address (by keyed hash when the request was anonymised by retention). Also the
  *       RFC 8058 one-click target (`List-Unsubscribe-Post`). Responds with an HTML page.
  *     operationId: submitPublicReviewUnsubscribe
  *     parameters:

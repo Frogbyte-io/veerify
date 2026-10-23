@@ -4,7 +4,7 @@
  *   get:
  *     tags: [Marketing]
  *     summary: List testimonials for moderation
- *     description: Newest first, with counts by status and the team slug (for the public wall link). Includes whether the author consented to public display.
+ *     description: Newest first, with counts by status and the workspace slug (for the public wall link). Includes whether the author consented to public display.
  *     operationId: listMarketingTestimonials
  *     parameters:
  *       - in: path
@@ -17,7 +17,7 @@
  *     responses:
  *       200: { description: Testimonials and counts }
  *       400: { description: Invalid query }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
 import { and, count, desc, eq, type SQL } from 'drizzle-orm'

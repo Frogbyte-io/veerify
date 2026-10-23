@@ -34,7 +34,7 @@
  *     responses:
  *       200: { description: Mentions page }
  *       400: { description: Invalid query or cursor }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
 import { and, count, desc, eq, gte, lt, or, type SQL } from 'drizzle-orm'

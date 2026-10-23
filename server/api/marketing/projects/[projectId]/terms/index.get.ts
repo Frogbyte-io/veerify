@@ -12,7 +12,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Terms and whether the caller can manage them }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  *       404: { description: No site added yet }
  */
 import { asc, eq } from 'drizzle-orm'

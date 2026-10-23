@@ -29,7 +29,7 @@ function makeWatch(overrides: Partial<Watch> = {}): Watch {
   return {
     id: 'w1',
     siteId: 's1',
-    teamId: 't1',
+    organizationId: 't1',
     projectId: 'p1',
     projectName: 'Prod',
     projectSettings: null,
@@ -542,14 +542,14 @@ describe('shared fetches and lazy text', () => {
         : [
             makeWatch({
               id: 'a',
-              teamId: 'ta',
+              organizationId: 'ta',
               siteId: 'sa',
               lastContentHash: hashText(old1),
               lastCheckedAt: new Date(1),
             }),
             makeWatch({
               id: 'b',
-              teamId: 'tb',
+              organizationId: 'tb',
               siteId: 'sb',
               lastContentHash: hashText(old2),
               lastCheckedAt: new Date(1),
@@ -574,7 +574,7 @@ describe('shared fetches and lazy text', () => {
   it('applies a shared failure to each watch without refetching', async () => {
     const t = setup({ 'https://rival.com/robots.txt': res(404, ''), 'https://rival.com/pricing': res(503, '') })
     t.store.loadDue = vi.fn(async (_c: Date, _l: number, scope?: string) =>
-      scope === 'never' ? [makeWatch({ id: 'a' }), makeWatch({ id: 'b', teamId: 't2', siteId: 's2' })] : []
+      scope === 'never' ? [makeWatch({ id: 'a' }), makeWatch({ id: 'b', organizationId: 't2', siteId: 's2' })] : []
     ) as never
     const summary = await checkCompetitorWatches({}, t.deps)
     expect(t.requested.filter((u) => u.endsWith('/pricing'))).toHaveLength(1)
