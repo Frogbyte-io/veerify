@@ -43,9 +43,8 @@ import {
   type SeoAuditTrigger,
 } from '~/server/database/schema/marketing'
 import { project } from '~/server/database/schema/feedback'
-import { teamMember, user } from '~/server/database/schema/auth'
-import { teamModuleSettings } from '~/server/database/schema/teams'
-import { DEFAULT_TEAM_MODULES, resolveProductModules } from '~/lib/modules'
+import { member, user } from '~/server/database/schema/auth'
+import { isModuleEnabled } from '~/lib/modules'
 import { sendMarketingCredentialInvalidEmail } from '~/lib/email'
 import {
   getLlmProvider,
@@ -58,12 +57,12 @@ import {
 } from '~/server/services/llm'
 import { estimateCostUsdMicros } from '~/server/services/llm/models'
 import {
-  getTeamApiKey,
-  listTeamCredentials,
+  getOrgApiKey,
+  listOrgCredentials,
   markCredentialInvalid,
   markCredentialValid,
-  type TeamApiKey,
-} from '~/server/utils/team-credentials'
+  type OrgApiKey,
+} from '~/server/utils/org-credentials'
 import { recordUsage } from '~/server/utils/marketing-usage'
 import {
   estimateVisibilityReservation,
@@ -155,8 +154,9 @@ export interface CreateRunInput {
 
 export async function createRun(input: CreateRunInput) {
   const [site] = await db
-    .select({ id: marketingSite.id, teamId: marketingSite.teamId, verifiedAt: marketingSite.verifiedAt })
+    .select({ id: marketingSite.id, organizationId: project.organizationId, verifiedAt: marketingSite.verifiedAt })
     .from(marketingSite)
+    .innerJoin(project, eq(project.id, marketingSite.projectId))
     .where(eq(marketingSite.id, input.siteId))
     .limit(1)
   if (!site || !site.verifiedAt) throw runError('site_unverified')
@@ -174,7 +174,7 @@ export async function createRun(input: CreateRunInput) {
     .where(and(eq(aiVisibilityPrompt.siteId, site.id), eq(aiVisibilityPrompt.active, true)))
   if (prompts.length === 0) throw runError('no_prompts')
 
-  const credentials = await listTeamCredentials(site.teamId)
+  const credentials = await listOrgCredentials(site.organizationId)
   let providers = credentials
     .filter((c) => c.status !== 'invalid')
     .map((c) => c.provider)
@@ -262,7 +262,7 @@ export function parseAbortCount(error: string | null | undefined): number {
 }
 
 export interface AnswerContext {
-  teamId: string
+  organizationId: string
   promptText: string
   terms: MarketingTermInput[]
   brandLabel: string | null
@@ -291,22 +291,32 @@ export interface RunnerDeps {
   release: (answerId: string, error?: string) => Promise<void>
   markRunsRunning: (runIds: string[]) => Promise<void>
   loadContext: (answer: ClaimedAnswer) => Promise<AnswerContext | null>
-  getKey: (teamId: string, provider: LlmProviderId) => Promise<TeamApiKey | null>
+  getKey: (organizationId: string, provider: LlmProviderId) => Promise<OrgApiKey | null>
   /** Atomic budget reservation (see llm-budget.ts); false when the cap would be exceeded */
-  reserveBudget: (teamId: string, provider: string, amountMicros: number, capCents: number | null) => Promise<boolean>
+  reserveBudget: (
+    organizationId: string,
+    provider: string,
+    amountMicros: number,
+    capCents: number | null
+  ) => Promise<boolean>
   budgetRefusalReason: (
-    teamId: string,
+    organizationId: string,
     provider: string,
     amountMicros: number,
     capCents: number
   ) => Promise<'cap' | 'in_flight'>
   /** Replaces a reservation with the actual spend */
-  settleBudget: (teamId: string, provider: string, reservedMicros: number, actualMicros: number) => Promise<void>
-  releaseBudget: (teamId: string, provider: string, reservedMicros: number) => Promise<void>
-  recordUsage: (teamId: string, metric: string, units: number) => Promise<void>
-  markInvalid: (teamId: string, provider: LlmProviderId, message: string, keyHint?: string) => Promise<boolean>
-  markValid: (teamId: string, provider: LlmProviderId, keyHint?: string) => Promise<void>
-  notifyInvalid: (teamId: string, provider: LlmProviderId) => Promise<void>
+  settleBudget: (
+    organizationId: string,
+    provider: string,
+    reservedMicros: number,
+    actualMicros: number
+  ) => Promise<void>
+  releaseBudget: (organizationId: string, provider: string, reservedMicros: number) => Promise<void>
+  recordUsage: (organizationId: string, metric: string, units: number) => Promise<void>
+  markInvalid: (organizationId: string, provider: LlmProviderId, message: string, keyHint?: string) => Promise<boolean>
+  markValid: (organizationId: string, provider: LlmProviderId, keyHint?: string) => Promise<void>
+  notifyInvalid: (organizationId: string, provider: LlmProviderId) => Promise<void>
   failAnswer: (answerId: string, error: string) => Promise<void>
   failPendingForProvider: (runId: string, provider: LlmProviderId, error: string) => Promise<void>
   /** Resolves false when the row was no longer pending (already handled elsewhere) */
@@ -492,10 +502,10 @@ async function processAnswer(
     return 'failed'
   }
 
-  const { teamId } = context
+  const { organizationId } = context
   const provider = answer.provider
 
-  const key = await deps.getKey(teamId, provider)
+  const key = await deps.getKey(organizationId, provider)
   if (!key) {
     await failProvider(answer, deps, stopped, 'No API key is configured for this provider')
     return 'failed'
@@ -516,14 +526,14 @@ async function processAnswer(
     estimateVisibilityReservation(provider, answerModel, extractModel, context.promptText, extractionSystem),
     key.monthlyBudgetCents
   )
-  if (!(await deps.reserveBudget(teamId, provider, held, key.monthlyBudgetCents))) {
+  if (!(await deps.reserveBudget(organizationId, provider, held, key.monthlyBudgetCents))) {
     // Only a real cap fails the provider's answers. If the refusal came from other answers'
     // reservations still in flight, leave this one pending for the next tick (bounded by the 24h
     // pending-answer timeout) instead of failing work that may fit once they settle.
     const reason =
       key.monthlyBudgetCents == null
         ? 'cap'
-        : await deps.budgetRefusalReason(teamId, provider, held, key.monthlyBudgetCents)
+        : await deps.budgetRefusalReason(organizationId, provider, held, key.monthlyBudgetCents)
     if (reason === 'in_flight') {
       stopped.add(provider)
       await releaseSafely(deps, answer.id)
@@ -543,7 +553,7 @@ async function processAnswer(
         signal,
       })
     } catch (err) {
-      return await handleProviderError(err, answer, teamId, key.keyHint, deps, stopped, invalidated, signal)
+      return await handleProviderError(err, answer, organizationId, key.keyHint, deps, stopped, invalidated, signal)
     }
 
     let totalIn = answered.usage.inputTokens
@@ -575,7 +585,7 @@ async function processAnswer(
     }
 
     // The spend is real from here on, whatever happens to the row
-    await deps.settleBudget(teamId, provider, held, costMicros)
+    await deps.settleBudget(organizationId, provider, held, costMicros)
     settled = true
 
     const analysis = buildAnalysis(answered.text, answered.citations, context.terms, extraction)
@@ -589,19 +599,19 @@ async function processAnswer(
     })
 
     await Promise.all([
-      deps.recordUsage(teamId, `llm:${provider}:input_tokens`, totalIn),
-      deps.recordUsage(teamId, `llm:${provider}:output_tokens`, totalOut),
-      deps.recordUsage(teamId, 'visibility:answers', 1),
+      deps.recordUsage(organizationId, `llm:${provider}:input_tokens`, totalIn),
+      deps.recordUsage(organizationId, `llm:${provider}:output_tokens`, totalOut),
+      deps.recordUsage(organizationId, 'visibility:answers', 1),
     ])
 
     // Not saved: another worker already settled this row. The spend above is real, so usage is still recorded.
     if (saved === false) return 'released'
 
-    if (key.status === 'unchecked') await deps.markValid(teamId, provider, key.keyHint)
+    if (key.status === 'unchecked') await deps.markValid(organizationId, provider, key.keyHint)
     return 'done'
   } finally {
     // Provider failed or the worker crashed before settling: give the reservation back
-    if (!settled) await deps.releaseBudget(teamId, provider, held).catch(() => undefined)
+    if (!settled) await deps.releaseBudget(organizationId, provider, held).catch(() => undefined)
   }
 }
 
@@ -615,7 +625,7 @@ async function failProvider(answer: ClaimedAnswer, deps: RunnerDeps, stopped: Se
 async function handleProviderError(
   err: unknown,
   answer: ClaimedAnswer,
-  teamId: string,
+  organizationId: string,
   keyHint: string | undefined,
   deps: RunnerDeps,
   stopped: Set<LlmProviderId>,
@@ -646,9 +656,9 @@ async function handleProviderError(
       invalidated.add(provider)
       stopped.add(provider)
       const transitioned =
-        first && (await deps.markInvalid(teamId, provider, 'The provider rejected the API key', keyHint))
+        first && (await deps.markInvalid(organizationId, provider, 'The provider rejected the API key', keyHint))
       await failProvider(answer, deps, stopped, 'The API key for this provider was rejected')
-      if (transitioned) await deps.notifyInvalid(teamId, provider).catch(() => undefined)
+      if (transitioned) await deps.notifyInvalid(organizationId, provider).catch(() => undefined)
       return 'failed'
     }
     if (err.kind === 'quota') {
@@ -680,12 +690,12 @@ async function handleProviderError(
 // Default (database-backed) dependencies
 // ---------------------------------------------------------------------------
 
-export async function notifyCredentialInvalid(teamId: string, provider: LlmProviderId): Promise<void> {
+export async function notifyCredentialInvalid(organizationId: string, provider: LlmProviderId): Promise<void> {
   const admins = await db
     .select({ email: user.email })
-    .from(teamMember)
-    .innerJoin(user, eq(user.id, teamMember.userId))
-    .where(and(eq(teamMember.teamId, teamId), eq(teamMember.role, 'admin')))
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(and(eq(member.organizationId, organizationId), inArray(member.role, ['owner', 'admin'])))
 
   const baseUrl = (process.env.BETTER_AUTH_URL || '').replace(/\/$/, '')
   const providerLabel = LLM_PROVIDERS.find((p) => p.id === provider)?.label ?? provider
@@ -694,11 +704,11 @@ export async function notifyCredentialInvalid(teamId: string, provider: LlmProvi
       await sendMarketingCredentialInvalidEmail({
         to: admin.email,
         providerLabel,
-        settingsUrl: `${baseUrl}/marketing/settings`,
+        settingsUrl: `${baseUrl}/workspace`,
       })
     } catch (err) {
       logger.warn('Failed to send credential-invalid email', {
-        teamId,
+        organizationId,
         provider,
         error: err instanceof Error ? err.name : 'unknown',
       })
@@ -709,7 +719,12 @@ export async function notifyCredentialInvalid(teamId: string, provider: LlmProvi
 export function createDefaultDeps(): RunnerDeps {
   const runContext = new Map<
     string,
-    Promise<{ teamId: string; terms: MarketingTermInput[]; brandLabel: string | null; blockedReason: string | null }>
+    Promise<{
+      organizationId: string
+      terms: MarketingTermInput[]
+      brandLabel: string | null
+      blockedReason: string | null
+    }>
   >()
   const prompts = new Map<string, Promise<string | null>>()
 
@@ -781,26 +796,25 @@ export function createDefaultDeps(): RunnerDeps {
             const [row] = await db
               .select({
                 siteId: marketingSite.id,
-                teamId: marketingSite.teamId,
+                organizationId: project.organizationId,
                 verifiedAt: marketingSite.verifiedAt,
                 projectSettings: project.settings,
-                teamEnabled: teamModuleSettings.marketingEnabled,
               })
               .from(aiVisibilityRun)
               .innerJoin(marketingSite, eq(marketingSite.id, aiVisibilityRun.siteId))
               .innerJoin(project, eq(project.id, marketingSite.projectId))
-              .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
               .where(eq(aiVisibilityRun.id, answer.runId))
               .limit(1)
             if (!row) throw new Error('run not found')
-            const teamEnabled = row.teamEnabled ?? DEFAULT_TEAM_MODULES.marketingEnabled
-            const productEnabled = resolveProductModules(row.projectSettings).marketingEnabled
-            const blockedReason =
-              teamEnabled !== true || !productEnabled
-                ? 'Marketing is turned off for this product'
-                : !row.verifiedAt
-                  ? 'Site is no longer verified'
-                  : null
+            const marketingOn = isModuleEnabled(
+              row.projectSettings as Record<string, unknown> | null,
+              'marketingEnabled'
+            )
+            const blockedReason = !marketingOn
+              ? 'Marketing is turned off for this project'
+              : !row.verifiedAt
+                ? 'Site is no longer verified'
+                : null
             const terms = await db.select().from(marketingTerm).where(eq(marketingTerm.siteId, row.siteId))
             const inputs: MarketingTermInput[] = terms.map((t) => ({
               id: t.id,
@@ -809,7 +823,7 @@ export function createDefaultDeps(): RunnerDeps {
               aliases: t.aliases,
             }))
             return {
-              teamId: row.teamId,
+              organizationId: row.organizationId,
               terms: inputs,
               brandLabel: inputs.find((t) => t.kind === 'brand')?.label ?? null,
               blockedReason,
@@ -837,7 +851,7 @@ export function createDefaultDeps(): RunnerDeps {
       }
     },
 
-    getKey: getTeamApiKey,
+    getKey: getOrgApiKey,
     reserveBudget,
     budgetRefusalReason,
     settleBudget,
@@ -1036,7 +1050,7 @@ export interface ScheduleDeps {
 /**
  * Sites that need a scheduled run, selected entirely in SQL so sites missing a prerequisite are
  * never fetched (and so not re-checked every hour). Mirrors the checks in `createRun`: verified
- * site, Marketing on for the team AND the product (product default is off), a brand term, an
+ * site, Marketing on for the project (default off), a brand term, an
  * active prompt, a usable (not invalid) LLM credential, and no run since `cutoff`. Never-run
  * sites come first, then the longest-waiting; LIMIT staggers the load across hourly ticks.
  */
@@ -1045,19 +1059,17 @@ export function buildDueSitesQuery(cutoff: Date, limit: number) {
     SELECT s.id
     FROM marketing_site s
     JOIN project p ON p.id = s.project_id
-    JOIN team_module_settings t ON t.team_id = s.team_id
     LEFT JOIN LATERAL (
       SELECT max(r.created_at) AS last_at FROM ai_visibility_run r WHERE r.site_id = s.id
     ) lr ON true
     WHERE s.verified_at IS NOT NULL
-      AND t.marketing_enabled = true
       AND p.settings ->> 'marketingEnabled' = 'true'
       AND (lr.last_at IS NULL OR lr.last_at < ${sqlTimestamp(cutoff)})
       AND EXISTS (SELECT 1 FROM marketing_term mt WHERE mt.site_id = s.id AND mt.kind = 'brand')
       AND EXISTS (SELECT 1 FROM ai_visibility_prompt ap WHERE ap.site_id = s.id AND ap.active = true)
       AND EXISTS (
-        SELECT 1 FROM team_api_credential c
-        WHERE c.team_id = s.team_id
+        SELECT 1 FROM organization_api_credential c
+        WHERE c.organization_id = p.organization_id
           AND c.status <> 'invalid'
           AND c.provider IN (${sql.join(
             LLM_PROVIDER_IDS.map((id) => sql`${id}`),

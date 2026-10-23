@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   const entryId = requireRouteParam(event, 'entryId')
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { organizationId } = await requireMarketingAccess(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   // Each call spends the team's own provider credit: 20 per hour per product
@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
 
   // Counted in the database so the cap holds across serverless instances
   await requireDbLimit(
-    teamId,
+    organizationId,
     `ratelimit:announce:${projectId}:${dayStamp()}`,
     GENERATIONS_PER_DAY,
     'Daily limit of announcement generations reached for this product. Try again tomorrow'

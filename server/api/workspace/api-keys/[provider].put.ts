@@ -1,21 +1,17 @@
 /**
  * @openapi
- * /api/marketing/teams/{teamId}/credentials/{provider}:
+ * /api/workspace/api-keys/{provider}:
  *   put:
  *     tags: [Marketing]
- *     summary: Add or replace a team API key
+ *     summary: Add or replace a workspace API key
  *     description: >
- *       Team admins only. The key is checked against the provider before it is
+ *       Workspace owners and admins only. The key is checked against the provider before it is
  *       stored. A rejected key (authentication failure) returns 400 and is not
  *       saved. Network or provider outages save the key as `unchecked`. The key
  *       is encrypted at rest and never returned. Returns 503 when the server has
  *       no SECRETS_ENCRYPTION_KEY.
  *     operationId: putMarketingCredential
  *     parameters:
- *       - in: path
- *         name: teamId
- *         required: true
- *         schema: { type: string }
  *       - in: path
  *         name: provider
  *         required: true
@@ -33,17 +29,16 @@
  *     responses:
  *       200: { description: Credential saved (hint and status only) }
  *       400: { description: Invalid input or the provider rejected the key }
- *       403: { description: Team admin required }
+ *       403: { description: Workspace owner or admin required }
  *       503: { description: Key encryption is not configured on this server }
  */
 import { z } from 'zod'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuthWithOrganization } from '~/server/utils/project-context'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { createSuccessResponse } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
 import type { ApiCredentialProvider } from '~/server/database/schema/marketing'
-import { saveTeamCredential } from '~/server/utils/team-credentials'
-import { requireRouteParam } from '~/server/utils/marketing-site'
+import { saveOrgCredential } from '~/server/utils/org-credentials'
 import {
   badRequest,
   isLlmCredentialProvider,
@@ -86,10 +81,9 @@ async function validateWithProvider(
 }
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
-  const teamId = requireRouteParam(event, 'teamId')
+  const { session, organizationId } = await requireAuthWithOrganization(event)
   const provider = requireCredentialProvider(event)
-  await requireCredentialAdmin(teamId, session.user.id)
+  await requireCredentialAdmin(organizationId, session.user.id)
   requireSecretsConfigured()
   const body = await validateBody(event, bodySchema)
 
@@ -101,7 +95,7 @@ export default defineEventHandler(async (event) => {
     maxRequests: 20,
     windowSeconds: 3600,
     identifier: 'marketing-credential-save',
-    subject: `${teamId}:${session.user.id}`,
+    subject: `${organizationId}:${session.user.id}`,
   })
 
   const outcome = await validateWithProvider(provider, body.apiKey)
@@ -112,8 +106,8 @@ export default defineEventHandler(async (event) => {
     badRequest(safeMessage || 'The provider rejected this API key')
   }
 
-  const credential = await saveTeamCredential({
-    teamId,
+  const credential = await saveOrgCredential({
+    organizationId,
     provider,
     apiKey: body.apiKey,
     userId: session.user.id,

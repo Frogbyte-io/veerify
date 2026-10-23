@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
   // An anonymised request (older than the retention window) only has the keyed hash left.
   const knownEmail = isRedactedEmail(request.email) ? null : normalizeMarketingEmail(request.email)
   const emailHash = request.emailHash ?? (knownEmail ? hashEmail(knownEmail) : null)
-  if (emailHash) await writeSuppression(db, { teamId: request.teamId, email: knownEmail, emailHash })
+  if (emailHash) await writeSuppression(db, { organizationId: request.organizationId, email: knownEmail, emailHash })
 
   setHeader(event, 'content-type', 'text/html; charset=utf-8')
   setHeader(event, 'cache-control', 'no-store')

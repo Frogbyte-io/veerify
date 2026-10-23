@@ -1,38 +1,32 @@
 /**
  * @openapi
- * /api/marketing/teams/{teamId}/credentials/{provider}:
+ * /api/workspace/api-keys/{provider}:
  *   delete:
  *     tags: [Marketing]
- *     summary: Remove a team API key
- *     description: Team admins only.
+ *     summary: Remove a workspace API key
+ *     description: Workspace owners and admins only.
  *     operationId: deleteMarketingCredential
  *     parameters:
- *       - in: path
- *         name: teamId
- *         required: true
- *         schema: { type: string }
  *       - in: path
  *         name: provider
  *         required: true
  *         schema: { type: string, enum: [anthropic, openai, perplexity, gemini, firecrawl, pagespeed] }
  *     responses:
  *       200: { description: Key removed }
- *       403: { description: Team admin required }
+ *       403: { description: Workspace owner or admin required }
  *       404: { description: No key stored for this provider }
  */
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuthWithOrganization } from '~/server/utils/project-context'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { deleteTeamCredential } from '~/server/utils/team-credentials'
-import { requireRouteParam } from '~/server/utils/marketing-site'
+import { deleteOrgCredential } from '~/server/utils/org-credentials'
 import { requireCredentialProvider, requireCredentialAdmin } from '~/server/utils/marketing-credential-routes'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
-  const teamId = requireRouteParam(event, 'teamId')
+  const { session, organizationId } = await requireAuthWithOrganization(event)
   const provider = requireCredentialProvider(event)
-  await requireCredentialAdmin(teamId, session.user.id)
+  await requireCredentialAdmin(organizationId, session.user.id)
 
-  const deleted = await deleteTeamCredential(teamId, provider)
+  const deleted = await deleteOrgCredential(organizationId, provider)
   if (!deleted) {
     throw createError({
       statusCode: 404,

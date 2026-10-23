@@ -92,12 +92,12 @@ export async function collectFeedbackItems(
 
 /**
  * Incoming customer messages only, for conversations attributed to this
- * product (`conversation.projectId`, the resolved product) within the team.
+ * project (`conversation.projectId`).
  * Notes, outgoing agent replies, private and system rows are excluded in the
  * query and again on the returned rows. Reads the plain-text `body`, never
  * `bodyHtml`.
  */
-export async function collectSupportItems(teamId: string, projectId: string, since: Date): Promise<DatedItem[]> {
+export async function collectSupportItems(projectId: string, since: Date): Promise<DatedItem[]> {
   const rows = await db
     .select({
       body: conversationMessage.body,
@@ -110,7 +110,6 @@ export async function collectSupportItems(teamId: string, projectId: string, sin
     .innerJoin(conversation, eq(conversation.id, conversationMessage.conversationId))
     .where(
       and(
-        eq(conversation.teamId, teamId),
         eq(conversation.projectId, projectId),
         eq(conversationMessage.kind, 'incoming'),
         eq(conversationMessage.senderKind, 'contact'),

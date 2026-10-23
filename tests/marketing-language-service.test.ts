@@ -165,7 +165,7 @@ describe('items', () => {
 })
 
 describe('provider, budget and limits', () => {
-  it('stores the insight, filters existing terms and asks callTeamLlm to count the run', async () => {
+  it('stores the insight, filters existing terms and asks callOrgLlm to count the run', async () => {
     const result = await runCustomerLanguage(input, makeDeps())
     expect(result.suggestedTerms).toEqual([{ kind: 'keyword', label: 'slow exports' }])
     expect(completeRun).toHaveBeenCalledTimes(1)

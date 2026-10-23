@@ -22,14 +22,14 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { marketingTerm } from '~/server/database/schema/marketing'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireRouteParam } from '~/server/utils/marketing-site'
 import { requireMarketingSite } from '~/server/utils/marketing-terms'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   const termId = requireRouteParam(event, 'termId')
   await requireMarketingAccess(projectId, session.user.id)

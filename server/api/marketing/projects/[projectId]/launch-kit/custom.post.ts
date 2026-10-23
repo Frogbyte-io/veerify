@@ -31,7 +31,7 @@ import { randomUUID } from 'node:crypto'
 import { and, count, eq, like } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { launchKitItem } from '~/server/database/schema/marketing'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -44,7 +44,7 @@ import {
 } from '~/server/utils/marketing-launch-kit'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   await requireMarketingAccess(projectId, session.user.id)
   const body = await validateBody(event, createCustomSchema)

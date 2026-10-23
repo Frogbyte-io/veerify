@@ -23,10 +23,10 @@ import { SOCIAL_SOURCES } from '~/server/services/social-sources'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { findMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   await requireMarketingAccess(projectId, session.user.id)
 

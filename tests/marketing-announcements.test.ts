@@ -93,11 +93,11 @@ vi.mock('~/server/services/marketing/llm-call', () => ({
       data: { success: false, error: { code, message } },
     })
   },
-  callTeamLlm: (...args: unknown[]) => state.llm(...args),
+  callOrgLlm: (...args: unknown[]) => state.llm(...args),
 }))
 
-vi.mock('~/server/utils/team-credentials', () => ({
-  listTeamCredentials: vi.fn(async () => [{ provider: 'anthropic', status: 'valid' }]),
+vi.mock('~/server/utils/org-credentials', () => ({
+  listOrgCredentials: vi.fn(async () => [{ provider: 'anthropic', status: 'valid' }]),
 }))
 
 vi.mock('~/server/database/drizzle', () => {

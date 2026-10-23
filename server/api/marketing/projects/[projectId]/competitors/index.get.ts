@@ -30,15 +30,15 @@ import {
   serializeChange,
   serializeWatch,
 } from '~/server/utils/marketing-competitors'
-import { findMarketingSite, isTeamAdminOf, requireRouteParam, serializeSite } from '~/server/utils/marketing-site'
+import { findMarketingSite, isMarketingAdminOf, requireRouteParam, serializeSite } from '~/server/utils/marketing-site'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
-  const { project, teamId } = await requireMarketingAccess(projectId, session.user.id)
-  const canManage = await isTeamAdminOf(teamId, session.user.id)
+  const { project, organizationId } = await requireMarketingAccess(projectId, session.user.id)
+  const canManage = await isMarketingAdminOf(projectId, session.user.id)
   const summariesEnabled = (project.settings as Record<string, unknown> | null)?.[SUMMARY_SETTING_KEY] === true
 
   const site = await findMarketingSite(projectId)

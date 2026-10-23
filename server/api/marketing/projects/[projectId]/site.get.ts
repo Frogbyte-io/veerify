@@ -18,21 +18,24 @@
  *       403: { description: Not a team member, or Marketing is off }
  *       404: { description: Product not found }
  */
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import {
   findMarketingSite,
-  isTeamAdminOf,
+  isMarketingAdminOf,
   requireRouteParam,
   serializeSiteWithVerification,
 } from '~/server/utils/marketing-site'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { organizationId } = await requireMarketingAccess(projectId, session.user.id)
 
-  const [site, canManage] = await Promise.all([findMarketingSite(projectId), isTeamAdminOf(teamId, session.user.id)])
+  const [site, canManage] = await Promise.all([
+    findMarketingSite(projectId),
+    isMarketingAdminOf(projectId, session.user.id),
+  ])
   return createSuccessResponse(serializeSiteWithVerification(site, canManage))
 })

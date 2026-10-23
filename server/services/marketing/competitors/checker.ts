@@ -1,5 +1,5 @@
 import { isAllowed } from '~/server/services/marketing/audit/robots'
-import { callTeamLlm } from '~/server/services/marketing/llm-call'
+import { callOrgLlm } from '~/server/services/marketing/llm-call'
 import { createLogger } from '~/server/utils/logger'
 import { marketingConfig } from '~/server/utils/marketing-config'
 import { recordUsage } from '~/server/utils/marketing-usage'
@@ -31,7 +31,7 @@ export interface CheckerDeps {
   fetchText: (url: string, opts: Parameters<typeof safeFetchText>[1]) => Promise<SafeFetchResult>
   now: () => Date
   sleep: (ms: number) => Promise<void>
-  recordUsage: (teamId: string, metric: string, units: number) => Promise<void>
+  recordUsage: (organizationId: string, metric: string, units: number) => Promise<void>
   summarize: (watch: WatchContext, added: string[], removed: string[]) => Promise<SummaryResult | null>
 }
 
@@ -291,7 +291,7 @@ export async function checkWatch(watch: WatchContext, ctx: RunContext, deps: Che
   try {
     const page = await loadPage(target, host, ctx, deps)
     if (page.fetches > 0)
-      await deps.recordUsage(watch.teamId, 'competitors:fetches', page.fetches).catch(() => undefined)
+      await deps.recordUsage(watch.organizationId, 'competitors:fetches', page.fetches).catch(() => undefined)
     if (page.kind === 'skipped') return 'skipped'
     if (page.kind === 'blocked') return block()
     if (page.kind === 'fail') return fail(page.message)
@@ -384,8 +384,8 @@ export async function summarizeChange(
   added: string[],
   removed: string[]
 ): Promise<SummaryResult | null> {
-  const result = await callTeamLlm<{ summary?: unknown }>(
-    watch.teamId,
+  const result = await callOrgLlm<{ summary?: unknown }>(
+    watch.organizationId,
     {
       system: SUMMARY_SYSTEM_PROMPT,
       input: buildSummaryInput(watch.termLabel, watch.url, added, removed),

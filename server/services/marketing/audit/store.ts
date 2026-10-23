@@ -6,7 +6,6 @@
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, notInArray, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
-import { teamModuleSettings } from '~/server/database/schema/teams'
 import {
   marketingSite,
   seoAudit,
@@ -14,7 +13,7 @@ import {
   seoIssue,
   type SeoAuditStatus,
 } from '~/server/database/schema/marketing'
-import { DEFAULT_TEAM_MODULES, resolveProductModules } from '~/lib/modules'
+import { isModuleEnabled } from '~/lib/modules'
 import type { PageFacts } from './types'
 
 export type AuditRow = typeof seoAudit.$inferSelect
@@ -23,10 +22,10 @@ export type NewAuditRow = typeof seoAudit.$inferInsert
 export interface AuditSite {
   id: string
   projectId: string
-  teamId: string
+  organizationId: string
   origin: string
   verifiedAt: Date | null
-  /** Team module switch and product toggle both on */
+  /** Marketing switched on for the project */
   marketingEnabled: boolean
 }
 
@@ -106,27 +105,23 @@ export const drizzleAuditStore: AuditStore = {
       .select({
         id: marketingSite.id,
         projectId: marketingSite.projectId,
-        teamId: marketingSite.teamId,
+        organizationId: project.organizationId,
         origin: marketingSite.origin,
         verifiedAt: marketingSite.verifiedAt,
         settings: project.settings,
-        teamMarketing: teamModuleSettings.marketingEnabled,
       })
       .from(marketingSite)
       .innerJoin(project, eq(project.id, marketingSite.projectId))
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
       .where(eq(marketingSite.id, siteId))
       .limit(1)
     if (!row) return null
-    const teamOn = row.teamMarketing === null ? DEFAULT_TEAM_MODULES.marketingEnabled : row.teamMarketing === true
-    const productOn = resolveProductModules(row.settings as Record<string, unknown> | null).marketingEnabled
     return {
       id: row.id,
       projectId: row.projectId,
-      teamId: row.teamId,
+      organizationId: row.organizationId,
       origin: row.origin,
       verifiedAt: row.verifiedAt,
-      marketingEnabled: teamOn && productOn === true,
+      marketingEnabled: isModuleEnabled(row.settings as Record<string, unknown> | null, 'marketingEnabled'),
     }
   },
 
@@ -286,13 +281,11 @@ export const drizzleAuditStore: AuditStore = {
       })
       .from(marketingSite)
       .innerJoin(project, eq(project.id, marketingSite.projectId))
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
       .where(
         and(
           isNotNull(marketingSite.verifiedAt),
-          // Both Marketing switches are in the query (not filtered afterwards), so sites with
+          // The Marketing switch is in the query (not filtered afterwards), so sites with
           // Marketing off never fill the LIMIT or get re-selected every hour
-          sql`coalesce(${teamModuleSettings.marketingEnabled}, ${DEFAULT_TEAM_MODULES.marketingEnabled}) = true`,
           sql`${project.settings}->>'marketingEnabled' = 'true'`,
           sql`NOT ${hasActive}`,
           or(isNull(lastAudit), lt(lastAudit, olderThanSql))

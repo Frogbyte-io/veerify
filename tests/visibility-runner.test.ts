@@ -56,9 +56,9 @@ vi.mock('~/server/database/drizzle', () => ({
   },
 }))
 
-vi.mock('~/server/utils/team-credentials', () => ({
-  listTeamCredentials: vi.fn(async () => state.credentials),
-  getTeamApiKey: vi.fn(),
+vi.mock('~/server/utils/org-credentials', () => ({
+  listOrgCredentials: vi.fn(async () => state.credentials),
+  getOrgApiKey: vi.fn(),
   markCredentialInvalid: vi.fn(),
   markCredentialValid: vi.fn(),
 }))

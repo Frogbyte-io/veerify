@@ -32,8 +32,10 @@ import { listAnnouncements } from '~/server/services/marketing/announcements/ser
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
-  const { project, teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { project, organizationId } = await requireMarketingAccess(projectId, session.user.id)
 
   const cursor = getQuery(event).cursor
-  return createSuccessResponse(await listAnnouncements(project, teamId, typeof cursor === 'string' ? cursor : null))
+  return createSuccessResponse(
+    await listAnnouncements(project, organizationId, typeof cursor === 'string' ? cursor : null)
+  )
 })

@@ -35,13 +35,13 @@ import { mention } from '~/server/database/schema/marketing'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { requireMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody } from '~/server/utils/validation'
 
 const bodySchema = z.object({ status: z.enum(['new', 'seen', 'dismissed']) })
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   const mentionId = requireRouterParam(event, 'mentionId', 'Mention ID')
   await requireMarketingAccess(projectId, session.user.id)

@@ -15,7 +15,7 @@ import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { createLogger } from '~/server/utils/logger'
 import { marketingConfig } from '~/server/utils/marketing-config'
-import { getTeamApiKey, markCredentialInvalid } from '~/server/utils/team-credentials'
+import { getOrgApiKey, markCredentialInvalid } from '~/server/utils/org-credentials'
 import { recordUsage } from '~/server/utils/marketing-usage'
 import { getCrawlProvider, resolveCrawlConfig } from '~/server/services/crawl'
 import {
@@ -53,7 +53,7 @@ export interface RunnerDeps {
   newId: () => string
   getCrawlProvider: () => CrawlProvider
   resolveCrawlConfig: typeof resolveCrawlConfig
-  getTeamApiKey: typeof getTeamApiKey
+  getOrgApiKey: typeof getOrgApiKey
   markCredentialInvalid: typeof markCredentialInvalid
   recordUsage: typeof recordUsage
   fetchSiteFacts: typeof fetchSiteFacts
@@ -67,7 +67,7 @@ export const defaultDeps: RunnerDeps = {
   newId: () => randomUUID(),
   getCrawlProvider: () => getCrawlProvider('firecrawl'),
   resolveCrawlConfig,
-  getTeamApiKey,
+  getOrgApiKey,
   markCredentialInvalid,
   recordUsage,
   fetchSiteFacts,
@@ -142,10 +142,10 @@ export async function getAuditStartStatus(
 
 /** Team key first (unless known invalid), then the instance key. Null means basic mode. */
 async function resolveConfigFor(
-  teamId: string,
+  organizationId: string,
   deps: RunnerDeps
 ): Promise<{ config: CrawlProviderConfig; teamKey: boolean } | null> {
-  const stored = await deps.getTeamApiKey(teamId, 'firecrawl')
+  const stored = await deps.getOrgApiKey(organizationId, 'firecrawl')
   const teamKey = stored && stored.status !== 'invalid' ? stored.apiKey : null
   const config = deps.resolveCrawlConfig(teamKey)
   if (!config) return null
@@ -185,7 +185,7 @@ export async function startAudit(
   if (!status.canStart && status.reason) throw blockedError(status)
 
   const site = (await deps.store.loadSite(input.siteId))!
-  const crawl = await resolveConfigFor(site.teamId, deps)
+  const crawl = await resolveConfigFor(site.organizationId, deps)
   const mode: SeoAuditMode = crawl ? 'full' : 'basic'
   const now = deps.now()
   const id = deps.newId()
@@ -369,27 +369,27 @@ async function processAudit(audit: AuditRow, deadline: number, deps: RunnerDeps)
 
   try {
     if (audit.status === 'queued') {
-      if (audit.mode === 'basic') await runBasic(audit, site.origin, site.teamId, deps)
-      else await startCrawlJob(audit, site.origin, site.teamId, deps)
+      if (audit.mode === 'basic') await runBasic(audit, site.origin, site.organizationId, deps)
+      else await startCrawlJob(audit, site.origin, site.organizationId, deps)
     } else if (audit.status === 'crawling') {
-      await pollCrawl(audit, site.teamId, deadline, deps)
+      await pollCrawl(audit, site.organizationId, deadline, deps)
     } else if (audit.status === 'analyzing') {
-      await finishAudit(audit, site.origin, site.teamId, deps)
+      await finishAudit(audit, site.origin, site.organizationId, deps)
     }
   } catch (err) {
     if (err instanceof CrawlProviderError) {
-      await handleProviderError(audit, site.teamId, err, deps)
+      await handleProviderError(audit, site.organizationId, err, deps)
       return
     }
     await recordTransient(deps, audit, err)
   }
 }
 
-async function handleProviderError(audit: AuditRow, teamId: string, err: CrawlProviderError, deps: RunnerDeps) {
+async function handleProviderError(audit: AuditRow, organizationId: string, err: CrawlProviderError, deps: RunnerDeps) {
   if (err.kind === 'auth') {
-    const resolved = await resolveConfigFor(teamId, deps)
+    const resolved = await resolveConfigFor(organizationId, deps)
     const usedTeamKey = resolved?.teamKey ?? false
-    if (usedTeamKey) await deps.markCredentialInvalid(teamId, 'firecrawl', err.message)
+    if (usedTeamKey) await deps.markCredentialInvalid(organizationId, 'firecrawl', err.message)
     await fail(
       deps,
       audit,
@@ -408,7 +408,7 @@ async function handleProviderError(audit: AuditRow, teamId: string, err: CrawlPr
   await recordTransient(deps, audit, err)
 }
 
-async function runBasic(audit: AuditRow, origin: string, teamId: string, deps: RunnerDeps) {
+async function runBasic(audit: AuditRow, origin: string, organizationId: string, deps: RunnerDeps) {
   const userAgent = marketingConfig.botUserAgent
   let home: CrawledPage
   try {
@@ -428,11 +428,11 @@ async function runBasic(audit: AuditRow, origin: string, teamId: string, deps: R
     siteFacts: interimFacts(audit, 0, true),
   })
   if (!moved) return
-  await finishAudit({ ...audit, status: 'analyzing', pagesFetched: 1 }, origin, teamId, deps)
+  await finishAudit({ ...audit, status: 'analyzing', pagesFetched: 1 }, origin, organizationId, deps)
 }
 
-async function startCrawlJob(audit: AuditRow, origin: string, teamId: string, deps: RunnerDeps) {
-  const resolved = await resolveConfigFor(teamId, deps)
+async function startCrawlJob(audit: AuditRow, origin: string, organizationId: string, deps: RunnerDeps) {
+  const resolved = await resolveConfigFor(organizationId, deps)
   if (!resolved) {
     await fail(deps, audit, 'No Firecrawl key is configured any more. Add one in Marketing settings and run again.')
     return
@@ -448,8 +448,8 @@ async function startCrawlJob(audit: AuditRow, origin: string, teamId: string, de
   })
 }
 
-async function pollCrawl(audit: AuditRow, teamId: string, deadline: number, deps: RunnerDeps) {
-  const resolved = await resolveConfigFor(teamId, deps)
+async function pollCrawl(audit: AuditRow, organizationId: string, deadline: number, deps: RunnerDeps) {
+  const resolved = await resolveConfigFor(organizationId, deps)
   if (!resolved || !audit.crawlJobId) {
     await fail(deps, audit, 'No Firecrawl key is configured any more. Add one in Marketing settings and run again.')
     return
@@ -491,7 +491,7 @@ async function pollCrawl(audit: AuditRow, teamId: string, deadline: number, deps
     if (rows.length > 0) {
       const inserted = await deps.store.insertPages(rows)
       pagesFetched += inserted
-      if (inserted > 0) await deps.recordUsage(teamId, 'crawl:pages', inserted)
+      if (inserted > 0) await deps.recordUsage(organizationId, 'crawl:pages', inserted)
     }
     if (batch.next) cursor = batch.next
 
@@ -525,14 +525,14 @@ async function holdLease(audit: AuditRow, deps: RunnerDeps): Promise<boolean> {
   return held
 }
 
-async function finishAudit(audit: AuditRow, origin: string, teamId: string, deps: RunnerDeps) {
+async function finishAudit(audit: AuditRow, origin: string, organizationId: string, deps: RunnerDeps) {
   const userAgent = marketingConfig.botUserAgent
   if (!(await holdLease(audit, deps))) return
   const site: SiteFacts = await deps.fetchSiteFacts(origin, { userAgent })
   const stored = await deps.store.loadPages(audit.id)
 
   if (!(await holdLease(audit, deps))) return
-  const pagespeed = await collectPageSpeed(teamId, origin, deps)
+  const pagespeed = await collectPageSpeed(organizationId, origin, deps)
 
   const analyzable = stored.filter((p) => !(p.facts as FactsWithError).error)
   const issues: AuditIssue[] = [
@@ -596,8 +596,12 @@ async function finishAudit(audit: AuditRow, origin: string, teamId: string, deps
   if (done) await deps.store.pruneAudits(audit.siteId, AUDIT_RETENTION)
 }
 
-async function collectPageSpeed(teamId: string, origin: string, deps: RunnerDeps): Promise<Record<string, unknown>> {
-  const teamKey = await deps.getTeamApiKey(teamId, 'pagespeed')
+async function collectPageSpeed(
+  organizationId: string,
+  origin: string,
+  deps: RunnerDeps
+): Promise<Record<string, unknown>> {
+  const teamKey = await deps.getOrgApiKey(organizationId, 'pagespeed')
   const usable = teamKey && teamKey.status !== 'invalid' ? teamKey.apiKey : null
   const apiKey = usable ?? marketingConfig.pagespeedApiKey ?? null
   if (!apiKey) return { status: 'not_configured' }
@@ -607,7 +611,7 @@ async function collectPageSpeed(teamId: string, origin: string, deps: RunnerDeps
     return { status: 'ok', ...result }
   } catch (err) {
     if (err instanceof PageSpeedError) {
-      if (err.kind === 'auth' && usable) await deps.markCredentialInvalid(teamId, 'pagespeed', err.message)
+      if (err.kind === 'auth' && usable) await deps.markCredentialInvalid(organizationId, 'pagespeed', err.message)
       return { status: 'error', kind: err.kind, message: err.message }
     }
     return { status: 'error', kind: 'failed', message: 'PageSpeed request failed' }
@@ -624,7 +628,7 @@ export async function cancelAudit(auditId: string, partial?: Partial<RunnerDeps>
   if (audit.status === 'crawling' && audit.crawlJobId) {
     try {
       const site = await deps.store.loadSite(audit.siteId)
-      const resolved = site ? await resolveConfigFor(site.teamId, deps) : null
+      const resolved = site ? await resolveConfigFor(site.organizationId, deps) : null
       if (resolved) await deps.getCrawlProvider().cancelCrawl(resolved.config, audit.crawlJobId)
     } catch (err) {
       logger.warn('Could not cancel crawl job at the provider', {

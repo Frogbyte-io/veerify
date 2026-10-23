@@ -26,10 +26,10 @@ import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { requireRouterParam } from '~/server/utils/marketing-mentions'
 import { notFound } from '~/server/utils/marketing-reviews'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   const id = requireRouterParam(event, 'id', 'Testimonial ID')
   await requireMarketingAdmin(projectId, session.user.id)

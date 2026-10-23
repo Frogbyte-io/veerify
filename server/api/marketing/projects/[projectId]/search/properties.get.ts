@@ -4,7 +4,7 @@
  *   get:
  *     tags: [Marketing]
  *     summary: List the Search Console properties the connected Google account can read
- *     description: Team admins only. Properties where the account is only an unverified user are left out.
+ *     description: Project admins only. Properties where the account is only an unverified user are left out.
  *     operationId: listSearchProperties
  *     parameters:
  *       - in: path
@@ -13,7 +13,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: "`{ properties: [{ siteUrl, permissionLevel, selectable }], selected }; selectable is true only for properties matching the site origin`" }
- *       403: { description: Team admin required, or Marketing is off }
+ *       403: { description: Project admin required, or Marketing is off }
  *       404: { description: Search Console is not connected }
  *       409: { description: Google access was revoked; reconnect }
  *       502: { description: Google request failed }
@@ -29,10 +29,10 @@ import {
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { findMarketingSite, requireRouteParam } from '~/server/utils/marketing-site'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   await requireMarketingAdmin(projectId, session.user.id)
 

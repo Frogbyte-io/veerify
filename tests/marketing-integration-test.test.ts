@@ -32,8 +32,8 @@ vi.mock('~/server/utils/marketing-config', () => ({
     },
   },
 }))
-vi.mock('~/server/utils/team-credentials', () => ({
-  getTeamApiKey: vi.fn(async (_t: string, provider: string) => state.teamKeys[provider] ?? null),
+vi.mock('~/server/utils/org-credentials', () => ({
+  getOrgApiKey: vi.fn(async (_t: string, provider: string) => state.teamKeys[provider] ?? null),
   markCredentialValid: vi.fn(async (...args: unknown[]) => void state.marked.push(['valid', ...args])),
   markCredentialInvalid: vi.fn(async (...args: unknown[]) => void state.marked.push(['invalid', ...args])),
 }))

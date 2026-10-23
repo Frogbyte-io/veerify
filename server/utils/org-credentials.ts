@@ -1,14 +1,14 @@
-// Team-supplied provider keys (bring your own key) for the marketing module.
+// Workspace-supplied provider keys (bring your own key) for the marketing module.
 //
 // Keys are encrypted with `server/utils/secrets.ts` and bound to their row by
-// associated data (`team:<teamId>:<provider>`), so an envelope copied into
-// another team's row fails to decrypt. Nothing here returns or logs a key
-// except `getTeamApiKey`, whose callers pass it straight to a provider.
+// associated data (`org:<organizationId>:<provider>`), so an envelope copied into
+// another workspace's row fails to decrypt. Nothing here returns or logs a key
+// except `getOrgApiKey`, whose callers pass it straight to a provider.
 
 import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { teamApiCredential, type ApiCredentialProvider } from '~/server/database/schema/marketing'
+import { organizationApiCredential, type ApiCredentialProvider } from '~/server/database/schema/marketing'
 import { decryptSecret, encryptSecret, keyHint } from '~/server/utils/secrets'
 import { createLogger } from '~/server/utils/logger'
 
@@ -35,8 +35,8 @@ export function isApiCredentialProvider(value: unknown): value is ApiCredentialP
   return typeof value === 'string' && (API_CREDENTIAL_PROVIDERS as readonly string[]).includes(value)
 }
 
-function associatedData(teamId: string, provider: ApiCredentialProvider) {
-  return `team:${teamId}:${provider}`
+function associatedData(organizationId: string, provider: ApiCredentialProvider) {
+  return `org:${organizationId}:${provider}`
 }
 
 /** Error text stored on the row; provider messages are already key-free but may be long */
@@ -44,7 +44,7 @@ function truncateError(message: string) {
   return message.length > 300 ? `${message.slice(0, 297)}...` : message
 }
 
-export interface TeamCredentialSummary {
+export interface OrgCredentialSummary {
   provider: ApiCredentialProvider
   keyHint: string
   status: 'valid' | 'invalid' | 'unchecked'
@@ -55,24 +55,24 @@ export interface TeamCredentialSummary {
 }
 
 /** Safe to return from the API: hints and status only, never key material. */
-export async function listTeamCredentials(teamId: string): Promise<TeamCredentialSummary[]> {
+export async function listOrgCredentials(organizationId: string): Promise<OrgCredentialSummary[]> {
   const rows = await db
     .select({
-      provider: teamApiCredential.provider,
-      keyHint: teamApiCredential.keyHint,
-      status: teamApiCredential.status,
-      monthlyBudgetCents: teamApiCredential.monthlyBudgetCents,
-      lastValidatedAt: teamApiCredential.lastValidatedAt,
-      lastError: teamApiCredential.lastError,
-      updatedAt: teamApiCredential.updatedAt,
+      provider: organizationApiCredential.provider,
+      keyHint: organizationApiCredential.keyHint,
+      status: organizationApiCredential.status,
+      monthlyBudgetCents: organizationApiCredential.monthlyBudgetCents,
+      lastValidatedAt: organizationApiCredential.lastValidatedAt,
+      lastError: organizationApiCredential.lastError,
+      updatedAt: organizationApiCredential.updatedAt,
     })
-    .from(teamApiCredential)
-    .where(eq(teamApiCredential.teamId, teamId))
+    .from(organizationApiCredential)
+    .where(eq(organizationApiCredential.organizationId, organizationId))
 
   return rows
 }
 
-export interface TeamApiKey {
+export interface OrgApiKey {
   apiKey: string
   status: 'valid' | 'invalid' | 'unchecked'
   monthlyBudgetCents: number | null
@@ -81,35 +81,40 @@ export interface TeamApiKey {
 }
 
 /**
- * Decrypts a team's key for one provider. Returns null when none is stored or
+ * Decrypts a workspace's key for one provider. Returns null when none is stored or
  * when the stored envelope cannot be decrypted (wrong/rotated-away instance
  * key) — the latter is logged without key material and surfaces to the team
  * as a missing key rather than a crash in a scheduled task.
  */
-export async function getTeamApiKey(teamId: string, provider: ApiCredentialProvider): Promise<TeamApiKey | null> {
+export async function getOrgApiKey(organizationId: string, provider: ApiCredentialProvider): Promise<OrgApiKey | null> {
   const [row] = await db
     .select({
-      encryptedKey: teamApiCredential.encryptedKey,
-      keyHint: teamApiCredential.keyHint,
-      status: teamApiCredential.status,
-      monthlyBudgetCents: teamApiCredential.monthlyBudgetCents,
+      encryptedKey: organizationApiCredential.encryptedKey,
+      keyHint: organizationApiCredential.keyHint,
+      status: organizationApiCredential.status,
+      monthlyBudgetCents: organizationApiCredential.monthlyBudgetCents,
     })
-    .from(teamApiCredential)
-    .where(and(eq(teamApiCredential.teamId, teamId), eq(teamApiCredential.provider, provider)))
+    .from(organizationApiCredential)
+    .where(
+      and(
+        eq(organizationApiCredential.organizationId, organizationId),
+        eq(organizationApiCredential.provider, provider)
+      )
+    )
     .limit(1)
 
   if (!row) return null
 
   try {
     return {
-      apiKey: decryptSecret(row.encryptedKey, associatedData(teamId, provider)),
+      apiKey: decryptSecret(row.encryptedKey, associatedData(organizationId, provider)),
       status: row.status,
       monthlyBudgetCents: row.monthlyBudgetCents,
       keyHint: row.keyHint,
     }
   } catch (err) {
-    logger.warn('Stored team API key could not be decrypted', {
-      teamId,
+    logger.warn('Stored workspace API key could not be decrypted', {
+      organizationId,
       provider,
       error: err instanceof Error ? err.name : 'unknown',
     })
@@ -117,8 +122,8 @@ export async function getTeamApiKey(teamId: string, provider: ApiCredentialProvi
   }
 }
 
-export interface SaveTeamCredentialInput {
-  teamId: string
+export interface SaveOrgCredentialInput {
+  organizationId: string
   provider: ApiCredentialProvider
   apiKey: string
   userId: string
@@ -128,18 +133,18 @@ export interface SaveTeamCredentialInput {
   monthlyBudgetCents?: number | null
 }
 
-export async function saveTeamCredential(input: SaveTeamCredentialInput): Promise<TeamCredentialSummary> {
+export async function saveOrgCredential(input: SaveOrgCredentialInput): Promise<OrgCredentialSummary> {
   const now = new Date()
-  const encryptedKey = encryptSecret(input.apiKey, associatedData(input.teamId, input.provider))
+  const encryptedKey = encryptSecret(input.apiKey, associatedData(input.organizationId, input.provider))
   const hint = keyHint(input.apiKey)
   const validatedAt = input.status === 'unchecked' ? null : now
   const lastError = input.lastError ? truncateError(input.lastError) : null
 
   const [row] = await db
-    .insert(teamApiCredential)
+    .insert(organizationApiCredential)
     .values({
       id: randomUUID(),
-      teamId: input.teamId,
+      organizationId: input.organizationId,
       provider: input.provider,
       encryptedKey,
       keyHint: hint,
@@ -152,7 +157,7 @@ export async function saveTeamCredential(input: SaveTeamCredentialInput): Promis
       updatedAt: now,
     })
     .onConflictDoUpdate({
-      target: [teamApiCredential.teamId, teamApiCredential.provider],
+      target: [organizationApiCredential.organizationId, organizationApiCredential.provider],
       set: {
         encryptedKey,
         keyHint: hint,
@@ -178,23 +183,33 @@ export async function saveTeamCredential(input: SaveTeamCredentialInput): Promis
 }
 
 export async function updateCredentialBudget(
-  teamId: string,
+  organizationId: string,
   provider: ApiCredentialProvider,
   monthlyBudgetCents: number | null
 ): Promise<boolean> {
   const rows = await db
-    .update(teamApiCredential)
+    .update(organizationApiCredential)
     .set({ monthlyBudgetCents, updatedAt: new Date() })
-    .where(and(eq(teamApiCredential.teamId, teamId), eq(teamApiCredential.provider, provider)))
-    .returning({ id: teamApiCredential.id })
+    .where(
+      and(
+        eq(organizationApiCredential.organizationId, organizationId),
+        eq(organizationApiCredential.provider, provider)
+      )
+    )
+    .returning({ id: organizationApiCredential.id })
   return rows.length > 0
 }
 
-export async function deleteTeamCredential(teamId: string, provider: ApiCredentialProvider): Promise<boolean> {
+export async function deleteOrgCredential(organizationId: string, provider: ApiCredentialProvider): Promise<boolean> {
   const rows = await db
-    .delete(teamApiCredential)
-    .where(and(eq(teamApiCredential.teamId, teamId), eq(teamApiCredential.provider, provider)))
-    .returning({ id: teamApiCredential.id })
+    .delete(organizationApiCredential)
+    .where(
+      and(
+        eq(organizationApiCredential.organizationId, organizationId),
+        eq(organizationApiCredential.provider, provider)
+      )
+    )
+    .returning({ id: organizationApiCredential.id })
   return rows.length > 0
 }
 
@@ -202,33 +217,38 @@ export async function deleteTeamCredential(teamId: string, provider: ApiCredenti
  * Called when a provider rejects the key (401/403) during scheduled work.
  * Returns true only on the transition into `invalid`, so callers notify team
  * admins once instead of on every failing run. `expectedKeyHint` guards against
- * marking a key the team replaced while the call was in flight: when given and
+ * marking a key the workspace replaced while the call was in flight: when given and
  * the stored hint differs, nothing changes and false is returned.
  */
 export async function markCredentialInvalid(
-  teamId: string,
+  organizationId: string,
   provider: ApiCredentialProvider,
   message: string,
   expectedKeyHint?: string
 ): Promise<boolean> {
   const now = new Date()
   const current = await db
-    .select({ status: teamApiCredential.status, keyHint: teamApiCredential.keyHint })
-    .from(teamApiCredential)
-    .where(and(eq(teamApiCredential.teamId, teamId), eq(teamApiCredential.provider, provider)))
+    .select({ status: organizationApiCredential.status, keyHint: organizationApiCredential.keyHint })
+    .from(organizationApiCredential)
+    .where(
+      and(
+        eq(organizationApiCredential.organizationId, organizationId),
+        eq(organizationApiCredential.provider, provider)
+      )
+    )
     .limit(1)
 
   if (current.length === 0) return false
   if (expectedKeyHint !== undefined && current[0].keyHint !== expectedKeyHint) return false
 
   await db
-    .update(teamApiCredential)
+    .update(organizationApiCredential)
     .set({ status: 'invalid', lastError: truncateError(message), lastValidatedAt: now, updatedAt: now })
     .where(
       and(
-        eq(teamApiCredential.teamId, teamId),
-        eq(teamApiCredential.provider, provider),
-        ...(expectedKeyHint !== undefined ? [eq(teamApiCredential.keyHint, expectedKeyHint)] : [])
+        eq(organizationApiCredential.organizationId, organizationId),
+        eq(organizationApiCredential.provider, provider),
+        ...(expectedKeyHint !== undefined ? [eq(organizationApiCredential.keyHint, expectedKeyHint)] : [])
       )
     )
 
@@ -236,19 +256,19 @@ export async function markCredentialInvalid(
 }
 
 export async function markCredentialValid(
-  teamId: string,
+  organizationId: string,
   provider: ApiCredentialProvider,
   expectedKeyHint?: string
 ): Promise<void> {
   const now = new Date()
   await db
-    .update(teamApiCredential)
+    .update(organizationApiCredential)
     .set({ status: 'valid', lastError: null, lastValidatedAt: now, updatedAt: now })
     .where(
       and(
-        eq(teamApiCredential.teamId, teamId),
-        eq(teamApiCredential.provider, provider),
-        ...(expectedKeyHint !== undefined ? [eq(teamApiCredential.keyHint, expectedKeyHint)] : [])
+        eq(organizationApiCredential.organizationId, organizationId),
+        eq(organizationApiCredential.provider, provider),
+        ...(expectedKeyHint !== undefined ? [eq(organizationApiCredential.keyHint, expectedKeyHint)] : [])
       )
     )
 }

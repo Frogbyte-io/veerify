@@ -23,7 +23,7 @@
  *       200: { description: "escalated: true. Conversation id, inbox id and display id are included only when the caller can open that inbox" }
  *       403: { description: Not a team member, Marketing is off, or no access to a support inbox }
  *       404: { description: Mention not found for this product }
- *       409: { description: Support is not enabled for this team }
+ *       409: { description: Support is not enabled for this project }
  */
 import {
   canAccessInbox,
@@ -35,27 +35,27 @@ import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { requireMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { SUPPORT_INBOX_FORBIDDEN_MESSAGE } from '~/server/utils/support-access'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   const mentionId = requireRouterParam(event, 'mentionId', 'Mention ID')
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  await requireMarketingAccess(projectId, session.user.id)
   const site = await requireMentionsSite(projectId)
 
-  if (!(await isSupportEnabled(teamId))) {
+  if (!(await isSupportEnabled(projectId))) {
     throw createError({
       statusCode: 409,
       statusMessage: 'Conflict',
       data: createErrorResponse(
         ErrorCode.CONFLICT,
-        'Support is not enabled for this team. Turn it on to escalate mentions.'
+        'Support is not enabled for this project. Turn it on to escalate mentions.'
       ),
     })
   }
 
-  const inbox = await pickEscalationInbox(teamId, projectId, session.user.id)
+  const inbox = await pickEscalationInbox(projectId, session.user.id)
   if (!inbox) {
     throw createError({
       statusCode: 403,
@@ -67,7 +67,6 @@ export default defineEventHandler(async (event) => {
   const result = await escalateMention({
     siteId: site.id,
     mentionId,
-    teamId,
     projectId,
     userId: session.user.id,
     inbox,

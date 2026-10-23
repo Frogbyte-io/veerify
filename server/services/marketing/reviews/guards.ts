@@ -1,4 +1,4 @@
-import { DEFAULT_TEAM_MODULES, resolveProductModules } from '~/lib/modules'
+import { isModuleEnabled } from '~/lib/modules'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -7,14 +7,11 @@ export const REQUEST_LINK_MAX_AGE_DAYS = 60
 
 export interface MarketingToggleInput {
   projectSettings: Record<string, unknown> | null
-  /** `null` when the team never opened the Tools tab (registry default applies) */
-  teamMarketingEnabled: boolean | null
 }
 
-/** Marketing must be on for both the team and the product. */
+/** Marketing must be switched on for the project (`project.settings.marketingEnabled`, default off). */
 export function isMarketingOn(input: MarketingToggleInput): boolean {
-  const teamOn = input.teamMarketingEnabled ?? DEFAULT_TEAM_MODULES.marketingEnabled
-  return teamOn && resolveProductModules(input.projectSettings).marketingEnabled === true
+  return isModuleEnabled(input.projectSettings, 'marketingEnabled')
 }
 
 /** True once a request link is older than `REQUEST_LINK_MAX_AGE_DAYS`, measured from when it was sent. */

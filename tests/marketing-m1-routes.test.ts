@@ -95,11 +95,11 @@ vi.mock('~/server/utils/secrets', () => ({
   keyHint: (k: string) => k.slice(-4),
 }))
 
-vi.mock('~/server/utils/team-credentials', async (importActual) => {
-  const actual = await importActual<typeof import('~/server/utils/team-credentials')>()
+vi.mock('~/server/utils/org-credentials', async (importActual) => {
+  const actual = await importActual<typeof import('~/server/utils/org-credentials')>()
   return {
     ...actual,
-    listTeamCredentials: vi.fn(async () => [
+    listOrgCredentials: vi.fn(async () => [
       {
         provider: 'anthropic',
         keyHint: 'abcd',
@@ -110,7 +110,7 @@ vi.mock('~/server/utils/team-credentials', async (importActual) => {
         updatedAt: new Date(),
       },
     ]),
-    saveTeamCredential: vi.fn(async (input: Record<string, unknown>) => ({
+    saveOrgCredential: vi.fn(async (input: Record<string, unknown>) => ({
       provider: input.provider,
       keyHint: String(input.apiKey).slice(-4),
       status: input.status,
@@ -120,7 +120,7 @@ vi.mock('~/server/utils/team-credentials', async (importActual) => {
       updatedAt: new Date(),
     })),
     updateCredentialBudget: vi.fn(async () => true),
-    deleteTeamCredential: vi.fn(async () => true),
+    deleteOrgCredential: vi.fn(async () => true),
   }
 })
 
@@ -141,7 +141,7 @@ vi.mock('~/server/services/marketing/site-verification', async (importActual) =>
   return { ...actual, checkVerification: vi.fn(async () => state.checkVerification) }
 })
 
-const teamCredentials = await import('~/server/utils/team-credentials')
+const teamCredentials = await import('~/server/utils/org-credentials')
 const rateLimit = await import('~/server/utils/rate-limit')
 
 const event = {} as never
@@ -364,7 +364,7 @@ describe('credentials routes', () => {
     state.body = { apiKey: KEY }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 403 })
-    expect(teamCredentials.saveTeamCredential).not.toHaveBeenCalled()
+    expect(teamCredentials.saveOrgCredential).not.toHaveBeenCalled()
   })
 
   it('PUT returns 503 when secrets are not configured', async () => {
@@ -373,7 +373,7 @@ describe('credentials routes', () => {
     state.body = { apiKey: KEY }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 503 })
-    expect(teamCredentials.saveTeamCredential).not.toHaveBeenCalled()
+    expect(teamCredentials.saveOrgCredential).not.toHaveBeenCalled()
   })
 
   it('PUT rejects an unknown provider', async () => {
@@ -392,7 +392,7 @@ describe('credentials routes', () => {
     const error = await run(handler).catch((e) => e)
     expect(error.statusCode).toBe(400)
     expect(JSON.stringify(error.data)).not.toContain(KEY)
-    expect(teamCredentials.saveTeamCredential).not.toHaveBeenCalled()
+    expect(teamCredentials.saveOrgCredential).not.toHaveBeenCalled()
   })
 
   it('PUT saves a valid key as valid and never returns it', async () => {
@@ -400,7 +400,7 @@ describe('credentials routes', () => {
     state.body = { apiKey: KEY, monthlyBudgetCents: 2500 }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     const res = await run(handler)
-    expect(teamCredentials.saveTeamCredential).toHaveBeenCalledWith(
+    expect(teamCredentials.saveOrgCredential).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'valid', lastError: null, monthlyBudgetCents: 2500, teamId: 't1' })
     )
     expect(JSON.stringify(res)).not.toContain(KEY)
@@ -413,7 +413,7 @@ describe('credentials routes', () => {
     state.body = { apiKey: KEY, monthlyBudgetCents: 500 }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     await run(handler)
-    expect(teamCredentials.saveTeamCredential).toHaveBeenCalledWith(
+    expect(teamCredentials.saveOrgCredential).toHaveBeenCalledWith(
       expect.objectContaining({ provider, status: 'valid', monthlyBudgetCents: 500 })
     )
   })
@@ -424,7 +424,7 @@ describe('credentials routes', () => {
     state.validateLlm = { ok: false, kind: 'server', message: 'Provider is down' }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     await run(handler)
-    expect(teamCredentials.saveTeamCredential).toHaveBeenCalledWith(
+    expect(teamCredentials.saveOrgCredential).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'unchecked', lastError: 'Provider is down' })
     )
   })
@@ -436,7 +436,7 @@ describe('credentials routes', () => {
     state.validateCrawl = { ok: false, kind: 'auth', message: 'Unauthorized' }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 400 })
-    expect(teamCredentials.saveTeamCredential).not.toHaveBeenCalled()
+    expect(teamCredentials.saveOrgCredential).not.toHaveBeenCalled()
   })
 
   it('PUT saves pagespeed keys unchecked', async () => {
@@ -445,7 +445,7 @@ describe('credentials routes', () => {
     state.body = { apiKey: 'AIza-abcdefgh' }
     const handler = await load('~/server/api/marketing/teams/[teamId]/credentials/[provider].put')
     await run(handler)
-    expect(teamCredentials.saveTeamCredential).toHaveBeenCalledWith(expect.objectContaining({ status: 'unchecked' }))
+    expect(teamCredentials.saveOrgCredential).toHaveBeenCalledWith(expect.objectContaining({ status: 'unchecked' }))
   })
 
   it('PUT rejects a budget on non-LLM providers', async () => {
@@ -480,7 +480,7 @@ describe('credentials routes', () => {
     await expect(run(handler)).rejects.toMatchObject({ statusCode: 403 })
     state.role = 'admin'
     await run(handler)
-    expect(teamCredentials.deleteTeamCredential).toHaveBeenCalledWith('t1', 'anthropic')
+    expect(teamCredentials.deleteOrgCredential).toHaveBeenCalledWith('t1', 'anthropic')
   })
 })
 

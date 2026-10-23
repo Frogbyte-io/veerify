@@ -24,19 +24,19 @@ import { DEFAULT_REVIEW_SETTINGS } from '~/server/services/marketing/reviews/typ
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { requireRouterParam } from '~/server/utils/marketing-mentions'
 import { listProductStatuses } from '~/server/utils/marketing-reviews'
-import { isTeamAdminOf } from '~/server/utils/marketing-site'
+import { isMarketingAdminOf } from '~/server/utils/marketing-site'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { organizationId } = await requireMarketingAccess(projectId, session.user.id)
 
   const [ctx, statuses, canManage] = await Promise.all([
     dbReviewsStore.loadProjectContext(projectId),
     listProductStatuses(projectId),
-    isTeamAdminOf(teamId, session.user.id),
+    isMarketingAdminOf(projectId, session.user.id),
   ])
 
   return createSuccessResponse({

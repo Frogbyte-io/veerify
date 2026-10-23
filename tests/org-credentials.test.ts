@@ -44,8 +44,8 @@ vi.mock('~/server/database/drizzle', () => {
 
 process.env.SECRETS_ENCRYPTION_KEY = randomBytes(32).toString('base64')
 
-const { getTeamApiKey, markCredentialInvalid, saveTeamCredential, isApiCredentialProvider } =
-  await import('~/server/utils/team-credentials')
+const { getOrgApiKey, markCredentialInvalid, saveOrgCredential, isApiCredentialProvider } =
+  await import('~/server/utils/org-credentials')
 
 beforeEach(() => {
   state.inserted = undefined
@@ -56,7 +56,7 @@ beforeEach(() => {
 
 describe('team credentials', () => {
   it('stores only an encrypted envelope and a hint', async () => {
-    const summary = await saveTeamCredential({
+    const summary = await saveOrgCredential({
       teamId: 'team-1',
       provider: 'anthropic',
       apiKey: 'sk-ant-secret-value-1234',
@@ -72,7 +72,7 @@ describe('team credentials', () => {
   })
 
   it('decrypts for the same team and provider only', async () => {
-    await saveTeamCredential({
+    await saveOrgCredential({
       teamId: 'team-1',
       provider: 'openai',
       apiKey: 'sk-openai-abcdef',
@@ -81,14 +81,14 @@ describe('team credentials', () => {
     })
     state.selectRows = [{ encryptedKey: state.inserted?.encryptedKey, status: 'valid', monthlyBudgetCents: null }]
 
-    await expect(getTeamApiKey('team-1', 'openai')).resolves.toMatchObject({ apiKey: 'sk-openai-abcdef' })
+    await expect(getOrgApiKey('team-1', 'openai')).resolves.toMatchObject({ apiKey: 'sk-openai-abcdef' })
     // Same envelope read as another team's row: associated data mismatch
-    await expect(getTeamApiKey('team-2', 'openai')).resolves.toBeNull()
-    await expect(getTeamApiKey('team-1', 'anthropic')).resolves.toBeNull()
+    await expect(getOrgApiKey('team-2', 'openai')).resolves.toBeNull()
+    await expect(getOrgApiKey('team-1', 'anthropic')).resolves.toBeNull()
   })
 
   it('returns null when no key is stored', async () => {
-    await expect(getTeamApiKey('team-1', 'firecrawl')).resolves.toBeNull()
+    await expect(getOrgApiKey('team-1', 'firecrawl')).resolves.toBeNull()
   })
 
   it('reports only the transition into invalid', async () => {

@@ -29,7 +29,7 @@ import { createSuccessResponse } from '~/server/utils/response'
 const SUGGESTIONS_PER_DAY = 40
 
 export default defineEventHandler(async (event) => {
-  const { site, project, teamId } = await requireVisibilityRequest(event)
+  const { site, project, organizationId } = await requireVisibilityRequest(event)
 
   // Each call spends the team's own provider credit: 10 per hour per site
   await requireRateLimit(event, {
@@ -41,14 +41,14 @@ export default defineEventHandler(async (event) => {
 
   // Same cap, but counted in the database so it holds across serverless instances
   await requireDbLimit(
-    teamId,
+    organizationId,
     `ratelimit:suggest:${site.id}:${dayStamp()}`,
     SUGGESTIONS_PER_DAY,
     'Daily limit of prompt suggestions reached for this site. Try again tomorrow'
   )
 
   const result = await suggestPrompts({
-    teamId,
+    organizationId,
     siteId: site.id,
     project: { id: project.id, name: project.name, description: project.description },
   })

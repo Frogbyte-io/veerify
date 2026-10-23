@@ -30,10 +30,10 @@ import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { markSeenSchema } from '~/server/utils/marketing-competitors'
 import { findMarketingSite, requireRouteParam } from '~/server/utils/marketing-site'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   await requireMarketingAccess(projectId, session.user.id)
   const raw = await readBody(event).catch(() => null)

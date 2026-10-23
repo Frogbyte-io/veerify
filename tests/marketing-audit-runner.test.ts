@@ -3,7 +3,7 @@ import type { AuditStore, AuditRow, AuditSite, StoredPage } from '~/server/servi
 import type { RunnerDeps } from '~/server/services/marketing/audit/runner'
 
 vi.mock('~/server/database/drizzle', () => ({ db: {} }))
-vi.mock('~/server/utils/team-credentials', () => ({ getTeamApiKey: vi.fn(), markCredentialInvalid: vi.fn() }))
+vi.mock('~/server/utils/org-credentials', () => ({ getOrgApiKey: vi.fn(), markCredentialInvalid: vi.fn() }))
 vi.mock('~/server/utils/marketing-usage', () => ({ recordUsage: vi.fn() }))
 
 const { startAudit, advanceAudits, scheduleAudits, cancelAudit, getAuditStartStatus, MAX_CONSECUTIVE_ERRORS } =
@@ -122,7 +122,7 @@ const deps = (): Partial<RunnerDeps> => ({
   now: () => new Date(clock),
   newId: () => `id-${++idCounter}`,
   getCrawlProvider: () => provider,
-  getTeamApiKey: vi.fn(async () => null) as never,
+  getOrgApiKey: vi.fn(async () => null) as never,
   markCredentialInvalid: vi.fn(async () => true) as never,
   recordUsage: vi.fn(async () => undefined) as never,
   fetchSiteFacts: vi.fn(async () => ({
@@ -154,7 +154,7 @@ afterEach(() => {
 function withFull(d: Partial<RunnerDeps>): Partial<RunnerDeps> {
   return {
     ...d,
-    getTeamApiKey: vi.fn(async () => ({ apiKey: 'team-key', status: 'valid', monthlyBudgetCents: null })) as never,
+    getOrgApiKey: vi.fn(async () => ({ apiKey: 'team-key', status: 'valid', monthlyBudgetCents: null })) as never,
   }
 }
 
@@ -220,7 +220,7 @@ describe('startAudit guards', () => {
   it('ignores a team key already marked invalid', async () => {
     const d = {
       ...deps(),
-      getTeamApiKey: vi.fn(async () => ({ apiKey: 'bad', status: 'invalid', monthlyBudgetCents: null })) as never,
+      getOrgApiKey: vi.fn(async () => ({ apiKey: 'bad', status: 'invalid', monthlyBudgetCents: null })) as never,
     }
     expect((await startAudit({ siteId: 's1', trigger: 'manual' }, d)).mode).toBe('basic')
   })
