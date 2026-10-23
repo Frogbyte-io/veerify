@@ -33,6 +33,19 @@ export async function assertProjectDomainAvailable(hostname: string, projectId?:
   }
 }
 
+export async function getStoredProviderDomain(hostname: string, database: Pick<typeof db, 'select'> = db) {
+  const [row] = await database
+    .select({
+      provider: projectDomain.provider,
+      providerDomainId: projectDomain.providerDomainId,
+      status: projectDomain.status,
+    })
+    .from(projectDomain)
+    .where(eq(projectDomain.hostname, normalizeDomainHostname(hostname)))
+    .limit(1)
+  return row || null
+}
+
 export async function persistProjectDomainResult(
   projectId: string,
   result: DomainProviderResult,
@@ -40,6 +53,9 @@ export async function persistProjectDomainResult(
 ) {
   const now = new Date()
   const hostname = normalizeDomainHostname(result.hostname)
+  // Only write the provider id when the provider reported one, so providers
+  // that have no ids never clobber a stored value.
+  const providerIdValue = result.providerDomainId ? { providerDomainId: result.providerDomainId } : {}
 
   await database
     .update(projectDomain)
@@ -54,6 +70,7 @@ export async function persistProjectDomainResult(
       hostname,
       kind: 'custom_subdomain',
       provider: result.provider,
+      ...providerIdValue,
       status: result.status,
       isPrimary: true,
       verificationPayload: {
@@ -73,6 +90,7 @@ export async function persistProjectDomainResult(
       set: {
         projectId,
         provider: result.provider,
+        ...providerIdValue,
         status: result.status,
         isPrimary: true,
         verificationPayload: {

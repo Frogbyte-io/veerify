@@ -17,6 +17,7 @@ import {
 import {
   assertProjectDomainAvailable,
   detachProjectDomain,
+  getStoredProviderDomain,
   persistProjectDomainResult,
 } from '~/server/services/domains/domain-repository'
 import {
@@ -260,6 +261,11 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const previousDomainRef =
+    domainChanged && currentProject.customDomain && currentProject.customDomain !== requestedDomain
+      ? await getStoredProviderDomain(currentProject.customDomain)
+      : null
+
   const updated = await db.transaction(async (tx) => {
     const [updatedProject] = await tx
       .update(project)
@@ -289,7 +295,9 @@ export default defineEventHandler(async (event) => {
 
   if (domainChanged && currentProject.customDomain && currentProject.customDomain !== requestedDomain) {
     try {
-      await removeProjectCustomDomain(currentProject.customDomain)
+      await removeProjectCustomDomain(currentProject.customDomain, {
+        providerDomainId: previousDomainRef?.providerDomainId,
+      })
     } catch (err) {
       logger.error('Failed to detach previous custom domain from provider', {
         domain: currentProject.customDomain,

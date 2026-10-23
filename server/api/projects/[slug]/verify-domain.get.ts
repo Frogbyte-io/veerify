@@ -7,9 +7,10 @@ import {
   buildDomainSettingsPatch,
   normalizeCustomDomainInput,
   normalizeDomainSettings,
+  shouldSendDomainVerifiedEmail,
   verifyProjectCustomDomain,
 } from '~/server/services/domains/domain-service'
-import { persistProjectDomainResult } from '~/server/services/domains/domain-repository'
+import { getStoredProviderDomain, persistProjectDomainResult } from '~/server/services/domains/domain-repository'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('projects')
@@ -28,9 +29,18 @@ export default defineEventHandler(async (event) => {
   }
 
   const currentSettings = normalizeDomainSettings(selectedProject.settings)
-  const result = await verifyProjectCustomDomain(domain)
+  const stored = await getStoredProviderDomain(domain)
+  const result = await verifyProjectCustomDomain(domain, { providerDomainId: stored?.providerDomainId })
 
-  if (result.verified && session?.user?.email && currentSettings.domainVerifiedEmailSentFor !== domain) {
+  // Already-active domains (including ones adopted from another provider) never re-send.
+  const sendVerifiedEmail = shouldSendDomainVerifiedEmail({
+    verified: result.verified,
+    domain,
+    settings: currentSettings,
+    previousStatus: stored?.status,
+  })
+
+  if (sendVerifiedEmail && session?.user?.email) {
     sendCustomDomainVerifiedEmail({
       to: session.user.email,
       name: session.user.name || 'there',
