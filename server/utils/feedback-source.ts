@@ -10,3 +10,11 @@ export function redactClientMetadata<T extends FeedbackMetadata>(metadata: T, is
   delete rest.client
   return rest as T
 }
+
+/** `apiKeyId` is internal bookkeeping; only team members may see it. */
+export function stripApiKeyId<T extends { apiKeyId?: unknown }>(row: T, isTeamMember: boolean): T {
+  if (isTeamMember || !('apiKeyId' in row)) return row
+  const rest = { ...row }
+  delete rest.apiKeyId
+  return rest
+}

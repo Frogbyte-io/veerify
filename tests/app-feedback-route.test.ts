@@ -108,6 +108,22 @@ describe('POST /api/v1/feedback', () => {
     expect(state.inserted).toHaveLength(0)
   })
 
+  it('treats null client fields as absent', async () => {
+    state.body = { ...validBody, appVersion: null }
+    await handler(makeEvent('Bearer vfy_pub_abc'))
+    expect(state.status).toBe(201)
+    const client = (state.inserted[0].metadata as { client: Record<string, string> }).client
+    expect(client).not.toHaveProperty('appVersion')
+    expect(client.os).toBe('windows')
+  })
+
+  it('omits client entirely when all client fields are null', async () => {
+    state.body = { type: 'bug', description: 'x', appVersion: null, os: null, osVersion: null }
+    await handler(makeEvent('Bearer vfy_pub_abc'))
+    expect(state.status).toBe(201)
+    expect(state.inserted[0].metadata).toEqual({ feedbackType: 'bug_report' })
+  })
+
   it('creates feedback marked with the key name', async () => {
     const result = await handler(makeEvent('Bearer vfy_pub_abc'))
 

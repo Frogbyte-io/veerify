@@ -7,7 +7,7 @@ import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, githubIssueLink, project, vote } from '~/server/database/schema/feedback'
 import { teamMember } from '~/server/database/schema/auth'
-import { redactClientMetadata } from '~/server/utils/feedback-source'
+import { redactClientMetadata, stripApiKeyId } from '~/server/utils/feedback-source'
 
 const listFeedbackQuerySchema = z
   .object({
@@ -127,30 +127,30 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const result = items.map((item) => ({
-    ...item.feedback,
-    metadata: redactClientMetadata(
-      item.feedback.metadata,
-      Boolean(item.projectTeamId && memberTeamIds.has(item.projectTeamId))
-    ),
-    category: item.category,
-    project: item.project,
-    githubIssue:
-      item.githubIssue?.issueNumber && item.githubIssue.issueUrl
-        ? {
-            issueNumber: item.githubIssue.issueNumber,
-            issueUrl: item.githubIssue.issueUrl,
-            issueState: item.githubIssue.issueState,
-          }
-        : null,
-    hasVoted: voterVoteMap.has(item.feedback.id),
-    voteType: voterVoteMap.get(item.feedback.id) || null,
-    isOwn: session?.user
-      ? item.feedback.authorUserId === session.user.id
-      : anonSession
-        ? item.feedback.authorSessionId === anonSession.id
-        : false,
-  }))
+  const result = items.map((item) => {
+    const isTeamMember = Boolean(item.projectTeamId && memberTeamIds.has(item.projectTeamId))
+    return {
+      ...stripApiKeyId(item.feedback, isTeamMember),
+      metadata: redactClientMetadata(item.feedback.metadata, isTeamMember),
+      category: item.category,
+      project: item.project,
+      githubIssue:
+        item.githubIssue?.issueNumber && item.githubIssue.issueUrl
+          ? {
+              issueNumber: item.githubIssue.issueNumber,
+              issueUrl: item.githubIssue.issueUrl,
+              issueState: item.githubIssue.issueState,
+            }
+          : null,
+      hasVoted: voterVoteMap.has(item.feedback.id),
+      voteType: voterVoteMap.get(item.feedback.id) || null,
+      isOwn: session?.user
+        ? item.feedback.authorUserId === session.user.id
+        : anonSession
+          ? item.feedback.authorSessionId === anonSession.id
+          : false,
+    }
+  })
 
   return createSuccessResponse({
     items: result,

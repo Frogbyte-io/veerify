@@ -5441,7 +5441,7 @@ export const openapiPaths = {
           "description": "Not a team member"
         },
         "404": {
-          "description": "Project or key not found"
+          "description": "Project or key not found, or key already revoked"
         }
       }
     }

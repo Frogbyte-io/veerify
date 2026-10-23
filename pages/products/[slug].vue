@@ -128,6 +128,7 @@ import ProductSettingsGithub from '~/components/products/ProductSettingsGithub.v
 import ProductSettingsDomain from '~/components/products/ProductSettingsDomain.vue'
 import ProductSettingsEmbed from '~/components/products/ProductSettingsEmbed.vue'
 import ProductSettingsDanger from '~/components/products/ProductSettingsDanger.vue'
+import ProductSettingsApiKeys from '~/components/products/ProductSettingsApiKeys.vue'
 import ProductSettingsFeedback from '~/components/products/ProductSettingsFeedback.vue'
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
 import { resolveProductModules } from '~/lib/modules'
@@ -175,6 +176,7 @@ export default {
     ProductSettingsEmbed,
     ProductSettingsDanger,
     ProductSettingsFeedback,
+    ProductSettingsApiKeys,
   },
   data() {
     return {

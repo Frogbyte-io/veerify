@@ -18,9 +18,9 @@
  *     responses:
  *       200: { description: "Key revoked" }
  *       403: { description: "Not a team member" }
- *       404: { description: "Project or key not found" }
+ *       404: { description: "Project or key not found, or key already revoked" }
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { projectApiKey } from '~/server/database/schema/feedback'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
   const [revoked] = await db
     .update(projectApiKey)
     .set({ revokedAt: new Date() })
-    .where(and(eq(projectApiKey.id, keyId), eq(projectApiKey.projectId, project.id)))
+    .where(and(eq(projectApiKey.id, keyId), eq(projectApiKey.projectId, project.id), isNull(projectApiKey.revokedAt)))
     .returning({ id: projectApiKey.id, revokedAt: projectApiKey.revokedAt })
 
   if (!revoked) {

@@ -76,6 +76,7 @@ describe('feedback source visibility in endpoints', () => {
       authorUserId: null,
       authorSessionId: null,
       sourceLabel: 'Dot X',
+      apiKeyId: 'key-1',
       metadata: { feedbackType: 'bug_report', client },
     }
   })
@@ -96,12 +97,14 @@ describe('feedback source visibility in endpoints', () => {
     expect(data.metadata.client).toBeUndefined()
     expect(data.metadata.feedbackType).toBe('bug_report')
     expect(data.sourceLabel).toBe('Dot X')
+    expect(data).not.toHaveProperty('apiKeyId')
   })
 
   it('keeps metadata.client for team members', async () => {
     const data = await detail(true)
     expect(data.metadata.client).toEqual(client)
     expect(data.sourceLabel).toBe('Dot X')
+    expect(data.apiKeyId).toBe('key-1')
   })
 
   it('public list maps sourceLabel and still omits metadata', async () => {
@@ -150,16 +153,19 @@ describe('feedback source visibility in endpoints', () => {
       expect(item.metadata.feedbackType).toBe('bug_report')
       expect(item.sourceLabel).toBe('Dot X')
       expect(item.projectTeamId).toBeUndefined()
+      expect(item).not.toHaveProperty('apiKeyId')
     })
 
     it("keeps metadata.client for a member of the item's project team", async () => {
       const item = await list({ memberTeamIds: ['t1'] })
       expect(item.metadata.client).toEqual(client)
+      expect(item.apiKeyId).toBe('key-1')
     })
 
     it('redacts metadata.client for a logged-in non-member', async () => {
       const item = await list({ memberTeamIds: ['other-team'] })
       expect(item.metadata.client).toBeUndefined()
+      expect(item).not.toHaveProperty('apiKeyId')
     })
   })
 })

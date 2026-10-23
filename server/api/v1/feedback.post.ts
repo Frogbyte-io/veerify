@@ -40,7 +40,7 @@ import { validateBody } from '~/server/utils/validation'
 
 const logger = createLogger('app-feedback')
 
-const clientField = z.string().trim().max(64).optional()
+const clientField = z.string().trim().max(64).nullish()
 
 const appFeedbackSchema = z.object({
   type: z.enum(['bug', 'feature']),

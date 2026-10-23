@@ -1,9 +1,12 @@
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
   inserted: [] as Record<string, unknown>[],
   rows: [] as Record<string, unknown>[],
   updated: [] as Record<string, unknown>[],
+  whereArgs: [] as unknown[],
   updateResult: [] as Record<string, unknown>[],
   body: {} as unknown,
   status: undefined as number | undefined,
@@ -62,7 +65,12 @@ vi.mock('~/server/database/drizzle', () => ({
     update: vi.fn(() => ({
       set: (v: Record<string, unknown>) => {
         state.updated.push(v)
-        return { where: () => ({ returning: () => Promise.resolve(state.updateResult) }) }
+        return {
+          where: (arg: unknown) => {
+            state.whereArgs.push(arg)
+            return { returning: () => Promise.resolve(state.updateResult) }
+          },
+        }
       },
     })),
   },
@@ -83,6 +91,7 @@ beforeEach(() => {
   state.inserted = []
   state.rows = []
   state.updated = []
+  state.whereArgs = []
   state.updateResult = []
   state.body = {}
   state.status = undefined
@@ -144,6 +153,18 @@ describe('app key routes', () => {
   it('delete of a key from another project returns 404', async () => {
     state.updateResult = []
     await expect(deleteHandler({})).rejects.toMatchObject({ statusCode: 404 })
+    // The update filter must constrain the key id, the resolved project id, and un-revoked state.
+    const { sql, params } = new PgDialect().sqlToQuery(state.whereArgs[0] as SQL)
+    expect(params).toEqual(expect.arrayContaining(['key-1', 'proj-1']))
+    expect(sql).toContain('"project_api_key"."id" = $')
+    expect(sql).toContain('"project_api_key"."project_id" = $')
+  })
+
+  it('delete does not re-revoke an already revoked key (filters on revokedAt IS NULL, 404)', async () => {
+    state.updateResult = []
+    await expect(deleteHandler({})).rejects.toMatchObject({ statusCode: 404 })
+    const { sql } = new PgDialect().sqlToQuery(state.whereArgs[0] as SQL)
+    expect(sql).toMatch(/"revoked_at" is null/)
   })
 
   it.each([

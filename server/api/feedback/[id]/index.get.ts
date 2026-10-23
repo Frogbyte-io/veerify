@@ -7,7 +7,7 @@ import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, vote, project, feedbackSubscription } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
 import { conversation } from '~/server/database/schema/support'
-import { redactClientMetadata } from '~/server/utils/feedback-source'
+import { redactClientMetadata, stripApiKeyId } from '~/server/utils/feedback-source'
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
@@ -130,7 +130,7 @@ export default defineEventHandler(async (event) => {
   const publicSafeFeedback =
     !isTeamMember && item.feedback.metadata?.source === 'support_conversation'
       ? {
-          ...item.feedback,
+          ...stripApiKeyId(item.feedback, isTeamMember),
           title: 'Support request',
           body: null,
           authorName: null,
@@ -139,7 +139,7 @@ export default defineEventHandler(async (event) => {
           authorSessionId: null,
           metadata: null,
         }
-      : { ...item.feedback, metadata: redactClientMetadata(item.feedback.metadata, isTeamMember) }
+      : { ...stripApiKeyId(item.feedback, isTeamMember), metadata: redactClientMetadata(item.feedback.metadata, isTeamMember) }
   const publicSafeAuthor = !isTeamMember && item.feedback.metadata?.source === 'support_conversation' ? null : author
 
   return createSuccessResponse({
