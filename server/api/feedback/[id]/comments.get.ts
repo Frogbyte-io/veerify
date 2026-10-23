@@ -1,11 +1,12 @@
 import { eq, and, asc } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
-import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
+import { requireProjectAccess } from '~/server/utils/project-access'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackComment } from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
+import { requirePublicFeedback } from '~/server/utils/feedback-access'
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
@@ -38,10 +39,10 @@ export default defineEventHandler(async (event) => {
       isTeamMember = true
     } catch {
       // If user doesn't have team access, check if project is public
-      await requirePublicProject(fb.projectId)
+      await requirePublicFeedback(fb)
     }
   } else {
-    await requirePublicProject(fb.projectId)
+    await requirePublicFeedback(fb)
   }
 
   // Build where clause - hide internal comments from non-team-members

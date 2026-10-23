@@ -1,8 +1,8 @@
 import type { H3Event } from 'h3'
 import { and, asc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackAttachment, project } from '~/server/database/schema/feedback'
-import { teamMember } from '~/server/database/schema/auth'
+import { feedback, feedbackAttachment, product, project } from '~/server/database/schema/feedback'
+import { hasProjectAccess } from '~/server/utils/project-access'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import {
@@ -39,14 +39,9 @@ export function isRowUploader(
   return false
 }
 
-export async function isTeamMemberOfProject(projectTeamId: string, userId: string | null): Promise<boolean> {
+export async function isProjectMemberOf(projectId: string, userId: string | null): Promise<boolean> {
   if (!userId) return false
-  const [membership] = await db
-    .select({ id: teamMember.id })
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, projectTeamId), eq(teamMember.userId, userId)))
-    .limit(1)
-  return Boolean(membership)
+  return hasProjectAccess(projectId, userId)
 }
 
 export interface FeedbackAttachmentContext {
@@ -69,8 +64,14 @@ export async function loadFeedbackAttachmentContext(
   const [proj] = await db.select().from(project).where(eq(project.id, fb.projectId)).limit(1)
   if (!proj) feedbackAttachmentError(404, 'Project not found')
 
+  const [prod] = await db
+    .select({ isPublic: product.isPublic })
+    .from(product)
+    .where(eq(product.id, fb.productId))
+    .limit(1)
+
   const actor = preResolvedActor ?? (await resolveAttachmentActor(event))
-  const isTeamMember = await isTeamMemberOfProject(proj.teamId, actor.userId)
+  const isTeamMember = await isProjectMemberOf(proj.id, actor.userId)
   const isAuthor = actor.userId
     ? fb.authorUserId === actor.userId
     : actor.anonSessionId
@@ -80,7 +81,8 @@ export async function loadFeedbackAttachmentContext(
   const access = decideAttachmentAccess({
     isTeamMember,
     isAuthor,
-    projectIsPublic: proj.isPublic,
+    // The public board only exists for public products of public projects
+    projectIsPublic: proj.isPublic && prod?.isPublic === true,
     feedbackIsHidden: fb.isHidden,
     feedbackIsSupportDerived: fb.metadata?.source === 'support_conversation',
   })

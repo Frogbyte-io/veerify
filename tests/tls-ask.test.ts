@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { extractTeamSlug, parseAskHostname } from '../server/utils/tls-ask'
+import { extractOrgSlug, parseAskHostname } from '../server/utils/tls-ask'
 
 describe('parseAskHostname', () => {
   it('normalizes case and a trailing dot', () => {
@@ -40,38 +40,38 @@ describe('parseAskHostname', () => {
   })
 })
 
-describe('extractTeamSlug', () => {
+describe('extractOrgSlug', () => {
   it('extracts a single label under the app domain', () => {
-    expect(extractTeamSlug('acme.veerify.io', 'veerify.io')).toBe('acme')
+    expect(extractOrgSlug('acme.veerify.io', 'veerify.io')).toBe('acme')
   })
 
   it('rejects deeper names', () => {
-    // `a.b.veerify.io` is not a team subdomain; treating it as one would let a
+    // `a.b.veerify.io` is not a workspace subdomain; treating it as one would let a
     // nested label mint a certificate.
-    expect(extractTeamSlug('a.b.veerify.io', 'veerify.io')).toBeNull()
+    expect(extractOrgSlug('a.b.veerify.io', 'veerify.io')).toBeNull()
   })
 
   it('rejects the bare app domain', () => {
-    expect(extractTeamSlug('veerify.io', 'veerify.io')).toBeNull()
+    expect(extractOrgSlug('veerify.io', 'veerify.io')).toBeNull()
   })
 
   it('rejects a suffix match that is not a subdomain boundary', () => {
     // `notveerify.io` ends with `veerify.io` as a substring but is a different
     // domain entirely.
-    expect(extractTeamSlug('notveerify.io', 'veerify.io')).toBeNull()
+    expect(extractOrgSlug('notveerify.io', 'veerify.io')).toBeNull()
   })
 
   it('rejects slugs with leading or trailing hyphens', () => {
-    expect(extractTeamSlug('-acme.veerify.io', 'veerify.io')).toBeNull()
-    expect(extractTeamSlug('acme-.veerify.io', 'veerify.io')).toBeNull()
+    expect(extractOrgSlug('-acme.veerify.io', 'veerify.io')).toBeNull()
+    expect(extractOrgSlug('acme-.veerify.io', 'veerify.io')).toBeNull()
   })
 
   it('returns null when no app domain is configured', () => {
-    expect(extractTeamSlug('acme.veerify.io', '')).toBeNull()
-    expect(extractTeamSlug('acme.veerify.io', '   ')).toBeNull()
+    expect(extractOrgSlug('acme.veerify.io', '')).toBeNull()
+    expect(extractOrgSlug('acme.veerify.io', '   ')).toBeNull()
   })
 
   it('is case-insensitive on the configured suffix', () => {
-    expect(extractTeamSlug('acme.veerify.io', 'Veerify.IO')).toBe('acme')
+    expect(extractOrgSlug('acme.veerify.io', 'Veerify.IO')).toBe('acme')
   })
 })

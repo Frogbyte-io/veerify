@@ -39,11 +39,6 @@ vi.mock('~/server/database/drizzle', () => {
   return { db }
 })
 
-const teamModule = vi.hoisted(() => ({ enabled: true }))
-vi.mock('~/server/utils/public-modules', () => ({
-  isTeamModuleEnabled: vi.fn(async () => teamModule.enabled),
-}))
-
 vi.mock('h3', () => ({
   createError: (input: Record<string, unknown>) => Object.assign(new Error(String(input.statusMessage)), input),
 }))
@@ -59,10 +54,12 @@ const { createEntrySchema, updateEntrySchema } = await import('~/server/services
 const { resolvePublicChangelogProject, listPublishedEntries, findPublishedEntryBySlug } =
   await import('~/server/services/changelog/public')
 
-const publicProject = vi.hoisted(() => ({ value: { team: { id: 't1' }, project: { id: 'p1', settings: {} } } as any }))
+const publicProject = vi.hoisted(() => ({
+  value: { organization: { id: 'o1', slug: 'acme' }, project: { id: 'p1', settings: {} } } as any,
+}))
 vi.mock('~/server/utils/project-access', () => ({
-  resolvePublicProjectByTeam: vi.fn(async (teamSlug: string) => {
-    if (teamSlug === 'private') {
+  resolvePublicProject: vi.fn(async (orgSlug: string) => {
+    if (orgSlug === 'private') {
       throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
     }
     return publicProject.value
@@ -90,10 +87,9 @@ beforeEach(() => {
   state.rows = []
   state.ops = []
   txCalls.count = 0
-  teamModule.enabled = true
   loggerError.mockClear()
   clearChangelogPublishedHooks()
-  publicProject.value = { team: { id: 't1' }, project: { id: 'p1', settings: { changelogEnabled: true } } }
+  publicProject.value = { organization: { id: 'o1' }, project: { id: 'p1', settings: { changelogEnabled: true } } }
 })
 
 describe('slug generation', () => {
@@ -269,19 +265,14 @@ describe('publish / unpublish', () => {
 })
 
 describe('public access', () => {
-  it('404s when the product changelog toggle is off or unset', async () => {
-    publicProject.value = { team: {}, project: { id: 'p1', settings: { changelogEnabled: false } } }
+  it('404s when the project changelog toggle is off or unset', async () => {
+    publicProject.value = { organization: {}, project: { id: 'p1', settings: { changelogEnabled: false } } }
     await expect(resolvePublicChangelogProject('t', 'p')).rejects.toMatchObject({ statusCode: 404 })
-    publicProject.value = { team: {}, project: { id: 'p1', settings: null } }
-    await expect(resolvePublicChangelogProject('t', 'p')).rejects.toMatchObject({ statusCode: 404 })
-  })
-
-  it('404s when the team-level changelog module is off', async () => {
-    teamModule.enabled = false
+    publicProject.value = { organization: {}, project: { id: 'p1', settings: null } }
     await expect(resolvePublicChangelogProject('t', 'p')).rejects.toMatchObject({ statusCode: 404 })
   })
 
-  it('propagates the private product error', async () => {
+  it('propagates the private project error', async () => {
     await expect(resolvePublicChangelogProject('private', 'p')).rejects.toMatchObject({ statusCode: 403 })
   })
 

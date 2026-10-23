@@ -1,20 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
-  project: { id: 'p1', teamId: 't1', settings: { roadmapEnabled: true } } as Record<string, unknown>,
-  moduleRow: [{ roadmapEnabled: true }] as unknown[],
+  project: { id: 'p1', organizationId: 'o1', settings: { roadmapEnabled: true } } as Record<string, unknown>,
 }))
 
 const httpError = (statusCode: number, message: string) =>
   Object.assign(new Error(message), { statusCode, data: { error: { message } } })
-
-vi.mock('~/server/database/drizzle', () => ({
-  db: {
-    select: () => ({
-      from: () => ({ where: () => ({ limit: () => Promise.resolve(state.moduleRow) }) }),
-    }),
-  },
-}))
 
 vi.mock('~/server/utils/project-access', () => ({
   requireProjectAccess: vi.fn(async (projectId: string) => {
@@ -31,40 +22,26 @@ vi.mock('h3', () => ({
 const { requireRoadmapAccess } = await import('~/server/utils/roadmap-access')
 
 beforeEach(() => {
-  state.project = { id: 'p1', teamId: 't1', settings: { roadmapEnabled: true } }
-  state.moduleRow = [{ roadmapEnabled: true }]
+  state.project = { id: 'p1', organizationId: 'o1', settings: { roadmapEnabled: true } }
 })
 
 describe('requireRoadmapAccess', () => {
-  it('returns the project and team when both switches are on', async () => {
-    await expect(requireRoadmapAccess('p1', 'u1')).resolves.toEqual({ project: state.project, teamId: 't1' })
+  it('returns the project when the tool is switched on', async () => {
+    await expect(requireRoadmapAccess('p1', 'u1')).resolves.toEqual({ project: state.project })
   })
 
-  it('propagates project 404 and non-member 403', async () => {
+  it('propagates project 404 and no-access 403', async () => {
     await expect(requireRoadmapAccess('missing', 'u1')).rejects.toMatchObject({ statusCode: 404 })
     await expect(requireRoadmapAccess('foreign', 'u1')).rejects.toMatchObject({ statusCode: 403 })
   })
 
-  it('rejects with 403 when the team module is off', async () => {
-    state.moduleRow = [{ roadmapEnabled: false }]
+  it('rejects with 403 when the project switch is off or unset (default off)', async () => {
+    state.project = { id: 'p1', organizationId: 'o1', settings: { roadmapEnabled: false } }
     await expect(requireRoadmapAccess('p1', 'u1')).rejects.toMatchObject({
       statusCode: 403,
-      data: { error: { message: 'Roadmap is not enabled for this team' } },
+      data: { error: { message: 'Roadmap is not enabled for this project' } },
     })
-  })
-
-  it('treats a missing team settings row as the registry default (off)', async () => {
-    state.moduleRow = []
-    await expect(requireRoadmapAccess('p1', 'u1')).rejects.toMatchObject({ statusCode: 403 })
-  })
-
-  it('rejects with 403 when the product toggle is off or unset', async () => {
-    state.project = { id: 'p1', teamId: 't1', settings: { roadmapEnabled: false } }
-    await expect(requireRoadmapAccess('p1', 'u1')).rejects.toMatchObject({
-      statusCode: 403,
-      data: { error: { message: 'Roadmap is not enabled for this product' } },
-    })
-    state.project = { id: 'p1', teamId: 't1', settings: null }
+    state.project = { id: 'p1', organizationId: 'o1', settings: null }
     await expect(requireRoadmapAccess('p1', 'u1')).rejects.toMatchObject({ statusCode: 403 })
   })
 })

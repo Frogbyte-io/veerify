@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { eq, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
-import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
+import { requireProjectAccess } from '~/server/utils/project-access'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody, optionalTrimmedEmail, optionalTrimmedString } from '~/server/utils/validation'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
@@ -12,6 +12,7 @@ import { user } from '~/server/database/schema/auth'
 import { sendNewCommentNotificationEmail } from '~/lib/email'
 import { createLogger } from '~/server/utils/logger'
 import { notifyProjectTeam, notifyFeedbackSubscribers } from '~/server/utils/notifications'
+import { requirePublicFeedback } from '~/server/utils/feedback-access'
 
 const logger = createLogger('feedback')
 
@@ -63,10 +64,10 @@ export default defineEventHandler(async (event) => {
       await requireProjectAccess(fb.projectId, session.user.id)
       isTeamMember = true
     } catch {
-      await requirePublicProject(fb.projectId)
+      await requirePublicFeedback(fb)
     }
   } else {
-    await requirePublicProject(fb.projectId)
+    await requirePublicFeedback(fb)
   }
 
   // Internal comments require team membership

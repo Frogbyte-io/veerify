@@ -115,7 +115,7 @@ async function main() {
 
   try {
     const { rows } = await client.query<{ slug: string }>(
-      `SELECT slug FROM "team" WHERE slug IS NOT NULL ORDER BY created_at ASC`
+      `SELECT slug FROM "organization" WHERE slug IS NOT NULL ORDER BY created_at ASC`
     )
 
     for (const row of rows) {
@@ -124,7 +124,7 @@ async function main() {
 
       const hostname = `${slug}.${config.appDomain}`
       await ensureVercelDomain(hostname)
-      console.log(`[team-subdomains] ensured ${hostname}`)
+      console.log(`[org-subdomains] ensured ${hostname}`)
     }
   } finally {
     await client.end()
@@ -132,6 +132,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('[team-subdomains] failed:', error instanceof Error ? error.message : error)
+  console.error('[org-subdomains] failed:', error instanceof Error ? error.message : error)
   process.exit(1)
 })

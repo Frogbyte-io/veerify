@@ -151,24 +151,24 @@ export function shouldSendDomainVerifiedEmail(input: {
   return true
 }
 
-export function buildTeamSubdomainHostname(teamSlug: string, appDomain: string) {
-  const normalizedTeamSlug = normalizeDomainHostname(teamSlug)
+export function buildOrgSubdomainHostname(orgSlug: string, appDomain: string) {
+  const normalizedOrgSlug = normalizeDomainHostname(orgSlug)
   const normalizedAppDomain = normalizeDomainHostname(appDomain)
 
-  if (!normalizedTeamSlug || !normalizedAppDomain || normalizedAppDomain === 'localhost') {
+  if (!normalizedOrgSlug || !normalizedAppDomain || normalizedAppDomain === 'localhost') {
     return null
   }
 
-  return `${normalizedTeamSlug}.${normalizedAppDomain}`
+  return `${normalizedOrgSlug}.${normalizedAppDomain}`
 }
 
-export async function registerTeamPublicDomain(teamSlug: string) {
+export async function registerOrgPublicDomain(orgSlug: string) {
   if (getDomainProviderName() !== 'vercel') {
     return null
   }
 
   const config = useRuntimeConfig()
-  const hostname = buildTeamSubdomainHostname(teamSlug, String(config.public.appDomain || 'localhost'))
+  const hostname = buildOrgSubdomainHostname(orgSlug, String(config.public.appDomain || 'localhost'))
   if (!hostname) {
     return null
   }
@@ -176,12 +176,12 @@ export async function registerTeamPublicDomain(teamSlug: string) {
   return getDomainProvider().registerProjectDomain({ hostname })
 }
 
-export async function registerTeamPublicDomainBestEffort(teamSlug: string, context: Record<string, unknown> = {}) {
+export async function registerOrgPublicDomainBestEffort(orgSlug: string, context: Record<string, unknown> = {}) {
   try {
-    await registerTeamPublicDomain(teamSlug)
+    await registerOrgPublicDomain(orgSlug)
   } catch (error) {
-    logger.error('Failed to register generated team public domain', {
-      teamSlug,
+    logger.error('Failed to register generated workspace public domain', {
+      orgSlug,
       ...context,
       error: error instanceof Error ? error.message : error,
     })

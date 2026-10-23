@@ -35,12 +35,12 @@
  *       400: { description: Missing or malformed domain }
  */
 import { findPublicProjectByDomain } from '~/server/utils/project-access'
-import { buildTeamSubdomainHostname } from '~/server/services/domains/domain-service'
+import { buildOrgSubdomainHostname } from '~/server/services/domains/domain-service'
 import { db } from '~/server/database/drizzle'
-import { team } from '~/server/database/schema/auth'
+import { organization } from '~/server/database/schema/auth'
 import { eq } from 'drizzle-orm'
 import { requireRateLimit } from '~/server/utils/rate-limit'
-import { extractTeamSlug, parseAskHostname } from '~/server/utils/tls-ask'
+import { extractOrgSlug, parseAskHostname } from '~/server/utils/tls-ask'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('tls-ask')
@@ -82,20 +82,24 @@ export default defineEventHandler(async (event) => {
     return { allowed: true }
   }
 
-  // 2. A team subdomain under the app domain, e.g. acme.veerify.io.
-  //    Resolve the slug and confirm the team exists rather than trusting the
+  // 2. A workspace subdomain under the app domain, e.g. acme.veerify.io.
+  //    Resolve the slug and confirm the organization exists rather than trusting the
   //    suffix — otherwise any *.veerify.io label would mint a certificate.
   if (appDomain && hostname.endsWith(`.${appDomain}`)) {
-    const slug = extractTeamSlug(hostname, appDomain)
+    const slug = extractOrgSlug(hostname, appDomain)
 
     if (slug) {
-      const [existing] = await db.select({ id: team.id }).from(team).where(eq(team.slug, slug)).limit(1)
-      if (existing && buildTeamSubdomainHostname(slug, appDomain) === hostname) {
+      const [existing] = await db
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.slug, slug))
+        .limit(1)
+      if (existing && buildOrgSubdomainHostname(slug, appDomain) === hostname) {
         return { allowed: true }
       }
     }
 
-    logger.warn('Refused TLS issuance for unknown team subdomain', { hostname })
+    logger.warn('Refused TLS issuance for unknown workspace subdomain', { hostname })
     throw createError({ statusCode: 403, statusMessage: 'Unknown host' })
   }
 

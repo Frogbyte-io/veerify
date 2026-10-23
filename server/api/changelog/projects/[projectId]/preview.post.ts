@@ -20,7 +20,7 @@
  *       200: { description: "`{ html }`, sanitised server-side" }
  *       400: { description: Validation failed }
  */
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireChangelogAccess } from '~/server/utils/changelog-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -29,7 +29,7 @@ import { renderMarkdown } from '~/server/utils/markdown'
 import { previewSchema } from '~/server/services/changelog/schemas'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   await requireChangelogAccess(projectId, session.user.id)
   const { body } = await validateBody(event, previewSchema)
