@@ -32,15 +32,12 @@ describe('collectSupportItems', () => {
   const since = new Date('2026-07-12T00:00:00Z')
   const at = new Date('2026-10-01T00:00:00Z')
 
-  it('scopes the query to incoming customer messages of this team and product within the window', async () => {
+  it('scopes the query to incoming customer messages of this project within the window', async () => {
     state.queue = [[]]
-    await collectSupportItems('team-1', 'proj-1', since)
+    await collectSupportItems('proj-1', since)
     const q = sqlOf(state.wheres[0])
-    expect(q.params).toEqual(
-      expect.arrayContaining(['team-1', 'proj-1', 'incoming', 'contact', false, since.toISOString()])
-    )
+    expect(q.params).toEqual(expect.arrayContaining(['proj-1', 'incoming', 'contact', false, since.toISOString()]))
     expect(q.sql).toContain('"conversation"."project_id"')
-    expect(q.sql).toContain('"conversation"."team_id"')
   })
 
   it('keeps only incoming customer text and drops notes, agent replies and private rows', async () => {
@@ -60,7 +57,7 @@ describe('collectSupportItems', () => {
         { body: null, kind: 'incoming', senderKind: 'contact', isPrivate: false, createdAt: at },
       ],
     ]
-    const items = await collectSupportItems('team-1', 'proj-1', since)
+    const items = await collectSupportItems('proj-1', since)
     expect(items.map((i) => i.text)).toEqual(['customer says exports are slow'])
     expect(items[0].source).toBe('support')
   })

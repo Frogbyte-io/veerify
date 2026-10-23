@@ -46,7 +46,7 @@ describe('consumeDbLimit', () => {
     const result = await consumeDbLimit('t1', 'ratelimit:suggest:s1:2026-10-10', 3)
     expect(result).toEqual({ allowed: true, remaining: 2 })
     expect(state.values).toMatchObject({
-      teamId: 't1',
+      organizationId: 't1',
       metric: 'ratelimit:suggest:s1:2026-10-10',
       units: 1,
       period: currentPeriod(),

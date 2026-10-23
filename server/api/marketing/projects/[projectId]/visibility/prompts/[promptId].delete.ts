@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Prompt deleted }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Prompt not found for this product }
  */
 import { eq } from 'drizzle-orm'

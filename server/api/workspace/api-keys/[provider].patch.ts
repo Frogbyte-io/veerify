@@ -1,16 +1,12 @@
 /**
  * @openapi
- * /api/marketing/teams/{teamId}/credentials/{provider}:
+ * /api/workspace/api-keys/{provider}:
  *   patch:
  *     tags: [Marketing]
  *     summary: Set or clear the monthly budget of an LLM key
- *     description: Team admins only. Applies to LLM provider keys (anthropic, openai, perplexity, gemini). Null removes the cap.
+ *     description: Workspace owners and admins only. Applies to LLM provider keys (anthropic, openai, perplexity, gemini). Null removes the cap.
  *     operationId: patchMarketingCredential
  *     parameters:
- *       - in: path
- *         name: teamId
- *         required: true
- *         schema: { type: string }
  *       - in: path
  *         name: provider
  *         required: true
@@ -27,15 +23,14 @@
  *     responses:
  *       200: { description: Budget updated }
  *       400: { description: Not an LLM provider or invalid budget }
- *       403: { description: Team admin required }
+ *       403: { description: Workspace owner or admin required }
  *       404: { description: No key stored for this provider }
  */
 import { z } from 'zod'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuthWithOrganization } from '~/server/utils/project-context'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
-import { updateCredentialBudget } from '~/server/utils/team-credentials'
-import { requireRouteParam } from '~/server/utils/marketing-site'
+import { updateCredentialBudget } from '~/server/utils/org-credentials'
 import {
   badRequest,
   isLlmCredentialProvider,
@@ -48,17 +43,16 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
-  const teamId = requireRouteParam(event, 'teamId')
+  const { session, organizationId } = await requireAuthWithOrganization(event)
   const provider = requireCredentialProvider(event)
-  await requireCredentialAdmin(teamId, session.user.id)
+  await requireCredentialAdmin(organizationId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   if (!isLlmCredentialProvider(provider)) {
     badRequest('A monthly budget only applies to LLM provider keys')
   }
 
-  const updated = await updateCredentialBudget(teamId, provider, body.monthlyBudgetCents)
+  const updated = await updateCredentialBudget(organizationId, provider, body.monthlyBudgetCents)
   if (!updated) {
     throw createError({
       statusCode: 404,

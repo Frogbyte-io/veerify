@@ -20,7 +20,7 @@
  *         schema: { type: integer, minimum: 7, maximum: 45, default: 28 }
  *     responses:
  *       200: { description: Summary; `connection` is null when Search Console is not connected }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  */
 import { and, asc, desc, eq, gte } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
@@ -29,9 +29,9 @@ import { getGoogleRedirectUri } from '~/server/services/google/search-console'
 import { findGscConnection, isGscConfigured } from '~/server/services/marketing/search/connection'
 import { computeTotals, shiftDate, splitPeriods } from '~/server/services/marketing/search/summary'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
-import { findMarketingSite, isTeamAdminOf, requireRouteParam } from '~/server/utils/marketing-site'
+import { findMarketingSite, isMarketingAdminOf, requireRouteParam } from '~/server/utils/marketing-site'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 const DEFAULT_DAYS = 28
 const MIN_DAYS = 7
@@ -39,14 +39,17 @@ const MAX_DAYS = 45
 const TOP_QUERIES = 50
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { organizationId } = await requireMarketingAccess(projectId, session.user.id)
 
   const raw = Number.parseInt(String(getQuery(event).days ?? ''), 10)
   const days = Number.isFinite(raw) ? Math.min(Math.max(raw, MIN_DAYS), MAX_DAYS) : DEFAULT_DAYS
 
-  const [site, canManage] = await Promise.all([findMarketingSite(projectId), isTeamAdminOf(teamId, session.user.id)])
+  const [site, canManage] = await Promise.all([
+    findMarketingSite(projectId),
+    isMarketingAdminOf(projectId, session.user.id),
+  ])
   const base = {
     configured: isGscConfigured(),
     // Built server-side from BETTER_AUTH_URL; the browser origin can differ behind a proxy.

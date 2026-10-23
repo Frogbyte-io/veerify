@@ -67,7 +67,7 @@ export async function findItem(projectId: string, directoryId: string): Promise<
 
 /**
  * Item fields shared by catalog and custom entries. For catalog directories
- * `url` is the team's own listing URL; for custom ones it is the directory link.
+ * `url` is the workspace's own listing URL; for custom ones it is the directory link.
  */
 function itemState(row: ItemRow | undefined) {
   return {

@@ -14,7 +14,7 @@
  *     responses:
  *       200: { description: Prompt created }
  *       400: { description: Validation failed }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       409: { description: Duplicate prompt or active (25) or total (100) prompt cap reached }
  */
 import { randomUUID } from 'node:crypto'

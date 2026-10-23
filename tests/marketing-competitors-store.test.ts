@@ -37,7 +37,7 @@ describe('dbCompetitorStore.loadDue', () => {
     expect(sql).toContain('w.last_checked_at IS NULL OR w.last_checked_at <')
     expect(sql).toContain('s.verified_at IS NOT NULL')
     expect(sql).toContain(`p.settings ->> 'marketingEnabled' = 'true'`)
-    expect(sql).toContain('tm.marketing_enabled = true')
+    expect(sql).not.toContain('team_module_settings')
     expect(sql).toMatch(/ORDER BY last_checked_at ASC NULLS FIRST, id ASC\s+LIMIT \$\d+/)
     expect(params).toContain(30)
     expect(params).toContain('2026-10-09T10:00:00.000Z')
@@ -65,7 +65,7 @@ describe('dbCompetitorStore.loadDue', () => {
       {
         id: 'w1',
         site_id: 's1',
-        team_id: 't1',
+        organization_id: 't1',
         project_id: 'p1',
         project_name: 'Prod',
         project_settings: { marketingEnabled: true },
@@ -80,7 +80,7 @@ describe('dbCompetitorStore.loadDue', () => {
       },
     ]
     const [watch] = await dbCompetitorStore.loadDue(new Date(), 10)
-    expect(watch).toMatchObject({ id: 'w1', teamId: 't1', lastContentHash: 'abc', lastCheckedAt: null })
+    expect(watch).toMatchObject({ id: 'w1', organizationId: 't1', lastContentHash: 'abc', lastCheckedAt: null })
     expect(watch.lastText).toBeUndefined()
   })
 

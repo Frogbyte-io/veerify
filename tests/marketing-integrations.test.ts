@@ -6,8 +6,8 @@ const state = vi.hoisted(() => ({
   outdated: 0 as number | null,
 }))
 
-vi.mock('~/server/utils/team-credentials', () => ({
-  listTeamCredentials: vi.fn(async () => state.credentials),
+vi.mock('~/server/utils/org-credentials', () => ({
+  listOrgCredentials: vi.fn(async () => state.credentials),
 }))
 vi.mock('~/server/services/marketing/secrets-rotation', () => ({ countOutdatedSecrets: async () => state.outdated }))
 vi.mock('~/server/utils/secrets', () => ({ isSecretsConfigured: () => state.secrets }))

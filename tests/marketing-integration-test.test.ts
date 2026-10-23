@@ -19,7 +19,14 @@ const state = vi.hoisted(() => ({
 vi.mock('~/server/database/drizzle', () => ({
   db: {
     select: () => ({
-      from: () => ({ innerJoin: () => ({ where: () => ({ limit: async () => state.google.rows }) }) }),
+      from: () => {
+        const chain: Record<string, unknown> = {
+          innerJoin: () => chain,
+          where: () => chain,
+          limit: async () => state.google.rows,
+        }
+        return chain
+      },
     }),
   },
 }))
@@ -32,8 +39,8 @@ vi.mock('~/server/utils/marketing-config', () => ({
     },
   },
 }))
-vi.mock('~/server/utils/team-credentials', () => ({
-  getTeamApiKey: vi.fn(async (_t: string, provider: string) => state.teamKeys[provider] ?? null),
+vi.mock('~/server/utils/org-credentials', () => ({
+  getOrgApiKey: vi.fn(async (_t: string, provider: string) => state.teamKeys[provider] ?? null),
   markCredentialValid: vi.fn(async (...args: unknown[]) => void state.marked.push(['valid', ...args])),
   markCredentialInvalid: vi.fn(async (...args: unknown[]) => void state.marked.push(['invalid', ...args])),
 }))

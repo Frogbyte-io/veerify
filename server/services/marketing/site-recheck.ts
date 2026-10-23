@@ -2,8 +2,6 @@ import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { marketingSite } from '~/server/database/schema/marketing'
 import { project, projectDomain } from '~/server/database/schema/feedback'
-import { teamModuleSettings } from '~/server/database/schema/teams'
-import { DEFAULT_TEAM_MODULES } from '~/lib/modules'
 import {
   checkVerification,
   isCoveredByVerifiedDomain,
@@ -23,13 +21,10 @@ import {
  */
 
 /**
- * Sites are only re-checked while Marketing is on for both the team and the product: a switched-off module
+ * Sites are only re-checked while Marketing is on for the project: a switched-off module
  * must not keep probing the site's DNS or pages. Re-enabling resumes the checks.
  */
-const marketingOn = and(
-  sql`coalesce(${teamModuleSettings.marketingEnabled}, ${DEFAULT_TEAM_MODULES.marketingEnabled})`,
-  sql`${project.settings}->>'marketingEnabled' = 'true'`
-)
+const marketingOn = sql`${project.settings}->>'marketingEnabled' = 'true'`
 
 export const DOMAIN_LOST_MESSAGE = 'The custom domain that verified this site is no longer active — verify again'
 export const RECHECK_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000
@@ -100,7 +95,6 @@ const defaultDeps: RecheckDeps = {
       .select(siteColumns)
       .from(marketingSite)
       .innerJoin(project, eq(project.id, marketingSite.projectId))
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
       .where(and(isNotNull(marketingSite.verifiedAt), eq(marketingSite.verificationMethod, 'domain'), marketingOn)),
   listDueSites: (now, limit) => {
     const lastCheck = sql`coalesce(${marketingSite.verificationCheckedAt}, ${marketingSite.verifiedAt})`
@@ -110,7 +104,6 @@ const defaultDeps: RecheckDeps = {
       .select(siteColumns)
       .from(marketingSite)
       .innerJoin(project, eq(project.id, marketingSite.projectId))
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
       .where(
         and(
           marketingOn,

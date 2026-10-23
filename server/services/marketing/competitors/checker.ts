@@ -1,5 +1,5 @@
 import { isAllowed } from '~/server/services/marketing/audit/robots'
-import { callTeamLlm } from '~/server/services/marketing/llm-call'
+import { callOrgLlm } from '~/server/services/marketing/llm-call'
 import { createLogger } from '~/server/utils/logger'
 import { marketingConfig } from '~/server/utils/marketing-config'
 import { recordUsage } from '~/server/utils/marketing-usage'
@@ -31,7 +31,7 @@ export interface CheckerDeps {
   fetchText: (url: string, opts: Parameters<typeof safeFetchText>[1]) => Promise<SafeFetchResult>
   now: () => Date
   sleep: (ms: number) => Promise<void>
-  recordUsage: (teamId: string, metric: string, units: number) => Promise<void>
+  recordUsage: (organizationId: string, metric: string, units: number) => Promise<void>
   summarize: (watch: WatchContext, added: string[], removed: string[]) => Promise<SummaryResult | null>
 }
 
@@ -47,7 +47,7 @@ export interface RunContext {
   lastPageRequestAt: Map<string, number>
   deadline: number
   /**
-   * Fetched pages by URL for this run: watches of different teams on the same URL share one fetch
+   * Fetched pages by URL for this run: watches of different projects on the same URL share one fetch
    * (and one robots/spacing slot); each is still diffed against its own stored text.
    */
   pages?: Map<string, Promise<PageResult>>
@@ -156,7 +156,7 @@ function pathOf(url: URL): string {
   return `${url.pathname}${url.search}`
 }
 
-/** One fetch per URL per run: a page several teams watch is fetched once and shared. */
+/** One fetch per URL per run: a page several projects watch is fetched once and shared. */
 function loadPage(target: URL, host: string, ctx: RunContext, deps: CheckerDeps): Promise<PageResult> {
   const key = target.toString()
   const cache = ctx.pages
@@ -291,7 +291,7 @@ export async function checkWatch(watch: WatchContext, ctx: RunContext, deps: Che
   try {
     const page = await loadPage(target, host, ctx, deps)
     if (page.fetches > 0)
-      await deps.recordUsage(watch.teamId, 'competitors:fetches', page.fetches).catch(() => undefined)
+      await deps.recordUsage(watch.organizationId, 'competitors:fetches', page.fetches).catch(() => undefined)
     if (page.kind === 'skipped') return 'skipped'
     if (page.kind === 'blocked') return block()
     if (page.kind === 'fail') return fail(page.message)
@@ -378,14 +378,14 @@ export function buildSummaryInput(competitor: string, url: string, added: string
   ].join('\n\n')
 }
 
-/** Summary with the team's own LLM key. Null when nothing usable came back; throws when no key or over budget. */
+/** Summary with the workspace's own LLM key. Null when nothing usable came back; throws when no key or over budget. */
 export async function summarizeChange(
   watch: WatchContext,
   added: string[],
   removed: string[]
 ): Promise<SummaryResult | null> {
-  const result = await callTeamLlm<{ summary?: unknown }>(
-    watch.teamId,
+  const result = await callOrgLlm<{ summary?: unknown }>(
+    watch.organizationId,
     {
       system: SUMMARY_SYSTEM_PROMPT,
       input: buildSummaryInput(watch.termLabel, watch.url, added, removed),
@@ -421,7 +421,7 @@ export function interleaveByHost(watches: WatchContext[]): WatchContext[] {
 }
 
 /**
- * Moves watches on the same URL (different teams) next to each other, keeping first-appearance order,
+ * Moves watches on the same URL (different projects) next to each other, keeping first-appearance order,
  * so a shared page is fetched once and applied to all of them while it is still cached.
  */
 export function groupByUrl(watches: WatchContext[]): WatchContext[] {

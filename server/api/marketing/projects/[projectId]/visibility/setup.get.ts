@@ -13,7 +13,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Setup state }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Project not found }
  */
 import { and, eq, sql } from 'drizzle-orm'
@@ -22,16 +22,16 @@ import { aiVisibilityPrompt, marketingSite, marketingTerm } from '~/server/datab
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { LLM_PROVIDERS } from '~/server/services/llm'
-import { listTeamCredentials } from '~/server/utils/team-credentials'
+import { listOrgCredentials } from '~/server/utils/org-credentials'
 import { createSuccessResponse } from '~/server/utils/response'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const projectId = getRouterParam(event, 'projectId') ?? ''
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { organizationId } = await requireMarketingAccess(projectId, session.user.id)
 
   const [site] = await db.select().from(marketingSite).where(eq(marketingSite.projectId, projectId)).limit(1)
-  const credentials = await listTeamCredentials(teamId)
+  const credentials = await listOrgCredentials(organizationId)
   const providers = LLM_PROVIDERS.map((p) => {
     const credential = credentials.find((c) => c.provider === p.id)
     return { id: p.id, label: p.label, status: credential?.status ?? 'missing' }

@@ -16,7 +16,7 @@ export const promptTextSchema = z
   .min(PROMPT_MIN_LENGTH, `Prompt must be at least ${PROMPT_MIN_LENGTH} characters`)
   .max(PROMPT_MAX_LENGTH, `Prompt must be ${PROMPT_MAX_LENGTH} characters or fewer`)
 
-/** Order in which a team's keys are tried for suggestions: Anthropic first, then OpenAI, Gemini, Perplexity. */
+/** Order in which a workspace's keys are tried for suggestions: Anthropic first, then OpenAI, Gemini, Perplexity. */
 export function pickSuggestionProvider(credentials: { provider: string; status: string }[]): LlmProviderId | null {
   for (const id of ['anthropic', 'openai', 'gemini', 'perplexity'] as const) {
     if (credentials.some((c) => c.provider === id && c.status !== 'invalid')) return id

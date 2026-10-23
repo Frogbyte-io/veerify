@@ -4,7 +4,7 @@
  *   get:
  *     tags: [Marketing]
  *     summary: List testimonials for moderation
- *     description: Newest first, with counts by status and the team slug (for the public wall link). Includes whether the author consented to public display.
+ *     description: Newest first, with counts by status and the workspace slug (for the public wall link). Includes whether the author consented to public display.
  *     operationId: listMarketingTestimonials
  *     parameters:
  *       - in: path
@@ -17,18 +17,18 @@
  *     responses:
  *       200: { description: Testimonials and counts }
  *       400: { description: Invalid query }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
 import { and, count, desc, eq, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
-import { team } from '~/server/database/schema/auth'
 import { testimonial } from '~/server/database/schema/marketing'
+import { getOrganizationSlug } from '~/server/utils/marketing-public-url'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateQuery } from '~/server/utils/validation'
 
 const querySchema = z.object({
@@ -38,15 +38,15 @@ const querySchema = z.object({
 const MAX_ITEMS = 200
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { project, organizationId } = await requireMarketingAccess(projectId, session.user.id)
   const query = validateQuery(event, querySchema)
 
   const conditions: SQL[] = [eq(testimonial.projectId, projectId)]
   if (query.status) conditions.push(eq(testimonial.status, query.status))
 
-  const [items, statusRows, teamRows] = await Promise.all([
+  const [items, statusRows, orgSlug] = await Promise.all([
     db
       .select({
         id: testimonial.id,
@@ -70,12 +70,12 @@ export default defineEventHandler(async (event) => {
       .from(testimonial)
       .where(eq(testimonial.projectId, projectId))
       .groupBy(testimonial.status),
-    // The team slug builds the public wall link in the UI.
-    db.select({ slug: team.slug }).from(team).where(eq(team.id, teamId)).limit(1),
+    // The workspace and project slugs build the public wall link in the UI.
+    getOrganizationSlug(organizationId),
   ])
 
   const counts = { pending: 0, approved: 0, rejected: 0 }
   for (const row of statusRows) counts[row.status] = Number(row.total)
 
-  return createSuccessResponse({ items, counts, teamSlug: teamRows[0]?.slug ?? null })
+  return createSuccessResponse({ items, counts, orgSlug, projectSlug: project.slug })
 })

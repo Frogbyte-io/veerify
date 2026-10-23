@@ -23,7 +23,7 @@ export const RETRY_BACKOFF_MS = [15 * MINUTE_MS, 60 * MINUTE_MS, 6 * 60 * MINUTE
 
 /** Most recipients one published changelog entry may fan out to. */
 export const MAX_CHANGELOG_RECIPIENTS = 200
-/** Manually queued requests per team per rolling day. */
+/** Manually queued requests per project per rolling day. */
 export const MANUAL_DAILY_CAP = 100
 
 export interface EnqueueInput {
@@ -91,7 +91,7 @@ export async function enqueueReviewRequest(input: EnqueueInput, deps: ReviewServ
   if (input.trigger === 'shipped' && !settings.shippedTrigger) return { queued: false, reason: 'trigger_off' }
   if (!isMarketingOn(ctx)) return { queued: false, reason: 'marketing_off' }
 
-  if (await store.isSuppressed(ctx.teamId, email)) return { queued: false, reason: 'suppressed' }
+  if (await store.isSuppressed(ctx.organizationId, email)) return { queued: false, reason: 'suppressed' }
 
   const since = new Date(now.getTime() - settings.cooldownDays * DAY_MS)
   if (await store.hasRecentRequest(ctx.projectId, email, since)) return { queued: false, reason: 'cooldown' }
@@ -101,7 +101,6 @@ export async function enqueueReviewRequest(input: EnqueueInput, deps: ReviewServ
     {
       id: randomUUID(),
       projectId: ctx.projectId,
-      teamId: ctx.teamId,
       email,
       name: input.name?.trim() ? input.name.trim().slice(0, 200) : null,
       trigger: input.trigger,
@@ -115,7 +114,7 @@ export async function enqueueReviewRequest(input: EnqueueInput, deps: ReviewServ
 
 /**
  * Queue manual requests for a list of addresses. Each address gets its own result.
- * At most `MANUAL_DAILY_CAP` manual requests are queued per team per rolling day.
+ * At most `MANUAL_DAILY_CAP` manual requests are queued per project per rolling day.
  */
 export async function enqueueManualReviewRequests(
   input: { projectId: string; emails: string[] },
@@ -127,7 +126,7 @@ export async function enqueueManualReviewRequests(
   const ctx = await store.loadProjectContext(input.projectId)
   let remaining = MANUAL_DAILY_CAP
   if (ctx) {
-    remaining = MANUAL_DAILY_CAP - (await store.countManualSince(ctx.teamId, new Date(now.getTime() - DAY_MS)))
+    remaining = MANUAL_DAILY_CAP - (await store.countManualSince(ctx.projectId, new Date(now.getTime() - DAY_MS)))
   }
 
   const seen = new Set<string>()
@@ -330,7 +329,7 @@ export async function processReviewRequests(
       const settings = row.settings
       if (!settings || !settings.enabled) return await skip('disabled')
       if (!isMarketingOn(row)) return await skip('marketing_off')
-      if (await store.isSuppressed(row.teamId, row.email)) return await skip('suppressed')
+      if (await store.isSuppressed(row.organizationId, row.email)) return await skip('suppressed')
 
       const key = `${row.projectId}:${row.email}`
       if (sentThisRun.has(key)) return await skip('cooldown')
@@ -340,7 +339,7 @@ export async function processReviewRequests(
 
       // Last look right before the mailer: the row may have been erased or the address unsubscribed
       // since the claim and the checks above.
-      if (!(await store.stillSendable(row.id, row.teamId, row.email))) return await skip('suppressed')
+      if (!(await store.stillSendable(row.id, row.organizationId, row.email))) return await skip('suppressed')
 
       const token = encodeURIComponent(row.token)
       let failure: { kind: FailureKind; message: string; logged: Record<string, unknown> } | null = null

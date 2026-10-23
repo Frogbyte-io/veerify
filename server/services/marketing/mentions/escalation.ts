@@ -10,8 +10,8 @@ import {
   conversationMessage,
   supportInbox,
 } from '~/server/database/schema/support'
-import { teamModuleSettings } from '~/server/database/schema/teams'
-import { DEFAULT_TEAM_MODULES } from '~/lib/modules'
+import { project } from '~/server/database/schema/feedback'
+import { isModuleEnabled } from '~/lib/modules'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { requireInboxAccess } from '~/server/utils/support-access'
 import { allocateConversationDisplayId } from '~/server/utils/support-counter'
@@ -91,32 +91,24 @@ function httpError(
   throw createError({ statusCode, statusMessage, data: createErrorResponse(code, message) })
 }
 
-/** Support is a team-level module (no product toggle). A missing team row reads as the registry default (off). */
-export async function isSupportEnabled(teamId: string) {
-  const [row] = await db
-    .select({ supportEnabled: teamModuleSettings.supportEnabled })
-    .from(teamModuleSettings)
-    .where(eq(teamModuleSettings.teamId, teamId))
-    .limit(1)
-  return row ? row.supportEnabled === true : DEFAULT_TEAM_MODULES.supportEnabled
+/** Support is switched per project (`project.settings.supportEnabled`, default off). */
+export async function isSupportEnabled(projectId: string) {
+  const [row] = await db.select({ settings: project.settings }).from(project).where(eq(project.id, projectId)).limit(1)
+  return row ? isModuleEnabled(row.settings as Record<string, unknown> | null, 'supportEnabled') : false
 }
 
 /**
- * The inbox new escalations land in: an enabled inbox linked to this product first, then the
- * team's oldest enabled inbox, restricted to inboxes where the user can work conversations.
+ * The inbox new escalations land in: the project's oldest enabled inbox the user can work
+ * conversations in. Support inboxes belong to the project of the mention.
  */
-export async function pickEscalationInbox(teamId: string, projectId: string, userId: string) {
+export async function pickEscalationInbox(projectId: string, userId: string) {
   const inboxes = await db
-    .select({ id: supportInbox.id, projectId: supportInbox.projectId })
+    .select({ id: supportInbox.id })
     .from(supportInbox)
-    .where(and(eq(supportInbox.teamId, teamId), eq(supportInbox.isEnabled, true)))
+    .where(and(eq(supportInbox.projectId, projectId), eq(supportInbox.isEnabled, true)))
     .orderBy(asc(supportInbox.createdAt))
 
-  const ordered = [
-    ...inboxes.filter((i) => i.projectId === projectId),
-    ...inboxes.filter((i) => i.projectId !== projectId),
-  ]
-  for (const candidate of ordered) {
+  for (const candidate of inboxes) {
     try {
       const access = await requireInboxAccess(candidate.id, userId)
       if (access.capabilities.canWorkConversations) return access
@@ -127,7 +119,7 @@ export async function pickEscalationInbox(teamId: string, projectId: string, use
   return null
 }
 
-/** Whether the user can open this inbox (inbox member or team admin). Never throws for a denied or missing inbox. */
+/** Whether the user can open this inbox (inbox member or project admin). Never throws for a denied or missing inbox. */
 export async function canAccessInbox(inboxId: string, userId: string): Promise<boolean> {
   try {
     await requireInboxAccess(inboxId, userId)
@@ -147,26 +139,26 @@ export async function accessibleInboxIds(inboxIds: Iterable<string>, userId: str
 }
 
 /** Whether the user may escalate: support is on and they can work in at least one inbox. */
-export async function canEscalateMentions(teamId: string, projectId: string, userId: string): Promise<boolean> {
-  if (!(await isSupportEnabled(teamId))) return false
-  return (await pickEscalationInbox(teamId, projectId, userId)) !== null
+export async function canEscalateMentions(projectId: string, userId: string): Promise<boolean> {
+  if (!(await isSupportEnabled(projectId))) return false
+  return (await pickEscalationInbox(projectId, userId)) !== null
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 /**
  * `conversation.contactId` is NOT NULL, so an escalation needs a contact. One shared placeholder
- * contact per team is used: no email, no phone, and a `system` identity (not an email identity).
+ * contact per project is used: no email, no phone, and a `system` identity (not an email identity).
  * Outbound mail resolves recipients from the contact's email, so nothing can be sent to it.
  */
-async function ensureSystemContact(tx: Tx, teamId: string): Promise<string> {
+async function ensureSystemContact(tx: Tx, projectId: string): Promise<string> {
   const find = async () => {
     const [row] = await tx
       .select({ contactId: contactIdentity.contactId })
       .from(contactIdentity)
       .where(
         and(
-          eq(contactIdentity.teamId, teamId),
+          eq(contactIdentity.projectId, projectId),
           eq(contactIdentity.kind, SYSTEM_IDENTITY_KIND),
           eq(contactIdentity.value, SYSTEM_IDENTITY_VALUE)
         )
@@ -180,13 +172,15 @@ async function ensureSystemContact(tx: Tx, teamId: string): Promise<string> {
 
   const contactId = randomUUID()
   const now = new Date()
-  await tx.insert(contact).values({ id: contactId, teamId, name: SYSTEM_CONTACT_NAME, createdAt: now, updatedAt: now })
+  await tx
+    .insert(contact)
+    .values({ id: contactId, projectId, name: SYSTEM_CONTACT_NAME, createdAt: now, updatedAt: now })
   const claimed = await tx
     .insert(contactIdentity)
     .values({
       id: randomUUID(),
       contactId,
-      teamId,
+      projectId,
       kind: SYSTEM_IDENTITY_KIND,
       value: SYSTEM_IDENTITY_VALUE,
       createdAt: now,
@@ -213,7 +207,6 @@ export interface EscalationResult {
 export interface EscalateInput {
   siteId: string
   mentionId: string
-  teamId: string
   projectId: string
   userId: string
   inbox: { id: string }
@@ -249,7 +242,7 @@ export async function escalateMention(input: EscalateInput): Promise<EscalationR
       const [existing] = await tx
         .select({ id: conversation.id, inboxId: conversation.inboxId, displayId: conversation.displayId })
         .from(conversation)
-        .where(and(eq(conversation.id, row.conversationId), eq(conversation.teamId, input.teamId)))
+        .where(and(eq(conversation.id, row.conversationId), eq(conversation.projectId, input.projectId)))
         .limit(1)
       if (existing) {
         return {
@@ -274,13 +267,12 @@ export async function escalateMention(input: EscalateInput): Promise<EscalationR
     const item: EscalationMention = { ...row, termLabel }
     const now = new Date()
     const conversationId = randomUUID()
-    const contactId = await ensureSystemContact(tx, input.teamId)
-    const displayId = await allocateConversationDisplayId(tx, input.teamId)
+    const contactId = await ensureSystemContact(tx, input.projectId)
+    const displayId = await allocateConversationDisplayId(tx, input.projectId)
 
     await tx.insert(conversation).values({
       id: conversationId,
       inboxId: input.inbox.id,
-      teamId: input.teamId,
       contactId,
       projectId: input.projectId,
       displayId,
@@ -316,7 +308,7 @@ export async function escalateMention(input: EscalateInput): Promise<EscalationR
   if (!result.alreadyEscalated) {
     await publishConversationEvent({
       type: 'conversation.created',
-      teamId: input.teamId,
+      projectId: input.projectId,
       inboxId: result.inboxId,
       conversationId: result.conversationId,
     })
