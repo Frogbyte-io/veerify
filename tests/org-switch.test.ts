@@ -3,7 +3,7 @@ import { shouldLeaveRouteOnOrgSwitch } from '~/lib/org-switch'
 
 describe('shouldLeaveRouteOnOrgSwitch', () => {
   it('keeps top-level, dashboard and settings pages', () => {
-    for (const path of ['/dashboard', '/support', '/feedback?x=1', '/dashboard/roadmap', '/settings#security']) {
+    for (const path of ['/dashboard', '/support', '/feedback?x=1', '/dashboard/roadmap', '/settings#profile']) {
       expect(shouldLeaveRouteOnOrgSwitch(path)).toBe(false)
     }
   })

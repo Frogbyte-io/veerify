@@ -17,7 +17,7 @@
             </div>
             <CardTitle class="text-2xl">Start collecting feedback</CardTitle>
             <CardDescription class="text-base">
-              Create a workspace to set up feedback boards, manage projects, and collaborate with your team.
+              Create a workspace to set up feedback boards, manage projects, and collaborate with your colleagues.
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
@@ -32,7 +32,7 @@
               </div>
               <div class="flex items-start gap-3">
                 <Icon name="lucide:check-circle" class="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
-                <p class="text-sm">Team collaboration and project management</p>
+                <p class="text-sm">Projects for each of your brands, shared with your colleagues</p>
               </div>
             </div>
 

@@ -3,14 +3,15 @@
  * imports so they can be unit tested.
  */
 
-/** Dashboard/app routes. On public hosts (team subdomains, custom domains) they redirect to the root. */
+/** Dashboard/app routes. On public hosts (workspace subdomains, custom domains) they redirect to the root. */
 export const PUBLIC_HOST_APP_ROUTES = [
   '/dashboard',
   '/settings',
   '/reports',
   '/feedback',
   '/help',
-  '/products',
+  '/workspace',
+  '/project',
   '/login',
   '/signup',
   '/auth',
@@ -28,7 +29,8 @@ export const PROTECTED_ROUTES = [
   '/reports',
   '/feedback',
   '/help',
-  '/products',
+  '/workspace',
+  '/project',
   '/onboarding',
   '/submissions',
   '/support',

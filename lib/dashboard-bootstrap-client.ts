@@ -12,10 +12,10 @@ export type DashboardBootstrap = {
     }
   }
   projectContext?: {
-    organizations?: unknown[]
-    activeOrganization?: Record<string, unknown> | null
-    projects?: unknown[]
-    activeProject?: Record<string, unknown> | null
+    organizations?: Array<{ id: string; name: string; slug?: string }>
+    activeOrganization?: { id: string; name: string; slug?: string } | null
+    projects?: Array<Record<string, any>>
+    activeProject?: Record<string, any> | null
   }
   workspace?: {
     stats?: Record<string, unknown>

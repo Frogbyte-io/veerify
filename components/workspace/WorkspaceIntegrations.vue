@@ -1,5 +1,5 @@
 <template>
-  <Card id="integrations" class="scroll-mt-20" data-testid="marketing-settings-integrations">
+  <Card id="integrations" class="scroll-mt-20" data-testid="workspace-settings-integrations">
     <CardHeader>
       <CardTitle role="heading" aria-level="2">Integration status</CardTitle>
       <CardDescription>What works on this installation, and what to set up for the rest.</CardDescription>
@@ -28,7 +28,7 @@
 
       <div v-else-if="error" class="text-center py-4" data-testid="marketing-integrations-error">
         <p class="text-sm text-destructive mb-2">{{ error }}</p>
-        <Button variant="outline" size="sm" @click="$emit('retry')">Retry</Button>
+        <Button variant="outline" size="sm" @click="load">Retry</Button>
       </div>
 
       <ul v-else class="min-w-0 divide-y rounded-lg border">
@@ -89,21 +89,18 @@ import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
 import { toast } from 'vue-sonner'
 
 export default {
-  name: 'MarketingSettingsIntegrations',
+  name: 'WorkspaceIntegrations',
 
   props: {
-    integrations: { type: Array, default: () => [] },
-    isLoading: { type: Boolean, default: false },
-    error: { type: String, default: null },
-    teamId: { type: String, default: null },
-    /** Team admins only: tests use the team's keys and count against a rate limit */
+    /** Workspace owners/admins only: tests use the workspace's keys and count against a rate limit */
     canManage: { type: Boolean, default: false },
   },
 
-  emits: ['retry', 'refresh'],
-
   data() {
     return {
+      integrations: [],
+      isLoading: true,
+      error: null,
       results: {},
       running: {},
       runningAll: false,
@@ -116,7 +113,25 @@ export default {
     },
   },
 
+  mounted() {
+    this.load()
+  },
+
   methods: {
+    async load(silent = false) {
+      if (silent !== true) this.isLoading = true
+      this.error = null
+      try {
+        const response = await $fetch('/api/workspace/integrations')
+        const data = response?.data
+        this.integrations = Array.isArray(data) ? data : data?.integrations || []
+      } catch (err) {
+        this.error = apiErrorMessage(err, 'Failed to load integration status')
+      } finally {
+        this.isLoading = false
+      }
+    },
+
     isNotConfigured(result) {
       return result?.notConfigured === true
     },
@@ -144,7 +159,7 @@ export default {
     async runTest(id) {
       this.running = { ...this.running, [id]: true }
       try {
-        const response = await $fetch(`/api/marketing/teams/${this.teamId}/integrations/${id}/test`, {
+        const response = await $fetch(`/api/workspace/integrations/${id}/test`, {
           method: 'POST',
         })
         const result = response?.data
@@ -153,8 +168,8 @@ export default {
           result.detail = 'not configured'
         }
         this.results = { ...this.results, [id]: result }
-        // A team key may have been marked valid or invalid
-        if (result?.source === 'team') this.$emit('refresh')
+        // A workspace key may have been marked valid or invalid
+        if (result?.source === 'team' || result?.source === 'workspace') this.load(true)
         return true
       } catch (err) {
         this.results = {
@@ -168,13 +183,13 @@ export default {
     },
 
     async testOne(id) {
-      if (this.busy || !this.teamId) return
+      if (this.busy) return
       await this.runTest(id)
     },
 
-    // Sequential: keeps load low and stays inside the per-team hourly limit
+    // Sequential: keeps load low and stays inside the per-workspace hourly limit
     async testAll() {
-      if (this.busy || !this.teamId) return
+      if (this.busy) return
       this.runningAll = true
       let passed = 0
       let failed = 0

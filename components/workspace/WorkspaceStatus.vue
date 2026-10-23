@@ -68,7 +68,7 @@
 
 <script>
 export default {
-  name: 'SettingsStatus',
+  name: 'WorkspaceStatus',
   data() {
     return {
       isLoading: true,

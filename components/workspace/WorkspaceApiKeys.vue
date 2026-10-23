@@ -1,5 +1,5 @@
 <template>
-  <Card id="keys" class="scroll-mt-20" data-testid="marketing-settings-keys">
+  <Card id="keys" class="scroll-mt-20" data-testid="workspace-settings-keys">
     <CardHeader>
       <CardTitle role="heading" aria-level="2">API keys</CardTitle>
       <CardDescription>
@@ -24,7 +24,7 @@
           class="rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
           data-testid="marketing-keys-read-only"
         >
-          You can see which keys are set, but only team admins can add, replace or remove them.
+          You can see which keys are set. Only workspace owners and admins can change this.
         </p>
         <p
           v-if="!secretsConfigured"
@@ -196,13 +196,9 @@ const PROVIDERS = [
 ]
 
 export default {
-  name: 'MarketingSettingsApiKeys',
+  name: 'WorkspaceApiKeys',
 
   mixins: [inlineFormMixin],
-
-  props: {
-    teamId: { type: String, required: true },
-  },
 
   emits: ['changed'],
 
@@ -223,9 +219,6 @@ export default {
   },
 
   watch: {
-    teamId() {
-      this.load()
-    },
     editing(id) {
       if (id) this.inlineOpen(`key-${id}`, () => this.cancelEdit())
       else this.inlineClose()
@@ -273,7 +266,7 @@ export default {
       this.isLoading = true
       this.error = null
       try {
-        const response = await $fetch(`/api/marketing/teams/${this.teamId}/credentials`)
+        const response = await $fetch('/api/workspace/api-keys')
         const data = response?.data || {}
         this.credentials = data.credentials || []
         this.canManage = data.canManage === true
@@ -303,9 +296,9 @@ export default {
       this.busy = id
       this.rowError = { ...this.rowError, [id]: null }
       try {
-        const response = await $fetch(`/api/marketing/teams/${this.teamId}/credentials/${id}`, {
+        const response = await $fetch(`/api/workspace/api-keys/${id}`, {
           method: 'PUT',
-          body: { apiKey: this.keyDraft.trim() },
+          body: { key: this.keyDraft.trim() },
         })
         const status = response?.data?.credential?.status
         this.editing = null
@@ -331,7 +324,7 @@ export default {
       this.busy = id
       this.rowError = { ...this.rowError, [id]: null }
       try {
-        await $fetch(`/api/marketing/teams/${this.teamId}/credentials/${id}`, {
+        await $fetch(`/api/workspace/api-keys/${id}`, {
           method: 'PATCH',
           body: { monthlyBudgetCents: cents },
         })
@@ -348,7 +341,7 @@ export default {
       this.busy = id
       this.rowError = { ...this.rowError, [id]: null }
       try {
-        await $fetch(`/api/marketing/teams/${this.teamId}/credentials/${id}`, { method: 'DELETE' })
+        await $fetch(`/api/workspace/api-keys/${id}`, { method: 'DELETE' })
         toast.success('Key removed')
         await this.load()
         this.$emit('changed')

@@ -160,7 +160,7 @@ export default {
         if (!raw || /not found/i.test(raw)) {
           this.errorMessage = 'This invitation link is invalid or has already been used.'
         } else if (/expired/i.test(raw)) {
-          this.errorMessage = 'This invitation has expired. Ask your team to send a new one.'
+          this.errorMessage = 'This invitation has expired. Ask the workspace admin to send a new one.'
         } else if (/email/i.test(raw)) {
           this.errorMessage = 'This invitation was sent to a different email address.'
         } else {
@@ -179,17 +179,14 @@ export default {
         })
 
         if (this.invitationSummary?.organizationId) {
+          // Server-side activation also picks a project the new member can open.
+          await $fetch('/api/organizations/active', {
+            method: 'POST',
+            body: { organizationId: this.invitationSummary.organizationId },
+          }).catch(() => null)
           await authClient.organization.setActive({
             organizationId: this.invitationSummary.organizationId,
           })
-          clearDashboardBootstrapCache()
-        }
-
-        if (this.invitationSummary?.teamId) {
-          await $fetch('/api/teams/active', {
-            method: 'POST',
-            body: { teamId: this.invitationSummary.teamId },
-          }).catch(() => null)
           clearDashboardBootstrapCache()
         }
 

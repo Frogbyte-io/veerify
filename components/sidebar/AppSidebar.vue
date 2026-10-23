@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import TeamSwitcher from './TeamSwitcher.vue'
+import ProjectSwitcher from './ProjectSwitcher.vue'
 import NavUser from './NavUser.vue'
 import { useSidebar } from '~/components/ui/sidebar'
-import { DEFAULT_TEAM_MODULES } from '~/lib/modules'
-import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups } from '~/lib/sidebar-nav'
+import type { ModuleSettings } from '~/lib/modules'
+import { SIDEBAR_NAV_GROUPS, getVisibleNavGroups, showProductSubItems } from '~/lib/sidebar-nav'
 
 interface SidebarProps {
   side?: 'left' | 'right'
@@ -103,13 +103,13 @@ function handleResizeHandleClick() {
 
 onMounted(() => {
   restoreSidebarWidth()
-  void loadTeamModules()
+  void loadActiveProject()
 
   if (import.meta.client) {
-    // Module settings are per team, so both a team switch and a Tools-tab
+    // Tools are switched per project, so both a project switch and a Tools-tab
     // toggle change what this sidebar should render.
-    window.addEventListener('veerify:active-team-changed', loadTeamModules)
-    window.addEventListener('veerify:team-modules-changed', loadTeamModules)
+    window.addEventListener('veerify:active-project-changed', loadActiveProject)
+    window.addEventListener('veerify:project-modules-changed', loadActiveProject)
   }
 })
 
@@ -118,71 +118,137 @@ onBeforeUnmount(() => {
   stopSidebarResize()
 
   if (import.meta.client) {
-    window.removeEventListener('veerify:active-team-changed', loadTeamModules)
-    window.removeEventListener('veerify:team-modules-changed', loadTeamModules)
+    window.removeEventListener('veerify:active-project-changed', loadActiveProject)
+    window.removeEventListener('veerify:project-modules-changed', loadActiveProject)
   }
 })
 
-// Shared state set by TeamSwitcher — null = loading, true = has org, false = personal account
+// Shared state set by ProjectSwitcher — null = loading, true = has org, false = personal account
 const hasActiveOrganization = useState<boolean | null>('hasActiveOrganization', () => null)
 
-// Per-team module enablement (delta D-31). Defaults match the table's column
-// defaults, so the sidebar renders correctly for a team that has never opened
-// the Tools tab and therefore has no row.
-const teamModules = ref({ ...DEFAULT_TEAM_MODULES })
-
-async function loadTeamModules() {
-  if (!import.meta.client) return
-  try {
-    const activeTeam = await $fetch<{ data?: { id?: string } }>('/api/teams/active')
-    const teamId = activeTeam?.data?.id
-    if (!teamId) return
-
-    const response = await $fetch<{ data?: { modules?: Record<string, boolean> } }>(`/api/teams/${teamId}/modules`)
-    if (response?.data?.modules) {
-      teamModules.value = { ...teamModules.value, ...response.data.modules }
-    }
-  } catch {
-    // Keep defaults — a failed lookup should not blank the navigation.
+type ProductSummary = { id: string; name: string; slug: string }
+type ActiveProjectResponse = {
+  data?: {
+    project?: { id?: string; role?: 'admin' | 'member' }
+    organization?: { role?: string }
+    products?: ProductSummary[]
+    modules?: Partial<ModuleSettings>
   }
 }
 
+// Nothing is assumed on until the active project has loaded: tools stay hidden rather than
+// flashing on and off, and the "Add tool" entry only appears for a known project admin.
+const projectModules = ref<Partial<ModuleSettings>>({})
+const products = ref<ProductSummary[]>([])
+const isProjectAdmin = ref(false)
+const marketingOpen = ref(import.meta.client ? window.location.pathname.startsWith('/marketing') : false)
+
+async function loadActiveProject() {
+  if (!import.meta.client) return
+  try {
+    const response = await ($fetch as unknown as (url: string) => Promise<ActiveProjectResponse>)(
+      '/api/projects/active'
+    )
+    const context = response?.data
+    if (!context) return
+    projectModules.value = context.modules || {}
+    products.value = context.products || []
+    const orgRole = context.organization?.role
+    isProjectAdmin.value = context.project?.role === 'admin' || orgRole === 'owner' || orgRole === 'admin'
+  } catch {
+    // 409 = no project yet (ProjectSwitcher routes to onboarding); other failures keep the last state.
+    projectModules.value = {}
+    products.value = []
+    isProjectAdmin.value = false
+  }
+}
+
+const visibilityContext = computed(() => ({
+  hasActiveOrganization: hasActiveOrganization.value,
+  modules: projectModules.value,
+  productCount: products.value.length,
+  isProjectAdmin: isProjectAdmin.value,
+}))
+
 // One rule decides every group and item; see lib/sidebar-nav.ts.
-const visibleGroups = computed(() =>
-  getVisibleNavGroups(SIDEBAR_NAV_GROUPS, {
-    hasActiveOrganization: hasActiveOrganization.value,
-    modules: teamModules.value,
-  })
-)
+const visibleGroups = computed(() => getVisibleNavGroups(SIDEBAR_NAV_GROUPS, visibilityContext.value))
+const hasProductSubItems = computed(() => showProductSubItems(visibilityContext.value))
+
+function productUrl(base: string, product: ProductSummary) {
+  return `${base}?product=${encodeURIComponent(product.slug)}`
+}
 </script>
 
 <template>
   <Sidebar data-testid="app-sidebar" :style="sidebarStyle" v-bind="props">
     <SidebarHeader>
-      <TeamSwitcher />
+      <ProjectSwitcher />
     </SidebarHeader>
 
     <SidebarContent
       class="pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)] group-data-[collapsible=icon]:[mask-image:none]"
     >
       <SidebarGroup v-for="group in visibleGroups" :key="group.id" :data-testid="group.testId">
-        <SidebarGroupLabel>{{ group.label }}</SidebarGroupLabel>
-        <SidebarGroupContent>
+        <!-- Collapsible group (Marketing) -->
+        <template v-if="group.collapsible">
           <SidebarMenu>
-            <SidebarMenuItem v-for="item in group.items" :key="item.url">
+            <SidebarMenuItem>
               <SidebarMenuButton
-                as-child
-                :tooltip="item.title"
+                :tooltip="group.label"
+                :aria-expanded="marketingOpen"
                 class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                @click="marketingOpen = !marketingOpen"
               >
-                <NuxtLink :to="item.url" prefetch-on="interaction">
-                  <Icon :name="item.icon" class="!size-5 shrink-0" />
-                  <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
-                </NuxtLink>
+                <Icon :name="group.icon || 'lucide:folder'" class="!size-5 shrink-0" />
+                <span class="group-data-[collapsible=icon]:hidden">{{ group.label }}</span>
+                <Icon
+                  name="lucide:chevron-right"
+                  class="ml-auto size-4 transition-transform group-data-[collapsible=icon]:hidden"
+                  :class="marketingOpen ? 'rotate-90' : ''"
+                />
               </SidebarMenuButton>
+              <SidebarMenuSub v-if="marketingOpen">
+                <SidebarMenuSubItem v-for="item in group.items" :key="item.url">
+                  <SidebarMenuSubButton as-child>
+                    <NuxtLink :to="item.url" prefetch-on="interaction">
+                      <span>{{ item.title }}</span>
+                    </NuxtLink>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              </SidebarMenuSub>
             </SidebarMenuItem>
           </SidebarMenu>
-        </SidebarGroupContent>
+        </template>
+
+        <template v-else>
+          <SidebarGroupLabel>{{ group.label }}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem v-for="item in group.items" :key="item.url">
+                <SidebarMenuButton
+                  as-child
+                  :tooltip="item.title"
+                  class="group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:!size-10 group-data-[collapsible=icon]:!p-2.5"
+                >
+                  <NuxtLink :to="item.url" prefetch-on="interaction">
+                    <Icon :name="item.icon" class="!size-5 shrink-0" />
+                    <span class="group-data-[collapsible=icon]:hidden">{{ item.title }}</span>
+                  </NuxtLink>
+                </SidebarMenuButton>
+                <!-- Per-product boards: only when the project has more than one product -->
+                <SidebarMenuSub v-if="item.productSubItems && hasProductSubItems">
+                  <SidebarMenuSubItem v-for="product in products" :key="product.id">
+                    <SidebarMenuSubButton as-child>
+                      <NuxtLink :to="productUrl(item.url, product)" prefetch-on="interaction">
+                        <span>{{ product.name }}</span>
+                      </NuxtLink>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                </SidebarMenuSub>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </template>
       </SidebarGroup>
     </SidebarContent>
 
