@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  APP_KEY_PREFIX,
+  deriveTitle,
+  generateAppKey,
+  hashAppKey,
+  readBearerAppKey,
+  requireAppKey,
+  toFeedbackType,
+} from '../server/utils/app-keys'
+
 const state = vi.hoisted(() => ({ row: null as Record<string, unknown> | null }))
 
 vi.mock('~/server/database/drizzle', () => ({
@@ -11,16 +21,6 @@ vi.mock('~/server/database/drizzle', () => ({
     })),
   },
 }))
-
-import {
-  APP_KEY_PREFIX,
-  deriveTitle,
-  generateAppKey,
-  hashAppKey,
-  readBearerAppKey,
-  requireAppKey,
-  toFeedbackType,
-} from '../server/utils/app-keys'
 
 function eventWith(authorization?: string) {
   return { node: { req: { headers: authorization === undefined ? {} : { authorization } } } } as never
