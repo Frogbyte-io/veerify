@@ -6,6 +6,8 @@ import { getAnonSession } from '~/server/utils/anonymous-session'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, githubIssueLink, project, vote } from '~/server/database/schema/feedback'
+import { teamMember } from '~/server/database/schema/auth'
+import { redactClientMetadata } from '~/server/utils/feedback-source'
 
 const listFeedbackQuerySchema = z
   .object({
@@ -75,6 +77,7 @@ export default defineEventHandler(async (event) => {
     .select({
       feedback: feedback,
       category: feedbackCategory,
+      projectTeamId: project.teamId,
       project: {
         id: project.id,
         name: project.name,
@@ -94,6 +97,16 @@ export default defineEventHandler(async (event) => {
     .orderBy(desc(feedback.isPinned), orderFn(sortColumn))
     .limit(query.limit)
     .offset(offset)
+
+  // metadata.client is team-only: redact it unless the caller belongs to the item's project team.
+  const memberTeamIds = new Set<string>()
+  if (session?.user && items.length > 0) {
+    const memberships = await db
+      .select({ teamId: teamMember.teamId })
+      .from(teamMember)
+      .where(eq(teamMember.userId, session.user.id))
+    memberships.forEach((m) => memberTeamIds.add(m.teamId))
+  }
 
   // Check which items the viewer has voted on (authenticated user or anonymous session)
   const voterVoteMap: Map<string, 'upvote' | 'downvote'> = new Map()
@@ -116,6 +129,10 @@ export default defineEventHandler(async (event) => {
 
   const result = items.map((item) => ({
     ...item.feedback,
+    metadata: redactClientMetadata(
+      item.feedback.metadata,
+      Boolean(item.projectTeamId && memberTeamIds.has(item.projectTeamId))
+    ),
     category: item.category,
     project: item.project,
     githubIssue:

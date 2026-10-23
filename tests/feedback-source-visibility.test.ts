@@ -4,6 +4,7 @@ import { redactClientMetadata } from '../server/utils/feedback-source'
 const state = vi.hoisted(() => ({
   results: [] as unknown[],
   teamMember: false,
+  anonymous: false,
   feedbackRow: {} as Record<string, unknown>,
 }))
 
@@ -16,7 +17,7 @@ vi.mock('~/server/database/drizzle', () => {
   return { db: chain }
 })
 vi.mock('~/server/utils/auth-middleware', () => ({
-  optionalAuth: vi.fn(async () => ({ user: { id: 'u1', email: 'u@x.io' } })),
+  optionalAuth: vi.fn(async () => (state.anonymous ? null : { user: { id: 'u1', email: 'u@x.io' } })),
 }))
 vi.mock('~/server/utils/anonymous-session', () => ({ getAnonSession: vi.fn(async () => null) }))
 vi.mock('~/server/utils/project-access', () => ({
@@ -27,7 +28,14 @@ vi.mock('~/server/utils/project-access', () => ({
   resolvePublicProjectByTeam: vi.fn(async () => ({ project: { id: 'p1' } })),
 }))
 vi.mock('~/server/utils/validation', () => ({
-  validateQuery: vi.fn(() => ({ page: 1, limit: 20, sortBy: 'voteCount', sortOrder: 'desc' })),
+  validateQuery: vi.fn(() => ({
+    page: 1,
+    limit: 20,
+    sortBy: 'voteCount',
+    sortOrder: 'desc',
+    projectIds: [],
+    projectId: 'p1',
+  })),
 }))
 
 type Handler = (event: unknown) => Promise<{ data: any }>
@@ -55,6 +63,7 @@ describe('feedback source visibility in endpoints', () => {
     vi.stubGlobal('createError', (i: Record<string, unknown>) => Object.assign(new Error('err'), i))
     vi.stubGlobal('getRouterParam', (_e: unknown, name: string) => (name === 'id' ? 'fb-1' : 'x'))
     state.results = []
+    state.anonymous = false
     state.feedbackRow = {
       id: 'fb-1',
       projectId: 'p1',
@@ -116,5 +125,41 @@ describe('feedback source visibility in endpoints', () => {
     expect(items[0].sourceLabel).toBe('Dot X')
     expect(items[0].metadata).toBeUndefined()
     expect(items[1].sourceLabel).toBeNull()
+  })
+
+  describe('dashboard list endpoint', () => {
+    async function list(opts: { anonymous?: boolean; memberTeamIds?: string[] }) {
+      state.anonymous = Boolean(opts.anonymous)
+      const row = {
+        feedback: state.feedbackRow,
+        category: null,
+        projectTeamId: 't1',
+        project: { id: 'p1' },
+        githubIssue: null,
+      }
+      state.results = opts.anonymous
+        ? [[{ count: 1 }], [row], []]
+        : [[{ count: 1 }], [row], (opts.memberTeamIds ?? []).map((teamId) => ({ teamId })), []]
+      const handler = (await import('../server/api/feedback/index.get')).default as unknown as Handler
+      return (await handler({})).data.items[0]
+    }
+
+    it('redacts metadata.client for anonymous callers', async () => {
+      const item = await list({ anonymous: true })
+      expect(item.metadata.client).toBeUndefined()
+      expect(item.metadata.feedbackType).toBe('bug_report')
+      expect(item.sourceLabel).toBe('Dot X')
+      expect(item.projectTeamId).toBeUndefined()
+    })
+
+    it("keeps metadata.client for a member of the item's project team", async () => {
+      const item = await list({ memberTeamIds: ['t1'] })
+      expect(item.metadata.client).toEqual(client)
+    })
+
+    it('redacts metadata.client for a logged-in non-member', async () => {
+      const item = await list({ memberTeamIds: ['other-team'] })
+      expect(item.metadata.client).toBeUndefined()
+    })
   })
 })
