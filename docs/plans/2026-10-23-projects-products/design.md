@@ -160,7 +160,7 @@ type ActiveProjectContext = {
 - `requireMarketingAccess` → `{ project, organizationId }` (any project member, marketing switched on for the project). "Marketing admin" = project admin. Data/credential admin = **org owner/admin**.
 - Project routes keep `/api/marketing/projects/[projectId]/**`.
 - Workspace routes (replacing `/api/marketing/teams/[teamId]/**`), org owner/admin to write, any org member to read, active org via `requireAuthWithOrganization`:
-  - `GET /api/workspace/api-keys` · `PUT /api/workspace/api-keys/[provider]` `{ key }` · `PATCH /api/workspace/api-keys/[provider]` `{ monthlyBudgetCents }` · `DELETE /api/workspace/api-keys/[provider]`
+  - `GET /api/workspace/api-keys` · `PUT /api/workspace/api-keys/[provider]` `{ apiKey }` · `PATCH /api/workspace/api-keys/[provider]` `{ monthlyBudgetCents }` · `DELETE /api/workspace/api-keys/[provider]`
   - `GET|PUT /api/workspace/data-consent`
   - `GET /api/workspace/integrations` · `POST /api/workspace/integrations/[id]/test`
   - `POST /api/workspace/erase-contact`

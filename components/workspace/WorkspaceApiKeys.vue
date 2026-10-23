@@ -298,7 +298,7 @@ export default {
       try {
         const response = await $fetch(`/api/workspace/api-keys/${id}`, {
           method: 'PUT',
-          body: { key: this.keyDraft.trim() },
+          body: { apiKey: this.keyDraft.trim() },
         })
         const status = response?.data?.credential?.status
         this.editing = null
