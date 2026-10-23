@@ -171,7 +171,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  if (updatedOrg.slug !== org.slug) {
+  if (updatedOrg.slug && updatedOrg.slug !== org.slug) {
     await registerOrgPublicDomainBestEffort(updatedOrg.slug, { organizationId: updatedOrg.id })
   }
 

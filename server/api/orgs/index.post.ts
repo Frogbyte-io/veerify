@@ -149,7 +149,9 @@ export default defineEventHandler(async (event) => {
     return org
   })
 
-  await registerOrgPublicDomainBestEffort(createdOrganization.slug, { organizationId: createdOrganization.id })
+  if (createdOrganization.slug) {
+    await registerOrgPublicDomainBestEffort(createdOrganization.slug, { organizationId: createdOrganization.id })
+  }
 
   setResponseStatus(event, 201)
 
