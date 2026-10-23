@@ -616,8 +616,10 @@ export default {
   },
   watch: {
     project: {
-      handler(newProject) {
+      handler(newProject, oldProject) {
         const settings = newProject.settings || {}
+        // Background reloads hand us an identical project; keep the user's pending edits and files then.
+        if (oldProject && JSON.stringify(oldProject.settings || {}) === JSON.stringify(settings)) return
         this.form.accentColor = settings.accentColor || '#3b82f6'
         this.form.logoUrl = settings.logoUrl || ''
         this.form.bannerUrl = settings.bannerUrl || ''
