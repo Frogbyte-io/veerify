@@ -1,8 +1,12 @@
 import { parse } from 'tldts'
-import { normalizeDomainHostname, type DomainProviderResult } from './provider'
+import { normalizeDomainHostname, type DomainProvider, type DomainProviderResult } from './provider'
+import { resolveDomainProviderName, type DomainProviderName } from './provider-name'
+import { CloudflareSaasDomainProvider } from './providers/cloudflare-saas'
 import { StaticCnameDomainProvider } from './providers/static-cname'
 import { VercelDomainProvider } from './providers/vercel'
 import { createLogger } from '../../utils/logger'
+
+export { resolveDomainProviderName }
 
 type ProjectSettings = Record<string, unknown>
 
@@ -116,24 +120,35 @@ export function buildDomainSettingsPatch(
   return nextSettings
 }
 
-function getDomainProvider() {
-  const config = useRuntimeConfig()
-  const provider = String(config.domainProvider || 'static-cname')
-    .trim()
-    .toLowerCase()
-
-  if (provider === 'vercel') {
-    return new VercelDomainProvider()
-  }
-
+export function createDomainProvider(name: DomainProviderName): DomainProvider {
+  if (name === 'vercel') return new VercelDomainProvider()
+  if (name === 'cloudflare-saas') return new CloudflareSaasDomainProvider()
   return new StaticCnameDomainProvider()
 }
 
+function getDomainProvider() {
+  return createDomainProvider(getDomainProviderName())
+}
+
 function getDomainProviderName() {
-  const config = useRuntimeConfig()
-  return String(config.domainProvider || 'static-cname')
-    .trim()
-    .toLowerCase()
+  return resolveDomainProviderName(useRuntimeConfig().domainProvider)
+}
+
+/**
+ * Decide whether the "domain verified" email should go out after a check.
+ * Never for a domain that was already active (e.g. a pre-existing static-cname
+ * row adopted by a new provider), nor when it was already sent for this domain.
+ */
+export function shouldSendDomainVerifiedEmail(input: {
+  verified: boolean
+  domain: string
+  settings: ProjectSettings
+  previousStatus?: string | null
+}): boolean {
+  if (!input.verified) return false
+  if (input.settings.domainVerifiedEmailSentFor === input.domain) return false
+  if (input.previousStatus === 'active' || input.settings.domainStatus === 'active') return false
+  return true
 }
 
 export function buildTeamSubdomainHostname(teamSlug: string, appDomain: string) {
@@ -173,26 +188,31 @@ export async function registerTeamPublicDomainBestEffort(teamSlug: string, conte
   }
 }
 
+type ProviderRef = { providerDomainId?: string | null }
+
 export async function registerProjectCustomDomain(hostname: string) {
   return getDomainProvider().registerProjectDomain({
     hostname: normalizeDomainHostname(hostname),
   })
 }
 
-export async function getProjectCustomDomainStatus(hostname: string) {
+export async function getProjectCustomDomainStatus(hostname: string, ref: ProviderRef = {}) {
   return getDomainProvider().getProjectDomainStatus({
     hostname: normalizeDomainHostname(hostname),
+    providerDomainId: ref.providerDomainId,
   })
 }
 
-export async function verifyProjectCustomDomain(hostname: string) {
+export async function verifyProjectCustomDomain(hostname: string, ref: ProviderRef = {}) {
   return getDomainProvider().verifyProjectDomain({
     hostname: normalizeDomainHostname(hostname),
+    providerDomainId: ref.providerDomainId,
   })
 }
 
-export async function removeProjectCustomDomain(hostname: string) {
+export async function removeProjectCustomDomain(hostname: string, ref: ProviderRef = {}) {
   return getDomainProvider().removeProjectDomain({
     hostname: normalizeDomainHostname(hostname),
+    providerDomainId: ref.providerDomainId,
   })
 }

@@ -20,13 +20,21 @@ export interface DomainProviderResult {
   expected: string | null
   resolvedTo: string[]
   message: string | null
+  /** Provider-side id (e.g. Cloudflare custom hostname id), persisted to domain.provider_domain_id. */
+  providerDomainId?: string | null
+}
+
+export interface DomainProviderInput {
+  hostname: string
+  /** Stored provider id, when known. Providers fall back to the hostname. */
+  providerDomainId?: string | null
 }
 
 export interface DomainProvider {
-  registerProjectDomain(input: { hostname: string }): Promise<DomainProviderResult>
-  getProjectDomainStatus(input: { hostname: string }): Promise<DomainProviderResult>
-  verifyProjectDomain(input: { hostname: string }): Promise<DomainProviderResult>
-  removeProjectDomain(input: { hostname: string }): Promise<void>
+  registerProjectDomain(input: DomainProviderInput): Promise<DomainProviderResult>
+  getProjectDomainStatus(input: DomainProviderInput): Promise<DomainProviderResult>
+  verifyProjectDomain(input: DomainProviderInput): Promise<DomainProviderResult>
+  removeProjectDomain(input: DomainProviderInput): Promise<void>
 }
 
 export function normalizeDomainHostname(hostname: string): string {

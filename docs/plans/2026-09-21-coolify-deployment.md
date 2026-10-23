@@ -103,17 +103,15 @@ The latter is an alternative scheduler, not needed for this initial single-proce
 2. **Domains:** configure dashboard, root/public board, and a team subdomain in Coolify. A wildcard
    DNS record alone does not install wildcard routing or a certificate; configure and test both.
    If wildcard TLS is chosen, supply the DNS challenge configuration appropriate to the DNS provider.
-3. **Customer domains:** `static-cname` verifies DNS but does not provision Coolify routes. The
-   existing Caddy `on_demand_tls` + `/api/system/tls-ask` mechanism will not run behind a normal
-   Coolify proxy. For staging, register one test customer hostname manually in Coolify and verify it
-   through the app. Before production, inventory every existing customer hostname and provision
-   its route/certificate. Automated onboarding needs a separate reviewed Coolify domain adapter,
-   or a dedicated ingress design preserving Caddy's strict issuance gate. Do not mark automatic
-   customer-domain onboarding ready just because a manually registered hostname works.
+3. **Customer domains:** handled by the `cloudflare-saas` domain provider (Cloudflare for SaaS on the
+   `veerify.io` zone), not by Coolify routes or Caddy `on_demand_tls`. See
+   [Customer domains with Cloudflare for SaaS](#customer-domains-with-cloudflare-for-saas). The Caddy
+   `/api/system/tls-ask` gate belongs to the non-Cloudflare self-hosted path and is unused behind the
+   tunnel; leave it as is.
 4. **Runtime config:** set Nuxt's `NUXT_PUBLIC_APP_DOMAIN`, `NUXT_PUBLIC_DASHBOARD_DOMAIN`, and
    `NUXT_PUBLIC_CNAME_TARGET` alongside their APP/CNAME counterparts. Some consumers use runtime
    config and others process environment. Verify compiled/browser config has staging hosts, not
-   Docker build defaults. Set `NUXT_DOMAIN_PROVIDER=static-cname` as well as `DOMAIN_PROVIDER`.
+   Docker build defaults. Set `NUXT_DOMAIN_PROVIDER` (`static-cname` until the Cloudflare rollout below, then `cloudflare-saas`) as well as `DOMAIN_PROVIDER`.
    Storage and mail also require the runtime overrides below; unprefixed variables referenced in
    `nuxt.config.ts` are build-time defaults, not automatic production runtime overrides. Do not bake
    credentials into the image to work around this.
@@ -135,6 +133,76 @@ The latter is an alternative scheduler, not needed for this initial single-proce
 See [Coolify domain configuration](https://coolify.io/docs/core/networking/domains) for domain-to-port
 routing. The public URL uses HTTPS normally; the configured port selects the container's port 3000.
 
+## Customer domains with Cloudflare for SaaS
+
+With `DOMAIN_PROVIDER=cloudflare-saas`, saving a custom domain on a project registers it as a
+Cloudflare Custom Hostname on the `veerify.io` zone (`POST /zones/{zone_id}/custom_hostnames`, HTTP
+DCV, DV certificate). Cloudflare issues and renews the certificate at its edge; Veerify never holds
+customer keys.
+
+- **Customer DNS:** one record, `CNAME feedback.acme.com -> cname.veerify.io` (`CNAME_TARGET`). That
+  name is the zone's **fallback origin**, which must already be set in the zone's Cloudflare for SaaS
+  settings, proxied, and pointing at the tunnel. HTTP DCV completes on its own once the CNAME
+  resolves. If Cloudflare returns ownership or certificate TXT records they are shown in the domain
+  settings so the customer can pre-validate.
+- **Status:** a domain is `active` only when the Cloudflare hostname status and its certificate status
+  are both `active`. The app serves a custom domain only while its stored status is `active`. The
+  status is refreshed when the owner presses verify in project settings; the stored Cloudflare id is
+  kept in `domain.provider_domain_id` (lookup falls back to the hostname).
+- **Removal:** detaching a domain deletes the custom hostname (already gone counts as success).
+- **Token:** `CLOUDFLARE_API_TOKEN` needs exactly **Zone > SSL and Certificates > Edit**, restricted
+  to the `veerify.io` zone (Zone Resources: Include > Specific zone > veerify.io). Nothing else.
+  `CLOUDFLARE_ZONE_ID` is that zone's id (zone Overview page). Set both as Coolify secrets, plus the
+  runtime overrides `NUXT_CLOUDFLARE_API_TOKEN` and `NUXT_CLOUDFLARE_ZONE_ID`, with
+  `NUXT_DOMAIN_PROVIDER=cloudflare-saas` and `NUXT_PUBLIC_CNAME_TARGET=cname.veerify.io`. The server
+  logs a warning at startup if the provider is selected and either value is missing.
+
+### Operator check: arbitrary Host headers must reach the app
+
+This is a configuration check, not a code change. Cloudflare forwards customer traffic to the
+fallback origin with the customer's hostname still in the `Host` header (for example
+`feedback.acme.com`). The Cloudflare Tunnel public hostname rule for the app, and Coolify's Traefik
+router behind it, must therefore accept and route **any** Host to the Veerify container instead of
+only the known Veerify hostnames. Verify before rollout:
+
+1. In the tunnel config, the rule that serves `cname.veerify.io` forwards to Traefik (or the app
+   service) with no restriction that drops unknown hostnames, and the origin does not rewrite `Host`.
+2. In Coolify, the Veerify application has a catch-all route (or the tunnel targets the app port
+   directly), so a request with `Host: feedback.dotmatrixlabs.com` reaches the app and is not answered
+   with Traefik's 404.
+3. Test it: `curl -sI --resolve feedback.dotmatrixlabs.com:443:<edge-ip> https://feedback.dotmatrixlabs.com/`
+   returns the board, not a 404 from Traefik or a Cloudflare error 1014/1016.
+
+Unknown hostnames are still refused by Cloudflare itself (no custom hostname, no certificate) and by
+the app (no active `domain` row), so a catch-all origin route does not open an issuance relay.
+
+### Rollout
+
+1. Create the API token (permissions above) and note the zone id. Confirm in the Cloudflare dashboard
+   that Cloudflare for SaaS is enabled and the fallback origin is `cname.veerify.io` and **Active**.
+2. Run the Host-header operator check above against the existing working hostname.
+3. With the old provider still selected, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` and run a
+   dry run from a host that can reach the production database:
+   `yarn domains:sync-cloudflare`. Review the report: every row should be `would_adopt` (for example
+   `feedback.dotmatrixlabs.com`, already in Cloudflare) or `would_register`. Hostnames inside the zone
+   itself, such as `feedback.veerify.io`, show as `skipped_zone`: they are ordinary DNS records there,
+   and the provider reports them as active without ever registering or deleting them. Cloudflare hostnames with
+   no Veerify row are listed as orphans for manual review; the script never deletes anything.
+4. Run `yarn domains:sync-cloudflare --apply --i-know-this-is-production`. It records provider
+   `cloudflare-saas` and the Cloudflare id on each row, and marks active domains as already notified so
+   no "domain connected/verified" email is sent. Re-running changes nothing unless a status changed.
+5. Switch the provider: `DOMAIN_PROVIDER=cloudflare-saas` and `NUXT_DOMAIN_PROVIDER=cloudflare-saas`,
+   then redeploy (or restart) the app.
+6. Check `feedback.dotmatrixlabs.com` still loads and its domain settings show Active. Add a new test
+   domain, point its CNAME at `cname.veerify.io`, press verify, and confirm it reaches Active.
+7. Rollback: set both provider variables back to `static-cname` and redeploy. Hostnames stay in
+   Cloudflare and keep serving; no data needs reverting. An active row keeps working because the app
+   only reads the stored status.
+
+An existing row that was not synced is adopted by Cloudflare hostname the first time its owner presses
+verify while `cloudflare-saas` is selected (or registered there if missing), also without sending an
+email for an already active domain.
+
 ## Environment inventory
 
 Secrets belong in Coolify environment settings, never the repository or deployment logs.
@@ -144,7 +212,7 @@ Secrets belong in Coolify environment settings, never the repository or deployme
 | Runtime  | APP_DEPLOYMENT_MODE=self-hosted, NODE_ENV=production, HOST=0.0.0.0, PORT=3000; build must use Node server preset, not a Vercel preset                                                                                                                                                                                                                                 |
 | Database | DATABASE_URL for isolated managed staging DB; same target for app/migrator; SSL trust configured and tested                                                                                                                                                                                                                                                           |
 | Auth     | BETTER_AUTH_URL, BETTER_AUTH_SECRET; optional previous secret; optional MARKETING_EMAIL_HASH_KEY (set once, never rotate); staging-specific GitHub OAuth callback/credentials                                                                                                                                                                                         |
-| Domains  | APP_DOMAIN, APP_DASHBOARD_DOMAIN, CNAME_TARGET, DOMAIN_PROVIDER=static-cname; matching NUXT runtime overrides above                                                                                                                                                                                                                                                   |
+| Domains  | APP_DOMAIN, APP_DASHBOARD_DOMAIN, CNAME_TARGET, DOMAIN_PROVIDER (`static-cname`, then `cloudflare-saas`; with `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ZONE_ID`); matching NUXT runtime overrides above                                                                                                                                                          |
 | Links    | APP_URL as an absolute reachable HTTPS origin for CSAT links                                                                                                                                                                                                                                                                                                          |
 | Redis    | Self-hosted Valkey stack is implemented in `ops/coolify/redis/` but not provisioned. Configure unique Production/Preview names and credentials, set runtime `REDIS_URL` and both Redis drivers, and verify the daily off-server backup/restore path before production. See the [Redis stack design](../superpowers/specs/2026-09-28-coolify-redis-compose-design.md). |
 | Storage  | `NUXT_STORAGE_DRIVER=s3`, `NUXT_STORAGE_BUCKET`, `NUXT_STORAGE_REGION`, `NUXT_STORAGE_ENDPOINT`, `NUXT_STORAGE_ACCESS_KEY_ID`, `NUXT_STORAGE_SECRET_ACCESS_KEY`, `NUXT_STORAGE_FORCE_PATH_STYLE`, `NUXT_STORAGE_PUBLIC_BASE_URL`, `NUXT_UPLOAD_TOKEN_SECRET`                                                                                                          |
@@ -202,7 +270,7 @@ does not exist yet. External cron HTTP calls additionally need `CRON_SECRET`; Ni
       reconnect after restart. Do not rely on notification polling as proof that sockets work.
 - [ ] Observe actual outbound retry, due SLA breach, automation, CSAT, and cleanup effects over
       multiple scheduler ticks; record IDs/counts, never message bodies or secrets. Repeat a restart.
-- [ ] Verify a manually provisioned customer hostname and denial for an unknown hostname.
+- [ ] Verify a customer hostname registered through `cloudflare-saas` (CNAME to `cname.veerify.io`, Cloudflare certificate, board served) and that an unregistered hostname is refused by Cloudflare.
 - [ ] Exercise deployment failure and return to the previous image; prove scheduler ownership is
       singular before, during, and after the switch. Accept a brief maintenance window initially.
 - [ ] Run required harness and affected deployment/behavior tests before opening a deployment PR.

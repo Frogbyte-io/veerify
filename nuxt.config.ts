@@ -110,6 +110,9 @@ export default defineNuxtConfig({
     vercelProjectId: process.env.VERCEL_PROJECT_ID || '',
     vercelTeamId: process.env.VERCEL_TEAM_ID || '',
     vercelTeamSlug: process.env.VERCEL_TEAM_SLUG || '',
+    // Runtime override for prebuilt images: NUXT_CLOUDFLARE_API_TOKEN / NUXT_CLOUDFLARE_ZONE_ID.
+    cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN || '',
+    cloudflareZoneId: process.env.CLOUDFLARE_ZONE_ID || '',
     storageDriver: process.env.STORAGE_DRIVER || 'local',
     storageBucket: process.env.STORAGE_BUCKET || '',
     storageRegion: process.env.STORAGE_REGION || 'auto',
