@@ -3,22 +3,26 @@ import { projectPaths, shellTitle } from '~/lib/public-shell'
 import { isModuleOffMessage } from '~/lib/changelog-editor'
 
 describe('projectPaths', () => {
-  it('addresses sub-pages without the product slug on a custom domain', () => {
-    expect(projectPaths('acme', true)).toEqual({
+  it('addresses sub-pages without the project slug on a custom domain', () => {
+    const paths = projectPaths('acme', true)
+    expect(paths).toMatchObject({
       feedback: '/',
       roadmap: '/roadmap',
       changelog: '/changelog',
       testimonials: '/testimonials',
     })
+    expect(paths.product('decker')).toBe('/decker')
   })
 
   it('prefixes the project slug on workspace subdomains', () => {
-    expect(projectPaths('acme', false)).toEqual({
+    const paths = projectPaths('acme', false)
+    expect(paths).toMatchObject({
       feedback: '/acme',
       roadmap: '/acme/roadmap',
       changelog: '/acme/changelog',
       testimonials: '/acme/testimonials',
     })
+    expect(paths.product('decker')).toBe('/acme/decker')
   })
 })
 

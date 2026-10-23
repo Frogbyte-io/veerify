@@ -8,7 +8,7 @@ const state = vi.hoisted(() => ({
       dashboardDomain: 'app.build.example.test',
     },
   },
-  teamExists: false,
+  orgExists: false,
   projectDomainStatus: null as 'active' | 'dns_required' | null,
 }))
 
@@ -26,7 +26,7 @@ vi.mock('~/server/utils/rate-limit', () => ({
 vi.mock('~/server/utils/project-access', () => ({
   findPublicProjectByDomain: vi.fn(async () =>
     state.projectDomainStatus
-      ? { project: { id: 'project-1' }, team: { id: 'team-1' }, domainStatus: state.projectDomainStatus }
+      ? { project: { id: 'project-1' }, organization: { id: 'org-1' }, domainStatus: state.projectDomainStatus }
       : undefined
   ),
 }))
@@ -37,7 +37,7 @@ vi.mock('~/server/database/drizzle', () => ({
       const chain = {
         from: () => chain,
         where: () => chain,
-        limit: async () => (state.teamExists ? [{ id: 'team-1' }] : []),
+        limit: async () => (state.orgExists ? [{ id: 'org-1' }] : []),
       }
       return chain
     }),
@@ -49,7 +49,7 @@ const handler = (await import('~/server/api/system/tls-ask.get')).default
 describe('TLS ask route live domain configuration', () => {
   beforeEach(() => {
     state.domain = ''
-    state.teamExists = false
+    state.orgExists = false
     state.projectDomainStatus = null
     vi.stubEnv('APP_DOMAIN', '')
     vi.stubEnv('APP_DASHBOARD_DOMAIN', '')
@@ -80,18 +80,18 @@ describe('TLS ask route live domain configuration', () => {
     await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403 })
   })
 
-  it('allows a known team under the live app domain over the build-time app domain', async () => {
+  it('allows a known workspace under the live app domain over the build-time app domain', async () => {
     vi.stubEnv('APP_DOMAIN', 'live.example.test')
     state.domain = 'acme.live.example.test'
-    state.teamExists = true
+    state.orgExists = true
 
     await expect(handler({} as never)).resolves.toEqual({ allowed: true })
   })
 
-  it('rejects a team hostname under the build-time app domain when a live override is configured', async () => {
+  it('rejects a workspace hostname under the build-time app domain when a live override is configured', async () => {
     vi.stubEnv('APP_DOMAIN', 'live.example.test')
     state.domain = 'acme.build.example.test'
-    state.teamExists = true
+    state.orgExists = true
 
     await expect(handler({} as never)).rejects.toMatchObject({ statusCode: 403 })
   })

@@ -1,10 +1,41 @@
+/**
+ * @openapi
+ * /api/public/o/{orgSlug}/{projectSlug}/products/{productSlug}/feedback:
+ *   post:
+ *     tags: [Public]
+ *     summary: Submit feedback to a public product board
+ *     operationId: submitPublicProductFeedback
+ *     parameters:
+ *       - { in: path, name: orgSlug, required: true, schema: { type: string } }
+ *       - { in: path, name: projectSlug, required: true, schema: { type: string } }
+ *       - { in: path, name: productSlug, required: true, schema: { type: string } }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, body]
+ *             properties:
+ *               title: { type: string, maxLength: 200 }
+ *               body: { type: string, maxLength: 5000 }
+ *               categoryId: { type: string, nullable: true }
+ *               authorName: { type: string }
+ *               authorEmail: { type: string }
+ *               attachmentIds: { type: array, items: { type: string } }
+ *     responses:
+ *       201: { description: Feedback created }
+ *       400: { description: Validation failed }
+ *       403: { description: Project is not public }
+ *       404: { description: Workspace, project or product not found }
+ */
 import { z } from 'zod'
 import { eq, and } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody, optionalTrimmedEmail, optionalTrimmedString } from '~/server/utils/validation'
-import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
+import { resolvePublicProject, requirePublicProduct } from '~/server/utils/project-access'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
@@ -26,13 +57,15 @@ const submitFeedbackSchema = z.object({
 export default defineEventHandler(async (event) => {
   await requireRateLimit(event, { ...rateLimits.strict, identifier: 'public-feedback-submit' })
 
-  const teamSlug = getRouterParam(event, 'teamSlug')
+  const orgSlug = getRouterParam(event, 'orgSlug')
   const projectSlug = getRouterParam(event, 'projectSlug')
+  const productSlug = getRouterParam(event, 'productSlug')
 
   const session = await optionalAuth(event)
   const body = await validateBody(event, submitFeedbackSchema)
 
-  const { project: proj } = await resolvePublicProjectByTeam(teamSlug!, projectSlug!)
+  const { project: proj } = await resolvePublicProject(orgSlug!, projectSlug!)
+  const prod = await requirePublicProduct(proj, productSlug!)
 
   if (!session?.user && !body.authorName) {
     throw createError({
@@ -70,6 +103,7 @@ export default defineEventHandler(async (event) => {
       .values({
         id: crypto.randomUUID(),
         projectId: proj.id,
+        productId: prod.id,
         categoryId: body.categoryId || null,
         title: body.title,
         body: body.body,
@@ -98,7 +132,7 @@ export default defineEventHandler(async (event) => {
 
     if (session?.user) {
       await createAutomaticFeedbackLink(tx, {
-        teamId: proj.teamId,
+        projectId: proj.id,
         feedbackId: createdFeedback.id,
         authorUserId: session.user.id,
         createdAt: now,
@@ -121,6 +155,7 @@ export default defineEventHandler(async (event) => {
   setResponseStatus(event, 201)
   return createSuccessResponse({
     id: created.id,
+    productId: created.productId,
     title: created.title,
     status: created.status,
     createdAt: created.createdAt,

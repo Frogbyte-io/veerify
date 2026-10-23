@@ -1,6 +1,6 @@
 /**
  * @openapi
- * /api/public/t/{teamSlug}/{projectSlug}/testimonials:
+ * /api/public/o/{orgSlug}/{projectSlug}/testimonials:
  *   get:
  *     tags: [Public]
  *     summary: Public testimonial wall
@@ -10,7 +10,7 @@
  *     operationId: listPublicTestimonials
  *     parameters:
  *       - in: path
- *         name: teamSlug
+ *         name: orgSlug
  *         required: true
  *         schema: { type: string }
  *       - in: path
@@ -19,29 +19,29 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Testimonials }
- *       403: { description: Product is not public }
- *       404: { description: Team or product not found, or Marketing is off }
+ *       403: { description: Project is not public }
+ *       404: { description: Workspace or project not found, or Marketing is off }
  */
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { testimonial } from '~/server/database/schema/marketing'
-import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
+import { resolvePublicProject } from '~/server/utils/project-access'
 import { isModuleEnabledForProject } from '~/server/utils/public-modules'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 
 const MAX_PUBLIC_TESTIMONIALS = 100
 
 export default defineEventHandler(async (event) => {
-  const teamSlug = getRouterParam(event, 'teamSlug')
+  const orgSlug = getRouterParam(event, 'orgSlug')
   const projectSlug = getRouterParam(event, 'projectSlug')
-  const { team: t, project: proj } = await resolvePublicProjectByTeam(teamSlug!, projectSlug!)
+  const { project: proj } = await resolvePublicProject(orgSlug!, projectSlug!)
 
-  // Marketing must be on for the team and the product; otherwise indistinguishable from none
-  if (!(await isModuleEnabledForProject(t.id, proj.settings as Record<string, unknown> | null, 'marketingEnabled'))) {
+  // Marketing must be on for the project; otherwise indistinguishable from none
+  if (!isModuleEnabledForProject(proj.settings as Record<string, unknown> | null, 'marketingEnabled')) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Testimonials are not available for this product'),
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Testimonials are not available for this project'),
     })
   }
 

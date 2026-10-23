@@ -9,7 +9,7 @@ function isPageRequest(pathname: string) {
 }
 
 export default defineEventHandler(async (event) => {
-  event.context.teamSubdomain = null
+  event.context.publicOrgSlug = null
   event.context.publicProjectSlug = null
 
   const pathname = getRequestURL(event).pathname
@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
 
   const publicProject = await findPublicProjectByDomain(hostWithoutPort)
   if (publicProject) {
-    event.context.teamSubdomain = publicProject.team.slug
+    event.context.publicOrgSlug = publicProject.organization.slug
     event.context.publicProjectSlug = publicProject.project.slug
     return
   }
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   if (hostWithoutPort.endsWith('.' + appDomain)) {
     const subdomain = hostWithoutPort.slice(0, -(appDomain.length + 1))
     if (subdomain && !subdomain.includes('.')) {
-      event.context.teamSubdomain = subdomain
+      event.context.publicOrgSlug = subdomain
       return
     }
   }
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
   if (appDomain === 'localhost' && hostWithoutPort.endsWith('.localhost')) {
     const subdomain = hostWithoutPort.slice(0, -'.localhost'.length)
     if (subdomain && !subdomain.includes('.')) {
-      event.context.teamSubdomain = subdomain
+      event.context.publicOrgSlug = subdomain
       return
     }
   }

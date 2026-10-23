@@ -21,7 +21,7 @@
     "db:seed:clean": "yarn db:migrate && tsx scripts/seed.ts --clean",
     "db:seed:e2e": "tsx scripts/seed.ts --clean && tsx scripts/seed.ts",
     "vercel-build": "yarn db:migrate:deploy && yarn openapi:generate && nuxt build",
-    "domains:ensure-team-subdomains": "tsx scripts/ensure-team-subdomains.ts",
+    "domains:ensure-org-subdomains": "tsx scripts/ensure-org-subdomains.ts",
     "domains:sync-cloudflare": "tsx scripts/sync-cloudflare-custom-hostnames.ts",
     "lint": "eslint .",
     "format:check": "prettier --check .",

@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
 import {
   changelogEntry,
   changelogEntryFeedback,
+  changelogEntryProduct,
   type ChangelogEntryStatus,
   type ChangelogLabel,
 } from '~/server/database/schema/changelog'
-import { feedback } from '~/server/database/schema/feedback'
+import { feedback, product } from '~/server/database/schema/feedback'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { generateUniqueSlug } from './slug'
@@ -33,9 +34,10 @@ function isUniqueViolation(error: unknown) {
   return e?.code === '23505' || e?.cause?.code === '23505'
 }
 
-export function serializeEntry(row: ChangelogEntryRow) {
+export function serializeEntry(row: ChangelogEntryRow, productIds: string[]) {
   return {
     id: row.id,
+    productIds,
     projectId: row.projectId,
     title: row.title,
     slug: row.slug,
@@ -50,6 +52,26 @@ export function serializeEntry(row: ChangelogEntryRow) {
   }
 }
 
+/** Product ids each entry is tagged with. Entries with no tag apply to the whole project. */
+export async function loadEntryProductIds(entryIds: string[]): Promise<Map<string, string[]>> {
+  const byEntry = new Map<string, string[]>()
+  if (entryIds.length === 0) return byEntry
+  const rows = await db
+    .select({ entryId: changelogEntryProduct.entryId, productId: changelogEntryProduct.productId })
+    .from(changelogEntryProduct)
+    .where(inArray(changelogEntryProduct.entryId, entryIds))
+  for (const row of rows) {
+    const list = byEntry.get(row.entryId) ?? []
+    list.push(row.productId)
+    byEntry.set(row.entryId, list)
+  }
+  return byEntry
+}
+
+export async function getEntryProductIds(entryId: string): Promise<string[]> {
+  return (await loadEntryProductIds([entryId])).get(entryId) ?? []
+}
+
 export async function findEntry(projectId: string, entryId: string): Promise<ChangelogEntryRow> {
   const [row] = await db
     .select()
@@ -60,13 +82,19 @@ export async function findEntry(projectId: string, entryId: string): Promise<Cha
   return row
 }
 
+/** Entries tagged with the product, or untagged (applying to the whole project). */
+export function taggedWithOrUntagged(productId: string) {
+  return sql`(exists (select 1 from ${changelogEntryProduct} where ${changelogEntryProduct.entryId} = ${changelogEntry.id} and ${changelogEntryProduct.productId} = ${productId}) or not exists (select 1 from ${changelogEntryProduct} where ${changelogEntryProduct.entryId} = ${changelogEntry.id}))`
+}
+
 export async function listEntries(
   projectId: string,
-  options: { status?: ChangelogEntryStatus; cursor?: string; limit?: number }
+  options: { status?: ChangelogEntryStatus; productId?: string; cursor?: string; limit?: number }
 ) {
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_PAGE_SIZE, 1), 100)
   const conditions = [eq(changelogEntry.projectId, projectId)]
   if (options.status) conditions.push(eq(changelogEntry.status, options.status))
+  if (options.productId) conditions.push(taggedWithOrUntagged(options.productId))
   if (options.cursor) {
     const cursor = decodeListCursor(options.cursor, 'changelog')
     conditions.push(
@@ -92,7 +120,7 @@ export async function listEntries(
 
 /**
  * Throws 400 unless every id is feedback of `projectId`. Prevents linking
- * another product's feedback (and leaking its titles on the public page).
+ * another project's feedback (and leaking its titles on the public page).
  */
 export async function assertFeedbackInProject(projectId: string, feedbackIds: string[]) {
   if (feedbackIds.length === 0) return
@@ -101,7 +129,19 @@ export async function assertFeedbackInProject(projectId: string, feedbackIds: st
     .from(feedback)
     .where(and(eq(feedback.projectId, projectId), inArray(feedback.id, feedbackIds)))
   if (rows.length !== new Set(feedbackIds).size) {
-    httpError(400, 'Bad Request', ErrorCode.VALIDATION_ERROR, 'Linked feedback must belong to this product')
+    httpError(400, 'Bad Request', ErrorCode.VALIDATION_ERROR, 'Linked feedback must belong to this project')
+  }
+}
+
+/** Throws 400 unless every id is a product of `projectId`. */
+export async function assertProductsInProject(projectId: string, productIds: string[]) {
+  if (productIds.length === 0) return
+  const rows = await db
+    .select({ id: product.id })
+    .from(product)
+    .where(and(eq(product.projectId, projectId), inArray(product.id, productIds)))
+  if (rows.length !== new Set(productIds).size) {
+    httpError(400, 'Bad Request', ErrorCode.VALIDATION_ERROR, 'Products must belong to this project')
   }
 }
 
@@ -113,6 +153,15 @@ async function replaceLinkedFeedback(executor: Executor, entryId: string, feedba
     await executor
       .insert(changelogEntryFeedback)
       .values([...new Set(feedbackIds)].map((feedbackId) => ({ entryId, feedbackId })))
+  }
+}
+
+async function replaceEntryProducts(executor: Executor, entryId: string, productIds: string[]) {
+  await executor.delete(changelogEntryProduct).where(eq(changelogEntryProduct.entryId, entryId))
+  if (productIds.length > 0) {
+    await executor
+      .insert(changelogEntryProduct)
+      .values([...new Set(productIds)].map((productId) => ({ entryId, productId })))
   }
 }
 
@@ -130,10 +179,13 @@ export interface EntryInput {
   body?: string
   labels?: ChangelogLabel[]
   feedbackIds?: string[]
+  /** Products the entry applies to; empty/omitted = the whole project */
+  productIds?: string[]
 }
 
 export async function createEntry(projectId: string, authorUserId: string, input: EntryInput) {
   await assertFeedbackInProject(projectId, input.feedbackIds ?? [])
+  await assertProductsInProject(projectId, input.productIds ?? [])
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const slug = await generateUniqueSlug(projectId, input.title)
@@ -158,6 +210,7 @@ export async function createEntry(projectId: string, authorUserId: string, input
           })
           .returning()
         if (input.feedbackIds?.length) await replaceLinkedFeedback(tx, row.id, input.feedbackIds)
+        if (input.productIds?.length) await replaceEntryProducts(tx, row.id, input.productIds)
         return row
       })
     } catch (error) {
@@ -171,6 +224,7 @@ export async function createEntry(projectId: string, authorUserId: string, input
 export async function updateEntry(projectId: string, entryId: string, input: Partial<EntryInput>) {
   await findEntry(projectId, entryId)
   if (input.feedbackIds !== undefined) await assertFeedbackInProject(projectId, input.feedbackIds)
+  if (input.productIds !== undefined) await assertProductsInProject(projectId, input.productIds)
 
   const patch: Partial<typeof changelogEntry.$inferInsert> = { updatedAt: new Date() }
   if (input.title !== undefined) patch.title = input.title
@@ -186,6 +240,7 @@ export async function updateEntry(projectId: string, entryId: string, input: Par
       .returning()
     if (!row) notFound()
     if (input.feedbackIds !== undefined) await replaceLinkedFeedback(tx, entryId, input.feedbackIds)
+    if (input.productIds !== undefined) await replaceEntryProducts(tx, entryId, input.productIds)
     return row
   })
 }

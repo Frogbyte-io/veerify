@@ -1,16 +1,17 @@
 /**
- * Served at `/api/public/t/{teamSlug}/{projectSlug}/changelog.rss`. Nitro
+ * Served at `/api/public/o/{orgSlug}/{projectSlug}/changelog.rss`. Nitro
  * strips only the trailing `.get.ts`, so the `.rss` stays in the route path.
  *
  * @openapi
- * /api/public/t/{teamSlug}/{projectSlug}/changelog.rss:
+ * /api/public/o/{orgSlug}/{projectSlug}/changelog.rss:
  *   get:
  *     tags: [Public]
  *     summary: RSS 2.0 feed of the latest 30 published changelog entries
  *     operationId: getPublicChangelogRss
  *     parameters:
- *       - { in: path, name: teamSlug, required: true, schema: { type: string } }
+ *       - { in: path, name: orgSlug, required: true, schema: { type: string } }
  *       - { in: path, name: projectSlug, required: true, schema: { type: string } }
+ *       - { in: query, name: product, description: Product slug, schema: { type: string } }
  *     responses:
  *       200:
  *         description: RSS feed
@@ -20,20 +21,30 @@
  *       404: { description: Not found or Changelog disabled }
  */
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
-import { listPublishedEntries, resolvePublicChangelogProject, RSS_ITEM_LIMIT } from '~/server/services/changelog/public'
+import {
+  listPublishedEntries,
+  resolvePublicChangelogProductFilter,
+  resolvePublicChangelogProject,
+  RSS_ITEM_LIMIT,
+} from '~/server/services/changelog/public'
 import { buildRssFeed, rssDescription } from '~/server/services/changelog/rss'
 
 export default defineEventHandler(async (event) => {
-  const teamSlug = getRouterParam(event, 'teamSlug')
+  const orgSlug = getRouterParam(event, 'orgSlug')
   const projectSlug = getRouterParam(event, 'projectSlug')
-  const { team, project } = await resolvePublicChangelogProject(teamSlug!, projectSlug!)
+  const { organization, project } = await resolvePublicChangelogProject(orgSlug!, projectSlug!)
+  const productSlug = getQuery(event).product
+  const productId = await resolvePublicChangelogProductFilter(
+    project,
+    typeof productSlug === 'string' && productSlug ? productSlug : undefined
+  )
 
-  const { rows } = await listPublishedEntries(project.id, { limit: RSS_ITEM_LIMIT })
+  const { rows } = await listPublishedEntries(project.id, { limit: RSS_ITEM_LIMIT, productId })
 
   const requestUrl = getRequestURL(event)
   const boardUrl = buildPublicBoardUrl({
     project: { slug: project.slug, customDomain: project.customDomain, settings: project.settings },
-    teamSlug: team.slug,
+    orgSlug: organization.slug,
     projectSlug: project.slug,
     appDomain: useRuntimeConfig().public.appDomain || 'localhost',
     protocol: requestUrl.protocol,

@@ -1,10 +1,32 @@
+/**
+ * @openapi
+ * /api/public/o/{orgSlug}/{projectSlug}/products/{productSlug}/feedback:
+ *   get:
+ *     tags: [Public]
+ *     summary: Public feedback board of one product
+ *     description: Only non-hidden items. Private products answer 404.
+ *     operationId: listPublicProductFeedback
+ *     parameters:
+ *       - { in: path, name: orgSlug, required: true, schema: { type: string } }
+ *       - { in: path, name: projectSlug, required: true, schema: { type: string } }
+ *       - { in: path, name: productSlug, required: true, schema: { type: string } }
+ *       - { in: query, name: status, schema: { type: string } }
+ *       - { in: query, name: categoryId, schema: { type: string } }
+ *       - { in: query, name: tag, schema: { type: string } }
+ *       - { in: query, name: page, schema: { type: integer } }
+ *       - { in: query, name: limit, schema: { type: integer } }
+ *     responses:
+ *       200: { description: "`{ items, pagination }`" }
+ *       403: { description: Project is not public }
+ *       404: { description: Workspace, project or product not found }
+ */
 import { z } from 'zod'
 import { eq, and, desc, asc, count, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { validateQuery } from '~/server/utils/validation'
-import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
+import { resolvePublicProject, requirePublicProduct } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, vote } from '~/server/database/schema/feedback'
 
@@ -19,16 +41,18 @@ const querySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const teamSlug = getRouterParam(event, 'teamSlug')
+  const orgSlug = getRouterParam(event, 'orgSlug')
   const projectSlug = getRouterParam(event, 'projectSlug')
+  const productSlug = getRouterParam(event, 'productSlug')
 
   const session = await optionalAuth(event)
   const anonSession = !session?.user ? await getAnonSession(event) : null
   const query = validateQuery(event, querySchema)
 
-  const { project: proj } = await resolvePublicProjectByTeam(teamSlug!, projectSlug!)
+  const { project: proj } = await resolvePublicProject(orgSlug!, projectSlug!)
+  const prod = await requirePublicProduct(proj, productSlug!)
 
-  const conditions = [eq(feedback.projectId, proj.id), eq(feedback.isHidden, false)]
+  const conditions = [eq(feedback.projectId, proj.id), eq(feedback.productId, prod.id), eq(feedback.isHidden, false)]
   if (query.status) conditions.push(eq(feedback.status, query.status))
   if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
   if (query.tag) {
@@ -76,6 +100,7 @@ export default defineEventHandler(async (event) => {
     // listing free of the original ticket body and author identity.
     // `metadata` is intentionally not returned by this public endpoint.
     id: item.feedback.id,
+    productId: item.feedback.productId,
     title: item.feedback.metadata?.source === 'support_conversation' ? 'Support request' : item.feedback.title,
     body: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.body,
     status: item.feedback.status,
