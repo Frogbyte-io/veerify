@@ -86,6 +86,11 @@ export const selectors = {
   feedbackDetailPin: '[data-testid="feedback-detail-pin"]',
   feedbackDetailVisibility: '[data-testid="feedback-detail-visibility"]',
   feedbackDetailLock: '[data-testid="feedback-detail-lock"]',
+  feedbackProductChips: '[data-testid="feedback-product-chips"]',
+  feedbackProductChipAll: '[data-testid="feedback-product-chip-all"]',
+  feedbackTabFeedback: '[data-testid="feedback-tab-feedback"]',
+  feedbackTabSettings: '[data-testid="feedback-tab-settings"]',
+  feedbackCreateProduct: '[data-testid="feedback-create-product"]',
 }
 
 export const projectSwitcherItemSelector = (projectId: string) => `[data-testid="project-switcher-item-${projectId}"]`
