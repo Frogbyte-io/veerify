@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { teamMember } from '~/server/database/schema/auth'
+import { hasProjectAccess } from './project-access'
 import { parseChannel } from '~/server/services/realtime'
 import { requireConversationAccess, requireInboxAccess } from '~/server/utils/support-access'
 
@@ -22,7 +22,7 @@ function deny(reason: string): ChannelAuthResult {
 }
 
 export interface ChannelAuthDeps {
-  isTeamMember(teamId: string, userId: string): Promise<boolean>
+  hasProjectAccess(projectId: string, userId: string): Promise<boolean>
   canAccessInbox(inboxId: string, userId: string): Promise<boolean>
   canAccessConversation(conversationId: string, userId: string): Promise<boolean>
 }
@@ -46,8 +46,8 @@ export async function authorizeChannelWith(
       // A peer may only ever listen to its own user channel.
       return parsed.id === userId ? ALLOW : deny('Forbidden')
 
-    case 'team':
-      return (await deps.isTeamMember(parsed.id, userId)) ? ALLOW : deny('Forbidden')
+    case 'project':
+      return (await deps.hasProjectAccess(parsed.id, userId)) ? ALLOW : deny('Forbidden')
 
     case 'inbox':
       return (await deps.canAccessInbox(parsed.id, userId)) ? ALLOW : deny('Forbidden')
@@ -58,16 +58,6 @@ export async function authorizeChannelWith(
     default:
       return deny('Unknown channel')
   }
-}
-
-async function isTeamMember(teamId: string, userId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: teamMember.id })
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, userId)))
-    .limit(1)
-
-  return Boolean(row)
 }
 
 // `requireInboxAccess` / `requireConversationAccess` throw 404/403 to carry
@@ -94,5 +84,5 @@ async function canAccessConversation(conversationId: string, userId: string): Pr
 
 /** Authorize a peer's subscription request against the database. */
 export function authorizeChannel(channel: string, userId: string): Promise<ChannelAuthResult> {
-  return authorizeChannelWith(channel, userId, { isTeamMember, canAccessInbox, canAccessConversation })
+  return authorizeChannelWith(channel, userId, { hasProjectAccess, canAccessInbox, canAccessConversation })
 }

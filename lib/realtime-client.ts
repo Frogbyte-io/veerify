@@ -40,12 +40,10 @@
 export interface RealtimeEnvelope {
   v: number
   type: string
-  teamId: string
+  projectId?: string
   inboxId?: string
   conversationId?: string
   messageId?: string
-  /** `marketing.mentions.new` only */
-  projectId?: string
   count?: number
 }
 
@@ -53,8 +51,8 @@ export interface RealtimeSubscriptionHandlers {
   /** Called for every event delivered on this channel. */
   onEvent?: (envelope: RealtimeEnvelope, channel: string) => void
   /**
-   * Called when the server refuses a subscribe request (e.g. not a team
-   * member, or a channel scope that isn't available yet). Not retried
+   * Called when the server refuses a subscribe request (e.g. no access to
+   * the project, or a channel scope that isn't available yet). Not retried
    * automatically — surface it to the caller rather than looping forever.
    */
   onSubscribeError?: (reason: string, channel: string) => void

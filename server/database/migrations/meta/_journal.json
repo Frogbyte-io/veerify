@@ -393,6 +393,27 @@
       "when": 1792665098992,
       "tag": "0055_luxuriant_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792789244164,
+      "tag": "0056_projects_products_add",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1792789250989,
+      "tag": "0057_projects_products_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1792789345978,
+      "tag": "0058_projects_products_drop_teams",
+      "breakpoints": true
     }
   ]
 }
