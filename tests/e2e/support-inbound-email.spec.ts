@@ -1,8 +1,9 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
-import { project, projectMember } from '../../server/database/schema/feedback'
+import { project } from '../../server/database/schema/feedback'
 import {
   contact,
   contactIdentity,
@@ -100,7 +101,9 @@ test.describe.serial('inbound email', () => {
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie)
-    const activeProjectId = (await (await request.get('/api/projects/active', { headers })).json()).data.id as string
+    const activeProjectId = await enableProjectSupport(
+      (await (await request.get('/api/projects/active', { headers })).json()).data.project.id as string
+    )
     const [activeProject] = await db
       .select({ organizationId: project.organizationId })
       .from(project)
@@ -293,19 +296,7 @@ test.describe.serial('inbound email', () => {
     const headers = withAuthHeaders(sessionCookie)
 
     const projectResponse = await request.get('/api/projects/active', { headers })
-    const projectId = (await projectResponse.json()).data.id as string
-    const sessionResponse = await request.get('/api/auth/session', { headers })
-    const seedUserId = (await sessionResponse.json()).data.user.id as string
-    const [membershipBefore] = await db
-      .select({ id: projectMember.id, role: projectMember.role })
-      .from(projectMember)
-      .where(and(eq(projectMember.projectId, projectId), eq(projectMember.userId, seedUserId)))
-      .limit(1)
-    expect(membershipBefore).toBeTruthy()
-    if (!membershipBefore) throw new Error('Seed project membership fixture disappeared')
-    if (membershipBefore.role !== 'admin') {
-      await db.update(projectMember).set({ role: 'admin' }).where(eq(projectMember.id, membershipBefore.id))
-    }
+    const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
 
     const suffix = randomUUID().slice(0, 8)
     const inboxAddress = `inbound-${suffix}@example.com`
@@ -451,9 +442,6 @@ test.describe.serial('inbound email', () => {
       // The seed project is shared with every other spec, so put the tool switch
       // back the way it was rather than leaving Support on behind us.
       await db.update(project).set({ settings: settingsBefore }).where(eq(project.id, projectId))
-      if (membershipBefore.role !== 'admin') {
-        await db.update(projectMember).set({ role: membershipBefore.role }).where(eq(projectMember.id, membershipBefore.id))
-      }
     }
   })
 })

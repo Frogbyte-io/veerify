@@ -1,3 +1,4 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, request as createRequest, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { and, asc, eq, inArray, ne } from 'drizzle-orm'
@@ -19,7 +20,7 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 async function activeProjectId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
   const response = await request.get('/api/projects/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
-  return (await response.json()).data.id as string
+  return await enableProjectSupport((await response.json()).data.project.id as string)
 }
 
 /** The project's first product, which every project has at least one of. */

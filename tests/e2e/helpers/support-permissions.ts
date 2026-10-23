@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { APIRequestContext } from '@playwright/test'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './db'
+import { enableProjectSupport } from './support-project'
 import { signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders, type LoginCredentials } from './auth'
 import { account, session, member, user, verification } from '../../../server/database/schema/auth'
 import { projectMember } from '../../../server/database/schema/feedback'
@@ -110,6 +111,9 @@ export async function createSupportPermissionFixture(request: APIRequestContext)
       }
       fixture.userIds.push(createdUsers[role].userId)
     }
+
+    // Seeded projects ship with Support off.
+    await enableProjectSupport(SEEDED_PROJECT_ID)
 
     const now = new Date()
     const primaryInboxId = randomUUID()

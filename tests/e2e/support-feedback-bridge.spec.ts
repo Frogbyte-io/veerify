@@ -1,6 +1,7 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
 import { feedback, product, project } from '../../server/database/schema/feedback'
@@ -21,7 +22,9 @@ test.setTimeout(60_000)
 async function activeProject(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
   const response = await request.get('/api/projects/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
-  return (await response.json()).data as { id: string; slug: string }
+  const active = (await response.json()).data.project as { id: string; slug: string }
+  await enableProjectSupport(active.id)
+  return active
 }
 
 test('converts a support conversation and keeps ticket content private on the public board', async ({
@@ -60,12 +63,25 @@ test('converts a support conversation and keeps ticket content private on the pu
   const suffix = randomUUID().slice(0, 8)
   const inboxId = randomUUID()
   const inboxMemberId = randomUUID()
+  const secondProductId = randomUUID()
+  const secondProductSlug = `bridge-beta-${suffix}`
   const contactId = randomUUID()
   const messageId = randomUUID()
   let conversationId: string | null = null
   let feedbackId: string | null = null
+  let roadmapSwitchedOn = false
 
   try {
+    // With a single product the dialog hides the product layer, so give the project a second public
+    // product: the picker appears, defaults to the first product, and lets the agent route elsewhere.
+    await db.insert(product).values({
+      id: secondProductId,
+      projectId: active.id,
+      name: `Bridge Beta ${suffix}`,
+      slug: secondProductSlug,
+      isPublic: true,
+      sortOrder: 999,
+    })
     await db.insert(supportInbox).values({
       id: inboxId,
       projectId: active.id,
@@ -125,6 +141,7 @@ test('converts a support conversation and keeps ticket content private on the pu
       'Private ticket details that must not appear on the public board.'
     )
     await expect(page.getByTestId('support-feedback-product')).toHaveValue(publicProduct.id)
+    await page.getByTestId('support-feedback-product').selectOption(secondProductId)
 
     const createResponse = page.waitForResponse(
       (response) =>
@@ -140,6 +157,11 @@ test('converts a support conversation and keeps ticket content private on the pu
     const linkedConversation = (await linkedResponse.json()).data.conversation
     feedbackId = linkedConversation.linkedFeedbackId as string
     expect(feedbackId).toBeTruthy()
+    const [created] = await db
+      .select({ productId: feedback.productId })
+      .from(feedback)
+      .where(eq(feedback.id, feedbackId))
+    expect(created?.productId).toBe(secondProductId)
     expect(linkedConversation.linkedFeedback).toMatchObject({
       id: feedbackId,
       status: 'open',
@@ -162,15 +184,24 @@ test('converts a support conversation and keeps ticket content private on the pu
     expect(publicDetail.author).toBeNull()
     expect(publicDetail.authorEmail).toBeNull()
 
-    const publicBoardResponse = await request.get(`/api/public/o/${projectRow.slug}/${publicProject.slug}/products/${publicProduct.slug}/feedback`, {
-      headers: publicHeaders,
-    })
+    const publicBoardResponse = await request.get(
+      `/api/public/o/${projectRow.slug}/${publicProject.slug}/products/${secondProductSlug}/feedback`,
+      {
+        headers: publicHeaders,
+      }
+    )
     expect(publicBoardResponse.ok()).toBeTruthy()
     const boardItem = (await publicBoardResponse.json()).data.items.find(
       (item: { id: string }) => item.id === feedbackId
     )
     expect(boardItem).toMatchObject({ id: feedbackId, title: 'Support request', body: null, authorName: null })
 
+    // The public roadmap 404s unless the Roadmap tool is switched on for the project.
+    await db
+      .update(project)
+      .set({ settings: sql`coalesce(${project.settings}, '{}'::jsonb) || '{"roadmapEnabled": true}'::jsonb` })
+      .where(eq(project.id, active.id))
+    roadmapSwitchedOn = true
     const roadmapResponse = await request.get(`/api/public/o/${projectRow.slug}/${publicProject.slug}/roadmap`, {
       headers: publicHeaders,
     })
@@ -181,10 +212,17 @@ test('converts a support conversation and keeps ticket content private on the pu
       .find((item: { id: string }) => item.id === feedbackId)
     expect(roadmapItem).toMatchObject({ id: feedbackId, title: 'Support request', body: null, authorName: null })
   } finally {
+    if (roadmapSwitchedOn) {
+      await db
+        .update(project)
+        .set({ settings: sql`${project.settings} - 'roadmapEnabled'` })
+        .where(eq(project.id, active.id))
+    }
     if (feedbackId) await db.delete(feedback).where(eq(feedback.id, feedbackId))
     if (conversationId) await db.delete(conversation).where(eq(conversation.id, conversationId))
     await db.delete(contact).where(eq(contact.id, contactId))
     await db.delete(supportInboxMember).where(eq(supportInboxMember.id, inboxMemberId))
     await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
+    await db.delete(product).where(eq(product.id, secondProductId))
   }
 })

@@ -9,7 +9,7 @@ import {
   type SupportPermissionRole,
 } from './helpers/support-permissions'
 import { getPlaywrightBaseURL, loginViaProgrammaticPage, withOriginHeaders } from './helpers/auth'
-import { account, session, user, verification } from '../../server/database/schema/auth'
+import { account, member, session, user, verification } from '../../server/database/schema/auth'
 import { project, projectMember } from '../../server/database/schema/feedback'
 import {
   contact,
@@ -49,6 +49,7 @@ test.describe('support sending domains', () => {
     id: `sd_project_b_${randomUUID().slice(0, 8)}`,
     inboxId: randomUUID(),
     memberId: randomUUID(),
+    orgMemberId: randomUUID(),
     inboxMemberId: randomUUID(),
     userId: '',
     credentials: null as Credentials | null,
@@ -75,6 +76,17 @@ test.describe('support sending domains', () => {
       name: `Sending Domains Project B ${suffix}`,
       slug: `sd-project-b-${suffix}`,
       organizationId: seedProject.organizationId,
+      settings: { supportEnabled: true },
+      createdAt: now,
+      updatedAt: now,
+    })
+    // Project B's admin belongs to the same workspace as a plain member (project access requires it)
+    // and is promoted to admin of this one project only.
+    await db.insert(member).values({
+      id: projectB.orgMemberId,
+      organizationId: seedProject.organizationId,
+      userId: projectB.userId,
+      role: 'member',
       createdAt: now,
       updatedAt: now,
     })
@@ -107,12 +119,15 @@ test.describe('support sending domains', () => {
   test.afterAll(async () => {
     await Promise.all(contexts.map((context) => context.close()))
     const projectIds = [projectB.id, fixture?.projectId].filter(Boolean) as string[]
-    if (projectIds.length) await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.projectId, projectIds))
+    if (projectIds.length)
+      await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.projectId, projectIds))
     await db.delete(supportInboxMember).where(eq(supportInboxMember.id, projectB.inboxMemberId))
     await db.delete(supportInbox).where(eq(supportInbox.id, projectB.inboxId))
     await db.delete(projectMember).where(eq(projectMember.id, projectB.memberId))
     await db.delete(project).where(eq(project.id, projectB.id))
-    if (projectB.credentials) await db.delete(verification).where(eq(verification.identifier, projectB.credentials.email))
+    await db.delete(member).where(eq(member.id, projectB.orgMemberId))
+    if (projectB.credentials)
+      await db.delete(verification).where(eq(verification.identifier, projectB.credentials.email))
     if (projectB.userId) {
       await db.delete(session).where(eq(session.userId, projectB.userId))
       await db.delete(account).where(eq(account.userId, projectB.userId))
@@ -164,7 +179,9 @@ test.describe('support sending domains', () => {
 
     test('admin adds a domain, copies the ownership record, verifies it and sends from it', async ({ browser }) => {
       domainA = `acme${suffix}.verify-ok.test`
-      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, settingsPath(), { clipboard: true })
+      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, settingsPath(), {
+        clipboard: true,
+      })
       await expect(page.getByTestId('support-sending-domains')).toBeVisible({ timeout: 20_000 })
 
       await addDomainViaUi(page, domainA)
@@ -263,7 +280,9 @@ test.describe('support sending domains', () => {
 
       const detail = await page.request.get(`${SENDING_DOMAINS_PATH(projectB.id)}/${domainAClaimId}`, { headers })
       expect(detail.status()).toBe(404)
-      const crossProject = await page.request.get(`${SENDING_DOMAINS_PATH(fixture.projectId)}/${domainAClaimId}`, { headers })
+      const crossProject = await page.request.get(`${SENDING_DOMAINS_PATH(fixture.projectId)}/${domainAClaimId}`, {
+        headers,
+      })
       expect([403, 404]).toContain(crossProject.status())
 
       const claim = await page.request.post(SENDING_DOMAINS_PATH(projectB.id), {
@@ -692,7 +711,9 @@ test.describe('support sending domains', () => {
       await expect(page.getByText('Removal in progress')).toBeVisible()
     })
 
-    test('project policy with the feature off still renders the picker and the forwarding button', async ({ browser }) => {
+    test('project policy with the feature off still renders the picker and the forwarding button', async ({
+      browser,
+    }) => {
       const page = await openStubbed(browser, {
         list: () => ok(listPayload({ enabled: false, policy: 'project', domains: [] })),
       })
