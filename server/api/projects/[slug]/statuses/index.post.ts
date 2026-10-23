@@ -19,7 +19,7 @@ const createStatusSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const { project } = await requireProjectStatusAccess(event)
+  const { project } = await requireProjectStatusAccess(event, { admin: true })
   const body = await validateBody(event, createStatusSchema)
 
   const baseValue = toStatusValue(body.name)

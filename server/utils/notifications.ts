@@ -2,7 +2,8 @@ import { eq, and, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedbackSubscription, project } from '~/server/database/schema/feedback'
 import { notification } from '~/server/database/schema/notifications'
-import { teamMember, user } from '~/server/database/schema/auth'
+import { user } from '~/server/database/schema/auth'
+import { listProjectMembers } from '~/server/utils/project-summary'
 import { createLogger } from '~/server/utils/logger'
 import { publishRealtime, userChannel } from '~/server/services/realtime'
 
@@ -114,25 +115,21 @@ export async function createNotification(params: CreateNotificationParams) {
 }
 
 /**
- * Creates in-app notifications for all team members of a project,
- * optionally excluding a specific user (e.g. the actor who triggered the event).
+ * Creates in-app notifications for everyone who can open a project (workspace owners/admins,
+ * project members, and every workspace member of a workspace-wide project), optionally
+ * excluding a specific user (e.g. the actor who triggered the event).
  */
-export async function notifyProjectTeam(
+export async function notifyProjectMembers(
   projectId: string,
   excludeUserId: string | null,
   params: Omit<CreateNotificationParams, 'userId' | 'projectId'>
 ) {
   try {
-    // Get the project's team
-    const [proj] = await db.select({ teamId: project.teamId }).from(project).where(eq(project.id, projectId)).limit(1)
+    const [proj] = await db.select().from(project).where(eq(project.id, projectId)).limit(1)
 
     if (!proj) return
 
-    // Get all team members
-    const members = await db
-      .select({ userId: teamMember.userId })
-      .from(teamMember)
-      .where(eq(teamMember.teamId, proj.teamId))
+    const members = await listProjectMembers(proj)
 
     // Create notifications for each member (excluding the actor)
     const recipientIds = members.filter((m) => m.userId !== excludeUserId).map((m) => m.userId)
@@ -157,7 +154,7 @@ export async function notifyProjectTeam(
       )
     )
   } catch (err) {
-    logger.error('Failed to notify project team', {
+    logger.error('Failed to notify project members', {
       projectId,
       type: params.type,
       error: err instanceof Error ? err.message : err,
@@ -195,10 +192,13 @@ export async function notifyUser(
   }
 }
 
+/** @deprecated Use notifyProjectMembers; kept so existing call sites keep working until they are renamed. */
+export const notifyProjectTeam = notifyProjectMembers
+
 /**
  * Creates in-app notifications for logged-in users subscribed to a feedback item
  * whose notifyChannel is 'app' or 'both'.
- * Excludes a specific user (e.g. the actor) and any users already notified as team members.
+ * Excludes a specific user (e.g. the actor) and any users already notified as project members.
  */
 export async function notifyFeedbackSubscribers(
   feedbackId: string,
@@ -216,7 +216,7 @@ export async function notifyFeedbackSubscribers(
       .from(feedbackSubscription)
       .where(and(eq(feedbackSubscription.feedbackId, feedbackId), isNotNull(feedbackSubscription.userId)))
 
-    // Filter to app/both channels, exclude actor and already-notified team members
+    // Filter to app/both channels, exclude actor and already-notified project members
     const allExcluded = new Set([...excludeUserIds, ...(excludeUserId ? [excludeUserId] : [])])
     const recipients = subscribers.filter(
       (s) => s.userId && !allExcluded.has(s.userId) && (s.notifyChannel === 'app' || s.notifyChannel === 'both')

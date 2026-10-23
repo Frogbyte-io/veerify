@@ -123,7 +123,7 @@ export const openapiCommonSchemas = {
       userId: { type: 'string', example: 'usr_123' },
       expiresAt: { type: 'string', format: 'date-time' },
       activeOrganizationId: { type: 'string', example: 'org_123' },
-      activeTeamId: { type: 'string', example: 'team_123' },
+      activeProjectId: { type: 'string', example: 'project_123' },
     },
   } as OpenAPISchema,
 
@@ -146,7 +146,6 @@ export const openapiCommonSchemas = {
       slug: { type: 'string', example: 'my-project' },
       description: { type: 'string', example: 'A great project' },
       organizationId: { type: 'string', example: 'org_123' },
-      teamId: { type: 'string', example: 'team_123' },
       githubRepoUrl: { type: 'string', format: 'uri', example: 'https://github.com/org/repo' },
       createdAt: { type: 'string', format: 'date-time' },
       updatedAt: { type: 'string', format: 'date-time' },

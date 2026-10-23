@@ -5,6 +5,7 @@ import { project } from '~/server/database/schema/feedback'
 import { createSuccessResponse, createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
+import { assertProjectSlugAllowed } from '~/server/utils/product-rules'
 import { sendCustomDomainConnectedEmail } from '~/lib/email'
 import { getStorageProvider } from '~/server/utils/storage'
 import {
@@ -65,6 +66,7 @@ const updateProjectSchema = z.object({
   slug: commonSchemas.slug.optional(),
   description: z.string().max(1000, 'Description too long').nullable().optional(),
   isPublic: z.boolean().optional(),
+  accessMode: z.enum(['workspace', 'restricted']).optional(),
   customDomain: z.string().max(253, 'Domain too long').nullable().optional(),
   settings: projectSettingsSchema,
 })
@@ -129,7 +131,7 @@ async function consumeUploadAsset(input: {
 }
 
 export default defineEventHandler(async (event) => {
-  const { project: currentProject, session } = await requireProjectCategoryAccess(event)
+  const { project: currentProject, session } = await requireProjectCategoryAccess(event, { admin: true })
   const body = await validateBody(event, updateProjectSchema)
   const currentSettings = normalizeDomainSettings(currentProject.settings)
   const requestedDomain =
@@ -246,17 +248,18 @@ export default defineEventHandler(async (event) => {
     : nextSettings
 
   if (body.slug && body.slug !== currentProject.slug) {
+    assertProjectSlugAllowed(body.slug)
     const [conflict] = await db
       .select()
       .from(project)
-      .where(and(eq(project.teamId, currentProject.teamId), eq(project.slug, body.slug)))
+      .where(and(eq(project.organizationId, currentProject.organizationId), eq(project.slug, body.slug)))
       .limit(1)
 
     if (conflict) {
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
-        data: createErrorResponse(ErrorCode.CONFLICT, 'A project with this slug already exists in this team'),
+        data: createErrorResponse(ErrorCode.CONFLICT, 'A project with this slug already exists in this workspace'),
       })
     }
   }
@@ -274,6 +277,7 @@ export default defineEventHandler(async (event) => {
         ...(body.slug !== undefined && { slug: body.slug }),
         ...(body.description !== undefined && { description: body.description }),
         ...(body.isPublic !== undefined && { isPublic: body.isPublic }),
+        ...(body.accessMode !== undefined && { accessMode: body.accessMode }),
         ...(body.customDomain !== undefined && { customDomain: requestedDomain }),
         ...((body.settings !== undefined || shouldNotifyConnected || domainChanged) && { settings: settingsForUpdate }),
         updatedAt: new Date(),

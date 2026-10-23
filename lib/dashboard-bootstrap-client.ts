@@ -11,11 +11,11 @@ export type DashboardBootstrap = {
       token?: string
     }
   }
-  teamContext?: {
-    teams?: unknown[]
+  projectContext?: {
     organizations?: unknown[]
-    activeTeam?: Record<string, unknown> | null
     activeOrganization?: Record<string, unknown> | null
+    projects?: unknown[]
+    activeProject?: Record<string, unknown> | null
   }
   workspace?: {
     stats?: Record<string, unknown>

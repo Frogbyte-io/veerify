@@ -1,6 +1,6 @@
 import { and, eq, gt } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { invitation, team, user } from '~/server/database/schema/auth'
+import { invitation, user } from '~/server/database/schema/auth'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireOrganizationRoleBySlug } from '~/server/utils/organization-access'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
@@ -27,15 +27,12 @@ export default defineEventHandler(async (event) => {
       email: invitation.email,
       role: invitation.role,
       status: invitation.status,
-      teamId: invitation.teamId,
-      teamName: team.name,
       inviterName: user.name,
       expiresAt: invitation.expiresAt,
       createdAt: invitation.createdAt,
     })
     .from(invitation)
     .innerJoin(user, eq(invitation.inviterId, user.id))
-    .leftJoin(team, eq(invitation.teamId, team.id))
     .where(
       and(eq(invitation.organizationId, org.id), eq(invitation.status, 'pending'), gt(invitation.expiresAt, new Date()))
     )

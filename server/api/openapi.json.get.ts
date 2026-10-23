@@ -26,13 +26,13 @@ export default defineEventHandler(() => {
     tags: [
       { name: 'Authentication', description: 'Authentication and session management' },
       { name: 'Organizations', description: 'Organization management' },
-      { name: 'Teams', description: 'Team workspace management' },
+      { name: 'Projects', description: 'Projects, products and project access' },
       { name: 'Projects', description: 'Project management' },
       { name: 'Feedback', description: 'Feedback and feature request management' },
       { name: 'GitHub', description: 'GitHub integration endpoints' },
       {
         name: 'Support',
-        description: 'Support platform: contacts, companies, inboxes, conversations, tags, and team settings',
+        description: 'Support platform: contacts, companies, inboxes, conversations, tags, and project settings',
       },
     ],
     components: {
@@ -90,7 +90,7 @@ export default defineEventHandler(() => {
                 userId: { type: 'string' },
                 expiresAt: { type: 'string', format: 'date-time' },
                 activeOrganizationId: { type: 'string', nullable: true },
-                activeTeamId: { type: 'string', nullable: true },
+                activeProjectId: { type: 'string', nullable: true },
               },
             },
           },
@@ -113,7 +113,7 @@ export default defineEventHandler(() => {
             slug: { type: 'string', example: 'my-project' },
             description: { type: 'string', nullable: true },
             organizationId: { type: 'string' },
-            teamId: { type: 'string' },
+            projectId: { type: 'string' },
             githubRepoUrl: { type: 'string', format: 'uri', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
@@ -139,7 +139,7 @@ export default defineEventHandler(() => {
           type: 'object',
           properties: {
             id: { type: 'string', example: 'ctc_123' },
-            teamId: { type: 'string' },
+            projectId: { type: 'string' },
             name: { type: 'string', nullable: true },
             email: { type: 'string', format: 'email', nullable: true },
             phone: { type: 'string', nullable: true },
@@ -173,7 +173,7 @@ export default defineEventHandler(() => {
           type: 'object',
           properties: {
             id: { type: 'string', example: 'co_123' },
-            teamId: { type: 'string' },
+            projectId: { type: 'string' },
             name: { type: 'string' },
             domain: { type: 'string', nullable: true },
             attributes: { type: 'object', nullable: true },
@@ -185,8 +185,7 @@ export default defineEventHandler(() => {
           type: 'object',
           properties: {
             id: { type: 'string', example: 'ibx_123' },
-            teamId: { type: 'string' },
-            projectId: { type: 'string', nullable: true, description: 'Optional single-product link' },
+            projectId: { type: 'string' },
             name: { type: 'string' },
             slug: { type: 'string' },
             type: { type: 'string', example: 'email' },
@@ -233,10 +232,9 @@ export default defineEventHandler(() => {
           properties: {
             id: { type: 'string', example: 'cnv_123' },
             inboxId: { type: 'string' },
-            teamId: { type: 'string' },
+            projectId: { type: 'string' },
             contactId: { type: 'string' },
-            projectId: { type: 'string', nullable: true },
-            displayId: { type: 'integer', description: 'Per-team ticket number' },
+            displayId: { type: 'integer', description: 'Per-project ticket number' },
             subject: { type: 'string', nullable: true },
             status: { type: 'string', enum: ['open', 'pending', 'resolved', 'snoozed', 'closed'] },
             priority: { type: 'string', nullable: true, enum: ['low', 'normal', 'high', 'urgent'] },
@@ -351,7 +349,7 @@ export default defineEventHandler(() => {
           type: 'object',
           properties: {
             id: { type: 'string' },
-            teamId: { type: 'string' },
+            projectId: { type: 'string' },
             name: { type: 'string' },
             color: { type: 'string', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
