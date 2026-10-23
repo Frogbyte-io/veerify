@@ -1,8 +1,10 @@
 import { betterAuth } from 'better-auth'
+import { APIError } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { magicLink, multiSession, organization, testUtils, twoFactor } from 'better-auth/plugins'
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
+import { isReservedSlug } from '../server/utils/reserved-slugs'
 import {
   sendEmailVerificationEmail,
   sendMagicLinkEmail,
@@ -171,6 +173,19 @@ export const auth = betterAuth({
           inviteUrl: invitationUrl,
           role: data.role,
         })
+      },
+      organizationHooks: {
+        // The organization slug is the workspace's public subdomain
+        // (<slug>.APP_DOMAIN): refuse reserved names, then register the hostname.
+        async beforeCreateOrganization({ organization: org }) {
+          if (org.slug && isReservedSlug(org.slug)) {
+            throw new APIError('BAD_REQUEST', { message: 'This workspace URL is reserved. Choose another one.' })
+          }
+        },
+        async afterCreateOrganization({ organization: org }) {
+          const { registerOrgPublicDomainBestEffort } = await import('../server/services/domains/domain-service')
+          await registerOrgPublicDomainBestEffort(org.slug, { organizationId: org.id })
+        },
       },
     }),
     magicLink({

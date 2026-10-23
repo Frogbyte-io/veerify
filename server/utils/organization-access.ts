@@ -1,3 +1,4 @@
+import { isReservedSlug } from './reserved-slugs'
 import { and, count, eq, ne } from 'drizzle-orm'
 import type { AuthSession } from './auth-middleware'
 import { db } from '~/server/database/drizzle'
@@ -36,6 +37,15 @@ export async function findOrganizationBySlug(slug: string) {
 }
 
 export async function assertOrganizationSlugAvailable(slug: string, excludeOrganizationId?: string) {
+  // The organization slug is the public subdomain (<slug>.APP_DOMAIN), so it
+  // must never shadow an app or infrastructure hostname.
+  if (isReservedSlug(slug)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'This workspace URL is reserved. Choose another one.'),
+    })
+  }
   const [existing] = await db
     .select({ id: organization.id })
     .from(organization)
