@@ -19,6 +19,8 @@ import { SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-att
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { createLogger } from '~/server/utils/logger'
 import { recordSupportMetric } from '~/server/utils/support-observability'
+import { isSenderAllowedForTeam } from '~/server/utils/sender-enforcement'
+import { resolveEffectiveSenderPolicy } from '~/server/utils/sending-domains'
 
 const logger = createLogger('outbound-delivery')
 
@@ -472,9 +474,18 @@ export async function failOutboundDelivery(
   messageId: string,
   error: unknown,
   attemptCount: number,
-  deps: { now?: Date; random?: () => number } = {}
+  deps: {
+    now?: Date
+    random?: () => number
+    /**
+     * Fail permanently regardless of the attempt count. For failures retrying
+     * cannot fix (sender not authorized): the agent's explicit retry action
+     * resets the delivery once the cause is resolved.
+     */
+    terminal?: boolean
+  } = {}
 ): Promise<boolean> {
-  const terminal = attemptCount >= MAX_DELIVERY_ATTEMPTS
+  const terminal = deps.terminal === true || attemptCount >= MAX_DELIVERY_ATTEMPTS
   const sanitized = sanitizeDeliveryError(error)
   const now = deps.now ?? new Date()
 
@@ -572,7 +583,77 @@ export interface ProcessOutboundDeliveryDeps {
     diagnostics: { provider: string; providerAccountKey: string; providerMessageId?: string }
   ) => Promise<void>
   /** Defaults to `failOutboundDelivery` - injectable so unit tests never touch the db. */
-  onFailed?: (id: string, messageId: string, error: unknown, attemptCount: number) => Promise<void>
+  onFailed?: (
+    id: string,
+    messageId: string,
+    error: unknown,
+    attemptCount: number,
+    options?: { terminal?: boolean }
+  ) => Promise<unknown>
+  /**
+   * Final sender check (design §4.5). Defaults to the team-scoped policy lookup;
+   * injectable so unit tests never touch the db. Return false to fail terminally
+   * with `SENDER_DOMAIN_NOT_AUTHORIZED` without calling `sendEmail`.
+   */
+  authorizeSender?: (claim: OutboundClaim) => Promise<boolean>
+  /**
+   * Called when the provider itself rejected the sender (SMTP 553 or
+   * `sender_not_authorized`). Defaults to suspending the owning team's claim
+   * through the poller module; injectable so unit tests never touch the db.
+   * Never allowed to fail the delivery bookkeeping.
+   */
+  onSenderRejected?: (claim: OutboundClaim, reason: string) => Promise<void>
+}
+
+/** `lastError` recorded when the final sender check refuses a delivery. */
+export const SENDER_DOMAIN_NOT_AUTHORIZED = 'SENDER_DOMAIN_NOT_AUTHORIZED'
+
+async function resolveDeliveryTeamId(messageId: string): Promise<string | null> {
+  const [owner] = await db
+    .select({ teamId: conversation.teamId })
+    .from(conversationMessage)
+    .innerJoin(conversation, eq(conversation.id, conversationMessage.conversationId))
+    .where(eq(conversationMessage.id, messageId))
+    .limit(1)
+  return owner?.teamId ?? null
+}
+
+/**
+ * Whether the team that owns this delivery may send as `payload.from`.
+ *
+ * Always true when the payload has no explicit From, and under the effective
+ * `legacy` policy (no claim exists anywhere, so no team's domain can be
+ * borrowed). Otherwise the owning team's verdict applies, which also refuses a
+ * From on another team's claim. Fails closed when the owning conversation can
+ * no longer be found: nobody can then vouch for the sender.
+ */
+async function defaultAuthorizeSender(claim: OutboundClaim): Promise<boolean> {
+  const from = claim.payload.from?.address
+  if (!from || (await resolveEffectiveSenderPolicy()) !== 'team') return true
+
+  const teamId = await resolveDeliveryTeamId(claim.messageId)
+  if (!teamId) return false
+
+  return isSenderAllowedForTeam(teamId, from)
+}
+
+/**
+ * True when a failed send says the provider refused the sender itself: SMTP
+ * 553 (mailbox/sender not allowed) or a `sender_not_authorized` response code.
+ */
+export function isProviderSenderRejection(response: unknown): boolean {
+  const text = response instanceof Error ? response.message : typeof response === 'string' ? response : ''
+  return /sender_not_authorized/i.test(text) || /(^|[^\w.])553(?=[\s-]|$)/.test(text)
+}
+
+async function defaultOnSenderRejected(claim: OutboundClaim, reason: string): Promise<void> {
+  const address = claim.payload.from?.address
+  if (!address) return
+  const teamId = await resolveDeliveryTeamId(claim.messageId)
+  if (!teamId) return
+  // Dynamic import keeps the poller out of this module's load path.
+  const { suspendClaimForSenderRejection } = await import('~/server/utils/sending-domain-poller')
+  await suspendClaimForSenderRejection(teamId, address, reason)
 }
 
 /**
@@ -601,9 +682,19 @@ export async function processOutboundDelivery(
         .where(eq(conversationAttachment.messageId, messageId)))
   const onSent = deps.onSent ?? completeOutboundDelivery
   const onFailed = deps.onFailed ?? failOutboundDelivery
+  const authorizeSender = deps.authorizeSender ?? defaultAuthorizeSender
+  const onSenderRejected = deps.onSenderRejected ?? defaultOnSenderRejected
   const driver = getConfiguredChannelDriver()
 
   try {
+    // Final check, right before the provider call: it covers code paths that
+    // enqueue directly, and domains deleted or suspended while mail was queued.
+    if (!(await authorizeSender(claim))) {
+      recordSupportMetric('support.sending_domain.blocked', { reason: 'outbox' })
+      await onFailed(claim.id, claim.messageId, SENDER_DOMAIN_NOT_AUTHORIZED, claim.attemptCount, { terminal: true })
+      return { outcome: 'failed', error: SENDER_DOMAIN_NOT_AUTHORIZED }
+    }
+
     let attachments: EmailAttachment[] | undefined
     if (claim.payload.attachments) {
       const canonical = await getAttachmentSizes(claim.messageId)
@@ -672,12 +763,49 @@ export async function processOutboundDelivery(
       return { outcome: 'sent' }
     }
 
+    if (isProviderSenderRejection(result.response)) {
+      return await failForSenderRejection(claim, result.response, onFailed, onSenderRejected)
+    }
+
     await onFailed(claim.id, claim.messageId, result.response, claim.attemptCount)
     return { outcome: 'failed', error: sanitizeDeliveryError(result.response) }
   } catch (error) {
+    if (isProviderSenderRejection(error)) {
+      return await failForSenderRejection(claim, error, onFailed, onSenderRejected)
+    }
     await onFailed(claim.id, claim.messageId, error, claim.attemptCount)
     return { outcome: 'failed', error: sanitizeDeliveryError(error) }
   }
+}
+
+/**
+ * The provider refused the sender: the message was definitely not sent and
+ * retrying cannot help, so it fails terminally with the same
+ * `SENDER_DOMAIN_NOT_AUTHORIZED` marker as the local check, and the claim is
+ * suspended so the next reply is blocked up front.
+ */
+async function failForSenderRejection(
+  claim: OutboundClaim,
+  response: unknown,
+  onFailed: NonNullable<ProcessOutboundDeliveryDeps['onFailed']>,
+  onSenderRejected: NonNullable<ProcessOutboundDeliveryDeps['onSenderRejected']>
+): Promise<{ outcome: 'failed'; error: string }> {
+  const reason = sanitizeDeliveryError(response)
+  logger.warn('Provider rejected the sender of an outbound delivery', {
+    deliveryId: claim.id,
+    messageId: claim.messageId,
+    reason,
+  })
+  try {
+    await onSenderRejected(claim, reason)
+  } catch (error) {
+    logger.error('Could not suspend the sending domain after a sender rejection', {
+      deliveryId: claim.id,
+      error: error instanceof Error ? error.message : error,
+    })
+  }
+  await onFailed(claim.id, claim.messageId, SENDER_DOMAIN_NOT_AUTHORIZED, claim.attemptCount, { terminal: true })
+  return { outcome: 'failed', error: SENDER_DOMAIN_NOT_AUTHORIZED }
 }
 
 /** One worker pass may claim and send at most this many deliveries. */

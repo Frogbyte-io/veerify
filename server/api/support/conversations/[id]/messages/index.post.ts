@@ -26,7 +26,7 @@
  *       400: { description: Validation failed }
  *       403: { description: Not a member of this inbox or a team admin }
  *       404: { description: Conversation not found }
- *       409: { description: The inbox has no sending address, or the contact has no email address }
+ *       409: { description: "The inbox has no sending address, the contact has no email address, or (team sender policy) the inbox's From address is on a domain the team has not verified (SENDER_NOT_VERIFIED)" }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -43,6 +43,7 @@ import { contact, conversationMessage, conversationParticipant, supportInbox } f
 import { emailDomain, parseReferences } from '~/server/services/support-channels/types'
 import { buildOutgoingReply } from '~/server/utils/outbound-reply'
 import { runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
+import { isSenderAllowedForTeam } from '~/server/utils/sender-enforcement'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import {
   commitMessageWithAttachments,
@@ -117,6 +118,21 @@ export default defineEventHandler(async (event) => {
         statusCode: 409,
         statusMessage: 'Conflict',
         data: createErrorResponse(ErrorCode.CONFLICT, 'This inbox has no sending address configured'),
+      })
+    }
+
+    // Team sender policy (design §4.5). Checked before anything is reserved or
+    // written so a blocked reply leaves no half-finished state. Never blocks
+    // under the legacy policy.
+    if (!(await isSenderAllowedForTeam(existing.teamId, inbox.emailAddress))) {
+      const senderDomain = emailDomain(inbox.emailAddress) ?? inbox.emailAddress
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Conflict',
+        data: createErrorResponse(
+          'SENDER_NOT_VERIFIED',
+          `Replies from ${inbox.emailAddress} are blocked until ${senderDomain} is verified in Support settings`
+        ),
       })
     }
 

@@ -16,6 +16,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/db-reset.ts",
+    "db:backfill-sending-domains": "tsx scripts/backfill-sending-domains.ts",
     "db:seed": "yarn db:migrate && tsx scripts/seed.ts",
     "db:seed:clean": "yarn db:migrate && tsx scripts/seed.ts --clean",
     "db:seed:e2e": "tsx scripts/seed.ts --clean && tsx scripts/seed.ts",

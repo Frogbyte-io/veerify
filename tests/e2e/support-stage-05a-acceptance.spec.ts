@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { asc, eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
+import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import {
   contact,
   conversation,
@@ -35,6 +36,7 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
     request,
   }) => {
     const { teamId, userId } = await activeTeamAndUser(request)
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `stage-05a-claim-inbox-${suffix}`
     const membershipId = `stage-05a-claim-member-${suffix}`
@@ -147,6 +149,7 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
 
   test('restores reply and internal-note drafts independently for the same conversation', async ({ page, request }) => {
     const { teamId, userId } = await activeTeamAndUser(request)
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `stage-05a-draft-inbox-${suffix}`
     const membershipId = `stage-05a-draft-member-${suffix}`
@@ -255,6 +258,7 @@ test.describe.serial('Stage 05A acceptance workflows', () => {
     request,
   }) => {
     const { teamId, userId } = await activeTeamAndUser(request)
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `stage-05a-search-inbox-${suffix}`
     const membershipId = `stage-05a-search-member-${suffix}`

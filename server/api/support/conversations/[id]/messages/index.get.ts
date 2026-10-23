@@ -11,6 +11,12 @@
  *       anchors to the newest messages, never to an arbitrary page. All
  *       kinds (`incoming`, `outgoing`, `note`, `activity`) are included,
  *       private notes too, since this is the agent-facing thread pane.
+ *       Outgoing messages carry delivery detail for the retry UI:
+ *       `deliveryError` (short sanitized text or null), `senderBlocked`
+ *       (true when the failure is `SENDER_DOMAIN_NOT_AUTHORIZED`: the message
+ *       was never submitted to the provider) and `retryable` (true only for a
+ *       failed reply that has an email outbox entry; CSAT survey deliveries are
+ *       never retryable).
  *     operationId: listSupportConversationMessages
  *     parameters:
  *       - in: path
@@ -26,13 +32,14 @@
  *       404: { description: Conversation not found }
  */
 import { z } from 'zod'
-import { asc, desc, eq, inArray } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { conversationAttachment, conversationMessage } from '~/server/database/schema/support'
+import { conversationAttachment, conversationMessage, supportOutboundDelivery } from '~/server/database/schema/support'
+import { SENDER_DOMAIN_NOT_AUTHORIZED } from '~/server/utils/outbound-delivery'
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
@@ -62,6 +69,7 @@ export default defineEventHandler(async (event) => {
       channelMessageId: conversationMessage.channelMessageId,
       inReplyTo: conversationMessage.inReplyTo,
       deliveryStatus: conversationMessage.deliveryStatus,
+      deliveryError: conversationMessage.deliveryError,
       createdAt: conversationMessage.createdAt,
     })
     .from(conversationMessage)
@@ -92,8 +100,17 @@ export default defineEventHandler(async (event) => {
     list.push(attachment)
     attachmentsByMessage.set(attachment.messageId, list)
   }
+  const emailDeliveries = messageIds.length
+    ? await db
+        .select({ messageId: supportOutboundDelivery.messageId })
+        .from(supportOutboundDelivery)
+        .where(and(inArray(supportOutboundDelivery.messageId, messageIds), eq(supportOutboundDelivery.kind, 'email')))
+    : []
+  const hasEmailDelivery = new Set(emailDeliveries.map((delivery) => delivery.messageId))
   const enrichedItems = items.map((item) => ({
     ...item,
+    senderBlocked: item.deliveryStatus === 'failed' && item.deliveryError === SENDER_DOMAIN_NOT_AUTHORIZED,
+    retryable: item.kind === 'outgoing' && item.deliveryStatus === 'failed' && hasEmailDelivery.has(item.id),
     attachments: (attachmentsByMessage.get(item.id) ?? []).map((attachment) => ({
       id: attachment.id,
       fileName: attachment.fileName,

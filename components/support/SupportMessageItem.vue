@@ -98,11 +98,20 @@
             data-testid="support-message-delivery-failed"
           >
             <Icon name="lucide:alert-circle" class="w-3 h-3 text-destructive shrink-0" />
-            <span class="text-xs text-destructive">{{
+            <span v-if="isSenderBlocked" class="text-xs text-destructive" data-testid="support-message-sender-blocked">
+              Not sent: this inbox's From address isn't verified for your team.
+              <NuxtLink
+                to="/support/settings"
+                class="underline hover:no-underline"
+                data-testid="support-message-sender-link"
+                >Verify the domain in Support settings.</NuxtLink
+              >
+            </span>
+            <span v-else class="text-xs text-destructive">{{
               message.deliveryStatus === 'bounced' ? 'Bounced' : 'Failed to send'
             }}</span>
             <button
-              v-if="message.deliveryStatus === 'failed'"
+              v-if="message.deliveryStatus === 'failed' && message.retryable !== false"
               type="button"
               class="text-xs text-destructive underline hover:no-underline disabled:opacity-50 disabled:no-underline"
               data-testid="support-message-retry"
@@ -120,6 +129,8 @@
 
 <script>
 import { toast } from 'vue-sonner'
+
+const SENDER_DOMAIN_NOT_AUTHORIZED = 'SENDER_DOMAIN_NOT_AUTHORIZED'
 
 export default {
   name: 'SupportMessageItem',
@@ -150,6 +161,7 @@ export default {
   data() {
     return {
       retrying: false,
+      senderRetryBlocked: false,
     }
   },
 
@@ -170,6 +182,15 @@ export default {
     renderableHtml() {
       if (this.message.kind === 'activity') return null
       return this.message.bodyHtml || null
+    },
+
+    /** The outbox refused to send because the From address is not authorized for the team. */
+    isSenderBlocked() {
+      return (
+        this.senderRetryBlocked ||
+        this.message.senderBlocked === true ||
+        this.message.deliveryError === SENDER_DOMAIN_NOT_AUTHORIZED
+      )
     },
 
     messageBody() {
@@ -231,7 +252,11 @@ export default {
 
     async retryDelivery() {
       if (this.retrying || !this.conversationId) return
-      if (!window.confirm('The previous attempt may already have been accepted. Retrying could send a duplicate.')) {
+      // A blocked sender never reached the provider, so there is no duplicate risk to confirm.
+      if (
+        !this.isSenderBlocked &&
+        !window.confirm('The previous attempt may already have been accepted. Retrying could send a duplicate.')
+      ) {
         return
       }
       this.retrying = true
@@ -240,13 +265,19 @@ export default {
         await $fetch(`/api/support/conversations/${this.conversationId}/messages/${this.message.id}/retry`, {
           method: 'POST',
         })
+        this.senderRetryBlocked = false
         // Not set locally: the worker pass this triggers publishes a realtime
         // event once it actually resolves (server/utils/outbound-delivery.ts),
         // which is what refreshes `message.deliveryStatus` for real. Setting
         // 'pending' here too would just be a second, possibly-wrong copy of
         // the same fact.
       } catch (err) {
-        toast.error(err?.data?.error?.message || 'Failed to retry')
+        const payload = err?.data?.data?.error || err?.data?.error || {}
+        if (err?.statusCode === 409 && payload.code === 'SENDER_NOT_VERIFIED') {
+          this.senderRetryBlocked = true
+        } else {
+          toast.error(payload.message || 'Failed to retry')
+        }
       } finally {
         this.retrying = false
       }

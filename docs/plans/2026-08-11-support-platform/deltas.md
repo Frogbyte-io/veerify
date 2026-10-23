@@ -709,3 +709,35 @@ what to build invites the next agent to "finish" it by adding the cuts back.
 `design.md` gives each team one shared inbox, so it had exactly one possible value. And
 `conversation.status = 'snoozed'` / `conversation.snoozedUntil` now have **no writer anywhere in the
 program**; they are intentionally dormant, not dead columns awaiting cleanup.
+
+### D-37 — SUP-04-6 verdict becomes team-scoped; outbox enforces sender ownership
+
+**Found:** design review for custom sending domains, 2026-10-22. **Status:** resolved in
+`docs/plans/2026-10-22-custom-sending-domains/design.md` and implemented on `feat/custom-sending-domains`.
+
+Stage 04 treated the provider's domain list as the authority on whether a From address is allowed.
+`MailgunChannelDriver.checkSendingAuthorization` passes for any `active` domain in the whole Frogmail
+project, and its `unauthorized` verdict also returned `verifiedDomains`, every domain in the project.
+`sending-status.get.ts` sent that list to any inbox agent. That was harmless while one team used a few
+operator-added domains. Once customers add their own, every team could read every other customer's domains.
+
+Nothing checked authorization at send time either. `checkSendingAuthorization` had a single caller, the
+settings endpoint, and `processOutboundDelivery` sent whatever `payload.from` held. A team could set its From
+to `support@teamb.com` and the provider would accept it, because the domain was verified for the project.
+
+**Resolution.**
+
+- The verdict is team-scoped (`resolveTeamSenderAuthorization`) and never returns a provider-wide list. The
+  `verifiedDomains` field is removed in both policies. `unknown` must still never be shown as "not authorized"
+  (SUP-04-6).
+- Enforcement points: settings verdict, inbox save (`422 SENDER_DOMAIN_NOT_OWNED`), agent reply
+  (`409 SENDER_NOT_VERIFIED`), auto-reply, CSAT, and a final check in `processOutboundDelivery` that fails the
+  delivery as terminal with `SENDER_DOMAIN_NOT_AUTHORIZED` without calling `sendEmail`.
+- Ownership is a claim per team with its own Veerify TXT proof; DKIM alone cannot prove ownership because
+  Frogmail never deletes the SES identity.
+- `SUPPORT_SENDER_POLICY` is `legacy` (today's behaviour) or `team`. `team` is forced when
+  `SUPPORT_SENDING_DOMAINS_ENABLED=true`, so existing deployments are unchanged until they opt in.
+
+**Consequence worth flagging.** Turning on `team` policy breaks teams already sending from manually
+onboarded domains until they hold a claim. The backfill script (`scripts/backfill-sending-domains.ts`, design
+§13 item 2) must run first; it is not part of this delta's code.

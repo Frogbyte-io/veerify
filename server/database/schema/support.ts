@@ -44,6 +44,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { user, team } from './auth'
 import { project, feedback } from './feedback'
+import type { SendingDomainDnsRecord } from '../../../lib/support-sending-domains'
 
 // Support companies - the Zendesk "organization" concept, named to avoid
 // collision with the existing `organization` table. Declared before `contact`
@@ -266,6 +267,12 @@ export const supportInboxAddress = pgTable(
     address: text('address').notNull(),
     projectId: text('project_id').references(() => project.id, { onDelete: 'set null' }),
     isPrimary: boolean('is_primary').default(false).notNull(),
+    // 'platform' rows are system-generated forwarding addresses on
+    // SUPPORT_PLATFORM_MAIL_DOMAIN; 'custom' rows are entered by the team.
+    kind: text('kind').default('custom').notNull(),
+    // Provider inbound route for direct receiving on a verified sending domain.
+    providerRouteId: text('provider_route_id'),
+    providerRouteStatus: text('provider_route_status'),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
@@ -274,6 +281,11 @@ export const supportInboxAddress = pgTable(
     uniqueAddress: uniqueIndex('support_inbox_address_address_idx').on(table.address),
     inboxIdx: index('support_inbox_address_inbox_idx').on(table.inboxId),
     projectIdx: index('support_inbox_address_project_idx').on(table.projectId),
+    validKind: check('support_inbox_address_kind_check', sql`${table.kind} in ('custom','platform')`),
+    validRouteStatus: check(
+      'support_inbox_address_route_status_check',
+      sql`${table.providerRouteStatus} is null or ${table.providerRouteStatus} in ('active','failed')`
+    ),
   })
 )
 
@@ -1140,6 +1152,67 @@ export const supportMetricDaily = pgTable(
     finiteValueCheck: check(
       'support_metric_daily_finite_value_check',
       sql`${table.value} = ${table.value} and ${table.value} < 'Infinity'::double precision and ${table.value} > '-Infinity'::double precision`
+    ),
+  })
+)
+
+// Customer sending domains: one row per claimed domain, owned by exactly one
+// team. See docs/plans/2026-10-22-custom-sending-domains/design.md §5.
+export const supportSendingDomain = pgTable(
+  'support_sending_domain',
+  {
+    id: text('id').primaryKey(),
+    teamId: text('team_id')
+      .notNull()
+      .references(() => team.id, { onDelete: 'cascade' }),
+    // Normalized ASCII (lowercase, no trailing dot, punycode).
+    domain: text('domain').notNull(),
+    // Registrable domain (tldts getDomain); advisory-lock and hierarchy key.
+    registrableDomain: text('registrable_domain').notNull(),
+    status: text('status').default('provisioning').notNull(),
+    provider: text('provider').notNull(),
+    providerAccountKey: text('provider_account_key').default('').notNull(),
+    providerOwnership: text('provider_ownership'),
+    providerState: text('provider_state'),
+    receivesViaProvider: boolean('receives_via_provider').default(false).notNull(),
+    ownershipToken: text('ownership_token').notNull(),
+    ownershipVerifiedAt: timestamp('ownership_verified_at'),
+    ownershipFailures: integer('ownership_failures').default(0).notNull(),
+    providerFailures: integer('provider_failures').default(0).notNull(),
+    dnsRecords: jsonb('dns_records').$type<SendingDomainDnsRecord[]>().default([]).notNull(),
+    verifiedAt: timestamp('verified_at'),
+    lastCheckedAt: timestamp('last_checked_at'),
+    nextCheckAt: timestamp('next_check_at'),
+    leaseExpiresAt: timestamp('lease_expires_at'),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    lastErrorCode: text('last_error_code'),
+    lastError: text('last_error'),
+    // Pending-claim expiry; null once verified.
+    expiresAt: timestamp('expires_at'),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    uniqueDomain: uniqueIndex('support_sending_domain_domain_idx').on(table.domain),
+    teamIdx: index('support_sending_domain_team_idx').on(table.teamId),
+    registrableIdx: index('support_sending_domain_registrable_idx').on(table.registrableDomain),
+    dueIdx: index('support_sending_domain_due_idx').on(table.status, table.nextCheckAt),
+    validStatus: check(
+      'support_sending_domain_status_check',
+      sql`${table.status} in ('provisioning','pending','verified','suspended','failed','deleting')`
+    ),
+    validOwnership: check(
+      'support_sending_domain_ownership_check',
+      sql`${table.providerOwnership} is null or ${table.providerOwnership} in ('created','adopted')`
+    ),
+    validProviderState: check(
+      'support_sending_domain_provider_state_check',
+      sql`${table.providerState} is null or ${table.providerState} in ('active','unverified')`
     ),
   })
 )

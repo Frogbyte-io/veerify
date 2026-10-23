@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
+import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import {
   contact,
   conversation,
@@ -82,6 +83,7 @@ test.describe.serial('outbound reply round trip', () => {
 
     const teamResponse = await request.get('/api/teams/active', { headers })
     const teamId = (await teamResponse.json()).data.id as string
+    await ensureVerifiedSendingDomain(teamId)
 
     const suffix = randomUUID().slice(0, 8)
     const inboxAddress = `inbound-${suffix}@example.com`
@@ -367,6 +369,7 @@ test.describe.serial('outbound attachment contract', () => {
     const teamResponse = await request.get('/api/teams/active', { headers })
     expect(teamResponse.ok()).toBeTruthy()
     const teamId = (await teamResponse.json()).data.id as string
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const customerEmail = `attachment-${suffix}@example.com`
     const adminCredentials = { email: `attachment-admin-${suffix}@example.com`, password: TEST_PASSWORD }

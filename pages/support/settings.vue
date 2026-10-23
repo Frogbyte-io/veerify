@@ -640,6 +640,13 @@
           </CardContent>
         </Card>
 
+        <!-- Sending domains -->
+        <SupportSendingDomains
+          v-if="activeTeamId"
+          :team-id="activeTeamId"
+          @loaded="(info, loadedTeamId) => onSendingDomainsLoaded(info, loadedTeamId)"
+        />
+
         <!-- Inbox settings -->
         <template v-if="hasInboxes">
           <div v-if="inboxes.length > 1" class="flex items-center gap-3">
@@ -674,14 +681,18 @@
               <div class="grid gap-4 sm:grid-cols-2">
                 <div>
                   <Label for="general-from-address">From address</Label>
-                  <Input
-                    id="general-from-address"
+                  <SupportFromAddressPicker
+                    :key="selectedInboxId"
                     v-model="generalEmailAddress"
-                    type="email"
-                    placeholder="support@yourdomain.com"
-                    class="mt-2"
+                    input-id="general-from-address"
+                    :policy="senderPolicy"
+                    :loading="!sendingDomainsLoaded"
+                    :domains="sendingDomainsInfo?.domains || []"
+                    :platform-addresses="platformAddresses"
+                    :domains-enabled="sendingDomainsInfo?.enabled === true"
                     :disabled="isSavingGeneral || !canManageInbox"
                     :readonly="!canManageInbox"
+                    @update:valid="fromPickerValid = $event"
                   />
                   <p class="text-sm text-muted-foreground mt-1">Used as the From on outgoing replies.</p>
                 </div>
@@ -710,16 +721,24 @@
                   Set a From address above to have it checked against your provider.
                 </p>
                 <div
+                  v-else-if="sendingStatus.authorization.status === 'pending'"
+                  class="flex items-start gap-2 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 p-3 text-sm"
+                  data-testid="support-settings-sending-pending"
+                >
+                  <Icon name="lucide:clock" class="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    Replies are blocked until {{ sendingStatus.authorization.domain.domain }} is verified. Publish the
+                    DNS records in Sending domains above.
+                  </span>
+                </div>
+                <div
                   v-else-if="sendingStatus.authorization.status === 'unauthorized'"
                   class="flex items-start gap-2 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-400 p-3 text-sm"
                   data-testid="support-settings-sending-unauthorized"
+                  :data-reason="sendingStatus.authorization.reason || undefined"
                 >
                   <Icon name="lucide:alert-triangle" class="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>
-                    "{{ sendingStatus.address }}" is not on a domain your provider is verified to send from. Replies
-                    sent as this address may be rejected. Verify the domain with your provider, or use an address on a
-                    verified domain.
-                  </span>
+                  <span>{{ sendingUnauthorizedMessage }}</span>
                 </div>
                 <div
                   v-else-if="sendingStatus.authorization.status === 'authorized'"
@@ -727,7 +746,14 @@
                   data-testid="support-settings-sending-authorized"
                 >
                   <Icon name="lucide:check-circle-2" class="w-4 h-4 shrink-0" />
-                  <span>Your provider is verified to send as "{{ sendingStatus.address }}".</span>
+                  <span v-if="sendingStatus.authorization.platform"
+                    >"{{ sendingStatus.address }}" is your Veerify address and is ready to send.</span
+                  >
+                  <span v-else-if="sendingStatus.policy === 'team' && sendingStatus.authorization.domain"
+                    >Your team has verified {{ sendingStatus.authorization.domain.domain }}, so replies can be sent as
+                    "{{ sendingStatus.address }}".</span
+                  >
+                  <span v-else>Your provider is verified to send as "{{ sendingStatus.address }}".</span>
                 </div>
                 <div
                   v-else
@@ -758,7 +784,7 @@
               <div v-if="canManageInbox" class="flex justify-end">
                 <Button
                   data-testid="support-inbox-settings-save"
-                  :disabled="isSavingGeneral || !generalHasChanges"
+                  :disabled="isSavingGeneral || !generalHasChanges || !fromPickerValid"
                   @click="saveGeneral"
                 >
                   <Icon v-if="isSavingGeneral" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
@@ -968,6 +994,55 @@
                 <p v-else class="text-sm text-muted-foreground">
                   Add a receiving address below before pointing mail at this inbox.
                 </p>
+
+                <div v-if="platformAddress" class="space-y-1" data-testid="support-settings-platform-address">
+                  <Label>Forward your support address to</Label>
+                  <div class="flex items-center gap-2">
+                    <Input
+                      :model-value="platformAddress"
+                      readonly
+                      data-testid="support-settings-channel-platform-forward"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      data-testid="support-settings-platform-copy"
+                      @click="copy(platformAddress)"
+                      >Copy</Button
+                    >
+                    <Button
+                      v-if="canManageInbox"
+                      variant="outline"
+                      size="sm"
+                      data-testid="support-settings-platform-regenerate"
+                      :disabled="isRegeneratingPlatformAddress"
+                      @click="isRegenerateDialogOpen = true"
+                      >Regenerate</Button
+                    >
+                  </div>
+                  <p class="text-xs text-muted-foreground">
+                    In Google Workspace or Microsoft 365, add a forwarding rule from your support address to this
+                    address. Gmail's forwarding confirmation arrives here as a ticket.
+                  </p>
+                </div>
+                <div
+                  v-else-if="canManageInbox && channel.platformForwardingEnabled"
+                  class="space-y-1"
+                  data-testid="support-settings-platform-create"
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    :disabled="isCreatingPlatformAddress"
+                    @click="createPlatformAddress"
+                  >
+                    <Icon v-if="isCreatingPlatformAddress" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+                    Create forwarding address
+                  </Button>
+                  <p class="text-xs text-muted-foreground">
+                    Get a Veerify address to forward your own support mailbox to.
+                  </p>
+                </div>
               </template>
             </CardContent>
           </Card>
@@ -1093,6 +1168,9 @@
                       <div class="flex items-center gap-2">
                         <span class="font-mono text-sm truncate">{{ address.address }}</span>
                         <Badge v-if="address.isPrimary" variant="outline" class="text-xs">Primary</Badge>
+                        <Badge v-if="address.kind === 'platform'" variant="outline" class="text-xs"
+                          >Veerify forwarding</Badge
+                        >
                       </div>
                       <p class="text-sm mt-0.5">
                         <span v-if="productName(address.projectId)">{{ productName(address.projectId) }}</span>
@@ -1100,7 +1178,7 @@
                       </p>
                     </div>
                     <Button
-                      v-if="canManageInbox"
+                      v-if="canManageInbox && address.kind !== 'platform'"
                       variant="ghost"
                       size="icon"
                       class="shrink-0 ml-4"
@@ -1184,6 +1262,40 @@
                 class="w-4 h-4 mr-2 animate-spin"
               />
               Remove member
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <!-- Regenerate forwarding address confirmation -->
+      <Dialog :open="isRegenerateDialogOpen" @update:open="onRegenerateDialogToggle">
+        <DialogContent class="sm:max-w-[420px]" data-testid="support-regenerate-platform-dialog">
+          <DialogHeader>
+            <DialogTitle>Regenerate forwarding address</DialogTitle>
+            <DialogDescription>
+              This replaces "{{ platformAddress }}" with a new address. The old address stops working immediately, so
+              any forwarding rule that still points at it will lose mail until you update it.
+              <template v-if="selectedInbox?.emailAddress === platformAddress">
+                This inbox also sends from it, so its From address moves to the new address.
+              </template>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              :disabled="isRegeneratingPlatformAddress"
+              @click="onRegenerateDialogToggle(false)"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              :disabled="isRegeneratingPlatformAddress"
+              data-testid="support-regenerate-platform-confirm"
+              @click="regeneratePlatformAddress"
+            >
+              <Icon v-if="isRegeneratingPlatformAddress" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+              Regenerate address
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1350,6 +1462,12 @@ export default {
 
       // sending authorization (SUP-04-6)
       sendingStatus: null,
+      sendingDomainsInfo: null,
+      sendingDomainsLoaded: false,
+      isCreatingPlatformAddress: false,
+      isRegeneratingPlatformAddress: false,
+      isRegenerateDialogOpen: false,
+      fromPickerValid: true,
       isLoadingSendingStatus: true,
       sendingStatusError: null,
 
@@ -1438,6 +1556,41 @@ export default {
       return (list.find((a) => a.isPrimary) || list[0])?.address || ''
     },
 
+    senderPolicy() {
+      // The server decides: SUPPORT_SENDER_POLICY=team applies even when the sending-domains feature is off.
+      const policy = this.sendingDomainsInfo?.policy ?? this.sendingStatus?.policy
+      return policy === 'team' ? 'team' : 'legacy'
+    },
+
+    /** The inbox's Veerify forwarding address (kind 'platform'), from channel-status or the address list. */
+    platformAddress() {
+      return this.channel?.platformAddress || (this.addresses || []).find((a) => a.kind === 'platform')?.address || ''
+    },
+
+    platformAddresses() {
+      return this.platformAddress ? [this.platformAddress] : []
+    },
+
+    sendingUnauthorizedMessage() {
+      const status = this.sendingStatus
+      const address = status?.address
+      if (!status || status.policy !== 'team') {
+        // legacy policy keeps the provider-wide wording
+        return `"${address}" is not on a domain your provider is verified to send from. Replies sent as this address may be rejected. Verify the domain with your provider, or use an address on a verified domain.`
+      }
+      const reason = status.authorization.reason
+      if (reason === 'suspended') {
+        return `The domain for "${address}" is suspended because its DNS records were no longer found. Replies are blocked until you publish them again and verify the domain in Sending domains above.`
+      }
+      if (reason === 'provider_mismatch') {
+        return `"${address}" was verified with a different mail provider configuration. Register the domain again in Sending domains above.`
+      }
+      const owned = status.authorization.teamDomains || []
+      return owned.length
+        ? `"${address}" is not on a domain your team has verified. Replies are blocked. Use an address on ${owned.join(', ')}.`
+        : `"${address}" is not on a domain your team has verified. Replies are blocked. Add and verify the domain in Sending domains above.`
+    },
+
     slaWeekdays() {
       return ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
     },
@@ -1469,6 +1622,7 @@ export default {
       this.error = null
       this.inboxAccessError = null
       this.clearInboxScopedState()
+      this.resetSendingDomainsState()
 
       try {
         const [teamResponse, sessionResponse] = await Promise.all([
@@ -1537,8 +1691,18 @@ export default {
       }
     },
 
+    /** Team-scoped sending-domain state; a team switch must not leak the previous team's list into the picker. */
+    resetSendingDomainsState() {
+      this.sendingDomainsInfo = null
+      this.sendingDomainsLoaded = false
+      this.isRegenerateDialogOpen = false
+      this.isCreatingPlatformAddress = false
+      this.isRegeneratingPlatformAddress = false
+    },
+
     clearInboxScopedState() {
       this.selectedInboxId = ''
+      this.fromPickerValid = true
       this.members = []
       this.addresses = []
       this.sendingStatus = null
@@ -1636,6 +1800,7 @@ export default {
       this.generalSignature = this.selectedInbox?.signature || ''
       this.generalEmailAddress = this.selectedInbox?.emailAddress || ''
       this.generalFromName = this.selectedInbox?.fromName || ''
+      this.fromPickerValid = true
     },
 
     async saveTeamPolicy(value) {
@@ -2467,6 +2632,64 @@ export default {
         if (this.isCurrentRequest(token, teamId, inboxId)) this.isLoadingChannel = false
       }
       return this.isCurrentRequest(token, teamId, inboxId)
+    },
+
+    onSendingDomainsLoaded(info, loadedTeamId) {
+      // Ignore a response that belongs to a team we have already switched away from.
+      if (loadedTeamId && loadedTeamId !== this.activeTeamId) return
+      const signature = (value) => (value?.domains || []).map((row) => `${row.id}:${row.status}`).join('|')
+      const changed = this.sendingDomainsLoaded && signature(info) !== signature(this.sendingDomainsInfo)
+      this.sendingDomainsInfo = info
+      this.sendingDomainsLoaded = true
+      // A domain changing state changes the verdict for the current From address.
+      if (changed && this.selectedInboxId && !this.isLoadingSendingStatus) this.loadSendingStatus()
+    },
+
+    async createPlatformAddress() {
+      const inboxId = this.selectedInboxId
+      if (!inboxId || this.isCreatingPlatformAddress) return
+      this.isCreatingPlatformAddress = true
+      try {
+        await $fetch(`/api/support/inboxes/${inboxId}/addresses/platform`, { method: 'POST' })
+        await Promise.all([this.loadChannelStatus(), this.reloadAddresses()])
+        toast.success('Forwarding address created')
+      } catch (err) {
+        toast.error(this.extractErrorMessage(err, 'Failed to create forwarding address'))
+      } finally {
+        this.isCreatingPlatformAddress = false
+      }
+    },
+
+    onRegenerateDialogToggle(open) {
+      if (!open && this.isRegeneratingPlatformAddress) return
+      this.isRegenerateDialogOpen = open
+    },
+
+    async regeneratePlatformAddress() {
+      const inboxId = this.selectedInboxId
+      const token = this.requestToken
+      const teamId = this.activeTeamId
+      if (!inboxId || this.isRegeneratingPlatformAddress) return
+      this.isRegeneratingPlatformAddress = true
+      try {
+        await $fetch(`/api/support/inboxes/${inboxId}/addresses/platform`, {
+          method: 'POST',
+          body: { regenerate: true },
+        })
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        this.isRegenerateDialogOpen = false
+        await Promise.all([
+          this.loadChannelStatus({ token, teamId, inboxId }),
+          this.reloadAddresses({ token, teamId, inboxId }),
+          this.loadSendingStatus({ token, teamId, inboxId }),
+        ])
+        toast.success('Forwarding address regenerated. The previous address no longer receives mail.')
+      } catch (err) {
+        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        toast.error(this.extractErrorMessage(err, 'Failed to regenerate forwarding address'))
+      } finally {
+        if (this.isCurrentRequest(token, teamId, inboxId)) this.isRegeneratingPlatformAddress = false
+      }
     },
 
     async copy(value) {

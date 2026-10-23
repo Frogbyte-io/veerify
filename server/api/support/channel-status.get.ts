@@ -7,7 +7,12 @@
  *     description: >
  *       Read-only. The provider and its webhook credentials are deployment
  *       environment configuration, not per-team settings, so this reports
- *       whether they are set - never their values.
+ *       whether they are set - never their values. `platformAddress` is the
+ *       inbox's platform forwarding address (customers forward their support
+ *       address to it), or null when none exists yet.
+ *       `platformForwardingEnabled` is true when the deployment sets
+ *       `SUPPORT_PLATFORM_MAIL_DOMAIN`, so the UI can offer to create one for
+ *       an inbox that predates it.
  *     operationId: getSupportChannelStatus
  *     responses:
  *       200: { description: Channel status }
@@ -18,6 +23,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxRole } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { z } from 'zod'
+import { findPlatformAddress, getPlatformMailDomain } from '~/server/utils/platform-address'
 import {
   SUPPORT_CHANNEL_PROVIDERS,
   getConfiguredChannelDriver,
@@ -28,6 +34,9 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const { inboxId } = validateQuery(event, z.object({ inboxId: z.string().min(1) }))
   await requireInboxRole(inboxId, session.user.id, 'agent')
+
+  const platformForwardingEnabled = getPlatformMailDomain() !== null
+  const platformAddress = platformForwardingEnabled ? await findPlatformAddress(inboxId) : null
 
   const provider = getConfiguredChannelProviderName()
   const driver = getConfiguredChannelDriver()
@@ -48,5 +57,7 @@ export default defineEventHandler(async (event) => {
     missingEnvVars: missing,
     /** Where the provider should be told to POST inbound mail. */
     inboundPath: `/api/support/inbound/${provider}`,
+    platformForwardingEnabled,
+    platformAddress: platformAddress?.address ?? null,
   })
 })

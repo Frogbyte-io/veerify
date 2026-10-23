@@ -1,12 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { OutboundClaim } from '../server/utils/outbound-delivery'
 
-import {
+// WP1/WP2 modules (customer sending domains) do not exist on this branch yet;
+// the final sender check consults them, so they are mocked.
+const sendingDomains = vi.hoisted(() => ({
+  resolveSenderPolicy: vi.fn(() => 'legacy' as 'legacy' | 'team'),
+  resolveEffectiveSenderPolicy: vi.fn(async (): Promise<'legacy' | 'team'> => 'legacy'),
+  isDomainClaimedByOtherTeam: vi.fn(async () => false),
+  resolveTeamSenderAuthorization: vi.fn(),
+}))
+sendingDomains.resolveEffectiveSenderPolicy.mockImplementation(async () => sendingDomains.resolveSenderPolicy())
+vi.mock('~/server/utils/sending-domains', () => sendingDomains)
+vi.mock('~/server/services/sending-domains', () => ({ getSendingDomainProvider: vi.fn(() => null) }))
+const metrics = vi.hoisted(() => ({ recordSupportMetric: vi.fn() }))
+vi.mock('~/server/utils/support-observability', () => metrics)
+
+const {
   computeNextAttemptAt,
+  isProviderSenderRejection,
   processOutboundDelivery,
   runOutboundDeliveryWorker,
   sanitizeDeliveryError,
-  type OutboundClaim,
-} from '../server/utils/outbound-delivery'
+} = await import('../server/utils/outbound-delivery')
 
 describe('sanitizeDeliveryError', () => {
   it('extracts the message from an Error', () => {
@@ -190,6 +205,169 @@ describe('processOutboundDelivery', () => {
 
     expect(result).toEqual({ outcome: 'failed', error: 'socket hang up' })
     expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', expect.any(Error), 1)
+  })
+
+  describe('final sender check', () => {
+    const withFrom = (): OutboundClaim =>
+      claim({ payload: { to: 'customer@example.com', subject: 'Re: Invoice', from: { address: 'support@teamb.com' } } })
+
+    it('fails terminally with SENDER_DOMAIN_NOT_AUTHORIZED and never calls sendEmail', async () => {
+      const sendEmail = vi.fn()
+      const getObject = vi.fn()
+      const onSent = vi.fn()
+      const onFailed = vi.fn().mockResolvedValue(undefined)
+      const authorizeSender = vi.fn().mockResolvedValue(false)
+
+      const result = await processOutboundDelivery(withFrom(), {
+        sendEmail,
+        getObject,
+        onSent,
+        onFailed,
+        authorizeSender,
+      })
+
+      expect(result).toEqual({ outcome: 'failed', error: 'SENDER_DOMAIN_NOT_AUTHORIZED' })
+      expect(sendEmail).not.toHaveBeenCalled()
+      expect(getObject).not.toHaveBeenCalled()
+      expect(onSent).not.toHaveBeenCalled()
+      // Terminal even on attempt 1: retrying cannot fix an unauthorized sender.
+      expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', 'SENDER_DOMAIN_NOT_AUTHORIZED', 1, {
+        terminal: true,
+      })
+    })
+
+    it('sends normally when the sender is authorized', async () => {
+      const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'sent' })
+      const onSent = vi.fn().mockResolvedValue(undefined)
+      const authorizeSender = vi.fn().mockResolvedValue(true)
+
+      const result = await processOutboundDelivery(withFrom(), {
+        sendEmail,
+        getObject: vi.fn(),
+        onSent,
+        onFailed: vi.fn(),
+        authorizeSender,
+      })
+
+      expect(result).toEqual({ outcome: 'sent' })
+      expect(authorizeSender).toHaveBeenCalledWith(expect.objectContaining({ id: 'delivery-1' }))
+      expect(sendEmail).toHaveBeenCalledTimes(1)
+    })
+
+    it('records the outbox block metric when the final check refuses', async () => {
+      metrics.recordSupportMetric.mockClear()
+      await processOutboundDelivery(withFrom(), {
+        sendEmail: vi.fn(),
+        getObject: vi.fn(),
+        onSent: vi.fn(),
+        onFailed: vi.fn().mockResolvedValue(undefined),
+        authorizeSender: vi.fn().mockResolvedValue(false),
+      })
+
+      expect(metrics.recordSupportMetric).toHaveBeenCalledWith('support.sending_domain.blocked', { reason: 'outbox' })
+    })
+
+    describe('provider sender rejection', () => {
+      it.each([
+        ['an SMTP 553 reply', { accepted: false, response: 'Message failed: 553 5.7.1 Sender address rejected' }],
+        ['a sender_not_authorized code', { accepted: false, response: '{"code":"sender_not_authorized"}' }],
+      ])('suspends the claim and fails terminally on %s', async (_label, outcome) => {
+        const onFailed = vi.fn().mockResolvedValue(undefined)
+        const onSenderRejected = vi.fn().mockResolvedValue(undefined)
+
+        const result = await processOutboundDelivery(withFrom(), {
+          sendEmail: vi.fn().mockResolvedValue(outcome),
+          getObject: vi.fn(),
+          onSent: vi.fn(),
+          onFailed,
+          authorizeSender: vi.fn().mockResolvedValue(true),
+          onSenderRejected,
+        })
+
+        expect(result).toEqual({ outcome: 'failed', error: 'SENDER_DOMAIN_NOT_AUTHORIZED' })
+        expect(onSenderRejected).toHaveBeenCalledWith(expect.objectContaining({ id: 'delivery-1' }), expect.any(String))
+        expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', 'SENDER_DOMAIN_NOT_AUTHORIZED', 1, {
+          terminal: true,
+        })
+      })
+
+      it('also recognizes a thrown rejection, and still fails when suspending throws', async () => {
+        const onFailed = vi.fn().mockResolvedValue(undefined)
+
+        const result = await processOutboundDelivery(withFrom(), {
+          sendEmail: vi.fn().mockRejectedValue(new Error('553 sender not allowed')),
+          getObject: vi.fn(),
+          onSent: vi.fn(),
+          onFailed,
+          authorizeSender: vi.fn().mockResolvedValue(true),
+          onSenderRejected: vi.fn().mockRejectedValue(new Error('db down')),
+        })
+
+        expect(result).toEqual({ outcome: 'failed', error: 'SENDER_DOMAIN_NOT_AUTHORIZED' })
+        expect(onFailed).toHaveBeenCalledTimes(1)
+      })
+
+      it('leaves other failures retryable and does not suspend anything', async () => {
+        const onFailed = vi.fn().mockResolvedValue(undefined)
+        const onSenderRejected = vi.fn()
+
+        await processOutboundDelivery(withFrom(), {
+          sendEmail: vi.fn().mockResolvedValue({ accepted: false, response: '451 try again later' }),
+          getObject: vi.fn(),
+          onSent: vi.fn(),
+          onFailed,
+          authorizeSender: vi.fn().mockResolvedValue(true),
+          onSenderRejected,
+        })
+
+        expect(onSenderRejected).not.toHaveBeenCalled()
+        expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', '451 try again later', 1)
+      })
+
+      it('matches 553 and sender_not_authorized, not digits inside other numbers', () => {
+        expect(isProviderSenderRejection('553 5.7.1 nope')).toBe(true)
+        expect(isProviderSenderRejection(new Error('Message failed: 553-5.7.1 nope'))).toBe(true)
+        expect(isProviderSenderRejection('Sender_Not_Authorized')).toBe(true)
+        expect(isProviderSenderRejection('queued as 1553.22 id 5530')).toBe(false)
+        expect(isProviderSenderRejection('421 busy')).toBe(false)
+      })
+    })
+
+    it('treats a throwing check as a retryable failure, not as authorization', async () => {
+      const sendEmail = vi.fn()
+      const onFailed = vi.fn().mockResolvedValue(undefined)
+      const authorizeSender = vi.fn().mockRejectedValue(new Error('db unavailable'))
+
+      const result = await processOutboundDelivery(withFrom(), {
+        sendEmail,
+        getObject: vi.fn(),
+        onSent: vi.fn(),
+        onFailed,
+        authorizeSender,
+      })
+
+      expect(result).toEqual({ outcome: 'failed', error: 'db unavailable' })
+      expect(sendEmail).not.toHaveBeenCalled()
+      expect(onFailed).toHaveBeenCalledWith('delivery-1', 'msg-1', expect.any(Error), 1)
+    })
+
+    it('does not consult the policy lookup under the legacy sender policy', async () => {
+      sendingDomains.resolveSenderPolicy.mockReturnValue('legacy')
+      sendingDomains.resolveTeamSenderAuthorization.mockClear()
+      const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'sent' })
+
+      // No authorizeSender override: the default implementation runs, and must
+      // short-circuit without touching the database.
+      const result = await processOutboundDelivery(withFrom(), {
+        sendEmail,
+        getObject: vi.fn(),
+        onSent: vi.fn().mockResolvedValue(undefined),
+        onFailed: vi.fn(),
+      })
+
+      expect(result).toEqual({ outcome: 'sent' })
+      expect(sendingDomains.resolveTeamSenderAuthorization).not.toHaveBeenCalled()
+    })
   })
 })
 

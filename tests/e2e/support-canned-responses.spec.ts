@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
+import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 import {
   cannedResponse,
@@ -47,6 +48,7 @@ async function loginAndActivateTeam(page: import('@playwright/test').Page, teamI
 test.describe.serial('support canned responses', () => {
   test('an ordinary inbox agent can create, edit, and delete team canned responses', async ({ page, request }) => {
     const { teamId, userId } = await activeTeamAndUser(request)
+    await ensureVerifiedSendingDomain(teamId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `canned-crud-inbox-${suffix}`
     const membershipId = `canned-crud-member-${suffix}`

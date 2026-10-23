@@ -103,7 +103,9 @@ export interface ChannelConfiguration {
  */
 export type SendingAuthorization =
   | { status: 'authorized' }
-  | { status: 'unauthorized'; verifiedDomains: string[] }
+  // Deliberately carries no domain list: the provider account is shared by every
+  // team, so its domains must never reach a caller that can show them to a user.
+  | { status: 'unauthorized' }
   | { status: 'unknown'; reason: string }
 
 /** Injected so the provider lookups are testable without a network. */
@@ -167,9 +169,7 @@ export function authorizationForDomains(
     return { status: 'unknown', reason: `Could not read a domain from "${address}"` }
   }
 
-  return matchVerifiedDomain(domain, verifiedDomains, options)
-    ? { status: 'authorized' }
-    : { status: 'unauthorized', verifiedDomains }
+  return matchVerifiedDomain(domain, verifiedDomains, options) ? { status: 'authorized' } : { status: 'unauthorized' }
 }
 
 export interface ChannelDriver {
@@ -178,6 +178,12 @@ export interface ChannelDriver {
 
   /** Non-secret deployment identity used to isolate delivery webhook keys. */
   readonly accountKey: string
+
+  /**
+   * Whether the provider authorizes a verified domain's subdomains as senders
+   * (Mailgun/Frogmail yes, Postmark no). Team-scoped enforcement needs this.
+   */
+  readonly authorizesSubdomains: boolean
 
   /**
    * Verify the request really came from the provider. Returns false rather

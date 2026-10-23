@@ -18,10 +18,11 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Inbox updated }
- *       400: { description: projectId or defaultAssigneeUserId does not belong to this team }
+ *       400: { description: "projectId or defaultAssigneeUserId does not belong to this team, or fromName contains @, <, >, a double quote or a control character" }
  *       403: { description: Not a member of this inbox or a team admin }
  *       404: { description: Inbox not found }
  *       409: { description: Another inbox already uses this slug or email address }
+ *       422: { description: "The email address is on another team's sending domain, or under the team sender policy not on one of this team's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)" }
  */
 import { z } from 'zod'
 import { and, eq } from 'drizzle-orm'
@@ -35,6 +36,12 @@ import { db } from '~/server/database/drizzle'
 import { supportInbox } from '~/server/database/schema/support'
 import { project } from '~/server/database/schema/feedback'
 import { teamMember } from '~/server/database/schema/auth'
+import { assertSenderAddressAllowedForInbox } from '~/server/utils/sending-domains'
+
+// The display name goes into the From header: reject anything that could break
+// out of it or forge an address (`@`, `<`, `>`, `"`, control characters).
+// eslint-disable-next-line no-control-regex
+const FROM_NAME_FORBIDDEN = /[@<>"\u0000-\u001f\u007f]/
 
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
@@ -47,7 +54,15 @@ const bodySchema = z.object({
   // address entirely, which is deliberate: falling back to some default
   // would send as an address nobody chose.
   emailAddress: z.string().trim().toLowerCase().email().max(320).nullable().optional(),
-  fromName: z.string().trim().max(200).nullable().optional(),
+  fromName: z
+    .string()
+    .trim()
+    .max(200)
+    .refine((value) => !FROM_NAME_FORBIDDEN.test(value), {
+      message: 'The sender name cannot contain @, <, >, " or control characters',
+    })
+    .nullable()
+    .optional(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -87,6 +102,16 @@ export default defineEventHandler(async (event) => {
         data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'defaultAssigneeUserId is not a member of this team'),
       })
     }
+  }
+
+  // Sender policy (design §4.5): under `team` the From must sit on one of this
+  // team's own claims or be one of its platform addresses; under any policy it
+  // may not sit on another team's claim. Throws 422 SENDER_DOMAIN_NOT_OWNED.
+  // Clearing the address (null) is always allowed. Unchanged addresses are not
+  // re-checked, so saving other fields never fails because of a domain that was
+  // removed later.
+  if (body.emailAddress && body.emailAddress.toLowerCase() !== (inbox.emailAddress ?? '').toLowerCase()) {
+    await assertSenderAddressAllowedForInbox(inbox.teamId, body.emailAddress)
   }
 
   try {

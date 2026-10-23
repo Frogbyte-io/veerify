@@ -55,7 +55,12 @@ vi.mock('~/server/database/drizzle', () => ({
       const chain: Record<string, any> = {
         from: vi.fn().mockReturnThis(),
         innerJoin: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
+        // The third select is the outbox lookup of the retry flags: no delivery rows.
+        where: vi
+          .fn()
+          .mockImplementation(() =>
+            state.readMode === 'message' && state.selectCount === 3 ? Promise.resolve([]) : chain
+          ),
         orderBy: vi
           .fn()
           .mockImplementation(() =>

@@ -7,7 +7,10 @@
  *     description: >
  *       The creator is added as a supportInboxMember with role "admin" in the
  *       same transaction - otherwise a team member who isn't a team admin
- *       could create an inbox they have no access to afterward.
+ *       could create an inbox they have no access to afterward. When
+ *       `SUPPORT_PLATFORM_MAIL_DOMAIN` is set, a platform forwarding address
+ *       is generated in the same transaction and returned as `platformAddress`
+ *       (null when the feature is off).
  *     operationId: createSupportInbox
  *     responses:
  *       200: { description: Inbox created }
@@ -27,6 +30,8 @@ import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportInbox, supportInboxMember } from '~/server/database/schema/support'
 import { project } from '~/server/database/schema/feedback'
+import { team } from '~/server/database/schema/auth'
+import { ensurePlatformAddress } from '~/server/utils/platform-address'
 
 const bodySchema = z.object({
   teamId: z.string().min(1),
@@ -83,7 +88,13 @@ export default defineEventHandler(async (event) => {
         createdAt: now,
       })
 
-      return createSuccessResponse({ inbox: created })
+      // Platform forwarding address (design §9.1); null without a platform domain.
+      const [owningTeam] = await tx.select({ slug: team.slug }).from(team).where(eq(team.id, body.teamId)).limit(1)
+      const platformAddress = owningTeam
+        ? await ensurePlatformAddress(tx, { id: inboxId, slug: created.slug }, owningTeam.slug)
+        : null
+
+      return createSuccessResponse({ inbox: created, platformAddress })
     })
   } catch (error) {
     if (isUniqueViolation(error)) {

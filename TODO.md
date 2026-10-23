@@ -455,3 +455,17 @@ restore deferred Stage 05 features.
   - `bcf0255`, merged in `c461222`; review fixes `f929fc8`, `372ad4e`, merged in `5161226`. Added support-scoped `j/k/r/n/c/e//?` handling over the visible list, composer mode focus, claim/resolve actions, search focus, and a dismissible help overlay. Editable fields and controls are protected, in-flight claim/resolve mutations are deduplicated, and focused Chromium coverage passes 1/1. Full integrated harness passes with 596 unit, 6 Redis, and 115 Postgres tests; broad E2E is guard-skipped locally without `PLAYWRIGHT_FORCE=1`/explicit PG variables.
 - [x] **SUP-05A-8** Add E2E coverage: reply auto-claims, note does not, draft restores its own mode, search finds a resolved conversation from another view
   - `074e635`, review-strengthening `ca892cb`, merged in `22f85bf`. Added three deterministic Chromium acceptance workflows covering persisted note/reply assignment and message kinds, independent reply/note drafts, and resolved-conversation global search from another fixed view with exact deep-link/view/input hydration after reload. Focused Chromium passes 3/3; final harness passes with 596 unit, 6 Redis, and 115 Postgres tests. Broad E2E is guard-skipped locally without `PLAYWRIGHT_FORCE=1`/explicit PG variables.
+
+## Support Platform — Custom sending domains
+
+Branch `feat/custom-sending-domains`. Design: `docs/plans/2026-10-22-custom-sending-domains/design.md`. Delta: D-37.
+
+- [x] **WP1** Data model, rules and authorization core (`lib/support-sending-domains.ts`, `server/utils/sending-domains.ts`, migration `0055`)
+- [x] **WP2** Provider adapters (`server/services/sending-domains/`: mailgun/Frogmail, postmark list-only, fake)
+- [x] **WP3** Team API, background poller and scheduler wiring
+- [x] **WP4** Enforcement points, platform forwarding addresses and inbound routes
+- [x] **WP5** Settings UI (domains card, DNS table, From picker) and Playwright coverage
+- [x] Integration: `.env.example`, `docker-compose.yml`, `docs/deployment-mail.md`, delta D-37, Frogmail `X-Frogmail-Error` codes and contested-domain handling
+- [ ] Backfill script `scripts/backfill-sending-domains.ts` (dry run by default); run it before enabling `team` policy
+- [ ] Staging acceptance against a real Frogmail with a test zone: add a domain and publish records; Verified within one poll; a reply is delivered with DKIM aligned; a second team is refused for the domain and its subdomain; forwarding to the platform address creates a ticket in the right inbox and product; delete cleans up Frogmail (`frogmail_dns_cleanup`); with direct receiving enabled by an operator, the route is created and inbound works
+- [ ] Production rollout: issue the separate `domains:*` Frogmail key, run the backfill, set `SUPPORT_SENDING_DOMAINS_ENABLED=true`, and watch `support.sending_domain.blocked` and `support.delivery.failed` for 48 hours
