@@ -18,6 +18,8 @@ export interface CloudflareSaasOptions {
   apiToken?: string
   zoneId?: string
   cnameTarget?: string
+  /** Name of the Cloudflare zone (e.g. `veerify.io`). Looked up from the API when omitted. */
+  zoneName?: string
 }
 
 export interface CloudflareCustomHostname {
@@ -162,6 +164,35 @@ export function mapCloudflareHostname(
   }
 }
 
+/** Zone names by zone id, so each process asks Cloudflare once. */
+const zoneNameCache = new Map<string, Promise<string>>()
+
+function isSameOrSubdomain(hostname: string, zoneName: string) {
+  return hostname === zoneName || hostname.endsWith(`.${zoneName}`)
+}
+
+/**
+ * Hostnames inside Veerify's own zone (such as `feedback.veerify.io`) are plain
+ * DNS records there. Registering one as a custom hostname in the same zone would
+ * change how it is served, so the provider leaves them alone and reports them as
+ * active. New ones cannot be added: validateProjectCustomDomain rejects platform
+ * domains, so only rows that predate that rule get here.
+ */
+function zoneHostnameResult(hostname: string, zoneName: string): DomainProviderResult {
+  return {
+    hostname,
+    provider: PROVIDER_NAME,
+    verified: true,
+    status: 'active',
+    dnsRecords: [],
+    configuredBy: 'zone',
+    expected: null,
+    resolvedTo: [],
+    message: `Served directly from the ${zoneName} Cloudflare zone, not as a custom hostname`,
+    providerDomainId: null,
+  }
+}
+
 function isDuplicate(error: CloudflareApiError): boolean {
   return error.status === 409 || error.codes.includes(1406) || /duplicate|already exists/i.test(error.message)
 }
@@ -189,6 +220,49 @@ export class CloudflareSaasDomainProvider implements DomainProvider {
       throw createError({ statusCode: 500, statusMessage: 'Cloudflare domain provider is not configured' })
     }
     return { apiToken, zoneId, cnameTarget: normalizeDomainHostname(cnameTarget) }
+  }
+
+  /** The zone's own name, from the options or the Cloudflare API (cached per zone id). */
+  private async getZoneName(): Promise<string> {
+    if (this.options.zoneName) return normalizeDomainHostname(this.options.zoneName)
+    const { apiToken, zoneId } = this.getConfig()
+    let pending = zoneNameCache.get(zoneId)
+    if (!pending) {
+      pending = this.fetchZoneName(apiToken, zoneId)
+      zoneNameCache.set(zoneId, pending)
+      pending.catch(() => zoneNameCache.delete(zoneId))
+    }
+    return pending
+  }
+
+  private async fetchZoneName(apiToken: string, zoneId: string): Promise<string> {
+    const doFetch = this.options.fetch || fetch
+    let response: Response
+    try {
+      response = await doFetch(`${API_BASE}/zones/${encodeURIComponent(zoneId)}`, {
+        headers: { Authorization: `Bearer ${apiToken}`, 'Content-Type': 'application/json' },
+      })
+    } catch {
+      throw createError({ statusCode: 502, statusMessage: 'Could not reach the Cloudflare API' })
+    }
+    const payload = (await response.json().catch(() => null)) as CloudflareEnvelope<{ name?: string }> | null
+    const name = normalizeDomainHostname(String(payload?.result?.name || ''))
+    if (!response.ok || payload?.success === false || !name) {
+      const errors = Array.isArray(payload?.errors) ? payload.errors : []
+      throw this.toHttpError(
+        new CloudflareApiError(
+          response.status,
+          errors.map((e) => Number(e.code)).filter(Number.isFinite),
+          cleanList(errors.map((e) => e.message)).join('; ') || 'Could not read the Cloudflare zone'
+        )
+      )
+    }
+    return name
+  }
+
+  /** True for hostnames inside the Cloudflare zone itself, which are never custom hostnames. */
+  async isZoneHostname(hostnameInput: string): Promise<boolean> {
+    return isSameOrSubdomain(normalizeDomainHostname(hostnameInput), await this.getZoneName())
   }
 
   /** Raw call. Throws CloudflareApiError for non-2xx; never includes the token. */
@@ -307,6 +381,13 @@ export class CloudflareSaasDomainProvider implements DomainProvider {
   async registerProjectDomain(input: DomainProviderInput) {
     const hostname = normalizeDomainHostname(input.hostname)
     const { cnameTarget } = this.getConfig()
+    const zoneName = await this.getZoneName()
+    if (isSameOrSubdomain(hostname, zoneName)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${hostname} is inside the ${zoneName} zone and cannot be added as a custom domain`,
+      })
+    }
     // Look up first: Cloudflare documents no stable "duplicate hostname" error,
     // so adopting an existing hostname must not depend on parsing one.
     const record = (await this.find(hostname, input.providerDomainId)) || (await this.register(hostname))
@@ -316,6 +397,8 @@ export class CloudflareSaasDomainProvider implements DomainProvider {
   async getProjectDomainStatus(input: DomainProviderInput) {
     const hostname = normalizeDomainHostname(input.hostname)
     const { cnameTarget } = this.getConfig()
+    const zoneName = await this.getZoneName()
+    if (isSameOrSubdomain(hostname, zoneName)) return zoneHostnameResult(hostname, zoneName)
     // A row that predates this provider (e.g. static-cname) has no Cloudflare
     // record id: adopt the existing hostname, or register it if it is missing.
     const record = (await this.find(hostname, input.providerDomainId)) || (await this.register(hostname))
@@ -325,6 +408,8 @@ export class CloudflareSaasDomainProvider implements DomainProvider {
   async verifyProjectDomain(input: DomainProviderInput) {
     const hostname = normalizeDomainHostname(input.hostname)
     const { cnameTarget } = this.getConfig()
+    const zoneName = await this.getZoneName()
+    if (isSameOrSubdomain(hostname, zoneName)) return zoneHostnameResult(hostname, zoneName)
     const record = (await this.find(hostname, input.providerDomainId)) || (await this.register(hostname))
     const current = mapCloudflareHostname(hostname, record, cnameTarget)
 
@@ -370,6 +455,7 @@ export class CloudflareSaasDomainProvider implements DomainProvider {
 
   async removeProjectDomain(input: DomainProviderInput) {
     const hostname = normalizeDomainHostname(input.hostname)
+    if (await this.isZoneHostname(hostname)) return
     const record = await this.find(hostname, input.providerDomainId)
     if (!record?.id) return
     try {

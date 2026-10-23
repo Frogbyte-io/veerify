@@ -184,7 +184,9 @@ the app (no active `domain` row), so a catch-all origin route does not open an i
 3. With the old provider still selected, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` and run a
    dry run from a host that can reach the production database:
    `yarn domains:sync-cloudflare`. Review the report: every row should be `would_adopt` (for example
-   `feedback.dotmatrixlabs.com`, already in Cloudflare) or `would_register`. Cloudflare hostnames with
+   `feedback.dotmatrixlabs.com`, already in Cloudflare) or `would_register`. Hostnames inside the zone
+   itself, such as `feedback.veerify.io`, show as `skipped_zone`: they are ordinary DNS records there,
+   and the provider reports them as active without ever registering or deleting them. Cloudflare hostnames with
    no Veerify row are listed as orphans for manual review; the script never deletes anything.
 4. Run `yarn domains:sync-cloudflare --apply --i-know-this-is-production`. It records provider
    `cloudflare-saas` and the Cloudflare id on each row, and marks active domains as already notified so

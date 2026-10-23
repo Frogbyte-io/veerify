@@ -42,7 +42,13 @@ function mockFetch(handler: (call: Call) => Reply) {
 }
 
 function provider(fetchImpl: typeof fetch) {
-  return new CloudflareSaasDomainProvider({ fetch: fetchImpl, apiToken: TOKEN, zoneId: 'zone123', cnameTarget: TARGET })
+  return new CloudflareSaasDomainProvider({
+    fetch: fetchImpl,
+    apiToken: TOKEN,
+    zoneId: 'zone123',
+    cnameTarget: TARGET,
+    zoneName: 'veerify.io',
+  })
 }
 
 const hostnameRecord = (over: Partial<CloudflareCustomHostname> = {}): CloudflareCustomHostname => ({
@@ -280,6 +286,79 @@ describe('CloudflareSaasDomainProvider', () => {
         statusCode: 500,
       })
     })
+  })
+})
+
+describe('CloudflareSaasDomainProvider hostnames inside the zone', () => {
+  const noCalls = () =>
+    mockFetch(() => {
+      throw new Error('no Cloudflare call expected')
+    })
+
+  it('reports an in-zone hostname as active without calling the custom hostname API', async () => {
+    const { fn, calls } = noCalls()
+    const p = provider(fn)
+    for (const result of [
+      await p.getProjectDomainStatus({ hostname: 'feedback.veerify.io' }),
+      await p.verifyProjectDomain({ hostname: 'Feedback.Veerify.io.' }),
+    ]) {
+      expect(result).toMatchObject({
+        hostname: 'feedback.veerify.io',
+        status: 'active',
+        verified: true,
+        dnsRecords: [],
+        configuredBy: 'zone',
+        providerDomainId: null,
+      })
+    }
+    expect(calls).toEqual([])
+  })
+
+  it('refuses to register an in-zone hostname and never deletes one', async () => {
+    const { fn, calls } = noCalls()
+    const p = provider(fn)
+    await expect(p.registerProjectDomain({ hostname: 'veerify.io' })).rejects.toMatchObject({ statusCode: 400 })
+    await p.removeProjectDomain({ hostname: 'feedback.veerify.io', providerDomainId: 'cf-id-1' })
+    expect(calls).toEqual([])
+  })
+
+  it('does not treat a lookalike domain as part of the zone', async () => {
+    const { fn } = noCalls()
+    const p = provider(fn)
+    expect(await p.isZoneHostname('feedback.veerify.io')).toBe(true)
+    expect(await p.isZoneHostname('notveerify.io')).toBe(false)
+    expect(await p.isZoneHostname('veerify.io.evil.com')).toBe(false)
+  })
+
+  it('reads the zone name from Cloudflare once when it is not configured', async () => {
+    const { fn, calls } = mockFetch((call) =>
+      call.url.endsWith('/zones/zone-lookup') ? { result: { name: 'veerify.io' } } : { result: [] }
+    )
+    const p = new CloudflareSaasDomainProvider({
+      fetch: fn,
+      apiToken: TOKEN,
+      zoneId: 'zone-lookup',
+      cnameTarget: TARGET,
+    })
+
+    expect(await p.isZoneHostname('feedback.veerify.io')).toBe(true)
+    expect(await p.isZoneHostname('feedback.acme.com')).toBe(false)
+    expect(calls.filter((c) => c.url.endsWith('/zones/zone-lookup'))).toHaveLength(1)
+    expect(calls[0].auth).toBe(`Bearer ${TOKEN}`)
+  })
+
+  it('fails clearly when the zone cannot be read, without leaking the token', async () => {
+    const { fn } = mockFetch(() => ({ status: 403, errors: [{ code: 10000, message: 'Authentication error' }] }))
+    const p = new CloudflareSaasDomainProvider({
+      fetch: fn,
+      apiToken: TOKEN,
+      zoneId: 'zone-denied',
+      cnameTarget: TARGET,
+    })
+    const error = await p.getProjectDomainStatus({ hostname: 'feedback.acme.com' }).catch((e) => e)
+    expect(error).toMatchObject({ statusCode: 502 })
+    expect(String(error.statusMessage)).toContain('API token')
+    expect(JSON.stringify(error)).not.toContain(TOKEN)
   })
 })
 

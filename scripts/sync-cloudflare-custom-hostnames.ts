@@ -17,7 +17,8 @@
  *
  * Needs CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID (or the NUXT_ variants).
  * Idempotent: a second run reports every row as in_sync and writes nothing
- * unless Cloudflare's status changed.
+ * unless Cloudflare's status changed. Hostnames inside the zone itself (such as
+ * feedback.veerify.io) are reported as skipped_zone and never touched.
  */
 import { pathToFileURL } from 'node:url'
 import { and, eq, ne } from 'drizzle-orm'
@@ -35,6 +36,7 @@ export type SyncAction =
   | 'would_register'
   | 'in_sync'
   | 'skipped_local'
+  | 'skipped_zone'
   | 'error'
 
 export interface SyncDomainRow {
@@ -72,6 +74,7 @@ export interface SyncProvider {
   lookupProjectDomain: CloudflareSaasDomainProvider['lookupProjectDomain']
   registerProjectDomain: CloudflareSaasDomainProvider['registerProjectDomain']
   listCustomHostnames: CloudflareSaasDomainProvider['listCustomHostnames']
+  isZoneHostname: CloudflareSaasDomainProvider['isZoneHostname']
 }
 
 const PROVIDER = 'cloudflare-saas'
@@ -166,6 +169,16 @@ export async function runSync(options: {
       continue
     }
     try {
+      // A record in Veerify's own zone (e.g. feedback.veerify.io) is not a custom
+      // hostname. Registering it in the same zone would change how it is served.
+      if (await provider.isZoneHostname(row.hostname)) {
+        entries.push({
+          hostname: row.hostname,
+          action: 'skipped_zone',
+          reason: 'inside the Cloudflare zone itself; left unchanged',
+        })
+        continue
+      }
       const existing = await provider.lookupProjectDomain({
         hostname: row.hostname,
         providerDomainId: row.providerDomainId,
@@ -232,6 +245,7 @@ export async function runSync(options: {
     would_register: 0,
     in_sync: 0,
     skipped_local: 0,
+    skipped_zone: 0,
     error: 0,
     orphans: orphans.length,
   } as SyncReport['summary']

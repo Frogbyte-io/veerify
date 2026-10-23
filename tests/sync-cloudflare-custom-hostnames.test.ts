@@ -57,6 +57,7 @@ function setup(rows: SyncDomainRow[], cloudflare: Record<string, DomainProviderR
         status: 'active',
         sslStatus: 'active',
       })),
+    isZoneHostname: async (hostname) => hostname === 'veerify.io' || hostname.endsWith('.veerify.io'),
   }
   return { store, provider, applied, registerProjectDomain }
 }
@@ -65,6 +66,22 @@ const run = (apply: boolean, ctx: ReturnType<typeof setup>) =>
   runSync({ apply, provider: ctx.provider, store: ctx.store, sleep: async () => {} })
 
 describe('sync-cloudflare-custom-hostnames', () => {
+  it('skips hostnames inside the zone and never looks them up or registers them', async () => {
+    const ctx = setup([row('feedback.veerify.io', { provider: 'vercel' })], {})
+    const lookup = vi.spyOn(ctx.provider, 'lookupProjectDomain')
+
+    for (const apply of [false, true]) {
+      const report = await run(apply, ctx)
+      expect(report.entries).toEqual([
+        expect.objectContaining({ hostname: 'feedback.veerify.io', action: 'skipped_zone' }),
+      ])
+      expect(report.summary.skipped_zone).toBe(1)
+    }
+    expect(lookup).not.toHaveBeenCalled()
+    expect(ctx.registerProjectDomain).not.toHaveBeenCalled()
+    expect(ctx.applied).toEqual([])
+  })
+
   it('dry run reports adoption and registration without writing or registering', async () => {
     const ctx = setup([row('feedback.dotmatrixlabs.com'), row('new.acme.com', { status: 'dns_required' })], {
       'feedback.dotmatrixlabs.com': result('feedback.dotmatrixlabs.com', 'cf-1'),
