@@ -30,6 +30,7 @@ export default defineEventHandler(() => {
       { name: 'Projects', description: 'Project management' },
       { name: 'Feedback', description: 'Feedback and feature request management' },
       { name: 'GitHub', description: 'GitHub integration endpoints' },
+      { name: 'App API', description: 'Public API for apps submitting feedback with a project app key' },
       {
         name: 'Support',
         description: 'Support platform: contacts, companies, inboxes, conversations, tags, and team settings',
@@ -42,6 +43,11 @@ export default defineEventHandler(() => {
           in: 'cookie',
           name: 'better-auth.session_token',
           description: 'Session cookie set by Better-Auth',
+        },
+        appKeyAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          description: 'Project app key (vfy_pub_...) created in project settings',
         },
       },
       schemas: {

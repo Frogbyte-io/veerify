@@ -8282,5 +8282,76 @@ export const openapiPaths = {
         }
       }
     }
+  },
+  "/api/v1/feedback": {
+    "post": {
+      "tags": [
+        "App API"
+      ],
+      "summary": "Submit feedback from an app",
+      "description": "Creates feedback in the project the app key belongs to. Authenticate with a project app key as a Bearer token.",
+      "operationId": "submitAppFeedback",
+      "security": [
+        {
+          "appKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "type",
+                "description"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "bug",
+                    "feature"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "appVersion": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "os": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "osVersion": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Feedback created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Missing",
+          "unknown": null,
+          "or revoked app key": null
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
   }
 } as const
