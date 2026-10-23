@@ -27,6 +27,9 @@ export const selectors = {
   projectSwitcherActiveName: '[data-testid="project-switcher-active-name"]',
   projectSwitcherActiveOrg: '[data-testid="project-switcher-active-org"]',
   projectSwitcherNewProject: '[data-testid="project-switcher-new-project"]',
+  projectSwitcherCreate: '[data-testid="project-switcher-create"]',
+  projectCreateName: '[data-testid="project-create-name"]',
+  projectCreateSubmit: '[data-testid="project-create-submit"]',
   navUserLoading: '[data-testid="nav-user-loading"]',
   navUserTrigger: '[data-testid="nav-user-trigger"]',
   navUserName: '[data-testid="nav-user-name"]',
@@ -93,6 +96,8 @@ export const selectors = {
   feedbackCreateProduct: '[data-testid="feedback-create-product"]',
 }
 
+export const workspaceTabSelector = (key: string) => `[data-testid="workspace-tab-${key}"]`
+export const projectSettingsTabSelector = (key: string) => `[data-testid="project-settings-tab-${key}"]`
 export const projectSwitcherItemSelector = (projectId: string) => `[data-testid="project-switcher-item-${projectId}"]`
 export const feedbackItemSelector = (id: string) => `[data-testid="feedback-item-${id}"]`
 export const feedbackItemDeleteSelector = (id: string) => `[data-testid="feedback-item-delete-${id}"]`

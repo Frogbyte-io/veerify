@@ -78,7 +78,7 @@
                   :src="logoPreviewUrl || organizationLogo"
                   alt="Organization logo"
                   class="h-full w-full object-cover"
-                >
+                />
                 <span v-else class="flex flex-col items-center gap-1 text-muted-foreground group-hover:text-primary">
                   <Icon name="lucide:image-plus" class="h-5 w-5" />
                 </span>
@@ -98,7 +98,7 @@
                 class="hidden"
                 :disabled="!canEditOrganization || isSaving"
                 @change="handleLogoFileSelect"
-              >
+              />
 
               <div class="flex flex-col gap-1.5">
                 <p class="text-sm font-medium">
@@ -212,6 +212,7 @@
 
 <script>
 import { toast } from 'vue-sonner'
+import { clearDashboardBootstrapCache } from '~/lib/dashboard-bootstrap-client'
 
 const LOGO_IMAGE_RULES = {
   maxBytes: 2 * 1024 * 1024,
@@ -437,7 +438,11 @@ export default {
         this.deleteConfirmation = ''
         toast.success('Workspace deleted')
         this.$emit('updated', null)
-        await navigateTo('/get-started')
+        // Another workspace may still be available: land in its active project instead of onboarding.
+        clearDashboardBootstrapCache()
+        const next = await $fetch('/api/projects/active').catch(() => null)
+        if (import.meta.client) window.dispatchEvent(new CustomEvent('veerify:active-project-changed'))
+        await navigateTo(next?.data?.project ? '/dashboard' : '/get-started')
       } catch (error) {
         console.error('Error deleting organization:', error)
         toast.error(error?.data?.error?.message || error?.statusMessage || 'Failed to delete workspace')

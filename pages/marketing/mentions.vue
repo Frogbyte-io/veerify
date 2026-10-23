@@ -22,7 +22,7 @@
       </div>
 
       <!-- No project -->
-      <Card v-else-if="!product">
+      <Card v-else-if="!project">
         <CardContent class="py-10 text-center text-sm text-muted-foreground">
           Create a project, then switch Marketing on for it.
         </CardContent>

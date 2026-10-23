@@ -148,3 +148,16 @@ test('published changelog entry appears on the public page and RSS feed', async 
   expect(rss.headers()['content-type']).toContain('application/rss+xml')
   expect(await rss.text()).toContain(title)
 })
+
+test('provider API keys are managed in workspace settings, not in marketing settings', async ({ page }) => {
+  await login(page)
+
+  await page.goto(`/marketing/settings`, { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('marketing-settings-site')).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId('workspace-settings-keys')).toHaveCount(0)
+  await expect(page.locator('[data-testid^="marketing-key-"]')).toHaveCount(0)
+
+  await page.goto(`/workspace#keys`, { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('workspace-settings-keys')).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-testid^="marketing-key-"]').first()).toBeVisible()
+})

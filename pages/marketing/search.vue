@@ -18,7 +18,7 @@
         The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">
+      <div v-else-if="!project" class="text-sm text-muted-foreground">
         Create a project to see its search performance.
       </div>
 
