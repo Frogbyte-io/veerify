@@ -234,6 +234,8 @@ Eight tables, all defined with `pgTable` from `drizzle-orm/pg-core`:
 | `invitation`   | id, organizationId, email, role, status, inviterId, expiresAt         | Pending invites                            |
 | `twoFactor`    | id, userId (FK→user), secret, backupCodes                             | TOTP 2FA                                   |
 
+App feedback API keys (`project_api_key`, SHA-256 hash only stored) live in `server/database/schema/feedback.ts`, not `auth.ts`.
+
 ### Migration Workflow
 
 1. Edit `server/database/schema/auth.ts`
@@ -429,6 +431,7 @@ All feedback, votes, and comments are scoped to projects, which belong to teams,
 | `GET /api/feedback/[id]`       | Optional | Authenticated: requires team membership. Anonymous: requires public project                      |
 | `DELETE /api/feedback/[id]`    | Required | Author OR team member of project's team                                                          |
 | `POST /api/feedback/[id]/vote` | Optional | Project must be public (voting is public-facing)                                                 |
+| `POST /api/v1/feedback`        | App key  | Creates feedback in the key's project                                                            |
 
 ### Team Member Roles
 

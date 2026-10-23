@@ -59,15 +59,15 @@ contract. The Dot X work is done in a separate thread against `D:/dot-x`.
 
 New table in `server/database/schema/feedback.ts`:
 
-| column        | notes                                                         |
-| ------------- | ------------------------------------------------------------- |
-| `id`          | text PK                                                       |
-| `projectId`   | FK → project, cascade delete                                  |
-| `name`        | display name, e.g. "Dot X" — this is the "Added from …" label  |
-| `keyPrefix`   | first ~12 chars of the key, shown in the UI to identify it    |
-| `keyHash`     | SHA-256 of the full key, unique; the key itself is not stored |
-| `createdByUserId` | FK → user, set null on delete                             |
-| `createdAt`, `lastUsedAt`, `revokedAt` | timestamps; revoked keys are rejected  |
+| column                                 | notes                                                         |
+| -------------------------------------- | ------------------------------------------------------------- |
+| `id`                                   | text PK                                                       |
+| `projectId`                            | FK → project, cascade delete                                  |
+| `name`                                 | display name, e.g. "Dot X" — this is the "Added from …" label |
+| `keyPrefix`                            | first ~12 chars of the key, shown in the UI to identify it    |
+| `keyHash`                              | SHA-256 of the full key, unique; the key itself is not stored |
+| `createdByUserId`                      | FK → user, set null on delete                                 |
+| `createdAt`, `lastUsedAt`, `revokedAt` | timestamps; revoked keys are rejected                         |
 
 Key format: `vfy_pub_` + 32 random bytes base62/base64url. The full key is shown once on
 creation (copy button + "you won't see this again"). Lookup is by hash.
