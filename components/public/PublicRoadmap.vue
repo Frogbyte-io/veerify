@@ -60,14 +60,15 @@
     <div v-else-if="error" class="max-w-6xl mx-auto px-4 py-12 text-center">
       <Icon name="lucide:alert-circle" class="w-16 h-16 mx-auto text-destructive mb-4" />
       <h1 class="text-2xl font-bold mb-2">Project Not Found</h1>
-      <p class="text-muted-foreground">{{ error }}</p>
+      <p class="text-muted-foreground mb-4">{{ error }}</p>
+      <button class="text-sm text-primary hover:underline" @click="load">Try again</button>
     </div>
 
     <!-- Roadmap disabled -->
     <div v-else-if="projectData && !roadmapEnabled" class="max-w-4xl mx-auto px-4 py-24 text-center">
       <Icon name="lucide:map" class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
       <h1 class="text-2xl font-bold mb-2">Roadmap not available</h1>
-      <p class="text-muted-foreground mb-6">The roadmap feature is not enabled for this product.</p>
+      <p class="text-muted-foreground mb-6">The roadmap feature is not enabled for this project.</p>
       <NuxtLink
         :to="feedbackBoardPath"
         class="inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -117,7 +118,7 @@
               {{ projectInitial }}
             </div>
             <div class="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>{{ projectData.team.name }}</span>
+              <span>{{ projectData.organization?.name }}</span>
             </div>
           </div>
           <h1 class="text-3xl font-bold mb-1">{{ projectData.project.name }}</h1>
@@ -163,6 +164,13 @@
           </NuxtLink>
         </div>
 
+        <PublicProductFilter
+          :products="products"
+          :selected="productFilter"
+          :base-path="roadmapPath"
+          :accent-color="accentColor"
+        />
+
         <!-- Roadmap summary -->
         <p class="text-muted-foreground text-sm mb-6">A timeline view of all feedback items grouped by status.</p>
 
@@ -172,6 +180,12 @@
             <Skeleton class="h-8 w-full" />
             <Skeleton v-for="m in 3" :key="m" class="h-24 w-full" />
           </div>
+        </div>
+
+        <div v-else-if="columnsError" class="text-center py-20">
+          <Icon name="lucide:alert-circle" class="w-10 h-10 mx-auto text-destructive mb-3" />
+          <p class="font-medium mb-1">{{ columnsError }}</p>
+          <button class="text-sm text-primary hover:underline mt-2" @click="loadRoadmap">Try again</button>
         </div>
 
         <!-- Empty state -->
@@ -242,6 +256,15 @@
                     {{ feedbackTypeLabel(item.tag) }}
                   </span>
                 </div>
+
+                <!-- Product -->
+                <span
+                  v-if="productName(item)"
+                  class="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full border mb-2"
+                  data-testid="public-roadmap-product-badge"
+                >
+                  {{ productName(item) }}
+                </span>
 
                 <!-- Title -->
                 <p class="text-sm font-medium line-clamp-2 mb-2">{{ item.title }}</p>
@@ -359,7 +382,7 @@ const FEEDBACK_BOARD_PREFETCH_CACHE_TTL_MS = 60_000
 export default {
   name: 'PublicRoadmap',
   props: {
-    teamSlug: { type: String, required: true },
+    orgSlug: { type: String, required: true },
     projectSlug: { type: String, required: true },
   },
   data() {
@@ -368,6 +391,8 @@ export default {
       columns: [],
       isLoading: true,
       columnsLoading: true,
+      columnsError: null,
+      roadmapSeq: 0,
       error: null,
       previousColorMode: null,
       activeTheme: 'system',
@@ -412,20 +437,34 @@ export default {
       const port = dashboardDomain === 'localhost' ? ':' + window.location.port : ''
       return `${protocol}//${dashboardDomain}${port}`
     },
+    apiBase() {
+      return `/api/public/o/${encodeURIComponent(this.orgSlug)}/${encodeURIComponent(this.projectSlug)}`
+    },
+    products() {
+      return this.projectData?.products || []
+    },
+    productFilter() {
+      const value = this.$route.query.product
+      return typeof value === 'string' ? value : ''
+    },
+    onCustomDomain() {
+      return import.meta.client && this.projectData?.project?.customDomain === window.location.hostname
+    },
+    pathPrefix() {
+      return this.onCustomDomain ? '' : `/${this.projectSlug}`
+    },
+    roadmapPath() {
+      return `${this.pathPrefix}/roadmap`
+    },
     feedbackBoardPath() {
-      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
-        return '/'
-      }
-      return `/${this.projectSlug}`
+      const base = this.pathPrefix || '/'
+      return this.productFilter ? `${this.pathPrefix}/${encodeURIComponent(this.productFilter)}` : base
     },
     roadmapEnabled() {
       return this.projectData?.project?.settings?.roadmapEnabled === true
     },
     changelogPath() {
-      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
-        return '/changelog'
-      }
-      return `/${this.projectSlug}/changelog`
+      return `${this.pathPrefix}/changelog`
     },
     changelogEnabled() {
       return this.projectData?.project?.settings?.changelogEnabled === true
@@ -434,10 +473,7 @@ export default {
       return this.projectData?.hasTestimonials === true
     },
     testimonialsPath() {
-      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
-        return '/testimonials'
-      }
-      return `/${this.projectSlug}/testimonials`
+      return `${this.pathPrefix}/testimonials`
     },
     authRedirectTarget() {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}/roadmap`)
@@ -501,41 +537,66 @@ export default {
     }))
   },
 
+  watch: {
+    productFilter() {
+      if (this.projectData) this.loadRoadmap()
+    },
+  },
+
   async mounted() {
     if (import.meta.client) {
       this.previousColorMode = this.$colorMode.preference
     }
-    // Use data prefetched by the feedback board page to skip the full-page loading skeleton
-    const roadmapCacheKey = `pubRoadmapData_${this.teamSlug}_${this.projectSlug}`
-    const cached = import.meta.client ? useState(roadmapCacheKey).value : null
-    if (cached && Date.now() - cached.cachedAt < 60_000 && cached.response?.data) {
-      const data = cached.response.data
-      this.projectData = { project: data.project, team: data.team, hasTestimonials: data.hasTestimonials === true }
-      this.columns = data.columns || []
-      this.isLoading = false
-      this.columnsLoading = false
-      this.applyTheme(data.project?.settings?.themeMode || 'system')
-      this.warmFeedbackBoardData()
-      await this.checkCurrentUser()
-      return
-    }
-    try {
-      const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`)
-      const data = response?.data
-      this.projectData = { project: data.project, team: data.team, hasTestimonials: data.hasTestimonials === true }
-      this.columns = data.columns || []
-      this.applyTheme(this.projectData.project.settings?.themeMode || 'system')
-      this.warmFeedbackBoardData()
-      await this.checkCurrentUser()
-    } catch (err) {
-      console.error('Error loading roadmap:', err)
-      this.error = 'This roadmap could not be found.'
-    } finally {
-      this.isLoading = false
-      this.columnsLoading = false
-    }
+    await this.load()
   },
   methods: {
+    async load() {
+      this.isLoading = true
+      this.error = null
+      try {
+        const projectResponse = await $fetch(this.apiBase)
+        const project = projectResponse?.data
+        this.projectData = {
+          project: project.project,
+          organization: project.organization,
+          products: project.products || [],
+          hasTestimonials: project.hasTestimonials === true,
+        }
+        this.applyTheme(project.project?.settings?.themeMode || 'system')
+        await this.loadRoadmap()
+        this.warmFeedbackBoardData()
+        await this.checkCurrentUser()
+      } catch (err) {
+        console.error('Error loading roadmap:', err)
+        this.error = 'This roadmap could not be found.'
+      } finally {
+        this.isLoading = false
+      }
+    },
+    async loadRoadmap() {
+      const seq = ++this.roadmapSeq
+      this.columnsLoading = true
+      this.columnsError = null
+      try {
+        const response = await $fetch(`${this.apiBase}/roadmap`, {
+          query: this.productFilter ? { product: this.productFilter } : {},
+        })
+        if (seq !== this.roadmapSeq) return
+        this.columns = response?.data?.columns || []
+      } catch (err) {
+        if (seq !== this.roadmapSeq) return
+        console.error('Error loading roadmap items:', err)
+        this.columns = []
+        this.columnsError = 'Failed to load the roadmap.'
+      } finally {
+        if (seq === this.roadmapSeq) this.columnsLoading = false
+      }
+    },
+    productName(item) {
+      if (this.products.length < 2) return ''
+      if (item.product?.name) return item.product.name
+      return this.products.find((p) => p.id === item.productId)?.name || ''
+    },
     warmFeedbackBoardData() {
       const now = Date.now()
       const cachedAt = this.feedbackBoardPrefetch?.cachedAt || 0
@@ -550,10 +611,12 @@ export default {
         sortOrder: 'desc',
       })
 
-      const cacheKey = `pubBoardData_${this.teamSlug}_${this.projectSlug}`
+      // Only a single-product project opens straight onto its board
+      if (this.products.length !== 1) return Promise.resolve(null)
+      const cacheKey = `pubBoardData_${this.orgSlug}_${this.projectSlug}_`
       const promise = Promise.all([
-        $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`),
-        $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback?${params.toString()}`),
+        $fetch(this.apiBase),
+        $fetch(`${this.apiBase}/products/${encodeURIComponent(this.products[0].slug)}/feedback?${params.toString()}`),
       ])
         .then(([projectResponse, feedbackResponse]) => {
           if (import.meta.client) {

@@ -8,7 +8,7 @@
               <Icon name="lucide:tags" class="h-5 w-5" />
               Feedback Categories
             </CardTitle>
-            <CardDescription>Organize feedback into categories for your product.</CardDescription>
+            <CardDescription>Organize feedback into categories for your project.</CardDescription>
           </div>
           <Button size="sm" @click="openCreateDialog">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -207,7 +207,7 @@ function sortCategories(categories) {
 }
 
 export default {
-  name: 'ProductSettingsCategories',
+  name: 'FeedbackSettingsCategories',
   components: {
     VueDraggable,
   },

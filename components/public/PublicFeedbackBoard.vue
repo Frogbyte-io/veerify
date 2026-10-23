@@ -107,13 +107,34 @@
               {{ projectInitial }}
             </div>
             <div class="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>{{ projectData.team.name }}</span>
+              <span>{{ projectData.organization?.name }}</span>
             </div>
           </div>
           <h1 class="text-3xl font-bold mb-2">{{ projectData.project.name }}</h1>
           <p v-if="projectData.project.description" class="text-muted-foreground text-lg">
             {{ projectData.project.description }}
           </p>
+        </div>
+
+        <!-- Product tabs (only with more than one public product) -->
+        <div
+          v-if="hasMultipleProducts"
+          data-testid="public-product-tabs"
+          class="flex flex-wrap items-center gap-2 mb-4"
+        >
+          <NuxtLink
+            v-for="product in products"
+            :key="product.id"
+            :to="productPath(product)"
+            class="rounded-full border px-3 py-1 text-sm transition-colors"
+            :class="
+              currentProduct?.id === product.id
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'text-muted-foreground hover:bg-accent'
+            "
+          >
+            {{ product.name }}
+          </NuxtLink>
         </div>
 
         <!-- Navigation tabs -->
@@ -154,223 +175,242 @@
           </NuxtLink>
         </div>
 
-        <!-- Stats -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div class="rounded-lg border bg-card p-4">
-            <p class="text-sm text-muted-foreground">Total</p>
-            <p class="text-2xl font-bold">{{ projectData.stats.total }}</p>
-          </div>
-          <div class="rounded-lg border bg-card p-4">
-            <p class="text-sm text-muted-foreground">Open</p>
-            <p class="text-2xl font-bold text-orange-600">{{ projectData.stats.open }}</p>
-          </div>
-          <div class="rounded-lg border bg-card p-4">
-            <p class="text-sm text-muted-foreground">In Progress</p>
-            <p class="text-2xl font-bold text-blue-600">{{ projectData.stats.inProgress }}</p>
-          </div>
-          <div class="rounded-lg border bg-card p-4">
-            <p class="text-sm text-muted-foreground">Completed</p>
-            <p class="text-2xl font-bold text-green-600">{{ projectData.stats.completed }}</p>
-          </div>
-        </div>
-
-        <!-- Actions Bar -->
-        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <div class="flex flex-wrap items-center gap-2">
-            <select
-              v-model="filters.status"
-              data-testid="public-feedback-filter-status"
-              aria-label="Filter by status"
-              class="px-3 py-2 rounded-md border bg-background text-sm"
-              @change="resetFeedback"
-            >
-              <option value="">All Status</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="planned">Planned</option>
-              <option value="completed">Completed</option>
-            </select>
-
-            <select
-              v-model="filters.categoryId"
-              data-testid="public-feedback-filter-category"
-              aria-label="Filter by category"
-              class="px-3 py-2 rounded-md border bg-background text-sm"
-              @change="resetFeedback"
-            >
-              <option value="">All Categories</option>
-              <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">
-                {{ cat.name }}
-              </option>
-            </select>
-
-            <select
-              v-model="filters.tag"
-              data-testid="public-feedback-filter-tag"
-              aria-label="Filter by tag"
-              class="px-3 py-2 rounded-md border bg-background text-sm"
-              @change="resetFeedback"
-            >
-              <option value="">All Tags</option>
-              <option v-for="tag in feedbackTypeOptions" :key="tag.value" :value="tag.value">
-                {{ tag.label }}
-              </option>
-            </select>
-
-            <select
-              v-model="filters.sortBy"
-              data-testid="public-feedback-filter-sort"
-              aria-label="Sort feedback"
-              class="px-3 py-2 rounded-md border bg-background text-sm"
-              @change="resetFeedback"
-            >
-              <option value="voteCount">Most Voted</option>
-              <option value="createdAt">Newest</option>
-            </select>
-          </div>
-
-          <Button @click="showSubmitDialog = true">
-            <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
-            Submit Feedback
-          </Button>
-        </div>
-
-        <!-- Feedback List -->
-        <div v-if="feedbackLoading && feedbackItems.length === 0" class="space-y-4">
-          <Skeleton v-for="n in 3" :key="n" class="h-28" />
-        </div>
-
-        <div
-          v-else-if="!feedbackLoading && feedbackItems.length === 0"
-          class="rounded-lg border bg-card p-12 text-center"
-        >
-          <Icon name="lucide:message-square" class="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-          <h2 class="text-lg font-semibold mb-2">No feedback yet</h2>
-          <p class="text-muted-foreground mb-4">Be the first to submit feedback for this product!</p>
-          <Button @click="showSubmitDialog = true">
-            <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
-            Submit Feedback
-          </Button>
-        </div>
-
-        <div v-else class="space-y-3">
-          <div
-            v-for="item in feedbackItems"
-            :key="item.id"
-            class="rounded-lg border bg-card hover:shadow-sm transition-shadow cursor-pointer"
-            :class="item.isOwn ? 'ring-2 ring-primary/30' : ''"
-            :data-testid="`public-feedback-item-${item.id}`"
-            role="button"
-            tabindex="0"
-            @click="openFeedbackDetails(item)"
-            @pointerenter="warmFeedbackDetails(item.id)"
-            @focus="warmFeedbackDetails(item.id)"
-            @keydown.enter.prevent="openFeedbackDetails(item)"
-            @keydown.space.prevent="openFeedbackDetails(item)"
-          >
-            <div class="flex items-start gap-4 p-4">
-              <div
-                class="flex flex-col items-center min-w-[48px] gap-0.5"
-                :class="votingIds.has(item.id) ? 'opacity-50' : ''"
-              >
-                <button
-                  class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
-                  :class="item.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
-                  :title="item.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
-                  :aria-label="`${item.voteType === 'upvote' ? 'Remove upvote from' : 'Upvote'}: ${item.title}`"
-                  :disabled="votingIds.has(item.id)"
-                  @click.stop="handleVote(item, 'upvote')"
-                >
-                  <Icon :name="voteIcons.up" class="w-5 h-5" />
-                </button>
-                <span class="text-sm font-semibold leading-none">{{ item.voteCount }}</span>
-                <button
-                  class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
-                  :class="
-                    item.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
-                  "
-                  :title="item.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
-                  :aria-label="`${item.voteType === 'downvote' ? 'Remove downvote from' : 'Downvote'}: ${item.title}`"
-                  :disabled="votingIds.has(item.id)"
-                  @click.stop="handleVote(item, 'downvote')"
-                >
-                  <Icon :name="voteIcons.down" class="w-5 h-5" />
-                </button>
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-start justify-between gap-2 mb-1">
-                  <h3 class="font-medium flex items-center gap-1.5">
-                    <Icon
-                      v-if="item.isPinned"
-                      name="lucide:pin"
-                      class="w-3.5 h-3.5 text-primary shrink-0"
-                      data-testid="public-feedback-pinned-icon"
-                    />
-                    {{ item.title }}
-                  </h3>
-                  <div class="flex items-center gap-2 shrink-0">
-                    <span
-                      class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                      :class="
-                        statusClasses[item.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
-                      "
-                    >
-                      {{ formatStatus(item.status) }}
-                    </span>
-                    <span
-                      v-if="item.category"
-                      class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                      :style="{ backgroundColor: item.category.color + '20', color: item.category.color }"
-                    >
-                      <span
-                        v-if="item.category.icon"
-                        :data-testid="`public-feedback-category-icon-${item.id}`"
-                        class="mr-1"
-                      >
-                        {{ item.category.icon }}
-                      </span>
-                      {{ item.category.name }}
-                    </span>
-                    <span
-                      v-if="item.tag && feedbackTypeLabel(item.tag)"
-                      class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
-                    >
-                      {{ feedbackTypeLabel(item.tag) }}
-                    </span>
-                  </div>
-                </div>
-                <p v-if="item.body" class="text-sm text-muted-foreground line-clamp-2 mb-2">
-                  {{ item.body }}
-                </p>
-                <div class="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span v-if="item.isOwn" class="text-primary font-medium">
-                    <Icon name="lucide:star" class="w-3 h-3 inline" />
-                    Your submission
-                  </span>
-                  <span v-else-if="item.authorName">
-                    <Icon name="lucide:user" class="w-3 h-3 inline" />
-                    {{ item.authorName }}
-                  </span>
-                  <span>
-                    <Icon name="lucide:calendar" class="w-3 h-3 inline" />
-                    {{ formatDate(item.createdAt) }}
-                  </span>
-                  <span v-if="item.commentCount > 0">
-                    <Icon name="lucide:message-circle" class="w-3 h-3 inline" />
-                    {{ item.commentCount }}
-                  </span>
-                  <span class="ml-auto text-primary">View details</span>
-                </div>
-              </div>
+        <template v-if="currentProduct">
+          <!-- Stats -->
+          <div v-if="projectData.stats" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="rounded-lg border bg-card p-4">
+              <p class="text-sm text-muted-foreground">Total</p>
+              <p class="text-2xl font-bold">{{ projectData.stats.total }}</p>
+            </div>
+            <div class="rounded-lg border bg-card p-4">
+              <p class="text-sm text-muted-foreground">Open</p>
+              <p class="text-2xl font-bold text-orange-600">{{ projectData.stats.open }}</p>
+            </div>
+            <div class="rounded-lg border bg-card p-4">
+              <p class="text-sm text-muted-foreground">In Progress</p>
+              <p class="text-2xl font-bold text-blue-600">{{ projectData.stats.inProgress }}</p>
+            </div>
+            <div class="rounded-lg border bg-card p-4">
+              <p class="text-sm text-muted-foreground">Completed</p>
+              <p class="text-2xl font-bold text-green-600">{{ projectData.stats.completed }}</p>
             </div>
           </div>
 
-          <!-- Infinite scroll sentinel -->
-          <div ref="scrollSentinel" class="h-4" />
-          <!-- Loading more indicator -->
-          <div v-if="feedbackLoading && feedbackItems.length > 0" class="flex justify-center py-6">
-            <Icon name="lucide:loader-2" class="w-5 h-5 animate-spin text-muted-foreground" />
+          <!-- Actions Bar -->
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <div class="flex flex-wrap items-center gap-2">
+              <select
+                v-model="filters.status"
+                data-testid="public-feedback-filter-status"
+                aria-label="Filter by status"
+                class="px-3 py-2 rounded-md border bg-background text-sm"
+                @change="resetFeedback"
+              >
+                <option value="">All Status</option>
+                <option value="open">Open</option>
+                <option value="in_progress">In Progress</option>
+                <option value="planned">Planned</option>
+                <option value="completed">Completed</option>
+              </select>
+
+              <select
+                v-model="filters.categoryId"
+                data-testid="public-feedback-filter-category"
+                aria-label="Filter by category"
+                class="px-3 py-2 rounded-md border bg-background text-sm"
+                @change="resetFeedback"
+              >
+                <option value="">All Categories</option>
+                <option v-for="cat in projectData.categories" :key="cat.id" :value="cat.id">
+                  {{ cat.name }}
+                </option>
+              </select>
+
+              <select
+                v-model="filters.tag"
+                data-testid="public-feedback-filter-tag"
+                aria-label="Filter by tag"
+                class="px-3 py-2 rounded-md border bg-background text-sm"
+                @change="resetFeedback"
+              >
+                <option value="">All Tags</option>
+                <option v-for="tag in feedbackTypeOptions" :key="tag.value" :value="tag.value">
+                  {{ tag.label }}
+                </option>
+              </select>
+
+              <select
+                v-model="filters.sortBy"
+                data-testid="public-feedback-filter-sort"
+                aria-label="Sort feedback"
+                class="px-3 py-2 rounded-md border bg-background text-sm"
+                @change="resetFeedback"
+              >
+                <option value="voteCount">Most Voted</option>
+                <option value="createdAt">Newest</option>
+              </select>
+            </div>
+
+            <Button @click="showSubmitDialog = true">
+              <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
+              Submit Feedback
+            </Button>
           </div>
+
+          <!-- Feedback List -->
+          <div v-if="feedbackLoading && feedbackItems.length === 0" class="space-y-4">
+            <Skeleton v-for="n in 3" :key="n" class="h-28" />
+          </div>
+
+          <div
+            v-else-if="!feedbackLoading && feedbackItems.length === 0"
+            class="rounded-lg border bg-card p-12 text-center"
+          >
+            <Icon name="lucide:message-square" class="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+            <h2 class="text-lg font-semibold mb-2">No feedback yet</h2>
+            <p class="text-muted-foreground mb-4">Be the first to submit feedback!</p>
+            <Button @click="showSubmitDialog = true">
+              <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
+              Submit Feedback
+            </Button>
+          </div>
+
+          <div v-else class="space-y-3">
+            <div
+              v-for="item in feedbackItems"
+              :key="item.id"
+              class="rounded-lg border bg-card hover:shadow-sm transition-shadow cursor-pointer"
+              :class="item.isOwn ? 'ring-2 ring-primary/30' : ''"
+              :data-testid="`public-feedback-item-${item.id}`"
+              role="button"
+              tabindex="0"
+              @click="openFeedbackDetails(item)"
+              @pointerenter="warmFeedbackDetails(item.id)"
+              @focus="warmFeedbackDetails(item.id)"
+              @keydown.enter.prevent="openFeedbackDetails(item)"
+              @keydown.space.prevent="openFeedbackDetails(item)"
+            >
+              <div class="flex items-start gap-4 p-4">
+                <div
+                  class="flex flex-col items-center min-w-[48px] gap-0.5"
+                  :class="votingIds.has(item.id) ? 'opacity-50' : ''"
+                >
+                  <button
+                    class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
+                    :class="item.voteType === 'upvote' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
+                    :title="item.voteType === 'upvote' ? 'Remove upvote' : 'Upvote'"
+                    :aria-label="`${item.voteType === 'upvote' ? 'Remove upvote from' : 'Upvote'}: ${item.title}`"
+                    :disabled="votingIds.has(item.id)"
+                    @click.stop="handleVote(item, 'upvote')"
+                  >
+                    <Icon :name="voteIcons.up" class="w-5 h-5" />
+                  </button>
+                  <span class="text-sm font-semibold leading-none">{{ item.voteCount }}</span>
+                  <button
+                    class="flex items-center justify-center w-8 h-8 rounded-md hover:bg-accent transition-colors disabled:pointer-events-none"
+                    :class="
+                      item.voteType === 'downvote' ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
+                    "
+                    :title="item.voteType === 'downvote' ? 'Remove downvote' : 'Downvote'"
+                    :aria-label="`${item.voteType === 'downvote' ? 'Remove downvote from' : 'Downvote'}: ${item.title}`"
+                    :disabled="votingIds.has(item.id)"
+                    @click.stop="handleVote(item, 'downvote')"
+                  >
+                    <Icon :name="voteIcons.down" class="w-5 h-5" />
+                  </button>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-start justify-between gap-2 mb-1">
+                    <h3 class="font-medium flex items-center gap-1.5">
+                      <Icon
+                        v-if="item.isPinned"
+                        name="lucide:pin"
+                        class="w-3.5 h-3.5 text-primary shrink-0"
+                        data-testid="public-feedback-pinned-icon"
+                      />
+                      {{ item.title }}
+                    </h3>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <span
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                        :class="
+                          statusClasses[item.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                        "
+                      >
+                        {{ formatStatus(item.status) }}
+                      </span>
+                      <span
+                        v-if="item.category"
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                        :style="{ backgroundColor: item.category.color + '20', color: item.category.color }"
+                      >
+                        <span
+                          v-if="item.category.icon"
+                          :data-testid="`public-feedback-category-icon-${item.id}`"
+                          class="mr-1"
+                        >
+                          {{ item.category.icon }}
+                        </span>
+                        {{ item.category.name }}
+                      </span>
+                      <span
+                        v-if="item.tag && feedbackTypeLabel(item.tag)"
+                        class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
+                      >
+                        {{ feedbackTypeLabel(item.tag) }}
+                      </span>
+                    </div>
+                  </div>
+                  <p v-if="item.body" class="text-sm text-muted-foreground line-clamp-2 mb-2">
+                    {{ item.body }}
+                  </p>
+                  <div class="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span v-if="item.isOwn" class="text-primary font-medium">
+                      <Icon name="lucide:star" class="w-3 h-3 inline" />
+                      Your submission
+                    </span>
+                    <span v-else-if="item.authorName">
+                      <Icon name="lucide:user" class="w-3 h-3 inline" />
+                      {{ item.authorName }}
+                    </span>
+                    <span>
+                      <Icon name="lucide:calendar" class="w-3 h-3 inline" />
+                      {{ formatDate(item.createdAt) }}
+                    </span>
+                    <span v-if="item.commentCount > 0">
+                      <Icon name="lucide:message-circle" class="w-3 h-3 inline" />
+                      {{ item.commentCount }}
+                    </span>
+                    <span class="ml-auto text-primary">View details</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Infinite scroll sentinel -->
+            <div ref="scrollSentinel" class="h-4" />
+            <!-- Loading more indicator -->
+            <div v-if="feedbackLoading && feedbackItems.length > 0" class="flex justify-center py-6">
+              <Icon name="lucide:loader-2" class="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          </div>
+        </template>
+
+        <!-- Product list: several public products and none chosen yet -->
+        <div v-else data-testid="public-product-list" class="grid gap-3 sm:grid-cols-2">
+          <NuxtLink
+            v-for="product in products"
+            :key="product.id"
+            :to="productPath(product)"
+            class="rounded-lg border bg-card p-5 hover:shadow-sm transition-shadow"
+          >
+            <h2 class="font-semibold">{{ product.name }}</h2>
+            <p v-if="product.description" class="text-sm text-muted-foreground mt-1">{{ product.description }}</p>
+            <span class="mt-3 inline-flex items-center text-sm text-primary">
+              Open feedback board
+              <Icon name="lucide:arrow-right" class="w-4 h-4 ml-1" />
+            </span>
+          </NuxtLink>
         </div>
 
         <!-- Submit Feedback Dialog -->
@@ -992,8 +1032,9 @@ const FEEDBACK_DETAILS_PREFETCH_LIMIT = 3
 export default {
   name: 'PublicFeedbackBoard',
   props: {
-    teamSlug: { type: String, required: true },
+    orgSlug: { type: String, required: true },
     projectSlug: { type: String, required: true },
+    productSlug: { type: String, default: null },
   },
   data() {
     return {
@@ -1118,20 +1159,39 @@ export default {
       if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}`)
       return encodeURIComponent(window.location.href)
     },
+    projectApiBase() {
+      return `/api/public/o/${encodeURIComponent(this.orgSlug)}/${encodeURIComponent(this.projectSlug)}`
+    },
+    products() {
+      return this.projectData?.products || []
+    },
+    hasMultipleProducts() {
+      return this.products.length > 1
+    },
+    // The product whose board is shown. A single public product is the board
+    // itself; with several, a slug in the URL picks one and without it the
+    // visitor chooses from the product list.
+    currentProduct() {
+      if (this.productSlug) return this.products.find((p) => p.slug === this.productSlug) || null
+      return this.products.length === 1 ? this.products[0] : null
+    },
+    feedbackApiPath() {
+      return `${this.projectApiBase}/products/${encodeURIComponent(this.currentProduct?.slug || '')}/feedback`
+    },
+    onCustomDomain() {
+      return import.meta.client && this.projectData?.project?.customDomain === window.location.hostname
+    },
+    productPathPrefix() {
+      return this.onCustomDomain ? '' : `/${this.projectSlug}`
+    },
     roadmapPath() {
-      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
-        return '/roadmap'
-      }
-      return `/${this.projectSlug}/roadmap`
+      return `${this.productPathPrefix}/roadmap`
     },
     roadmapEnabled() {
       return this.projectData?.project?.settings?.roadmapEnabled === true
     },
     changelogPath() {
-      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
-        return '/changelog'
-      }
-      return `/${this.projectSlug}/changelog`
+      return `${this.productPathPrefix}/changelog`
     },
     changelogEnabled() {
       return this.projectData?.project?.settings?.changelogEnabled === true
@@ -1140,10 +1200,7 @@ export default {
       return this.projectData?.hasTestimonials === true
     },
     testimonialsPath() {
-      if (import.meta.client && this.projectData?.project?.customDomain === window.location.hostname) {
-        return '/testimonials'
-      }
-      return `/${this.projectSlug}/testimonials`
+      return `${this.productPathPrefix}/testimonials`
     },
     customFooterBranding() {
       return this.projectData?.project?.settings?.customFooterBranding?.trim() || ''
@@ -1219,7 +1276,7 @@ export default {
       window.addEventListener('scroll', this.handleScroll, { passive: true })
     }
     // Use data prefetched by the roadmap page to skip the full-page loading skeleton
-    const boardCacheKey = `pubBoardData_${this.teamSlug}_${this.projectSlug}`
+    const boardCacheKey = `pubBoardData_${this.orgSlug}_${this.projectSlug}_${this.productSlug || ''}`
     const cached = import.meta.client ? useState(boardCacheKey).value : null
     if (cached && Date.now() - cached.cachedAt < 60_000 && cached.projectResponse?.data) {
       const projectData = cached.projectResponse.data
@@ -1240,8 +1297,12 @@ export default {
       return
     }
     try {
-      const response = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`)
+      const response = await $fetch(this.projectApiBase)
       this.projectData = response?.data
+      if (this.productSlug && !this.currentProduct) {
+        this.error = 'This feedback board could not be found.'
+        return
+      }
       this.applyTheme(this.projectData?.project?.settings?.themeMode || 'system')
       await this.loadFeedback()
       this.warmRoadmapData()
@@ -1256,6 +1317,9 @@ export default {
     }
   },
   methods: {
+    productPath(product) {
+      return `${this.productPathPrefix}/${product.slug}`
+    },
     handleScroll() {
       this.scrollY = window.scrollY
     },
@@ -1276,7 +1340,7 @@ export default {
       this.applyTheme(cycle[this.activeTheme] || 'system')
     },
     async loadFeedback() {
-      if (!this.projectData) return
+      if (!this.projectData || !this.currentProduct) return
       this.feedbackLoading = true
       const isFirstPage = this.pagination.page === 1
       try {
@@ -1288,9 +1352,7 @@ export default {
         if (this.filters.status) params.set('status', this.filters.status)
         if (this.filters.categoryId) params.set('categoryId', this.filters.categoryId)
         if (this.filters.tag) params.set('tag', this.filters.tag)
-        const response = await $fetch(
-          `/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback?${params.toString()}`
-        )
+        const response = await $fetch(`${this.feedbackApiPath}?${params.toString()}`)
         const data = response?.data
         const newItems = this.mergeWithLocalVotes(data?.items || [])
         if (isFirstPage) {
@@ -1344,7 +1406,7 @@ export default {
 
       this.isSubmitting = true
       try {
-        await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/feedback`, {
+        await $fetch(this.feedbackApiPath, {
           method: 'POST',
           body: payload,
         })
@@ -1355,7 +1417,7 @@ export default {
         this.pagination.page = 1
         this.filters.sortBy = 'createdAt'
         await this.loadFeedback()
-        const projectResponse = await $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}`)
+        const projectResponse = await $fetch(this.projectApiBase)
         this.projectData = projectResponse?.data
       } catch (err) {
         console.error('Error submitting feedback:', err)
@@ -1395,8 +1457,8 @@ export default {
         return this.roadmapPrefetch.promise
       }
 
-      const cacheKey = `pubRoadmapData_${this.teamSlug}_${this.projectSlug}`
-      const promise = $fetch(`/api/public/t/${this.teamSlug}/${this.projectSlug}/roadmap`)
+      const cacheKey = `pubRoadmapData_${this.orgSlug}_${this.projectSlug}_`
+      const promise = $fetch(`${this.projectApiBase}/roadmap`)
         .then((response) => {
           if (import.meta.client) {
             useState(cacheKey).value = { response, cachedAt: Date.now() }
@@ -1695,9 +1757,8 @@ export default {
           await $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
         }
 
-        const response = await $fetch('/api/teams/list-user')
-        const teams = response?.data || []
-        this.isAdmin = teams.some((t) => t.slug === this.teamSlug)
+        const response = await $fetch(`${this.projectApiBase}/viewer`)
+        this.isAdmin = response?.data?.isMember === true
       } catch {
         this.currentUser = null
         this.isAdmin = false

@@ -59,7 +59,7 @@
             >
               {{ projectInitial }}
             </div>
-            <span class="text-sm text-muted-foreground">{{ projectData.team.name }}</span>
+            <span class="text-sm text-muted-foreground">{{ projectData.organization?.name }}</span>
           </div>
           <h1 class="text-3xl font-bold mb-1">{{ projectData.project.name }}</h1>
           <p v-if="projectData.project.description" class="text-muted-foreground text-lg">
@@ -127,15 +127,15 @@ const TAB_BASE = 'px-4 py-2 text-sm font-medium border-b-2 -mb-px'
 const TAB_INACTIVE = 'text-muted-foreground hover:text-foreground transition-colors border-transparent'
 
 /**
- * Shared frame of a product's public sub-pages (changelog, testimonials):
- * theme handling, banner, header with the product name, and the tab bar.
+ * Shared frame of a project's public sub-pages (changelog, testimonials):
+ * theme handling, banner, header with the project name, and the tab bar.
  * It loads the public project and emits `loaded`; the page content goes in the
  * default slot.
  */
 export default {
   name: 'PublicProjectShell',
   props: {
-    teamSlug: { type: String, required: true },
+    orgSlug: { type: String, required: true },
     projectSlug: { type: String, required: true },
     // Which tab is current: 'changelog' | 'testimonials'
     active: { type: String, required: true },
@@ -158,7 +158,7 @@ export default {
   },
   computed: {
     apiBase() {
-      return `/api/public/t/${encodeURIComponent(this.teamSlug)}/${encodeURIComponent(this.projectSlug)}`
+      return `/api/public/o/${encodeURIComponent(this.orgSlug)}/${encodeURIComponent(this.projectSlug)}`
     },
     accentColor() {
       return this.projectData?.project?.settings?.accentColor || '#6366f1'
@@ -204,7 +204,7 @@ export default {
     },
   },
   watch: {
-    teamSlug() {
+    orgSlug() {
       this.load()
     },
     projectSlug() {
@@ -220,7 +220,7 @@ export default {
             {
               rel: 'alternate',
               type: 'application/rss+xml',
-              title: `${this.projectData?.project?.name || 'Product'} changelog`,
+              title: `${this.projectData?.project?.name || 'Project'} changelog`,
               href: this.rssHref,
             },
           ]
@@ -254,7 +254,12 @@ export default {
         const response = await $fetch(this.apiBase)
         if (seq !== this.loadSeq) return
         const data = response?.data
-        this.projectData = { project: data.project, team: data.team, hasTestimonials: data.hasTestimonials === true }
+        this.projectData = {
+          project: data.project,
+          organization: data.organization,
+          products: data.products || [],
+          hasTestimonials: data.hasTestimonials === true,
+        }
         this.applyTheme(data.project?.settings?.themeMode || 'system')
       } catch (err) {
         if (seq !== this.loadSeq) return

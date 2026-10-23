@@ -216,7 +216,7 @@ function sortStatuses(statuses) {
 }
 
 export default {
-  name: 'ProductSettingsStatuses',
+  name: 'FeedbackSettingsStatuses',
   props: {
     project: {
       type: Object,
