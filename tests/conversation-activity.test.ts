@@ -78,16 +78,6 @@ describe('recordConversationActivity', () => {
     expect(rows[0].body).toBe('Unassigned.')
   })
 
-  it('describes a product being set, looking up the project name', async () => {
-    const rows = await bodies([{ field: 'projectId', from: null, to: 'p1' }], [[{ name: 'Billing' }]])
-    expect(rows[0].body).toBe('Product set to Billing.')
-  })
-
-  it('describes a product being cleared', async () => {
-    const rows = await bodies([{ field: 'projectId', from: 'p1', to: null }])
-    expect(rows[0].body).toBe('Product cleared.')
-  })
-
   it('inserts one activity row per change, all private and attributed to the actor', async () => {
     const rows = await bodies(
       [
@@ -112,7 +102,7 @@ describe('recordConversationStatusEvent', () => {
     const { tx, inserted } = fakeTx()
 
     await recordConversationStatusEvent(tx as any, {
-      teamId: 'team1',
+      projectId: 'project1',
       inboxId: 'inbox1',
       conversationId: 'conv1',
       fromStatus: 'open',
@@ -123,7 +113,7 @@ describe('recordConversationStatusEvent', () => {
 
     expect(inserted).toHaveLength(1)
     expect(inserted[0]).toMatchObject({
-      teamId: 'team1',
+      projectId: 'project1',
       inboxId: 'inbox1',
       conversationId: 'conv1',
       fromStatus: 'open',
@@ -191,7 +181,7 @@ describe('diffConversationPatch', () => {
   })
 
   it('records several changes from one patch', () => {
-    const { changes } = diffConversationPatch(open, { status: 'pending', priority: 'high', projectId: 'p1' }, now)
-    expect(changes.map((c) => c.field)).toEqual(['status', 'priority', 'projectId'])
+    const { changes } = diffConversationPatch(open, { status: 'pending', priority: 'high' }, now)
+    expect(changes.map((c) => c.field)).toEqual(['status', 'priority'])
   })
 })

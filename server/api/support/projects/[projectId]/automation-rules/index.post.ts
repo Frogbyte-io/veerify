@@ -1,6 +1,6 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/automation-rules:
+ * /api/support/projects/{projectId}/automation-rules:
  *   post:
  *     tags: [Support]
  *     summary: Create a support automation rule
@@ -8,7 +8,7 @@
  *     responses:
  *       200: { description: Automation rule created }
  *       400: { description: Invalid rule or inbox scope }
- *       403: { description: Team administrator required }
+ *       403: { description: Project administrator required }
  */
 import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
@@ -16,7 +16,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { automationRule, supportInbox, type AutomationConditionGroup } from '~/server/database/schema/support'
@@ -42,21 +42,21 @@ function invalidInbox(): never {
   throw createError({
     statusCode: 400,
     statusMessage: 'Bad Request',
-    data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Inbox is not part of this team'),
+    data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Inbox is not part of this project'),
   })
 }
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
-  await requireTeamAdmin(teamId, session.user.id)
+  const projectId = getRouterParam(event, 'projectId') as string
+  await requireProjectAdmin(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   if (body.inboxId) {
     const [ownedInbox] = await db
       .select({ id: supportInbox.id })
       .from(supportInbox)
-      .where(and(eq(supportInbox.id, body.inboxId), eq(supportInbox.teamId, teamId)))
+      .where(and(eq(supportInbox.id, body.inboxId), eq(supportInbox.projectId, projectId)))
       .limit(1)
     if (!ownedInbox) invalidInbox()
   }
@@ -79,7 +79,7 @@ export default defineEventHandler(async (event) => {
     .insert(automationRule)
     .values({
       id: randomUUID(),
-      teamId,
+      projectId,
       inboxId: body.inboxId ?? null,
       name: body.name,
       trigger: body.trigger,

@@ -12,7 +12,8 @@ import {
   supportOutboundDelivery,
 } from '../../server/database/schema/support'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
-import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
+import { account, session, user, verification } from '../../server/database/schema/auth'
+import { project, projectMember } from '../../server/database/schema/feedback'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
@@ -81,9 +82,9 @@ test.describe.serial('outbound reply round trip', () => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie)
 
-    const teamResponse = await request.get('/api/teams/active', { headers })
-    const teamId = (await teamResponse.json()).data.id as string
-    await ensureVerifiedSendingDomain(teamId)
+    const projectResponse = await request.get('/api/projects/active', { headers })
+    const projectId = (await projectResponse.json()).data.id as string
+    await ensureVerifiedSendingDomain(projectId)
 
     const suffix = randomUUID().slice(0, 8)
     const inboxAddress = `inbound-${suffix}@example.com`
@@ -94,9 +95,9 @@ test.describe.serial('outbound reply round trip', () => {
     let conversationId: string | undefined
 
     // Same dance as support-inbound-email.spec.ts: supportEnabled defaults
-    // to false per team (delta D-31).
+    // to false per project (delta D-31).
     //
-    // The module-toggle route requires a team admin as of the Stage 01-04
+    // The module-toggle route requires a project admin as of the Stage 01-04
     // hardening (Task 11), and the seed user is only a `member`. The inbound
     // spec was updated for that; this one was not, because it has always been
     // skipped for want of webhook credentials and so never ran to discover it.
@@ -104,28 +105,32 @@ test.describe.serial('outbound reply round trip', () => {
     const sessionUserResponse = await request.get('/api/auth/session', { headers })
     const seedUserId = (await sessionUserResponse.json()).data.user.id as string
     const [membershipBefore] = await db
-      .select({ id: teamMember.id, role: teamMember.role })
-      .from(teamMember)
-      .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, seedUserId)))
+      .select({ id: projectMember.id, role: projectMember.role })
+      .from(projectMember)
+      .where(and(eq(projectMember.projectId, projectId), eq(projectMember.userId, seedUserId)))
       .limit(1)
     expect(membershipBefore).toBeTruthy()
-    if (!membershipBefore) throw new Error('Seed team membership fixture disappeared')
+    if (!membershipBefore) throw new Error('Seed project membership fixture disappeared')
     if (membershipBefore.role !== 'admin') {
-      await db.update(teamMember).set({ role: 'admin' }).where(eq(teamMember.id, membershipBefore.id))
+      await db.update(projectMember).set({ role: 'admin' }).where(eq(projectMember.id, membershipBefore.id))
     }
 
-    const modulesBefore = await request.get(`/api/teams/${teamId}/modules`, { headers })
-    const supportWasEnabled = Boolean((await modulesBefore.json())?.data?.modules?.supportEnabled)
-    const enableSupport = await request.put(`/api/teams/${teamId}/modules`, {
-      headers,
-      data: { supportEnabled: true },
-    })
-    expect(enableSupport.ok()).toBeTruthy()
+    // Tool switches live in the project's settings.
+    const [projectBefore] = await db
+      .select({ settings: project.settings })
+      .from(project)
+      .where(eq(project.id, projectId))
+      .limit(1)
+    const settingsBefore = projectBefore?.settings ?? null
+    await db
+      .update(project)
+      .set({ settings: { ...(settingsBefore ?? {}), supportEnabled: true } })
+      .where(eq(project.id, projectId))
 
     try {
       const inboxResponse = await request.post('/api/support/inboxes', {
         headers,
-        data: { teamId, name: `E2E Outbound ${suffix}`, slug: `e2e-outbound-${suffix}` },
+        data: { projectId, name: `E2E Outbound ${suffix}`, slug: `e2e-outbound-${suffix}` },
       })
       expect(inboxResponse.ok()).toBeTruthy()
       const inboxId = (await inboxResponse.json()).data.inbox.id as string
@@ -347,13 +352,11 @@ test.describe.serial('outbound reply round trip', () => {
       }
       await db.delete(contact).where(eq(contact.email, customerEmail))
 
-      if (!supportWasEnabled) {
-        await request.put(`/api/teams/${teamId}/modules`, { headers, data: { supportEnabled: false } })
-      }
+      await db.update(project).set({ settings: settingsBefore }).where(eq(project.id, projectId))
 
-      // Restore last: the module toggle above still needs the elevated role.
+      // Restore last: the support requests above still need the elevated role.
       if (membershipBefore.role !== 'admin') {
-        await db.update(teamMember).set({ role: membershipBefore.role }).where(eq(teamMember.id, membershipBefore.id))
+        await db.update(projectMember).set({ role: membershipBefore.role }).where(eq(projectMember.id, membershipBefore.id))
       }
     }
   })
@@ -366,10 +369,10 @@ test.describe.serial('outbound attachment contract', () => {
   test('uploads through the proxy and persists only an opaque upload id', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie)
-    const teamResponse = await request.get('/api/teams/active', { headers })
-    expect(teamResponse.ok()).toBeTruthy()
-    const teamId = (await teamResponse.json()).data.id as string
-    await ensureVerifiedSendingDomain(teamId)
+    const projectResponse = await request.get('/api/projects/active', { headers })
+    expect(projectResponse.ok()).toBeTruthy()
+    const projectId = (await projectResponse.json()).data.id as string
+    await ensureVerifiedSendingDomain(projectId)
     const suffix = randomUUID().slice(0, 8)
     const customerEmail = `attachment-${suffix}@example.com`
     const adminCredentials = { email: `attachment-admin-${suffix}@example.com`, password: TEST_PASSWORD }
@@ -377,7 +380,7 @@ test.describe.serial('outbound attachment contract', () => {
     const conversationIds: string[] = []
     let conversationId: string | undefined
     let adminUserId: string | undefined
-    let teamMemberId: string | undefined
+    let projectMemberId: string | undefined
 
     try {
       const signupResponse = await request.post('/api/auth/sign-up/email', {
@@ -386,15 +389,15 @@ test.describe.serial('outbound attachment contract', () => {
       })
       expect(signupResponse.ok()).toBeTruthy()
       adminUserId = ((await signupResponse.json()).user?.id || '') as string
-      teamMemberId = randomUUID()
+      projectMemberId = randomUUID()
       await db
-        .insert(teamMember)
-        .values({ id: teamMemberId, teamId, userId: adminUserId, role: 'admin', createdAt: new Date() })
+        .insert(projectMember)
+        .values({ id: projectMemberId, projectId, userId: adminUserId, role: 'admin', createdAt: new Date() })
       const adminCookie = await signInAndGetSessionCookie(request, adminCredentials)
       const adminHeaders = withAuthHeaders(adminCookie)
       const inboxResponse = await request.post('/api/support/inboxes', {
         headers: adminHeaders,
-        data: { teamId, name: `E2E Attachment ${suffix}`, slug: `e2e-attachment-${suffix}` },
+        data: { projectId, name: `E2E Attachment ${suffix}`, slug: `e2e-attachment-${suffix}` },
       })
       expect(inboxResponse.ok()).toBeTruthy()
       const inboxId = (await inboxResponse.json()).data.inbox.id as string
@@ -408,7 +411,7 @@ test.describe.serial('outbound attachment contract', () => {
       expect(memberResponse.ok()).toBeTruthy()
       const contactResponse = await request.post('/api/support/contacts', {
         headers: adminHeaders,
-        data: { teamId, name: 'Attachment Customer', email: customerEmail },
+        data: { projectId, name: 'Attachment Customer', email: customerEmail },
       })
       expect(contactResponse.ok()).toBeTruthy()
       const contactId = (await contactResponse.json()).data.contact.id as string
@@ -473,7 +476,7 @@ test.describe.serial('outbound attachment contract', () => {
         await db.delete(supportAttachmentUpload).where(eq(supportAttachmentUpload.conversationId, conversationId))
       await db.delete(contact).where(eq(contact.email, customerEmail))
       if (inboxIds.length) await db.delete(supportInbox).where(inArray(supportInbox.id, inboxIds))
-      if (teamMemberId) await db.delete(teamMember).where(eq(teamMember.id, teamMemberId))
+      if (projectMemberId) await db.delete(projectMember).where(eq(projectMember.id, projectMemberId))
       if (adminUserId) {
         await db.delete(verification).where(eq(verification.identifier, adminCredentials.email))
         await db.delete(session).where(eq(session.userId, adminUserId))
@@ -489,7 +492,7 @@ test.describe.serial('outbound attachment contract', () => {
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie)
-    const teamId = (await (await request.get('/api/teams/active', { headers })).json()).data.id as string
+    const projectId = (await (await request.get('/api/projects/active', { headers })).json()).data.id as string
     const suffix = randomUUID().slice(0, 8)
     const adminCredentials = { email: `attachment-ui-admin-${suffix}@example.com`, password: TEST_PASSWORD }
     const signup = await request.post('/api/auth/sign-up/email', {
@@ -498,10 +501,10 @@ test.describe.serial('outbound attachment contract', () => {
     })
     expect(signup.ok()).toBeTruthy()
     const adminUserId = (await signup.json()).user.id as string
-    const teamMemberId = randomUUID()
+    const projectMemberId = randomUUID()
     await db
-      .insert(teamMember)
-      .values({ id: teamMemberId, teamId, userId: adminUserId, role: 'admin', createdAt: new Date() })
+      .insert(projectMember)
+      .values({ id: projectMemberId, projectId, userId: adminUserId, role: 'admin', createdAt: new Date() })
     const adminCookie = await signInAndGetSessionCookie(request, adminCredentials)
     const adminHeaders = withAuthHeaders(adminCookie)
     const customerEmail = `attachment-ui-${suffix}@example.com`
@@ -511,7 +514,7 @@ test.describe.serial('outbound attachment contract', () => {
     try {
       const inboxResponse = await request.post('/api/support/inboxes', {
         headers: adminHeaders,
-        data: { teamId, name: `Attachment UI ${suffix}`, slug: `e2e-attachment-ui-${suffix}` },
+        data: { projectId, name: `Attachment UI ${suffix}`, slug: `e2e-attachment-ui-${suffix}` },
       })
       expect(inboxResponse.ok()).toBeTruthy()
       inboxId = (await inboxResponse.json()).data.inbox.id as string
@@ -526,7 +529,7 @@ test.describe.serial('outbound attachment contract', () => {
       ).toBeTruthy()
       const contactResponse = await request.post('/api/support/contacts', {
         headers,
-        data: { teamId, name: 'Attachment UI Customer', email: customerEmail },
+        data: { projectId, name: 'Attachment UI Customer', email: customerEmail },
       })
       expect(contactResponse.ok()).toBeTruthy()
       const contactId = (await contactResponse.json()).data.contact.id as string
@@ -734,7 +737,7 @@ test.describe.serial('outbound attachment contract', () => {
       if (conversationId) await db.delete(conversation).where(eq(conversation.id, conversationId))
       await db.delete(contact).where(eq(contact.email, customerEmail))
       if (inboxId) await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
-      await db.delete(teamMember).where(eq(teamMember.id, teamMemberId))
+      await db.delete(projectMember).where(eq(projectMember.id, projectMemberId))
       await db.delete(verification).where(eq(verification.identifier, adminCredentials.email))
       await db.delete(session).where(eq(session.userId, adminUserId))
       await db.delete(account).where(eq(account.userId, adminUserId))

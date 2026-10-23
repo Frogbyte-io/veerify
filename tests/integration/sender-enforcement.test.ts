@@ -17,17 +17,17 @@ import {
   seedOrganization,
   seedQueuedDelivery,
   seedSendingDomain,
-  seedTeamWithInbox,
-  type SeededTeam,
+  seedProjectWithInbox,
+  type SeededProject,
 } from './helpers/sender-seed'
 
 /**
- * Enforcement points of the team sender policy (design §4.5) against real
+ * Enforcement points of the project sender policy (design §4.5) against real
  * Postgres: the outbox final check, `failOutboundDelivery`'s terminal option,
  * and CSAT. The provider (WP2) is mocked; `server/utils/sending-domains` (WP1)
- * is REAL, so the "team policy" describe block only runs once WP1 is merged.
+ * is REAL, so the "project policy" describe block only runs once WP1 is merged.
  *
- * Teams: A verified `acme.com`; B has no claim; C only a pending claim.
+ * Projects: A verified `acme.com`; B has no claim; C only a pending claim.
  */
 
 const provider = vi.hoisted(() => ({
@@ -44,16 +44,16 @@ const { runCsatDispatchSweep } = await import('../../server/utils/csat')
 const { ensurePlatformAddress } = await import('../../server/utils/platform-address')
 
 let orgId: string
-let teamA: SeededTeam
-let teamB: SeededTeam
-let teamC: SeededTeam
+let projectA: SeededProject
+let projectB: SeededProject
+let projectC: SeededProject
 let domainA: string
 
 beforeAll(async () => {
   orgId = await seedOrganization('enforce')
-  teamA = await seedTeamWithInbox(orgId, 'enfa', 'support-a@acme.test')
-  teamB = await seedTeamWithInbox(orgId, 'enfb', 'support-b@other.test')
-  teamC = await seedTeamWithInbox(orgId, 'enfc', 'support@pending.test')
+  projectA = await seedProjectWithInbox(orgId, 'enfa', 'support-a@acme.test')
+  projectB = await seedProjectWithInbox(orgId, 'enfb', 'support-b@other.test')
+  projectC = await seedProjectWithInbox(orgId, 'enfc', 'support@pending.test')
 })
 
 afterAll(async () => {
@@ -76,7 +76,7 @@ async function messageRow(messageId: string) {
 
 describe('failOutboundDelivery terminal option', () => {
   it('fails a first attempt permanently when terminal is set', async () => {
-    const queued = await seedQueuedDelivery(teamA, 'support@acme.test')
+    const queued = await seedQueuedDelivery(projectA, 'support@acme.test')
 
     const failed = await failOutboundDelivery(queued.deliveryId, queued.messageId, 'SENDER_DOMAIN_NOT_AUTHORIZED', 1, {
       terminal: true,
@@ -95,7 +95,7 @@ describe('failOutboundDelivery terminal option', () => {
   })
 
   it('keeps retrying a first attempt without the option', async () => {
-    const queued = await seedQueuedDelivery(teamA, 'support@acme.test')
+    const queued = await seedQueuedDelivery(projectA, 'support@acme.test')
 
     await failOutboundDelivery(queued.deliveryId, queued.messageId, new Error('socket hang up'), 1)
 
@@ -105,7 +105,7 @@ describe('failOutboundDelivery terminal option', () => {
   })
 
   it('processOutboundDelivery fails terminally through the real failure path when the sender is refused', async () => {
-    const queued = await seedQueuedDelivery(teamB, 'support@acme.test')
+    const queued = await seedQueuedDelivery(projectB, 'support@acme.test')
     const sendEmail = vi.fn()
 
     const result = await processOutboundDelivery(queued.claim, {
@@ -125,10 +125,10 @@ describe('failOutboundDelivery terminal option', () => {
 })
 
 describe('legacy sender policy', () => {
-  it('sends as any address, without consulting team claims', async () => {
+  it('sends as any address, without consulting project claims', async () => {
     vi.stubEnv('SUPPORT_SENDER_POLICY', 'legacy')
     vi.stubEnv('SUPPORT_SENDING_DOMAINS_ENABLED', '')
-    const queued = await seedQueuedDelivery(teamB, 'support@acme.test')
+    const queued = await seedQueuedDelivery(projectB, 'support@acme.test')
     const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'ok' })
 
     const result = await processOutboundDelivery(queued.claim, { sendEmail, getObject: vi.fn() })
@@ -138,25 +138,25 @@ describe('legacy sender policy', () => {
   })
 })
 
-describe('team sender policy (needs WP1)', () => {
+describe('project sender policy (needs WP1)', () => {
   beforeAll(async () => {
-    domainA = await seedSendingDomain({ teamId: teamA.teamId, domain: 'acme.test' })
-    await seedSendingDomain({ teamId: teamC.teamId, domain: 'pending.test', status: 'pending' })
+    domainA = await seedSendingDomain({ projectId: projectA.projectId, domain: 'acme.test' })
+    await seedSendingDomain({ projectId: projectC.projectId, domain: 'pending.test', status: 'pending' })
   })
 
   beforeEach(() => {
-    vi.stubEnv('SUPPORT_SENDER_POLICY', 'team')
+    vi.stubEnv('SUPPORT_SENDER_POLICY', 'project')
   })
 
-  async function process(seed: SeededTeam, from: string) {
+  async function process(seed: SeededProject, from: string) {
     const queued = await seedQueuedDelivery(seed, from)
     const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'ok' })
     const result = await processOutboundDelivery(queued.claim, { sendEmail, getObject: vi.fn() })
     return { result, sendEmail, queued }
   }
 
-  it("blocks team B from sending as team A's verified domain, terminally and without calling sendEmail", async () => {
-    const { result, sendEmail, queued } = await process(teamB, 'support@acme.test')
+  it("blocks project B from sending as project A's verified domain, terminally and without calling sendEmail", async () => {
+    const { result, sendEmail, queued } = await process(projectB, 'support@acme.test')
 
     expect(result).toEqual({ outcome: 'failed', error: 'SENDER_DOMAIN_NOT_AUTHORIZED' })
     expect(sendEmail).not.toHaveBeenCalled()
@@ -166,23 +166,23 @@ describe('team sender policy (needs WP1)', () => {
     })
   })
 
-  it('lets team A send as its own verified domain, including a subdomain on a subdomain-authorizing provider', async () => {
-    expect((await process(teamA, 'support@acme.test')).result).toEqual({ outcome: 'sent' })
-    expect((await process(teamA, 'help@eu.acme.test')).result).toEqual({ outcome: 'sent' })
+  it('lets project A send as its own verified domain, including a subdomain on a subdomain-authorizing provider', async () => {
+    expect((await process(projectA, 'support@acme.test')).result).toEqual({ outcome: 'sent' })
+    expect((await process(projectA, 'help@eu.acme.test')).result).toEqual({ outcome: 'sent' })
   })
 
   it('refuses a subdomain when the provider only authorizes exact domains', async () => {
     provider.current = { name: 'mailgun', accountKey: 'acct', capabilities: { authorizesSubdomains: false } }
     try {
-      expect((await process(teamA, 'help@eu.acme.test')).result).toMatchObject({ outcome: 'failed' })
-      expect((await process(teamA, 'support@acme.test')).result).toEqual({ outcome: 'sent' })
+      expect((await process(projectA, 'help@eu.acme.test')).result).toMatchObject({ outcome: 'failed' })
+      expect((await process(projectA, 'support@acme.test')).result).toEqual({ outcome: 'sent' })
     } finally {
       provider.current = { name: 'mailgun', accountKey: 'acct', capabilities: { authorizesSubdomains: true } }
     }
   })
 
   it('blocks a pending claim', async () => {
-    const { result, sendEmail } = await process(teamC, 'support@pending.test')
+    const { result, sendEmail } = await process(projectC, 'support@pending.test')
 
     expect(result).toMatchObject({ outcome: 'failed', error: 'SENDER_DOMAIN_NOT_AUTHORIZED' })
     expect(sendEmail).not.toHaveBeenCalled()
@@ -191,7 +191,7 @@ describe('team sender policy (needs WP1)', () => {
   it('suspension blocks queued mail and recovery unblocks a retry', async () => {
     await db.update(supportSendingDomain).set({ status: 'suspended' }).where(eq(supportSendingDomain.id, domainA))
     try {
-      expect((await process(teamA, 'support@acme.test')).result).toMatchObject({
+      expect((await process(projectA, 'support@acme.test')).result).toMatchObject({
         outcome: 'failed',
         error: 'SENDER_DOMAIN_NOT_AUTHORIZED',
       })
@@ -199,7 +199,7 @@ describe('team sender policy (needs WP1)', () => {
       await db.update(supportSendingDomain).set({ status: 'verified' }).where(eq(supportSendingDomain.id, domainA))
     }
 
-    expect((await process(teamA, 'support@acme.test')).result).toEqual({ outcome: 'sent' })
+    expect((await process(projectA, 'support@acme.test')).result).toEqual({ outcome: 'sent' })
   })
 
   it('blocks a claim registered with a different provider account', async () => {
@@ -208,7 +208,7 @@ describe('team sender policy (needs WP1)', () => {
       .set({ providerAccountKey: 'other-project' })
       .where(eq(supportSendingDomain.id, domainA))
     try {
-      expect((await process(teamA, 'support@acme.test')).result).toMatchObject({ outcome: 'failed' })
+      expect((await process(projectA, 'support@acme.test')).result).toMatchObject({ outcome: 'failed' })
     } finally {
       await db
         .update(supportSendingDomain)
@@ -217,26 +217,30 @@ describe('team sender policy (needs WP1)', () => {
     }
   })
 
-  it("authorizes a team's own platform address and no one else's", async () => {
+  it("authorizes a project's own platform address and no one else's", async () => {
     vi.stubEnv('SUPPORT_PLATFORM_MAIL_DOMAIN', 'veerifymail.test')
     const platformA = await db.transaction((tx) =>
-      ensurePlatformAddress(tx, { id: teamA.inboxId, slug: teamA.inboxSlug }, teamA.teamSlug)
+      ensurePlatformAddress(
+        tx,
+        { id: projectA.inboxId, slug: projectA.inboxSlug, projectId: projectA.projectId },
+        projectA.projectSlug
+      )
     )
 
-    expect((await process(teamA, platformA!.address)).result).toEqual({ outcome: 'sent' })
-    expect((await process(teamB, platformA!.address)).result).toMatchObject({
+    expect((await process(projectA, platformA!.address)).result).toEqual({ outcome: 'sent' })
+    expect((await process(projectB, platformA!.address)).result).toMatchObject({
       outcome: 'failed',
       error: 'SENDER_DOMAIN_NOT_AUTHORIZED',
     })
   })
 
   describe('CSAT', () => {
-    async function seedSurveyFor(seed: SeededTeam) {
+    async function seedSurveyFor(seed: SeededProject) {
       const now = new Date()
       const surveyId = `csat_survey_${randomUUID()}`
       await db.insert(csatSurvey).values({
         id: surveyId,
-        teamId: seed.teamId,
+        projectId: seed.projectId,
         inboxId: seed.inboxId,
         name: 'CSAT',
         scale: 'csat_5',
@@ -271,13 +275,13 @@ describe('team sender policy (needs WP1)', () => {
     }
 
     it('skips the survey from an unauthorized sender and sends from an authorized one', async () => {
-      const surveyB = await seedSurveyFor(teamB)
-      const surveyA = await seedSurveyFor(teamA)
-      // Make team B's inbox address sit on team A's domain: B must not send it.
+      const surveyB = await seedSurveyFor(projectB)
+      const surveyA = await seedSurveyFor(projectA)
+      // Make project B's inbox address sit on project A's domain: B must not send it.
       await db
         .update(supportInbox)
         .set({ emailAddress: 'support-b@acme.test' })
-        .where(eq(supportInbox.id, teamB.inboxId))
+        .where(eq(supportInbox.id, projectB.inboxId))
 
       await runCsatDispatchSweep({ now: new Date() })
 

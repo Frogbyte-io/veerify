@@ -179,14 +179,14 @@ export async function submitCsatResponse(input: {
   })
 
   const [conversationRow] = await db
-    .select({ teamId: conversation.teamId, inboxId: conversation.inboxId })
+    .select({ projectId: conversation.projectId, inboxId: conversation.inboxId })
     .from(conversation)
     .where(eq(conversation.id, response.conversationId))
     .limit(1)
   if (conversationRow) {
     await publishConversationEvent({
       type: 'message.created',
-      teamId: conversationRow.teamId,
+      projectId: conversationRow.projectId,
       inboxId: conversationRow.inboxId,
       conversationId: response.conversationId,
       messageId,
@@ -254,12 +254,12 @@ async function dispatchCandidate(candidate: CsatCandidate, now: Date): Promise<b
   if (hasCsatOptedOut(candidate.contact.attributes)) return false
   if (!(await hasAgentReply(candidate.conversation.id))) return false
 
-  // Same sender rule as an agent reply: no survey from an address this team
+  // Same sender rule as an agent reply: no survey from an address this project
   // may not send as. Skipped rather than failed - a survey is optional, and
   // the conversation is picked up again on a later sweep once the domain is
   // verified. No-op under the legacy sender policy.
-  if (!(await isSenderAllowedOrRecordBlock(candidate.conversation.teamId, senderAddress, 'csat'))) {
-    logger.warn('CSAT survey skipped: sender address is not authorized for this team', {
+  if (!(await isSenderAllowedOrRecordBlock(candidate.conversation.projectId, senderAddress, 'csat'))) {
+    logger.warn('CSAT survey skipped: sender address is not authorized for this project', {
       inboxId: candidate.inbox.id,
       conversationId: candidate.conversation.id,
     })
@@ -335,7 +335,7 @@ async function dispatchCandidate(candidate: CsatCandidate, now: Date): Promise<b
   if (created) {
     await publishConversationEvent({
       type: 'message.created',
-      teamId: candidate.conversation.teamId,
+      projectId: candidate.conversation.projectId,
       inboxId: candidate.conversation.inboxId,
       conversationId: candidate.conversation.id,
       messageId,
@@ -371,7 +371,7 @@ export async function runCsatDispatchSweep(input: { now?: Date; limit?: number }
       .innerJoin(supportInbox, eq(supportInbox.id, conversation.inboxId))
       .where(
         and(
-          eq(conversation.teamId, survey.teamId),
+          eq(conversation.projectId, survey.projectId),
           eq(conversation.status, status),
           survey.inboxId ? eq(conversation.inboxId, survey.inboxId) : undefined,
           or(lte(conversation.updatedAt, now), lte(conversation.resolvedAt, now))

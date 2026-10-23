@@ -4,10 +4,10 @@ import { and, eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, teamMember, user } from '../../server/database/schema/auth'
-import { project, feedback } from '../../server/database/schema/feedback'
-import { contact, contactLink, supportTeamSettings } from '../../server/database/schema/support'
-import { lockContactTeam } from '../../server/utils/contact-lock'
+import { member, organization, user } from '../../server/database/schema/auth'
+import { project, projectMember, product, feedback } from '../../server/database/schema/feedback'
+import { contact, contactLink, supportProjectSettings } from '../../server/database/schema/support'
+import { lockContactProject } from '../../server/utils/contact-lock'
 import { deleteContactLinkInTransaction } from '../../server/utils/contact-link-transaction'
 import { mergeContactsInTransaction } from '../../server/utils/contact-merge-transaction'
 import { createAutomaticFeedbackLink } from '../../server/utils/support-auto-link'
@@ -36,12 +36,12 @@ function makePgClient() {
 
 const ids = {
   org: `auto_link_org_${randomUUID()}`,
-  team: `auto_link_team_${randomUUID()}`,
-  otherTeam: `auto_link_other_team_${randomUUID()}`,
-  user: `auto_link_user_${randomUUID()}`,
-  otherTeamUser: `auto_link_other_user_${randomUUID()}`,
   project: `auto_link_project_${randomUUID()}`,
   otherProject: `auto_link_other_project_${randomUUID()}`,
+  user: `auto_link_user_${randomUUID()}`,
+  otherProjectUser: `auto_link_other_user_${randomUUID()}`,
+  product: `auto_link_product_${randomUUID()}`,
+  otherProduct: `auto_link_other_product_${randomUUID()}`,
 }
 
 const now = new Date()
@@ -51,6 +51,7 @@ async function addFeedback(authorUserId: string | null = ids.user, projectId = i
   await db.insert(feedback).values({
     id,
     projectId,
+    productId: projectId === ids.otherProject ? ids.otherProduct : ids.product,
     title: 'Auto-link integration fixture',
     body: 'Fixture',
     authorUserId,
@@ -76,7 +77,7 @@ async function waitForBackendLock(client: Client, pid: number, timeoutMs = 5_000
       wait_event: string | null
       waiting_on_lock: boolean
       blocking_pids: number[]
-      blocker_team_lock: boolean
+      blocker_project_lock: boolean
     }>(
       `
         SELECT a.wait_event_type, a.wait_event,
@@ -91,7 +92,7 @@ async function waitForBackendLock(client: Client, pid: number, timeoutMs = 5_000
                  WHERE held.pid = ANY(pg_blocking_pids(a.pid))
                    AND held.locktype = 'advisory'
                    AND held.granted
-               ) AS blocker_team_lock
+               ) AS blocker_project_lock
         FROM pg_stat_activity a
         WHERE a.pid = $1
       `,
@@ -105,7 +106,7 @@ async function waitForBackendLock(client: Client, pid: number, timeoutMs = 5_000
   throw new Error(`backend ${pid} did not reach a PostgreSQL lock wait within ${timeoutMs}ms`)
 }
 
-async function waitForHeldTeamLock(client: Client, pid: number, timeoutMs = 5_000) {
+async function waitForHeldProjectLock(client: Client, pid: number, timeoutMs = 5_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const result = await client.query<{ held: boolean }>(
@@ -193,20 +194,24 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       createdAt: now,
       updatedAt: now,
     })
-    await db.insert(team).values([
+    await db.insert(project).values([
       {
-        id: ids.team,
-        name: 'Auto-link team',
-        slug: `auto-link-team-${randomUUID()}`,
+        id: ids.project,
+        name: 'Auto-link project',
+        slug: `auto-link-project-${randomUUID()}`,
         organizationId: ids.org,
+        // Restricted: only explicit project members may open it, so the other
+        // project's user is a genuine outsider.
+        accessMode: 'restricted',
         createdAt: now,
         updatedAt: now,
       },
       {
-        id: ids.otherTeam,
-        name: 'Other team',
+        id: ids.otherProject,
+        name: 'Other project',
         slug: `auto-link-other-${randomUUID()}`,
         organizationId: ids.org,
+        accessMode: 'restricted',
         createdAt: now,
         updatedAt: now,
       },
@@ -220,55 +225,68 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
         updatedAt: now,
       },
       {
-        id: ids.otherTeamUser,
-        name: 'Other team customer',
+        id: ids.otherProjectUser,
+        name: 'Other project customer',
         email: `auto-link-other-${randomUUID()}@example.com`,
         createdAt: now,
         updatedAt: now,
       },
     ])
-    await db.insert(teamMember).values([
-      { id: `auto_link_member_${randomUUID()}`, teamId: ids.team, userId: ids.user, role: 'member', createdAt: now },
+    await db.insert(member).values([
+      { id: `auto_link_org_member_${randomUUID()}`, organizationId: ids.org, userId: ids.user, role: 'member' },
+      {
+        id: `auto_link_org_member_${randomUUID()}`,
+        organizationId: ids.org,
+        userId: ids.otherProjectUser,
+        role: 'member',
+      },
+    ])
+    await db.insert(projectMember).values([
       {
         id: `auto_link_member_${randomUUID()}`,
-        teamId: ids.otherTeam,
-        userId: ids.otherTeamUser,
+        projectId: ids.project,
+        userId: ids.user,
+        role: 'member',
+        createdAt: now,
+      },
+      {
+        id: `auto_link_member_${randomUUID()}`,
+        projectId: ids.otherProject,
+        userId: ids.otherProjectUser,
         role: 'member',
         createdAt: now,
       },
     ])
-    await db.insert(project).values({
-      id: ids.project,
-      organizationId: ids.org,
-      teamId: ids.team,
-      slug: `auto-link-project-${randomUUID()}`,
-      name: 'Auto-link project',
-      description: 'Fixture',
-      createdAt: now,
-      updatedAt: now,
-    })
-    await db.insert(project).values({
-      id: ids.otherProject,
-      organizationId: ids.org,
-      teamId: ids.otherTeam,
-      slug: `auto-link-other-project-${randomUUID()}`,
-      name: 'Other auto-link project',
-      description: 'Fixture',
-      createdAt: now,
-      updatedAt: now,
-    })
+    await db.insert(product).values([
+      {
+        id: ids.product,
+        projectId: ids.project,
+        name: 'Auto-link product',
+        slug: 'main',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: ids.otherProduct,
+        projectId: ids.otherProject,
+        name: 'Other auto-link product',
+        slug: 'main',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ])
   })
 
   afterAll(async () => {
     await db.delete(contactLink).where(sql`${contactLink.entityId} like ${'auto_link_feedback_%'}`)
     await db.delete(feedback).where(sql`${feedback.projectId} in (${ids.project}, ${ids.otherProject})`)
     await db.delete(contact).where(sql`${contact.id} like ${'auto_link_contact_%'}`)
-    await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, ids.team))
-    await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, ids.otherTeam))
+    await db.delete(supportProjectSettings).where(eq(supportProjectSettings.projectId, ids.project))
+    await db.delete(supportProjectSettings).where(eq(supportProjectSettings.projectId, ids.otherProject))
     await db.delete(project).where(eq(project.id, ids.project))
     await db.delete(project).where(eq(project.id, ids.otherProject))
-    await db.delete(teamMember).where(sql`${teamMember.userId} in (${ids.user}, ${ids.otherTeamUser})`)
-    await db.delete(user).where(sql`${user.id} in (${ids.user}, ${ids.otherTeamUser})`)
+    await db.delete(projectMember).where(sql`${projectMember.userId} in (${ids.user}, ${ids.otherProjectUser})`)
+    await db.delete(user).where(sql`${user.id} in (${ids.user}, ${ids.otherProjectUser})`)
     await db.delete(organization).where(eq(organization.id, ids.org))
   })
 
@@ -276,25 +294,25 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await db.delete(contactLink).where(sql`${contactLink.entityId} like ${'auto_link_feedback_%'}`)
     await db.delete(feedback).where(sql`${feedback.projectId} in (${ids.project}, ${ids.otherProject})`)
     await db.delete(contact).where(sql`${contact.id} like ${'auto_link_contact_%'}`)
-    await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, ids.team))
-    await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, ids.otherTeam))
+    await db.delete(supportProjectSettings).where(eq(supportProjectSettings.projectId, ids.project))
+    await db.delete(supportProjectSettings).where(eq(supportProjectSettings.projectId, ids.otherProject))
   })
 
   async function createContact(values: Partial<typeof contact.$inferInsert> = {}) {
     const id = `auto_link_contact_${randomUUID()}`
     const [created] = await db
       .insert(contact)
-      .values({ id, teamId: ids.team, name: 'Fixture contact', createdAt: now, updatedAt: now, ...values })
+      .values({ id, projectId: ids.project, name: 'Fixture contact', createdAt: now, updatedAt: now, ...values })
       .returning()
     return created
   }
 
   async function setEnabled(enabled: boolean) {
     await db
-      .insert(supportTeamSettings)
-      .values({ teamId: ids.team, autoLinkFeedback: enabled, createdAt: now, updatedAt: new Date() })
+      .insert(supportProjectSettings)
+      .values({ projectId: ids.project, autoLinkFeedback: enabled, createdAt: now, updatedAt: new Date() })
       .onConflictDoUpdate({
-        target: supportTeamSettings.teamId,
+        target: supportProjectSettings.projectId,
         set: { autoLinkFeedback: enabled, updatedAt: new Date() },
       })
   }
@@ -309,12 +327,17 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
         const result = await tx.execute(sql`select pg_backend_pid() as pid`)
         await observeBackendPid(Number(result.rows[0]?.pid))
       }
-      return createAutomaticFeedbackLink(tx, { teamId: ids.team, feedbackId, authorUserId, createdAt: new Date() })
+      return createAutomaticFeedbackLink(tx, {
+        projectId: ids.project,
+        feedbackId,
+        authorUserId,
+        createdAt: new Date(),
+      })
     })
   }
 
-  async function runForTeam(
-    teamId: string,
+  async function runForProject(
+    projectId: string,
     feedbackId: string,
     authorUserId: string | null,
     observeBackendPid?: BackendPidObserver,
@@ -326,7 +349,12 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
         const result = await tx.execute(sql`select pg_backend_pid() as pid`)
         await observeBackendPid(Number(result.rows[0]?.pid))
       }
-      const result = await createAutomaticFeedbackLink(tx, { teamId, feedbackId, authorUserId, createdAt: new Date() })
+      const result = await createAutomaticFeedbackLink(tx, {
+        projectId,
+        feedbackId,
+        authorUserId,
+        createdAt: new Date(),
+      })
       onCompleted?.()
       if (holdAfterLink) await holdAfterLink
       return result
@@ -347,7 +375,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       mutationReady = resolve
     })
     const mutation = db.transaction(async (tx: Tx) => {
-      await lockContactTeam(tx, ids.team)
+      await lockContactProject(tx, ids.project)
       await mutate(tx)
       mutationReady()
       await mutationReleased
@@ -365,7 +393,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       await expect(waitForBackendLock(observer, helperPid)).resolves.toMatchObject({
         wait_event_type: 'Lock',
         wait_event: 'advisory',
-        blocker_team_lock: true,
+        blocker_project_lock: true,
       })
     } finally {
       releaseMutation()
@@ -375,7 +403,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await expect(linkAttempt).resolves.toMatchObject(expected)
   }
 
-  it('links only the exact one active same-team user contact', async () => {
+  it('links only the exact one active same-project user contact', async () => {
     await setEnabled(true)
     const active = await createContact({ userId: ids.user })
     const id = await addFeedback()
@@ -438,18 +466,18 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
 
-  it('does not link a contact that exists only in another team', async () => {
+  it('does not link a contact that exists only in another project', async () => {
     await setEnabled(true)
     await db.insert(contact).values({
       id: `auto_link_contact_${randomUUID()}`,
-      teamId: ids.otherTeam,
-      userId: ids.otherTeamUser,
-      name: 'Cross-team only',
+      projectId: ids.otherProject,
+      userId: ids.otherProjectUser,
+      name: 'Cross-project only',
       createdAt: now,
       updatedAt: now,
     })
-    const id = await addFeedback(ids.otherTeamUser)
-    await expect(run(id, ids.otherTeamUser)).resolves.toMatchObject({ linked: false, reason: 'none' })
+    const id = await addFeedback(ids.otherProjectUser)
+    await expect(run(id, ids.otherProjectUser)).resolves.toMatchObject({ linked: false, reason: 'none' })
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
 
@@ -531,7 +559,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     await expect(linkFor(id)).resolves.toBeUndefined()
   })
 
-  it('lets an auto-link holding the team lock yield cleanly to a concurrent merge', async () => {
+  it('lets an auto-link holding the project lock yield cleanly to a concurrent merge', async () => {
     await setEnabled(true)
     const survivor = await createContact({ userId: null })
     const active = await createContact({ userId: ids.user })
@@ -569,7 +597,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
         linkAttempt = run(id, ids.user, async (pid) => resolve(pid))
       })
       const linkPid = await linkPidReady
-      await waitForHeldTeamLock(observer, linkPid)
+      await waitForHeldProjectLock(observer, linkPid)
 
       /* eslint-disable no-unused-vars */
       let mergePidReady!: (value: number) => void
@@ -586,7 +614,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       await expect(waitForBackendLock(observer, mergePid)).resolves.toMatchObject({
         wait_event_type: 'Lock',
         wait_event: 'advisory',
-        blocker_team_lock: true,
+        blocker_project_lock: true,
       })
 
       releaseConflict()
@@ -628,7 +656,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     })
     const autoLinkAttempt = db.transaction(async (tx: Tx) => {
       const result = await createAutomaticFeedbackLink(tx, {
-        teamId: ids.team,
+        projectId: ids.project,
         feedbackId: id,
         authorUserId: ids.user,
         createdAt: new Date(),
@@ -656,7 +684,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       await expect(waitForBackendLock(observer, unlinkPid)).resolves.toMatchObject({
         wait_event_type: 'Lock',
         wait_event: 'advisory',
-        blocker_team_lock: true,
+        blocker_project_lock: true,
       })
     } finally {
       releaseAutoLink()
@@ -718,7 +746,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       await expect(waitForBackendLock(observer, unlinkPid)).resolves.toMatchObject({
         wait_event_type: 'Lock',
         wait_event: 'advisory',
-        blocker_team_lock: true,
+        blocker_project_lock: true,
       })
     } finally {
       releaseMerge()
@@ -748,7 +776,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       .returning({ id: contactLink.id })
 
     await expect(
-      db.transaction((tx) => deleteContactLinkInTransaction(tx, active.id, link.id, ids.otherTeamUser))
+      db.transaction((tx) => deleteContactLinkInTransaction(tx, active.id, link.id, ids.otherProjectUser))
     ).rejects.toMatchObject({ statusCode: 403 })
     await expect(
       db.transaction((tx) => deleteContactLinkInTransaction(tx, 'missing-contact', link.id, ids.user))
@@ -776,7 +804,7 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       (tx) =>
         tx.insert(contact).values({
           id: `auto_link_contact_${randomUUID()}`,
-          teamId: ids.team,
+          projectId: ids.project,
           userId: ids.user,
           name: 'Concurrent second match',
           createdAt: now,
@@ -797,9 +825,9 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
       id,
       (tx) =>
         tx
-          .update(supportTeamSettings)
+          .update(supportProjectSettings)
           .set({ autoLinkFeedback: false, updatedAt: new Date() })
-          .where(eq(supportTeamSettings.teamId, ids.team)),
+          .where(eq(supportProjectSettings.projectId, ids.project)),
       { linked: false, reason: 'disabled' }
     )
 
@@ -807,61 +835,61 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     expect(active.id).toBeTruthy()
   })
 
-  it('does not block auto-link work in an unrelated team while this team is locked', async () => {
+  it('does not block auto-link work in an unrelated project while this project is locked', async () => {
     await setEnabled(true)
-    const teamContact = await createContact({ userId: null })
+    const projectContact = await createContact({ userId: null })
     await db
-      .insert(supportTeamSettings)
-      .values({ teamId: ids.otherTeam, autoLinkFeedback: true, createdAt: now, updatedAt: now })
+      .insert(supportProjectSettings)
+      .values({ projectId: ids.otherProject, autoLinkFeedback: true, createdAt: now, updatedAt: now })
     const active = await db
       .insert(contact)
       .values({
         id: `auto_link_contact_${randomUUID()}`,
-        teamId: ids.otherTeam,
-        userId: ids.otherTeamUser,
-        name: 'Other team contact',
+        projectId: ids.otherProject,
+        userId: ids.otherProjectUser,
+        name: 'Other project contact',
         createdAt: now,
         updatedAt: now,
       })
       .returning()
-    const id = await addFeedback(ids.otherTeamUser, ids.otherProject)
+    const id = await addFeedback(ids.otherProjectUser, ids.otherProject)
 
-    let releaseTeam!: () => void
-    let teamLockReady!: () => void
+    let releaseProject!: () => void
+    let projectLockReady!: () => void
     /* eslint-disable no-unused-vars */
-    let teamLockPidReady!: (value: number) => void
+    let projectLockPidReady!: (value: number) => void
     /* eslint-enable no-unused-vars */
-    const teamReleased = new Promise<void>((resolve) => {
-      releaseTeam = resolve
+    const projectReleased = new Promise<void>((resolve) => {
+      releaseProject = resolve
     })
-    const teamStarted = new Promise<void>((resolve) => {
-      teamLockReady = resolve
+    const projectStarted = new Promise<void>((resolve) => {
+      projectLockReady = resolve
     })
-    const teamPid = new Promise<number>((resolve) => {
-      teamLockPidReady = resolve
+    const projectPid = new Promise<number>((resolve) => {
+      projectLockPidReady = resolve
     })
-    const teamLock = db.transaction(async (tx: Tx) => {
+    const projectLock = db.transaction(async (tx: Tx) => {
       const result = await tx.execute(sql`select pg_backend_pid() as pid`)
-      teamLockPidReady(Number(result.rows[0]?.pid))
-      await lockContactTeam(tx, ids.team)
-      await tx.update(contact).set({ updatedAt: new Date() }).where(eq(contact.id, teamContact.id))
-      teamLockReady()
-      await teamReleased
+      projectLockPidReady(Number(result.rows[0]?.pid))
+      await lockContactProject(tx, ids.project)
+      await tx.update(contact).set({ updatedAt: new Date() }).where(eq(contact.id, projectContact.id))
+      projectLockReady()
+      await projectReleased
     })
-    await teamStarted
-    const teamLockPid = await teamPid
+    await projectStarted
+    const projectLockPid = await projectPid
 
     let releaseOther!: () => void
     const otherReleased = new Promise<void>((resolve) => {
       releaseOther = resolve
     })
-    let otherAttempt!: ReturnType<typeof runForTeam>
+    let otherAttempt!: ReturnType<typeof runForProject>
     let otherCompleted = false
     const otherPidReady = new Promise<number>((resolve) => {
-      otherAttempt = runForTeam(
-        ids.otherTeam,
+      otherAttempt = runForProject(
+        ids.otherProject,
         id,
-        ids.otherTeamUser,
+        ids.otherProjectUser,
         async (pid) => resolve(pid),
         otherReleased,
         () => {
@@ -873,16 +901,16 @@ describe('createAutomaticFeedbackLink (real Postgres)', () => {
     const observer = makePgClient()
     await observer.connect()
     try {
-      await waitForHeldTeamLock(observer, teamLockPid)
-      await waitForHeldContactWriteLock(observer, teamLockPid)
-      await waitForHeldTeamLock(observer, otherPid)
+      await waitForHeldProjectLock(observer, projectLockPid)
+      await waitForHeldContactWriteLock(observer, projectLockPid)
+      await waitForHeldProjectLock(observer, otherPid)
       await waitForCompletionOrLock(observer, otherPid, () => otherCompleted)
       releaseOther()
       await expect(otherAttempt).resolves.toMatchObject({ linked: true, contactId: active[0].id })
     } finally {
       releaseOther()
-      releaseTeam()
-      await Promise.allSettled([teamLock, otherAttempt])
+      releaseProject()
+      await Promise.allSettled([projectLock, otherAttempt])
       await observer.end()
     }
     await expect(linkFor(id)).resolves.toMatchObject({ contactId: active[0].id })

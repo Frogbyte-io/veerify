@@ -1,10 +1,10 @@
 import { expect, request as createRequest, test, type Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray, ne } from 'drizzle-orm'
+import { and, asc, eq, inArray, ne } from 'drizzle-orm'
 import { db } from './helpers/db'
-import { feedback, project } from '../../server/database/schema/feedback'
-import { contact, contactLink, supportTeamSettings } from '../../server/database/schema/support'
-import { team, teamMember, user } from '../../server/database/schema/auth'
+import { feedback, product, project, projectMember } from '../../server/database/schema/feedback'
+import { contact, contactLink, supportProjectSettings } from '../../server/database/schema/support'
+import { organization, user } from '../../server/database/schema/auth'
 import {
   getPlaywrightBaseURL,
   loginViaProgrammaticPage,
@@ -16,10 +16,33 @@ import {
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
-  const response = await request.get('/api/teams/active', { headers: withAuthHeaders(sessionCookie) })
+async function activeProjectId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
+  const response = await request.get('/api/projects/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
   return (await response.json()).data.id as string
+}
+
+/** The project's first product, which every project has at least one of. */
+async function defaultProduct(projectId: string) {
+  const [row] = await db
+    .select({ id: product.id, slug: product.slug })
+    .from(product)
+    .where(eq(product.projectId, projectId))
+    .orderBy(asc(product.sortOrder), asc(product.createdAt))
+    .limit(1)
+  if (!row) throw new Error(`Project ${projectId} has no product`)
+  return row
+}
+
+/** Public feedback endpoint for a project's default product (anonymous submissions). */
+async function publicFeedbackPath(proj: { id: string; slug: string; organizationId: string }) {
+  const [org] = await db
+    .select({ slug: organization.slug })
+    .from(organization)
+    .where(eq(organization.id, proj.organizationId))
+    .limit(1)
+  const prod = await defaultProduct(proj.id)
+  return `/api/public/o/${org?.slug}/${proj.slug}/products/${prod.slug}/feedback`
 }
 
 async function navigateToAuthenticatedPage(page: Page, path: string) {
@@ -32,27 +55,27 @@ async function navigateToAuthenticatedPage(page: Page, path: string) {
 test.describe.serial('support contact timeline', () => {
   test('keeps probable feedback tenant-scoped and separate until an agent links it', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await activeTeamId(request, sessionCookie)
+    const projectId = await activeProjectId(request, sessionCookie)
     const [operator] = await db.select({ id: user.id }).from(user).where(eq(user.email, TEST_EMAIL)).limit(1)
     const [operatorMembership] = await db
       .select()
-      .from(teamMember)
-      .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, operator?.id || '')))
+      .from(projectMember)
+      .where(and(eq(projectMember.projectId, projectId), eq(projectMember.userId, operator?.id || '')))
       .limit(1)
-    const [ownProject] = await db.select().from(project).where(eq(project.teamId, teamId)).limit(1)
-    const [otherTeam] = await db
-      .select({ id: team.id, organizationId: team.organizationId })
-      .from(team)
-      .where(ne(team.id, teamId))
+    const [ownProject] = await db.select().from(project).where(eq(project.id, projectId)).limit(1)
+    const [otherProject] = await db
+      .select({ id: project.id, organizationId: project.organizationId })
+      .from(project)
+      .where(ne(project.id, projectId))
       .limit(1)
-    if (!ownProject || !otherTeam || !operator || !operatorMembership) {
+    if (!ownProject || !otherProject || !operator || !operatorMembership) {
       test.skip()
       return
     }
     const [originalSupportSettings] = await db
       .select()
-      .from(supportTeamSettings)
-      .where(eq(supportTeamSettings.teamId, teamId))
+      .from(supportProjectSettings)
+      .where(eq(supportProjectSettings.projectId, projectId))
       .limit(1)
 
     const contactId = randomUUID()
@@ -70,8 +93,7 @@ test.describe.serial('support contact timeline', () => {
     try {
       await db.insert(project).values({
         id: otherProjectId,
-        organizationId: otherTeam.organizationId,
-        teamId: otherTeam.id,
+        organizationId: otherProject.organizationId,
         slug: `e2e-support-timeline-${otherProjectId}`,
         name: `E2E Support Timeline ${otherProjectId}`,
         description: 'Created for support contact timeline isolation coverage',
@@ -79,14 +101,25 @@ test.describe.serial('support contact timeline', () => {
         updatedAt: now,
       })
       otherProjectOwned = true
+      const otherProductId = randomUUID()
+      await db.insert(product).values({
+        id: otherProductId,
+        projectId: otherProjectId,
+        name: 'Timeline other product',
+        slug: `main-${otherProductId}`,
+        createdAt: now,
+        updatedAt: now,
+      })
+      const ownProduct = await defaultProduct(ownProject.id)
       await db
         .insert(contact)
-        .values({ id: contactId, teamId, name: 'Timeline contact', email, createdAt: now, updatedAt: now })
+        .values({ id: contactId, projectId, name: 'Timeline contact', email, createdAt: now, updatedAt: now })
       contactOwned = true
       await db.insert(feedback).values([
         {
           id: ownFeedbackId,
           projectId: ownProject.id,
+          productId: ownProduct.id,
           title: 'Own probable feedback',
           authorEmail: email,
           createdAt: now,
@@ -95,6 +128,7 @@ test.describe.serial('support contact timeline', () => {
         {
           id: foreignFeedbackId,
           projectId: otherProjectId,
+          productId: otherProductId,
           title: 'Foreign feedback',
           authorEmail: email,
           createdAt: now,
@@ -103,7 +137,7 @@ test.describe.serial('support contact timeline', () => {
       ])
       feedbackOwned = true
 
-      await db.update(teamMember).set({ role: 'admin' }).where(eq(teamMember.id, operatorMembership.id))
+      await db.update(projectMember).set({ role: 'admin' }).where(eq(projectMember.id, operatorMembership.id))
       roleChanged = true
 
       const timeline = await request.get(`/api/support/contacts/${contactId}/timeline`, {
@@ -165,12 +199,12 @@ test.describe.serial('support contact timeline', () => {
         probableNextCursor: null,
       })
 
-      const defaultSettings = await request.get(`/api/support/teams/${teamId}/settings`, {
+      const defaultSettings = await request.get(`/api/support/projects/${projectId}/settings`, {
         headers: withAuthHeaders(sessionCookie),
       })
       expect((await defaultSettings.json()).data.settings.autoLinkFeedback).toBe(false)
       settingsFixtureCreated = !originalSupportSettings
-      const settingResponse = await request.put(`/api/support/teams/${teamId}/settings`, {
+      const settingResponse = await request.put(`/api/support/projects/${projectId}/settings`, {
         headers: withAuthHeaders(sessionCookie),
         data: { autoLinkFeedback: true },
       })
@@ -207,10 +241,10 @@ test.describe.serial('support contact timeline', () => {
       await cleanup('settings', async () => {
         if (originalSupportSettings) {
           await db
-            .insert(supportTeamSettings)
+            .insert(supportProjectSettings)
             .values(originalSupportSettings)
             .onConflictDoUpdate({
-              target: supportTeamSettings.teamId,
+              target: supportProjectSettings.projectId,
               set: {
                 autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
                 createdAt: originalSupportSettings.createdAt,
@@ -218,15 +252,15 @@ test.describe.serial('support contact timeline', () => {
               },
             })
         } else if (settingsFixtureCreated) {
-          await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
+          await db.delete(supportProjectSettings).where(eq(supportProjectSettings.projectId, projectId))
         }
       })
       await cleanup('role', async () => {
         if (roleChanged) {
           await db
-            .update(teamMember)
+            .update(projectMember)
             .set({ role: operatorMembership.role })
-            .where(eq(teamMember.id, operatorMembership.id))
+            .where(eq(projectMember.id, operatorMembership.id))
         }
       })
       await cleanup('links', async () => {
@@ -264,15 +298,15 @@ test.describe.serial('support contact timeline', () => {
         .limit(1)
       expect(remainingProject).toBeUndefined()
       const [restoredSettings] = await db
-        .select({ autoLinkFeedback: supportTeamSettings.autoLinkFeedback })
-        .from(supportTeamSettings)
-        .where(eq(supportTeamSettings.teamId, teamId))
+        .select({ autoLinkFeedback: supportProjectSettings.autoLinkFeedback })
+        .from(supportProjectSettings)
+        .where(eq(supportProjectSettings.projectId, projectId))
         .limit(1)
       expect(restoredSettings?.autoLinkFeedback ?? null).toBe(originalSupportSettings?.autoLinkFeedback ?? null)
       const [restoredMembership] = await db
-        .select({ role: teamMember.role })
-        .from(teamMember)
-        .where(eq(teamMember.id, operatorMembership.id))
+        .select({ role: projectMember.role })
+        .from(projectMember)
+        .where(eq(projectMember.id, operatorMembership.id))
         .limit(1)
       expect(restoredMembership?.role).toBe(operatorMembership.role)
     }
@@ -283,24 +317,24 @@ test.describe.serial('support contact timeline', () => {
     page,
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await activeTeamId(request, sessionCookie)
-    const [teamRow] = await db.select().from(team).where(eq(team.id, teamId)).limit(1)
-    const [ownProject] = await db.select().from(project).where(eq(project.teamId, teamId)).limit(1)
+    const projectId = await activeProjectId(request, sessionCookie)
+    const [projectRow] = await db.select().from(project).where(eq(project.id, projectId)).limit(1)
+    const [ownProject] = await db.select().from(project).where(eq(project.id, projectId)).limit(1)
     const [customer] = await db.select().from(user).where(eq(user.email, TEST_EMAIL)).limit(1)
     const [operatorMembership] = await db
       .select()
-      .from(teamMember)
-      .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, customer?.id || '')))
+      .from(projectMember)
+      .where(and(eq(projectMember.projectId, projectId), eq(projectMember.userId, customer?.id || '')))
       .limit(1)
-    if (!teamRow || !ownProject || !customer || !operatorMembership) {
+    if (!projectRow || !ownProject || !customer || !operatorMembership) {
       test.skip()
       return
     }
 
     const [originalSupportSettings] = await db
       .select()
-      .from(supportTeamSettings)
-      .where(eq(supportTeamSettings.teamId, teamId))
+      .from(supportProjectSettings)
+      .where(eq(supportProjectSettings.projectId, projectId))
       .limit(1)
     const originalIsPublic = ownProject.isPublic
     const contactId = randomUUID()
@@ -317,7 +351,7 @@ test.describe.serial('support contact timeline', () => {
     try {
       await db.insert(contact).values({
         id: contactId,
-        teamId,
+        projectId,
         userId: customer.id,
         email: TEST_EMAIL,
         name: 'Authenticated auto-link customer',
@@ -326,10 +360,10 @@ test.describe.serial('support contact timeline', () => {
       })
       contactOwned = true
 
-      await db.update(teamMember).set({ role: 'admin' }).where(eq(teamMember.id, operatorMembership.id))
+      await db.update(projectMember).set({ role: 'admin' }).where(eq(projectMember.id, operatorMembership.id))
       roleChanged = true
 
-      const settingResponse = await request.put(`/api/support/teams/${teamId}/settings`, {
+      const settingResponse = await request.put(`/api/support/projects/${projectId}/settings`, {
         headers: withAuthHeaders(sessionCookie),
         data: { autoLinkFeedback: true },
       })
@@ -338,7 +372,12 @@ test.describe.serial('support contact timeline', () => {
 
       const authenticated = await request.post('/api/feedback', {
         headers: withAuthHeaders(sessionCookie),
-        data: { projectId: ownProject.id, title: 'Authenticated automatic link', body: 'Signed-in body' },
+        data: {
+          projectId: ownProject.id,
+          productId: (await defaultProduct(ownProject.id)).id,
+          title: 'Authenticated automatic link',
+          body: 'Signed-in body',
+        },
       })
       expect(authenticated.status()).toBe(201)
       const authenticatedId = (await authenticated.json()).data.id as string
@@ -349,7 +388,7 @@ test.describe.serial('support contact timeline', () => {
         projectChanged = true
       }
 
-      const emailOnly = await anonymousRequest.post(`/api/public/t/${teamRow.slug}/${ownProject.slug}/feedback`, {
+      const emailOnly = await anonymousRequest.post(await publicFeedbackPath(ownProject), {
         headers: withOriginHeaders('/feedback'),
         data: {
           title: 'Email-only must remain unlinked',
@@ -361,7 +400,7 @@ test.describe.serial('support contact timeline', () => {
       expect(emailOnly.status()).toBe(201)
       feedbackIds.push((await emailOnly.json()).data.id as string)
 
-      const anonymous = await anonymousRequest.post(`/api/public/t/${teamRow.slug}/${ownProject.slug}/feedback`, {
+      const anonymous = await anonymousRequest.post(await publicFeedbackPath(ownProject), {
         headers: withOriginHeaders('/feedback'),
         data: { title: 'Anonymous must remain unlinked', body: 'Anonymous body', authorName: 'Anonymous submitter' },
       })
@@ -411,10 +450,10 @@ test.describe.serial('support contact timeline', () => {
       await cleanup('settings', async () => {
         if (originalSupportSettings) {
           await db
-            .insert(supportTeamSettings)
+            .insert(supportProjectSettings)
             .values(originalSupportSettings)
             .onConflictDoUpdate({
-              target: supportTeamSettings.teamId,
+              target: supportProjectSettings.projectId,
               set: {
                 autoLinkFeedback: originalSupportSettings.autoLinkFeedback,
                 createdAt: originalSupportSettings.createdAt,
@@ -422,15 +461,15 @@ test.describe.serial('support contact timeline', () => {
               },
             })
         } else if (settingsCreated) {
-          await db.delete(supportTeamSettings).where(eq(supportTeamSettings.teamId, teamId))
+          await db.delete(supportProjectSettings).where(eq(supportProjectSettings.projectId, projectId))
         }
       })
       await cleanup('role', async () => {
         if (roleChanged) {
           await db
-            .update(teamMember)
+            .update(projectMember)
             .set({ role: operatorMembership.role })
-            .where(eq(teamMember.id, operatorMembership.id))
+            .where(eq(projectMember.id, operatorMembership.id))
         }
       })
       await cleanup('links', async () => {
@@ -463,14 +502,14 @@ test.describe.serial('support contact timeline', () => {
       expect(remainingFeedback).toEqual([])
       const [restoredSettings] = await db
         .select()
-        .from(supportTeamSettings)
-        .where(eq(supportTeamSettings.teamId, teamId))
+        .from(supportProjectSettings)
+        .where(eq(supportProjectSettings.projectId, projectId))
         .limit(1)
       expect(restoredSettings?.autoLinkFeedback ?? null).toBe(originalSupportSettings?.autoLinkFeedback ?? null)
       const [restoredMembership] = await db
-        .select({ role: teamMember.role })
-        .from(teamMember)
-        .where(eq(teamMember.id, operatorMembership.id))
+        .select({ role: projectMember.role })
+        .from(projectMember)
+        .where(eq(projectMember.id, operatorMembership.id))
         .limit(1)
       expect(restoredMembership?.role).toBe(operatorMembership.role)
       const [restoredProject] = await db
@@ -487,14 +526,15 @@ test.describe.serial('support contact timeline', () => {
     page,
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await activeTeamId(request, sessionCookie)
-    const [ownProject] = await db.select().from(project).where(eq(project.teamId, teamId)).limit(1)
+    const projectId = await activeProjectId(request, sessionCookie)
+    const [ownProject] = await db.select().from(project).where(eq(project.id, projectId)).limit(1)
     const [customer] = await db.select().from(user).where(eq(user.email, TEST_EMAIL)).limit(1)
     if (!ownProject || !customer) {
       test.skip()
       return
     }
 
+    const paginationProductId = (await defaultProduct(ownProject.id)).id
     const contactId = randomUUID()
     const email = `timeline-pagination-${contactId}@example.com`
     const linkedIds = Array.from({ length: 51 }, () => randomUUID())
@@ -507,7 +547,7 @@ test.describe.serial('support contact timeline', () => {
     try {
       await db.insert(contact).values({
         id: contactId,
-        teamId,
+        projectId,
         userId: customer.id,
         email,
         name: 'Pagination timeline contact',
@@ -519,6 +559,7 @@ test.describe.serial('support contact timeline', () => {
         allFeedbackIds.map((id, index) => ({
           id,
           projectId: ownProject.id,
+          productId: paginationProductId,
           title: `${index < linkedIds.length ? 'Linked' : 'Probable'} pagination ${index}`,
           authorEmail: email,
           createdAt: new Date(now - index * 1000),

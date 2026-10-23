@@ -3,7 +3,8 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { contact, conversation, conversationReadState, supportInbox } from '../../server/database/schema/support'
 import {
   isConversationUnread,
@@ -14,7 +15,7 @@ import {
 
 const suffix = randomUUID()
 const orgId = `read_org_${suffix}`
-const teamId = `read_team_${suffix}`
+const projectId = `read_project_${suffix}`
 const inboxId = `read_inbox_${suffix}`
 const agentAId = `read_agent_a_${suffix}`
 const agentBId = `read_agent_b_${suffix}`
@@ -51,10 +52,10 @@ describe('conversation read state (real Postgres)', () => {
       createdAt,
       updatedAt: createdAt,
     })
-    await db.insert(team).values({
-      id: teamId,
-      name: 'Read State Team',
-      slug: `read-state-team-${suffix}`,
+    await db.insert(project).values({
+      id: projectId,
+      name: 'Read State Project',
+      slug: `read-state-project-${suffix}`,
       organizationId: orgId,
       createdAt,
       updatedAt: createdAt,
@@ -77,7 +78,7 @@ describe('conversation read state (real Postgres)', () => {
     ])
     await db.insert(supportInbox).values({
       id: inboxId,
-      teamId,
+      projectId,
       name: 'Read State Inbox',
       slug: `read-state-inbox-${suffix}`,
       createdAt,
@@ -85,7 +86,7 @@ describe('conversation read state (real Postgres)', () => {
     })
     await db.insert(contact).values({
       id: contactId,
-      teamId,
+      projectId,
       name: 'Customer',
       email: `read-customer-${suffix}@example.com`,
       createdAt,
@@ -94,7 +95,7 @@ describe('conversation read state (real Postgres)', () => {
     await db.insert(conversation).values({
       id: conversationId,
       inboxId,
-      teamId,
+      projectId,
       contactId,
       displayId: 9952,
       subject: 'Read state',
@@ -110,7 +111,7 @@ describe('conversation read state (real Postgres)', () => {
     await db.delete(conversation).where(eq(conversation.id, conversationId))
     await db.delete(contact).where(eq(contact.id, contactId))
     await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
-    await db.delete(team).where(eq(team.id, teamId))
+    await db.delete(project).where(eq(project.id, projectId))
     await db.delete(organization).where(eq(organization.id, orgId))
     await db.delete(user).where(inArray(user.id, [agentAId, agentBId]))
   })

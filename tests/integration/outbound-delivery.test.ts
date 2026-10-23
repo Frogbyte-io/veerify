@@ -3,7 +3,8 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team } from '../../server/database/schema/auth'
+import { organization } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -34,7 +35,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
  */
 describe('outbound delivery outbox (real Postgres)', () => {
   const orgId = `org_outbound_${randomUUID()}`
-  const teamId = `team_outbound_${randomUUID()}`
+  const projectId = `project_outbound_${randomUUID()}`
   const inboxId = `inbox_outbound_${randomUUID()}`
   const contactId = `contact_outbound_${randomUUID()}`
   const conversationId = `conv_outbound_${randomUUID()}`
@@ -57,12 +58,15 @@ describe('outbound delivery outbox (real Postgres)', () => {
 
   beforeAll(async () => {
     await db.insert(organization).values({ id: orgId, name: 'Outbound Org', slug: `outbound-org-${randomUUID()}` })
-    await db
-      .insert(team)
-      .values({ id: teamId, name: 'Outbound Team', slug: `outbound-team-${randomUUID()}`, organizationId: orgId })
+    await db.insert(project).values({
+      id: projectId,
+      name: 'Outbound Project',
+      slug: `outbound-project-${randomUUID()}`,
+      organizationId: orgId,
+    })
     await db.insert(supportInbox).values({
       id: inboxId,
-      teamId,
+      projectId,
       name: 'Outbound Inbox',
       slug: `outbound-inbox-${randomUUID()}`,
       createdAt: now,
@@ -70,7 +74,7 @@ describe('outbound delivery outbox (real Postgres)', () => {
     })
     await db.insert(contact).values({
       id: contactId,
-      teamId,
+      projectId,
       name: 'Jane',
       email: `jane-${randomUUID()}@example.com`,
       createdAt: now,
@@ -79,7 +83,7 @@ describe('outbound delivery outbox (real Postgres)', () => {
     await db.insert(conversation).values({
       id: conversationId,
       inboxId,
-      teamId,
+      projectId,
       contactId,
       displayId: 9101,
       subject: 'Outbound test',
@@ -91,7 +95,7 @@ describe('outbound delivery outbox (real Postgres)', () => {
   })
 
   afterAll(async () => {
-    // organization → team → inbox/contact/conversation → messages → outbox all cascade.
+    // organization → project → inbox/contact/conversation → messages → outbox all cascade.
     await db.delete(organization).where(eq(organization.id, orgId))
   })
 

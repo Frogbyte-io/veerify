@@ -3,7 +3,8 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team } from '../../server/database/schema/auth'
+import { organization } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { contact, conversation, conversationMessage, supportInbox } from '../../server/database/schema/support'
 import { resolveThread } from '../../server/utils/inbound-threading'
 import { recordProviderChannelMessageId } from '../../server/utils/outbound-delivery'
@@ -20,13 +21,13 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
  */
 describe('resolveThread (real Postgres)', () => {
   const orgId = `org_thread_${randomUUID()}`
-  const teamId = `team_thread_${randomUUID()}`
+  const projectId = `project_thread_${randomUUID()}`
   const inboxId = `inbox_thread_${randomUUID()}`
   const otherInboxId = `inbox_thread_other_${randomUUID()}`
   const contactId = `contact_thread_${randomUUID()}`
   const otherContactId = `contact_thread_other_${randomUUID()}`
 
-  const inbox = { id: inboxId, teamId }
+  const inbox = { id: inboxId, projectId }
   const now = new Date()
 
   /**
@@ -38,7 +39,7 @@ describe('resolveThread (real Postgres)', () => {
   function resolve(
     message: Parameters<typeof resolveThread>[2],
     forContactId: string,
-    targetInbox: { id: string; teamId: string } = inbox
+    targetInbox: { id: string; projectId: string } = inbox
   ) {
     return db.transaction((tx: Tx) => resolveThread(tx, targetInbox, message, forContactId))
   }
@@ -55,16 +56,16 @@ describe('resolveThread (real Postgres)', () => {
       name: 'Threading Integration Org',
       slug: `threading-org-${randomUUID()}`,
     })
-    await db.insert(team).values({
-      id: teamId,
-      name: 'Threading Integration Team',
-      slug: `threading-team-${randomUUID()}`,
+    await db.insert(project).values({
+      id: projectId,
+      name: 'Threading Integration Project',
+      slug: `threading-project-${randomUUID()}`,
       organizationId: orgId,
     })
     await db.insert(supportInbox).values([
       {
         id: inboxId,
-        teamId,
+        projectId,
         name: 'Threading Inbox',
         slug: `threading-inbox-${randomUUID()}`,
         createdAt: now,
@@ -72,7 +73,7 @@ describe('resolveThread (real Postgres)', () => {
       },
       {
         id: otherInboxId,
-        teamId,
+        projectId,
         name: 'Other Threading Inbox',
         slug: `threading-inbox-other-${randomUUID()}`,
         createdAt: now,
@@ -82,7 +83,7 @@ describe('resolveThread (real Postgres)', () => {
     await db.insert(contact).values([
       {
         id: contactId,
-        teamId,
+        projectId,
         name: 'Jane',
         email: `jane-${randomUUID()}@example.com`,
         createdAt: now,
@@ -90,7 +91,7 @@ describe('resolveThread (real Postgres)', () => {
       },
       {
         id: otherContactId,
-        teamId,
+        projectId,
         name: 'Bob',
         email: `bob-${randomUUID()}@example.com`,
         createdAt: now,
@@ -102,7 +103,7 @@ describe('resolveThread (real Postgres)', () => {
       {
         id: threadedConversationId,
         inboxId,
-        teamId,
+        projectId,
         contactId,
         displayId: 9001,
         subject: 'Invoice question',
@@ -115,7 +116,7 @@ describe('resolveThread (real Postgres)', () => {
       {
         id: otherInboxConversationId,
         inboxId: otherInboxId,
-        teamId,
+        projectId,
         contactId,
         displayId: 9002,
         subject: 'Other inbox invoice question',
@@ -149,7 +150,7 @@ describe('resolveThread (real Postgres)', () => {
   })
 
   afterAll(async () => {
-    // organization → team → inbox/contact/conversation → messages all cascade.
+    // organization → project → inbox/contact/conversation → messages all cascade.
     await db.delete(organization).where(eq(organization.id, orgId))
   })
 
@@ -187,7 +188,7 @@ describe('resolveThread (real Postgres)', () => {
     const result = await resolve(
       { messageId: 'new@x.com', inReplyTo: storedMessageId, references: [], subject: 'Re: other invoice' },
       contactId,
-      { id: otherInboxId, teamId }
+      { id: otherInboxId, projectId }
     )
 
     expect(result).toEqual({ conversationId: otherInboxConversationId, matchedBy: 'message-id' })
@@ -198,7 +199,7 @@ describe('resolveThread (real Postgres)', () => {
     await db.insert(conversation).values({
       id: collisionConversationId,
       inboxId,
-      teamId,
+      projectId,
       contactId,
       displayId: 9003,
       subject: 'Invoice question',
@@ -272,7 +273,7 @@ describe('resolveThread (real Postgres)', () => {
     const result = await resolve(
       { messageId: 'new@x.com', inReplyTo: storedMessageId, references: [], subject: 'Re: Invoice question' },
       contactId,
-      { id: `inbox_other_${randomUUID()}`, teamId }
+      { id: `inbox_other_${randomUUID()}`, projectId }
     )
 
     expect(result.conversationId).toBeNull()
@@ -399,7 +400,7 @@ describe('resolveThread (real Postgres)', () => {
       const result = await resolve(
         { messageId: 'customer-reply@x.com', inReplyTo: sesMessageId, references: [], subject: 'Unrelated subject' },
         contactId,
-        { id: otherInboxId, teamId }
+        { id: otherInboxId, projectId }
       )
 
       expect(result.matchedBy).not.toBe('message-id')

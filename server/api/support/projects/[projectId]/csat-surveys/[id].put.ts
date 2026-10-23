@@ -1,14 +1,14 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/csat-surveys/{id}:
+ * /api/support/projects/{projectId}/csat-surveys/{id}:
  *   put:
  *     tags: [Support]
- *     summary: Update a team CSAT survey
+ *     summary: Update a project CSAT survey
  *     operationId: updateSupportCsatSurvey
  *     responses:
  *       200: { description: CSAT survey updated }
  *       400: { description: Invalid survey or inbox scope }
- *       403: { description: Team administrator required }
+ *       403: { description: Project administrator required }
  *       404: { description: Survey not found }
  */
 import { and, eq } from 'drizzle-orm'
@@ -16,7 +16,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { csatSurvey, supportInbox, type CsatScale, type CsatSendTrigger } from '~/server/database/schema/support'
@@ -39,21 +39,21 @@ function invalidInbox(): never {
   throw createError({
     statusCode: 400,
     statusMessage: 'Bad Request',
-    data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Inbox is not part of this team'),
+    data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Inbox is not part of this project'),
   })
 }
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
+  const projectId = getRouterParam(event, 'projectId') as string
   const id = getRouterParam(event, 'id') as string
-  await requireTeamAdmin(teamId, session.user.id)
+  await requireProjectAdmin(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   const [existing] = await db
     .select({ id: csatSurvey.id })
     .from(csatSurvey)
-    .where(and(eq(csatSurvey.id, id), eq(csatSurvey.teamId, teamId)))
+    .where(and(eq(csatSurvey.id, id), eq(csatSurvey.projectId, projectId)))
     .limit(1)
   if (!existing) {
     throw createError({
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
     const [ownedInbox] = await db
       .select({ id: supportInbox.id })
       .from(supportInbox)
-      .where(and(eq(supportInbox.id, body.inboxId), eq(supportInbox.teamId, teamId)))
+      .where(and(eq(supportInbox.id, body.inboxId), eq(supportInbox.projectId, projectId)))
       .limit(1)
     if (!ownedInbox) invalidInbox()
   }

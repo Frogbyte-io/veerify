@@ -1,35 +1,35 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/csat-surveys/{id}:
+ * /api/support/projects/{projectId}/csat-surveys/{id}:
  *   delete:
  *     tags: [Support]
- *     summary: Delete a team CSAT survey
+ *     summary: Delete a project CSAT survey
  *     operationId: deleteSupportCsatSurvey
  *     responses:
  *       200: { description: CSAT survey deleted }
  *       409: { description: CSAT survey has responses and must be disabled }
- *       403: { description: Team administrator required }
+ *       403: { description: Project administrator required }
  *       404: { description: Survey not found }
  */
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { db } from '~/server/database/drizzle'
 import { csatResponse, csatSurvey } from '~/server/database/schema/support'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
+  const projectId = getRouterParam(event, 'projectId') as string
   const id = getRouterParam(event, 'id') as string
-  await requireTeamAdmin(teamId, session.user.id)
+  await requireProjectAdmin(projectId, session.user.id)
 
   await db.transaction(async (tx) => {
     const [survey] = await tx
       .select({ id: csatSurvey.id })
       .from(csatSurvey)
-      .where(and(eq(csatSurvey.id, id), eq(csatSurvey.teamId, teamId)))
+      .where(and(eq(csatSurvey.id, id), eq(csatSurvey.projectId, projectId)))
       .for('update')
       .limit(1)
 

@@ -1,17 +1,17 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/sending-domains:
+ * /api/support/projects/{projectId}/sending-domains:
  *   post:
  *     tags: [Support]
  *     summary: Claim a sending domain and register it with the mail provider
  *     description: >
- *       Team administrators only. Returns 201 once the domain is registered and waiting
+ *       Project administrators only. Returns 201 once the domain is registered and waiting
  *       for DNS, or 202 when the provider was temporarily unavailable and registration
  *       will be retried in the background.
  *     operationId: createSupportSendingDomain
  *     parameters:
  *       - in: path
- *         name: teamId
+ *         name: projectId
  *         required: true
  *         schema: { type: string }
  *     requestBody:
@@ -27,7 +27,7 @@
  *       201: { description: Domain claimed and registered }
  *       202: { description: Domain claimed; registration will be retried }
  *       400: { description: Invalid request }
- *       403: { description: Team administrator required }
+ *       403: { description: Project administrator required }
  *       404: { description: Feature disabled }
  *       409: { description: Domain claimed by another workspace, owned elsewhere, or a limit was reached }
  *       422: { description: Domain rejected by validation or the provider }
@@ -38,12 +38,12 @@ import { z } from 'zod'
 import { setResponseStatus } from 'h3'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { validateBody } from '~/server/utils/validation'
 import { createLogger } from '~/server/utils/logger'
 import { recordSupportMetric } from '~/server/utils/support-observability'
-import { createSendingDomainClaim, getTeamSendingDomain, toSendingDomainView } from '~/server/utils/sending-domains'
+import { createSendingDomainClaim, getProjectSendingDomain, toSendingDomainView } from '~/server/utils/sending-domains'
 import {
   deleteSendingDomainRow,
   registerSendingDomainClaim,
@@ -67,8 +67,8 @@ const PROVISIONING_SAFETY_NET_MS = 2 * 60 * 1000
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
-  await requireTeamAdmin(teamId, session.user.id)
+  const projectId = getRouterParam(event, 'projectId') as string
+  await requireProjectAdmin(projectId, session.user.id)
   requireSendingDomainsEnabled()
   const body = await validateBody(event, bodySchema)
 
@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
     maxRequests: 10,
     windowSeconds: 60 * 60,
     identifier: 'sending-domain-create',
-    subject: `team:${teamId}`,
+    subject: `project:${projectId}`,
   })
   await requireRateLimit(event, {
     maxRequests: 5,
@@ -87,10 +87,10 @@ export default defineEventHandler(async (event) => {
 
   const provider = requireConfiguredSendingDomainProvider()
 
-  // Rules, limits and cross-team conflicts (409 DOMAIN_CLAIMED etc.) are enforced
+  // Rules, limits and cross-project conflicts (409 DOMAIN_CLAIMED etc.) are enforced
   // under the advisory lock inside the claim helper.
   const claim = await createSendingDomainClaim({
-    teamId,
+    projectId,
     domain: body.domain,
     userId: session.user.id,
     provider: provider.name,
@@ -120,7 +120,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await saveSendingDomainPatch(claim, outcome.patch)
-  const row = await getTeamSendingDomain(teamId, claim.id)
+  const row = await getProjectSendingDomain(projectId, claim.id)
 
   if (outcome.kind === 'transient') {
     recordSupportMetric('support.sending_domain.failed', {

@@ -16,7 +16,7 @@ vi.mock('~/server/utils/auth-middleware', () => ({
 }))
 
 vi.mock('~/server/utils/support-access', () => ({
-  requireInboxAccess: vi.fn(async () => ({ id: 'inbox-1', teamId: 'team-1' })),
+  requireInboxAccess: vi.fn(async () => ({ id: 'inbox-1', projectId: 'project-1' })),
 }))
 
 vi.mock('~/server/database/drizzle', () => {

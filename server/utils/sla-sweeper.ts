@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { listProjectAdminUserIds } from '~/server/utils/support-access'
 import { and, asc, eq, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { teamMember } from '~/server/database/schema/auth'
 import {
   conversation,
   conversationMessage,
@@ -44,7 +44,7 @@ function metricLabel(metric: SlaMetric): string {
 }
 
 async function supervisorRecipients(row: Candidate): Promise<string[]> {
-  const [inboxMembers, teamAdmins] = await Promise.all([
+  const [inboxMembers, projectAdmins] = await Promise.all([
     db
       .select({ userId: supportInboxMember.userId })
       .from(supportInboxMember)
@@ -54,12 +54,9 @@ async function supervisorRecipients(row: Candidate): Promise<string[]> {
           inArray(supportInboxMember.role, ['supervisor', 'admin'])
         )
       ),
-    db
-      .select({ userId: teamMember.userId })
-      .from(teamMember)
-      .where(and(eq(teamMember.teamId, row.conversation.teamId), eq(teamMember.role, 'admin'))),
+    listProjectAdminUserIds(row.conversation.projectId),
   ])
-  return [...new Set([...inboxMembers, ...teamAdmins].map((member) => member.userId))]
+  return [...new Set([...inboxMembers.map((member) => member.userId), ...projectAdmins])]
 }
 
 async function dispatchEscalation(row: Candidate, metric: SlaMetric): Promise<number> {

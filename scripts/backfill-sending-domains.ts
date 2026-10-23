@@ -1,13 +1,13 @@
 /**
- * Backfill customer sending-domain claims before enabling the `team` sender
+ * Backfill customer sending-domain claims before enabling the `project` sender
  * policy (design docs/plans/2026-10-22-custom-sending-domains/design.md §13
  * step 2, §14).
  *
- * Teams that already send from their own domain (inbox From addresses set up by
- * hand before self-serve domains existed) would lose sending the moment `team`
+ * Projects that already send from their own domain (inbox From addresses set up by
+ * hand before self-serve domains existed) would lose sending the moment `project`
  * policy turns on. This script finds every From domain in use and, for domains
- * used by exactly one team that the provider already has `active`, creates an
- * adopted `pending` claim, so the team only has to publish the ownership TXT.
+ * used by exactly one project that the provider already has `active`, creates an
+ * adopted `pending` claim, so the project only has to publish the ownership TXT.
  *
  * Usage:
  *   yarn db:backfill-sending-domains                 # dry run, readable report
@@ -16,18 +16,19 @@
  *   yarn db:backfill-sending-domains --apply --i-know-this-is-production
  *
  * Options:
- *   --team <id>         limit to one team (repeatable)
+ *   --project <id>         limit to one project (repeatable)
  *   --delay-ms <n>      pause between provider calls (default 600, the provider allows 120/min)
  *
  * Idempotent: a domain that already has a claim is reported and left alone, so
- * a second run changes nothing. Domains used by several teams are never
+ * a second run changes nothing. Domains used by several projects are never
  * assigned automatically.
  */
 import { pathToFileURL } from 'node:url'
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '../server/database/drizzle'
 import { createDatabaseConnectionConfig } from '../server/database/connection-config'
-import { team, teamMember } from '../server/database/schema/auth'
+import { member } from '../server/database/schema/auth'
+import { project, projectMember } from '../server/database/schema/feedback'
 import { supportInbox, supportInboxAddress, supportSendingDomain } from '../server/database/schema/support'
 import {
   PENDING_TTL_DAYS,
@@ -49,7 +50,7 @@ export type BackfillAction =
   | 'would_create'
   | 'already_claimed'
   | 'covered_by_parent'
-  | 'conflict_multiple_teams'
+  | 'conflict_multiple_projects'
   | 'conflict_claimed_elsewhere'
   | 'not_on_provider'
   | 'not_active_on_provider'
@@ -57,17 +58,17 @@ export type BackfillAction =
   | 'provider_error'
   | 'skipped'
 
-export interface BackfillTeamRef {
+export interface BackfillProjectRef {
   id: string
   name: string
 }
 
 export interface BackfillEntry {
   domain: string
-  teams: BackfillTeamRef[]
+  projects: BackfillProjectRef[]
   action: BackfillAction
   reason: string
-  /** TXT record the team must publish (claims created now, or still unverified). */
+  /** TXT record the project must publish (claims created now, or still unverified). */
   txtRecord?: { name: string; value: string }
 }
 
@@ -81,7 +82,7 @@ export interface BackfillSummary {
   blocked: number
   errors: number
   skipped: number
-  teamsNeedingDns: number
+  projectsNeedingDns: number
 }
 
 export interface BackfillReport {
@@ -93,7 +94,7 @@ export interface BackfillReport {
 
 export interface BackfillOptions {
   apply: boolean
-  teamIds?: string[]
+  projectIds?: string[]
   delayMs?: number
   now?: Date
 }
@@ -136,22 +137,24 @@ function connectionHost(env: NodeJS.ProcessEnv): string | undefined {
 }
 
 interface UsageRow {
-  teamId: string
+  projectId: string
   address: string
 }
 
-async function collectUsage(teamIds?: string[]): Promise<UsageRow[]> {
-  const scope = teamIds && teamIds.length > 0 ? inArray(supportInbox.teamId, teamIds) : undefined
+async function collectUsage(projectIds?: string[]): Promise<UsageRow[]> {
+  const scope = projectIds && projectIds.length > 0 ? inArray(supportInbox.projectId, projectIds) : undefined
   const primary = await db
-    .select({ teamId: supportInbox.teamId, address: supportInbox.emailAddress })
+    .select({ projectId: supportInbox.projectId, address: supportInbox.emailAddress })
     .from(supportInbox)
     .where(and(isNotNull(supportInbox.emailAddress), scope))
   const custom = await db
-    .select({ teamId: supportInbox.teamId, address: supportInboxAddress.address })
+    .select({ projectId: supportInbox.projectId, address: supportInboxAddress.address })
     .from(supportInboxAddress)
     .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
     .where(and(eq(supportInboxAddress.kind, 'custom'), scope))
-  return [...primary, ...custom].flatMap((row) => (row.address ? [{ teamId: row.teamId, address: row.address }] : []))
+  return [...primary, ...custom].flatMap((row) =>
+    row.address ? [{ projectId: row.projectId, address: row.address }] : []
+  )
 }
 
 function platformDomain(): string | null {
@@ -163,21 +166,29 @@ function platformDomain(): string | null {
   return value || null
 }
 
-async function pickClaimUser(teamId: string): Promise<string | null> {
-  const [admin] = await db
-    .select({ userId: teamMember.userId })
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, teamId), eq(teamMember.role, 'admin')))
-    .orderBy(asc(teamMember.createdAt))
+async function pickClaimUser(projectId: string): Promise<string | null> {
+  const [owning] = await db
+    .select({ organizationId: project.organizationId })
+    .from(project)
+    .where(eq(project.id, projectId))
     .limit(1)
-  if (admin) return admin.userId
-  const [member] = await db
-    .select({ userId: teamMember.userId })
-    .from(teamMember)
-    .where(eq(teamMember.teamId, teamId))
-    .orderBy(asc(teamMember.createdAt))
+  if (!owning) return null
+
+  const [projectAdmin] = await db
+    .select({ userId: projectMember.userId })
+    .from(projectMember)
+    .where(and(eq(projectMember.projectId, projectId), eq(projectMember.role, 'admin')))
+    .orderBy(asc(projectMember.createdAt))
     .limit(1)
-  return member?.userId ?? null
+  if (projectAdmin) return projectAdmin.userId
+
+  const [orgAdmin] = await db
+    .select({ userId: member.userId })
+    .from(member)
+    .where(and(eq(member.organizationId, owning.organizationId), inArray(member.role, ['owner', 'admin'])))
+    .orderBy(asc(member.createdAt))
+    .limit(1)
+  return orgAdmin?.userId ?? null
 }
 
 // eslint-disable-next-line no-unused-vars
@@ -219,10 +230,10 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
   const reserved = reservedSendingDomains()
   const platform = platformDomain()
 
-  // --- Collect: team -> domains -----------------------------------------------------------
-  const usage = await collectUsage(options.teamIds)
-  const teamDomains = new Map<string, Set<string>>()
-  const skippedDomains = new Map<string, { teams: Set<string>; reason: string }>()
+  // --- Collect: project -> domains -----------------------------------------------------------
+  const usage = await collectUsage(options.projectIds)
+  const projectDomains = new Map<string, Set<string>>()
+  const skippedDomains = new Map<string, { projects: Set<string>; reason: string }>()
 
   for (const row of usage) {
     const domain = normalizeSendingDomain(emailDomain(row.address) ?? '')
@@ -235,55 +246,58 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
       if (!skipReason && !getRegistrableDomain(domain, allowTestTld)) skipReason = 'not a registrable domain'
     }
     if (skipReason) {
-      const entry = skippedDomains.get(domain) ?? { teams: new Set<string>(), reason: skipReason }
-      entry.teams.add(row.teamId)
+      const entry = skippedDomains.get(domain) ?? { projects: new Set<string>(), reason: skipReason }
+      entry.projects.add(row.projectId)
       skippedDomains.set(domain, entry)
       continue
     }
-    const set = teamDomains.get(row.teamId) ?? new Set<string>()
+    const set = projectDomains.get(row.projectId) ?? new Set<string>()
     set.add(domain)
-    teamDomains.set(row.teamId, set)
+    projectDomains.set(row.projectId, set)
   }
 
-  const involvedTeamIds = new Set<string>([
-    ...teamDomains.keys(),
-    ...[...skippedDomains.values()].flatMap((v) => [...v.teams]),
+  const involvedProjectIds = new Set<string>([
+    ...projectDomains.keys(),
+    ...[...skippedDomains.values()].flatMap((v) => [...v.projects]),
   ])
-  const teamRows = involvedTeamIds.size
+  const projectRows = involvedProjectIds.size
     ? await db
-        .select({ id: team.id, name: team.name })
-        .from(team)
-        .where(inArray(team.id, [...involvedTeamIds]))
+        .select({ id: project.id, name: project.name })
+        .from(project)
+        .where(inArray(project.id, [...involvedProjectIds]))
     : []
-  const teamRef = (id: string): BackfillTeamRef => ({ id, name: teamRows.find((t) => t.id === id)?.name ?? id })
+  const projectRef = (id: string): BackfillProjectRef => ({
+    id,
+    name: projectRows.find((t) => t.id === id)?.name ?? id,
+  })
 
   // Existing claims (any status) for hierarchy and idempotency checks.
   const existing = await db.select().from(supportSendingDomain)
 
   // --- Plan -------------------------------------------------------------------------------
-  // Within a team a subdomain whose parent is also used by that team collapses into the parent.
-  const covered = new Map<string, { teamId: string; parent: string }[]>() // domain -> collapsed (team, parent)
-  const candidates = new Map<string, Set<string>>() // domain -> teams using it directly
-  for (const [teamId, domains] of teamDomains) {
+  // Within a project a subdomain whose parent is also used by that project collapses into the parent.
+  const covered = new Map<string, { projectId: string; parent: string }[]>() // domain -> collapsed (project, parent)
+  const candidates = new Map<string, Set<string>>() // domain -> projects using it directly
+  for (const [projectId, domains] of projectDomains) {
     for (const domain of domains) {
       const parent = [...domains]
         .filter((other) => other !== domain && isSameOrSubdomain(domain, other))
         .sort((a, b) => a.length - b.length)[0]
       if (parent) {
-        covered.set(domain, [...(covered.get(domain) ?? []), { teamId, parent }])
+        covered.set(domain, [...(covered.get(domain) ?? []), { projectId, parent }])
       } else {
-        candidates.set(domain, (candidates.get(domain) ?? new Set()).add(teamId))
+        candidates.set(domain, (candidates.get(domain) ?? new Set()).add(projectId))
       }
     }
   }
 
   const entries: BackfillEntry[] = []
-  const dnsTeams = new Set<string>()
+  const dnsProjects = new Set<string>()
 
   for (const [domain, info] of [...skippedDomains].sort(([a], [b]) => a.localeCompare(b))) {
     entries.push({
       domain,
-      teams: [...info.teams].map(teamRef),
+      projects: [...info.projects].map(projectRef),
       action: 'skipped',
       reason: info.reason,
     })
@@ -293,81 +307,81 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
     for (const item of items) {
       entries.push({
         domain,
-        teams: [teamRef(item.teamId)],
+        projects: [projectRef(item.projectId)],
         action: 'covered_by_parent',
-        reason: `the same team uses ${item.parent}; only the parent is claimed`,
+        reason: `the same project uses ${item.parent}; only the parent is claimed`,
       })
     }
   }
 
   let needsDelay = false
-  for (const [domain, teamSet] of [...candidates].sort(([a], [b]) => a.localeCompare(b))) {
-    const teams = [...teamSet]
-    const refs = teams.map(teamRef)
+  for (const [domain, projectSet] of [...candidates].sort(([a], [b]) => a.localeCompare(b))) {
+    const projects = [...projectSet]
+    const refs = projects.map(projectRef)
 
-    if (teams.length > 1) {
+    if (projects.length > 1) {
       entries.push({
         domain,
-        teams: refs,
-        action: 'conflict_multiple_teams',
-        reason: 'used by several teams; an operator must decide which team owns it. Nothing was assigned',
+        projects: refs,
+        action: 'conflict_multiple_projects',
+        reason: 'used by several projects; an operator must decide which project owns it. Nothing was assigned',
       })
       continue
     }
-    const teamId = teams[0]
+    const projectId = projects[0]
 
-    // A parent or subdomain used by a different team makes the claim ambiguous too.
-    const relatedTeam = [...candidates].find(
-      ([other, otherTeams]) =>
+    // A parent or subdomain used by a different project makes the claim ambiguous too.
+    const relatedProject = [...candidates].find(
+      ([other, otherProjects]) =>
         other !== domain &&
         (isSameOrSubdomain(domain, other) || isSameOrSubdomain(other, domain)) &&
-        [...otherTeams].some((t) => t !== teamId)
+        [...otherProjects].some((t) => t !== projectId)
     )
-    if (relatedTeam) {
+    if (relatedProject) {
       entries.push({
         domain,
-        teams: refs,
-        action: 'conflict_multiple_teams',
-        reason: `${relatedTeam[0]} is used by another team; a parent and its subdomain cannot belong to different teams. Operator must resolve`,
+        projects: refs,
+        action: 'conflict_multiple_projects',
+        reason: `${relatedProject[0]} is used by another project; a parent and its subdomain cannot belong to different projects. Operator must resolve`,
       })
       continue
     }
 
-    const own = existing.find((c) => c.domain === domain && c.teamId === teamId)
+    const own = existing.find((c) => c.domain === domain && c.projectId === projectId)
     if (own) {
       const unverified = UNVERIFIED.includes(own.status)
       entries.push({
         domain,
-        teams: refs,
+        projects: refs,
         action: 'already_claimed',
-        reason: `already claimed by this team (status ${own.status})`,
+        reason: `already claimed by this project (status ${own.status})`,
         ...(unverified ? { txtRecord: txtOf(own.dnsRecords, domain, own.ownershipToken) } : {}),
       })
-      if (unverified) dnsTeams.add(teamId)
+      if (unverified) dnsProjects.add(projectId)
       continue
     }
-    const ownParent = existing.find((c) => c.teamId === teamId && isSameOrSubdomain(domain, c.domain))
+    const ownParent = existing.find((c) => c.projectId === projectId && isSameOrSubdomain(domain, c.domain))
     if (ownParent) {
       entries.push({
         domain,
-        teams: refs,
+        projects: refs,
         action: 'already_claimed',
-        reason: `covered by this team's claim on ${ownParent.domain} (status ${ownParent.status})`,
+        reason: `covered by this project's claim on ${ownParent.domain} (status ${ownParent.status})`,
       })
       continue
     }
     const other = existing.find(
-      (c) => c.teamId !== teamId && (isSameOrSubdomain(domain, c.domain) || isSameOrSubdomain(c.domain, domain))
+      (c) => c.projectId !== projectId && (isSameOrSubdomain(domain, c.domain) || isSameOrSubdomain(c.domain, domain))
     )
     if (other) {
       entries.push({
         domain,
-        teams: refs,
+        projects: refs,
         action: 'conflict_claimed_elsewhere',
         reason:
           other.domain === domain
-            ? 'already claimed by another team. Nothing changed'
-            : `${other.domain} is claimed by another team. Nothing changed`,
+            ? 'already claimed by another project. Nothing changed'
+            : `${other.domain} is claimed by another project. Nothing changed`,
       })
       continue
     }
@@ -379,26 +393,26 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
     try {
       result = await providerGet(provider, domain, sleep)
     } catch (error) {
-      entries.push({ domain, teams: refs, action: 'provider_error', reason: errorText(error).message })
+      entries.push({ domain, projects: refs, action: 'provider_error', reason: errorText(error).message })
       continue
     }
     if (!result) {
       entries.push({
         domain,
-        teams: refs,
+        projects: refs,
         action: 'not_on_provider',
-        reason: `not on provider (${provider.name}) - the team must add it`,
+        reason: `not on provider (${provider.name}) - the project must add it`,
       })
       continue
     }
     if (result.state !== 'active') {
       entries.push({
         domain,
-        teams: refs,
+        projects: refs,
         action: 'not_active_on_provider',
         reason: result.contested
           ? `on provider but owned by another project (${result.message ?? 'contested'}) - nothing created`
-          : `on provider but not active yet (${result.state}) - the team must finish the provider DNS first`,
+          : `on provider but not active yet (${result.state}) - the project must finish the provider DNS first`,
       })
       continue
     }
@@ -406,19 +420,19 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
     if (!options.apply) {
       entries.push({
         domain,
-        teams: refs,
+        projects: refs,
         action: 'would_create',
-        reason: 'active on provider; would create an adopted pending claim (team then publishes the TXT record)',
+        reason: 'active on provider; would create an adopted pending claim (project then publishes the TXT record)',
       })
-      dnsTeams.add(teamId)
+      dnsProjects.add(projectId)
       continue
     }
 
     try {
-      const userId = await pickClaimUser(teamId)
-      // created_by_user_id is nullable; a team with no members at all gets a claim without a creator.
+      const userId = await pickClaimUser(projectId)
+      // created_by_user_id is nullable; a project with no members at all gets a claim without a creator.
       const claim = await createSendingDomainClaim({
-        teamId,
+        projectId,
         domain,
         userId: userId as string,
         provider: provider.name,
@@ -441,18 +455,18 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
         .where(eq(supportSendingDomain.id, claim.id))
       entries.push({
         domain,
-        teams: refs,
+        projects: refs,
         action: 'created',
-        reason: 'active on provider; created an adopted pending claim. The team must publish the TXT record',
+        reason: 'active on provider; created an adopted pending claim. The project must publish the TXT record',
         txtRecord: { name: txt.name, value: txt.value },
       })
-      dnsTeams.add(teamId)
+      dnsProjects.add(projectId)
     } catch (error) {
       const { code, message } = errorText(error)
       const rule = ['DOMAIN_CLAIMED', 'DOMAIN_REJECTED', 'DOMAIN_LIMIT_REACHED', 'PENDING_LIMIT_REACHED'].includes(code)
       entries.push({
         domain,
-        teams: refs,
+        projects: refs,
         action: rule ? 'blocked' : 'provider_error',
         reason: rule ? `claim rules refused it - ${message}` : `claim failed - ${message}`,
       })
@@ -465,12 +479,12 @@ export async function runBackfill(options: BackfillOptions, deps: BackfillDeps =
     claimsCreated: count('created'),
     claimsWouldCreate: count('would_create'),
     alreadyClaimed: count('already_claimed', 'covered_by_parent'),
-    conflicts: count('conflict_multiple_teams', 'conflict_claimed_elsewhere'),
+    conflicts: count('conflict_multiple_projects', 'conflict_claimed_elsewhere'),
     notOnProvider: count('not_on_provider', 'not_active_on_provider'),
     blocked: count('blocked'),
     errors: count('provider_error'),
     skipped: count('skipped'),
-    teamsNeedingDns: dnsTeams.size,
+    projectsNeedingDns: dnsProjects.size,
   }
 
   return { mode: options.apply ? 'apply' : 'dry-run', provider: provider.name, entries, summary }
@@ -486,7 +500,7 @@ const ACTION_LABEL: Record<BackfillAction, string> = {
   would_create: 'WOULD CREATE',
   already_claimed: 'ALREADY CLAIMED',
   covered_by_parent: 'COVERED BY PARENT',
-  conflict_multiple_teams: 'CONFLICT (several teams)',
+  conflict_multiple_projects: 'CONFLICT (several projects)',
   conflict_claimed_elsewhere: 'CONFLICT (claimed elsewhere)',
   not_on_provider: 'NOT ON PROVIDER',
   not_active_on_provider: 'NOT ACTIVE ON PROVIDER',
@@ -504,7 +518,7 @@ export function formatReport(report: BackfillReport): string {
   if (report.entries.length === 0) lines.push('No From domains in use.')
   for (const entry of report.entries) {
     lines.push(entry.domain)
-    lines.push(`  teams:  ${entry.teams.map((t) => `${t.name} (${t.id})`).join(', ')}`)
+    lines.push(`  projects:  ${entry.projects.map((t) => `${t.name} (${t.id})`).join(', ')}`)
     lines.push(`  action: ${ACTION_LABEL[entry.action]}`)
     lines.push(`  reason: ${entry.reason}`)
     if (entry.txtRecord) lines.push(`  TXT:    ${entry.txtRecord.name}  "${entry.txtRecord.value}"`)
@@ -522,7 +536,7 @@ export function formatReport(report: BackfillReport): string {
   lines.push(`  blocked by claim rules:  ${s.blocked}`)
   lines.push(`  errors:                  ${s.errors}`)
   lines.push(`  skipped:                 ${s.skipped}`)
-  lines.push(`  teams needing DNS action: ${s.teamsNeedingDns}`)
+  lines.push(`  projects needing DNS action: ${s.projectsNeedingDns}`)
   if (report.mode === 'dry-run') lines.push('', 'Dry run. Re-run with --apply to create the claims.')
   return lines.join('\n')
 }
@@ -532,7 +546,7 @@ export function parseArgs(argv: string[]): {
   json: boolean
   production: boolean
   help: boolean
-  teamIds: string[]
+  projectIds: string[]
   delayMs?: number
 } {
   const out = {
@@ -540,7 +554,7 @@ export function parseArgs(argv: string[]): {
     json: false,
     production: false,
     help: false,
-    teamIds: [] as string[],
+    projectIds: [] as string[],
     delayMs: undefined as number | undefined,
   }
   for (let i = 0; i < argv.length; i++) {
@@ -551,7 +565,7 @@ export function parseArgs(argv: string[]): {
     else if (arg === '--json') out.json = true
     else if (arg === '--i-know-this-is-production') out.production = true
     else if (arg === '--help' || arg === '-h') out.help = true
-    else if (flag === '--team') out.teamIds.push(String(value()))
+    else if (flag === '--project') out.projectIds.push(String(value()))
     else if (flag === '--delay-ms') {
       const n = Number(value())
       if (!Number.isFinite(n) || n < 0) throw new Error('--delay-ms needs a non-negative number')
@@ -565,7 +579,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2))
   if (args.help) {
     console.log(
-      'Usage: yarn db:backfill-sending-domains [--apply] [--json] [--team <id>] [--delay-ms <n>] [--i-know-this-is-production]'
+      'Usage: yarn db:backfill-sending-domains [--apply] [--json] [--project <id>] [--delay-ms <n>] [--i-know-this-is-production]'
     )
     return
   }
@@ -582,7 +596,7 @@ async function main() {
     }
   }
 
-  const report = await runBackfill({ apply: args.apply, teamIds: args.teamIds, delayMs: args.delayMs })
+  const report = await runBackfill({ apply: args.apply, projectIds: args.projectIds, delayMs: args.delayMs })
   console.log(args.json ? JSON.stringify(report, null, 2) : formatReport(report))
   if (report.summary.errors > 0) process.exitCode = 1
 }

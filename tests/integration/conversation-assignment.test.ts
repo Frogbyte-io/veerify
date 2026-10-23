@@ -3,14 +3,15 @@ import { asc, eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { contact, conversation, conversationMessage, supportInbox } from '../../server/database/schema/support'
 import { claimConversationForAgent } from '../../server/utils/conversation-assignment'
 import { commitMessageWithAttachments } from '../../server/utils/support-attachment-finalization'
 
 const suffix = randomUUID()
 const orgId = `assignment_org_${suffix}`
-const teamId = `assignment_team_${suffix}`
+const projectId = `assignment_project_${suffix}`
 const inboxId = `assignment_inbox_${suffix}`
 const agentAId = `assignment_agent_a_${suffix}`
 const agentBId = `assignment_agent_b_${suffix}`
@@ -65,10 +66,10 @@ describe('conversation assignment while posting messages (real Postgres)', () =>
       createdAt: now,
       updatedAt: now,
     })
-    await db.insert(team).values({
-      id: teamId,
-      name: 'Assignment Team',
-      slug: `assignment-team-${suffix}`,
+    await db.insert(project).values({
+      id: projectId,
+      name: 'Assignment Project',
+      slug: `assignment-project-${suffix}`,
       organizationId: orgId,
       createdAt: now,
       updatedAt: now,
@@ -91,7 +92,7 @@ describe('conversation assignment while posting messages (real Postgres)', () =>
     ])
     await db.insert(supportInbox).values({
       id: inboxId,
-      teamId,
+      projectId,
       name: 'Assignment Inbox',
       slug: `assignment-inbox-${suffix}`,
       emailAddress: 'support@example.com',
@@ -100,7 +101,7 @@ describe('conversation assignment while posting messages (real Postgres)', () =>
     })
     await db.insert(contact).values({
       id: contactId,
-      teamId,
+      projectId,
       name: 'Customer',
       email: 'customer@example.com',
       createdAt: now,
@@ -109,7 +110,7 @@ describe('conversation assignment while posting messages (real Postgres)', () =>
     await db.insert(conversation).values({
       id: conversationId,
       inboxId,
-      teamId,
+      projectId,
       contactId,
       displayId: 9951,
       subject: 'Ownership',
@@ -123,7 +124,7 @@ describe('conversation assignment while posting messages (real Postgres)', () =>
     await db.delete(conversation).where(eq(conversation.id, conversationId))
     await db.delete(contact).where(eq(contact.id, contactId))
     await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
-    await db.delete(team).where(eq(team.id, teamId))
+    await db.delete(project).where(eq(project.id, projectId))
     await db.delete(organization).where(eq(organization.id, orgId))
     await db.delete(user).where(inArray(user.id, [agentAId, agentBId]))
   })

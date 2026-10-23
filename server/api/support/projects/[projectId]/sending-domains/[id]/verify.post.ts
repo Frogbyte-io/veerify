@@ -1,17 +1,17 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/sending-domains/{id}/verify:
+ * /api/support/projects/{projectId}/sending-domains/{id}/verify:
  *   post:
  *     tags: [Support]
  *     summary: Re-check a sending domain now
  *     description: >
- *       Team administrators only. For failed, provisioning or provider-mismatched claims
+ *       Project administrators only. For failed, provisioning or provider-mismatched claims
  *       this registers the domain again; otherwise it asks the provider to re-verify and
  *       re-checks the Veerify ownership TXT record and DMARC. Returns the updated claim.
  *     operationId: verifySupportSendingDomain
  *     parameters:
  *       - in: path
- *         name: teamId
+ *         name: projectId
  *         required: true
  *         schema: { type: string }
  *       - in: path
@@ -21,8 +21,8 @@
  *     responses:
  *       200: { description: Updated sending domain }
  *       202: { description: Provider temporarily unavailable; registration will be retried }
- *       403: { description: Team administrator required }
- *       404: { description: Feature disabled, or the domain does not belong to this team }
+ *       403: { description: Project administrator required }
+ *       404: { description: Feature disabled, or the domain does not belong to this project }
  *       409: { description: Domain is being removed, or is owned by another service }
  *       422: { description: Domain rejected by the provider }
  *       429: { description: Rate limit exceeded }
@@ -32,11 +32,11 @@
 import { createError, setResponseHeader, setResponseStatus } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { createLogger } from '~/server/utils/logger'
 import { recordSupportMetric } from '~/server/utils/support-observability'
-import { getTeamSendingDomain, toSendingDomainView } from '~/server/utils/sending-domains'
+import { getProjectSendingDomain, toSendingDomainView } from '~/server/utils/sending-domains'
 import {
   checkSendingDomainClaim,
   pendingExpiryFrom,
@@ -59,12 +59,12 @@ const logger = createLogger('sending-domains')
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
+  const projectId = getRouterParam(event, 'projectId') as string
   const id = getRouterParam(event, 'id') as string
-  await requireTeamAdmin(teamId, session.user.id)
+  await requireProjectAdmin(projectId, session.user.id)
   requireSendingDomainsEnabled()
 
-  const claim = await getTeamSendingDomain(teamId, id)
+  const claim = await getProjectSendingDomain(projectId, id)
 
   await requireRateLimit(event, {
     maxRequests: 1,
@@ -75,8 +75,8 @@ export default defineEventHandler(async (event) => {
   await requireRateLimit(event, {
     maxRequests: 60,
     windowSeconds: 60 * 60,
-    identifier: 'sending-domain-verify-team',
-    subject: `team:${teamId}`,
+    identifier: 'sending-domain-verify-project',
+    subject: `project:${projectId}`,
   })
 
   if (claim.status === 'deleting') {
@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
 
   const provider = requireConfiguredSendingDomainProvider()
   const now = new Date()
-  const reload = () => getTeamSendingDomain(teamId, claim.id)
+  const reload = () => getProjectSendingDomain(projectId, claim.id)
 
   // Hold the row while talking to the provider: an admin delete (or a poll pass)
   // must not interleave with a register in flight, or the provider domain leaks.

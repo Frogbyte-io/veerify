@@ -3,11 +3,12 @@ import { eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { supportInbox, supportInboxMember } from '../../server/database/schema/support'
 
 const orgId = `schema_contract_org_${randomUUID()}`
-const teamId = `schema_contract_team_${randomUUID()}`
+const projectId = `schema_contract_project_${randomUUID()}`
 const inboxId = `schema_contract_inbox_${randomUUID()}`
 const userId = `schema_contract_user_${randomUUID()}`
 const now = new Date()
@@ -20,10 +21,10 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(team).values({
-    id: teamId,
-    name: 'Schema Contract Team',
-    slug: `schema-contract-team-${randomUUID()}`,
+  await db.insert(project).values({
+    id: projectId,
+    name: 'Schema Contract Project',
+    slug: `schema-contract-project-${randomUUID()}`,
     organizationId: orgId,
     createdAt: now,
     updatedAt: now,
@@ -37,7 +38,7 @@ beforeAll(async () => {
   })
   await db.insert(supportInbox).values({
     id: inboxId,
-    teamId,
+    projectId,
     name: 'Schema Contract Inbox',
     slug: `schema-contract-inbox-${randomUUID()}`,
     createdAt: now,

@@ -6,7 +6,7 @@
  *     summary: Create an inbox
  *     description: >
  *       The creator is added as a supportInboxMember with role "admin" in the
- *       same transaction - otherwise a team member who isn't a team admin
+ *       same transaction - otherwise a project member who isn't a project admin
  *       could create an inbox they have no access to afterward. When
  *       `SUPPORT_PLATFORM_MAIL_DOMAIN` is set, a platform forwarding address
  *       is generated in the same transaction and returned as `platformAddress`
@@ -14,53 +14,32 @@
  *     operationId: createSupportInbox
  *     responses:
  *       200: { description: Inbox created }
- *       400: { description: projectId does not belong to this team }
- *       403: { description: Not a member of the team }
- *       409: { description: An inbox with this slug already exists in the team }
+ *       403: { description: Not a member of the project }
+ *       409: { description: An inbox with this slug already exists in the project }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportInbox, supportInboxMember } from '~/server/database/schema/support'
-import { project } from '~/server/database/schema/feedback'
-import { team } from '~/server/database/schema/auth'
 import { ensurePlatformAddress } from '~/server/utils/platform-address'
 
 const bodySchema = z.object({
-  teamId: z.string().min(1),
+  projectId: z.string().min(1),
   name: z.string().trim().min(1).max(200),
   slug: commonSchemas.slug,
-  projectId: z.string().min(1).optional(),
 })
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const body = await validateBody(event, bodySchema)
 
-  await requireTeamAdmin(body.teamId, session.user.id)
-
-  if (body.projectId) {
-    const [matchedProject] = await db
-      .select({ id: project.id })
-      .from(project)
-      .where(and(eq(project.id, body.projectId), eq(project.teamId, body.teamId)))
-      .limit(1)
-
-    if (!matchedProject) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Project is not part of this team'),
-      })
-    }
-  }
+  const owningProject = await requireProjectAdmin(body.projectId, session.user.id)
 
   const now = new Date()
   const inboxId = randomUUID()
@@ -71,8 +50,7 @@ export default defineEventHandler(async (event) => {
         .insert(supportInbox)
         .values({
           id: inboxId,
-          teamId: body.teamId,
-          projectId: body.projectId ?? null,
+          projectId: body.projectId,
           name: body.name,
           slug: body.slug,
           createdAt: now,
@@ -89,10 +67,11 @@ export default defineEventHandler(async (event) => {
       })
 
       // Platform forwarding address (design §9.1); null without a platform domain.
-      const [owningTeam] = await tx.select({ slug: team.slug }).from(team).where(eq(team.id, body.teamId)).limit(1)
-      const platformAddress = owningTeam
-        ? await ensurePlatformAddress(tx, { id: inboxId, slug: created.slug }, owningTeam.slug)
-        : null
+      const platformAddress = await ensurePlatformAddress(
+        tx,
+        { id: inboxId, slug: created.slug, projectId: created.projectId },
+        owningProject.slug
+      )
 
       return createSuccessResponse({ inbox: created, platformAddress })
     })

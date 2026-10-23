@@ -1,13 +1,13 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/csat-summary:
+ * /api/support/projects/{projectId}/csat-summary:
  *   get:
  *     tags: [Support]
  *     summary: Summarize rated CSAT responses
  *     operationId: getSupportCsatSummary
  *     parameters:
  *       - in: path
- *         name: teamId
+ *         name: projectId
  *         required: true
  *         schema: { type: string }
  *       - in: query
@@ -21,13 +21,13 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: CSAT score summary }
- *       403: { description: Not a support agent on this team }
+ *       403: { description: Not a support agent on this project }
  */
 import { and, eq, gte, inArray, isNotNull, lt } from 'drizzle-orm'
 import { z } from 'zod'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireInboxAccess, requireSupportTeamRole } from '~/server/utils/support-access'
+import { requireInboxAccess, requireSupportProjectRole } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import {
@@ -36,7 +36,7 @@ import {
   csatSurvey,
   supportInbox,
   supportInboxMember,
-  supportTeamSettings,
+  supportProjectSettings,
 } from '~/server/database/schema/support'
 import { user } from '~/server/database/schema/auth'
 import { summarizeCsatRows } from '~/server/utils/csat-reporting'
@@ -57,23 +57,23 @@ const querySchema = z
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
-  const teamAccess = await requireSupportTeamRole(teamId, session.user.id, 'agent')
+  const projectId = getRouterParam(event, 'projectId') as string
+  const projectAccess = await requireSupportProjectRole(projectId, session.user.id, 'agent')
   const query = validateQuery(event, querySchema)
 
   const requestedInboxAccess = query.inboxId ? await requireInboxAccess(query.inboxId, session.user.id) : undefined
   const inboxScope = resolveCsatInboxScope({
-    teamId,
+    projectId,
     userId: session.user.id,
-    teamAccess,
+    projectAccess,
     requestedInboxId: query.inboxId,
-    requestedInboxTeamId: requestedInboxAccess?.teamId,
+    requestedInboxProjectId: requestedInboxAccess?.projectId,
   })
 
   const [settings] = await db
-    .select({ reportingTimezone: supportTeamSettings.reportingTimezone })
-    .from(supportTeamSettings)
-    .where(eq(supportTeamSettings.teamId, teamId))
+    .select({ reportingTimezone: supportProjectSettings.reportingTimezone })
+    .from(supportProjectSettings)
+    .where(eq(supportProjectSettings.projectId, projectId))
   const reportingTimezone = settings?.reportingTimezone ?? 'UTC'
   let from: Date
   let to: Date
@@ -95,9 +95,9 @@ export default defineEventHandler(async (event) => {
     throw error
   }
   const conditions = [
-    eq(csatSurvey.teamId, teamId),
-    eq(conversation.teamId, teamId),
-    eq(supportInbox.teamId, teamId),
+    eq(csatSurvey.projectId, projectId),
+    eq(conversation.projectId, projectId),
+    eq(supportInbox.projectId, projectId),
     isNotNull(csatResponse.rating),
     gte(csatResponse.respondedAt, from),
     lt(csatResponse.respondedAt, to),
@@ -109,7 +109,7 @@ export default defineEventHandler(async (event) => {
       .select({ id: supportInboxMember.inboxId })
       .from(supportInboxMember)
       .innerJoin(supportInbox, eq(supportInbox.id, supportInboxMember.inboxId))
-      .where(and(eq(supportInbox.teamId, inboxScope.teamId), eq(supportInboxMember.userId, inboxScope.userId)))
+      .where(and(eq(supportInbox.projectId, inboxScope.projectId), eq(supportInboxMember.userId, inboxScope.userId)))
     conditions.push(inArray(conversation.inboxId, accessibleInboxIds))
   }
 

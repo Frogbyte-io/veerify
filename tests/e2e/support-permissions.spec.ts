@@ -35,12 +35,12 @@ test.describe.serial('support permission-aware navigation', () => {
       throw new Error(`Programmatic page login did not persist session (status=${preAuthSession.status()})`)
     }
     const cookies = await context.cookies()
-    const activeTeamResponse = await page.request.post('/api/teams/active', {
+    const activeProjectResponse = await page.request.post('/api/projects/active', {
       headers: withOriginHeaders('/support'),
-      data: { teamId: fixture.teamId },
+      data: { projectId: fixture.projectId },
     })
-    if (!activeTeamResponse.ok()) {
-      throw new Error(`Could not activate the fixed team for ${role}: ${await activeTeamResponse.text()}`)
+    if (!activeProjectResponse.ok()) {
+      throw new Error(`Could not activate the fixed project for ${role}: ${await activeProjectResponse.text()}`)
     }
     const sessionResponse = await page.request.get('/api/auth/session')
     const sessionPayload = await sessionResponse.json().catch(() => null)
@@ -69,8 +69,8 @@ test.describe.serial('support permission-aware navigation', () => {
     return page
   }
 
-  test('team admin sees team policy and inbox administration', async ({ browser }) => {
-    const page = await openAs(browser, 'teamAdmin')
+  test('project admin sees project policy and inbox administration', async ({ browser }) => {
+    const page = await openAs(browser, 'projectAdmin')
 
     const channelRequest = page.waitForRequest(
       (request) => request.url().includes('/api/support/channel-status') && request.method() === 'GET'
@@ -78,7 +78,7 @@ test.describe.serial('support permission-aware navigation', () => {
     await page.reload({ waitUntil: 'domcontentloaded' })
     expect(new URL((await channelRequest).url()).searchParams.get('inboxId')).toBe(fixture.primaryInboxId)
 
-    await expect(page.getByTestId('support-team-policy')).toBeVisible()
+    await expect(page.getByTestId('support-project-policy')).toBeVisible()
     await expect(page.getByTestId('support-sla-settings')).toBeVisible()
     await expect(page.getByTestId('support-csat-settings')).toBeVisible()
     await expect(page.getByTestId('support-csat-save')).toBeVisible()
@@ -109,11 +109,11 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(removalDialog.getByRole('button', { name: 'Remove member' })).toBeVisible()
   })
 
-  test('inbox admin can manage inbox members but not team policy', async ({ browser }) => {
+  test('inbox admin can manage inbox members but not project policy', async ({ browser }) => {
     const page = await openAs(browser, 'inboxAdmin')
 
     await expect(page.getByTestId('support-add-inbox-member')).toBeVisible()
-    await expect(page.getByTestId('support-team-policy')).toHaveCount(0)
+    await expect(page.getByTestId('support-project-policy')).toHaveCount(0)
     await expect(page.getByTestId('support-sla-settings')).toHaveCount(0)
     await expect(page.getByTestId('support-csat-settings')).toHaveCount(0)
     await expect(page.getByTestId('support-automation-settings')).toHaveCount(0)
@@ -148,7 +148,7 @@ test.describe.serial('support permission-aware navigation', () => {
     const conversationRow = () => ({
       id: conversationId,
       inboxId: fixture.primaryInboxId,
-      teamId: fixture.teamId,
+      projectId: fixture.projectId,
       contactId,
       subject: 'Claim this conversation',
       displayId: 4051,
@@ -526,12 +526,12 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.getByText(fixture.primaryInboxName)).toHaveCount(0)
   })
 
-  test('index ignores an old team inbox response after switching teams', async ({ browser }) => {
+  test('index ignores an old project inbox response after switching projects', async ({ browser }) => {
     const page = await openAs(browser, 'agent', '/support')
-    const newInboxId = 'delayed-new-team-inbox'
+    const newInboxId = 'delayed-new-project-inbox'
     const oldInboxName = `Old delayed inbox ${Date.now()}`
     const newInboxName = `New delayed inbox ${Date.now()}`
-    let activeTeamTransition = 0
+    let activeProjectTransition = 0
     let releaseOldList!: () => void
     let oldListStarted!: () => void
     const oldListReady = new Promise<void>((resolve) => {
@@ -541,21 +541,21 @@ test.describe.serial('support permission-aware navigation', () => {
       releaseOldList = resolve
     })
 
-    await page.route('**/api/teams/active', async (route) => {
-      const activeTeamId =
-        activeTeamTransition === 0 ? fixture.teamId : activeTeamTransition === 1 ? 'old-team' : 'new-team'
+    await page.route('**/api/projects/active', async (route) => {
+      const activeProjectId =
+        activeProjectTransition === 0 ? fixture.projectId : activeProjectTransition === 1 ? 'old-project' : 'new-project'
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { id: activeTeamId },
+          data: { id: activeProjectId },
         }),
       })
     })
     await page.route('**/api/support/inboxes?*', async (route) => {
-      if (activeTeamTransition === 0) return route.continue()
-      if (activeTeamTransition === 1) {
+      if (activeProjectTransition === 0) return route.continue()
+      if (activeProjectTransition === 1) {
         oldListStarted()
         await oldListRelease
         await route.fulfill({
@@ -605,29 +605,29 @@ test.describe.serial('support permission-aware navigation', () => {
     )
 
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByTestId('support-inbox-page')).toHaveAttribute('data-active-team-listener-ready', 'true')
+    await expect(page.getByTestId('support-inbox-page')).toHaveAttribute('data-active-project-listener-ready', 'true')
     await expect(page.getByTestId(`support-inbox-switch-${fixture.primaryInboxId}`)).toBeVisible()
-    activeTeamTransition = 1
-    await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
+    activeProjectTransition = 1
+    await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-project-changed')))
     await oldListReady
-    activeTeamTransition = 2
-    await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
+    activeProjectTransition = 2
+    await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-project-changed')))
     await expect(page.getByText(newInboxName)).toBeVisible()
     releaseOldList()
     await expect(page.getByText(oldInboxName)).toHaveCount(0)
   })
 
-  test('team policy 403 uses safe recovery instead of leaving stale controls', async ({ browser }) => {
-    const page = await openAs(browser, 'teamAdmin')
-    await expect(page.getByTestId('support-team-policy')).toBeVisible()
-    await page.route('**/api/support/teams/*/settings', async (route) => {
+  test('project policy 403 uses safe recovery instead of leaving stale controls', async ({ browser }) => {
+    const page = await openAs(browser, 'projectAdmin')
+    await expect(page.getByTestId('support-project-policy')).toBeVisible()
+    await page.route('**/api/support/projects/*/settings', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
             success: true,
-            data: { settings: { autoLinkFeedback: false }, capabilities: { canManageTeamSupport: false } },
+            data: { settings: { autoLinkFeedback: false }, capabilities: { canManageProjectSupport: false } },
           }),
         })
         return
@@ -639,15 +639,15 @@ test.describe.serial('support permission-aware navigation', () => {
         body: JSON.stringify({ success: false, error: { message: 'forbidden' } }),
       })
     })
-    await page.getByTestId('support-team-policy-toggle').click()
+    await page.getByTestId('support-project-policy-toggle').click()
     await expect(page.getByTestId('support-inbox-access-error')).toHaveText(
       'You do not have access to this support inbox'
     )
-    await expect(page.getByTestId('support-team-policy')).toHaveCount(0)
+    await expect(page.getByTestId('support-project-policy')).toHaveCount(0)
   })
 
   test('settings ignores a stale mutation reload after an inbox switch', async ({ browser }) => {
-    const page = await openAs(browser, 'teamAdmin')
+    const page = await openAs(browser, 'projectAdmin')
     let listCalls = 0
     let releaseReload!: () => void
     let reloadStarted!: () => void
@@ -703,10 +703,10 @@ test.describe.serial('support permission-aware navigation', () => {
     await expect(page.getByTestId('support-no-assignment')).toBeVisible()
   })
 
-  test('settings recovery ownership resets when the active team changes mid-recovery', async ({ browser }) => {
-    const page = await openAs(browser, 'teamAdmin')
-    await expect(page.getByTestId('support-team-policy-toggle')).toBeVisible()
-    const switchedTeamId = 'permissions-recovery-switched-team'
+  test('settings recovery ownership resets when the active project changes mid-recovery', async ({ browser }) => {
+    const page = await openAs(browser, 'projectAdmin')
+    await expect(page.getByTestId('support-project-policy-toggle')).toBeVisible()
+    const switchedProjectId = 'permissions-recovery-switched-project'
     const switchedInboxId = 'permissions-recovery-switched-inbox'
     let releaseRecoveryList!: () => void
     let recoveryListStarted!: () => void
@@ -717,14 +717,14 @@ test.describe.serial('support permission-aware navigation', () => {
       releaseRecoveryList = resolve
     })
     let switchedInboxListCalls = 0
-    await page.route('**/api/teams/active', async (route) => {
+    await page.route('**/api/projects/active', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { id: switchedTeamId } }),
+        body: JSON.stringify({ success: true, data: { id: switchedProjectId } }),
       })
     })
-    await page.route('**/api/support/teams/*/settings', async (route) => {
+    await page.route('**/api/support/projects/*/settings', async (route) => {
       if (route.request().method() === 'PUT') {
         await route.fulfill({
           status: 403,
@@ -738,13 +738,13 @@ test.describe.serial('support permission-aware navigation', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { settings: { autoLinkFeedback: false }, capabilities: { canManageTeamSupport: true } },
+          data: { settings: { autoLinkFeedback: false }, capabilities: { canManageProjectSupport: true } },
         }),
       })
     })
     await page.route('**/api/support/inboxes?*', async (route) => {
-      const teamId = new URL(route.request().url()).searchParams.get('teamId')
-      if (teamId === fixture.teamId) {
+      const projectId = new URL(route.request().url()).searchParams.get('projectId')
+      if (projectId === fixture.projectId) {
         recoveryListStarted()
         await recoveryListRelease
         await route.fulfill({
@@ -761,7 +761,7 @@ test.describe.serial('support permission-aware navigation', () => {
         body: JSON.stringify({
           success: true,
           data: {
-            inboxes: [{ id: switchedInboxId, name: 'Switched team inbox', capabilities: { canManageInbox: true } }],
+            inboxes: [{ id: switchedInboxId, name: 'Switched project inbox', capabilities: { canManageInbox: true } }],
           },
         }),
       })
@@ -777,10 +777,10 @@ test.describe.serial('support permission-aware navigation', () => {
       }
       await route.continue()
     })
-    await page.route('**/api/teams/members?*', (route) =>
+    await page.route('**/api/projects/members?*', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
     )
-    await page.route(`**/api/teams/${switchedTeamId}/projects`, (route) =>
+    await page.route(`**/api/projects/${switchedProjectId}/projects`, (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
     )
     await page.route('**/api/support/inboxes/*/members', (route) =>
@@ -812,14 +812,14 @@ test.describe.serial('support permission-aware navigation', () => {
       })
     )
 
-    await page.getByTestId('support-team-policy-toggle').click()
+    await page.getByTestId('support-project-policy-toggle').click()
     await recoveryListReady
-    await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-team-changed')))
-    await expect(page.locator('#general-name')).toHaveValue('Switched team inbox')
+    await page.evaluate(() => window.dispatchEvent(new Event('veerify:active-project-changed')))
+    await expect(page.locator('#general-name')).toHaveValue('Switched project inbox')
     releaseRecoveryList()
-    await expect(page.getByTestId('support-team-policy')).toBeVisible()
+    await expect(page.getByTestId('support-project-policy')).toBeVisible()
 
-    await page.locator('#general-name').fill('Switched team inbox updated')
+    await page.locator('#general-name').fill('Switched project inbox updated')
     await page.getByTestId('support-inbox-settings-save').click()
     await expect.poll(() => switchedInboxListCalls).toBeGreaterThan(1)
   })

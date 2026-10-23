@@ -12,8 +12,8 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Feedback linked }
- *       400: { description: Feedback is not part of this team }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       400: { description: Feedback is not part of this project }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation or feedback not found }
  *       409: { description: Conversation already has linked feedback }
  */
@@ -29,7 +29,7 @@ import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { db } from '~/server/database/drizzle'
 import { contactLink, conversation, conversationMessage } from '~/server/database/schema/support'
-import { feedback, project } from '~/server/database/schema/feedback'
+import { feedback } from '~/server/database/schema/feedback'
 
 const bodySchema = z.object({ feedbackId: z.string().min(1) })
 
@@ -67,15 +67,14 @@ export default defineEventHandler(async (event) => {
     const [target] = await tx
       .select({ id: feedback.id, title: feedback.title })
       .from(feedback)
-      .innerJoin(project, eq(project.id, feedback.projectId))
-      .where(and(eq(feedback.id, body.feedbackId), eq(project.teamId, lockedConversation.teamId)))
+      .where(and(eq(feedback.id, body.feedbackId), eq(feedback.projectId, lockedConversation.projectId)))
       .limit(1)
 
     if (!target) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Feedback is not part of this team'),
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Feedback is not part of this project'),
       })
     }
 
@@ -115,7 +114,7 @@ export default defineEventHandler(async (event) => {
 
   await publishConversationEvent({
     type: 'conversation.updated',
-    teamId: accessibleConversation.teamId,
+    projectId: accessibleConversation.projectId,
     inboxId: accessibleConversation.inboxId,
     conversationId,
   })

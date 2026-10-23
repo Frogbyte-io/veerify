@@ -20,7 +20,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Address deleted }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox or address not found }
  *       409: { description: Platform addresses cannot be deleted - regenerate instead }
  */

@@ -11,7 +11,7 @@ import {
 function contact(overrides: Partial<MergeableContact> = {}): MergeableContact {
   return {
     id: 'c1',
-    teamId: 't1',
+    projectId: 't1',
     mergedIntoContactId: null,
     attributes: null,
     name: null,
@@ -23,7 +23,7 @@ function contact(overrides: Partial<MergeableContact> = {}): MergeableContact {
 }
 
 describe('canMerge', () => {
-  it('allows two distinct unmerged contacts in the same team', () => {
+  it('allows two distinct unmerged contacts in the same project', () => {
     expect(canMerge(contact({ id: 'a' }), contact({ id: 'b' }))).toEqual({ ok: true })
   })
 
@@ -34,12 +34,12 @@ describe('canMerge', () => {
     })
   })
 
-  it('refuses merging across teams', () => {
+  it('refuses merging across projects', () => {
     // The tenant-isolation guard: both ids come from the request, so having
-    // access to one proves nothing about the other's team.
-    expect(canMerge(contact({ id: 'a', teamId: 't1' }), contact({ id: 'b', teamId: 't2' }))).toEqual({
+    // access to one proves nothing about the other's project.
+    expect(canMerge(contact({ id: 'a', projectId: 't1' }), contact({ id: 'b', projectId: 't2' }))).toEqual({
       ok: false,
-      reason: 'Contacts belong to different teams',
+      reason: 'Contacts belong to different projects',
     })
   })
 
@@ -111,7 +111,7 @@ describe('backfillContactFields', () => {
   })
 
   it('does not touch email', () => {
-    // email is uniquely indexed per team and mirrored by a contactIdentity row,
+    // email is uniquely indexed per project and mirrored by a contactIdentity row,
     // so changing it here would collide or desync.
     const result = backfillContactFields(contact({ id: 'a' }), contact({ id: 'b', email: 'ada@example.com' }))
     expect(result).not.toHaveProperty('email')

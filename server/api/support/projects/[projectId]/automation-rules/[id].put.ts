@@ -1,6 +1,6 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/automation-rules/{id}:
+ * /api/support/projects/{projectId}/automation-rules/{id}:
  *   put:
  *     tags: [Support]
  *     summary: Update a support automation rule
@@ -8,7 +8,7 @@
  *     responses:
  *       200: { description: Automation rule updated }
  *       400: { description: Invalid rule or inbox scope }
- *       403: { description: Team administrator required }
+ *       403: { description: Project administrator required }
  *       404: { description: Rule not found }
  */
 import { and, eq } from 'drizzle-orm'
@@ -16,7 +16,7 @@ import { createError } from 'h3'
 import { z } from 'zod'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { automationRule, supportInbox, type AutomationConditionGroup } from '~/server/database/schema/support'
@@ -48,15 +48,15 @@ function badRequest(message: string): never {
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
+  const projectId = getRouterParam(event, 'projectId') as string
   const id = getRouterParam(event, 'id') as string
-  await requireTeamAdmin(teamId, session.user.id)
+  await requireProjectAdmin(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   const [existing] = await db
     .select({ id: automationRule.id })
     .from(automationRule)
-    .where(and(eq(automationRule.id, id), eq(automationRule.teamId, teamId)))
+    .where(and(eq(automationRule.id, id), eq(automationRule.projectId, projectId)))
     .limit(1)
   if (!existing) {
     throw createError({
@@ -70,9 +70,9 @@ export default defineEventHandler(async (event) => {
     const [ownedInbox] = await db
       .select({ id: supportInbox.id })
       .from(supportInbox)
-      .where(and(eq(supportInbox.id, body.inboxId), eq(supportInbox.teamId, teamId)))
+      .where(and(eq(supportInbox.id, body.inboxId), eq(supportInbox.projectId, projectId)))
       .limit(1)
-    if (!ownedInbox) badRequest('Inbox is not part of this team')
+    if (!ownedInbox) badRequest('Inbox is not part of this project')
   }
 
   if (body.actions) {

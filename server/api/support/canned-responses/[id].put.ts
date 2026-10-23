@@ -3,7 +3,7 @@
  * /api/support/canned-responses/{id}:
  *   put:
  *     tags: [Support]
- *     summary: Update a team canned response
+ *     summary: Update a project canned response
  *     operationId: updateSupportCannedResponse
  *     parameters:
  *       - in: path
@@ -13,16 +13,16 @@
  *     responses:
  *       200: { description: Canned response updated }
  *       400: { description: Validation failed }
- *       403: { description: Not a member of the team }
+ *       403: { description: Not a member of the project }
  *       404: { description: Canned response not found }
- *       409: { description: This shortcode is already in use for the team }
+ *       409: { description: This shortcode is already in use for the project }
  */
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamMembership } from '~/server/utils/support-access'
+import { requireProjectAccess } from '~/server/utils/project-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
@@ -56,7 +56,7 @@ function duplicateShortcodeError(): never {
   throw createError({
     statusCode: 409,
     statusMessage: 'Conflict',
-    data: createErrorResponse(ErrorCode.CONFLICT, 'This shortcode is already in use for the team'),
+    data: createErrorResponse(ErrorCode.CONFLICT, 'This shortcode is already in use for the project'),
   })
 }
 
@@ -68,7 +68,7 @@ export default defineEventHandler(async (event) => {
   const [existing] = await db.select().from(cannedResponse).where(eq(cannedResponse.id, responseId)).limit(1)
   if (!existing) notFound()
 
-  await requireTeamMembership(existing.teamId, session.user.id)
+  await requireProjectAccess(existing.projectId, session.user.id)
 
   try {
     const [updated] = await db
@@ -84,7 +84,7 @@ export default defineEventHandler(async (event) => {
 
     return createSuccessResponse({ cannedResponse: updated })
   } catch (error) {
-    if (isUniqueViolation(error, 'canned_response_team_shortcode_idx')) duplicateShortcodeError()
+    if (isUniqueViolation(error, 'canned_response_project_shortcode_idx')) duplicateShortcodeError()
     throw error
   }
 })

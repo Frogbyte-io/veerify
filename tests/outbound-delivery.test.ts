@@ -4,10 +4,10 @@ import type { OutboundClaim } from '../server/utils/outbound-delivery'
 // WP1/WP2 modules (customer sending domains) do not exist on this branch yet;
 // the final sender check consults them, so they are mocked.
 const sendingDomains = vi.hoisted(() => ({
-  resolveSenderPolicy: vi.fn(() => 'legacy' as 'legacy' | 'team'),
-  resolveEffectiveSenderPolicy: vi.fn(async (): Promise<'legacy' | 'team'> => 'legacy'),
-  isDomainClaimedByOtherTeam: vi.fn(async () => false),
-  resolveTeamSenderAuthorization: vi.fn(),
+  resolveSenderPolicy: vi.fn(() => 'legacy' as 'legacy' | 'project'),
+  resolveEffectiveSenderPolicy: vi.fn(async (): Promise<'legacy' | 'project'> => 'legacy'),
+  isDomainClaimedByOtherProject: vi.fn(async () => false),
+  resolveProjectSenderAuthorization: vi.fn(),
 }))
 sendingDomains.resolveEffectiveSenderPolicy.mockImplementation(async () => sendingDomains.resolveSenderPolicy())
 vi.mock('~/server/utils/sending-domains', () => sendingDomains)
@@ -209,7 +209,9 @@ describe('processOutboundDelivery', () => {
 
   describe('final sender check', () => {
     const withFrom = (): OutboundClaim =>
-      claim({ payload: { to: 'customer@example.com', subject: 'Re: Invoice', from: { address: 'support@teamb.com' } } })
+      claim({
+        payload: { to: 'customer@example.com', subject: 'Re: Invoice', from: { address: 'support@projectb.com' } },
+      })
 
     it('fails terminally with SENDER_DOMAIN_NOT_AUTHORIZED and never calls sendEmail', async () => {
       const sendEmail = vi.fn()
@@ -353,7 +355,7 @@ describe('processOutboundDelivery', () => {
 
     it('does not consult the policy lookup under the legacy sender policy', async () => {
       sendingDomains.resolveSenderPolicy.mockReturnValue('legacy')
-      sendingDomains.resolveTeamSenderAuthorization.mockClear()
+      sendingDomains.resolveProjectSenderAuthorization.mockClear()
       const sendEmail = vi.fn().mockResolvedValue({ accepted: true, response: 'sent' })
 
       // No authorizeSender override: the default implementation runs, and must
@@ -366,7 +368,7 @@ describe('processOutboundDelivery', () => {
       })
 
       expect(result).toEqual({ outcome: 'sent' })
-      expect(sendingDomains.resolveTeamSenderAuthorization).not.toHaveBeenCalled()
+      expect(sendingDomains.resolveProjectSenderAuthorization).not.toHaveBeenCalled()
     })
   })
 })

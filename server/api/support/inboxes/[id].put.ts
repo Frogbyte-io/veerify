@@ -18,14 +18,14 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Inbox updated }
- *       400: { description: "projectId or defaultAssigneeUserId does not belong to this team, or fromName contains @, <, >, a double quote or a control character" }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       400: { description: "defaultAssigneeUserId does not belong to this project, or fromName contains @, <, >, a double quote or a control character" }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox not found }
  *       409: { description: Another inbox already uses this slug or email address }
- *       422: { description: "The email address is on another team's sending domain, or under the team sender policy not on one of this team's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)" }
+ *       422: { description: "The email address is on another project's sending domain, or under the project sender policy not on one of this project's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)" }
  */
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
@@ -34,8 +34,6 @@ import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportInbox } from '~/server/database/schema/support'
-import { project } from '~/server/database/schema/feedback'
-import { teamMember } from '~/server/database/schema/auth'
 import { assertSenderAddressAllowedForInbox } from '~/server/utils/sending-domains'
 
 // The display name goes into the From header: reject anything that could break
@@ -46,7 +44,6 @@ const FROM_NAME_FORBIDDEN = /[@<>"\u0000-\u001f\u007f]/
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   slug: commonSchemas.slug.optional(),
-  projectId: z.string().nullable().optional(),
   defaultAssigneeUserId: z.string().nullable().optional(),
   signature: z.string().max(10_000).nullable().optional(),
   isEnabled: z.boolean().optional(),
@@ -72,46 +69,24 @@ export default defineEventHandler(async (event) => {
 
   const inbox = await requireInboxRole(inboxId, session.user.id, 'admin')
 
-  if (body.projectId) {
-    const [matchedProject] = await db
-      .select({ id: project.id })
-      .from(project)
-      .where(and(eq(project.id, body.projectId), eq(project.teamId, inbox.teamId)))
-      .limit(1)
-
-    if (!matchedProject) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Project is not part of this team'),
-      })
-    }
-  }
-
   if (body.defaultAssigneeUserId) {
-    const [matchedMember] = await db
-      .select({ id: teamMember.id })
-      .from(teamMember)
-      .where(and(eq(teamMember.teamId, inbox.teamId), eq(teamMember.userId, body.defaultAssigneeUserId)))
-      .limit(1)
-
-    if (!matchedMember) {
+    if (!(await hasProjectAccess(inbox.projectId, body.defaultAssigneeUserId))) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'defaultAssigneeUserId is not a member of this team'),
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'defaultAssigneeUserId is not a member of this project'),
       })
     }
   }
 
-  // Sender policy (design §4.5): under `team` the From must sit on one of this
-  // team's own claims or be one of its platform addresses; under any policy it
-  // may not sit on another team's claim. Throws 422 SENDER_DOMAIN_NOT_OWNED.
+  // Sender policy (design §4.5): under `project` the From must sit on one of this
+  // project's own claims or be one of its platform addresses; under any policy it
+  // may not sit on another project's claim. Throws 422 SENDER_DOMAIN_NOT_OWNED.
   // Clearing the address (null) is always allowed. Unchanged addresses are not
   // re-checked, so saving other fields never fails because of a domain that was
   // removed later.
   if (body.emailAddress && body.emailAddress.toLowerCase() !== (inbox.emailAddress ?? '').toLowerCase()) {
-    await assertSenderAddressAllowedForInbox(inbox.teamId, body.emailAddress)
+    await assertSenderAddressAllowedForInbox(inbox.projectId, body.emailAddress)
   }
 
   try {
@@ -120,7 +95,6 @@ export default defineEventHandler(async (event) => {
       .set({
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.slug !== undefined ? { slug: body.slug } : {}),
-        ...(body.projectId !== undefined ? { projectId: body.projectId } : {}),
         ...(body.defaultAssigneeUserId !== undefined ? { defaultAssigneeUserId: body.defaultAssigneeUserId } : {}),
         ...(body.signature !== undefined ? { signature: body.signature } : {}),
         ...(body.isEnabled !== undefined ? { isEnabled: body.isEnabled } : {}),
@@ -148,7 +122,7 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
-        data: createErrorResponse(ErrorCode.CONFLICT, 'Another inbox in this team already uses this slug'),
+        data: createErrorResponse(ErrorCode.CONFLICT, 'Another inbox in this project already uses this slug'),
       })
     }
     throw error

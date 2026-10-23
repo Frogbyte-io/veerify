@@ -9,7 +9,8 @@ import {
   type SupportPermissionRole,
 } from './helpers/support-permissions'
 import { getPlaywrightBaseURL, loginViaProgrammaticPage, withOriginHeaders } from './helpers/auth'
-import { account, session, team, teamMember, user, verification } from '../../server/database/schema/auth'
+import { account, session, user, verification } from '../../server/database/schema/auth'
+import { project, projectMember } from '../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -34,7 +35,7 @@ import {
 test.setTimeout(90_000)
 
 const PASSWORD = 'password123'
-const SENDING_DOMAINS_PATH = (teamId: string) => `/api/support/teams/${teamId}/sending-domains`
+const SENDING_DOMAINS_PATH = (projectId: string) => `/api/support/projects/${projectId}/sending-domains`
 
 type Credentials = { email: string; password: string }
 
@@ -43,9 +44,9 @@ test.describe('support sending domains', () => {
   let suffix: string
   const contexts: BrowserContext[] = []
 
-  // Team B: a second team with its own admin and inbox, for the isolation checks.
-  const teamB = {
-    id: `sd_team_b_${randomUUID().slice(0, 8)}`,
+  // Project B: a second project with its own admin and inbox, for the isolation checks.
+  const projectB = {
+    id: `sd_project_b_${randomUUID().slice(0, 8)}`,
     inboxId: randomUUID(),
     memberId: randomUUID(),
     inboxMemberId: randomUUID(),
@@ -57,47 +58,47 @@ test.describe('support sending domains', () => {
     suffix = randomUUID().slice(0, 8)
     fixture = await createSupportPermissionFixture(request)
 
-    const [seedTeam] = await db.select().from(team).where(eq(team.id, fixture.teamId)).limit(1)
-    if (!seedTeam) throw new Error('Seed team not found')
+    const [seedProject] = await db.select().from(project).where(eq(project.id, fixture.projectId)).limit(1)
+    if (!seedProject) throw new Error('Seed project not found')
 
-    teamB.credentials = { email: `sending-domains-team-b-${suffix}@example.com`, password: PASSWORD }
+    projectB.credentials = { email: `sending-domains-project-b-${suffix}@example.com`, password: PASSWORD }
     const signUp = await request.post('/api/auth/sign-up/email', {
       headers: withOriginHeaders('/signup'),
-      data: { name: 'Sending Domains Team B', ...teamB.credentials },
+      data: { name: 'Sending Domains Project B', ...projectB.credentials },
     })
-    if (!signUp.ok()) throw new Error(`Could not sign up team B admin: ${signUp.status()} ${await signUp.text()}`)
-    teamB.userId = (await signUp.json()).user.id as string
+    if (!signUp.ok()) throw new Error(`Could not sign up project B admin: ${signUp.status()} ${await signUp.text()}`)
+    projectB.userId = (await signUp.json()).user.id as string
 
     const now = new Date()
-    await db.insert(team).values({
-      id: teamB.id,
-      name: `Sending Domains Team B ${suffix}`,
-      slug: `sd-team-b-${suffix}`,
-      organizationId: seedTeam.organizationId,
+    await db.insert(project).values({
+      id: projectB.id,
+      name: `Sending Domains Project B ${suffix}`,
+      slug: `sd-project-b-${suffix}`,
+      organizationId: seedProject.organizationId,
       createdAt: now,
       updatedAt: now,
     })
-    await db.insert(teamMember).values({
-      id: teamB.memberId,
-      teamId: teamB.id,
-      userId: teamB.userId,
+    await db.insert(projectMember).values({
+      id: projectB.memberId,
+      projectId: projectB.id,
+      userId: projectB.userId,
       role: 'admin',
       createdAt: now,
     })
     await db.insert(supportInbox).values({
-      id: teamB.inboxId,
-      teamId: teamB.id,
-      name: `Team B Inbox ${suffix}`,
-      slug: `team-b-${suffix}`,
+      id: projectB.inboxId,
+      projectId: projectB.id,
+      name: `Project B Inbox ${suffix}`,
+      slug: `project-b-${suffix}`,
       type: 'email',
       isEnabled: true,
       createdAt: now,
       updatedAt: now,
     })
     await db.insert(supportInboxMember).values({
-      id: teamB.inboxMemberId,
-      inboxId: teamB.inboxId,
-      userId: teamB.userId,
+      id: projectB.inboxMemberId,
+      inboxId: projectB.inboxId,
+      userId: projectB.userId,
       role: 'admin',
       createdAt: now,
     })
@@ -105,17 +106,17 @@ test.describe('support sending domains', () => {
 
   test.afterAll(async () => {
     await Promise.all(contexts.map((context) => context.close()))
-    const teamIds = [teamB.id, fixture?.teamId].filter(Boolean) as string[]
-    if (teamIds.length) await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.teamId, teamIds))
-    await db.delete(supportInboxMember).where(eq(supportInboxMember.id, teamB.inboxMemberId))
-    await db.delete(supportInbox).where(eq(supportInbox.id, teamB.inboxId))
-    await db.delete(teamMember).where(eq(teamMember.id, teamB.memberId))
-    await db.delete(team).where(eq(team.id, teamB.id))
-    if (teamB.credentials) await db.delete(verification).where(eq(verification.identifier, teamB.credentials.email))
-    if (teamB.userId) {
-      await db.delete(session).where(eq(session.userId, teamB.userId))
-      await db.delete(account).where(eq(account.userId, teamB.userId))
-      await db.delete(user).where(eq(user.id, teamB.userId))
+    const projectIds = [projectB.id, fixture?.projectId].filter(Boolean) as string[]
+    if (projectIds.length) await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.projectId, projectIds))
+    await db.delete(supportInboxMember).where(eq(supportInboxMember.id, projectB.inboxMemberId))
+    await db.delete(supportInbox).where(eq(supportInbox.id, projectB.inboxId))
+    await db.delete(projectMember).where(eq(projectMember.id, projectB.memberId))
+    await db.delete(project).where(eq(project.id, projectB.id))
+    if (projectB.credentials) await db.delete(verification).where(eq(verification.identifier, projectB.credentials.email))
+    if (projectB.userId) {
+      await db.delete(session).where(eq(session.userId, projectB.userId))
+      await db.delete(account).where(eq(account.userId, projectB.userId))
+      await db.delete(user).where(eq(user.id, projectB.userId))
     }
     if (fixture) await cleanupSupportPermissionFixture(fixture)
   })
@@ -123,7 +124,7 @@ test.describe('support sending domains', () => {
   async function openPageAs(
     browser: Browser,
     credentials: Credentials,
-    teamId: string,
+    projectId: string,
     path: string,
     { clipboard = false }: { clipboard?: boolean } = {}
   ) {
@@ -133,11 +134,11 @@ test.describe('support sending domains', () => {
     if (clipboard) await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL })
     const page = await context.newPage()
     await loginViaProgrammaticPage(page, credentials)
-    const activate = await page.request.post('/api/teams/active', {
+    const activate = await page.request.post('/api/projects/active', {
       headers: withOriginHeaders('/support'),
-      data: { teamId },
+      data: { projectId },
     })
-    if (!activate.ok()) throw new Error(`Could not activate team ${teamId}: ${await activate.text()}`)
+    if (!activate.ok()) throw new Error(`Could not activate project ${projectId}: ${await activate.text()}`)
     await page.goto(path, { waitUntil: 'domcontentloaded' })
     await expect(page).not.toHaveURL(/\/login/)
     return page
@@ -163,7 +164,7 @@ test.describe('support sending domains', () => {
 
     test('admin adds a domain, copies the ownership record, verifies it and sends from it', async ({ browser }) => {
       domainA = `acme${suffix}.verify-ok.test`
-      const page = await openPageAs(browser, asRole('teamAdmin'), fixture.teamId, settingsPath(), { clipboard: true })
+      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, settingsPath(), { clipboard: true })
       await expect(page.getByTestId('support-sending-domains')).toBeVisible({ timeout: 20_000 })
 
       await addDomainViaUi(page, domainA)
@@ -194,14 +195,14 @@ test.describe('support sending domains', () => {
       await expect(row.getByTestId('support-sending-domain-status')).toContainText('Verified', { timeout: 20_000 })
 
       // The picker offers the verified domain; saving yields an authorized verdict.
-      const listResponse = await page.request.get(SENDING_DOMAINS_PATH(fixture.teamId))
+      const listResponse = await page.request.get(SENDING_DOMAINS_PATH(fixture.projectId))
       const list = (await listResponse.json()).data
       domainAClaimId = list.domains.find((d: { domain: string }) => d.domain === domainA).id
       expect(domainAClaimId).toBeTruthy()
 
       await page.reload({ waitUntil: 'domcontentloaded' })
       const picker = page.getByTestId('support-from-picker')
-      await expect(picker).toHaveAttribute('data-policy', 'team', { timeout: 20_000 })
+      await expect(picker).toHaveAttribute('data-policy', 'project', { timeout: 20_000 })
       await picker.getByTestId('support-from-picker-local').fill('support')
       await picker.getByTestId('support-from-picker-select').selectOption({ value: `domain:${domainA}` })
       await page.getByTestId('support-inbox-settings-save').click()
@@ -214,7 +215,7 @@ test.describe('support sending domains', () => {
     })
 
     test('provider refusals show inline and a flaky registration recovers on retry', async ({ browser }) => {
-      const page = await openPageAs(browser, asRole('teamAdmin'), fixture.teamId, settingsPath())
+      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, settingsPath())
       await expect(page.getByTestId('support-sending-domains')).toBeVisible({ timeout: 20_000 })
 
       await addDomainViaUi(page, `x${suffix}.owned-elsewhere.test`)
@@ -233,8 +234,8 @@ test.describe('support sending domains', () => {
       })
     })
 
-    test('a team member sees the card read-only and the API refuses their writes', async ({ browser }) => {
-      const page = await openPageAs(browser, asRole('agent'), fixture.teamId, settingsPath())
+    test('a project member sees the card read-only and the API refuses their writes', async ({ browser }) => {
+      const page = await openPageAs(browser, asRole('agent'), fixture.projectId, settingsPath())
       const card = page.getByTestId('support-sending-domains')
       await expect(card).toBeVisible({ timeout: 20_000 })
       await expect(rowFor(page, domainA)).toBeVisible()
@@ -243,29 +244,29 @@ test.describe('support sending domains', () => {
       await expect(page.getByTestId('support-sending-domain-delete')).toHaveCount(0)
 
       const headers = withOriginHeaders('/support/settings')
-      const create = await page.request.post(SENDING_DOMAINS_PATH(fixture.teamId), {
+      const create = await page.request.post(SENDING_DOMAINS_PATH(fixture.projectId), {
         headers,
         data: { domain: `member${suffix}.verify-ok.test` },
       })
       expect(create.status()).toBe(403)
-      const verify = await page.request.post(`${SENDING_DOMAINS_PATH(fixture.teamId)}/${domainAClaimId}/verify`, {
+      const verify = await page.request.post(`${SENDING_DOMAINS_PATH(fixture.projectId)}/${domainAClaimId}/verify`, {
         headers,
       })
       expect(verify.status()).toBe(403)
-      const del = await page.request.delete(`${SENDING_DOMAINS_PATH(fixture.teamId)}/${domainAClaimId}`, { headers })
+      const del = await page.request.delete(`${SENDING_DOMAINS_PATH(fixture.projectId)}/${domainAClaimId}`, { headers })
       expect(del.status()).toBe(403)
     })
 
-    test('another team cannot read, claim under, or send from a team’s domain', async ({ browser }) => {
-      const page = await openPageAs(browser, teamB.credentials!, teamB.id, '/support/settings')
+    test('another project cannot read, claim under, or send from a project’s domain', async ({ browser }) => {
+      const page = await openPageAs(browser, projectB.credentials!, projectB.id, '/support/settings')
       const headers = withOriginHeaders('/support/settings')
 
-      const detail = await page.request.get(`${SENDING_DOMAINS_PATH(teamB.id)}/${domainAClaimId}`, { headers })
+      const detail = await page.request.get(`${SENDING_DOMAINS_PATH(projectB.id)}/${domainAClaimId}`, { headers })
       expect(detail.status()).toBe(404)
-      const crossTeam = await page.request.get(`${SENDING_DOMAINS_PATH(fixture.teamId)}/${domainAClaimId}`, { headers })
-      expect([403, 404]).toContain(crossTeam.status())
+      const crossProject = await page.request.get(`${SENDING_DOMAINS_PATH(fixture.projectId)}/${domainAClaimId}`, { headers })
+      expect([403, 404]).toContain(crossProject.status())
 
-      const claim = await page.request.post(SENDING_DOMAINS_PATH(teamB.id), {
+      const claim = await page.request.post(SENDING_DOMAINS_PATH(projectB.id), {
         headers,
         data: { domain: `mail.${domainA}` },
       })
@@ -273,19 +274,19 @@ test.describe('support sending domains', () => {
       const claimBody = await claim.json()
       expect(claimBody.error?.code ?? claimBody.data?.error?.code).toBe('DOMAIN_CLAIMED')
 
-      const save = await page.request.put(`/api/support/inboxes/${teamB.inboxId}`, {
+      const save = await page.request.put(`/api/support/inboxes/${projectB.inboxId}`, {
         headers,
-        data: { name: `Team B Inbox ${suffix}`, emailAddress: `support@${domainA}` },
+        data: { name: `Project B Inbox ${suffix}`, emailAddress: `support@${domainA}` },
       })
       expect(save.status()).toBe(422)
 
-      const own = await page.request.get(SENDING_DOMAINS_PATH(teamB.id), { headers })
+      const own = await page.request.get(SENDING_DOMAINS_PATH(projectB.id), { headers })
       const ownList = (await own.json()).data
       expect(ownList.domains.map((d: { domain: string }) => d.domain)).not.toContain(domainA)
     })
 
     test('deleting a domain an inbox uses asks first, then blocks that inbox from sending', async ({ browser }) => {
-      const page = await openPageAs(browser, asRole('teamAdmin'), fixture.teamId, settingsPath())
+      const page = await openPageAs(browser, asRole('projectAdmin'), fixture.projectId, settingsPath())
       const row = rowFor(page, domainA)
       await expect(row).toBeVisible({ timeout: 20_000 })
 
@@ -314,10 +315,10 @@ test.describe('support sending domains', () => {
   })
 
   // UI-only states. Every sending-domain and sending-status response is stubbed, so
-  // these need the page and a logged-in team admin but no provider behaviour.
+  // these need the page and a logged-in project admin but no provider behaviour.
   test.describe('stubbed UI states', () => {
-    const LIST_URL = /\/api\/support\/teams\/[^/]+\/sending-domains(\?.*)?$/
-    const ITEM_URL = /\/api\/support\/teams\/[^/]+\/sending-domains\/[^/?]+(\?.*)?$/
+    const LIST_URL = /\/api\/support\/projects\/[^/]+\/sending-domains(\?.*)?$/
+    const ITEM_URL = /\/api\/support\/projects\/[^/]+\/sending-domains\/[^/?]+(\?.*)?$/
     const STATUS_URL = /\/api\/support\/inboxes\/[^/]+\/sending-status(\?.*)?$/
 
     const record = (overrides: Record<string, unknown> = {}) => ({
@@ -350,7 +351,7 @@ test.describe('support sending domains', () => {
 
     const listPayload = (overrides: Record<string, unknown> = {}) => ({
       enabled: true,
-      policy: 'team',
+      policy: 'project',
       provider: 'mailgun',
       capabilities: { register: true, verifyNow: true, remove: true, inboundRoutes: true, authorizesSubdomains: true },
       canManage: true,
@@ -376,12 +377,12 @@ test.describe('support sending domains', () => {
       const context = await browser.newContext({ baseURL })
       contexts.push(context)
       const page = await context.newPage()
-      await loginViaProgrammaticPage(page, asRole('teamAdmin'))
-      const activate = await page.request.post('/api/teams/active', {
+      await loginViaProgrammaticPage(page, asRole('projectAdmin'))
+      const activate = await page.request.post('/api/projects/active', {
         headers: withOriginHeaders('/support'),
-        data: { teamId: fixture.teamId },
+        data: { projectId: fixture.projectId },
       })
-      if (!activate.ok()) throw new Error(`Could not activate the fixed team: ${await activate.text()}`)
+      if (!activate.ok()) throw new Error(`Could not activate the fixed project: ${await activate.text()}`)
 
       if (handlers.list) {
         await page.route(LIST_URL, (route) =>
@@ -546,28 +547,28 @@ test.describe('support sending domains', () => {
       },
       {
         name: 'unauthorized (suspended)',
-        authorization: { status: 'unauthorized', reason: 'suspended', teamDomains: [] },
+        authorization: { status: 'unauthorized', reason: 'suspended', projectDomains: [] },
         testId: 'support-settings-sending-unauthorized',
         text: 'is suspended',
       },
       {
         name: 'unauthorized (not_owned)',
-        authorization: { status: 'unauthorized', reason: 'not_owned', teamDomains: ['owned.example.com'] },
+        authorization: { status: 'unauthorized', reason: 'not_owned', projectDomains: ['owned.example.com'] },
         testId: 'support-settings-sending-unauthorized',
         text: 'owned.example.com',
       },
       {
         name: 'unauthorized (provider_mismatch)',
-        authorization: { status: 'unauthorized', reason: 'provider_mismatch', teamDomains: [] },
+        authorization: { status: 'unauthorized', reason: 'provider_mismatch', projectDomains: [] },
         testId: 'support-settings-sending-unauthorized',
         text: 'Register the domain again',
       },
     ] as const) {
-      test(`team policy renders the ${scenario.name} sending verdict`, async ({ browser }) => {
+      test(`project policy renders the ${scenario.name} sending verdict`, async ({ browser }) => {
         const page = await openStubbed(browser, {
           list: () => ok(listPayload()),
           status: () =>
-            ok({ address: 'support@stub.example.com', policy: 'team', authorization: scenario.authorization }),
+            ok({ address: 'support@stub.example.com', policy: 'project', authorization: scenario.authorization }),
         })
         await expect(page.getByTestId(scenario.testId)).toContainText(scenario.text, { timeout: 20_000 })
       })
@@ -588,7 +589,7 @@ test.describe('support sending domains', () => {
           ),
       })
       const picker = page.getByTestId('support-from-picker')
-      await expect(picker).toHaveAttribute('data-policy', 'team', { timeout: 20_000 })
+      await expect(picker).toHaveAttribute('data-policy', 'project', { timeout: 20_000 })
       const options = picker.getByTestId('support-from-picker-select').locator('option')
       await expect(options.filter({ hasText: 'pending.example.com (waiting for DNS)' })).toHaveCount(1)
 
@@ -614,7 +615,7 @@ test.describe('support sending domains', () => {
           ok({
             address: 'support@other.example.com',
             policy: 'legacy',
-            authorization: { status: 'unauthorized', reason: 'not_owned', teamDomains: [] },
+            authorization: { status: 'unauthorized', reason: 'not_owned', projectDomains: [] },
           }),
       })
       await expect(page.getByTestId('support-from-picker-input')).toBeVisible({ timeout: 20_000 })
@@ -691,14 +692,14 @@ test.describe('support sending domains', () => {
       await expect(page.getByText('Removal in progress')).toBeVisible()
     })
 
-    test('team policy with the feature off still renders the picker and the forwarding button', async ({ browser }) => {
+    test('project policy with the feature off still renders the picker and the forwarding button', async ({ browser }) => {
       const page = await openStubbed(browser, {
-        list: () => ok(listPayload({ enabled: false, policy: 'team', domains: [] })),
+        list: () => ok(listPayload({ enabled: false, policy: 'project', domains: [] })),
       })
       await stubChannelStatus(page, { platformForwardingEnabled: true, platformAddress: null })
       await page.reload({ waitUntil: 'domcontentloaded' })
       await expect(page.getByTestId('support-sending-domains')).toHaveCount(0)
-      await expect(page.getByTestId('support-from-picker')).toHaveAttribute('data-policy', 'team', {
+      await expect(page.getByTestId('support-from-picker')).toHaveAttribute('data-policy', 'project', {
         timeout: 20_000,
       })
       await expect(page.getByTestId('support-settings-platform-create')).toBeVisible()
@@ -786,7 +787,7 @@ test.describe('support sending domains', () => {
       await page.reload({ waitUntil: 'domcontentloaded' })
       const picker = page.getByTestId('support-from-picker')
       const select = picker.getByTestId('support-from-picker-select')
-      await expect(picker).toHaveAttribute('data-policy', 'team', { timeout: 20_000 })
+      await expect(picker).toHaveAttribute('data-policy', 'project', { timeout: 20_000 })
 
       let saved: Record<string, unknown> | null = null
       await page.route(/\/api\/support\/inboxes\/[^/]+(\?.*)?$/, async (route) => {
@@ -821,7 +822,7 @@ test.describe('support sending domains', () => {
         const post = (url: string, data: unknown) =>
           page.request.post(url, { headers: withOriginHeaders('/support'), data })
         const contactResponse = await post('/api/support/contacts', {
-          teamId: fixture.teamId,
+          projectId: fixture.projectId,
           name: 'Blocked Sender Customer',
           email: customerEmail,
         })
@@ -879,7 +880,7 @@ test.describe('support sending domains', () => {
           waitUntil: 'domcontentloaded',
         })
         const notice = page.getByTestId('support-message-sender-blocked')
-        await expect(notice).toContainText("this inbox's From address isn't verified for your team", {
+        await expect(notice).toContainText("this inbox's From address isn't verified for your project", {
           timeout: 30_000,
         })
         await expect(page.getByTestId('support-message-sender-link')).toHaveAttribute('href', '/support/settings')

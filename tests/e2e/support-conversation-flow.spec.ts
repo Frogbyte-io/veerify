@@ -4,14 +4,15 @@ import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import { contact, conversation, supportInbox } from '../../server/database/schema/support'
-import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
+import { account, session, user, verification } from '../../server/database/schema/auth'
+import { projectMember } from '../../server/database/schema/feedback'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
-  const response = await request.get('/api/teams/active', { headers: withAuthHeaders(sessionCookie) })
+async function activeProjectId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
+  const response = await request.get('/api/projects/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
   return (await response.json()).data.id as string
 }
@@ -36,24 +37,24 @@ test.describe.serial('support conversation flow', () => {
     test.setTimeout(120_000)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie, '/support')
-    const teamId = await activeTeamId(request, sessionCookie)
-    await ensureVerifiedSendingDomain(teamId)
+    const projectId = await activeProjectId(request, sessionCookie)
+    await ensureVerifiedSendingDomain(projectId)
 
     const suffix = randomUUID().slice(0, 8)
     const adminCredentials = { email: `support-flow-admin-${suffix}@example.com`, password: TEST_PASSWORD }
     let adminUserId: string | undefined
-    let teamMemberId: string | undefined
+    let projectMemberId: string | undefined
     const createdInboxIds: string[] = []
     const createdContactIds: string[] = []
     const createdConversationIds: string[] = []
 
     try {
       // The creator is added as a supportInboxMember with role 'admin', which
-      // is what grants access below — the seed user's teamMember role is only
-      // 'member', so inbox access cannot be coming from the team-admin bypass.
+      // is what grants access below — the seed user's projectMember role is only
+      // 'member', so inbox access cannot be coming from the project-admin bypass.
       const deniedResponse = await request.post('/api/support/inboxes', {
         headers,
-        data: { teamId, name: `Denied E2E Inbox ${suffix}`, slug: `denied-e2e-inbox-${suffix}` },
+        data: { projectId, name: `Denied E2E Inbox ${suffix}`, slug: `denied-e2e-inbox-${suffix}` },
       })
       expect(deniedResponse.status()).toBe(403)
       expect(await deniedResponse.text()).toContain('FORBIDDEN')
@@ -65,16 +66,16 @@ test.describe.serial('support conversation flow', () => {
       expect(signupResponse.ok()).toBeTruthy()
       adminUserId = ((await signupResponse.json()).user?.id || '') as string
       expect(adminUserId).toBeTruthy()
-      teamMemberId = randomUUID()
+      projectMemberId = randomUUID()
       await db
-        .insert(teamMember)
-        .values({ id: teamMemberId, teamId, userId: adminUserId, role: 'admin', createdAt: new Date() })
+        .insert(projectMember)
+        .values({ id: projectMemberId, projectId, userId: adminUserId, role: 'admin', createdAt: new Date() })
 
       const adminCookie = await signInAndGetSessionCookie(request, adminCredentials)
       const adminHeaders = withAuthHeaders(adminCookie, '/support')
       const inboxResponse = await request.post('/api/support/inboxes', {
         headers: adminHeaders,
-        data: { teamId, name: `E2E Inbox ${suffix}`, slug: `e2e-inbox-${suffix}` },
+        data: { projectId, name: `E2E Inbox ${suffix}`, slug: `e2e-inbox-${suffix}` },
       })
       if (!inboxResponse.ok())
         throw new Error(`Inbox setup failed: ${inboxResponse.status()} ${await inboxResponse.text()}`)
@@ -95,7 +96,7 @@ test.describe.serial('support conversation flow', () => {
 
       const visibleInboxesResponse = await request.get('/api/support/inboxes', {
         headers,
-        params: { teamId },
+        params: { projectId },
       })
       expect(visibleInboxesResponse.ok()).toBeTruthy()
       const visibleInbox = (await visibleInboxesResponse.json()).data.inboxes.find(
@@ -105,7 +106,7 @@ test.describe.serial('support conversation flow', () => {
 
       const contactResponse = await request.post('/api/support/contacts', {
         headers,
-        data: { teamId, name: 'E2E Customer', email: `e2e-conv-${suffix}@example.com` },
+        data: { projectId, name: 'E2E Customer', email: `e2e-conv-${suffix}@example.com` },
       })
       expect(contactResponse.ok()).toBeTruthy()
       const contactId = (await contactResponse.json()).data.contact.id as string
@@ -147,11 +148,11 @@ test.describe.serial('support conversation flow', () => {
       // `isPrivate` is derived server-side from `kind`, so this also asserts
       // the note cannot accidentally become customer-visible.
       await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      const activeTeamResponse = await page.request.post('/api/teams/active', {
+      const activeProjectResponse = await page.request.post('/api/projects/active', {
         headers: withOriginHeaders('/support'),
-        data: { teamId },
+        data: { projectId },
       })
-      expect(activeTeamResponse.ok()).toBeTruthy()
+      expect(activeProjectResponse.ok()).toBeTruthy()
       await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, {
         waitUntil: 'domcontentloaded',
       })
@@ -294,7 +295,7 @@ test.describe.serial('support conversation flow', () => {
       for (const inboxId of createdInboxIds) {
         await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
       }
-      if (teamMemberId) await db.delete(teamMember).where(eq(teamMember.id, teamMemberId))
+      if (projectMemberId) await db.delete(projectMember).where(eq(projectMember.id, projectMemberId))
       if (adminUserId) {
         await db.delete(verification).where(eq(verification.identifier, adminCredentials.email))
         await db.delete(session).where(eq(session.userId, adminUserId))

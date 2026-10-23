@@ -9,17 +9,17 @@ import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders } 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-async function activeTeamAndUser(request: Parameters<typeof signInAndGetSessionCookie>[0]) {
+async function activeProjectAndUser(request: Parameters<typeof signInAndGetSessionCookie>[0]) {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const headers = withAuthHeaders(sessionCookie, '/support')
-  const [teamResponse, sessionResponse] = await Promise.all([
-    request.get('/api/teams/active', { headers }),
+  const [projectResponse, sessionResponse] = await Promise.all([
+    request.get('/api/projects/active', { headers }),
     request.get('/api/auth/session', { headers }),
   ])
-  expect(teamResponse.ok()).toBeTruthy()
+  expect(projectResponse.ok()).toBeTruthy()
   expect(sessionResponse.ok()).toBeTruthy()
   return {
-    teamId: (await teamResponse.json()).data.id as string,
+    projectId: (await projectResponse.json()).data.id as string,
     userId: (await sessionResponse.json()).data.user.id as string,
   }
 }
@@ -28,8 +28,8 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
   page,
   request,
 }) => {
-  const { teamId, userId } = await activeTeamAndUser(request)
-  await ensureVerifiedSendingDomain(teamId)
+  const { projectId, userId } = await activeProjectAndUser(request)
+  await ensureVerifiedSendingDomain(projectId)
   const suffix = randomUUID().slice(0, 8)
   const inboxId = `shortcut-e2e-inbox-${suffix}`
   const membershipId = `shortcut-e2e-member-${suffix}`
@@ -40,7 +40,7 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
   try {
     await db.insert(supportInbox).values({
       id: inboxId,
-      teamId,
+      projectId,
       name: `Shortcuts ${suffix}`,
       slug: `shortcuts-${suffix}`,
       emailAddress: `shortcuts-${suffix}@example.com`,
@@ -58,7 +58,7 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
     await db.insert(contact).values(
       contactIds.map((id, index) => ({
         id,
-        teamId,
+        projectId,
         name: `Shortcut Customer ${index + 1}`,
         email: `shortcut-customer-${index + 1}-${suffix}@example.com`,
         createdAt: now,
@@ -69,7 +69,7 @@ test('support keyboard shortcuts drive the visible list and ignore focused form 
       conversationIds.map((id, index) => ({
         id,
         inboxId,
-        teamId,
+        projectId,
         contactId: contactIds[index],
         displayId: 880000 + (Number.parseInt(suffix, 16) % 10000) * 10 + index,
         subject: index === 0 ? 'Shortcut first visible' : 'Shortcut second visible',

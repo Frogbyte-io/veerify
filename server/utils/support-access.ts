@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 // Imported explicitly rather than relying on Nuxt's auto-import, so this module
 // can be unit tested outside the Nitro runtime.
 import { createError } from 'h3'
@@ -11,7 +11,9 @@ import {
   supportInboxAddress,
   conversation,
 } from '~/server/database/schema/support'
-import { teamMember } from '~/server/database/schema/auth'
+import { member } from '~/server/database/schema/auth'
+import { project, projectMember } from '~/server/database/schema/feedback'
+import { requireProjectAccess, requireProjectRole, resolveProjectRole } from './project-access'
 import { createErrorResponse, ErrorCode } from './response'
 
 export type SupportInboxRole = 'agent' | 'supervisor' | 'admin'
@@ -21,12 +23,12 @@ export type SupportCapabilities = {
   canManageTagVocabulary: boolean
   canManageMembers: boolean
   canManageInbox: boolean
-  canManageTeamSupport: boolean
+  canManageProjectSupport: boolean
 }
 
 export type InboxAccess = typeof supportInbox.$inferSelect & {
   effectiveRole: SupportInboxRole
-  isTeamAdmin: boolean
+  isProjectAdmin: boolean
   capabilities: SupportCapabilities
 }
 
@@ -39,20 +41,20 @@ const SUPPORT_ROLE_RANK: Record<SupportInboxRole, number> = {
 export const SUPPORT_INBOX_FORBIDDEN_MESSAGE = 'You do not have access to this support inbox'
 
 /**
- * `role: null` means a team member who belongs to no support inbox and is not a
- * team admin. They get no support capability at all -- the approved matrix's
- * "Unassigned team member" column is `No` for every conversation capability.
+ * `role: null` means a project member who belongs to no support inbox and is not a
+ * project admin. They get no support capability at all -- the approved matrix's
+ * "Unassigned project member" column is `No` for every conversation capability.
  * Defaulting such a caller to `agent` made the UI advertise controls whose every
  * action `requireInboxAccess` then refused.
  */
-export function capabilitiesForRole(role: SupportInboxRole | null, isTeamAdmin: boolean): SupportCapabilities {
+export function capabilitiesForRole(role: SupportInboxRole | null, isProjectAdmin: boolean): SupportCapabilities {
   if (!role) {
     return {
       canWorkConversations: false,
       canManageTagVocabulary: false,
       canManageMembers: false,
       canManageInbox: false,
-      canManageTeamSupport: isTeamAdmin,
+      canManageProjectSupport: isProjectAdmin,
     }
   }
 
@@ -62,7 +64,7 @@ export function capabilitiesForRole(role: SupportInboxRole | null, isTeamAdmin: 
     canManageTagVocabulary: rank >= SUPPORT_ROLE_RANK.supervisor,
     canManageMembers: rank >= SUPPORT_ROLE_RANK.admin,
     canManageInbox: rank >= SUPPORT_ROLE_RANK.admin,
-    canManageTeamSupport: isTeamAdmin,
+    canManageProjectSupport: isProjectAdmin,
   }
 }
 
@@ -82,13 +84,13 @@ export function parseSupportInboxRole(role: unknown): SupportInboxRole | null {
 function withInboxAccess(
   inbox: typeof supportInbox.$inferSelect,
   effectiveRole: SupportInboxRole,
-  isTeamAdmin: boolean
+  isProjectAdmin: boolean
 ): InboxAccess {
   return {
     ...inbox,
     effectiveRole,
-    isTeamAdmin,
-    capabilities: capabilitiesForRole(effectiveRole, isTeamAdmin),
+    isProjectAdmin,
+    capabilities: capabilitiesForRole(effectiveRole, isProjectAdmin),
   }
 }
 
@@ -96,17 +98,17 @@ function withInboxAccess(
  * Authorization helpers for the support platform.
  *
  * Mirrors `server/utils/project-access.ts`: resolve the entity, resolve its
- * team, then check membership. 404 when the entity does not exist, 403 when it
+ * project, then check membership. 404 when the entity does not exist, 403 when it
  * does but the caller is not a member.
  */
 
 /**
- * Verify the user may act on a contact, via membership of the contact's team.
+ * Verify the user may act on a contact, via membership of the contact's project.
  *
  * Throws 404 if the contact does not exist, 403 if it does but the user is not
- * a member of its team. Distinguishing the two is deliberate and matches
+ * a member of its project. Distinguishing the two is deliberate and matches
  * `project-access.ts`: contact ids are opaque and only ever surfaced to users
- * who already have team access, so a 404 leaks nothing useful.
+ * who already have project access, so a 404 leaks nothing useful.
  */
 export async function requireContactAccess(contactId: string, userId: string) {
   const [row] = await db.select().from(contact).where(eq(contact.id, contactId)).limit(1)
@@ -119,16 +121,16 @@ export async function requireContactAccess(contactId: string, userId: string) {
     })
   }
 
-  await requireTeamMembership(row.teamId, userId)
+  await requireProjectAccess(row.projectId, userId)
 
   return row
 }
 
 /**
- * Verify the user may act on a company, via membership of the company's team.
+ * Verify the user may act on a company, via membership of the company's project.
  *
  * Same 404/403 split as `requireContactAccess`, for the same reason: company
- * ids are opaque and only ever shown to users who already have team access.
+ * ids are opaque and only ever shown to users who already have project access.
  */
 export async function requireCompanyAccess(companyId: string, userId: string) {
   const [row] = await db.select().from(supportCompany).where(eq(supportCompany.id, companyId)).limit(1)
@@ -141,52 +143,19 @@ export async function requireCompanyAccess(companyId: string, userId: string) {
     })
   }
 
-  await requireTeamMembership(row.teamId, userId)
+  await requireProjectAccess(row.projectId, userId)
 
   return row
-}
-
-/**
- * Verify the user is a member of a team.
- *
- * Used directly by team-scoped support endpoints (contact list, contact create,
- * company CRUD) where there is no entity to resolve first — the team id comes
- * from the request and must still be proven.
- */
-export async function requireTeamMembership(teamId: string, userId: string) {
-  const [membership] = await db
-    .select({ id: teamMember.id, role: teamMember.role })
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, userId)))
-    .limit(1)
-
-  if (!membership) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You do not have access to this team'),
-    })
-  }
-
-  return membership
-}
-
-export async function requireTeamAdmin(teamId: string, userId: string) {
-  const membership = await requireTeamMembership(teamId, userId)
-  if (membership.role !== 'admin') {
-    throwInboxForbidden()
-  }
-  return membership
 }
 
 /**
  * Verify the user may act on an inbox.
  *
  * Unlike `requireContactAccess`, support permissions do not live on
- * `teamMember` — a caller is authorized if they are a `supportInboxMember` of
- * this inbox, **or** hold the `admin` role on the inbox's team (support leads
+ * `projectMember` — a caller is authorized if they are a `supportInboxMember` of
+ * this inbox, **or** hold the `admin` role on the inbox's project (support leads
  * need to reach an inbox before anyone has explicitly added them to it).
- * `teamMember.role` semantics are otherwise unchanged (delta D-28).
+ * `projectMember.role` semantics are otherwise unchanged (delta D-28).
  */
 type SupportAccessExecutor = Pick<typeof db, 'select'>
 
@@ -207,13 +176,10 @@ export async function requireInboxAccess(inboxId: string, userId: string, execut
     .where(and(eq(supportInboxMember.inboxId, inboxId), eq(supportInboxMember.userId, userId)))
     .limit(1)
 
-  const [teamAdmin] = await executor
-    .select({ id: teamMember.id, role: teamMember.role })
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, inbox.teamId), eq(teamMember.userId, userId), eq(teamMember.role, 'admin')))
-    .limit(1)
+  const [proj] = await executor.select().from(project).where(eq(project.id, inbox.projectId)).limit(1)
+  const projectRole = proj ? await resolveProjectRole(proj, userId) : null
 
-  if (teamAdmin) {
+  if (projectRole === 'admin') {
     return withInboxAccess(inbox, 'admin', true)
   }
 
@@ -236,20 +202,20 @@ export async function requireInboxRole(
   return access
 }
 
-export async function resolveSupportTeamRole(
-  teamId: string,
+export async function resolveSupportProjectRole(
+  projectId: string,
   userId: string
-): Promise<{ effectiveRole: SupportInboxRole; isTeamAdmin: boolean } | null> {
-  const membership = await requireTeamMembership(teamId, userId)
-  if (membership.role === 'admin') {
-    return { effectiveRole: 'admin', isTeamAdmin: true }
+): Promise<{ effectiveRole: SupportInboxRole; isProjectAdmin: boolean } | null> {
+  const { role } = await requireProjectRole(projectId, userId)
+  if (role === 'admin') {
+    return { effectiveRole: 'admin', isProjectAdmin: true }
   }
 
   const supportMemberships = await db
     .select({ role: supportInboxMember.role })
     .from(supportInboxMember)
     .innerJoin(supportInbox, eq(supportInbox.id, supportInboxMember.inboxId))
-    .where(and(eq(supportInbox.teamId, teamId), eq(supportInboxMember.userId, userId)))
+    .where(and(eq(supportInbox.projectId, projectId), eq(supportInboxMember.userId, userId)))
 
   if (supportMemberships.length === 0) {
     return null
@@ -269,15 +235,15 @@ export async function resolveSupportTeamRole(
   if (!effectiveRole) {
     return null
   }
-  return { effectiveRole, isTeamAdmin: false }
+  return { effectiveRole, isProjectAdmin: false }
 }
 
-export async function requireSupportTeamRole(
-  teamId: string,
+export async function requireSupportProjectRole(
+  projectId: string,
   userId: string,
   minimumRole: 'agent' | 'supervisor'
-): Promise<{ effectiveRole: SupportInboxRole; isTeamAdmin: boolean }> {
-  const access = await resolveSupportTeamRole(teamId, userId)
+): Promise<{ effectiveRole: SupportInboxRole; isProjectAdmin: boolean }> {
+  const access = await resolveSupportProjectRole(projectId, userId)
   if (!access || SUPPORT_ROLE_RANK[access.effectiveRole] < SUPPORT_ROLE_RANK[minimumRole]) {
     throwInboxForbidden()
   }
@@ -343,4 +309,56 @@ export async function resolveInboxByAddress(emailAddress: string) {
   }
 
   return { inbox, address }
+}
+
+/**
+ * User ids that administer a project: organization owners/admins plus
+ * `project_member` rows with role 'admin' (who must still belong to the org).
+ */
+export async function listProjectAdminUserIds(
+  projectId: string,
+  executor: SupportAccessExecutor = db
+): Promise<string[]> {
+  const [proj] = await executor.select().from(project).where(eq(project.id, projectId)).limit(1)
+  if (!proj) return []
+
+  const orgAdmins = await executor
+    .select({ userId: member.userId })
+    .from(member)
+    .where(and(eq(member.organizationId, proj.organizationId), inArray(member.role, ['owner', 'admin'])))
+
+  const projectAdmins = await executor
+    .select({ userId: projectMember.userId })
+    .from(projectMember)
+    .innerJoin(member, and(eq(member.userId, projectMember.userId), eq(member.organizationId, proj.organizationId)))
+    .where(and(eq(projectMember.projectId, projectId), eq(projectMember.role, 'admin')))
+
+  return [...new Set([...orgAdmins, ...projectAdmins].map((row) => row.userId))]
+}
+
+/**
+ * User ids that can open a project (the people an assignment may target):
+ * org owners/admins, every org member on a 'workspace' project, or only those
+ * with a `project_member` row on a 'restricted' project.
+ */
+export async function listProjectUserIds(projectId: string, executor: SupportAccessExecutor = db): Promise<string[]> {
+  const [proj] = await executor.select().from(project).where(eq(project.id, projectId)).limit(1)
+  if (!proj) return []
+
+  const orgMembers = await executor
+    .select({ userId: member.userId, role: member.role })
+    .from(member)
+    .where(eq(member.organizationId, proj.organizationId))
+  const explicit = await executor
+    .select({ userId: projectMember.userId })
+    .from(projectMember)
+    .where(eq(projectMember.projectId, projectId))
+  const explicitIds = new Set(explicit.map((row) => row.userId))
+
+  return orgMembers
+    .filter(
+      (row) =>
+        row.role === 'owner' || row.role === 'admin' || proj.accessMode !== 'restricted' || explicitIds.has(row.userId)
+    )
+    .map((row) => row.userId)
 }

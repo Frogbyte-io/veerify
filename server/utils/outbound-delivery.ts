@@ -19,7 +19,7 @@ import { SUPPORT_MAX_MESSAGE_ATTACHMENT_BYTES } from '~/server/utils/support-att
 import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { createLogger } from '~/server/utils/logger'
 import { recordSupportMetric } from '~/server/utils/support-observability'
-import { isSenderAllowedForTeam } from '~/server/utils/sender-enforcement'
+import { isSenderAllowedForProject } from '~/server/utils/sender-enforcement'
 import { resolveEffectiveSenderPolicy } from '~/server/utils/sending-domains'
 
 const logger = createLogger('outbound-delivery')
@@ -332,7 +332,7 @@ async function applyDeliveryOutcome(input: {
  * Fire-and-forget and never throws: a realtime publish failure must not turn
  * a successful (or correctly recorded failed) send into a 500, and nothing
  * here is in the critical path of `deliveryStatus` actually being correct -
- * that already committed before this runs. Looks up `teamId`/`inboxId` fresh
+ * that already committed before this runs. Looks up `projectId`/`inboxId` fresh
  * because this module only ever has a bare `messageId` to work from.
  *
  * Exported (SUP-04-9): the delivery/bounce webhook endpoint updates
@@ -344,7 +344,7 @@ async function applyDeliveryOutcome(input: {
 export async function publishDeliveryStatusChanged(messageId: string): Promise<void> {
   try {
     const [row] = await db
-      .select({ teamId: conversation.teamId, inboxId: conversation.inboxId, conversationId: conversation.id })
+      .select({ projectId: conversation.projectId, inboxId: conversation.inboxId, conversationId: conversation.id })
       .from(conversationMessage)
       .innerJoin(conversation, eq(conversationMessage.conversationId, conversation.id))
       .where(eq(conversationMessage.id, messageId))
@@ -353,7 +353,7 @@ export async function publishDeliveryStatusChanged(messageId: string): Promise<v
 
     await publishConversationEvent({
       type: 'message.delivery-status',
-      teamId: row.teamId,
+      projectId: row.projectId,
       inboxId: row.inboxId,
       conversationId: row.conversationId,
       messageId,
@@ -591,14 +591,14 @@ export interface ProcessOutboundDeliveryDeps {
     options?: { terminal?: boolean }
   ) => Promise<unknown>
   /**
-   * Final sender check (design §4.5). Defaults to the team-scoped policy lookup;
+   * Final sender check (design §4.5). Defaults to the project-scoped policy lookup;
    * injectable so unit tests never touch the db. Return false to fail terminally
    * with `SENDER_DOMAIN_NOT_AUTHORIZED` without calling `sendEmail`.
    */
   authorizeSender?: (claim: OutboundClaim) => Promise<boolean>
   /**
    * Called when the provider itself rejected the sender (SMTP 553 or
-   * `sender_not_authorized`). Defaults to suspending the owning team's claim
+   * `sender_not_authorized`). Defaults to suspending the owning project's claim
    * through the poller module; injectable so unit tests never touch the db.
    * Never allowed to fail the delivery bookkeeping.
    */
@@ -608,33 +608,33 @@ export interface ProcessOutboundDeliveryDeps {
 /** `lastError` recorded when the final sender check refuses a delivery. */
 export const SENDER_DOMAIN_NOT_AUTHORIZED = 'SENDER_DOMAIN_NOT_AUTHORIZED'
 
-async function resolveDeliveryTeamId(messageId: string): Promise<string | null> {
+async function resolveDeliveryProjectId(messageId: string): Promise<string | null> {
   const [owner] = await db
-    .select({ teamId: conversation.teamId })
+    .select({ projectId: conversation.projectId })
     .from(conversationMessage)
     .innerJoin(conversation, eq(conversation.id, conversationMessage.conversationId))
     .where(eq(conversationMessage.id, messageId))
     .limit(1)
-  return owner?.teamId ?? null
+  return owner?.projectId ?? null
 }
 
 /**
- * Whether the team that owns this delivery may send as `payload.from`.
+ * Whether the project that owns this delivery may send as `payload.from`.
  *
  * Always true when the payload has no explicit From, and under the effective
- * `legacy` policy (no claim exists anywhere, so no team's domain can be
- * borrowed). Otherwise the owning team's verdict applies, which also refuses a
- * From on another team's claim. Fails closed when the owning conversation can
+ * `legacy` policy (no claim exists anywhere, so no project's domain can be
+ * borrowed). Otherwise the owning project's verdict applies, which also refuses a
+ * From on another project's claim. Fails closed when the owning conversation can
  * no longer be found: nobody can then vouch for the sender.
  */
 async function defaultAuthorizeSender(claim: OutboundClaim): Promise<boolean> {
   const from = claim.payload.from?.address
-  if (!from || (await resolveEffectiveSenderPolicy()) !== 'team') return true
+  if (!from || (await resolveEffectiveSenderPolicy()) !== 'project') return true
 
-  const teamId = await resolveDeliveryTeamId(claim.messageId)
-  if (!teamId) return false
+  const projectId = await resolveDeliveryProjectId(claim.messageId)
+  if (!projectId) return false
 
-  return isSenderAllowedForTeam(teamId, from)
+  return isSenderAllowedForProject(projectId, from)
 }
 
 /**
@@ -649,11 +649,11 @@ export function isProviderSenderRejection(response: unknown): boolean {
 async function defaultOnSenderRejected(claim: OutboundClaim, reason: string): Promise<void> {
   const address = claim.payload.from?.address
   if (!address) return
-  const teamId = await resolveDeliveryTeamId(claim.messageId)
-  if (!teamId) return
+  const projectId = await resolveDeliveryProjectId(claim.messageId)
+  if (!projectId) return
   // Dynamic import keeps the poller out of this module's load path.
   const { suspendClaimForSenderRejection } = await import('~/server/utils/sending-domain-poller')
-  await suspendClaimForSenderRejection(teamId, address, reason)
+  await suspendClaimForSenderRejection(projectId, address, reason)
 }
 
 /**

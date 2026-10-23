@@ -6,7 +6,7 @@
  *     summary: Report how inbound mail is configured for this deployment
  *     description: >
  *       Read-only. The provider and its webhook credentials are deployment
- *       environment configuration, not per-team settings, so this reports
+ *       environment configuration, not per-project settings, so this reports
  *       whether they are set - never their values. `platformAddress` is the
  *       inbox's platform forwarding address (customers forward their support
  *       address to it), or null when none exists yet.

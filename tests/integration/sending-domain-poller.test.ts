@@ -3,7 +3,8 @@ import { eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team } from '../../server/database/schema/auth'
+import { organization } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { supportSendingDomain } from '../../server/database/schema/support'
 import { claimDueSendingDomains, runSendingDomainPoll } from '../../server/utils/sending-domain-poller'
 
@@ -15,7 +16,7 @@ import { claimDueSendingDomains, runSendingDomainPoll } from '../../server/utils
  */
 describe('sending-domain poller (real Postgres)', () => {
   const orgId = `org_sdpoll_${randomUUID()}`
-  const teamId = `team_sdpoll_${randomUUID()}`
+  const projectId = `project_sdpoll_${randomUUID()}`
   const suffix = randomUUID().slice(0, 8)
   const past = () => new Date(Date.now() - 60_000)
   const ids: string[] = []
@@ -25,7 +26,7 @@ describe('sending-domain poller (real Postgres)', () => {
     ids.push(id)
     await db.insert(supportSendingDomain).values({
       id,
-      teamId,
+      projectId,
       domain: `${name}-${suffix}.example.com`,
       registrableDomain: `${suffix}.example.com`,
       status: 'pending',
@@ -61,8 +62,8 @@ describe('sending-domain poller (real Postgres)', () => {
   beforeAll(async () => {
     await db.insert(organization).values({ id: orgId, name: 'SD Poll Org', slug: `sdpoll-org-${randomUUID()}` })
     await db
-      .insert(team)
-      .values({ id: teamId, name: 'SD Poll Team', slug: `sdpoll-team-${randomUUID()}`, organizationId: orgId })
+      .insert(project)
+      .values({ id: projectId, name: 'SD Poll Project', slug: `sdpoll-project-${randomUUID()}`, organizationId: orgId })
   })
 
   beforeEach(async () => {
@@ -103,7 +104,7 @@ describe('sending-domain poller (real Postgres)', () => {
     const provider = makeProvider((domain) => calls.push(domain))
     const deps = {
       enabled: () => true,
-      policy: () => 'team' as const,
+      policy: () => 'project' as const,
       provider: provider as never,
       batchSize: 2,
       checkOwnership: async () => 'invalid' as const,
@@ -136,7 +137,7 @@ describe('sending-domain poller (real Postgres)', () => {
 
     const summary = await runSendingDomainPoll({
       enabled: () => true,
-      policy: () => 'team',
+      policy: () => 'project',
       provider: provider as never,
       metric: () => true,
     })

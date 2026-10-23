@@ -3,7 +3,8 @@ import { and, eq } from 'drizzle-orm'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team } from '../../server/database/schema/auth'
+import { organization } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -45,7 +46,7 @@ function claimed(claim: DeliveryEventClaimOutcome) {
 // the one test that sets it needs a real row, not an arbitrary string, or a
 // real Postgres run would fail on the constraint rather than the assertion.
 const orgId = `org_delivery_${randomUUID()}`
-const teamId = `team_delivery_${randomUUID()}`
+const projectId = `project_delivery_${randomUUID()}`
 const inboxId = `inbox_delivery_${randomUUID()}`
 const contactId = `contact_delivery_${randomUUID()}`
 const conversationId = `conv_delivery_${randomUUID()}`
@@ -54,12 +55,15 @@ const now = new Date()
 
 beforeAll(async () => {
   await db.insert(organization).values({ id: orgId, name: 'Delivery Org', slug: `delivery-org-${randomUUID()}` })
-  await db
-    .insert(team)
-    .values({ id: teamId, name: 'Delivery Team', slug: `delivery-team-${randomUUID()}`, organizationId: orgId })
+  await db.insert(project).values({
+    id: projectId,
+    name: 'Delivery Project',
+    slug: `delivery-project-${randomUUID()}`,
+    organizationId: orgId,
+  })
   await db.insert(supportInbox).values({
     id: inboxId,
-    teamId,
+    projectId,
     name: 'Delivery Inbox',
     slug: `delivery-inbox-${randomUUID()}`,
     createdAt: now,
@@ -67,7 +71,7 @@ beforeAll(async () => {
   })
   await db.insert(contact).values({
     id: contactId,
-    teamId,
+    projectId,
     name: 'Jane',
     email: `jane-${randomUUID()}@example.com`,
     createdAt: now,
@@ -76,7 +80,7 @@ beforeAll(async () => {
   await db.insert(conversation).values({
     id: conversationId,
     inboxId,
-    teamId,
+    projectId,
     contactId,
     displayId: 9201,
     subject: 'Delivery test',
@@ -96,7 +100,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  // organization → team → inbox/contact/conversation → messages cascade.
+  // organization → project → inbox/contact/conversation → messages cascade.
   // supportDeliveryEvent.messageId is `onDelete: 'set null'`, not cascade, so
   // rows created against fixtureMessageId are cleaned up explicitly below
   // rather than relying on this delete to remove them.

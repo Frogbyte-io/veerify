@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Member removed }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox or member not found }
  */
 import { and, eq } from 'drizzle-orm'

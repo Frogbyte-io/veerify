@@ -18,7 +18,7 @@ import {
 import {
   isSendingDomainsEnabled,
   resolveSenderPolicy,
-  resolveTeamSenderAuthorization,
+  resolveProjectSenderAuthorization,
 } from '~/server/utils/sending-domains'
 import { recordSupportMetric, type SupportMetricName } from '~/server/utils/support-observability'
 import { createLogger } from '~/server/utils/logger'
@@ -30,7 +30,7 @@ const logger = createLogger('sending-domain-poller')
  *
  * The pure decision functions (`registerSendingDomainClaim`, `checkSendingDomainClaim`,
  * `removeSendingDomainClaim`) return row patches and never touch the database; the
- * team API routes and the poll pass share them so the status machine lives in one place.
+ * project API routes and the poll pass share them so the status machine lives in one place.
  */
 
 export type SendingDomainRow = typeof supportSendingDomain.$inferSelect
@@ -49,7 +49,7 @@ export const MAX_REGISTER_ATTEMPTS = 8
  * Failed provider removals before a claim is released anyway with an operator
  * cleanup request. With the 6 hour backoff cap this is about two days, so a
  * credential misconfiguration cannot keep a row in `deleting` (and the domain
- * blocked for every other team) indefinitely.
+ * blocked for every other project) indefinitely.
  */
 export const MAX_REMOVE_ATTEMPTS = 12
 /** Hard cap on rows handled by one pass, so a runaway queue cannot loop forever. */
@@ -500,7 +500,7 @@ export async function removeSendingDomainClaim(
     const message = sanitizeSendingDomainError(error.message)
     const attemptCount = row.attemptCount + 1
     // Bounded retry budget: a row must not stay `deleting` forever (a stuck row
-    // blocks the domain for every other team). Rate limiting does not count.
+    // blocks the domain for every other project). Rate limiting does not count.
     if (error.code !== 'rate_limited' && attemptCount >= MAX_REMOVE_ATTEMPTS) {
       return { kind: 'deleted', operatorCleanupRequired: true }
     }
@@ -569,8 +569,8 @@ export async function claimDueSendingDomains(
 }
 
 export interface SaveSendingDomainHooks {
-  policy?: () => 'legacy' | 'team'
-  detach?: (row: Pick<SendingDomainRow, 'id' | 'teamId' | 'domain'>, executor?: DetachExecutor) => Promise<number>
+  policy?: () => 'legacy' | 'project'
+  detach?: (row: Pick<SendingDomainRow, 'id' | 'projectId' | 'domain'>, executor?: DetachExecutor) => Promise<number>
   metric?: typeof recordSupportMetric
 }
 
@@ -580,11 +580,11 @@ export interface SaveSendingDomainHooks {
  *
  * This is the single place where a claim becomes `verified` (poller, manual
  * Verify, recovery from `suspended`), so the §8.3 / H2 / M1 detachment of other
- * teams' addresses on the domain runs here, in the same transaction as the
+ * projects' addresses on the domain runs here, in the same transaction as the
  * status change: if it fails the claim does not verify and is retried.
  */
 export async function saveSendingDomainPatch(
-  row: Pick<SendingDomainRow, 'id' | 'teamId' | 'domain' | 'status'>,
+  row: Pick<SendingDomainRow, 'id' | 'projectId' | 'domain' | 'status'>,
   patch: SendingDomainPatch,
   hooks: SaveSendingDomainHooks = {}
 ): Promise<boolean> {
@@ -592,7 +592,7 @@ export async function saveSendingDomainPatch(
   const becomesVerified = patch.status === 'verified' && row.status !== 'verified'
   const policy = hooks.policy ?? resolveSenderPolicy
 
-  if (!becomesVerified || policy() !== 'team') {
+  if (!becomesVerified || policy() !== 'project') {
     const updated = await db
       .update(supportSendingDomain)
       .set(patch)
@@ -613,7 +613,7 @@ export async function saveSendingDomainPatch(
   })
   if (detached === null) return false
   if (detached > 0) {
-    logger.info("Detached other teams' addresses from a newly verified sending domain", {
+    logger.info("Detached other projects' addresses from a newly verified sending domain", {
       domainId: row.id,
       count: detached,
     })
@@ -653,7 +653,7 @@ export async function releaseSendingDomainLeases(ids: string[]): Promise<void> {
     .where(and(inArray(supportSendingDomain.id, ids), isNotNull(supportSendingDomain.leaseExpiresAt)))
 }
 
-/** Best-effort: delete provider routes created for the team's addresses on this exact domain. */
+/** Best-effort: delete provider routes created for the project's addresses on this exact domain. */
 export async function deleteProviderRoutes(
   row: SendingDomainRow,
   provider: SendingDomainProvider | null
@@ -665,7 +665,7 @@ export async function deleteProviderRoutes(
     .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
     .where(
       and(
-        eq(supportInbox.teamId, row.teamId),
+        eq(supportInbox.projectId, row.projectId),
         isNotNull(supportInboxAddress.providerRouteId),
         like(supportInboxAddress.address, `%@${row.domain}`)
       )
@@ -689,14 +689,14 @@ export async function deleteProviderRoutes(
 export type DetachExecutor = Pick<typeof db, 'delete' | 'update'>
 
 /**
- * Design §8.3: on a move to `verified`, other teams' custom addresses on this
+ * Design §8.3: on a move to `verified`, other projects' custom addresses on this
  * domain or its subdomains (possible only from before enforcement) are detached,
- * and so are other teams' inbox From addresses (`supportInbox.emailAddress`, set
- * to null) on it, so nobody keeps sending as a domain another team just proved
+ * and so are other projects' inbox From addresses (`supportInbox.emailAddress`, set
+ * to null) on it, so nobody keeps sending as a domain another project just proved
  * it owns. Returns the number of rows changed.
  */
 export async function detachForeignAddresses(
-  row: Pick<SendingDomainRow, 'id' | 'teamId' | 'domain'>,
+  row: Pick<SendingDomainRow, 'id' | 'projectId' | 'domain'>,
   executor: DetachExecutor = db
 ): Promise<number> {
   const onDomain = (column: typeof supportInboxAddress.address | typeof supportInbox.emailAddress) =>
@@ -709,7 +709,7 @@ export async function detachForeignAddresses(
         eq(supportInboxAddress.kind, 'custom'),
         inArray(
           supportInboxAddress.inboxId,
-          db.select({ id: supportInbox.id }).from(supportInbox).where(ne(supportInbox.teamId, row.teamId))
+          db.select({ id: supportInbox.id }).from(supportInbox).where(ne(supportInbox.projectId, row.projectId))
         ),
         onDomain(supportInboxAddress.address)
       )
@@ -721,7 +721,7 @@ export async function detachForeignAddresses(
     .set({ emailAddress: null, updatedAt: new Date() })
     .where(
       and(
-        ne(supportInbox.teamId, row.teamId),
+        ne(supportInbox.projectId, row.projectId),
         isNotNull(supportInbox.emailAddress),
         onDomain(supportInbox.emailAddress)
       )
@@ -747,13 +747,13 @@ export interface DirectRouteReconciliation {
 
 /**
  * Design §9.2 daily reconcile for a verified claim that receives mail through the
- * provider: retry routes whose creation failed, and create routes for the team's
+ * provider: retry routes whose creation failed, and create routes for the project's
  * custom addresses on the exact claimed domain that have none (for example
  * addresses added before the claim verified or before receiving was enabled).
  * A route failure never throws; the row is left `failed` for the next pass.
  */
 export async function reconcileDirectRoutes(
-  row: Pick<SendingDomainRow, 'id' | 'teamId' | 'domain'>,
+  row: Pick<SendingDomainRow, 'id' | 'projectId' | 'domain'>,
   provider: SendingDomainProvider
 ): Promise<DirectRouteReconciliation> {
   const result: DirectRouteReconciliation = { created: 0, failed: 0, misconfigured: false }
@@ -770,7 +770,7 @@ export async function reconcileDirectRoutes(
     .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
     .where(
       and(
-        eq(supportInbox.teamId, row.teamId),
+        eq(supportInbox.projectId, row.projectId),
         eq(supportInboxAddress.kind, 'custom'),
         like(sql`lower(${supportInboxAddress.address})`, `%@${row.domain}`),
         or(isNull(supportInboxAddress.providerRouteId), eq(supportInboxAddress.providerRouteStatus, 'failed'))
@@ -810,17 +810,17 @@ export async function reconcileDirectRoutes(
 /**
  * Design §14 (F-3 mitigation): when the outbox sees the provider refuse a From on
  * a verified claim (SMTP 553 or `sender_not_authorized`), the provider no longer
- * accepts that domain even though it reported it as active. Suspend the team's
+ * accepts that domain even though it reported it as active. Suspend the project's
  * verified claim covering `address`. The daily check can recover it if the
  * provider and DNS really pass again. Returns whether a claim was suspended.
  */
 export async function suspendClaimForSenderRejection(
-  teamId: string,
+  projectId: string,
   address: string,
   reason: string,
   deps: { now?: Date; metric?: typeof recordSupportMetric } = {}
 ): Promise<boolean> {
-  const verdict = await resolveTeamSenderAuthorization(teamId, address)
+  const verdict = await resolveProjectSenderAuthorization(projectId, address)
   if (verdict.status !== 'authorized' || !verdict.domain) return false
 
   const now = deps.now ?? new Date()
@@ -838,7 +838,7 @@ export async function suspendClaimForSenderRejection(
     .where(
       and(
         eq(supportSendingDomain.id, verdict.domain.id),
-        eq(supportSendingDomain.teamId, teamId),
+        eq(supportSendingDomain.projectId, projectId),
         eq(supportSendingDomain.status, 'verified')
       )
     )
@@ -885,7 +885,7 @@ export interface SendingDomainPollDeps {
   clock?: () => Date
   random?: () => number
   enabled?: () => boolean
-  policy?: () => 'legacy' | 'team'
+  policy?: () => 'legacy' | 'project'
   /** `undefined` resolves the configured provider; `null` means none is configured. */
   provider?: SendingDomainProvider | null
   claim?: (input: { now: Date; limit: number }) => Promise<SendingDomainRow[]>
@@ -1014,7 +1014,7 @@ export async function runSendingDomainPoll(deps: SendingDomainPollDeps = {}): Pr
     summary.checked++
     const saved = await save(row, outcome.patch)
     if (!saved) return
-    // Detaching other teams' addresses happens inside `save` (one place for every
+    // Detaching other projects' addresses happens inside `save` (one place for every
     // verification, including the manual Verify route).
     if (outcome.transition === 'verified') {
       summary.verified++

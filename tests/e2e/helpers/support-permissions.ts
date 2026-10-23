@@ -3,7 +3,8 @@ import type { APIRequestContext } from '@playwright/test'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './db'
 import { signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders, type LoginCredentials } from './auth'
-import { account, session, teamMember, user, verification } from '../../../server/database/schema/auth'
+import { account, session, user, verification } from '../../../server/database/schema/auth'
+import { projectMember } from '../../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -13,12 +14,12 @@ import {
 } from '../../../server/database/schema/support'
 
 const PASSWORD = 'password123'
-const SEEDED_TEAM_ID = 'seed_preview_team'
+const SEEDED_PROJECT_ID = 'seed_preview_project'
 
-export type SupportPermissionRole = 'teamAdmin' | 'inboxAdmin' | 'supervisor' | 'agent' | 'unassigned'
+export type SupportPermissionRole = 'projectAdmin' | 'inboxAdmin' | 'supervisor' | 'agent' | 'unassigned'
 
 export type SupportPermissionFixture = {
-  teamId: string
+  projectId: string
   primaryInboxId: string
   primaryInboxName: string
   forbiddenInboxId: string
@@ -27,7 +28,7 @@ export type SupportPermissionFixture = {
   users: Record<SupportPermissionRole, LoginCredentials & { userId: string }>
   userIds: string[]
   userEmails: string[]
-  teamMemberIds: string[]
+  projectMemberIds: string[]
   inboxMemberIds: string[]
   inboxIds: string[]
   contactIds: string[]
@@ -64,15 +65,15 @@ async function signUpUniqueUser(
 
 /**
  * Creates isolated role fixtures through the public auth surface, then adds
- * only the fixed team/inbox memberships needed by the permission matrix.
+ * only the fixed project/inbox memberships needed by the permission matrix.
  * IDs are returned to make cleanup ownership explicit.
  */
 export async function createSupportPermissionFixture(request: APIRequestContext): Promise<SupportPermissionFixture> {
   const suffix = randomUUID().slice(0, 8)
-  const roles: SupportPermissionRole[] = ['teamAdmin', 'inboxAdmin', 'supervisor', 'agent', 'unassigned']
+  const roles: SupportPermissionRole[] = ['projectAdmin', 'inboxAdmin', 'supervisor', 'agent', 'unassigned']
   const createdUsers = {} as Record<SupportPermissionRole, CreatedUser>
   const fixture = {
-    teamId: SEEDED_TEAM_ID,
+    projectId: SEEDED_PROJECT_ID,
     primaryInboxId: '',
     primaryInboxName: '',
     forbiddenInboxId: '',
@@ -81,7 +82,7 @@ export async function createSupportPermissionFixture(request: APIRequestContext)
     users: createdUsers,
     userIds: [] as string[],
     userEmails: [] as string[],
-    teamMemberIds: [] as string[],
+    projectMemberIds: [] as string[],
     inboxMemberIds: [] as string[],
     inboxIds: [] as string[],
     contactIds: [] as string[],
@@ -122,7 +123,7 @@ export async function createSupportPermissionFixture(request: APIRequestContext)
     await db.insert(supportInbox).values([
       {
         id: primaryInboxId,
-        teamId: SEEDED_TEAM_ID,
+        projectId: SEEDED_PROJECT_ID,
         name: primaryInboxName,
         slug: `permissions-${suffix}`,
         type: 'email',
@@ -132,7 +133,7 @@ export async function createSupportPermissionFixture(request: APIRequestContext)
       },
       {
         id: forbiddenInboxId,
-        teamId: SEEDED_TEAM_ID,
+        projectId: SEEDED_PROJECT_ID,
         name: forbiddenInboxName,
         slug: `restricted-${suffix}`,
         type: 'email',
@@ -142,22 +143,22 @@ export async function createSupportPermissionFixture(request: APIRequestContext)
       },
     ])
 
-    const teamMemberIds = roles.map(() => randomUUID())
-    fixture.teamMemberIds.push(...teamMemberIds)
-    await db.insert(teamMember).values(
+    const projectMemberIds = roles.map(() => randomUUID())
+    fixture.projectMemberIds.push(...projectMemberIds)
+    await db.insert(projectMember).values(
       roles.map((role, index) => ({
-        id: teamMemberIds[index],
-        teamId: SEEDED_TEAM_ID,
+        id: projectMemberIds[index],
+        projectId: SEEDED_PROJECT_ID,
         userId: createdUsers[role].userId,
-        role: role === 'teamAdmin' ? 'admin' : 'member',
+        role: role === 'projectAdmin' ? ('admin' as const) : ('member' as const),
         createdAt: now,
       }))
     )
 
-    // Team admins also receive an explicit admin row so this fixture exercises
-    // both the team-admin bypass and the inbox-role payload.
+    // Project admins also receive an explicit admin row so this fixture exercises
+    // both the project-admin bypass and the inbox-role payload.
     const assignedRoles: Array<[SupportPermissionRole, 'admin' | 'supervisor' | 'agent']> = [
-      ['teamAdmin', 'admin'],
+      ['projectAdmin', 'admin'],
       ['inboxAdmin', 'admin'],
       ['supervisor', 'supervisor'],
       ['agent', 'agent'],
@@ -194,18 +195,18 @@ export async function createSupportPermissionFixture(request: APIRequestContext)
 
     // Seed one conversation in the inaccessible inbox so the browser can prove
     // that a deep-link 403 recovers without leaking the rejected inbox name.
-    const adminCookie = await signInAndGetSessionCookie(request, createdUsers.teamAdmin)
-    const activeTeamResponse = await request.post('/api/teams/active', {
+    const adminCookie = await signInAndGetSessionCookie(request, createdUsers.projectAdmin)
+    const activeProjectResponse = await request.post('/api/projects/active', {
       headers: withAuthHeaders(adminCookie, '/support'),
-      data: { teamId: SEEDED_TEAM_ID },
+      data: { projectId: SEEDED_PROJECT_ID },
     })
-    if (!activeTeamResponse.ok())
-      throw new Error(`Could not activate the fixed team: ${await activeTeamResponse.text()}`)
+    if (!activeProjectResponse.ok())
+      throw new Error(`Could not activate the fixed project: ${await activeProjectResponse.text()}`)
     const headers = withAuthHeaders(adminCookie, '/support')
     const contactResponse = await request.post('/api/support/contacts', {
       headers,
       data: {
-        teamId: SEEDED_TEAM_ID,
+        projectId: SEEDED_PROJECT_ID,
         name: `Permission Customer ${suffix}`,
         email: `permission-customer-${suffix}@example.com`,
       },
@@ -242,7 +243,7 @@ export async function cleanupSupportPermissionFixture(fixture: SupportPermission
     await db.delete(supportInboxMember).where(inArray(supportInboxMember.id, fixture.inboxMemberIds))
     await db.delete(supportInbox).where(inArray(supportInbox.id, fixture.inboxIds))
   }
-  if (fixture.teamMemberIds.length) await db.delete(teamMember).where(inArray(teamMember.id, fixture.teamMemberIds))
+  if (fixture.projectMemberIds.length) await db.delete(projectMember).where(inArray(projectMember.id, fixture.projectMemberIds))
   if (fixture.userEmails.length)
     await db.delete(verification).where(inArray(verification.identifier, fixture.userEmails))
   if (fixture.userIds.length) {
@@ -270,10 +271,10 @@ export async function cleanupSupportPermissionFixture(fixture: SupportPermission
       db.select({ id: session.id }).from(session).where(inArray(session.userId, fixture.userIds))
     )
   }
-  if (fixture.teamMemberIds.length)
+  if (fixture.projectMemberIds.length)
     await assertNoOwned(
-      'team members',
-      db.select({ id: teamMember.id }).from(teamMember).where(inArray(teamMember.id, fixture.teamMemberIds))
+      'project members',
+      db.select({ id: projectMember.id }).from(projectMember).where(inArray(projectMember.id, fixture.projectMemberIds))
     )
   if (fixture.inboxMemberIds.length)
     await assertNoOwned(
