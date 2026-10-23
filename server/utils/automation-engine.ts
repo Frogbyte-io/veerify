@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { hasProjectAccess } from '~/server/utils/project-access'
+import { listProjectUserIds } from '~/server/utils/support-access'
 import { and, asc, desc, eq, gte, inArray, isNull, or } from 'drizzle-orm'
 import {
   automationRule,
@@ -13,7 +15,6 @@ import {
   type AutomationRuleTrigger,
   type AutomationConditionGroup,
 } from '~/server/database/schema/support'
-import { teamMember } from '~/server/database/schema/auth'
 import { db } from '~/server/database/drizzle'
 import { executeAutomationActions, type AutomationActionRegistry } from '~/server/utils/automation-actions'
 import { evaluateAutomationConditions, type AutomationConversationContext } from '~/server/utils/automation-conditions'
@@ -51,7 +52,7 @@ export type AutomationRunResult = {
 
 type ConversationAutomationState = {
   id: string
-  teamId: string
+  projectId: string
   inboxId: string
   contactId: string
   subject: string | null
@@ -84,7 +85,7 @@ async function loadConversationState(conversationId: string): Promise<Conversati
   const [row] = await db
     .select({
       id: conversation.id,
-      teamId: conversation.teamId,
+      projectId: conversation.projectId,
       inboxId: conversation.inboxId,
       contactId: conversation.contactId,
       subject: conversation.subject,
@@ -147,7 +148,7 @@ function buildActionRegistry(state: ConversationAutomationState, actorUserId: st
       await db.transaction(async (tx) => {
         await applyConversationStatusTransition(tx, {
           conversationId: state.id,
-          teamId: state.teamId,
+          projectId: state.projectId,
           inboxId: state.inboxId,
           toStatus: status,
           actorUserId,
@@ -168,28 +169,19 @@ function buildActionRegistry(state: ConversationAutomationState, actorUserId: st
     assign_to_agent: async (action) => {
       const userId = stringActionValue(action, 'userId', 'assigneeUserId', 'value')
       if (!userId) return actionFailure('An assignee user id is required')
-      const [member] = await db
-        .select({ id: teamMember.id })
-        .from(teamMember)
-        .where(and(eq(teamMember.teamId, state.teamId), eq(teamMember.userId, userId)))
-        .limit(1)
-      if (!member) return actionFailure('Assignee is not a member of the conversation team')
+      if (!(await hasProjectAccess(state.projectId, userId)))
+        return actionFailure('Assignee is not a member of the conversation project')
       await db
         .update(conversation)
         .set({ assigneeUserId: userId, updatedAt: new Date(), lastActivityAt: new Date() })
         .where(eq(conversation.id, state.id))
     },
     assign_round_robin: async () => {
-      const [member] = await db
-        .select({ userId: teamMember.userId })
-        .from(teamMember)
-        .where(eq(teamMember.teamId, state.teamId))
-        .orderBy(asc(teamMember.createdAt), asc(teamMember.userId))
-        .limit(1)
-      if (!member) return actionFailure('No team member is available for assignment')
+      const [assigneeId] = (await listProjectUserIds(state.projectId)).sort()
+      if (!assigneeId) return actionFailure('No project member is available for assignment')
       await db
         .update(conversation)
-        .set({ assigneeUserId: member.userId, updatedAt: new Date(), lastActivityAt: new Date() })
+        .set({ assigneeUserId: assigneeId, updatedAt: new Date(), lastActivityAt: new Date() })
         .where(eq(conversation.id, state.id))
     },
     add_tag: async (action) => {
@@ -198,9 +190,9 @@ function buildActionRegistry(state: ConversationAutomationState, actorUserId: st
       const [tag] = await db
         .select({ id: supportTag.id })
         .from(supportTag)
-        .where(and(eq(supportTag.id, tagId), eq(supportTag.teamId, state.teamId)))
+        .where(and(eq(supportTag.id, tagId), eq(supportTag.projectId, state.projectId)))
         .limit(1)
-      if (!tag) return actionFailure('Tag is not part of the conversation team')
+      if (!tag) return actionFailure('Tag is not part of the conversation project')
       await db
         .insert(conversationTag)
         .values({ id: randomUUID(), conversationId: state.id, tagId, createdAt: new Date() })
@@ -246,7 +238,7 @@ function buildActionRegistry(state: ConversationAutomationState, actorUserId: st
       const [response] = await db
         .select({ id: cannedResponse.id })
         .from(cannedResponse)
-        .where(and(eq(cannedResponse.id, cannedResponseId), eq(cannedResponse.teamId, state.teamId)))
+        .where(and(eq(cannedResponse.id, cannedResponseId), eq(cannedResponse.projectId, state.projectId)))
         .limit(1)
       return response
         ? actionFailure('Canned reply delivery is not available to the automation worker yet')
@@ -301,7 +293,7 @@ export async function runAutomationRules(input: AutomationRunInput): Promise<Aut
     .from(automationRule)
     .where(
       and(
-        eq(automationRule.teamId, state.teamId),
+        eq(automationRule.projectId, state.projectId),
         eq(automationRule.trigger, input.trigger),
         eq(automationRule.isEnabled, true),
         or(isNull(automationRule.inboxId), eq(automationRule.inboxId, state.inboxId))
@@ -398,7 +390,7 @@ export async function runAutomationRules(input: AutomationRunInput): Promise<Aut
       rule.actions,
       {
         conversationId: state.id,
-        teamId: state.teamId,
+        projectId: state.projectId,
         inboxId: state.inboxId,
         actorUserId: input.actorUserId ?? undefined,
         cascadeDepth: depth,
@@ -472,7 +464,7 @@ export async function runTimeBasedAutomationSweep(): Promise<{
   failures: number
 }> {
   const rules = await db
-    .select({ teamId: automationRule.teamId, inboxId: automationRule.inboxId })
+    .select({ projectId: automationRule.projectId, inboxId: automationRule.inboxId })
     .from(automationRule)
     .where(and(eq(automationRule.trigger, 'time_based'), eq(automationRule.isEnabled, true)))
 
@@ -483,7 +475,7 @@ export async function runTimeBasedAutomationSweep(): Promise<{
       .from(conversation)
       .where(
         and(
-          eq(conversation.teamId, rule.teamId),
+          eq(conversation.projectId, rule.projectId),
           rule.inboxId ? eq(conversation.inboxId, rule.inboxId) : undefined,
           inArray(conversation.status, ['open', 'pending', 'snoozed'])
         )

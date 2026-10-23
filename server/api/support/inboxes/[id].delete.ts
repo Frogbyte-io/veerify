@@ -15,7 +15,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Inbox deleted }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox not found }
  *       409: { description: Inbox still has conversations }
  */

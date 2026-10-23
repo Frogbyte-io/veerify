@@ -11,9 +11,9 @@ const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 test('support inbox exposes fixed views with Unassigned as the scoped landing view', async ({ page, request }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const headers = withAuthHeaders(sessionCookie, '/support')
-  const teamResponse = await request.get('/api/teams/active', { headers })
-  expect(teamResponse.ok()).toBeTruthy()
-  const teamId = (await teamResponse.json()).data.id as string
+  const projectResponse = await request.get('/api/projects/active', { headers })
+  expect(projectResponse.ok()).toBeTruthy()
+  const projectId = (await projectResponse.json()).data.id as string
   const sessionResponse = await request.get('/api/auth/session', { headers })
   expect(sessionResponse.ok()).toBeTruthy()
   const userId = (await sessionResponse.json()).data.user.id as string
@@ -75,7 +75,7 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
     await db.insert(supportInbox).values([
       {
         id: inboxId,
-        teamId,
+        projectId,
         name: `Fixed views ${suffix}`,
         slug: `fixed-views-${suffix}`,
         createdAt: now,
@@ -83,7 +83,7 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
       },
       {
         id: secondInboxId,
-        teamId,
+        projectId,
         name: `Fixed views second ${suffix}`,
         slug: `fixed-views-second-${suffix}`,
         createdAt: now,
@@ -109,7 +109,7 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
     await db.insert(contact).values(
       contactIds.map((id, index) => ({
         id,
-        teamId,
+        projectId,
         name: `Fixed Views Customer ${index}`,
         email: `fixed-views-${index}-${suffix}@example.com`,
         createdAt: now,
@@ -120,7 +120,7 @@ test('support inbox exposes fixed views with Unassigned as the scoped landing vi
       conversationRows.map((row, index) => ({
         ...row,
         inboxId: row.id.includes('second-unassigned') ? secondInboxId : inboxId,
-        teamId,
+        projectId,
         lastActivityAt: new Date(now.getTime() + index * 1000),
         lastCustomerReplyAt: new Date(now.getTime() + index * 1000),
         createdAt: new Date(now.getTime() + index * 1000),

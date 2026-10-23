@@ -43,8 +43,8 @@ const SIGNING_KEY = 'integration-signing-key'
 vi.stubEnv('SUPPORT_MAILGUN_SIGNING_KEY', SIGNING_KEY)
 
 const { db } = await import('../../server/database/drizzle')
-const { organization, team } = await import('../../server/database/schema/auth')
-const { teamModuleSettings } = await import('../../server/database/schema/teams')
+const { organization } = await import('../../server/database/schema/auth')
+const { project } = await import('../../server/database/schema/feedback')
 const { conversation, conversationMessage, supportEmailEvent, supportInbox, supportInboxAddress } =
   await import('../../server/database/schema/support')
 const handler = (await import('../../server/api/support/inbound/[provider].post')).default as unknown as (
@@ -54,8 +54,8 @@ const handler = (await import('../../server/api/support/inbound/[provider].post'
 describe('inbound deduplication per inbox (real Postgres)', () => {
   const runId = randomUUID().slice(0, 8)
   const orgId = `org_dedupe_${runId}`
-  const teamA = `team_dedupe_a_${runId}`
-  const teamB = `team_dedupe_b_${runId}`
+  const projectA = `project_dedupe_a_${runId}`
+  const projectB = `project_dedupe_b_${runId}`
   const inboxA = `inbox_dedupe_a_${runId}`
   const inboxB = `inbox_dedupe_b_${runId}`
   const addressA = `support-${runId}@a.example.test`
@@ -107,30 +107,41 @@ describe('inbound deduplication per inbox (real Postgres)', () => {
 
   beforeAll(async () => {
     await db.insert(organization).values({ id: orgId, name: 'Dedupe Org', slug: `dedupe-org-${runId}` })
-    await db.insert(team).values([
-      { id: teamA, name: 'Team A', slug: `dedupe-team-a-${runId}`, organizationId: orgId },
-      { id: teamB, name: 'Team B', slug: `dedupe-team-b-${runId}`, organizationId: orgId },
-    ])
-    await db.insert(teamModuleSettings).values([
-      { teamId: teamA, supportEnabled: true },
-      { teamId: teamB, supportEnabled: true },
+    await db.insert(project).values([
+      {
+        id: projectA,
+        name: 'Project A',
+        slug: `dedupe-project-a-${runId}`,
+        organizationId: orgId,
+        settings: { supportEnabled: true },
+      },
+      {
+        id: projectB,
+        name: 'Project B',
+        slug: `dedupe-project-b-${runId}`,
+        organizationId: orgId,
+        settings: { supportEnabled: true },
+      },
     ])
     await db.insert(supportInbox).values([
-      { id: inboxA, teamId: teamA, name: 'A', slug: `dedupe-a-${runId}`, createdAt: now, updatedAt: now },
-      { id: inboxB, teamId: teamB, name: 'B', slug: `dedupe-b-${runId}`, createdAt: now, updatedAt: now },
+      { id: inboxA, projectId: projectA, name: 'A', slug: `dedupe-a-${runId}`, createdAt: now, updatedAt: now },
+      { id: inboxB, projectId: projectB, name: 'B', slug: `dedupe-b-${runId}`, createdAt: now, updatedAt: now },
     ])
-    await db
-      .insert(supportInboxAddress)
-      .values([
-        { id: `addr_a_${runId}`, inboxId: inboxA, address: addressA, isPrimary: true },
-        { id: `addr_a_alias_${runId}`, inboxId: inboxA, address: aliasA },
-        { id: `addr_b_${runId}`, inboxId: inboxB, address: addressB, isPrimary: true },
-        ...raceAliasesA.map((address, index) => ({ id: `addr_a_race_${index}_${runId}`, inboxId: inboxA, address })),
-      ])
+    await db.insert(supportInboxAddress).values([
+      { id: `addr_a_${runId}`, inboxId: inboxA, projectId: projectA, address: addressA, isPrimary: true },
+      { id: `addr_a_alias_${runId}`, inboxId: inboxA, projectId: projectA, address: aliasA },
+      { id: `addr_b_${runId}`, inboxId: inboxB, projectId: projectB, address: addressB, isPrimary: true },
+      ...raceAliasesA.map((address, index) => ({
+        id: `addr_a_race_${index}_${runId}`,
+        inboxId: inboxA,
+        projectId: projectA,
+        address,
+      })),
+    ])
   })
 
   afterAll(async () => {
-    // organization -> teams -> inboxes -> conversations/messages/events all cascade.
+    // organization -> projects -> inboxes -> conversations/messages/events all cascade.
     await db.delete(organization).where(eq(organization.id, orgId))
     await db.delete(supportEmailEvent).where(like(supportEmailEvent.providerEventId, `%${runId}%`))
   })

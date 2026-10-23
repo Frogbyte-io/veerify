@@ -11,7 +11,7 @@
  *       worker's own automatic attempts. Triggers a worker pass immediately
  *       rather than waiting for the next unrelated reply to piggyback on.
  *       The sender is checked first: when the From stored on the delivery is
- *       still not authorized for the team, the retry is refused with 409
+ *       still not authorized for the project, the retry is refused with 409
  *       `SENDER_NOT_VERIFIED` and nothing is reset. Deliveries that are not
  *       replies (`kind: csat` surveys) have no retry; the thread API marks
  *       them `retryable: false` and this endpoint answers 404.
@@ -30,7 +30,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Retry queued }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation, message, or its outbox row not found }
  *       409: { description: "The message is not in a failed delivery state, or its sender is still not verified (SENDER_NOT_VERIFIED)" }
  */
@@ -46,7 +46,7 @@ import {
   runOutboundDeliveryWorker,
   SENDER_DOMAIN_NOT_AUTHORIZED,
 } from '~/server/utils/outbound-delivery'
-import { isSenderAllowedForTeam } from '~/server/utils/sender-enforcement'
+import { isSenderAllowedForProject } from '~/server/utils/sender-enforcement'
 import { emailDomain } from '~/server/services/support-channels/types'
 
 const logger = createConsola().withTag('veerify').withTag('support-outbound')
@@ -104,7 +104,7 @@ export default defineEventHandler(async (event) => {
   // Refuse before resetting: a retry that the worker would immediately block
   // again only burns the agent's click and rewrites the failure.
   const from = delivery.payload.from?.address
-  if (from && !(await isSenderAllowedForTeam(access.teamId, from))) {
+  if (from && !(await isSenderAllowedForProject(access.projectId, from))) {
     const senderDomain = emailDomain(from) ?? from
     throw createError({
       statusCode: 409,

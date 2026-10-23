@@ -16,7 +16,7 @@ describe('support contact timeline', () => {
     })
   })
 
-  it('defaults auto-linking off when no team setting exists', () => {
+  it('defaults auto-linking off when no project setting exists', () => {
     expect(isAutoLinkEnabled(undefined)).toBe(false)
     expect(isAutoLinkEnabled({ autoLinkFeedback: false })).toBe(false)
     expect(isAutoLinkEnabled({ autoLinkFeedback: true })).toBe(true)

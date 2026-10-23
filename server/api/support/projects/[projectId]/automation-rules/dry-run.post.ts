@@ -1,21 +1,21 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/automation-rules/dry-run:
+ * /api/support/projects/{projectId}/automation-rules/dry-run:
  *   post:
  *     tags: [Support]
  *     summary: Dry-run support automation rules for a conversation
  *     operationId: dryRunSupportAutomationRules
  *     responses:
  *       200: { description: Dry-run action plan }
- *       400: { description: Conversation is not part of the team }
- *       403: { description: Not a member of the team }
+ *       400: { description: Conversation is not part of the project }
+ *       403: { description: Not a member of the project }
  */
 import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { z } from 'zod'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireInboxRole, requireSupportTeamRole } from '~/server/utils/support-access'
+import { requireInboxRole, requireSupportProjectRole } from '~/server/utils/support-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { conversation } from '~/server/database/schema/support'
@@ -30,25 +30,25 @@ const bodySchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
-  await requireSupportTeamRole(teamId, session.user.id, 'agent')
+  const projectId = getRouterParam(event, 'projectId') as string
+  await requireSupportProjectRole(projectId, session.user.id, 'agent')
   const body = await validateBody(event, bodySchema)
 
   const [matched] = await db
     .select({ id: conversation.id, inboxId: conversation.inboxId })
     .from(conversation)
-    .where(and(eq(conversation.id, body.conversationId), eq(conversation.teamId, teamId)))
+    .where(and(eq(conversation.id, body.conversationId), eq(conversation.projectId, projectId)))
     .limit(1)
   if (!matched) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Conversation is not part of this team'),
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Conversation is not part of this project'),
     })
   }
 
-  // Team-level support membership is not enough to inspect every inbox: an
-  // agent may be assigned to only one of several inboxes in the team.
+  // Project-level support membership is not enough to inspect every inbox: an
+  // agent may be assigned to only one of several inboxes in the project.
   await requireInboxRole(matched.inboxId, session.user.id, 'agent')
 
   const result = await runAutomationRules({

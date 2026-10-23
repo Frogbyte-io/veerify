@@ -82,7 +82,7 @@ export interface InboundVerificationInput {
 
 /**
  * Which env vars a provider still needs. Names only, never values - the
- * channel card built in SUP-03-13 is visible to any team member.
+ * channel card built in SUP-03-13 is visible to any project member.
  *
  * Lives on the driver because delta D-34 flagged the alternative: a
  * `REQUIRED_ENV` map hard-coded in `channel-status.get.ts`, which meant adding
@@ -104,7 +104,7 @@ export interface ChannelConfiguration {
 export type SendingAuthorization =
   | { status: 'authorized' }
   // Deliberately carries no domain list: the provider account is shared by every
-  // team, so its domains must never reach a caller that can show them to a user.
+  // project, so its domains must never reach a caller that can show them to a user.
   | { status: 'unauthorized' }
   | { status: 'unknown'; reason: string }
 
@@ -181,7 +181,7 @@ export interface ChannelDriver {
 
   /**
    * Whether the provider authorizes a verified domain's subdomains as senders
-   * (Mailgun/Frogmail yes, Postmark no). Team-scoped enforcement needs this.
+   * (Mailgun/Frogmail yes, Postmark no). Project-scoped enforcement needs this.
    */
   readonly authorizesSubdomains: boolean
 
@@ -211,7 +211,7 @@ export interface ChannelDriver {
   /**
    * Whether the provider is authorized to send as `address`.
    *
-   * Stage 04 addition. `supportInbox.emailAddress` is free text, so a team can
+   * Stage 04 addition. `supportInbox.emailAddress` is free text, so a project can
    * set a From the provider will reject - and per the stage doc that must be
    * caught in settings rather than silently at send time.
    */

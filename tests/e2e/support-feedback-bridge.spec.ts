@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
-import { feedback, project } from '../../server/database/schema/feedback'
+import { feedback, product, project } from '../../server/database/schema/feedback'
+import { organization } from '../../server/database/schema/auth'
 import {
   contact,
   conversation,
@@ -11,15 +12,14 @@ import {
   supportInbox,
   supportInboxMember,
 } from '../../server/database/schema/support'
-import { team } from '../../server/database/schema/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
 test.setTimeout(60_000)
 
-async function activeTeam(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
-  const response = await request.get('/api/teams/active', { headers: withAuthHeaders(sessionCookie) })
+async function activeProject(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
+  const response = await request.get('/api/projects/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
   return (await response.json()).data as { id: string; slug: string }
 }
@@ -30,15 +30,29 @@ test('converts a support conversation and keeps ticket content private on the pu
 }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const headers = withAuthHeaders(sessionCookie, '/support')
-  const active = await activeTeam(request, sessionCookie)
+  const active = await activeProject(request, sessionCookie)
   const [publicProject] = await db
-    .select({ id: project.id, slug: project.slug, name: project.name })
+    .select({ id: project.id, slug: project.slug, name: project.name, organizationId: project.organizationId })
     .from(project)
-    .where(and(eq(project.teamId, active.id), eq(project.isPublic, true)))
+    .where(and(eq(project.id, active.id), eq(project.isPublic, true)))
     .limit(1)
-  const [teamRow] = await db.select({ slug: team.slug }).from(team).where(eq(team.id, active.id)).limit(1)
+  const [publicProduct] = publicProject
+    ? await db
+        .select({ id: product.id, slug: product.slug })
+        .from(product)
+        .where(and(eq(product.projectId, publicProject.id), eq(product.isPublic, true)))
+        .limit(1)
+    : []
+  const [orgRow] = publicProject
+    ? await db
+        .select({ slug: organization.slug })
+        .from(organization)
+        .where(eq(organization.id, publicProject.organizationId))
+        .limit(1)
+    : []
+  const projectRow = orgRow
 
-  if (!publicProject || !teamRow) {
+  if (!publicProject || !publicProduct || !projectRow) {
     test.skip()
     return
   }
@@ -54,7 +68,7 @@ test('converts a support conversation and keeps ticket content private on the pu
   try {
     await db.insert(supportInbox).values({
       id: inboxId,
-      teamId: active.id,
+      projectId: active.id,
       name: `Feedback bridge ${suffix}`,
       slug: `feedback-bridge-${suffix}`,
       createdAt: new Date(),
@@ -72,7 +86,7 @@ test('converts a support conversation and keeps ticket content private on the pu
     })
     await db.insert(contact).values({
       id: contactId,
-      teamId: active.id,
+      projectId: active.id,
       name: 'Private customer name',
       email: `feedback-bridge-${suffix}@example.com`,
       createdAt: new Date(),
@@ -81,7 +95,7 @@ test('converts a support conversation and keeps ticket content private on the pu
 
     const conversationResponse = await request.post('/api/support/conversations', {
       headers,
-      data: { inboxId, contactId, subject: 'Please add CSV exports', projectId: publicProject.id },
+      data: { inboxId, contactId, subject: 'Please add CSV exports' },
     })
     expect(conversationResponse.ok()).toBeTruthy()
     conversationId = (await conversationResponse.json()).data.conversation.id as string
@@ -98,9 +112,9 @@ test('converts a support conversation and keeps ticket content private on the pu
     })
 
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.request.post('/api/teams/active', {
+    await page.request.post('/api/projects/active', {
       headers: withOriginHeaders('/support'),
-      data: { teamId: active.id },
+      data: { projectId: active.id },
     })
     await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, { waitUntil: 'domcontentloaded' })
 
@@ -110,7 +124,7 @@ test('converts a support conversation and keeps ticket content private on the pu
     await expect(page.getByTestId('support-feedback-body')).toHaveValue(
       'Private ticket details that must not appear on the public board.'
     )
-    await expect(page.getByTestId('support-feedback-product')).toHaveValue(publicProject.id)
+    await expect(page.getByTestId('support-feedback-product')).toHaveValue(publicProduct.id)
 
     const createResponse = page.waitForResponse(
       (response) =>
@@ -148,7 +162,7 @@ test('converts a support conversation and keeps ticket content private on the pu
     expect(publicDetail.author).toBeNull()
     expect(publicDetail.authorEmail).toBeNull()
 
-    const publicBoardResponse = await request.get(`/api/public/t/${teamRow.slug}/${publicProject.slug}/feedback`, {
+    const publicBoardResponse = await request.get(`/api/public/o/${projectRow.slug}/${publicProject.slug}/products/${publicProduct.slug}/feedback`, {
       headers: publicHeaders,
     })
     expect(publicBoardResponse.ok()).toBeTruthy()
@@ -157,7 +171,7 @@ test('converts a support conversation and keeps ticket content private on the pu
     )
     expect(boardItem).toMatchObject({ id: feedbackId, title: 'Support request', body: null, authorName: null })
 
-    const roadmapResponse = await request.get(`/api/public/t/${teamRow.slug}/${publicProject.slug}/roadmap`, {
+    const roadmapResponse = await request.get(`/api/public/o/${projectRow.slug}/${publicProject.slug}/roadmap`, {
       headers: publicHeaders,
     })
     expect(roadmapResponse.ok()).toBeTruthy()

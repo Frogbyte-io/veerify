@@ -5,8 +5,8 @@
  *     tags: [Support]
  *     summary: Add an agent to an inbox
  *     description: >
- *       The target user must already be a member of the inbox's team - an
- *       inbox agent is a team member granted support access, not an
+ *       The target user must already be a member of the inbox's project - an
+ *       inbox agent is a project member granted support access, not an
  *       independent identity.
  *     operationId: addSupportInboxMember
  *     parameters:
@@ -16,14 +16,13 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Member added }
- *       400: { description: userId is not a member of this team }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       400: { description: userId is not a member of this project }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Inbox not found }
  *       409: { description: User is already a member of this inbox }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
@@ -32,7 +31,6 @@ import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportInboxMember } from '~/server/database/schema/support'
-import { teamMember } from '~/server/database/schema/auth'
 
 const bodySchema = z.object({
   userId: z.string().min(1),
@@ -46,17 +44,11 @@ export default defineEventHandler(async (event) => {
 
   const inbox = await requireInboxRole(inboxId, session.user.id, 'admin')
 
-  const [matchedMember] = await db
-    .select({ id: teamMember.id })
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, inbox.teamId), eq(teamMember.userId, body.userId)))
-    .limit(1)
-
-  if (!matchedMember) {
+  if (!(await hasProjectAccess(inbox.projectId, body.userId))) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'userId is not a member of this team'),
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'userId is not a member of this project'),
     })
   }
 

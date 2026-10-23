@@ -1,18 +1,18 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/sending-domains/{id}:
+ * /api/support/projects/{projectId}/sending-domains/{id}:
  *   delete:
  *     tags: [Support]
  *     summary: Release a sending domain
  *     description: >
- *       Team administrators only. Marks the claim as removing (it stops authorizing at
+ *       Project administrators only. Marks the claim as removing (it stops authorizing at
  *       once), removes the provider domain when Veerify created it, then deletes the
  *       claim. Adopted domains are never deleted at the provider. When inboxes still
  *       send from the domain the request is refused unless `force=true`.
  *     operationId: deleteSupportSendingDomain
  *     parameters:
  *       - in: path
- *         name: teamId
+ *         name: projectId
  *         required: true
  *         schema: { type: string }
  *       - in: path
@@ -27,8 +27,8 @@
  *       200: { description: Domain released }
  *       202: { description: Removal at the provider failed temporarily and will be retried }
  *       400: { description: Invalid query }
- *       403: { description: Team administrator required }
- *       404: { description: Feature disabled, or the domain does not belong to this team }
+ *       403: { description: Project administrator required }
+ *       404: { description: Feature disabled, or the domain does not belong to this project }
  *       409: { description: Inboxes still use this domain and force was not set (DOMAIN_IN_USE), or the domain is being registered or processed right now (DOMAIN_BUSY) }
  *       429: { description: Rate limit exceeded }
  */
@@ -39,13 +39,13 @@ import { db } from '~/server/database/drizzle'
 import { supportSendingDomain } from '~/server/database/schema/support'
 import { createErrorResponse, createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { validateQuery } from '~/server/utils/validation'
 import { createLogger } from '~/server/utils/logger'
 import { recordSupportMetric } from '~/server/utils/support-observability'
 import { getSendingDomainProvider } from '~/server/services/sending-domains'
-import { getTeamSendingDomain, listTeamSendingDomains } from '~/server/utils/sending-domains'
+import { getProjectSendingDomain, listProjectSendingDomains } from '~/server/utils/sending-domains'
 import {
   deleteSendingDomainRow,
   removeSendingDomainClaim,
@@ -73,19 +73,19 @@ const INLINE_REMOVE_LEASE_MS = 2 * 60 * 1000
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
+  const projectId = getRouterParam(event, 'projectId') as string
   const id = getRouterParam(event, 'id') as string
-  await requireTeamAdmin(teamId, session.user.id)
+  await requireProjectAdmin(projectId, session.user.id)
   requireSendingDomainsEnabled()
   const { force } = validateQuery(event, querySchema)
 
-  const claim = await getTeamSendingDomain(teamId, id)
+  const claim = await getProjectSendingDomain(projectId, id)
 
   await requireRateLimit(event, {
     maxRequests: 20,
     windowSeconds: 60 * 60,
     identifier: 'sending-domain-delete',
-    subject: `team:${teamId}`,
+    subject: `project:${projectId}`,
   })
 
   const provider = getSendingDomainProvider()
@@ -96,7 +96,7 @@ export default defineEventHandler(async (event) => {
   if (claim.leaseExpiresAt && claim.leaseExpiresAt > new Date()) throw domainBusyError()
 
   if (!force && claim.status !== 'deleting') {
-    const siblings = (await listTeamSendingDomains(teamId)).filter((other) => other.id !== claim.id)
+    const siblings = (await listProjectSendingDomains(projectId)).filter((other) => other.id !== claim.id)
     const inboxes = await listInboxesUsingDomain(
       claim,
       provider,
@@ -131,7 +131,7 @@ export default defineEventHandler(async (event) => {
     .where(
       and(
         eq(supportSendingDomain.id, claim.id),
-        eq(supportSendingDomain.teamId, teamId),
+        eq(supportSendingDomain.projectId, projectId),
         // Atomic with the lease check above: a register that took the lease since
         // the lookup wins, and the delete is refused.
         or(isNull(supportSendingDomain.leaseExpiresAt), lt(supportSendingDomain.leaseExpiresAt, now))
@@ -139,7 +139,7 @@ export default defineEventHandler(async (event) => {
     )
     .returning()
   if (!marked) {
-    const stillThere = await getTeamSendingDomain(teamId, claim.id).then(
+    const stillThere = await getProjectSendingDomain(projectId, claim.id).then(
       () => true,
       () => false
     )

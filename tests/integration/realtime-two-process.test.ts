@@ -9,7 +9,8 @@ import Redis from 'ioredis'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, session, team, teamMember, user } from '../../server/database/schema/auth'
+import { organization, session, user } from '../../server/database/schema/auth'
+import { project, projectMember } from '../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -260,7 +261,7 @@ describe.skipIf(skipReason !== null)('realtime across two application processes'
   const suffix = randomUUID()
   const ids = {
     organization: `realtime-org-${suffix}`,
-    team: `realtime-team-${suffix}`,
+    project: `realtime-project-${suffix}`,
     inbox: `realtime-inbox-${suffix}`,
     inboxMember: `realtime-inbox-member-${suffix}`,
     contact: `realtime-contact-${suffix}`,
@@ -305,20 +306,22 @@ describe.skipIf(skipReason !== null)('realtime across two application processes'
     auth.token = issuedSession.token
 
     await db.insert(organization).values({ id: ids.organization, name: 'Realtime test', slug: `realtime-${suffix}` })
-    await db.insert(team).values({
-      id: ids.team,
-      name: 'Realtime team',
-      slug: `realtime-team-${suffix}`,
+    await db.insert(project).values({
+      id: ids.project,
+      name: 'Realtime project',
+      slug: `realtime-project-${suffix}`,
       organizationId: ids.organization,
     })
-    await db.insert(teamMember).values({ id: randomUUID(), teamId: ids.team, userId: auth.userId, role: 'member' })
+    await db
+      .insert(projectMember)
+      .values({ id: randomUUID(), projectId: ids.project, userId: auth.userId, role: 'member' })
     await db
       .update(session)
-      .set({ activeOrganizationId: ids.organization, activeTeamId: ids.team, updatedAt: now })
+      .set({ activeOrganizationId: ids.organization, activeProjectId: ids.project, updatedAt: now })
       .where(eq(session.userId, auth.userId))
     await db.insert(supportInbox).values({
       id: ids.inbox,
-      teamId: ids.team,
+      projectId: ids.project,
       name: 'Realtime inbox',
       slug: `realtime-inbox-${suffix}`,
     })
@@ -330,14 +333,14 @@ describe.skipIf(skipReason !== null)('realtime across two application processes'
     })
     await db.insert(contact).values({
       id: ids.contact,
-      teamId: ids.team,
+      projectId: ids.project,
       name: 'Realtime customer',
       email: `customer-${suffix}@example.com`,
     })
     await db.insert(conversation).values({
       id: ids.conversation,
       inboxId: ids.inbox,
-      teamId: ids.team,
+      projectId: ids.project,
       contactId: ids.contact,
       displayId: 1,
       subject: 'Realtime test',

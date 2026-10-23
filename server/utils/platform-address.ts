@@ -6,7 +6,7 @@ import { supportInbox, supportInboxAddress } from '~/server/database/schema/supp
 /**
  * Platform forwarding addresses (design §9.1).
  *
- * A customer forwards `support@acme.com` to `<team>-<inbox>-<random>@<platform
+ * A customer forwards `support@acme.com` to `<project>-<inbox>-<random>@<platform
  * domain>`. The envelope recipient then identifies the inbox, so no DNS change
  * is needed on the customer's domain. The random suffix stops people guessing
  * addresses to spam an inbox. Only active when `SUPPORT_PLATFORM_MAIL_DOMAIN`
@@ -46,16 +46,16 @@ function randomSuffix(random: (max: number) => number): string {
 }
 
 /**
- * `<teamSlug>-<inboxSlug>-<6 random base32>@<domain>`. The readable prefix is
+ * `<projectSlug>-<inboxSlug>-<6 random base32>@<domain>`. The readable prefix is
  * trimmed so the whole local part stays within 64 characters; the random
  * suffix is never trimmed.
  */
 export function buildPlatformAddress(
-  input: { teamSlug: string; inboxSlug: string; domain: string },
+  input: { projectSlug: string; inboxSlug: string; domain: string },
   random: (max: number) => number = randomInt
 ): string {
   const suffix = randomSuffix(random)
-  const prefix = [slugPart(input.teamSlug), slugPart(input.inboxSlug)].filter(Boolean).join('-') || 'inbox'
+  const prefix = [slugPart(input.projectSlug), slugPart(input.inboxSlug)].filter(Boolean).join('-') || 'inbox'
   const maxPrefix = MAX_LOCAL_PART_LENGTH - suffix.length - 1
   const trimmed = prefix.slice(0, maxPrefix).replace(/-+$/, '') || 'inbox'
   return `${trimmed}-${suffix}@${input.domain}`
@@ -87,8 +87,8 @@ export async function findPlatformAddress(
  */
 export async function ensurePlatformAddress(
   executor: Executor,
-  inbox: { id: string; slug: string },
-  teamSlug: string,
+  inbox: { id: string; slug: string; projectId: string },
+  projectSlug: string,
   options: { regenerate?: boolean; random?: (max: number) => number } = {}
 ): Promise<PlatformAddressRow | null> {
   const domain = getPlatformMailDomain()
@@ -108,12 +108,13 @@ export async function ensurePlatformAddress(
   }
 
   for (let attempt = 0; attempt < MAX_INSERT_ATTEMPTS; attempt += 1) {
-    const address = buildPlatformAddress({ teamSlug, inboxSlug: inbox.slug, domain }, options.random)
+    const address = buildPlatformAddress({ projectSlug, inboxSlug: inbox.slug, domain }, options.random)
     const [created] = await executor
       .insert(supportInboxAddress)
       .values({
         id: randomUUID(),
         inboxId: inbox.id,
+        projectId: inbox.projectId,
         address,
         kind: 'platform',
         isPrimary: false,

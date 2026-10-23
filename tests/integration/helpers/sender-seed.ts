@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 
 import { db } from '../../../server/database/drizzle'
-import { organization, team, user } from '../../../server/database/schema/auth'
+import { organization, user } from '../../../server/database/schema/auth'
+import { project } from '../../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -17,10 +18,10 @@ import {
  * reachable from one organization, so a single delete in `afterAll` cascades.
  */
 
-export interface SeededTeam {
+export interface SeededProject {
   orgId: string
-  teamId: string
-  teamSlug: string
+  projectId: string
+  projectSlug: string
   userId: string
   inboxId: string
   inboxSlug: string
@@ -41,17 +42,17 @@ export async function seedOrganization(label: string): Promise<string> {
   return orgId
 }
 
-export async function seedTeamWithInbox(orgId: string, label: string, emailAddress: string): Promise<SeededTeam> {
+export async function seedProjectWithInbox(orgId: string, label: string, emailAddress: string): Promise<SeededProject> {
   const now = new Date()
-  const teamId = `${label}_team_${randomUUID()}`
-  const teamSlug = `${label}-${randomUUID().slice(0, 8)}`
+  const projectId = `${label}_project_${randomUUID()}`
+  const projectSlug = `${label}-${randomUUID().slice(0, 8)}`
   const userId = `${label}_user_${randomUUID()}`
   const inboxId = `${label}_inbox_${randomUUID()}`
   const inboxSlug = `${label}-inbox`
   const contactId = `${label}_contact_${randomUUID()}`
   const conversationId = `${label}_conv_${randomUUID()}`
 
-  await db.insert(team).values({ id: teamId, name: `${label} team`, slug: teamSlug, organizationId: orgId })
+  await db.insert(project).values({ id: projectId, name: `${label} project`, slug: projectSlug, organizationId: orgId })
   await db.insert(user).values({
     id: userId,
     name: `${label} agent`,
@@ -61,7 +62,7 @@ export async function seedTeamWithInbox(orgId: string, label: string, emailAddre
   })
   await db.insert(supportInbox).values({
     id: inboxId,
-    teamId,
+    projectId,
     name: `${label} inbox`,
     slug: inboxSlug,
     emailAddress,
@@ -70,7 +71,7 @@ export async function seedTeamWithInbox(orgId: string, label: string, emailAddre
   })
   await db.insert(contact).values({
     id: contactId,
-    teamId,
+    projectId,
     name: 'Customer',
     email: `customer-${randomUUID()}@example.org`,
     createdAt: now,
@@ -79,7 +80,7 @@ export async function seedTeamWithInbox(orgId: string, label: string, emailAddre
   await db.insert(conversation).values({
     id: conversationId,
     inboxId,
-    teamId,
+    projectId,
     contactId,
     displayId: 1,
     status: 'open',
@@ -87,12 +88,12 @@ export async function seedTeamWithInbox(orgId: string, label: string, emailAddre
     updatedAt: now,
   })
 
-  return { orgId, teamId, teamSlug, userId, inboxId, inboxSlug, contactId, conversationId, emailAddress }
+  return { orgId, projectId, projectSlug, userId, inboxId, inboxSlug, contactId, conversationId, emailAddress }
 }
 
 /** Insert a claim. `verified` by default, matching the provider named in the options. */
 export async function seedSendingDomain(input: {
-  teamId: string
+  projectId: string
   domain: string
   status?: string
   provider?: string
@@ -102,7 +103,7 @@ export async function seedSendingDomain(input: {
   const id = `sd_${randomUUID()}`
   await db.insert(supportSendingDomain).values({
     id,
-    teamId: input.teamId,
+    projectId: input.projectId,
     domain: input.domain,
     registrableDomain: input.domain.split('.').slice(-2).join('.'),
     status: input.status ?? 'verified',
@@ -119,7 +120,7 @@ export async function seedSendingDomain(input: {
 }
 
 /** An outgoing message with a claimed outbox row (attempt 1, live lease), as the worker sees it. */
-export async function seedQueuedDelivery(seed: SeededTeam, from: string) {
+export async function seedQueuedDelivery(seed: SeededProject, from: string) {
   const messageId = `msg_${randomUUID()}`
   const deliveryId = `del_${randomUUID()}`
   const now = new Date()

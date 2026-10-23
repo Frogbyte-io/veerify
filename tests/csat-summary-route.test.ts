@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
-vi.stubGlobal('getRouterParam', () => 'team-1')
+vi.stubGlobal('getRouterParam', () => 'project-1')
 vi.stubGlobal('getQuery', () => state.query)
 vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string; data?: unknown }) =>
   Object.assign(new Error(input.statusMessage), input)
@@ -22,7 +22,7 @@ vi.mock('~/server/utils/auth-middleware', () => ({
 
 vi.mock('~/server/utils/support-access', () => ({
   requireInboxAccess: vi.fn(),
-  requireSupportTeamRole: vi.fn(async () => ({ effectiveRole: 'admin', isTeamAdmin: true })),
+  requireSupportProjectRole: vi.fn(async () => ({ effectiveRole: 'admin', isProjectAdmin: true })),
 }))
 
 vi.mock('~/server/utils/validation', () => ({
@@ -53,7 +53,7 @@ vi.mock('~/server/database/drizzle', () => ({
   },
 }))
 
-const handler = (await import('~/server/api/support/teams/[teamId]/csat-summary.get')).default
+const handler = (await import('~/server/api/support/projects/[projectId]/csat-summary.get')).default
 
 describe('CSAT summary route query scope', () => {
   beforeEach(() => {
@@ -63,12 +63,12 @@ describe('CSAT summary route query scope', () => {
     state.reportingTimezone = undefined
   })
 
-  it('keeps team-admin summary rows on inboxes owned by the requested team', async () => {
+  it('keeps project-admin summary rows on inboxes owned by the requested project', async () => {
     await handler({} as never)
 
     expect(state.whereConditions).toHaveLength(2)
     const sql = new PgDialect().sqlToQuery(state.whereConditions[1] as never).sql
-    expect(sql).toContain('"support_inbox"."team_id"')
+    expect(sql).toContain('"support_inbox"."project_id"')
   })
 
   it('projects the immutable response scale for score normalization', async () => {

@@ -324,7 +324,7 @@ describe('inbound routes', () => {
   it('escapes the address and posts the route as a form', async () => {
     const fetchImpl = vi.fn(async () => json({ message: 'Route has been created', route: { id: 'route-1' } }))
     const result = await make(fetchImpl).createInboundRoute({
-      address: 'Help-Desk_1.team@acme.com',
+      address: 'Help-Desk_1.project@acme.com',
       forwardUrl: 'https://veerify.test/api/support/inbound/mailgun',
       description: 'veerify:inbox1:addr1',
     })
@@ -334,7 +334,7 @@ describe('inbound routes', () => {
     expect(url).toBe('https://frogmail.test/v3/routes')
     expect(init.method).toBe('POST')
     const form = new URLSearchParams(init.body as string)
-    expect(form.get('expression')).toBe('match_recipient("^help\\-desk\\_1\\.team@acme\\.com$")')
+    expect(form.get('expression')).toBe('match_recipient("^help\\-desk\\_1\\.project@acme\\.com$")')
     expect(form.getAll('action')).toEqual(['forward("https://veerify.test/api/support/inbound/mailgun")', 'stop()'])
     expect(form.get('priority')).toBe('10')
     expect(form.get('description')).toBe('veerify:inbox1:addr1')

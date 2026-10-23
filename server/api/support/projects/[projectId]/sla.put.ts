@@ -1,19 +1,19 @@
 /**
  * @openapi
- * /api/support/teams/{teamId}/sla:
+ * /api/support/projects/{projectId}/sla:
  *   put:
  *     tags: [Support]
  *     summary: Upsert business-hours and SLA policy settings
  *     operationId: updateSupportSlaSettings
  *     parameters:
  *       - in: path
- *         name: teamId
+ *         name: projectId
  *         required: true
  *         schema: { type: string }
  *     responses:
  *       200: { description: SLA settings updated }
  *       400: { description: Invalid SLA settings }
- *       403: { description: Team administrator required }
+ *       403: { description: Project administrator required }
  */
 import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
@@ -21,7 +21,7 @@ import { z } from 'zod'
 import { createError } from 'h3'
 import { createSuccessResponse, createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { requireProjectAdmin } from '~/server/utils/project-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { businessHours, slaPolicy, slaTarget } from '~/server/database/schema/support'
@@ -83,8 +83,8 @@ const bodySchema = z.object({
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
-  const teamId = getRouterParam(event, 'teamId') as string
-  await requireTeamAdmin(teamId, session.user.id)
+  const projectId = getRouterParam(event, 'projectId') as string
+  await requireProjectAdmin(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
   const now = new Date()
 
@@ -96,19 +96,22 @@ export default defineEventHandler(async (event) => {
         const [owned] = await tx
           .select({ id: businessHours.id })
           .from(businessHours)
-          .where(and(eq(businessHours.id, body.businessHours.id), eq(businessHours.teamId, teamId)))
+          .where(and(eq(businessHours.id, body.businessHours.id), eq(businessHours.projectId, projectId)))
           .limit(1)
         if (!owned) {
           throw createError({
             statusCode: 400,
             statusMessage: 'Bad Request',
-            data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Business-hours schedule is not part of this team'),
+            data: createErrorResponse(
+              ErrorCode.VALIDATION_ERROR,
+              'Business-hours schedule is not part of this project'
+            ),
           })
         }
       }
       const values = {
         id: businessHoursId,
-        teamId,
+        projectId,
         name: body.businessHours.name,
         timezone: body.businessHours.timezone,
         weeklySchedule: body.businessHours.weeklySchedule,
@@ -118,7 +121,10 @@ export default defineEventHandler(async (event) => {
         updatedAt: now,
       }
       if (body.businessHours.isDefault) {
-        await tx.update(businessHours).set({ isDefault: false, updatedAt: now }).where(eq(businessHours.teamId, teamId))
+        await tx
+          .update(businessHours)
+          .set({ isDefault: false, updatedAt: now })
+          .where(eq(businessHours.projectId, projectId))
       }
       await tx
         .insert(businessHours)
@@ -143,13 +149,13 @@ export default defineEventHandler(async (event) => {
       const ownedHours = await tx
         .select({ id: businessHours.id })
         .from(businessHours)
-        .where(and(eq(businessHours.teamId, teamId), inArray(businessHours.id, requestedHoursIds)))
+        .where(and(eq(businessHours.projectId, projectId), inArray(businessHours.id, requestedHoursIds)))
       const ownedIds = new Set(ownedHours.map((row) => row.id))
       if (requestedHoursIds.some((id) => id !== businessHoursId && !ownedIds.has(id))) {
         throw createError({
           statusCode: 400,
           statusMessage: 'Bad Request',
-          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Business-hours schedule is not part of this team'),
+          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Business-hours schedule is not part of this project'),
         })
       }
     }
@@ -159,12 +165,12 @@ export default defineEventHandler(async (event) => {
       const ownedPolicies = await tx
         .select({ id: slaPolicy.id })
         .from(slaPolicy)
-        .where(and(eq(slaPolicy.teamId, teamId), inArray(slaPolicy.id, requestedPolicyIds)))
+        .where(and(eq(slaPolicy.projectId, projectId), inArray(slaPolicy.id, requestedPolicyIds)))
       if (ownedPolicies.length !== new Set(requestedPolicyIds).size) {
         throw createError({
           statusCode: 400,
           statusMessage: 'Bad Request',
-          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'SLA policy is not part of this team'),
+          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'SLA policy is not part of this project'),
         })
       }
     }
@@ -173,7 +179,7 @@ export default defineEventHandler(async (event) => {
       const policyId = policy.id ?? randomUUID()
       const values = {
         id: policyId,
-        teamId,
+        projectId,
         name: policy.name,
         businessHoursId: policy.businessHoursId ?? (businessHoursId && policy.isDefault ? businessHoursId : null),
         conditions: policy.conditions,
@@ -184,7 +190,7 @@ export default defineEventHandler(async (event) => {
         updatedAt: now,
       }
       if (policy.isDefault) {
-        await tx.update(slaPolicy).set({ isDefault: false, updatedAt: now }).where(eq(slaPolicy.teamId, teamId))
+        await tx.update(slaPolicy).set({ isDefault: false, updatedAt: now }).where(eq(slaPolicy.projectId, projectId))
       }
       await tx
         .insert(slaPolicy)
@@ -216,5 +222,5 @@ export default defineEventHandler(async (event) => {
     }
   })
 
-  return createSuccessResponse(await loadSlaSettings(teamId))
+  return createSuccessResponse(await loadSlaSettings(projectId))
 })

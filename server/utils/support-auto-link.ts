@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { and, eq, isNull } from 'drizzle-orm'
-import { contact, contactLink, supportTeamSettings } from '~/server/database/schema/support'
-import { feedback, project } from '~/server/database/schema/feedback'
-import { lockContactTeam } from '~/server/utils/contact-lock'
+import { contact, contactLink, supportProjectSettings } from '~/server/database/schema/support'
+import { feedback } from '~/server/database/schema/feedback'
+import { lockContactProject } from '~/server/utils/contact-lock'
 
 type Transaction = Parameters<Parameters<typeof import('~/server/database/drizzle').db.transaction>[0]>[0]
 
@@ -14,7 +14,7 @@ export type AutomaticFeedbackLinkResult = {
 
 export async function createAutomaticFeedbackLink(
   tx: Transaction,
-  params: { teamId: string; feedbackId: string; authorUserId: string | null; createdAt: Date }
+  params: { projectId: string; feedbackId: string; authorUserId: string | null; createdAt: Date }
 ): Promise<AutomaticFeedbackLinkResult> {
   // Anonymous writes do not participate in automatic linking. Keep this
   // short-circuit before the policy read for direct callers as well as routes.
@@ -22,29 +22,28 @@ export async function createAutomaticFeedbackLink(
     return { linked: false, contactId: null, reason: 'anonymous' }
   }
 
-  // The team lock is the linearization point for the feedback policy and the
+  // The project lock is the linearization point for the feedback policy and the
   // contact candidate lifecycle. Settings updates take this same lock before
   // committing, so a disable that commits first is observed as disabled here.
-  await lockContactTeam(tx, params.teamId)
+  await lockContactProject(tx, params.projectId)
 
   const [settings] = await tx
-    .select({ autoLinkFeedback: supportTeamSettings.autoLinkFeedback })
-    .from(supportTeamSettings)
-    .where(eq(supportTeamSettings.teamId, params.teamId))
+    .select({ autoLinkFeedback: supportProjectSettings.autoLinkFeedback })
+    .from(supportProjectSettings)
+    .where(eq(supportProjectSettings.projectId, params.projectId))
     .limit(1)
 
   if (!settings?.autoLinkFeedback) {
     return { linked: false, contactId: null, reason: 'disabled' }
   }
 
-  const [feedbackInTeam] = await tx
+  const [feedbackInProject] = await tx
     .select({ id: feedback.id })
     .from(feedback)
-    .innerJoin(project, eq(project.id, feedback.projectId))
-    .where(and(eq(feedback.id, params.feedbackId), eq(project.teamId, params.teamId)))
+    .where(and(eq(feedback.id, params.feedbackId), eq(feedback.projectId, params.projectId)))
     .limit(1)
 
-  if (!feedbackInTeam) {
+  if (!feedbackInProject) {
     return { linked: false, contactId: null, reason: 'none' }
   }
 
@@ -53,7 +52,7 @@ export async function createAutomaticFeedbackLink(
     .from(contact)
     .where(
       and(
-        eq(contact.teamId, params.teamId),
+        eq(contact.projectId, params.projectId),
         eq(contact.userId, params.authorUserId),
         isNull(contact.blockedAt),
         isNull(contact.mergedIntoContactId)

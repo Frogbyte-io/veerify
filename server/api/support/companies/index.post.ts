@@ -7,22 +7,22 @@
  *     operationId: createSupportCompany
  *     responses:
  *       200: { description: Company created }
- *       403: { description: Not a member of the team }
- *       409: { description: A company with this name or domain already exists in the team }
+ *       403: { description: Not a member of the project }
+ *       409: { description: A company with this name or domain already exists in the project }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamMembership } from '~/server/utils/support-access'
+import { requireProjectAccess } from '~/server/utils/project-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { supportCompany } from '~/server/database/schema/support'
 
 const bodySchema = z.object({
-  teamId: z.string().min(1),
+  projectId: z.string().min(1),
   name: z.string().trim().min(1).max(200),
   domain: z.string().trim().toLowerCase().max(253).optional(),
   attributes: z.record(z.string(), z.unknown()).optional(),
@@ -32,7 +32,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const body = await validateBody(event, bodySchema)
 
-  await requireTeamMembership(body.teamId, session.user.id)
+  await requireProjectAccess(body.projectId, session.user.id)
 
   const now = new Date()
 
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
       .insert(supportCompany)
       .values({
         id: randomUUID(),
-        teamId: body.teamId,
+        projectId: body.projectId,
         name: body.name,
         domain: body.domain ?? null,
         attributes: body.attributes ?? null,
@@ -52,14 +52,17 @@ export default defineEventHandler(async (event) => {
 
     return createSuccessResponse({ company: created })
   } catch (error) {
-    // `supportCompany` is uniquely indexed on (teamId, name) and (teamId,
+    // `supportCompany` is uniquely indexed on (projectId, name) and (projectId,
     // domain), so either collision lands here rather than a pre-check --
     // two concurrent creates can both pass a pre-check and one still fails.
     if (isUniqueViolation(error)) {
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
-        data: createErrorResponse(ErrorCode.CONFLICT, 'A company with this name or domain already exists in this team'),
+        data: createErrorResponse(
+          ErrorCode.CONFLICT,
+          'A company with this name or domain already exists in this project'
+        ),
       })
     }
     throw error

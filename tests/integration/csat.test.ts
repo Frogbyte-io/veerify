@@ -3,7 +3,8 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, teamMember, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project, projectMember } from '../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -18,7 +19,7 @@ import { runCsatDispatchSweep, submitCsatResponse } from '../../server/utils/csa
 const now = new Date('2026-01-15T12:00:00.000Z')
 const ids = {
   org: `csat_org_${randomUUID()}`,
-  team: `csat_team_${randomUUID()}`,
+  project: `csat_project_${randomUUID()}`,
   user: `csat_user_${randomUUID()}`,
   inbox: `csat_inbox_${randomUUID()}`,
   contact: `csat_contact_${randomUUID()}`,
@@ -39,10 +40,10 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(team).values({
-    id: ids.team,
-    name: 'CSAT test team',
-    slug: `csat-team-${randomUUID()}`,
+  await db.insert(project).values({
+    id: ids.project,
+    name: 'CSAT test project',
+    slug: `csat-project-${randomUUID()}`,
     organizationId: ids.org,
     createdAt: now,
     updatedAt: now,
@@ -54,16 +55,16 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(teamMember).values({
+  await db.insert(projectMember).values({
     id: `csat_member_${randomUUID()}`,
-    teamId: ids.team,
+    projectId: ids.project,
     userId: ids.user,
     role: 'member',
     createdAt: now,
   })
   await db.insert(supportInbox).values({
     id: ids.inbox,
-    teamId: ids.team,
+    projectId: ids.project,
     name: 'CSAT inbox',
     slug: `csat-inbox-${randomUUID()}`,
     emailAddress: `support-${randomUUID()}@example.com`,
@@ -73,7 +74,7 @@ beforeAll(async () => {
   await db.insert(contact).values([
     {
       id: ids.contact,
-      teamId: ids.team,
+      projectId: ids.project,
       name: 'Survey Customer',
       email: `survey-customer-${randomUUID()}@example.com`,
       createdAt: now,
@@ -81,7 +82,7 @@ beforeAll(async () => {
     },
     {
       id: ids.noReplyContact,
-      teamId: ids.team,
+      projectId: ids.project,
       name: 'No Reply Customer',
       email: `no-reply-${randomUUID()}@example.com`,
       createdAt: now,
@@ -89,7 +90,7 @@ beforeAll(async () => {
     },
     {
       id: ids.optedOutContact,
-      teamId: ids.team,
+      projectId: ids.project,
       name: 'Opted Out Customer',
       email: `opted-out-${randomUUID()}@example.com`,
       attributes: { csatOptOut: true },
@@ -101,7 +102,7 @@ beforeAll(async () => {
     {
       id: ids.conversation,
       inboxId: ids.inbox,
-      teamId: ids.team,
+      projectId: ids.project,
       contactId: ids.contact,
       displayId: 1,
       status: 'resolved',
@@ -114,7 +115,7 @@ beforeAll(async () => {
     {
       id: ids.noReplyConversation,
       inboxId: ids.inbox,
-      teamId: ids.team,
+      projectId: ids.project,
       contactId: ids.noReplyContact,
       displayId: 2,
       status: 'resolved',
@@ -125,7 +126,7 @@ beforeAll(async () => {
     {
       id: ids.optedOutConversation,
       inboxId: ids.inbox,
-      teamId: ids.team,
+      projectId: ids.project,
       contactId: ids.optedOutContact,
       displayId: 3,
       status: 'resolved',
@@ -147,7 +148,7 @@ beforeAll(async () => {
   })
   await db.insert(csatSurvey).values({
     id: ids.survey,
-    teamId: ids.team,
+    projectId: ids.project,
     inboxId: ids.inbox,
     name: 'Default CSAT',
     scale: 'csat_5',

@@ -1,9 +1,9 @@
 import { and, eq } from 'drizzle-orm'
+import { hasProjectAccess } from '~/server/utils/project-access'
 import { createError } from 'h3'
 import type { db } from '~/server/database/drizzle'
-import { teamMember } from '~/server/database/schema/auth'
 import { contact, contactLink } from '~/server/database/schema/support'
-import { lockContactTeam } from '~/server/utils/contact-lock'
+import { lockContactProject } from '~/server/utils/contact-lock'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -25,9 +25,9 @@ function linkNotFound(): never {
 }
 
 /**
- * Authorize and remove a contact link under the owning team's lifecycle lock.
+ * Authorize and remove a contact link under the owning project's lifecycle lock.
  *
- * The first contact read only discovers the team row to lock. The contact is
+ * The first contact read only discovers the project row to lock. The contact is
  * then re-read after that lock, so a merge/delete that committed while this
  * request was starting cannot leave us acting on stale contact ownership.
  */
@@ -38,34 +38,28 @@ export async function deleteContactLinkInTransaction(
   userId: string
 ) {
   const [candidate] = await tx
-    .select({ teamId: contact.teamId })
+    .select({ projectId: contact.projectId })
     .from(contact)
     .where(eq(contact.id, contactId))
     .limit(1)
 
   if (!candidate) contactNotFound()
 
-  await lockContactTeam(tx, candidate.teamId)
+  await lockContactProject(tx, candidate.projectId)
 
   const [lockedContact] = await tx
-    .select({ id: contact.id, teamId: contact.teamId })
+    .select({ id: contact.id, projectId: contact.projectId })
     .from(contact)
     .where(eq(contact.id, contactId))
     .for('update')
 
   if (!lockedContact) contactNotFound()
 
-  const [membership] = await tx
-    .select({ id: teamMember.id })
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, lockedContact.teamId), eq(teamMember.userId, userId)))
-    .limit(1)
-
-  if (!membership) {
+  if (!(await hasProjectAccess(lockedContact.projectId, userId))) {
     throw createError({
       statusCode: 403,
       statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You do not have access to this team'),
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You do not have access to this project'),
     })
   }
 

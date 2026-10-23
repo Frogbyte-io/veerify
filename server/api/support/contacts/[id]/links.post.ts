@@ -7,8 +7,8 @@
  *     operationId: createSupportContactLink
  *     responses:
  *       200: { description: Link created }
- *       400: { description: Target is not in the contact's team }
- *       403: { description: Not a member of the contact's team }
+ *       400: { description: Target is not in the contact's project }
+ *       403: { description: Not a member of the contact's project }
  *       404: { description: Contact not found }
  *       409: { description: Link already exists }
  */
@@ -23,8 +23,8 @@ import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactLink } from '~/server/database/schema/support'
-import { feedback, project } from '~/server/database/schema/feedback'
-import { lockContactTeam } from '~/server/utils/contact-lock'
+import { feedback } from '~/server/database/schema/feedback'
+import { lockContactProject } from '~/server/utils/contact-lock'
 
 const bodySchema = z.object({
   entityType: z.literal('feedback'),
@@ -39,15 +39,15 @@ export default defineEventHandler(async (event) => {
 
   try {
     return await db.transaction(async (tx) => {
-      await lockContactTeam(tx, accessibleContact.teamId)
+      await lockContactProject(tx, accessibleContact.projectId)
 
       const [lockedContact] = await tx
-        .select({ id: contact.id, teamId: contact.teamId, mergedIntoContactId: contact.mergedIntoContactId })
+        .select({ id: contact.id, projectId: contact.projectId, mergedIntoContactId: contact.mergedIntoContactId })
         .from(contact)
         .where(eq(contact.id, contactId))
         .for('update')
 
-      if (!lockedContact || lockedContact.teamId !== accessibleContact.teamId) {
+      if (!lockedContact || lockedContact.projectId !== accessibleContact.projectId) {
         throw createError({
           statusCode: 404,
           statusMessage: 'Not Found',
@@ -65,15 +65,14 @@ export default defineEventHandler(async (event) => {
       const [target] = await tx
         .select({ id: feedback.id })
         .from(feedback)
-        .innerJoin(project, eq(project.id, feedback.projectId))
-        .where(and(eq(feedback.id, body.entityId), eq(project.teamId, lockedContact.teamId)))
+        .where(and(eq(feedback.id, body.entityId), eq(feedback.projectId, lockedContact.projectId)))
         .limit(1)
 
       if (!target) {
         throw createError({
           statusCode: 400,
           statusMessage: 'Bad Request',
-          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Feedback is not part of this team'),
+          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Feedback is not part of this project'),
         })
       }
 
