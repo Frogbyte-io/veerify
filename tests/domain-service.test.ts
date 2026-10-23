@@ -2,12 +2,18 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildDomainSettingsPatch,
+  createDomainProvider,
+  resolveDomainProviderName,
+  shouldSendDomainVerifiedEmail,
   buildTeamSubdomainHostname,
   getCustomDomainValidationError,
   normalizeCustomDomainInput,
 } from '../server/services/domains/domain-service'
+import { domainProviderEnvIssues } from '../server/services/domains/env'
+import { CloudflareSaasDomainProvider } from '../server/services/domains/providers/cloudflare-saas'
+import { StaticCnameDomainProvider } from '../server/services/domains/providers/static-cname'
 import { dedupeDnsRecords } from '../server/services/domains/provider'
-import { mapVercelDomainResult } from '../server/services/domains/providers/vercel'
+import { VercelDomainProvider, mapVercelDomainResult } from '../server/services/domains/providers/vercel'
 
 describe('domain service helpers', () => {
   it('normalizes custom domain input', () => {
@@ -147,5 +153,99 @@ describe('domain service helpers', () => {
         value: '23f9267bd57617a5.vercel-dns-017.com.',
       },
     ])
+  })
+})
+
+describe('domain provider selection', () => {
+  it('resolves provider names, defaulting to static-cname', () => {
+    expect(resolveDomainProviderName('cloudflare-saas')).toBe('cloudflare-saas')
+    expect(resolveDomainProviderName(' Cloudflare-SaaS ')).toBe('cloudflare-saas')
+    expect(resolveDomainProviderName('vercel')).toBe('vercel')
+    expect(resolveDomainProviderName('static-cname')).toBe('static-cname')
+    expect(resolveDomainProviderName('')).toBe('static-cname')
+    expect(resolveDomainProviderName(undefined)).toBe('static-cname')
+    expect(resolveDomainProviderName('nonsense')).toBe('static-cname')
+  })
+
+  it('instantiates the matching provider', () => {
+    expect(createDomainProvider('cloudflare-saas')).toBeInstanceOf(CloudflareSaasDomainProvider)
+    expect(createDomainProvider('vercel')).toBeInstanceOf(VercelDomainProvider)
+    expect(createDomainProvider('static-cname')).toBeInstanceOf(StaticCnameDomainProvider)
+  })
+})
+
+describe('domainProviderEnvIssues', () => {
+  it('is silent for other providers', () => {
+    expect(domainProviderEnvIssues({}, { domainProvider: 'static-cname' })).toEqual([])
+    expect(domainProviderEnvIssues({ DOMAIN_PROVIDER: 'vercel' })).toEqual([])
+  })
+
+  it('warns when cloudflare-saas is selected without credentials', () => {
+    const issues = domainProviderEnvIssues({}, { domainProvider: 'cloudflare-saas' })
+    expect(issues).toHaveLength(1)
+    expect(issues[0]).toContain('CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID')
+  })
+
+  it('names only the missing variable', () => {
+    const issues = domainProviderEnvIssues({}, { domainProvider: 'cloudflare-saas', cloudflareApiToken: 't' })
+    expect(issues[0]).toContain('CLOUDFLARE_ZONE_ID is not set')
+    expect(issues[0]).not.toContain('CLOUDFLARE_API_TOKEN')
+  })
+
+  it('accepts plain and NUXT_ prefixed env or runtime config', () => {
+    expect(
+      domainProviderEnvIssues({
+        DOMAIN_PROVIDER: 'cloudflare-saas',
+        CLOUDFLARE_API_TOKEN: 't',
+        CLOUDFLARE_ZONE_ID: 'z',
+      })
+    ).toEqual([])
+    expect(
+      domainProviderEnvIssues({
+        NUXT_DOMAIN_PROVIDER: 'cloudflare-saas',
+        NUXT_CLOUDFLARE_API_TOKEN: 't',
+        NUXT_CLOUDFLARE_ZONE_ID: 'z',
+      })
+    ).toEqual([])
+    expect(
+      domainProviderEnvIssues({}, { domainProvider: 'cloudflare-saas', cloudflareApiToken: 't', cloudflareZoneId: 'z' })
+    ).toEqual([])
+  })
+
+  it('never includes the token value in the message', () => {
+    const issues = domainProviderEnvIssues({}, { domainProvider: 'cloudflare-saas', cloudflareApiToken: 'sekret' })
+    expect(issues.join(' ')).not.toContain('sekret')
+  })
+})
+
+describe('shouldSendDomainVerifiedEmail', () => {
+  const domain = 'feedback.dotmatrixlabs.com'
+
+  it('sends once when a domain first becomes verified', () => {
+    expect(
+      shouldSendDomainVerifiedEmail({
+        verified: true,
+        domain,
+        settings: { domainStatus: 'dns_required' },
+        previousStatus: 'dns_required',
+      })
+    ).toBe(true)
+  })
+
+  it('does not send while unverified', () => {
+    expect(shouldSendDomainVerifiedEmail({ verified: false, domain, settings: {} })).toBe(false)
+  })
+
+  it('does not send for an already active domain adopted from another provider', () => {
+    expect(shouldSendDomainVerifiedEmail({ verified: true, domain, settings: {}, previousStatus: 'active' })).toBe(
+      false
+    )
+    expect(shouldSendDomainVerifiedEmail({ verified: true, domain, settings: { domainStatus: 'active' } })).toBe(false)
+  })
+
+  it('does not send twice for the same domain', () => {
+    expect(
+      shouldSendDomainVerifiedEmail({ verified: true, domain, settings: { domainVerifiedEmailSentFor: domain } })
+    ).toBe(false)
   })
 })
