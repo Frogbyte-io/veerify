@@ -115,7 +115,7 @@
 import { toast } from 'vue-sonner'
 
 export default {
-  name: 'SettingsBilling',
+  name: 'WorkspaceBilling',
   data() {
     return {
       organizationSlug: '',

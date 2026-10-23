@@ -132,7 +132,7 @@
                 <CardTitle class="text-lg">Want to collect feedback?</CardTitle>
                 <CardDescription>
                   Create a workspace to set up your own feedback boards, manage projects, and collaborate with your
-                  team.
+                  colleagues.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -166,8 +166,8 @@
       <!-- Workspace Dashboard (has organization) -->
       <template v-else>
         <div class="mb-6">
-          <h1 class="text-3xl font-bold text-foreground">Dashboard</h1>
-          <p class="text-muted-foreground">Overview of your team's feedback activity</p>
+          <h1 class="text-3xl font-bold text-foreground">{{ activeProject?.project?.name || 'Dashboard' }}</h1>
+          <p class="text-muted-foreground">Overview of this project's feedback activity</p>
         </div>
 
         <!-- Stats loading -->
@@ -228,7 +228,7 @@
           </div>
         </div>
 
-        <!-- Bottom section: recent feedback + team info -->
+        <!-- Bottom section: recent feedback + project info -->
         <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
           <!-- Recent Feedback -->
           <div class="lg:col-span-2">
@@ -286,11 +286,11 @@
             </Card>
           </div>
 
-          <!-- Team info -->
+          <!-- Project info -->
           <div class="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle class="text-base">Team Overview</CardTitle>
+                <CardTitle class="text-base">Project overview</CardTitle>
               </CardHeader>
               <CardContent class="space-y-4">
                 <div v-if="statsLoading">
@@ -298,17 +298,24 @@
                   <Skeleton class="h-8" />
                 </div>
                 <template v-else>
+                  <div v-if="productCount > 1" class="flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Icon name="lucide:package" class="w-4 h-4" />
+                      Products
+                    </div>
+                    <span class="font-semibold">{{ productCount }}</span>
+                  </div>
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2 text-sm text-muted-foreground">
                       <Icon name="lucide:folder" class="w-4 h-4" />
-                      Projects
+                      Projects in workspace
                     </div>
                     <span class="font-semibold">{{ stats.projectCount }}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2 text-sm text-muted-foreground">
                       <Icon name="lucide:users" class="w-4 h-4" />
-                      Members
+                      Workspace members
                     </div>
                     <span class="font-semibold">{{ stats.memberCount }}</span>
                   </div>
@@ -325,9 +332,9 @@
                   <Icon name="lucide:message-square" class="w-4 h-4 mr-2" />
                   View feedback
                 </Button>
-                <Button variant="outline" class="w-full justify-start" @click="navigateTo('/settings')">
+                <Button variant="outline" class="w-full justify-start" @click="navigateTo('/project/settings')">
                   <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
-                  Team settings
+                  Project settings
                 </Button>
               </CardContent>
             </Card>
@@ -348,6 +355,7 @@ export default {
     return {
       isLoading: true,
       hasOrganization: false,
+      activeProject: null,
       userName: '',
       recentSubmissions: [],
       submissionCount: 0,
@@ -364,6 +372,12 @@ export default {
         recentFeedback: [],
       },
     }
+  },
+
+  computed: {
+    productCount() {
+      return this.activeProject?.products?.length || 0
+    },
   },
 
   created() {
@@ -385,10 +399,15 @@ export default {
         const session = bootstrap?.session
         this.userName = session?.user?.name || 'there'
 
-        this.hasOrganization = Boolean(bootstrap?.teamContext?.activeOrganization)
+        this.hasOrganization = Boolean(bootstrap?.projectContext?.activeOrganization)
         if (this.hasOrganization) {
-          this.stats = bootstrap?.workspace?.stats || this.stats
-          this.statsLoading = false
+          this.activeProject = bootstrap?.projectContext?.activeProject || null
+          if (bootstrap?.workspace?.stats) {
+            this.stats = bootstrap.workspace.stats
+            this.statsLoading = false
+          } else {
+            await this.loadWorkspaceStats()
+          }
         } else {
           const personal = bootstrap?.personal || {}
           this.recentSubmissions = personal.recentSubmissions || []
