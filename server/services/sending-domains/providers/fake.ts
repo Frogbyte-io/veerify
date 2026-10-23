@@ -1,4 +1,4 @@
-import type { SendingDomainDnsRecord } from '~/lib/support-sending-domains'
+import { isFakeSendingDomainProviderAllowed, type SendingDomainDnsRecord } from '~/lib/support-sending-domains'
 import {
   SendingDomainProviderError,
   type ProviderDomainResult,
@@ -41,9 +41,9 @@ export function resetFakeSendingDomainState(): void {
   sharedStore.routes.clear()
 }
 
-/** True when `SUPPORT_SENDING_DOMAIN_PROVIDER=fake` is set outside production. */
+/** True when `SUPPORT_SENDING_DOMAIN_PROVIDER=fake` is set and allowed (see `isFakeSendingDomainProviderAllowed`). */
 export function isFakeSendingDomainMode(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.SUPPORT_SENDING_DOMAIN_PROVIDER?.trim().toLowerCase() === 'fake' && env.NODE_ENV !== 'production'
+  return isFakeSendingDomainProviderAllowed(env)
 }
 
 /** Domains whose ownership TXT counts as published in fake mode. */

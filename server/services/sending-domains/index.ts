@@ -1,3 +1,4 @@
+import { isFakeSendingDomainProviderAllowed } from '~/lib/support-sending-domains'
 import { createLogger } from '~/server/utils/logger'
 import { FakeSendingDomainProvider } from './providers/fake'
 import { MailgunSendingDomainProvider } from './providers/mailgun'
@@ -15,16 +16,17 @@ const logger = createLogger('sending-domains')
  * channel driver from `SUPPORT_CHANNEL_PROVIDER` (default `postmark`).
  *
  * `SUPPORT_SENDING_DOMAIN_PROVIDER=fake` swaps in the in-memory provider for
- * dev and e2e. It is refused when `NODE_ENV=production`: the override is
- * ignored (and logged) and the configured provider is used, so a stray
- * variable can never fake verification in production.
+ * dev and e2e. It is refused in production builds unless the app's own URL
+ * is a loopback host (the e2e suite): the override is ignored (and logged) and
+ * the configured provider is used, so a stray variable can never fake
+ * verification in a real deployment.
  *
  * Returns null for an unknown `SUPPORT_CHANNEL_PROVIDER`.
  */
 export function getSendingDomainProvider(env: NodeJS.ProcessEnv = process.env): SendingDomainProvider | null {
   const override = env.SUPPORT_SENDING_DOMAIN_PROVIDER?.trim().toLowerCase()
   if (override === 'fake') {
-    if (env.NODE_ENV === 'production') {
+    if (!isFakeSendingDomainProviderAllowed(env)) {
       logger.error('SUPPORT_SENDING_DOMAIN_PROVIDER=fake is refused in production; using the configured provider')
     } else {
       return new FakeSendingDomainProvider()

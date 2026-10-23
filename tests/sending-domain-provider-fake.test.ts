@@ -82,4 +82,37 @@ describe('getSendingDomainProvider', () => {
     })
     expect(provider).toBeInstanceOf(MailgunSendingDomainProvider)
   })
+
+  it('refuses the fake override in production on a real origin', () => {
+    const provider = getSendingDomainProvider({
+      SUPPORT_CHANNEL_PROVIDER: 'mailgun',
+      SUPPORT_SENDING_DOMAIN_PROVIDER: 'fake',
+      NODE_ENV: 'production',
+      BETTER_AUTH_URL: 'https://app.veerify.io',
+    })
+    expect(provider).toBeInstanceOf(MailgunSendingDomainProvider)
+  })
+
+  it.each(['http://localhost:4173', 'http://127.0.0.1:3000'])(
+    'allows the fake override in a production build served from %s (e2e)',
+    (url) => {
+      const provider = getSendingDomainProvider({
+        SUPPORT_CHANNEL_PROVIDER: 'mailgun',
+        SUPPORT_SENDING_DOMAIN_PROVIDER: 'fake',
+        NODE_ENV: 'production',
+        BETTER_AUTH_URL: url,
+      })
+      expect(provider).toBeInstanceOf(FakeSendingDomainProvider)
+    }
+  )
+
+  it('does not treat a lookalike host as loopback', () => {
+    const provider = getSendingDomainProvider({
+      SUPPORT_CHANNEL_PROVIDER: 'mailgun',
+      SUPPORT_SENDING_DOMAIN_PROVIDER: 'fake',
+      NODE_ENV: 'production',
+      BETTER_AUTH_URL: 'https://localhost.evil.example',
+    })
+    expect(provider).toBeInstanceOf(MailgunSendingDomainProvider)
+  })
 })

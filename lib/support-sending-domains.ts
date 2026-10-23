@@ -108,6 +108,23 @@ export interface SendingDomainEnvIssue {
 }
 
 /**
+ * True when the in-memory fake sending-domain provider may run. It is refused
+ * in production builds, except when the app's own URL (`BETTER_AUTH_URL`) is
+ * a loopback host: that is the e2e suite running a production build locally or
+ * in CI. A real deployment never serves its auth origin from localhost.
+ */
+export function isFakeSendingDomainProviderAllowed(env: Record<string, string | undefined>): boolean {
+  if ((env.SUPPORT_SENDING_DOMAIN_PROVIDER ?? '').trim().toLowerCase() !== 'fake') return false
+  if ((env.NODE_ENV ?? '').trim() !== 'production') return true
+  try {
+    const host = new URL((env.BETTER_AUTH_URL ?? '').trim()).hostname
+    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]'
+  } catch {
+    return false
+  }
+}
+
+/**
  * Misconfiguration checks for the sending-domain env (design §11.1). Pure so it
  * can be unit tested; `server/plugins/validate-env.ts` logs the result. Only
  * names are reported, never values (D-34).
@@ -117,10 +134,9 @@ export function sendingDomainEnvIssues(env: Record<string, string | undefined>):
   const issues: SendingDomainEnvIssue[] = []
   const enabled = get('SUPPORT_SENDING_DOMAINS_ENABLED').toLowerCase() === 'true'
   const fake = get('SUPPORT_SENDING_DOMAIN_PROVIDER').toLowerCase() === 'fake'
-  const production = get('NODE_ENV') === 'production'
   const policy = get('SUPPORT_SENDER_POLICY').toLowerCase()
 
-  if (fake && production) {
+  if (fake && !isFakeSendingDomainProviderAllowed(env)) {
     issues.push({
       level: 'error',
       message: 'SUPPORT_SENDING_DOMAIN_PROVIDER=fake is refused in production and will be ignored.',
@@ -140,7 +156,7 @@ export function sendingDomainEnvIssues(env: Record<string, string | undefined>):
   }
 
   const provider = (get('SUPPORT_CHANNEL_PROVIDER') || 'postmark').toLowerCase()
-  if (fake && !production) return issues
+  if (isFakeSendingDomainProviderAllowed(env)) return issues
 
   if (provider === 'mailgun') {
     const missing = ['SUPPORT_MAILGUN_API_KEY'].filter((name) => !get(name))
