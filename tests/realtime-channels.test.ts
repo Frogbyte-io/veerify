@@ -4,7 +4,7 @@ import { authorizeChannelWith, type ChannelAuthDeps } from '../server/utils/real
 
 function deps(isMember = false, canAccessInbox = false, canAccessConversation = false): ChannelAuthDeps {
   return {
-    isTeamMember: vi.fn(async () => isMember),
+    hasProjectAccess: vi.fn(async () => isMember),
     canAccessInbox: vi.fn(async () => canAccessInbox),
     canAccessConversation: vi.fn(async () => canAccessConversation),
   }
@@ -23,21 +23,21 @@ describe('authorizeChannelWith', () => {
     })
   })
 
-  it('allows a team channel when the user is a member', async () => {
-    await expect(authorizeChannelWith('team:t1', 'u1', deps(true))).resolves.toEqual({ allowed: true })
+  it('allows a project channel when the user is a member', async () => {
+    await expect(authorizeChannelWith('project:t1', 'u1', deps(true))).resolves.toEqual({ allowed: true })
   })
 
-  it('denies a team channel when the user is not a member', async () => {
-    await expect(authorizeChannelWith('team:t1', 'u1', deps(false))).resolves.toEqual({
+  it('denies a project channel when the user is not a member', async () => {
+    await expect(authorizeChannelWith('project:t1', 'u1', deps(false))).resolves.toEqual({
       allowed: false,
       reason: 'Forbidden',
     })
   })
 
-  it('checks membership against the requested team, not the user id', async () => {
+  it('checks membership against the requested project, not the user id', async () => {
     const d = deps(true)
-    await authorizeChannelWith('team:t42', 'u1', d)
-    expect(d.isTeamMember).toHaveBeenCalledWith('t42', 'u1')
+    await authorizeChannelWith('project:t42', 'u1', d)
+    expect(d.hasProjectAccess).toHaveBeenCalledWith('t42', 'u1')
   })
 
   it('allows an inbox channel when the peer has inbox access', async () => {
@@ -79,7 +79,7 @@ describe('authorizeChannelWith', () => {
   })
 
   it('denies unknown or malformed channels', async () => {
-    for (const channel of ['project:p1', 'team', 'team:', ':t1', '', 'nonsense']) {
+    for (const channel of ['team:t1', 'project', 'project:', ':t1', '', 'nonsense']) {
       await expect(authorizeChannelWith(channel, 'u1', deps(true))).resolves.toMatchObject({ allowed: false })
     }
   })
@@ -95,6 +95,6 @@ describe('authorizeChannelWith', () => {
     const d = deps(true)
     await authorizeChannelWith('user:u2', 'u1', d)
     await authorizeChannelWith('bogus:x', 'u1', d)
-    expect(d.isTeamMember).not.toHaveBeenCalled()
+    expect(d.hasProjectAccess).not.toHaveBeenCalled()
   })
 })

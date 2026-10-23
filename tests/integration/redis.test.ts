@@ -68,7 +68,7 @@ describe('redis realtime driver (integration)', () => {
     // listening yet), not a bug in the driver.
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    const envelope = createEnvelope({ type: 'conversation.created', teamId: 't1', conversationId: 'c1' })
+    const envelope = createEnvelope({ type: 'conversation.created', projectId: 't1', conversationId: 'c1' })
     await instanceA.publish(channel, envelope)
 
     await waitForCondition(() => received.length > 0)
@@ -87,7 +87,7 @@ describe('redis realtime driver (integration)', () => {
     await driver.subscribe(channelA, (envelope) => received.push(envelope))
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    await driver.publish(channelB, createEnvelope({ type: 'x', teamId: 't1' }))
+    await driver.publish(channelB, createEnvelope({ type: 'x', projectId: 't1' }))
 
     // Give a would-be leak time to arrive, then assert it didn't.
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -119,7 +119,7 @@ describe('redis realtime driver (integration)', () => {
     await waitForCondition(
       async () => {
         received.length = 0
-        await driver.publish(channel, createEnvelope({ type: 'x', teamId: 't1' }))
+        await driver.publish(channel, createEnvelope({ type: 'x', projectId: 't1' }))
         await new Promise((resolve) => setTimeout(resolve, 200))
         return received.length > 0
       },
