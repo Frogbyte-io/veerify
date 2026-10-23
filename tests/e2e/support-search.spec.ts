@@ -1,3 +1,4 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { inArray } from 'drizzle-orm'
@@ -23,7 +24,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
   const headers = withAuthHeaders(sessionCookie, '/support')
   const projectResponse = await request.get('/api/projects/active', { headers })
   expect(projectResponse.ok()).toBeTruthy()
-  const projectId = (await projectResponse.json()).data.id as string
+  const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
   const sessionResponse = await request.get('/api/auth/session', { headers })
   expect(sessionResponse.ok()).toBeTruthy()
   const userId = (await sessionResponse.json()).data.user.id as string

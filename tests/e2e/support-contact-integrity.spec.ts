@@ -1,3 +1,4 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray, ne } from 'drizzle-orm'
@@ -13,7 +14,7 @@ async function activeProjectId(request: Parameters<typeof signInAndGetSessionCoo
   const response = await request.get('/api/projects/active', { headers: withAuthHeaders(sessionCookie) })
   const payload = await response.json()
   expect(response.ok()).toBeTruthy()
-  return payload.data.id as string
+  return await enableProjectSupport(payload.data.project.id as string)
 }
 
 test.describe.serial('support contact integrity', () => {

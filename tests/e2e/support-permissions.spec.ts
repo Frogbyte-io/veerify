@@ -543,13 +543,17 @@ test.describe.serial('support permission-aware navigation', () => {
 
     await page.route('**/api/projects/active', async (route) => {
       const activeProjectId =
-        activeProjectTransition === 0 ? fixture.projectId : activeProjectTransition === 1 ? 'old-project' : 'new-project'
+        activeProjectTransition === 0
+          ? fixture.projectId
+          : activeProjectTransition === 1
+            ? 'old-project'
+            : 'new-project'
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { id: activeProjectId },
+          data: { project: { id: activeProjectId } },
         }),
       })
     })
@@ -721,7 +725,7 @@ test.describe.serial('support permission-aware navigation', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: { id: switchedProjectId } }),
+        body: JSON.stringify({ success: true, data: { project: { id: switchedProjectId, slug: switchedProjectId } } }),
       })
     })
     await page.route('**/api/support/projects/*/settings', async (route) => {
@@ -777,11 +781,12 @@ test.describe.serial('support permission-aware navigation', () => {
       }
       await route.continue()
     })
-    await page.route('**/api/projects/members?*', (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
-    )
-    await page.route(`**/api/projects/${switchedProjectId}/projects`, (route) =>
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) })
+    await page.route(`**/api/projects/${switchedProjectId}/members`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, data: { accessMode: 'workspace', members: [] } }),
+      })
     )
     await page.route('**/api/support/inboxes/*/members', (route) =>
       route.fulfill({

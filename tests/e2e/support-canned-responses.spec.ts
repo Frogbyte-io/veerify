@@ -1,3 +1,4 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
@@ -26,7 +27,7 @@ async function activeProjectAndUser(request: Parameters<typeof signInAndGetSessi
   expect(sessionResponse.ok()).toBeTruthy()
   const sessionPayload = await sessionResponse.json()
   return {
-    projectId: (await projectResponse.json()).data.id as string,
+    projectId: await enableProjectSupport((await projectResponse.json()).data.project.id as string),
     userId: sessionPayload.data.user.id as string,
     userName: (sessionPayload.data.user.name || sessionPayload.data.user.email) as string,
   }
