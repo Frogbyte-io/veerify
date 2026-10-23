@@ -56,6 +56,31 @@ export const project = pgTable(
   })
 )
 
+// App keys - project-scoped public keys that let desktop apps post feedback.
+// Only the SHA-256 hex hash is stored; the full key is shown once at creation.
+export const projectApiKey = pgTable(
+  'project_api_key',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    keyPrefix: text('key_prefix').notNull(),
+    keyHash: text('key_hash').notNull(),
+    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+    lastUsedAt: timestamp('last_used_at'),
+    revokedAt: timestamp('revoked_at'),
+  },
+  (table) => ({
+    keyHashIdx: uniqueIndex('project_api_key_hash_idx').on(table.keyHash),
+    projectIdx: index('project_api_key_project_idx').on(table.projectId),
+  })
+)
+
 // Provider-neutral domain state. project.customDomain remains as temporary
 // compatibility state while callers migrate to this table.
 export const projectDomain = pgTable(
@@ -213,6 +238,9 @@ export const feedback = pgTable(
       .$defaultFn(() => false)
       .notNull(),
     metadata: jsonb('metadata').$type<Record<string, any>>(),
+    // Set when submitted through an app key; sourceLabel is the public origin label
+    apiKeyId: text('api_key_id').references(() => projectApiKey.id, { onDelete: 'set null' }),
+    sourceLabel: text('source_label'),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),

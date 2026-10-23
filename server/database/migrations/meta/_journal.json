@@ -393,6 +393,13 @@
       "when": 1792665098992,
       "tag": "0055_luxuriant_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792774397587,
+      "tag": "0056_flashy_vulture",
+      "breakpoints": true
     }
   ]
 }
