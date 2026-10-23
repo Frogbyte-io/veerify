@@ -2,8 +2,8 @@ import { and, eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
-import { teamMember } from '~/server/database/schema/auth'
-import { requireAuthWithResolvedTeam } from './team-context'
+import { requireAuthWithOrganization } from './project-context'
+import { requireProjectRole } from './project-access'
 import { createErrorResponse, ErrorCode } from './response'
 
 export function toCategorySlug(name: string) {
@@ -16,8 +16,21 @@ export function toCategorySlug(name: string) {
     .replace(/^-|-$/g, '')
 }
 
-export async function requireProjectCategoryAccessBySlug(event: H3Event, projectSlug: string) {
-  const { session, activeTeam } = await requireAuthWithResolvedTeam(event)
+export interface ProjectSlugAccessOptions {
+  /** Require project admin (org owner/admin or project admin). Defaults to any project member. */
+  admin?: boolean
+}
+
+/**
+ * Resolves `projectSlug` inside the caller's active organization and verifies
+ * access (404 when missing, 403 without access / without admin when requested).
+ */
+export async function requireProjectBySlug(
+  event: H3Event,
+  projectSlug: string,
+  options: ProjectSlugAccessOptions = {}
+) {
+  const { session, organizationId } = await requireAuthWithOrganization(event)
 
   if (!projectSlug) {
     throw createError({
@@ -30,7 +43,7 @@ export async function requireProjectCategoryAccessBySlug(event: H3Event, project
   const [selectedProject] = await db
     .select()
     .from(project)
-    .where(and(eq(project.slug, projectSlug), eq(project.teamId, activeTeam.id)))
+    .where(and(eq(project.slug, projectSlug), eq(project.organizationId, organizationId)))
     .limit(1)
 
   if (!selectedProject) {
@@ -41,27 +54,27 @@ export async function requireProjectCategoryAccessBySlug(event: H3Event, project
     })
   }
 
-  const [membership] = await db
-    .select()
-    .from(teamMember)
-    .where(and(eq(teamMember.teamId, selectedProject.teamId), eq(teamMember.userId, session.user.id)))
-    .limit(1)
-
-  if (!membership) {
+  const { project: accessible, role } = await requireProjectRole(selectedProject.id, session.user.id)
+  if (options.admin && role !== 'admin') {
     throw createError({
       statusCode: 403,
       statusMessage: 'Forbidden',
-      data: createErrorResponse(ErrorCode.FORBIDDEN, 'You are not a member of this project team'),
+      data: createErrorResponse(ErrorCode.FORBIDDEN, 'Only project admins can do this'),
     })
   }
 
-  return {
-    session,
-    project: selectedProject,
-  }
+  return { session, project: accessible, role, organizationId }
 }
 
-export async function requireProjectCategoryAccess(event: H3Event) {
+export async function requireProjectCategoryAccessBySlug(
+  event: H3Event,
+  projectSlug: string,
+  options: ProjectSlugAccessOptions = {}
+) {
+  return requireProjectBySlug(event, projectSlug, options)
+}
+
+export async function requireProjectCategoryAccess(event: H3Event, options: ProjectSlugAccessOptions = {}) {
   const projectSlug = getRouterParam(event, 'slug') ?? getRouterParam(event, 'projectSlug')
-  return requireProjectCategoryAccessBySlug(event, projectSlug ?? '')
+  return requireProjectBySlug(event, projectSlug ?? '', options)
 }

@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   await requireAuth(event)
 
   const body = await readBody(event)
-  const { email, role, organizationId, teamId, resend } = body
+  const { email, role, organizationId, resend } = body
 
   if (!email || !organizationId) {
     throw createError({ statusCode: 400, statusMessage: 'Email and organizationId are required' })
@@ -22,7 +22,6 @@ export default defineEventHandler(async (event) => {
       id: invitation.id,
       status: invitation.status,
       expiresAt: invitation.expiresAt,
-      teamId: invitation.teamId,
     })
     .from(invitation)
     .where(
@@ -42,7 +41,6 @@ export default defineEventHandler(async (event) => {
         code: 'INVITATION_ALREADY_EXISTS',
         invitationId: existingInvitation.id,
         expiresAt: existingInvitation.expiresAt,
-        teamId: existingInvitation.teamId,
         recommendedSteps: ['Use "Send reminder" to resend the invitation or revoke the existing invite first.'],
       },
     })
@@ -82,7 +80,6 @@ export default defineEventHandler(async (event) => {
       email: normalizedEmail,
       role: role || 'member',
       ...(resend ? { resend: true } : {}),
-      ...(teamId ? { teamId } : {}),
     },
   })
 

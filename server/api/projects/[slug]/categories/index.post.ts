@@ -20,7 +20,7 @@ const createCategorySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const { project } = await requireProjectCategoryAccess(event)
+  const { project } = await requireProjectCategoryAccess(event, { admin: true })
   const body = await validateBody(event, createCategorySchema)
 
   const baseSlug = toCategorySlug(body.name)

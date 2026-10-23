@@ -5,7 +5,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
 
 export default defineEventHandler(async (event) => {
-  const { project } = await requireProjectCategoryAccess(event)
+  const { project } = await requireProjectCategoryAccess(event, { admin: true })
 
   const [integration] = await db
     .select()
