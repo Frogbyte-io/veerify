@@ -1,10 +1,34 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight text-foreground">Support settings</h1>
-        <p class="text-muted-foreground mt-1">Configure your team's shared inbox</p>
+    <div class="w-full min-w-0 p-0 sm:p-2 lg:p-6 max-w-4xl mx-auto space-y-6">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Support settings</h1>
+          <p class="text-muted-foreground mt-1">Configure your team's shared inbox</p>
+        </div>
+        <Button variant="outline" size="sm" as-child>
+          <NuxtLink to="/support">
+            <Icon name="lucide:inbox" class="w-4 h-4 mr-2" />
+            Back to inbox
+          </NuxtLink>
+        </Button>
       </div>
+
+      <nav
+        v-if="!isLoading && !error && sectionLinks.length > 1"
+        aria-label="Support settings sections"
+        data-testid="support-settings-section-nav"
+        class="sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      >
+        <a
+          v-for="link in sectionLinks"
+          :key="link.id"
+          :href="`#${link.id}`"
+          class="shrink-0 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          {{ link.label }}
+        </a>
+      </nav>
 
       <div
         v-if="inboxAccessError"
@@ -94,7 +118,7 @@
       </Card>
 
       <template v-else>
-        <Card v-if="canManageTeamSupport" data-testid="support-team-policy">
+        <Card v-if="canManageTeamSupport" id="team-policy" class="scroll-mt-16" data-testid="support-team-policy">
           <CardHeader>
             <CardTitle>Team support policy</CardTitle>
             <CardDescription>Controls how signed-in customer feedback is linked to support contacts.</CardDescription>
@@ -115,7 +139,7 @@
           </CardContent>
         </Card>
 
-        <Card v-if="canManageTeamSupport" data-testid="support-sla-settings">
+        <Card v-if="canManageTeamSupport" id="sla" class="scroll-mt-16" data-testid="support-sla-settings">
           <CardHeader>
             <CardTitle>SLA commitments</CardTitle>
             <CardDescription>Set the working week and the default response and resolution targets.</CardDescription>
@@ -221,7 +245,7 @@
           </CardContent>
         </Card>
 
-        <Card v-if="canManageTeamSupport" data-testid="support-csat-settings">
+        <Card v-if="canManageTeamSupport" id="csat" class="scroll-mt-16" data-testid="support-csat-settings">
           <CardHeader>
             <div class="flex items-start justify-between gap-4">
               <div>
@@ -372,7 +396,12 @@
         </Card>
 
         <!-- Automation control room -->
-        <Card v-if="canManageTeamSupport" data-testid="support-automation-settings" class="overflow-hidden">
+        <Card
+          v-if="canManageTeamSupport"
+          id="automation"
+          data-testid="support-automation-settings"
+          class="overflow-hidden scroll-mt-16"
+        >
           <CardHeader class="border-b bg-[#16211f] text-[#f5f1e8] dark:bg-[#111917]">
             <div class="flex items-start justify-between gap-4">
               <div>
@@ -643,6 +672,8 @@
         <!-- Sending domains -->
         <SupportSendingDomains
           v-if="activeTeamId"
+          id="sending-domains"
+          class="scroll-mt-16"
           :team-id="activeTeamId"
           @loaded="(info, loadedTeamId) => onSendingDomainsLoaded(info, loadedTeamId)"
         />
@@ -662,7 +693,7 @@
           </div>
 
           <!-- General -->
-          <Card>
+          <Card id="general" class="scroll-mt-16">
             <CardHeader>
               <CardTitle>General</CardTitle>
               <CardDescription>Basic identity for this inbox.</CardDescription>
@@ -795,7 +826,7 @@
           </Card>
 
           <!-- Canned responses -->
-          <Card data-testid="support-canned-responses">
+          <Card id="canned-responses" class="scroll-mt-16" data-testid="support-canned-responses">
             <CardHeader>
               <CardTitle>Canned responses</CardTitle>
               <CardDescription>Team shortcuts agents can insert from the support composer.</CardDescription>
@@ -914,7 +945,7 @@
           </Card>
 
           <!-- Channel (SUP-03-13) -->
-          <Card data-testid="support-settings-channel">
+          <Card id="channel" class="scroll-mt-16" data-testid="support-settings-channel">
             <CardHeader>
               <CardTitle>Channel</CardTitle>
               <CardDescription>
@@ -1048,7 +1079,7 @@
           </Card>
 
           <!-- Agents -->
-          <Card>
+          <Card id="agents" class="scroll-mt-16">
             <CardHeader>
               <CardTitle>Agents</CardTitle>
               <CardDescription>
@@ -1142,7 +1173,7 @@
           </Card>
 
           <!-- Receiving addresses -->
-          <Card>
+          <Card id="addresses" class="scroll-mt-16">
             <CardHeader>
               <CardTitle>Receiving addresses</CardTitle>
               <CardDescription>
@@ -1165,8 +1196,8 @@
                     class="flex items-center justify-between rounded-lg border p-3"
                   >
                     <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span class="font-mono text-sm truncate">{{ address.address }}</span>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-mono text-sm break-all">{{ address.address }}</span>
                         <Badge v-if="address.isPrimary" variant="outline" class="text-xs">Primary</Badge>
                         <Badge v-if="address.kind === 'platform'" variant="outline" class="text-xs"
                           >Veerify forwarding</Badge
@@ -1496,6 +1527,31 @@ export default {
   },
 
   computed: {
+    sectionLinks() {
+      const links = []
+      if (this.canManageTeamSupport && this.hasInboxes && this.selectedInboxId) {
+        links.push(
+          { id: 'team-policy', label: 'Policy' },
+          { id: 'sla', label: 'SLA' },
+          { id: 'csat', label: 'CSAT' },
+          { id: 'automation', label: 'Automation' }
+        )
+      }
+      if (this.sendingDomainsInfo?.enabled === true && this.selectedInboxId) {
+        links.push({ id: 'sending-domains', label: 'Sending domains' })
+      }
+      if (this.hasInboxes && this.selectedInboxId) {
+        links.push(
+          { id: 'general', label: 'General' },
+          { id: 'canned-responses', label: 'Canned responses' },
+          { id: 'channel', label: 'Channel' },
+          { id: 'agents', label: 'Agents' },
+          { id: 'addresses', label: 'Addresses' }
+        )
+      }
+      return links
+    },
+
     hasInboxes() {
       return this.inboxes.length > 0
     },
