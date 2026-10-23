@@ -31,7 +31,7 @@
           role="note"
           data-testid="reviews-settings-readonly"
         >
-          You can view these settings. Only team admins can change them.
+          You can view these settings. Only project admins can change them.
         </p>
 
         <div class="flex items-center justify-between gap-4 rounded-md border p-3">

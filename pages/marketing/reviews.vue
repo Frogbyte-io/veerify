@@ -8,7 +8,7 @@
             Ask happy customers for a review or a testimonial, and show the best ones on your public page.
           </p>
         </div>
-        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
       </div>
 
       <div v-if="!pickerSettled" class="space-y-4">
@@ -17,30 +17,30 @@
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a product first to ask for reviews.</div>
+      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a project to ask for reviews.</div>
 
-      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
       <template v-else>
         <MarketingReviewsSettings
-          :key="`settings-${product.id}`"
-          :project-id="product.id"
+          :key="`settings-${project.id}`"
+          :project-id="project.id"
           @forbidden="onForbidden"
           @permissions="onPermissions"
         />
         <MarketingReviewsRequests
-          :key="`requests-${product.id}`"
-          :project-id="product.id"
+          :key="`requests-${project.id}`"
+          :project-id="project.id"
           :can-manage="canManage"
           @forbidden="onForbidden"
         />
         <MarketingReviewsTestimonials
-          :key="`testimonials-${product.id}`"
-          :project-id="product.id"
-          :product="product"
+          :key="`testimonials-${project.id}`"
+          :project-id="project.id"
+          :project="project"
           :can-manage="canManage"
           @forbidden="onForbidden"
         />
@@ -59,7 +59,7 @@ export default {
 
   data() {
     return {
-      product: null,
+      project: null,
       pickerSettled: false,
       pickerError: false,
       marketingOff: false,
@@ -75,13 +75,13 @@ export default {
     },
 
     onPickerError() {
-      this.product = null
+      this.project = null
       this.pickerError = true
       this.pickerSettled = true
     },
 
-    onProductChange(product) {
-      this.product = product
+    onProjectChange(project) {
+      this.project = project
       this.pickerSettled = true
       this.pickerError = false
       this.marketingOff = false

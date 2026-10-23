@@ -7,24 +7,21 @@
       <div class="space-y-1">
         <p class="font-medium">Marketing is switched off</p>
         <p class="text-sm text-muted-foreground max-w-md mx-auto">
-          {{ message || 'Marketing needs to be enabled for your team and for this product.' }}
+          {{ message || 'Marketing needs to be switched on for this project.' }}
         </p>
-        <p class="text-sm text-muted-foreground max-w-md mx-auto">
-          Both switches have to be on: the team switch under Settings, Tools, and the product switch under the product's
-          Features tab.
+        <p v-if="isAdmin" class="text-sm text-muted-foreground max-w-md mx-auto">
+          Switch it on under Project settings, Tools.
+        </p>
+        <p v-else class="text-sm text-muted-foreground max-w-md mx-auto flex items-center justify-center gap-1.5">
+          <Icon name="lucide:lock" class="w-3.5 h-3.5" />
+          Project admins can switch Marketing on.
         </p>
       </div>
-      <div class="flex flex-wrap items-center justify-center gap-2">
+      <div v-if="isAdmin" class="flex flex-wrap items-center justify-center gap-2">
         <Button as-child variant="outline">
-          <NuxtLink to="/settings#tools">
+          <NuxtLink to="/project/settings#tools">
             <Icon name="lucide:layout-grid" class="w-4 h-4 mr-2" />
-            Settings: Tools
-          </NuxtLink>
-        </Button>
-        <Button v-if="product" as-child variant="outline">
-          <NuxtLink :to="`/products/${product.slug}#features`">
-            <Icon name="lucide:package" class="w-4 h-4 mr-2" />
-            {{ product.name }}: Features
+            Project settings: Tools
           </NuxtLink>
         </Button>
       </div>
@@ -37,8 +34,14 @@ export default {
   name: 'MarketingDisabled',
 
   props: {
-    product: { type: Object, default: null },
+    project: { type: Object, default: null },
     message: { type: String, default: '' },
+  },
+
+  computed: {
+    isAdmin() {
+      return this.project?.role === 'admin'
+    },
   },
 }
 </script>

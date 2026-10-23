@@ -55,7 +55,7 @@
           <p v-if="connectError" class="text-sm text-destructive" role="alert">{{ connectError }}</p>
         </div>
         <p v-else class="text-sm text-muted-foreground" data-testid="search-connect-readonly">
-          Only team admins can connect Search Console. Ask an admin of this team to do it.
+          Only project admins can connect Search Console. Ask an admin of this project to do it.
         </p>
       </template>
     </CardContent>

@@ -21,7 +21,7 @@
 
     <CardContent class="min-w-0 space-y-5">
       <p v-if="!canManage" class="rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-        Only team admins can change the site or verify it.
+        Only project admins can change the site or verify it.
       </p>
 
       <form class="space-y-2" @submit.prevent="saveOrigin" @keydown.esc="origin = site?.origin || ''">
@@ -139,7 +139,7 @@ export default {
   name: 'MarketingSettingsSite',
 
   props: {
-    product: { type: Object, required: true },
+    project: { type: Object, required: true },
     site: { type: Object, default: null },
     verification: { type: Object, default: null },
     canManage: { type: Boolean, default: false },
@@ -165,7 +165,7 @@ export default {
 
   computed: {
     addDisabledReason() {
-      if (!this.canManage) return 'Only team admins can change the site.'
+      if (!this.canManage) return 'Only project admins can change the site.'
       if (!this.origin.trim()) return this.site ? '' : 'Enter your site address to add it.'
       return ''
     },
@@ -195,7 +195,7 @@ export default {
       this.saving = true
       this.saveError = null
       try {
-        await $fetch(`/api/marketing/projects/${this.product.id}/site`, {
+        await $fetch(`/api/marketing/projects/${this.project.id}/site`, {
           method: 'PUT',
           body: { origin: this.origin },
         })
@@ -212,7 +212,7 @@ export default {
       this.verifying = true
       this.verifyError = null
       try {
-        const response = await $fetch(`/api/marketing/projects/${this.product.id}/site/verify`, {
+        const response = await $fetch(`/api/marketing/projects/${this.project.id}/site/verify`, {
           method: 'POST',
           body: { method: this.method },
         })
