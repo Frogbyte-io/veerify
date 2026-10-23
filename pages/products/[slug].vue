@@ -200,6 +200,7 @@ export default {
         { id: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
         { id: 'github', label: 'GitHub', icon: 'lucide:github', requiresFeature: 'feedbackEnabled' },
         { id: 'domain', label: 'Custom Domain', icon: 'lucide:globe' },
+        { id: 'api-keys', label: 'API keys', icon: 'lucide:key-round' },
         { id: 'embed', label: 'Embed', icon: 'lucide:code-2' },
         { id: 'danger', label: 'Danger Zone', icon: 'lucide:alert-triangle' },
       ]
@@ -224,6 +225,7 @@ export default {
         appearance: 'ProductSettingsAppearance',
         github: 'ProductSettingsGithub',
         domain: 'ProductSettingsDomain',
+        'api-keys': 'ProductSettingsApiKeys',
         embed: 'ProductSettingsEmbed',
         danger: 'ProductSettingsDanger',
       }
@@ -269,6 +271,11 @@ export default {
             refreshRepos: () => this.refreshGithubRepos(),
             isActive: this.activeTab === 'github',
           }
+        case 'api-keys':
+          return {
+            ...baseProps,
+            projectSlug: this.projectData?.slug,
+          }
         default:
           return baseProps
       }
@@ -293,6 +300,7 @@ export default {
         'appearance',
         'github',
         'domain',
+        'api-keys',
         'embed',
         'danger',
       ].includes(hash)
