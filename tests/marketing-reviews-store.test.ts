@@ -341,7 +341,6 @@ describe('email hash matching', () => {
     await dbReviewsStore.insertRequest({
       id: 'rr-1',
       projectId: 'p1',
-      organizationId: 't1',
       email: 'jane@example.com',
       name: null,
       trigger: 'csat',
