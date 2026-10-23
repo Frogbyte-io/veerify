@@ -359,10 +359,10 @@ if (import.meta.server) {
 
 Nuxt maps files under `server/api/` directly to routes. Method-specific files use suffixes:
 
-| File                                | Route                 | Method                      |
-| ----------------------------------- | --------------------- | --------------------------- |
-| `server/api/auth/[...all].ts`       | `/api/auth/*`         | All (Better-Auth catch-all) |
-| `server/api/user/profile.put.ts`    | `/api/user/profile`   | PUT                         |
+| File                             | Route               | Method                      |
+| -------------------------------- | ------------------- | --------------------------- |
+| `server/api/auth/[...all].ts`    | `/api/auth/*`       | All (Better-Auth catch-all) |
+| `server/api/user/profile.put.ts` | `/api/user/profile` | PUT                         |
 
 ### Protected Route Template
 
