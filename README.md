@@ -151,7 +151,7 @@ Preview/test data is always an explicit operation (`yarn db:seed` or `yarn db:se
 
 You can connect to PostgreSQL in two ways:
 
-**Option A — single connection string (recommended for hosted databases like Neon):**
+**Option A — single connection string (recommended for hosted databases):**
 
 ```env
 DATABASE_URL=postgres://user:password@host:5432/dbname?sslmode=require
