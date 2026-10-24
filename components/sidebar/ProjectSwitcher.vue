@@ -141,7 +141,7 @@
       >
         <NuxtLink to="/dashboard" prefetch-on="interaction">
           <div class="flex aspect-square size-8 items-center justify-center rounded-lg">
-            <img src="/veerify.svg" alt="Veerify" class="size-8" >
+            <img src="/veerify.svg" alt="Veerify" class="size-8" />
           </div>
           <span class="text-base font-semibold tracking-tight group-data-[collapsible=icon]:hidden">Veerify</span>
         </NuxtLink>
@@ -169,12 +169,31 @@
             :disabled="isCreating"
           />
         </div>
+        <div class="space-y-1.5">
+          <Label for="new-project-slug">URL</Label>
+          <Input
+            id="new-project-slug"
+            v-model="newProjectSlug"
+            data-testid="project-create-slug"
+            placeholder="acme"
+            maxlength="100"
+            :disabled="isCreating"
+            @input="newProjectSlugEdited = true"
+          />
+          <p class="text-xs text-muted-foreground" data-testid="project-create-url-preview">
+            Public site: {{ newProjectUrlPreview }}
+          </p>
+        </div>
         <p v-if="createError" class="text-sm text-red-500" data-testid="project-create-error">{{ createError }}</p>
         <DialogFooter>
           <Button type="button" variant="outline" :disabled="isCreating" @click="createDialogOpen = false">
             Cancel
           </Button>
-          <Button type="submit" data-testid="project-create-submit" :disabled="isCreating || !newProjectName.trim()">
+          <Button
+            type="submit"
+            data-testid="project-create-submit"
+            :disabled="isCreating || !newProjectName.trim() || !newProjectSlug.trim()"
+          >
             <Icon v-if="isCreating" name="lucide:loader-2" class="mr-2 size-4 animate-spin" />
             Create project
           </Button>
@@ -192,6 +211,20 @@ import {
   fetchDashboardBootstrap,
   getCachedDashboardBootstrap,
 } from '~/lib/dashboard-bootstrap-client'
+
+// Mirrors server/utils/product-rules.ts slugifyName so the preview matches what the server stores.
+function slugifyProjectName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 100)
+}
 
 const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 const CACHE_MAX_AGE_MS = 5 * 60 * 1000
@@ -262,6 +295,9 @@ export default {
       loadError: null,
       createDialogOpen: false,
       newProjectName: '',
+      // Follows the name until the user edits it.
+      newProjectSlug: '',
+      newProjectSlugEdited: false,
       isCreating: false,
       createError: null,
     }
@@ -287,14 +323,24 @@ export default {
       if (!this.activeProject) return orgName
       return `${orgName} · ${this.activeProject.isPublic ? 'Public' : 'Private'}`
     },
+    newProjectUrlPreview() {
+      const appDomain = useRuntimeConfig().public.appDomain || 'localhost'
+      const orgSlug = this.activeOrganization?.slug || 'workspace'
+      return `${orgSlug}.${appDomain}/${this.newProjectSlug.trim() || '…'}`
+    },
   },
 
   watch: {
     createDialogOpen(open) {
       if (!open) {
         this.newProjectName = ''
+        this.newProjectSlug = ''
+        this.newProjectSlugEdited = false
         this.createError = null
       }
+    },
+    newProjectName(name) {
+      if (!this.newProjectSlugEdited) this.newProjectSlug = slugifyProjectName(name)
     },
   },
 
@@ -525,7 +571,8 @@ export default {
       this.isCreating = true
       this.createError = null
       try {
-        const response = await $fetch('/api/projects', { method: 'POST', body: { name } })
+        const slug = slugifyProjectName(this.newProjectSlug) || undefined
+        const response = await $fetch('/api/projects', { method: 'POST', body: { name, slug } })
         const created = response?.data?.project
         if (created?.id) {
           await $fetch('/api/projects/active', { method: 'POST', body: { projectId: created.id } })

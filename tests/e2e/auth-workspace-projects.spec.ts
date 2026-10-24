@@ -111,7 +111,7 @@ test('onboarding creates the workspace together with its first project', async (
   }
 })
 
-test('project creation from the switcher derives the slug from the name and activates the project', async ({
+test('project creation from the switcher mirrors the slug from the name, keeps an edited slug, and activates the project', async ({
   page,
 }) => {
   await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
@@ -119,7 +119,8 @@ test('project creation from the switcher derives the slug from the name and acti
 
   const stamp = Date.now()
   const projectName = `DotMatrixLabs Ops ${stamp}`
-  const expectedSlug = `dotmatrixlabs-ops-${stamp}`
+  const mirroredSlug = `dotmatrixlabs-ops-${stamp}`
+  const expectedSlug = `dmx-ops-${stamp}`
 
   await page.goto('/dashboard')
   const trigger = page.locator(selectors.projectSwitcherTrigger)
@@ -129,6 +130,15 @@ test('project creation from the switcher derives the slug from the name and acti
 
   const dialog = page.getByRole('dialog', { name: 'New project' })
   await expect(dialog).toBeVisible()
+  await dialog.locator(selectors.projectCreateName).fill(projectName)
+  // The slug follows the full name while typing and previews the public URL.
+  const slugInput = dialog.locator(selectors.projectCreateSlug)
+  await expect(slugInput).toHaveValue(mirroredSlug)
+  await expect(dialog.getByTestId('project-create-url-preview')).toContainText(`/${mirroredSlug}`)
+  // Once edited, the slug no longer follows the name.
+  await slugInput.fill(expectedSlug)
+  await dialog.locator(selectors.projectCreateName).fill(`${projectName} `)
+  await expect(slugInput).toHaveValue(expectedSlug)
   await dialog.locator(selectors.projectCreateName).fill(projectName)
   await dialog.locator(selectors.projectCreateSubmit).click()
   await expect(dialog).toHaveCount(0)

@@ -63,7 +63,8 @@
 
     <!-- Main Content -->
     <div v-else-if="projectData" class="flex-1 flex flex-col">
-      <!-- Banner: custom image when set, otherwise a styled default using accentColor -->
+      <!-- Banner: custom image when set, otherwise the accentColor background. Decorative only: the
+           parallax layer overhangs the clipped container, so any text on it would be cut off. -->
       <!-- Outer container clips the parallax overflow -->
       <div data-testid="public-board-banner" class="w-full h-24 md:h-36 overflow-hidden relative">
         <!-- Inner parallax layer: extends beyond container so no blank edges show during scroll -->
@@ -75,12 +76,6 @@
             class="w-full h-full object-cover"
             @error="onBannerError"
           />
-          <!-- Default banner content when no image or image failed to load -->
-          <div v-if="!projectData.project.settings?.bannerUrl || bannerError" class="absolute inset-0 flex items-end">
-            <div class="max-w-4xl w-full mx-auto px-4 pb-4">
-              <p class="text-white/60 text-sm font-medium tracking-wide uppercase">Feedback Board</p>
-            </div>
-          </div>
         </div>
       </div>
 

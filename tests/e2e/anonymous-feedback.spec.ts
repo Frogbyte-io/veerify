@@ -812,7 +812,8 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(page.locator('img[data-testid="public-board-logo"]')).toHaveCount(0)
       await expect(fallbackBanner).toBeVisible()
       await expect(page.locator('[data-testid="public-board-banner"] img')).toHaveCount(0)
-      await expect(fallbackBanner.getByText('Feedback Board')).toBeVisible()
+      // The fallback banner is decorative: no text that the parallax overhang could clip.
+      await expect(fallbackBanner).toHaveText('')
     } finally {
       const resetResponse = await page.request.put('/api/projects/demo', {
         data: { settings: null },

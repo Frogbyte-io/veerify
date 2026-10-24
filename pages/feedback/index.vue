@@ -1,6 +1,6 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6 max-w-7xl mx-auto space-y-8">
+    <div class="p-6 w-full min-w-0 max-w-7xl mx-auto space-y-8">
       <!-- Header -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

@@ -29,6 +29,7 @@ export const selectors = {
   projectSwitcherNewProject: '[data-testid="project-switcher-new-project"]',
   projectSwitcherCreate: '[data-testid="project-switcher-create"]',
   projectCreateName: '[data-testid="project-create-name"]',
+  projectCreateSlug: '[data-testid="project-create-slug"]',
   projectCreateSubmit: '[data-testid="project-create-submit"]',
   navUserLoading: '[data-testid="nav-user-loading"]',
   navUserTrigger: '[data-testid="nav-user-trigger"]',
