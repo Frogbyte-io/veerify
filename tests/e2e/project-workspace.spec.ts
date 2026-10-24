@@ -448,6 +448,9 @@ test('custom domain status downgrades from stored verified state after a failed 
   await page.getByRole('button', { name: 'Check DNS' }).click()
   await expect(page.getByTestId('product-domain-status-title')).toHaveText('Domain connection error')
   await expect(page.getByText('Domain provider unavailable')).toBeVisible()
+  // The GET handler proxies through page.request; a background refetch still in flight when the
+  // test ends would otherwise fail teardown with "Target page, context or browser has been closed".
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
   await expect(page.getByRole('button', { name: 'Remove' })).toBeVisible()
   await page.getByRole('button', { name: 'Remove' }).click()
   await expect(page.getByRole('button', { name: 'Remove' })).toHaveCount(0)
