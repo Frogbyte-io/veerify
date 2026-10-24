@@ -18,7 +18,7 @@
  * so a slow provider only ever holds its own slots. Claims walk the pending partial index in
  * `(provider, created_at, id)` order, one cheap query per provider with remaining capacity.
  *
- * Time: the task runs on Vercel's 60 s limit with a 45 s budget. No new answer is claimed when less
+ * Time: the task works in ~45 s slices (it was sized for a 60 s function limit). No new answer is claimed when less
  * than `CLAIM_CUTOFF_MS` of the budget remains (a started answer needs time for its search plus
  * extraction call), and every provider call receives an AbortSignal that fires at the hard deadline
  * (budget + `HARD_DEADLINE_EXTRA_MS`) so nothing is killed mid-flight by the platform; an answer cut

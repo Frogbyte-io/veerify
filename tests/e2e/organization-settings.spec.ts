@@ -5,8 +5,7 @@ import { selectors, workspaceTabSelector } from './helpers/selectors'
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const TEMP_ORG_SLUG_PREFIX = 'org-e2e-'
-const deploymentMode =
-  process.env.APP_DEPLOYMENT_MODE || (process.env.VERCEL || process.env.VERCEL_ENV ? 'cloud' : 'self-hosted')
+const deploymentMode = process.env.APP_DEPLOYMENT_MODE || 'self-hosted'
 
 test.setTimeout(60_000)
 

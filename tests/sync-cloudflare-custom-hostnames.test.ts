@@ -67,7 +67,7 @@ const run = (apply: boolean, ctx: ReturnType<typeof setup>) =>
 
 describe('sync-cloudflare-custom-hostnames', () => {
   it('skips hostnames inside the zone and never looks them up or registers them', async () => {
-    const ctx = setup([row('feedback.veerify.io', { provider: 'vercel' })], {})
+    const ctx = setup([row('feedback.veerify.io', { provider: 'static-cname' })], {})
     const lookup = vi.spyOn(ctx.provider, 'lookupProjectDomain')
 
     for (const apply of [false, true]) {

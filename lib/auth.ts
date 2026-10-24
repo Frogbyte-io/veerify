@@ -182,10 +182,6 @@ export const auth = betterAuth({
             throw new APIError('BAD_REQUEST', { message: 'This workspace URL is reserved. Choose another one.' })
           }
         },
-        async afterCreateOrganization({ organization: org }) {
-          const { registerOrgPublicDomainBestEffort } = await import('../server/services/domains/domain-service')
-          await registerOrgPublicDomainBestEffort(org.slug, { organizationId: org.id })
-        },
       },
     }),
     magicLink({

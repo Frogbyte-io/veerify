@@ -189,7 +189,7 @@ real mailboxes you control, and record the results in `TODO.md` under MVP-DEP-3:
 - **Migration history.** Check whether the production database ever applied the old `main`
   migration `0019_supreme_groot`. If it did, resolve the journal ordering issue described at the top
   of the [Coolify plan](plans/2026-09-21-coolify-deployment.md) before running `migrate` against it.
-- **Customer domains.** List every customer board domain currently served by Vercel and provision a
+- **Customer domains.** List every customer board domain previously served by Vercel and provision a
   Coolify route and certificate for each. Coolify doesn't do Caddy's on-demand TLS.
 - **Backups.** Take a production backup and test a restore into a disposable database. Back up the
   bucket separately (a database dump doesn't include S3 objects).

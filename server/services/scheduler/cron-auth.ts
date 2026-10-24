@@ -4,9 +4,8 @@ import { timingSafeEqual } from 'node:crypto'
  * Verify that a request to a cron HTTP endpoint really came from the
  * scheduler and not an anonymous caller.
  *
- * Vercel Cron invokes the configured path with `Authorization: Bearer
- * <CRON_SECRET>` (see https://vercel.com/docs/cron-jobs/manage-cron-jobs).
- * An unauthenticated cron endpoint that triggers real work is a genuine
+ * External schedulers invoke the endpoint with `Authorization: Bearer
+ * <CRON_SECRET>`. An unauthenticated cron endpoint that triggers real work is a genuine
  * vulnerability, so this fails closed: a missing or empty secret means
  * "never authorize", not "allow everything".
  *

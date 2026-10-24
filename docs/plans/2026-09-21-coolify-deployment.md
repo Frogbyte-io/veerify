@@ -237,9 +237,8 @@ read directly from the runtime environment (no `NUXT_` mapping or build-time pla
 Moving support mail to Frogmail while keeping account mail on Resend is described in
 [Using Frogmail](../deployment-mail.md#using-frogmail).
 
-An APP_DEPLOYMENT_MODE of cloud selects the Vercel
-backend; do not use it to disable scheduling in a self-hosted replica. The dedicated scheduler switch
-does not exist yet. External cron HTTP calls additionally need `CRON_SECRET`; Nitro itself does not.
+The in-process Nitro scheduler runs regardless of APP_DEPLOYMENT_MODE; do not
+use it to disable scheduling in a replica. A dedicated scheduler switch does not exist yet. External cron HTTP calls additionally need `CRON_SECRET`; Nitro itself does not.
 
 ## Staging execution and evidence
 

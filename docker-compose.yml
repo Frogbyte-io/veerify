@@ -130,10 +130,6 @@ services:
       APP_DEPLOYMENT_MODE: self-hosted
       CNAME_TARGET: ${CNAME_TARGET:-}
       DOMAIN_PROVIDER: ${DOMAIN_PROVIDER:-static-cname}
-      VERCEL_API_TOKEN: ${VERCEL_API_TOKEN:-}
-      VERCEL_PROJECT_ID: ${VERCEL_PROJECT_ID:-}
-      VERCEL_TEAM_ID: ${VERCEL_TEAM_ID:-}
-      VERCEL_TEAM_SLUG: ${VERCEL_TEAM_SLUG:-}
 
       # --- Inbound support mail (Frogmail: SUPPORT_CHANNEL_PROVIDER=mailgun,
       # SUPPORT_MAILGUN_API_BASE_URL=<Frogmail origin>; empty = api.mailgun.net) ---

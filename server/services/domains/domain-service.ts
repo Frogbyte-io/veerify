@@ -3,7 +3,6 @@ import { normalizeDomainHostname, type DomainProvider, type DomainProviderResult
 import { resolveDomainProviderName, type DomainProviderName } from './provider-name'
 import { CloudflareSaasDomainProvider } from './providers/cloudflare-saas'
 import { StaticCnameDomainProvider } from './providers/static-cname'
-import { VercelDomainProvider } from './providers/vercel'
 import { createLogger } from '../../utils/logger'
 
 export { resolveDomainProviderName }
@@ -121,7 +120,6 @@ export function buildDomainSettingsPatch(
 }
 
 export function createDomainProvider(name: DomainProviderName): DomainProvider {
-  if (name === 'vercel') return new VercelDomainProvider()
   if (name === 'cloudflare-saas') return new CloudflareSaasDomainProvider()
   return new StaticCnameDomainProvider()
 }
@@ -160,32 +158,6 @@ export function buildOrgSubdomainHostname(orgSlug: string, appDomain: string) {
   }
 
   return `${normalizedOrgSlug}.${normalizedAppDomain}`
-}
-
-export async function registerOrgPublicDomain(orgSlug: string) {
-  if (getDomainProviderName() !== 'vercel') {
-    return null
-  }
-
-  const config = useRuntimeConfig()
-  const hostname = buildOrgSubdomainHostname(orgSlug, String(config.public.appDomain || 'localhost'))
-  if (!hostname) {
-    return null
-  }
-
-  return getDomainProvider().registerProjectDomain({ hostname })
-}
-
-export async function registerOrgPublicDomainBestEffort(orgSlug: string, context: Record<string, unknown> = {}) {
-  try {
-    await registerOrgPublicDomain(orgSlug)
-  } catch (error) {
-    logger.error('Failed to register generated workspace public domain', {
-      orgSlug,
-      ...context,
-      error: error instanceof Error ? error.message : error,
-    })
-  }
 }
 
 type ProviderRef = { providerDomainId?: string | null }

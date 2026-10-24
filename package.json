@@ -20,8 +20,6 @@
     "db:seed": "yarn db:migrate && tsx scripts/seed.ts",
     "db:seed:clean": "yarn db:migrate && tsx scripts/seed.ts --clean",
     "db:seed:e2e": "tsx scripts/seed.ts --clean && tsx scripts/seed.ts",
-    "vercel-build": "yarn db:migrate:deploy && yarn openapi:generate && nuxt build",
-    "domains:ensure-org-subdomains": "tsx scripts/ensure-org-subdomains.ts",
     "domains:sync-cloudflare": "tsx scripts/sync-cloudflare-custom-hostnames.ts",
     "lint": "eslint .",
     "format:check": "prettier --check .",
@@ -40,8 +38,7 @@
     "test:e2e:worktree": "node scripts/worktree-run.mjs yarn test:e2e",
     "snapshot:dashboard": "node scripts/snapshot-dashboard.mjs",
     "codex:mcp:chrome:setup": "node scripts/setup-codex-chrome-mcp.mjs",
-    "codex:mcp:chrome:status": "codex mcp get chrome-devtools",
-    "vercel:setup-domain-provider": "node scripts/setup-vercel-domain-provider.mjs"
+    "codex:mcp:chrome:status": "codex mcp get chrome-devtools"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.922.0",
@@ -54,7 +51,6 @@
     "@scalar/nuxt": "^0.5.66",
     "@tailwindcss/vite": "^4.1.8",
     "@types/pg": "^8.15.4",
-    "@vercel/analytics": "^1.6.1",
     "@vue/server-renderer": "3.5.27",
     "@vueuse/core": "^14.2.1",
     "better-auth": "^1.5.0",

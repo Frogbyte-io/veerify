@@ -17,15 +17,12 @@ function readInt(name: string, fallback: number, min: number, max: number): numb
 }
 
 /**
- * Whether this deployment is the multi-tenant cloud. Mirrors the detection in
- * `server/services/scheduler/index.ts` and `nuxt.config.ts`: `APP_DEPLOYMENT_MODE` wins when set to a
- * recognized value, otherwise Vercel's own env vars imply cloud.
+ * Whether this deployment is the multi-tenant cloud. Only `APP_DEPLOYMENT_MODE=cloud`
+ * (same as `nuxt.config.ts`) enables it; anything else is self-hosted.
  */
 export function isCloudDeployment(): boolean {
   const configured = (readEnv('APP_DEPLOYMENT_MODE') ?? '').toLowerCase()
-  if (configured === 'cloud') return true
-  if (configured === 'self-hosted') return false
-  return Boolean(process.env.VERCEL || process.env.VERCEL_ENV)
+  return configured === 'cloud'
 }
 
 /**

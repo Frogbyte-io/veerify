@@ -289,7 +289,6 @@ describe('backfill-sending-domains', () => {
 describe('production guard and arguments', () => {
   it('flags production-looking environments', () => {
     expect(productionDatabaseReason({ NODE_ENV: 'production' }, 'localhost')).toContain('NODE_ENV')
-    expect(productionDatabaseReason({ VERCEL_ENV: 'production' }, 'localhost')).toContain('VERCEL_ENV')
     expect(productionDatabaseReason({}, 'db.prod.example.com')).toContain('not local')
     expect(productionDatabaseReason({}, 'localhost')).toBeNull()
     expect(productionDatabaseReason({ PGDATABASE: 'x' }, '127.0.0.1')).toBeNull()

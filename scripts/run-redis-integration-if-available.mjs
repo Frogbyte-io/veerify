@@ -13,7 +13,7 @@ import { isDedicatedRedisUrl } from './redis-integration-policy.mjs'
  */
 
 const isCloudEnvironment = Boolean(
-  process.env.GITHUB_ACTIONS || process.env.VERCEL || process.env.CIRCLECI || process.env.BUILDKITE || process.env.CI
+  process.env.GITHUB_ACTIONS || process.env.CIRCLECI || process.env.BUILDKITE || process.env.CI
 )
 const failOnPreflightSkip =
   process.env.REDIS_INTEGRATION_SKIP_IS_FAILURE === '1' ||
