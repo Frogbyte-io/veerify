@@ -116,7 +116,6 @@ export function productionDatabaseReason(
   host: string | undefined = connectionHost(env)
 ): string | null {
   if (env.NODE_ENV === 'production') return 'NODE_ENV=production'
-  if (env.VERCEL_ENV === 'production') return 'VERCEL_ENV=production'
   const normalized = (host ?? '').trim().toLowerCase()
   if (!normalized || normalized.startsWith('/')) return null
   if (['localhost', '127.0.0.1', '::1', 'postgres', 'db'].includes(normalized)) return null

@@ -74,7 +74,6 @@
  *               $ref: '#/components/schemas/Error'
  */
 
-import { registerOrgPublicDomainBestEffort } from '~/server/services/domains/domain-service'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
@@ -148,10 +147,6 @@ export default defineEventHandler(async (event) => {
 
     return org
   })
-
-  if (createdOrganization.slug) {
-    await registerOrgPublicDomainBestEffort(createdOrganization.slug, { organizationId: createdOrganization.id })
-  }
 
   setResponseStatus(event, 201)
 

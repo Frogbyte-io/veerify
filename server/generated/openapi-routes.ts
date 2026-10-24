@@ -496,8 +496,8 @@ export const openapiPaths = {
       "tags": [
         "Internal"
       ],
-      "summary": "Scheduled task trigger (Vercel Cron only)",
-      "description": "Invoked by Vercel Cron on the schedule declared in vercel.json. Requires a bearer CRON_SECRET; not intended for manual calls.\n",
+      "summary": "Scheduled task trigger (external trigger)",
+      "description": "Optional external trigger; the in-process scheduler normally runs this task. Requires a bearer CRON_SECRET; not intended for manual calls.\n",
       "operationId": "cronExamplePing",
       "responses": {
         "200": {

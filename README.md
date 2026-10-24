@@ -145,7 +145,7 @@ range of migrations. For large installations, run the migration command as a
 single controlled deployment job and monitor long-running backfills before
 starting application replicas.
 
-Preview/test data is always an explicit operation (`yarn db:seed` or `yarn db:seed:e2e`) and must never be part of a build or package-install hook. Vercel's `vercel-build` command runs deployment migration first and compilation second, without seeding.
+Preview/test data is always an explicit operation (`yarn db:seed` or `yarn db:seed:e2e`) and must never be part of a build or package-install hook. The container entrypoint runs deployment migration on start; compilation never seeds.
 
 #### Configure the PostgreSQL database
 
@@ -339,7 +339,7 @@ single migration/backfill service before the app begins serving and brings Caddy
 When a project points a customer-owned domain at a project's public board, Caddy issues that domain's TLS
 certificate automatically on first request (on-demand TLS) — no manual cert management, no restart. The
 customer only needs a `CNAME`/`A` record pointing their domain at this VM; verification and DNS-target
-guidance is the same as on the CNAME/Vercel-based flow (see `CNAME_TARGET` above).
+guidance is the same as on the CNAME-based flow (see `CNAME_TARGET` above).
 
 Certificate issuance for arbitrary hosts is gated by an `ask` check in `Caddyfile` so the proxy can't be
 abused as an open certificate-issuance relay — see the comments in `Caddyfile` and D-07 in

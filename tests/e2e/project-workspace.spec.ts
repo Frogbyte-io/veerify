@@ -295,28 +295,28 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
       contentType: 'application/json',
       body: JSON.stringify({
         hostname: 'feedback.example.com',
-        provider: 'vercel',
+        provider: 'cloudflare-saas',
         verified: false,
         status: 'ownership_verification_required',
         dnsRecords: [
           {
             type: 'TXT',
-            name: '_vercel.feedback.example.com',
-            value: 'vc-domain-verify=e2e-token',
+            name: '_acme-challenge.feedback.example.com',
+            value: 'e2e-token-value',
           },
           {
             type: 'CNAME',
             name: 'feedback.example.com',
-            value: '23f9267bd57617a5.vercel-dns-017.com.',
+            value: 'abc123.edge.example.net.',
           },
           {
             type: 'CNAME',
             name: 'feedback.example.com',
-            value: 'cname.vercel-dns.com.',
+            value: 'cname.edge.example.net.',
           },
         ],
         configuredBy: 'CNAME',
-        expected: '23f9267bd57617a5.vercel-dns-017.com.',
+        expected: 'abc123.edge.example.net.',
         resolvedTo: [],
         message: null,
       }),
@@ -331,9 +331,9 @@ test('custom domain dns setup hides duplicate cname targets for the same host', 
   await page.locator('#custom-domain').fill('feedback.example.com')
   await page.getByRole('button', { name: 'Check DNS' }).click()
 
-  await expect(page.getByText('vc-domain-verify=e2e-token')).toBeVisible()
-  await expect(page.getByText('23f9267bd57617a5.vercel-dns-017.com.').last()).toBeVisible()
-  await expect(page.getByText('cname.vercel-dns.com.')).toHaveCount(0)
+  await expect(page.getByText('e2e-token-value')).toBeVisible()
+  await expect(page.getByText('abc123.edge.example.net.').last()).toBeVisible()
+  await expect(page.getByText('cname.edge.example.net.')).toHaveCount(0)
   await expect(page.getByText(/Last checked/)).toBeVisible()
 })
 

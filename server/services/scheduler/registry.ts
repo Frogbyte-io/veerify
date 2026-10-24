@@ -9,8 +9,8 @@ const registry = new Map<string, ScheduledTaskDefinition>()
  * This is the single call site future stages use (Stage 06's SLA sweeper,
  * Stage 08's CSAT dispatch). Registration only stores the definition in a
  * process-wide map — actually running it on a schedule is the job of the
- * backend-specific adapter (`server/tasks/**` for self-hosted,
- * `server/api/cron/*.get.ts` for Vercel), both of which look the
+ * backend-specific adapter (`server/tasks/**` for the in-process Nitro scheduler,
+ * `server/api/cron/*.get.ts` for external HTTP triggers), both of which look the
  * definition up by name via `getScheduledTask`.
  *
  * Throws synchronously on an invalid name, an invalid cron expression, or a

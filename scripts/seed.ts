@@ -296,14 +296,11 @@ async function seed(client: Client) {
  * (`test@preview.local` / `password123`). Seeding is an explicit development
  * or test operation and is never part of build/package lifecycle hooks.
  *
- * The original guard only checked `VERCEL_ENV`, which left self-hosted
- * deployments and any local production build unprotected. `NODE_ENV` covers
- * those. `ALLOW_PRODUCTION_SEED=true` exists for the rare deliberate case, e.g.
+ * `NODE_ENV=production` blocks the run. `ALLOW_PRODUCTION_SEED=true` exists for the rare deliberate case, e.g.
  * seeding a staging database that legitimately reports itself as production.
  */
 function productionSeedBlockReason(): string | null {
   if (process.env.ALLOW_PRODUCTION_SEED === 'true') return null
-  if (process.env.VERCEL_ENV === 'production') return 'VERCEL_ENV=production'
   if (process.env.NODE_ENV === 'production') return 'NODE_ENV=production'
   return null
 }

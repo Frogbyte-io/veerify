@@ -44,8 +44,8 @@ Use this as the fast path for task context before editing code.
 - `server/services/redis/client.ts`: shared ioredis factory. Both realtime and the
   rate limiter take connections from here.
 - `server/services/rate-limit/`: rate limiter store adapter (`memory` | `redis`).
-- `server/services/scheduler/`: scheduled tasks behind one API, backed by Vercel Cron
-  on cloud and Nitro tasks when self-hosted.
+- `server/services/scheduler/`: scheduled tasks behind one API, run in-process by Nitro tasks;
+  `/api/cron/*` HTTP endpoints (`CRON_SECRET`) allow external triggering.
 - `server/services/domains/`: custom domain provider adapter.
 - `lib/realtime-client.ts` + `plugins/realtime.client.ts`: browser realtime client.
 

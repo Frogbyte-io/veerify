@@ -4,7 +4,7 @@ import { Client } from 'pg'
 
 const require = createRequire(import.meta.url)
 const isCloudEnvironment = Boolean(
-  process.env.GITHUB_ACTIONS || process.env.VERCEL || process.env.CIRCLECI || process.env.BUILDKITE || process.env.CI
+  process.env.GITHUB_ACTIONS || process.env.CIRCLECI || process.env.BUILDKITE || process.env.CI
 )
 const isForced = process.env.PLAYWRIGHT_FORCE === '1'
 const canRunByEnvironment = isCloudEnvironment || isForced

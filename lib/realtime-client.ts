@@ -20,7 +20,7 @@
  * `docs/plans/2026-08-11-support-platform/design.md` ("Realtime") and
  * `docs/plans/2026-08-11-support-platform/deltas.md` (D-02):
  *
- *   - Reconnect with exponential backoff is the NORMAL path (Vercel closes
+ *   - Reconnect with exponential backoff is the NORMAL path (serverless hosts and proxies close
  *     WebSockets at the function max duration), not an error condition.
  *   - All previously-subscribed channels are resubscribed automatically on
  *     every reconnect — callers never re-register.

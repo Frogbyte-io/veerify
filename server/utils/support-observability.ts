@@ -5,7 +5,7 @@ import { createLogger } from '~/server/utils/logger'
  *
  * Every counter the support platform needs in production is derived from logs
  * rather than a metrics client: there is no metrics backend in this deployment,
- * and both target platforms (Vercel and the self-hosted Docker/Caddy path) can
+ * and the self-hosted Docker path can
  * build log-based counters from a stable structured record. That makes the log
  * line the contract, so it is typed and validated instead of hand-written at
  * each call site.
