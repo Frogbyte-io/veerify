@@ -31,18 +31,18 @@ const { sendMentionsDigests, digestWindowEnd, digestMetric } =
   await import('~/server/services/marketing/mentions/digest')
 
 type Digests = Parameters<typeof sendMentionsDigests>[1]
+type DigestTarget = { projectId: string; organizationId: string }
 
 const counts = { mention: 2, competitor: 0, opportunity: 0 }
 const NOW = new Date('2026-10-12T08:00:00Z')
 
-const siteFor = (siteId: string, teamId: string) => ({
+const siteFor = (siteId: string, projectId: string) => ({
   siteId,
-  teamId,
-  projectId: `p-${siteId}`,
+  organizationId: 'o1',
+  projectId,
   projectName: `Product ${siteId}`,
   projectSlug: siteId,
-  projectSettings: { marketingEnabled: true },
-  teamMarketingEnabled: true,
+  projectSettings: { marketingEnabled: true } as Record<string, unknown>,
 })
 
 /** In-memory ledger with the same semantics as INSERT ... ON CONFLICT DO NOTHING RETURNING */
@@ -53,19 +53,19 @@ function sharedLedger() {
     ledger: {
       listClaimed: async (date: string) =>
         new Set([...rows].filter((r) => r.endsWith(`|${date}`)).map((r) => r.split('|')[0])),
-      claim: async (teamIds: string[], date: string) => {
+      claim: async (targets: DigestTarget[], date: string) => {
         const won = new Set<string>()
-        for (const teamId of teamIds) {
-          const key = `${teamId}|${date}`
+        for (const { projectId } of targets) {
+          const key = `${projectId}|${date}`
           if (!rows.has(key)) {
             rows.add(key)
-            won.add(teamId)
+            won.add(projectId)
           }
         }
         return won
       },
-      release: async (teamIds: string[], date: string) => {
-        for (const teamId of teamIds) rows.delete(`${teamId}|${date}`)
+      release: async (targets: DigestTarget[], date: string) => {
+        for (const { projectId } of targets) rows.delete(`${projectId}|${date}`)
       },
     },
   }
@@ -80,18 +80,20 @@ function makeWorker(
   const loadDigestContents = vi.fn(
     async (siteIds: string[]) => new Map(siteIds.map((id) => [id, { counts, items: [] }]))
   )
-  const loadAdminEmailsForTeams = vi.fn(async (teamIds: string[]) => new Map(teamIds.map((t) => [t, [`${t}@x.test`]])))
+  const loadAdminEmailsForProjects = vi.fn(
+    async (targets: DigestTarget[]) => new Map(targets.map((t) => [t.projectId, [`${t.projectId}@x.test`]]))
+  )
   const deps: Digests = {
     store: { loadVerifiedSites: async () => sites },
     ledger,
     loadSitesWithNewMentions: async () => new Set(sites.map((s) => s.siteId)),
     loadDigestContents,
-    loadAdminEmailsForTeams,
+    loadAdminEmailsForProjects,
     sendEmail: send,
     baseUrl: 'https://app.test/',
     ...extra,
   }
-  return { deps, send, loadDigestContents, loadAdminEmailsForTeams }
+  return { deps, send, loadDigestContents, loadAdminEmailsForProjects }
 }
 
 describe('mentions digest ledger', () => {
@@ -99,12 +101,18 @@ describe('mentions digest ledger', () => {
     const { ledger, rows } = sharedLedger()
     const w = makeWorker(ledger, [siteFor('s1', 't1'), siteFor('s2', 't2')])
     const summary = await sendMentionsDigests({ now: NOW }, w.deps)
-    expect(summary).toMatchObject({ sitesNotified: 2, emailsSent: 2, errors: 0, teamsProcessed: 2, teamsDeferred: 0 })
+    expect(summary).toMatchObject({
+      sitesNotified: 2,
+      emailsSent: 2,
+      errors: 0,
+      projectsProcessed: 2,
+      projectsDeferred: 0,
+    })
     expect(rows).toEqual(new Set(['t1|2026-10-12', 't2|2026-10-12']))
     expect(w.send.mock.calls[0][0]).toMatchObject({
       to: 't1@x.test',
       productName: 'Product s1',
-      mentionsUrl: 'https://app.test/marketing/mentions?product=s1',
+      mentionsUrl: 'https://app.test/marketing/mentions?project=s1',
     })
   })
 
@@ -116,13 +124,13 @@ describe('mentions digest ledger', () => {
     const b = makeWorker(ledger, sites, send)
     // Both list the ledger before either claims, so only the atomic claim keeps them apart
     const [ra, rb] = await Promise.all([
-      sendMentionsDigests({ now: NOW, teamBatch: 3 }, a.deps),
-      sendMentionsDigests({ now: NOW, teamBatch: 3 }, b.deps),
+      sendMentionsDigests({ now: NOW, projectBatch: 3 }, a.deps),
+      sendMentionsDigests({ now: NOW, projectBatch: 3 }, b.deps),
     ])
     const recipients = send.mock.calls.map((c) => c[0].to)
     expect(new Set(recipients).size).toBe(recipients.length)
     expect(recipients).toHaveLength(10)
-    expect(ra.teamsProcessed + rb.teamsProcessed).toBe(10)
+    expect(ra.projectsProcessed + rb.projectsProcessed).toBe(10)
   })
 
   it('a later run skips teams already claimed today and does not send again', async () => {
@@ -133,7 +141,7 @@ describe('mentions digest ledger', () => {
     const second = makeWorker(ledger, sites)
     const summary = await sendMentionsDigests({ now: new Date('2026-10-12T09:00:00Z') }, second.deps)
     expect(second.send).not.toHaveBeenCalled()
-    expect(summary).toMatchObject({ emailsSent: 0, teamsProcessed: 0, teamsAlreadyClaimed: 1 })
+    expect(summary).toMatchObject({ emailsSent: 0, projectsProcessed: 0, projectsAlreadyClaimed: 1 })
   })
 
   it('claims the next day again', async () => {
@@ -153,16 +161,16 @@ describe('mentions digest ledger', () => {
       t += 20_000
     })
     const w1 = makeWorker(ledger, sites, send, { clock: () => t })
-    const first = await sendMentionsDigests({ now: NOW, teamBatch: 2, budgetMs: 45_000 }, w1.deps)
+    const first = await sendMentionsDigests({ now: NOW, projectBatch: 2, budgetMs: 45_000 }, w1.deps)
     // The budget is checked per email: batch 1 sends at 0 s and 20 s, batch 2 sends one at 40 s, and the
     // next email (60 s) is past the budget, so that team's claim is released and batch 3 never starts
-    expect(first.teamsProcessed).toBe(3)
-    expect(first.teamsDeferred).toBe(3)
+    expect(first.projectsProcessed).toBe(3)
+    expect(first.projectsDeferred).toBe(3)
 
     const w2 = makeWorker(ledger, sites, send)
     const second = await sendMentionsDigests({ now: new Date('2026-10-12T09:00:00Z') }, w2.deps)
-    expect(second.teamsProcessed).toBe(3)
-    expect(second.teamsAlreadyClaimed).toBe(3)
+    expect(second.projectsProcessed).toBe(3)
+    expect(second.projectsAlreadyClaimed).toBe(3)
     const recipients = send.mock.calls.map((c) => c[0].to)
     expect(new Set(recipients).size).toBe(6)
   })
@@ -192,10 +200,10 @@ describe('mentions digest ledger', () => {
       t += 50_000
     })
     const w = makeWorker(ledger, sites, send, { clock: () => t })
-    const summary = await sendMentionsDigests({ now: NOW, teamBatch: 25, budgetMs: 45_000 }, w.deps)
+    const summary = await sendMentionsDigests({ now: NOW, projectBatch: 25, budgetMs: 45_000 }, w.deps)
     // one batch of four teams: only the first email starts before the budget is gone
     expect(send).toHaveBeenCalledTimes(1)
-    expect(summary).toMatchObject({ emailsSent: 1, teamsProcessed: 1, teamsDeferred: 3 })
+    expect(summary).toMatchObject({ emailsSent: 1, projectsProcessed: 1, projectsDeferred: 3 })
     expect(rows.size).toBe(1)
   })
 
@@ -208,13 +216,13 @@ describe('mentions digest ledger', () => {
     })
     const w = makeWorker(ledger, sites, send, {
       clock: () => t,
-      loadAdminEmailsForTeams: async (teamIds: string[]) =>
-        new Map(teamIds.map((id) => [id, [`a@${id}.test`, `b@${id}.test`, `c@${id}.test`]])),
+      loadAdminEmailsForProjects: async (targets: DigestTarget[]) =>
+        new Map(targets.map(({ projectId: id }) => [id, [`a@${id}.test`, `b@${id}.test`, `c@${id}.test`]])),
     })
-    const summary = await sendMentionsDigests({ now: NOW, teamBatch: 25, budgetMs: 45_000 }, w.deps)
+    const summary = await sendMentionsDigests({ now: NOW, projectBatch: 25, budgetMs: 45_000 }, w.deps)
     // t0 started before the deadline, so all 3 of its recipients are mailed; t1 never started and is released
     expect(send.mock.calls.map((c) => c[0].to)).toEqual(['a@t0.test', 'b@t0.test', 'c@t0.test'])
-    expect(summary).toMatchObject({ emailsSent: 3, teamsProcessed: 1, teamsDeferred: 1 })
+    expect(summary).toMatchObject({ emailsSent: 3, projectsProcessed: 1, projectsDeferred: 1 })
     expect(rows).toEqual(new Set(['t0|2026-10-12']))
   })
 
@@ -246,23 +254,24 @@ describe('mentions digest ledger', () => {
     const { ledger } = sharedLedger()
     const sites = Array.from({ length: 10 }, (_, i) => siteFor(`s${i}`, `t${i % 5}`))
     const w = makeWorker(ledger, sites)
-    await sendMentionsDigests({ now: NOW, teamBatch: 25 }, w.deps)
+    await sendMentionsDigests({ now: NOW, projectBatch: 25 }, w.deps)
     expect(w.loadDigestContents).toHaveBeenCalledTimes(1)
     expect(w.loadDigestContents.mock.calls[0][0]).toHaveLength(10)
-    expect(w.loadAdminEmailsForTeams).toHaveBeenCalledTimes(1)
+    expect(w.loadAdminEmailsForProjects).toHaveBeenCalledTimes(1)
   })
 
   it('ignores sites with no new mentions, sites with a module switch off, and teams with no opted-in admin', async () => {
     const { ledger, rows } = sharedLedger()
     const sites = [
       siteFor('quiet', 'tq'),
-      { ...siteFor('off', 'to'), teamMarketingEnabled: false },
+      { ...siteFor('off', 'to'), projectSettings: { marketingEnabled: false } },
       siteFor('noadmins', 'tn'),
       siteFor('ok', 'tk'),
     ]
     const w = makeWorker(ledger, sites, undefined, {
       loadSitesWithNewMentions: async () => new Set(['off', 'noadmins', 'ok']),
-      loadAdminEmailsForTeams: async (teamIds) => new Map(teamIds.map((t) => [t, t === 'tn' ? [] : [`${t}@x.test`]])),
+      loadAdminEmailsForProjects: async (targets) =>
+        new Map(targets.map(({ projectId: t }) => [t, t === 'tn' ? [] : [`${t}@x.test`]])),
     })
     const summary = await sendMentionsDigests({ now: NOW }, w.deps)
     expect(summary.emailsSent).toBe(1)
@@ -274,6 +283,7 @@ describe('mentions digest ledger', () => {
     expect(digestWindowEnd(new Date('2026-10-12T10:00:00Z')).toISOString()).toBe('2026-10-12T07:00:00.000Z')
     expect(digestWindowEnd(new Date('2026-10-12T07:00:00Z')).toISOString()).toBe('2026-10-12T07:00:00.000Z')
     expect(digestMetric('2026-10-12')).toBe('digest:2026-10-12')
+    expect(digestMetric('2026-10-12', 'p1')).toBe('digest:2026-10-12:p1')
   })
 })
 
@@ -286,7 +296,11 @@ describe('default ledger and batched content (SQL)', () => {
       { now: NOW },
       {
         store: { loadVerifiedSites: async () => [] },
-        ledger: { listClaimed: async () => new Set(), claim: async () => new Set(), release: async () => undefined },
+        ledger: {
+          listClaimed: async () => new Set(),
+          claim: async () => new Set<string>(),
+          release: async () => undefined,
+        },
       }
     ).catch(() => undefined)
     const dialect = new PgDialect()

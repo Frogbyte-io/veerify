@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
   body: {} as Record<string, unknown>,
-  params: { id: 'inbox-1', memberId: 'member-1', addressId: 'address-1', teamId: 'team-1' } as Record<string, string>,
+  params: { id: 'inbox-1', memberId: 'member-1', addressId: 'address-1', projectId: 'project-1' } as Record<
+    string,
+    string
+  >,
   query: { inboxId: 'inbox-1' } as Record<string, unknown>,
   queuedRows: [] as unknown[][],
   rawBody: '',
@@ -45,27 +48,27 @@ const uploadState = vi.hoisted(() => ({
 }))
 
 const access = vi.hoisted(() => ({
-  requireTeamAdmin: vi.fn(async () => ({ id: 'team-member-1', role: 'admin' })),
+  requireProjectAdmin: vi.fn(async () => ({ id: 'project-member-1', role: 'admin' })),
   requireInboxRole: vi.fn(async (inboxId: string, _userId: string, minimumRole: string) => ({
     id: inboxId,
-    teamId: 'team-1',
+    projectId: 'project-1',
     emailAddress: null,
     effectiveRole: minimumRole,
-    isTeamAdmin: false,
+    isProjectAdmin: false,
   })),
-  requireSupportTeamRole: vi.fn(async () => ({ effectiveRole: 'supervisor', isTeamAdmin: false })),
-  requireTeamMembership: vi.fn(async () => ({ id: 'team-member-1', role: 'member' })),
-  requireInboxAccess: vi.fn(async (inboxId: string) => ({ id: inboxId, teamId: 'team-1' })),
-  requireContactAccess: vi.fn(async (contactId: string) => ({ id: contactId, teamId: 'team-1' })),
-  requireCompanyAccess: vi.fn(async (companyId: string) => ({ id: companyId, teamId: 'team-1' })),
+  requireSupportProjectRole: vi.fn(async () => ({ effectiveRole: 'supervisor', isProjectAdmin: false })),
+  requireProjectAccess: vi.fn(async () => ({ id: 'project-member-1', role: 'member' })),
+  requireInboxAccess: vi.fn(async (inboxId: string) => ({ id: inboxId, projectId: 'project-1' })),
+  requireContactAccess: vi.fn(async (contactId: string) => ({ id: contactId, projectId: 'project-1' })),
+  requireCompanyAccess: vi.fn(async (companyId: string) => ({ id: companyId, projectId: 'project-1' })),
   requireConversationAccess: vi.fn(async (conversationId: string) => ({ id: conversationId, inboxId: 'inbox-1' })),
-  resolveSupportTeamRole: vi.fn(async () => ({ effectiveRole: 'agent', isTeamAdmin: false })),
+  resolveSupportProjectRole: vi.fn(async () => ({ effectiveRole: 'agent', isProjectAdmin: false })),
   capabilitiesForRole: vi.fn(() => ({
     canWorkConversations: true,
     canManageTagVocabulary: false,
     canManageMembers: false,
     canManageInbox: false,
-    canManageTeamSupport: false,
+    canManageProjectSupport: false,
   })),
 }))
 
@@ -99,11 +102,26 @@ vi.mock('~/server/utils/auth-middleware', () => ({
   requireAuth: vi.fn(async () => state.session),
 }))
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: state.session, activeTeam: { id: 'team-1' } })),
+vi.mock('~/server/utils/project-context', () => ({
+  requireAuthWithResolvedProject: vi.fn(async () => ({ session: state.session, activeProject: { id: 'project-1' } })),
 }))
 
 vi.mock('~/server/utils/support-access', () => access)
+
+// Project access (org/project membership) is its own module; routes call it for
+// project-scoped endpoints. Delegates to the same stubs the tests already drive.
+vi.mock('~/server/utils/project-access', () => ({
+  requireProjectAdmin: (...args: unknown[]) => (access.requireProjectAdmin as (...a: unknown[]) => unknown)(...args),
+  requireProjectAccess: (...args: unknown[]) => (access.requireProjectAccess as (...a: unknown[]) => unknown)(...args),
+  requireProjectRole: async (...args: unknown[]) => {
+    const row = (await (access.requireProjectAccess as (...a: unknown[]) => Promise<{ role: string }>)(...args)) as {
+      role: string
+    }
+    return { project: row, role: row.role }
+  },
+  hasProjectAccess: vi.fn(async () => true),
+  getProjectById: vi.fn(async () => ({ id: 'project-1', slug: 'project-one', settings: { supportEnabled: true } })),
+}))
 
 vi.mock('~/server/utils/contact-link-transaction', () => contactLinkTransaction)
 
@@ -118,11 +136,11 @@ vi.mock('~/server/services/sending-domains/ownership', () => ({
 }))
 vi.mock('~/server/utils/sending-domains', () => ({
   isSendingDomainsEnabled: vi.fn(() => true),
-  resolveSenderPolicy: vi.fn(() => 'team'),
+  resolveSenderPolicy: vi.fn(() => 'project'),
   toSendingDomainView: vi.fn(),
   createSendingDomainClaim: vi.fn(),
-  getTeamSendingDomain: vi.fn(),
-  listTeamSendingDomains: vi.fn(),
+  getProjectSendingDomain: vi.fn(),
+  listProjectSendingDomains: vi.fn(),
 }))
 
 vi.mock('~/server/services/support-channels', () => ({
@@ -138,7 +156,7 @@ vi.mock('~/server/services/support-channels', () => ({
 vi.mock('~/server/utils/sending-domains', () => ({
   resolveSenderPolicy: vi.fn(() => 'legacy'),
   isSendingDomainsEnabled: vi.fn(() => false),
-  resolveTeamSenderAuthorization: vi.fn(),
+  resolveProjectSenderAuthorization: vi.fn(),
   assertSenderAddressAllowedForInbox: vi.fn(),
   assertReceivingAddressAllowed: vi.fn(),
 }))
@@ -245,24 +263,24 @@ const sendingStatus = (await import('~/server/api/support/inboxes/[id]/sending-s
 const tagCreate = (await import('~/server/api/support/tags/index.post')).default
 const tagDelete = (await import('~/server/api/support/tags/[id].delete')).default
 const channelStatus = (await import('~/server/api/support/channel-status.get')).default
-const supportSettings = (await import('~/server/api/support/teams/[teamId]/settings.put')).default
-const teamModules = (await import('~/server/api/teams/[teamId]/modules.put')).default
+const supportSettings = (await import('~/server/api/support/projects/[projectId]/settings.put')).default
 
 const inboxList = (await import('~/server/api/support/inboxes/index.get')).default
 const inboxDetail = (await import('~/server/api/support/inboxes/[id].get')).default
 const addressList = (await import('~/server/api/support/inboxes/[id]/addresses/index.get')).default
 const memberList = (await import('~/server/api/support/inboxes/[id]/members/index.get')).default
 const tagList = (await import('~/server/api/support/tags/index.get')).default
-const supportSettingsGet = (await import('~/server/api/support/teams/[teamId]/settings.get')).default
-const slaSettingsGet = (await import('~/server/api/support/teams/[teamId]/sla.get')).default
-const slaSettingsPut = (await import('~/server/api/support/teams/[teamId]/sla.put')).default
-const teamModulesGet = (await import('~/server/api/teams/[teamId]/modules.get')).default
-const sendingDomainList = (await import('~/server/api/support/teams/[teamId]/sending-domains/index.get')).default
-const sendingDomainCreate = (await import('~/server/api/support/teams/[teamId]/sending-domains/index.post')).default
-const sendingDomainGet = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id].get')).default
-const sendingDomainVerify = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id]/verify.post'))
+const supportSettingsGet = (await import('~/server/api/support/projects/[projectId]/settings.get')).default
+const slaSettingsGet = (await import('~/server/api/support/projects/[projectId]/sla.get')).default
+const slaSettingsPut = (await import('~/server/api/support/projects/[projectId]/sla.put')).default
+const sendingDomainList = (await import('~/server/api/support/projects/[projectId]/sending-domains/index.get')).default
+const sendingDomainCreate = (await import('~/server/api/support/projects/[projectId]/sending-domains/index.post'))
   .default
-const sendingDomainDelete = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id].delete')).default
+const sendingDomainGet = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id].get')).default
+const sendingDomainVerify = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id]/verify.post'))
+  .default
+const sendingDomainDelete = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id].delete'))
+  .default
 
 const contactList = (await import('~/server/api/support/contacts/index.get')).default
 const contactCreate = (await import('~/server/api/support/contacts/index.post')).default
@@ -314,7 +332,7 @@ const event = {} as never
 
 beforeEach(() => {
   state.body = {}
-  state.params = { id: 'inbox-1', memberId: 'member-1', addressId: 'address-1', teamId: 'team-1' }
+  state.params = { id: 'inbox-1', memberId: 'member-1', addressId: 'address-1', projectId: 'project-1' }
   state.query = { inboxId: 'inbox-1' }
   state.rawBody = ''
   state.headers = {}
@@ -326,30 +344,8 @@ beforeEach(() => {
 })
 
 describe('support route authorization inventory', () => {
-  it('reports module-management capability from the caller team role', async () => {
-    state.queuedRows = [
-      [{ id: 'team-member-1', role: 'member' }],
-      [{ feedbackEnabled: true, roadmapEnabled: false, changelogEnabled: false, supportEnabled: false }],
-    ]
-
-    await expect(teamModulesGet(event)).resolves.toMatchObject({
-      success: true,
-      data: { canManage: false },
-    })
-
-    state.queuedRows = [
-      [{ id: 'team-member-1', role: 'admin' }],
-      [{ feedbackEnabled: true, roadmapEnabled: false, changelogEnabled: false, supportEnabled: false }],
-    ]
-
-    await expect(teamModulesGet(event)).resolves.toMatchObject({
-      success: true,
-      data: { canManage: true },
-    })
-  })
-
   it.each([
-    ['inbox creation', inboxCreate, 'requireTeamAdmin', 'team-1', 'team-admin'],
+    ['inbox creation', inboxCreate, 'requireProjectAdmin', 'project-1', 'project-admin'],
     ['inbox settings', inboxUpdate, 'requireInboxRole', 'inbox-1', 'admin'],
     ['inbox deletion', inboxDelete, 'requireInboxRole', 'inbox-1', 'admin'],
     ['address creation', addressCreate, 'requireInboxRole', 'inbox-1', 'admin'],
@@ -358,14 +354,15 @@ describe('support route authorization inventory', () => {
     ['member creation', memberCreate, 'requireInboxRole', 'inbox-1', 'admin'],
     ['member deletion', memberDelete, 'requireInboxRole', 'inbox-1', 'admin'],
     ['sending status', sendingStatus, 'requireInboxRole', 'inbox-1', 'agent'],
-    ['shared tag creation', tagCreate, 'requireSupportTeamRole', 'team-1', 'supervisor'],
-    ['team support settings', supportSettings, 'requireTeamAdmin', 'team-1', 'team-admin'],
-    ['team module toggles', teamModules, 'requireTeamAdmin', 'team-1', 'team-admin'],
+    ['shared tag creation', tagCreate, 'requireSupportProjectRole', 'project-1', 'supervisor'],
+    ['project support settings', supportSettings, 'requireProjectAdmin', 'project-1', 'project-admin'],
   ] as const)('requires the exact minimum role for %s', async (_name, handler, helper, scope, role) => {
-    if (helper === 'requireTeamAdmin') {
-      access.requireTeamAdmin.mockImplementationOnce(() => forbidden())
+    if (helper === 'requireProjectAdmin') {
+      access.requireProjectAdmin.mockImplementationOnce(() => forbidden())
       state.body =
-        scope === 'team-1' ? { teamId: 'team-1', name: 'Support', slug: 'support' } : { autoLinkFeedback: true }
+        scope === 'project-1'
+          ? { projectId: 'project-1', name: 'Support', slug: 'support' }
+          : { autoLinkFeedback: true }
     } else if (helper === 'requireInboxRole') {
       access.requireInboxRole.mockImplementationOnce(() => forbidden())
       state.body =
@@ -379,28 +376,28 @@ describe('support route authorization inventory', () => {
                 ? { name: 'Support' }
                 : {}
     } else {
-      access.requireSupportTeamRole.mockImplementationOnce(() => forbidden())
-      state.body = { teamId: 'team-1', name: 'vip' }
-      state.queuedRows = [[{ id: 'tag-1', teamId: 'team-1' }]]
+      access.requireSupportProjectRole.mockImplementationOnce(() => forbidden())
+      state.body = { projectId: 'project-1', name: 'vip' }
+      state.queuedRows = [[{ id: 'tag-1', projectId: 'project-1' }]]
     }
 
     await expect(handler(event)).rejects.toMatchObject({ statusCode: 403 })
 
-    if (helper === 'requireTeamAdmin') {
-      expect(access.requireTeamAdmin).toHaveBeenCalledWith(scope, 'user-1')
+    if (helper === 'requireProjectAdmin') {
+      expect(access.requireProjectAdmin).toHaveBeenCalledWith(scope, 'user-1')
     } else if (helper === 'requireInboxRole') {
       expect(access.requireInboxRole).toHaveBeenCalledWith(scope, 'user-1', role)
     } else {
-      expect(access.requireSupportTeamRole).toHaveBeenCalledWith(scope, 'user-1', role)
+      expect(access.requireSupportProjectRole).toHaveBeenCalledWith(scope, 'user-1', role)
     }
   })
 
-  it('requires supervisor support-team access to delete a shared tag', async () => {
-    state.queuedRows = [[{ id: 'tag-1', teamId: 'team-1' }]]
-    access.requireSupportTeamRole.mockImplementationOnce(() => forbidden())
+  it('requires supervisor support-project access to delete a shared tag', async () => {
+    state.queuedRows = [[{ id: 'tag-1', projectId: 'project-1' }]]
+    access.requireSupportProjectRole.mockImplementationOnce(() => forbidden())
 
     await expect(tagDelete(event)).rejects.toMatchObject({ statusCode: 403 })
-    expect(access.requireSupportTeamRole).toHaveBeenCalledWith('team-1', 'user-1', 'supervisor')
+    expect(access.requireSupportProjectRole).toHaveBeenCalledWith('project-1', 'user-1', 'supervisor')
   })
 
   it('requires an inbox id and agent access before exposing channel configuration names', async () => {
@@ -419,26 +416,25 @@ describe('support route authorization inventory', () => {
     state.body = {
       title: 'Export to CSV',
       body: 'The customer needs a CSV export.',
-      projectId: 'project-1',
+      productId: 'product-1',
       categoryId: 'category-1',
     }
     access.requireConversationAccess.mockResolvedValueOnce({
       id: 'conversation-1',
       inboxId: 'inbox-1',
-      teamId: 'team-1',
+      projectId: 'project-1',
     } as never)
     state.queuedRows = [
       [
         {
           id: 'conversation-1',
           inboxId: 'inbox-1',
-          teamId: 'team-1',
-          contactId: 'contact-1',
           projectId: 'project-1',
+          contactId: 'contact-1',
           linkedFeedbackId: null,
         },
       ],
-      [{ id: 'project-1' }],
+      [{ id: 'product-1' }],
       [{ id: 'category-1' }],
       [{ id: 'feedback-1', title: 'Export to CSV' }],
       [{ id: 'link-1' }],
@@ -501,13 +497,13 @@ describe('support route authorization inventory', () => {
     expect(access.requireInboxRole).toHaveBeenCalledWith('inbox-1', 'user-1', 'admin')
   })
 
-  it('allows a team-admin bypass through the admin minimum for inbox mutation', async () => {
+  it('allows a project-admin bypass through the admin minimum for inbox mutation', async () => {
     access.requireInboxRole.mockResolvedValueOnce({
       id: 'inbox-1',
-      teamId: 'team-1',
+      projectId: 'project-1',
       emailAddress: null,
       effectiveRole: 'admin',
-      isTeamAdmin: true,
+      isProjectAdmin: true,
     })
     state.body = { name: 'Renamed inbox' }
 
@@ -556,7 +552,7 @@ const boundary = (
 const executableBoundaryCases: BoundaryCase[] = [
   {
     name: 'inboxes/index.get',
-    ...boundary(inboxList, 'requireTeamMembership', ['team-1', 'user-1'], { query: { teamId: 'team-1' } }),
+    ...boundary(inboxList, 'requireProjectAccess', ['project-1', 'user-1'], { query: { projectId: 'project-1' } }),
   },
   {
     name: 'inboxes/[id].get',
@@ -564,8 +560,8 @@ const executableBoundaryCases: BoundaryCase[] = [
   },
   {
     name: 'inboxes/index.post',
-    ...boundary(inboxCreate, 'requireTeamAdmin', ['team-1', 'user-1'], {
-      body: { teamId: 'team-1', name: 'Support', slug: 'support' },
+    ...boundary(inboxCreate, 'requireProjectAdmin', ['project-1', 'user-1'], {
+      body: { projectId: 'project-1', name: 'Support', slug: 'support' },
     }),
   },
   {
@@ -632,84 +628,92 @@ const executableBoundaryCases: BoundaryCase[] = [
     ...boundary(sendingStatus, 'requireInboxRole', ['inbox-1', 'user-1', 'agent'], { params: { id: 'inbox-1' } }),
   },
   {
-    // Support-team access, not bare team membership: the design gates reading the
+    // Support-project access, not bare project membership: the design gates reading the
     // shared tag vocabulary behind support access, and creation/deletion already
     // use the same helper at `supervisor`.
     name: 'tags/index.get',
-    ...boundary(tagList, 'requireSupportTeamRole', ['team-1', 'user-1', 'agent'], { query: { teamId: 'team-1' } }),
+    ...boundary(tagList, 'requireSupportProjectRole', ['project-1', 'user-1', 'agent'], {
+      query: { projectId: 'project-1' },
+    }),
   },
   {
     name: 'tags/index.post',
-    ...boundary(tagCreate, 'requireSupportTeamRole', ['team-1', 'user-1', 'supervisor'], {
-      body: { teamId: 'team-1', name: 'vip' },
+    ...boundary(tagCreate, 'requireSupportProjectRole', ['project-1', 'user-1', 'supervisor'], {
+      body: { projectId: 'project-1', name: 'vip' },
     }),
   },
   {
     name: 'tags/[id].delete',
-    ...boundary(tagDelete, 'requireSupportTeamRole', ['team-1', 'user-1', 'supervisor'], {
+    ...boundary(tagDelete, 'requireSupportProjectRole', ['project-1', 'user-1', 'supervisor'], {
       params: { id: 'tag-1' },
-      queuedRows: [[{ id: 'tag-1', teamId: 'team-1' }]],
+      queuedRows: [[{ id: 'tag-1', projectId: 'project-1' }]],
     }),
   },
   {
-    name: 'teams/[teamId]/settings.get',
-    ...boundary(supportSettingsGet, 'resolveSupportTeamRole', ['team-1', 'user-1'], { params: { teamId: 'team-1' } }),
+    name: 'projects/[projectId]/settings.get',
+    ...boundary(supportSettingsGet, 'resolveSupportProjectRole', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1' },
+    }),
   },
   {
-    name: 'teams/[teamId]/settings.put',
-    ...boundary(supportSettings, 'requireTeamAdmin', ['team-1', 'user-1'], {
-      params: { teamId: 'team-1' },
+    name: 'projects/[projectId]/settings.put',
+    ...boundary(supportSettings, 'requireProjectAdmin', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1' },
       body: { autoLinkFeedback: true },
     }),
   },
   {
-    name: 'teams/[teamId]/sla.get',
-    ...boundary(slaSettingsGet, 'requireTeamMembership', ['team-1', 'user-1'], { params: { teamId: 'team-1' } }),
+    name: 'projects/[projectId]/sla.get',
+    ...boundary(slaSettingsGet, 'requireProjectAccess', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1' },
+    }),
   },
   {
-    name: 'teams/[teamId]/sla.put',
-    ...boundary(slaSettingsPut, 'requireTeamAdmin', ['team-1', 'user-1'], {
-      params: { teamId: 'team-1' },
+    name: 'projects/[projectId]/sla.put',
+    ...boundary(slaSettingsPut, 'requireProjectAdmin', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1' },
       body: { policies: [] },
     }),
   },
   {
-    name: 'teams/[teamId]/sending-domains/index.get',
-    ...boundary(sendingDomainList, 'resolveSupportTeamRole', ['team-1', 'user-1'], { params: { teamId: 'team-1' } }),
+    name: 'projects/[projectId]/sending-domains/index.get',
+    ...boundary(sendingDomainList, 'resolveSupportProjectRole', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1' },
+    }),
   },
   {
-    name: 'teams/[teamId]/sending-domains/index.post',
-    ...boundary(sendingDomainCreate, 'requireTeamAdmin', ['team-1', 'user-1'], {
-      params: { teamId: 'team-1' },
+    name: 'projects/[projectId]/sending-domains/index.post',
+    ...boundary(sendingDomainCreate, 'requireProjectAdmin', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1' },
       body: { domain: 'acme.com' },
     }),
   },
   {
-    name: 'teams/[teamId]/sending-domains/[id].get',
-    ...boundary(sendingDomainGet, 'resolveSupportTeamRole', ['team-1', 'user-1'], {
-      params: { teamId: 'team-1', id: 'sd-1' },
+    name: 'projects/[projectId]/sending-domains/[id].get',
+    ...boundary(sendingDomainGet, 'resolveSupportProjectRole', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1', id: 'sd-1' },
     }),
   },
   {
-    name: 'teams/[teamId]/sending-domains/[id]/verify.post',
-    ...boundary(sendingDomainVerify, 'requireTeamAdmin', ['team-1', 'user-1'], {
-      params: { teamId: 'team-1', id: 'sd-1' },
+    name: 'projects/[projectId]/sending-domains/[id]/verify.post',
+    ...boundary(sendingDomainVerify, 'requireProjectAdmin', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1', id: 'sd-1' },
     }),
   },
   {
-    name: 'teams/[teamId]/sending-domains/[id].delete',
-    ...boundary(sendingDomainDelete, 'requireTeamAdmin', ['team-1', 'user-1'], {
-      params: { teamId: 'team-1', id: 'sd-1' },
+    name: 'projects/[projectId]/sending-domains/[id].delete',
+    ...boundary(sendingDomainDelete, 'requireProjectAdmin', ['project-1', 'user-1'], {
+      params: { projectId: 'project-1', id: 'sd-1' },
     }),
   },
   {
     name: 'contacts/index.get',
-    ...boundary(contactList, 'requireTeamMembership', ['team-1', 'user-1'], { query: { teamId: 'team-1' } }),
+    ...boundary(contactList, 'requireProjectAccess', ['project-1', 'user-1'], { query: { projectId: 'project-1' } }),
   },
   {
     name: 'contacts/index.post',
-    ...boundary(contactCreate, 'requireTeamMembership', ['team-1', 'user-1'], {
-      body: { teamId: 'team-1', name: 'Customer' },
+    ...boundary(contactCreate, 'requireProjectAccess', ['project-1', 'user-1'], {
+      body: { projectId: 'project-1', name: 'Customer' },
     }),
   },
   {
@@ -747,12 +751,12 @@ const executableBoundaryCases: BoundaryCase[] = [
   },
   {
     name: 'companies/index.get',
-    ...boundary(companyList, 'requireTeamMembership', ['team-1', 'user-1'], { query: { teamId: 'team-1' } }),
+    ...boundary(companyList, 'requireProjectAccess', ['project-1', 'user-1'], { query: { projectId: 'project-1' } }),
   },
   {
     name: 'companies/index.post',
-    ...boundary(companyCreate, 'requireTeamMembership', ['team-1', 'user-1'], {
-      body: { teamId: 'team-1', name: 'Acme' },
+    ...boundary(companyCreate, 'requireProjectAccess', ['project-1', 'user-1'], {
+      body: { projectId: 'project-1', name: 'Acme' },
     }),
   },
   {
@@ -980,17 +984,17 @@ describe('executable support route authorization inventory', () => {
       'canned-responses/[id].put',
       'canned-responses/index.get',
       'canned-responses/index.post',
-      'teams/[teamId]/automation-rules/[id].delete',
-      'teams/[teamId]/automation-rules/[id].put',
-      'teams/[teamId]/automation-rules/[id]/runs.get',
-      'teams/[teamId]/automation-rules/dry-run.post',
-      'teams/[teamId]/automation-rules/index.get',
-      'teams/[teamId]/automation-rules/index.post',
-      'teams/[teamId]/csat-surveys/[id].delete',
-      'teams/[teamId]/csat-surveys/[id].put',
-      'teams/[teamId]/csat-surveys/index.get',
-      'teams/[teamId]/csat-surveys/index.post',
-      'teams/[teamId]/csat-summary.get',
+      'projects/[projectId]/automation-rules/[id].delete',
+      'projects/[projectId]/automation-rules/[id].put',
+      'projects/[projectId]/automation-rules/[id]/runs.get',
+      'projects/[projectId]/automation-rules/dry-run.post',
+      'projects/[projectId]/automation-rules/index.get',
+      'projects/[projectId]/automation-rules/index.post',
+      'projects/[projectId]/csat-surveys/[id].delete',
+      'projects/[projectId]/csat-surveys/[id].put',
+      'projects/[projectId]/csat-surveys/index.get',
+      'projects/[projectId]/csat-surveys/index.post',
+      'projects/[projectId]/csat-summary.get',
     ]
     const inventoryNames = [...new Set(inventoryEntries)].sort()
 

@@ -1,11 +1,12 @@
 import { z } from 'zod'
-import { eq, and, desc, asc, count, inArray, or, ilike } from 'drizzle-orm'
+import { eq, and, desc, asc, count, or, ilike } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, githubIssueLink, project, vote } from '~/server/database/schema/feedback'
+import { feedback, feedbackCategory, githubIssueLink, product, project, vote } from '~/server/database/schema/feedback'
+import { resolveFeedbackListScope } from '~/server/utils/feedback-access'
 
 const listFeedbackQuerySchema = z
   .object({
@@ -23,6 +24,7 @@ const listFeedbackQuerySchema = z
       ),
     status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']).optional(),
     categoryId: z.string().optional(),
+    productId: z.string().min(1).optional(),
     search: z.string().optional(),
     page: z.coerce.number().int().positive().default(1),
     limit: z.coerce.number().int().positive().max(100).default(20),
@@ -40,12 +42,15 @@ export default defineEventHandler(async (event) => {
   const query = validateQuery(event, listFeedbackQuerySchema)
   const requestedProjectIds = query.projectIds.length > 0 ? query.projectIds : query.projectId ? [query.projectId] : []
 
-  const conditions = []
-  if (requestedProjectIds.length === 1) {
-    conditions.push(eq(feedback.projectId, requestedProjectIds[0]))
-  } else {
-    conditions.push(inArray(feedback.projectId, requestedProjectIds))
-  }
+  // Access check: members see everything in their projects; everyone else only
+  // non-hidden items of public products of public projects.
+  const { condition: scopeCondition, memberProjectIds } = await resolveFeedbackListScope(
+    requestedProjectIds,
+    session?.user?.id ?? null
+  )
+
+  const conditions = [scopeCondition]
+  if (query.productId) conditions.push(eq(feedback.productId, query.productId))
   if (query.status) conditions.push(eq(feedback.status, query.status))
   if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
   if (query.search) {
@@ -80,6 +85,11 @@ export default defineEventHandler(async (event) => {
         name: project.name,
         slug: project.slug,
       },
+      product: {
+        id: product.id,
+        name: product.name,
+        slug: product.slug,
+      },
       githubIssue: {
         issueNumber: githubIssueLink.issueNumber,
         issueUrl: githubIssueLink.issueUrl,
@@ -89,6 +99,7 @@ export default defineEventHandler(async (event) => {
     .from(feedback)
     .leftJoin(feedbackCategory, eq(feedback.categoryId, feedbackCategory.id))
     .leftJoin(project, eq(feedback.projectId, project.id))
+    .leftJoin(product, eq(feedback.productId, product.id))
     .leftJoin(githubIssueLink, eq(githubIssueLink.feedbackId, feedback.id))
     .where(whereClause)
     .orderBy(desc(feedback.isPinned), orderFn(sortColumn))
@@ -114,26 +125,47 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const result = items.map((item) => ({
-    ...item.feedback,
-    category: item.category,
-    project: item.project,
-    githubIssue:
-      item.githubIssue?.issueNumber && item.githubIssue.issueUrl
-        ? {
-            issueNumber: item.githubIssue.issueNumber,
-            issueUrl: item.githubIssue.issueUrl,
-            issueState: item.githubIssue.issueState,
-          }
-        : null,
-    hasVoted: voterVoteMap.has(item.feedback.id),
-    voteType: voterVoteMap.get(item.feedback.id) || null,
-    isOwn: session?.user
+  const result = items.map((item) => {
+    const isMember = memberProjectIds.has(item.feedback.projectId)
+    const isOwn = session?.user
       ? item.feedback.authorUserId === session.user.id
       : anonSession
         ? item.feedback.authorSessionId === anonSession.id
-        : false,
-  }))
+        : false
+    // Non-members never receive other people's contact details, edit tokens, or
+    // support-ticket content (same masking as the public board).
+    const isSupportDerived = item.feedback.metadata?.source === 'support_conversation'
+    const base = isMember
+      ? item.feedback
+      : {
+          ...item.feedback,
+          title: isSupportDerived ? 'Support request' : item.feedback.title,
+          body: isSupportDerived ? '' : item.feedback.body,
+          authorName: isSupportDerived ? null : item.feedback.authorName,
+          authorEmail: isOwn ? item.feedback.authorEmail : null,
+          metadata: isOwn
+            ? item.feedback.metadata
+            : { feedbackType: item.feedback.metadata?.feedbackType ?? null, source: item.feedback.metadata?.source },
+        }
+    return {
+      ...base,
+      productId: item.feedback.productId,
+      product: item.product,
+      category: item.category,
+      project: item.project,
+      githubIssue:
+        item.githubIssue?.issueNumber && item.githubIssue.issueUrl
+          ? {
+              issueNumber: item.githubIssue.issueNumber,
+              issueUrl: item.githubIssue.issueUrl,
+              issueState: item.githubIssue.issueState,
+            }
+          : null,
+      hasVoted: voterVoteMap.has(item.feedback.id),
+      voteType: voterVoteMap.get(item.feedback.id) || null,
+      isOwn,
+    }
+  })
 
   return createSuccessResponse({
     items: result,

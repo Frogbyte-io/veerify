@@ -8,33 +8,36 @@ export function currentPeriod(date: Date = new Date()): string {
 }
 
 /**
- * Adds `units` to the team's counter for this month and metric
+ * Adds `units` to the workspace's counter for this month and metric
  * (e.g. `llm:anthropic:input_tokens`, `crawl:pages`). A single atomic upsert, so
  * concurrent workers never lose increments. Non-positive or non-finite amounts
  * are ignored.
  */
-export async function recordUsage(teamId: string, metric: string, units: number): Promise<void> {
+export async function recordUsage(organizationId: string, metric: string, units: number): Promise<void> {
   const amount = Math.round(units)
   if (!Number.isFinite(amount) || amount <= 0) return
 
   const now = new Date()
   await db
     .insert(marketingUsage)
-    .values({ teamId, period: currentPeriod(now), metric, units: amount, updatedAt: now })
+    .values({ organizationId, period: currentPeriod(now), metric, units: amount, updatedAt: now })
     .onConflictDoUpdate({
-      target: [marketingUsage.teamId, marketingUsage.period, marketingUsage.metric],
+      target: [marketingUsage.organizationId, marketingUsage.period, marketingUsage.metric],
       set: { units: sql`${marketingUsage.units} + ${amount}`, updatedAt: now },
     })
 }
 
-/** All metric counters for a team in one period (defaults to the current one). */
-export async function getUsage(teamId: string, period: string = currentPeriod()): Promise<Record<string, number>> {
+/** All metric counters for a workspace in one period (defaults to the current one). */
+export async function getUsage(
+  organizationId: string,
+  period: string = currentPeriod()
+): Promise<Record<string, number>> {
   const rows = await db
     .select({ metric: marketingUsage.metric, units: marketingUsage.units })
     .from(marketingUsage)
     .where(
       and(
-        eq(marketingUsage.teamId, teamId),
+        eq(marketingUsage.organizationId, organizationId),
         eq(marketingUsage.period, period),
         // `ratelimit:*` rows are request counters (marketing-db-limit.ts), not billable usage
         // `ratelimit:*` rows are request counters (marketing-db-limit.ts) and `digest:<date>` rows the

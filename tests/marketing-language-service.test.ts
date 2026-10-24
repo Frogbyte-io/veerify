@@ -51,7 +51,7 @@ function providerError(statusCode: number, reason?: string) {
   return Object.assign(new Error('provider'), { statusCode, data: { error: { details: reason ? { reason } : {} } } })
 }
 
-const input = { projectId: 'p1', siteId: 's1', teamId: 't1', userId: 'u1', productName: 'Acme' }
+const input = { projectId: 'p1', siteId: 's1', organizationId: 't1', userId: 'u1', productName: 'Acme' }
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -154,7 +154,7 @@ describe('items', () => {
   it('passes product scope to collectors', async () => {
     await runCustomerLanguage(input, makeDeps())
     expect(collectFeedback.mock.calls[0][0]).toBe('p1')
-    expect(collectSupport.mock.calls[0].slice(0, 2)).toEqual(['t1', 'p1'])
+    expect(collectSupport.mock.calls[0].slice(0, 2)).toEqual(['p1', expect.any(Date)])
   })
 
   it('caps the input at 300 items', async () => {
@@ -165,7 +165,7 @@ describe('items', () => {
 })
 
 describe('provider, budget and limits', () => {
-  it('stores the insight, filters existing terms and asks callTeamLlm to count the run', async () => {
+  it('stores the insight, filters existing terms and asks callOrgLlm to count the run', async () => {
     const result = await runCustomerLanguage(input, makeDeps())
     expect(result.suggestedTerms).toEqual([{ kind: 'keyword', label: 'slow exports' }])
     expect(completeRun).toHaveBeenCalledTimes(1)

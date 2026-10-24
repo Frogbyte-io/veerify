@@ -8,7 +8,7 @@
             See how often AI assistants recommend your product, and which sources they rely on.
           </p>
         </div>
-        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
       </div>
 
       <div v-if="!pickerSettled" class="space-y-4">
@@ -17,13 +17,13 @@
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a product to get started.</div>
+      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to get started.</div>
 
       <!-- Marketing off (403) -->
-      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="marketingOffMessage" />
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="marketingOffMessage" />
 
       <div v-else-if="setupLoading" class="space-y-4">
         <Skeleton class="h-24 w-full" />
@@ -35,7 +35,7 @@
         <Button variant="outline" size="sm" @click="loadSetup">Retry</Button>
       </div>
 
-      <template v-else-if="product && setup">
+      <template v-else-if="project && setup">
         <!-- Setup checklist -->
         <Card v-if="setupIssues.length" data-testid="visibility-setup-needed">
           <CardHeader>
@@ -55,7 +55,7 @@
           </CardContent>
         </Card>
 
-        <VisibilityPrompts v-if="setup.hasSite" :project-id="product.id" @changed="loadSetup(true)" />
+        <VisibilityPrompts v-if="setup.hasSite" :project-id="project.id" @changed="loadSetup(true)" />
 
         <!-- Run -->
         <Card v-if="setup.hasSite" data-testid="visibility-run">
@@ -127,11 +127,11 @@
           <VisibilityResults v-else-if="summary" :data="summary" @select-prompt="openPrompt" />
         </section>
 
-        <VisibilityLlmsTxt v-if="setup.hasSite" :project-id="product.id" />
+        <VisibilityLlmsTxt v-if="setup.hasSite" :project-id="project.id" />
 
         <VisibilityAnswersDialog
           v-model:open="dialogOpen"
-          :project-id="product.id"
+          :project-id="project.id"
           :run-id="summary && summary.run ? summary.run.id : null"
           :prompt-id="dialogPrompt ? dialogPrompt.id : null"
           :prompt-text="dialogPrompt ? dialogPrompt.text : ''"
@@ -156,7 +156,7 @@ export default {
 
   data() {
     return {
-      product: null,
+      project: null,
       pickerSettled: false,
       pickerError: false,
       marketingOff: false,
@@ -180,10 +180,10 @@ export default {
 
   computed: {
     base() {
-      return `/api/marketing/projects/${this.product.id}/visibility`
+      return `/api/marketing/projects/${this.project.id}/visibility`
     },
     settingsLink() {
-      return this.product ? `/marketing/settings?product=${this.product.slug}` : '/marketing/settings'
+      return this.project ? `/marketing/settings` : '/marketing/settings'
     },
     setupIssues() {
       const s = this.setup
@@ -223,20 +223,20 @@ export default {
 
     onPickerError() {
       this.stopPolling()
-      this.product = null
+      this.project = null
       this.pickerError = true
       this.pickerSettled = true
     },
 
-    isCurrent(productId) {
-      return this.product?.id === productId
+    isCurrent(projectId) {
+      return this.project?.id === projectId
     },
 
-    async onProductChange(product) {
+    async onProjectChange(project) {
       this.pickerSettled = true
       this.pickerError = false
       this.stopPolling()
-      this.product = product
+      this.project = project
       this.setup = null
       this.setupError = null
       this.setupLoading = false
@@ -249,28 +249,28 @@ export default {
       this.runError = null
       this.marketingOff = false
       this.dialogOpen = false
-      if (!product) return
+      if (!project) return
       await this.loadSetup()
-      if (this.isCurrent(product.id) && this.setup?.hasSite) {
+      if (this.isCurrent(project.id) && this.setup?.hasSite) {
         await Promise.all([this.loadRuns(), this.loadSummary()])
       }
     },
 
     async loadSetup(quiet = false) {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       if (!quiet) {
         this.setupLoading = true
         this.setupError = null
       }
       try {
         const response = await $fetch(`${this.base}/setup`)
-        if (!this.isCurrent(productId)) return
+        if (!this.isCurrent(projectId)) return
         this.setup = response.data
         this.setupError = null
         this.marketingOff = false
       } catch (err) {
-        if (!this.isCurrent(productId)) return
+        if (!this.isCurrent(projectId)) return
         if (apiErrorStatus(err) === 403) {
           this.marketingOff = true
           this.marketingOffMessage = this.errorMessage(err, '')
@@ -280,58 +280,58 @@ export default {
           this.setupError = this.errorMessage(err, 'Failed to load AI visibility')
         }
       } finally {
-        if (this.isCurrent(productId)) this.setupLoading = false
+        if (this.isCurrent(projectId)) this.setupLoading = false
       }
     },
 
     async loadRuns() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.runsLoading = this.runs.length === 0
       this.runsError = null
       try {
         const response = await $fetch(`${this.base}/runs`)
-        if (!this.isCurrent(productId)) return
+        if (!this.isCurrent(projectId)) return
         this.runs = response.data.runs
         if (this.runActive) this.startPolling()
       } catch (err) {
-        if (!this.isCurrent(productId)) return
+        if (!this.isCurrent(projectId)) return
         this.runsError = this.errorMessage(err, 'Failed to load runs')
       } finally {
-        if (this.isCurrent(productId)) this.runsLoading = false
+        if (this.isCurrent(projectId)) this.runsLoading = false
       }
     },
 
     async loadSummary() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.summaryLoading = this.summary === null
       this.summaryError = null
       try {
         const response = await $fetch(`${this.base}/summary`)
-        if (!this.isCurrent(productId)) return
+        if (!this.isCurrent(projectId)) return
         this.summary = response.data
       } catch (err) {
-        if (!this.isCurrent(productId)) return
+        if (!this.isCurrent(projectId)) return
         this.summaryError = this.errorMessage(err, 'Failed to load results')
       } finally {
-        if (this.isCurrent(productId)) this.summaryLoading = false
+        if (this.isCurrent(projectId)) this.summaryLoading = false
       }
     },
 
     async startRun() {
-      const productId = this.product.id
+      const projectId = this.project.id
       this.starting = true
       this.runError = null
       try {
         const response = await $fetch(`${this.base}/runs`, { method: 'POST' })
-        if (!this.isCurrent(productId)) return
+        if (!this.isCurrent(projectId)) return
         this.runs = [response.data.run, ...this.runs.filter((run) => run.id !== response.data.run.id)]
         this.startPolling()
       } catch (err) {
-        if (this.isCurrent(productId)) this.runError = this.errorMessage(err, 'Failed to start the run')
+        if (this.isCurrent(projectId)) this.runError = this.errorMessage(err, 'Failed to start the run')
       } finally {
-        if (this.isCurrent(productId)) this.starting = false
+        if (this.isCurrent(projectId)) this.starting = false
       }
     },
 
@@ -349,21 +349,21 @@ export default {
 
     async poll() {
       const run = this.latestRun
-      if (!run || !this.product) {
+      if (!run || !this.project) {
         this.stopPolling()
         return
       }
-      const productId = this.product.id
+      const projectId = this.project.id
       try {
         const response = await $fetch(`${this.base}/runs/${run.id}`)
-        if (!this.isCurrent(productId)) return
+        if (!this.isCurrent(projectId)) return
         this.runs = [response.data.run, ...this.runs.slice(1)]
         if (!this.runActive) {
           this.stopPolling()
           await this.loadSummary()
         }
       } catch (err) {
-        if (!this.isCurrent(productId)) {
+        if (!this.isCurrent(projectId)) {
           this.stopPolling()
           return
         }

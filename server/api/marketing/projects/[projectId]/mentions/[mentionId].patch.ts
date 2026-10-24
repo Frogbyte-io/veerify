@@ -25,7 +25,7 @@
  *               status: { type: string, enum: [new, seen, dismissed] }
  *     responses:
  *       200: { description: Mention updated }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  *       404: { description: Mention not found for this product }
  */
 import { and, eq } from 'drizzle-orm'
@@ -35,13 +35,13 @@ import { mention } from '~/server/database/schema/marketing'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { requireMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody } from '~/server/utils/validation'
 
 const bodySchema = z.object({ status: z.enum(['new', 'seen', 'dismissed']) })
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   const mentionId = requireRouterParam(event, 'mentionId', 'Mention ID')
   await requireMarketingAccess(projectId, session.user.id)

@@ -12,7 +12,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Contact detail }
- *       403: { description: Not a member of the contact's team }
+ *       403: { description: Not a member of the contact's project }
  *       404: { description: Contact not found }
  */
 import { and, asc, eq } from 'drizzle-orm'
@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
         await db
           .select()
           .from(supportCompany)
-          .where(and(eq(supportCompany.id, row.companyId), eq(supportCompany.teamId, row.teamId)))
+          .where(and(eq(supportCompany.id, row.companyId), eq(supportCompany.projectId, row.projectId)))
           .limit(1)
       )[0] ?? null)
     : null

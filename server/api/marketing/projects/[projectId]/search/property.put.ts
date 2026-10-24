@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Choose the Search Console property to read
  *     description: >
- *       Team admins only. The property must be one the connected Google account can read and must match the site
+ *       Project admins only. The property must be one the connected Google account can read and must match the site
  *       (its URL-prefix property, or the sc-domain property for its registrable domain). Changing
  *       the property clears stored metrics and queues a fresh sync.
  *     operationId: putSearchProperty
@@ -26,7 +26,7 @@
  *     responses:
  *       200: { description: Property saved; status is now connected }
  *       400: { description: Not one of the account's properties }
- *       403: { description: Team admin required, or Marketing is off }
+ *       403: { description: Project admin required, or Marketing is off }
  *       404: { description: Search Console is not connected }
  *       409: { description: Google access was revoked; reconnect }
  *       502: { description: Google request failed }
@@ -44,13 +44,13 @@ import {
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { findMarketingSite, requireRouteParam } from '~/server/utils/marketing-site'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody } from '~/server/utils/validation'
 
 const bodySchema = z.object({ propertyUrl: z.string().trim().min(1).max(500) })
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   await requireMarketingAdmin(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)

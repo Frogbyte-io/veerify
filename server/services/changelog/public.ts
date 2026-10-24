@@ -1,10 +1,10 @@
-import { and, desc, eq, inArray, lt, or } from 'drizzle-orm'
+import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm'
 import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
-import { changelogEntry, changelogEntryFeedback } from '~/server/database/schema/changelog'
-import { feedback } from '~/server/database/schema/feedback'
-import { resolvePublicProjectByTeam } from '~/server/utils/project-access'
-import { isTeamModuleEnabled } from '~/server/utils/public-modules'
+import { changelogEntry, changelogEntryFeedback, changelogEntryProduct } from '~/server/database/schema/changelog'
+import { feedback, product } from '~/server/database/schema/feedback'
+import { requirePublicProduct, resolvePublicProject } from '~/server/utils/project-access'
+import { isModuleEnabledForProject } from '~/server/utils/public-modules'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { renderMarkdown } from '~/server/utils/markdown'
@@ -14,21 +14,62 @@ export const PUBLIC_PAGE_SIZE = 20
 export const RSS_ITEM_LIMIT = 30
 
 /**
- * Resolves a public product and requires the changelog module on for both the
- * product (`changelogEnabled`) and the team. A disabled changelog answers 404
- * (indistinguishable from none).
+ * Resolves a public project and requires the changelog tool on for it. A
+ * disabled changelog answers 404 (indistinguishable from none).
  */
-export async function resolvePublicChangelogProject(teamSlug: string, projectSlug: string) {
-  const resolved = await resolvePublicProjectByTeam(teamSlug, projectSlug)
-  const settings = resolved.project.settings as Record<string, unknown> | null
-  if (settings?.changelogEnabled !== true || !(await isTeamModuleEnabled(resolved.team.id, 'changelogEnabled'))) {
+export async function resolvePublicChangelogProject(orgSlug: string, projectSlug: string) {
+  const resolved = await resolvePublicProject(orgSlug, projectSlug)
+  if (!isModuleEnabledForProject(resolved.project.settings as Record<string, unknown> | null, 'changelogEnabled')) {
     throw createError({
       statusCode: 404,
       statusMessage: 'Not Found',
-      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Changelog is not available for this product'),
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Changelog is not available for this project'),
     })
   }
   return resolved
+}
+
+/**
+ * Entries visible on the public changelog: untagged (whole project), or tagged
+ * with at least one public product. Entries tagged only with private products
+ * are excluded. With `productId`, additionally restricts to entries tagged with
+ * that product or untagged.
+ */
+function publicEntryVisibility(projectId: string, productId?: string) {
+  const untagged = sql`not exists (select 1 from ${changelogEntryProduct} where ${changelogEntryProduct.entryId} = ${changelogEntry.id})`
+  const taggedPublic = sql`exists (select 1 from ${changelogEntryProduct} inner join ${product} on ${product.id} = ${changelogEntryProduct.productId} where ${changelogEntryProduct.entryId} = ${changelogEntry.id} and ${product.isPublic} = true)`
+  const conditions = [or(untagged, taggedPublic)!]
+  if (productId) {
+    const taggedWith = sql`exists (select 1 from ${changelogEntryProduct} where ${changelogEntryProduct.entryId} = ${changelogEntry.id} and ${changelogEntryProduct.productId} = ${productId})`
+    conditions.push(or(taggedWith, untagged)!)
+  }
+  return and(eq(changelogEntry.projectId, projectId), ...conditions)!
+}
+
+/** Resolves the optional `?product=<slug>` filter; private/unknown products 404. */
+export async function resolvePublicChangelogProductFilter(
+  proj: Parameters<typeof requirePublicProduct>[0],
+  productSlug?: string
+) {
+  if (!productSlug) return undefined
+  return (await requirePublicProduct(proj, productSlug)).id
+}
+
+/** Public product ids each entry is tagged with (private products are never exposed). */
+async function loadPublicProductIds(entryIds: string[]) {
+  const byEntry = new Map<string, string[]>()
+  if (entryIds.length === 0) return byEntry
+  const rows = await db
+    .select({ entryId: changelogEntryProduct.entryId, productId: changelogEntryProduct.productId })
+    .from(changelogEntryProduct)
+    .innerJoin(product, eq(changelogEntryProduct.productId, product.id))
+    .where(and(inArray(changelogEntryProduct.entryId, entryIds), eq(product.isPublic, true)))
+  for (const row of rows) {
+    const list = byEntry.get(row.entryId) ?? []
+    list.push(row.productId)
+    byEntry.set(row.entryId, list)
+  }
+  return byEntry
 }
 
 /** Visible (non-hidden, non-support-conversation) feedback titles per entry. */
@@ -55,9 +96,14 @@ async function loadPublicFeedback(entryIds: string[]) {
   return byEntry
 }
 
-function serializePublicEntry(row: ChangelogEntryRow, linked: Array<{ id: string; title: string }> | undefined) {
+function serializePublicEntry(
+  row: ChangelogEntryRow,
+  linked: Array<{ id: string; title: string }> | undefined,
+  productIds: string[] | undefined
+) {
   return {
     id: row.id,
+    productIds: productIds ?? [],
     title: row.title,
     slug: row.slug,
     summary: row.summary,
@@ -69,9 +115,12 @@ function serializePublicEntry(row: ChangelogEntryRow, linked: Array<{ id: string
   }
 }
 
-export async function listPublishedEntries(projectId: string, options: { cursor?: string; limit?: number } = {}) {
+export async function listPublishedEntries(
+  projectId: string,
+  options: { cursor?: string; limit?: number; productId?: string } = {}
+) {
   const limit = options.limit ?? PUBLIC_PAGE_SIZE
-  const conditions = [eq(changelogEntry.projectId, projectId), eq(changelogEntry.status, 'published')]
+  const conditions = [publicEntryVisibility(projectId, options.productId), eq(changelogEntry.status, 'published')]
   if (options.cursor) {
     // publishedAt is carried in the cursor's createdAt slot
     const cursor = decodeListCursor(options.cursor, 'changelog')
@@ -93,21 +142,21 @@ export async function listPublishedEntries(projectId: string, options: { cursor?
   const last = page[page.length - 1]
   const nextCursor =
     rows.length > limit && last?.publishedAt ? encodeListCursor({ createdAt: last.publishedAt, id: last.id }) : null
-  const linked = await loadPublicFeedback(page.map((row) => row.id))
-  return { rows: page, entries: page.map((row) => serializePublicEntry(row, linked.get(row.id))), nextCursor }
+  const pageIds = page.map((row) => row.id)
+  const linked = await loadPublicFeedback(pageIds)
+  const productIds = await loadPublicProductIds(pageIds)
+  return {
+    rows: page,
+    entries: page.map((row) => serializePublicEntry(row, linked.get(row.id), productIds.get(row.id))),
+    nextCursor,
+  }
 }
 
 export async function findPublishedEntryBySlug(projectId: string, slug: string) {
   const [row] = await db
     .select()
     .from(changelogEntry)
-    .where(
-      and(
-        eq(changelogEntry.projectId, projectId),
-        eq(changelogEntry.slug, slug),
-        eq(changelogEntry.status, 'published')
-      )
-    )
+    .where(and(publicEntryVisibility(projectId), eq(changelogEntry.slug, slug), eq(changelogEntry.status, 'published')))
     .limit(1)
   if (!row) {
     throw createError({
@@ -117,5 +166,6 @@ export async function findPublishedEntryBySlug(projectId: string, slug: string) 
     })
   }
   const linked = await loadPublicFeedback([row.id])
-  return serializePublicEntry(row, linked.get(row.id))
+  const productIds = await loadPublicProductIds([row.id])
+  return serializePublicEntry(row, linked.get(row.id), productIds.get(row.id))
 }

@@ -12,8 +12,8 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Tag added }
- *       400: { description: Tag is not part of this team }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       400: { description: Tag is not part of this project }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found }
  *       409: { description: This tag is already on the conversation }
  */
@@ -44,15 +44,15 @@ export default defineEventHandler(async (event) => {
   const existing = await requireConversationAccess(conversationId, session.user.id)
 
   // A foreign key proves the tag exists, not that it belongs to this
-  // conversation's team - without this check one team could tag another
-  // team's conversation.
+  // conversation's project - without this check one project could tag another
+  // project's conversation.
   const [tag] = await db.select().from(supportTag).where(eq(supportTag.id, body.tagId)).limit(1)
 
-  if (!tag || tag.teamId !== existing.teamId) {
+  if (!tag || tag.projectId !== existing.projectId) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Bad Request',
-      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Tag is not part of this team'),
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Tag is not part of this project'),
     })
   }
 
@@ -79,7 +79,7 @@ export default defineEventHandler(async (event) => {
         .where(eq(conversationTag.conversationId, conversationId))
       const sla = await resolveSlaAssignment(
         {
-          teamId: existing.teamId,
+          projectId: existing.projectId,
           inboxId: existing.inboxId,
           priority: existing.priority,
           companyId: contactRow?.companyId,
@@ -110,7 +110,7 @@ export default defineEventHandler(async (event) => {
     // means the UI needs no new handler.
     await publishConversationEvent({
       type: 'conversation.updated',
-      teamId: existing.teamId,
+      projectId: existing.projectId,
       inboxId: existing.inboxId,
       conversationId,
     })
@@ -121,7 +121,7 @@ export default defineEventHandler(async (event) => {
     await db.transaction(async (tx) => {
       const [current] = await tx
         .select({
-          teamId: conversation.teamId,
+          projectId: conversation.projectId,
           inboxId: conversation.inboxId,
           contactId: conversation.contactId,
           priority: conversation.priority,
@@ -142,7 +142,7 @@ export default defineEventHandler(async (event) => {
         .where(eq(conversationTag.conversationId, conversationId))
       const sla = await resolveSlaAssignment(
         {
-          teamId: current.teamId,
+          projectId: current.projectId,
           inboxId: current.inboxId,
           priority: current.priority,
           companyId: contactRow?.companyId,

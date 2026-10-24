@@ -46,27 +46,29 @@ beforeEach(() => {
 const queries = (needle: string) => state.log.filter((q) => q.text.includes(needle))
 
 describe('eraseContact', () => {
-  it('deletes by team and lower-cased email, then keeps a suppression', async () => {
+  it('deletes by workspace and lower-cased email, then keeps a suppression', async () => {
     state.respond = (text) => {
       if (text.startsWith('select')) return [['rr1'], ['rr2']]
       if (text.includes('delete from "testimonial"')) return [['t1']]
       if (text.includes('delete from "review_request"')) return [['rr1'], ['rr2']]
       return []
     }
-    const result = await eraseContact('team-1', '  Jane.Doe@Example.COM ')
+    const result = await eraseContact('org-1', '  Jane.Doe@Example.COM ')
     expect(result).toEqual({ reviewRequestsDeleted: 2, testimonialsDeleted: 1, suppressed: true })
 
     const requestDelete = queries('delete from "review_request"')[0]
-    expect(requestDelete.text).toContain('"team_id" = $1')
+    expect(requestDelete.text).toContain(
+      '"review_request"."project_id" in ((select "id" from "project" where "project"."organization_id" = $1))'
+    )
     expect(requestDelete.text).toContain('lower("review_request"."email") = $2')
     // Rows the retention task anonymised only have the keyed hash left
     expect(requestDelete.text).toContain('"review_request"."email_hash" in ($3)')
-    expect(requestDelete.params).toEqual(['team-1', 'jane.doe@example.com', hashEmail('jane.doe@example.com')])
+    expect(requestDelete.params).toEqual(['org-1', 'jane.doe@example.com', hashEmail('jane.doe@example.com')])
 
     const testimonialDelete = queries('delete from "testimonial"')[0]
-    // Scoped to the team's own products, never to every testimonial with that email
-    expect(testimonialDelete.text).toContain('select "id" from "project" where "project"."team_id" = $')
-    expect(testimonialDelete.params).toContain('team-1')
+    // Scoped to the workspace's own projects, never to every testimonial with that email
+    expect(testimonialDelete.text).toContain('select "id" from "project" where "project"."organization_id" = $')
+    expect(testimonialDelete.params).toContain('org-1')
     expect(testimonialDelete.params).toContain('jane.doe@example.com')
     expect(testimonialDelete.params).toContain('rr1')
     // By the author's own address or hash (cleared emails keep the hash)
@@ -76,7 +78,7 @@ describe('eraseContact', () => {
     const suppression = queries('insert into "marketing_email_suppression"')[0]
     expect(suppression.text).toContain('on conflict do nothing')
     expect(suppression.params).toEqual(
-      expect.arrayContaining(['team-1', 'jane.doe@example.com', hashEmail('jane.doe@example.com'), 'unsubscribed'])
+      expect.arrayContaining(['org-1', 'jane.doe@example.com', hashEmail('jane.doe@example.com'), 'unsubscribed'])
     )
     // A suppression that only had the address gets its hash
     const backfill = queries('update "marketing_email_suppression"')[0]
@@ -86,7 +88,7 @@ describe('eraseContact', () => {
   })
 
   it('finds a person by hash alone (address already anonymised), including testimonials without an address', async () => {
-    await eraseContact('team-1', 'Anon@Example.com')
+    await eraseContact('org-1', 'Anon@Example.com')
     const hash = hashEmail('anon@example.com')
     expect(queries('delete from "review_request"')[0].params).toContain(hash)
     const testimonialDelete = queries('delete from "testimonial"')[0]
@@ -109,7 +111,7 @@ describe('eraseContact', () => {
   })
 
   it('still suppresses when nothing matches', async () => {
-    const result = await eraseContact('team-1', 'nobody@example.com')
+    const result = await eraseContact('org-1', 'nobody@example.com')
     expect(result).toEqual({ reviewRequestsDeleted: 0, testimonialsDeleted: 0, suppressed: true })
     expect(queries('insert into "marketing_email_suppression"')).toHaveLength(1)
     // Without matched requests the testimonial match is by its own email only
@@ -180,7 +182,6 @@ describe('exportProductMarketingData', () => {
   const siteRow = [
     'site-1',
     'p1',
-    't1',
     'https://acme.com',
     'dns',
     'SECRET-VERIFICATION-TOKEN',
@@ -204,7 +205,7 @@ describe('exportProductMarketingData', () => {
     const sql = state.log.map((q) => q.text).join('\n')
     expect(sql).not.toContain('encrypted_refresh_token')
     expect(sql).not.toContain('encrypted_key')
-    expect(sql).not.toContain('team_api_credential')
+    expect(sql).not.toContain('organization_api_credential')
     expect(sql).not.toContain('"token"')
     expect(sql).not.toContain('last_text')
     expect(sql).not.toContain('seo_audit_page"."facts"') // only title is read from facts below

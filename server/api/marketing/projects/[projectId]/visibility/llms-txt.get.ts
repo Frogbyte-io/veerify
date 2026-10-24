@@ -16,37 +16,28 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Draft content }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Project or marketing site not found }
  */
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { seoAudit, seoAuditPage } from '~/server/database/schema/marketing'
-import { team } from '~/server/database/schema/auth'
 import { requireVisibilityRequest } from '~/server/services/marketing/visibility/access'
 import { buildLlmsTxt, LLMS_TXT_MAX_PAGES } from '~/server/services/marketing/visibility/llms-txt'
-import { buildPublicBoardUrl } from '~/lib/public-board-url'
-import { resolveProductModules } from '~/lib/modules'
+import { resolveProjectModules } from '~/lib/modules'
+import { buildMarketingPublicUrl, getOrganizationSlug } from '~/server/utils/marketing-public-url'
 import { createSuccessResponse } from '~/server/utils/response'
 
 export default defineEventHandler(async (event) => {
   const { site, project } = await requireVisibilityRequest(event)
 
-  const modules = resolveProductModules(project.settings as Record<string, unknown> | null)
+  const modules = resolveProjectModules(project.settings as Record<string, unknown> | null)
 
   let boardUrl: string | null = null
   let roadmapUrl: string | null = null
   if (project.isPublic && (modules.feedbackEnabled || modules.roadmapEnabled)) {
-    const [owner] = await db.select({ slug: team.slug }).from(team).where(eq(team.id, project.teamId)).limit(1)
-    const requestUrl = getRequestURL(event)
-    const base = buildPublicBoardUrl({
-      project: { slug: project.slug, customDomain: project.customDomain, settings: project.settings },
-      teamSlug: owner?.slug ?? null,
-      projectSlug: project.slug,
-      appDomain: useRuntimeConfig().public.appDomain || 'localhost',
-      protocol: requestUrl.protocol,
-      port: requestUrl.port,
-    })
+    const orgSlug = await getOrganizationSlug(project.organizationId)
+    const base = buildMarketingPublicUrl(project, orgSlug, getRequestURL(event))
     if (modules.feedbackEnabled) boardUrl = base
     if (modules.roadmapEnabled) roadmapUrl = `${base.replace(/\/+$/, '')}/roadmap`
   }

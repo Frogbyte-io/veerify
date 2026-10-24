@@ -16,7 +16,7 @@
  *     responses:
  *       200: { description: Contact deleted }
  *       409: { description: Contact has conversations or merge tombstones }
- *       403: { description: Not a member of the contact's team }
+ *       403: { description: Not a member of the contact's project }
  *       404: { description: Contact not found }
  */
 import { eq } from 'drizzle-orm'
@@ -26,7 +26,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireContactAccess } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { contact, conversation } from '~/server/database/schema/support'
-import { lockContactTeam } from '~/server/utils/contact-lock'
+import { lockContactProject } from '~/server/utils/contact-lock'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
   // with no foreign key, so an erasure request against a contact removes the
   // contact and its links, and leaves public feedback exactly as submitted.
   await db.transaction(async (tx) => {
-    await lockContactTeam(tx, accessibleContact.teamId)
+    await lockContactProject(tx, accessibleContact.projectId)
 
     // A merged contact is intentionally retained as a tombstone because old
     // conversations and provider references still point at its id. Deleting

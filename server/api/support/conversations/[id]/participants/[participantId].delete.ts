@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Participant removed }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation or participant not found }
  */
 import { and, eq } from 'drizzle-orm'
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
 
   await publishConversationEvent({
     type: 'conversation.updated',
-    teamId: existing.teamId,
+    projectId: existing.projectId,
     inboxId: existing.inboxId,
     conversationId,
   })

@@ -4,23 +4,27 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing settings</h1>
-          <p class="text-muted-foreground mt-1">Your site, brand names and the keys Marketing runs on</p>
+          <p class="text-muted-foreground mt-1">Your site and the terms Marketing uses for this project</p>
         </div>
-        <MarketingProductPicker @change="onProductChange" />
+        <MarketingProjectLoader @change="onProjectChange" @error="onLoaderError" />
       </div>
 
-      <template v-if="pickerReady">
-        <Card v-if="!product">
+      <p v-if="loaderError" class="text-sm text-muted-foreground" data-testid="marketing-picker-error">
+        The project could not be loaded. Use Retry above to try again.
+      </p>
+
+      <template v-else-if="pickerReady">
+        <Card v-if="!project">
           <CardContent class="py-10 text-center">
-            <p class="font-medium mb-1">No products yet</p>
-            <p class="text-sm text-muted-foreground mb-4">Marketing works on a product. Create one to get started.</p>
+            <p class="font-medium mb-1">No project yet</p>
+            <p class="text-sm text-muted-foreground mb-4">Marketing works on a project. Create one to get started.</p>
             <Button as-child variant="outline">
-              <NuxtLink to="/products">Go to products</NuxtLink>
+              <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
             </Button>
           </CardContent>
         </Card>
 
-        <MarketingDisabled v-else-if="disabledMessage !== null" :product="product" :message="disabledMessage" />
+        <MarketingDisabled v-else-if="disabledMessage !== null" :project="project" :message="disabledMessage" />
 
         <template v-else>
           <div v-if="isLoading" class="space-y-6">
@@ -43,24 +47,26 @@
 
           <template v-else>
             <MarketingSettingsSite
-              :product="product"
+              :project="project"
               :site="site"
               :verification="verification"
               :can-manage="canManage"
               @changed="onSiteChanged"
             />
-            <MarketingSettingsTerms :product="product" :site-added="site !== null" />
-            <MarketingSettingsApiKeys :team-id="product.teamId" @changed="loadIntegrations" />
-            <MarketingSettingsPrivacy v-if="canManage" :product="product" @changed="onSiteChanged" />
-            <MarketingSettingsIntegrations
-              :integrations="integrations"
-              :is-loading="integrationsLoading"
-              :error="integrationsError"
-              :team-id="product.teamId"
-              :can-manage="canManage"
-              @retry="loadIntegrations()"
-              @refresh="loadIntegrations(true)"
-            />
+            <MarketingSettingsTerms :project="project" :site-added="site !== null" />
+            <Card data-testid="marketing-settings-workspace-note">
+              <CardContent class="flex flex-wrap items-center justify-between gap-3 py-4">
+                <p class="text-sm text-muted-foreground">
+                  API keys, budgets, integrations and data consent are in Workspace settings.
+                </p>
+                <Button as-child variant="outline" size="sm">
+                  <NuxtLink to="/workspace">
+                    <Icon name="lucide:settings" class="w-4 h-4 mr-2" />
+                    Workspace settings
+                  </NuxtLink>
+                </Button>
+              </CardContent>
+            </Card>
           </template>
         </template>
       </template>
@@ -81,16 +87,14 @@ export default {
   data() {
     return {
       pickerReady: false,
-      product: null,
+      project: null,
+      loaderError: false,
       site: null,
       verification: null,
       canManage: false,
       isLoading: false,
       error: null,
       disabledMessage: null,
-      integrations: [],
-      integrationsLoading: false,
-      integrationsError: null,
       hashToken: 0,
     }
   },
@@ -107,41 +111,46 @@ export default {
   },
 
   methods: {
-    async onProductChange(product) {
+    onLoaderError() {
+      this.project = null
+      this.loaderError = true
       this.pickerReady = true
-      this.product = product
+    },
+
+    async onProjectChange(project) {
+      this.pickerReady = true
+      this.loaderError = false
+      this.project = project
       this.site = null
       this.verification = null
-      this.integrations = []
       this.disabledMessage = null
       this.error = null
-      if (!product) return
+      if (!project) return
       await this.loadSite()
     },
 
     // `silent` refreshes in place so the sections below keep their local state
     async loadSite(silent = false) {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       if (!silent) this.isLoading = true
       this.error = null
       this.disabledMessage = null
       try {
-        const response = await $fetch(`/api/marketing/projects/${productId}/site`)
-        if (this.product?.id !== productId) return
+        const response = await $fetch(`/api/marketing/projects/${projectId}/site`)
+        if (this.project?.id !== projectId) return
         this.site = response?.data?.site || null
         this.verification = response?.data?.verification || null
         this.canManage = response?.data?.canManage === true
-        this.loadIntegrations()
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.disabledMessage = apiErrorMessage(err, '')
         } else {
           this.error = apiErrorMessage(err, 'Failed to load the site')
         }
       } finally {
-        if (this.product?.id === productId) this.isLoading = false
+        if (this.project?.id === projectId) this.isLoading = false
         if (!silent && this.$route.hash) this.$nextTick(() => this.focusHashSection())
       }
     },
@@ -158,7 +167,7 @@ export default {
       } catch {
         return
       }
-      if (!id || !['site', 'terms', 'keys', 'integrations'].includes(id)) return
+      if (!id || !['site', 'terms'].includes(id)) return
       const deadline = performance.now() + 2000
       const attempt = () => {
         if (token !== this.hashToken) return
@@ -178,24 +187,6 @@ export default {
 
     async onSiteChanged() {
       await this.loadSite(true)
-    },
-
-    // `silent` refreshes in place, so test results below stay on screen
-    async loadIntegrations(silent = false) {
-      if (!this.product) return
-      const productId = this.product.id
-      if (silent !== true) this.integrationsLoading = true
-      this.integrationsError = null
-      try {
-        const response = await $fetch(`/api/marketing/projects/${productId}/overview`)
-        if (this.product?.id !== productId) return
-        this.integrations = response?.data?.integrations || []
-      } catch (err) {
-        if (this.product?.id !== productId) return
-        this.integrationsError = apiErrorMessage(err, 'Failed to load integration status')
-      } finally {
-        if (this.product?.id === productId) this.integrationsLoading = false
-      }
     },
   },
 }

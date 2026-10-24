@@ -1,23 +1,21 @@
 /**
  * Announcement drafts for published changelog entries. Drafts are written with
- * the team's own LLM key, edited by hand and copied out; Veerify never posts.
+ * the workspace's own LLM key, edited by hand and copied out; Veerify never posts.
  */
 
 import { randomUUID } from 'node:crypto'
 import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { team } from '~/server/database/schema/auth'
 import { feedback } from '~/server/database/schema/feedback'
 import { changelogEntry, changelogEntryFeedback } from '~/server/database/schema/changelog'
 import { marketingAnnouncementDraft } from '~/server/database/schema/marketing'
-import { teamModuleSettings } from '~/server/database/schema/teams'
-import { DEFAULT_TEAM_MODULES, resolveProductModules } from '~/lib/modules'
-import { buildPublicBoardUrl } from '~/lib/public-board-url'
+import { isModuleEnabled } from '~/lib/modules'
+import { buildMarketingPublicUrl, getOrganizationSlug } from '~/server/utils/marketing-public-url'
 import { markdownToPlainText } from '~/server/utils/markdown'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
-import { listTeamCredentials } from '~/server/utils/team-credentials'
+import { listOrgCredentials } from '~/server/utils/org-credentials'
 import { ErrorCode } from '~/server/utils/response'
-import { callTeamLlm, failWith } from '~/server/services/marketing/llm-call'
+import { callOrgLlm, failWith } from '~/server/services/marketing/llm-call'
 import { readConsent } from '~/server/services/marketing/customer-language/consent'
 import { SUPPORT_FEEDBACK_SOURCE } from '~/server/services/marketing/customer-language/collect'
 import { stripPii } from '~/server/services/marketing/customer-language/prompt'
@@ -107,19 +105,12 @@ export interface AnnouncementList {
 
 export async function listAnnouncements(
   project: { id: string; settings: unknown },
-  teamId: string,
+  organizationId: string,
   cursor?: string | null
 ): Promise<AnnouncementList> {
-  const [moduleRow] = await db
-    .select({ changelogEnabled: teamModuleSettings.changelogEnabled })
-    .from(teamModuleSettings)
-    .where(eq(teamModuleSettings.teamId, teamId))
-    .limit(1)
-  const teamEnabled = moduleRow ? moduleRow.changelogEnabled === true : DEFAULT_TEAM_MODULES.changelogEnabled
-  const changelogEnabled =
-    teamEnabled && resolveProductModules(project.settings as Record<string, unknown> | null).changelogEnabled === true
+  const changelogEnabled = isModuleEnabled(project.settings as Record<string, unknown> | null, 'changelogEnabled')
 
-  const credentials = await listTeamCredentials(teamId)
+  const credentials = await listOrgCredentials(organizationId)
   const hasUsableKey = pickSuggestionProvider(credentials) !== null
 
   const base = { changelogEnabled, hasUsableKey, limits: CHANNEL_LIMITS }
@@ -196,23 +187,11 @@ function publicEntryUrl(
     customDomain: string | null
     settings: unknown
   },
-  teamSlug: string | null,
+  orgSlug: string | null,
   entrySlug: string,
   requestUrl?: URL
 ): string {
-  const origin = requestUrl ?? new URL(process.env.BETTER_AUTH_URL || 'http://localhost:3000')
-  const base = buildPublicBoardUrl({
-    project: {
-      slug: project.slug,
-      customDomain: project.customDomain,
-      settings: project.settings as Record<string, unknown> | null,
-    },
-    teamSlug,
-    projectSlug: project.slug,
-    appDomain: useRuntimeConfig().public.appDomain || 'localhost',
-    protocol: origin.protocol,
-    port: origin.port,
-  })
+  const base = buildMarketingPublicUrl(project, orgSlug, requestUrl)
   return `${base.replace(/\/+$/, '')}/changelog/${entrySlug}`
 }
 
@@ -231,7 +210,7 @@ export async function generateAnnouncementDrafts(
   }
   const entry = found
 
-  const { project, teamId } = await requireMarketingAccess(entry.projectId, options.userId)
+  const { project, organizationId } = await requireMarketingAccess(entry.projectId, options.userId)
 
   if (entry.status !== 'published') {
     failWith(409, 'Conflict', ErrorCode.CONFLICT, 'Publish the entry before generating announcement drafts')
@@ -241,10 +220,10 @@ export async function generateAnnouncementDrafts(
     ? ANNOUNCEMENT_CHANNELS.filter((c) => options.channels!.includes(c))
     : [...ANNOUNCEMENT_CHANNELS]
 
-  const [owner] = await db.select({ slug: team.slug }).from(team).where(eq(team.id, teamId)).limit(1)
-  const consent = await readConsent(teamId)
+  const orgSlug = await getOrganizationSlug(organizationId)
+  const consent = await readConsent(organizationId)
 
-  // Linked feedback titles are customer text: only sent with the team's consent
+  // Linked feedback titles are customer text: only sent with the workspace's consent
   // for feedback text, never for hidden or support-derived items, and PII-stripped.
   const linkedFeedbackTitles = consent.allowFeedbackText
     ? (
@@ -264,10 +243,10 @@ export async function generateAnnouncementDrafts(
         .filter(Boolean)
     : []
 
-  const link = publicEntryUrl(project, owner?.slug ?? null, entry.slug, options.requestUrl)
+  const link = publicEntryUrl(project, orgSlug, entry.slug, options.requestUrl)
 
-  const result = await callTeamLlm<unknown>(
-    teamId,
+  const result = await callOrgLlm<unknown>(
+    organizationId,
     {
       system: buildAnnouncementSystemPrompt(),
       input: buildAnnouncementInput({

@@ -2,43 +2,61 @@ import { describe, expect, it } from 'vitest'
 import { buildPublicBoardUrl } from '../lib/public-board-url'
 
 describe('public board URL helper', () => {
-  it('uses active custom domains before team subdomains', () => {
+  it('uses an explicit active custom domain before workspace subdomains', () => {
     expect(
       buildPublicBoardUrl({
-        project: {
-          slug: 'dot-x',
-          customDomain: 'feedback.dotmatrixlabs.com',
-          settings: { domainStatus: 'active' },
-          team: { slug: 'dotmatrixlabs' },
-        },
+        orgSlug: 'dotmatrixlabs',
+        projectSlug: 'dot-x',
+        customDomain: 'feedback.dotmatrixlabs.com',
         appDomain: 'veerify.io',
         protocol: 'https:',
       })
     ).toBe('https://feedback.dotmatrixlabs.com')
   })
 
-  it('falls back to the team subdomain when custom domain is not active', () => {
+  it('uses the project custom domain only when its domain status is active', () => {
+    const base = { orgSlug: 'dotmatrixlabs', appDomain: 'veerify.io', protocol: 'https:' }
     expect(
       buildPublicBoardUrl({
-        project: {
-          slug: 'dot-x',
-          customDomain: 'feedback.dotmatrixlabs.com',
-          settings: { domainStatus: 'pending' },
-          team: { slug: 'dotmatrixlabs' },
-        },
+        ...base,
+        project: { slug: 'dot-x', customDomain: 'feedback.dotmatrixlabs.com', settings: { domainStatus: 'active' } },
+      })
+    ).toBe('https://feedback.dotmatrixlabs.com')
+    expect(
+      buildPublicBoardUrl({
+        ...base,
+        project: { slug: 'dot-x', customDomain: 'feedback.dotmatrixlabs.com', settings: { domainStatus: 'pending' } },
+      })
+    ).toBe('https://dotmatrixlabs.veerify.io/dot-x')
+  })
+
+  it('addresses a product board under the project, or at the domain root on a custom domain', () => {
+    expect(
+      buildPublicBoardUrl({
+        orgSlug: 'acme',
+        projectSlug: 'dotmatrix',
+        productSlug: 'dot-x',
         appDomain: 'veerify.io',
         protocol: 'https:',
       })
-    ).toBe('https://dotmatrixlabs.veerify.io/dot-x')
+    ).toBe('https://acme.veerify.io/dotmatrix/dot-x')
+    expect(
+      buildPublicBoardUrl({
+        orgSlug: 'acme',
+        projectSlug: 'dotmatrix',
+        productSlug: 'dot-x',
+        customDomain: 'feedback.acme.com',
+        appDomain: 'veerify.io',
+        protocol: 'https:',
+      })
+    ).toBe('https://feedback.acme.com/dot-x')
   })
 
   it('keeps non-standard ports for local preview URLs', () => {
     expect(
       buildPublicBoardUrl({
-        project: {
-          slug: 'demo',
-          team: { slug: 'preview-org' },
-        },
+        orgSlug: 'preview-org',
+        projectSlug: 'demo',
         appDomain: 'localhost',
         protocol: 'http:',
         port: '4173',

@@ -1,5 +1,5 @@
 /**
- * Budget reservations for team-key LLM calls (no schema change).
+ * Budget reservations for workspace-key LLM calls (no schema change).
  *
  * Reading the month's spend before a call and recording it after lets concurrent calls all pass the
  * check and overshoot the cap. Instead every capped call first reserves an upper-bound cost:
@@ -22,7 +22,7 @@
  * - A crash between reserve and settle leaks the reservation. There is no per-reservation table, so
  *   `resetStaleReservations` (hourly, from the visibility schedule task) zeroes reserved counters
  *   not touched for 15 minutes. A leak therefore blocks at most one call's upper bound, and only
- *   until the counter has been quiet for 15 minutes and the next hourly run; a busy team's leak
+ *   until the counter has been quiet for 15 minutes and the next hourly run; a busy workspace's leak
  *   lingers until it is quiet. Live reservations last seconds, so zeroing a quiet counter cannot
  *   drop a real one; a late settle after a reset is clamped at zero.
  */
@@ -84,7 +84,7 @@ export function estimateVisibilityReservation(
   return answer + extract
 }
 
-/** Reservation for a `callTeamLlm` request on the provider's extraction model. */
+/** Reservation for a `callOrgLlm` request on the provider's extraction model. */
 export function estimateTeamCallReservation(
   provider: LlmProviderId,
   request: { system: string; input: string; schema: Record<string, unknown> }
@@ -117,7 +117,7 @@ export function fitsBudget(spent: number, reserved: number, amount: number, capC
  * reservations serialize on the row, each seeing the previous one.
  */
 export async function reserveBudget(
-  teamId: string,
+  organizationId: string,
   provider: string,
   amountMicros: number,
   capCents: number | null
@@ -131,17 +131,17 @@ export async function reserveBudget(
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`
-      INSERT INTO marketing_usage (team_id, period, metric, units, updated_at)
-      VALUES (${teamId}, ${period}, ${reserved}, 0, now())
-      ON CONFLICT (team_id, period, metric) DO UPDATE SET units = marketing_usage.units
+      INSERT INTO marketing_usage (organization_id, period, metric, units, updated_at)
+      VALUES (${organizationId}, ${period}, ${reserved}, 0, now())
+      ON CONFLICT (organization_id, period, metric) DO UPDATE SET units = marketing_usage.units
     `)
     const result = await tx.execute(sql`
       UPDATE marketing_usage
       SET units = units + ${amount}::bigint, updated_at = now()
-      WHERE team_id = ${teamId} AND period = ${period} AND metric = ${reserved}
+      WHERE organization_id = ${organizationId} AND period = ${period} AND metric = ${reserved}
         AND units + ${amount}::bigint + COALESCE((
           SELECT c.units FROM marketing_usage c
-          WHERE c.team_id = ${teamId} AND c.period = ${period} AND c.metric = ${spent}
+          WHERE c.organization_id = ${organizationId} AND c.period = ${period} AND c.metric = ${spent}
         ), 0) <= ${capMicros}::bigint
       RETURNING units
     `)
@@ -155,7 +155,7 @@ export async function reserveBudget(
  * reservations are in the way and the call may fit once they settle.
  */
 export async function budgetRefusalReason(
-  teamId: string,
+  organizationId: string,
   provider: string,
   amountMicros: number,
   capCents: number
@@ -165,7 +165,7 @@ export async function budgetRefusalReason(
     .from(marketingUsage)
     .where(
       and(
-        eq(marketingUsage.teamId, teamId),
+        eq(marketingUsage.organizationId, organizationId),
         eq(marketingUsage.period, currentPeriod()),
         eq(marketingUsage.metric, costMetric(provider))
       )
@@ -180,7 +180,7 @@ export async function budgetRefusalReason(
  * to spend, atomically. Pass the amount `reserveBudget` actually held (0 when uncapped).
  */
 export async function settleBudget(
-  teamId: string,
+  organizationId: string,
   provider: string,
   reservedMicros: number,
   actualMicros: number
@@ -196,14 +196,14 @@ export async function settleBudget(
       await tx.execute(sql`
         UPDATE marketing_usage
         SET units = GREATEST(units - ${held}::bigint, 0), updated_at = now()
-        WHERE team_id = ${teamId} AND period = ${period} AND metric = ${reservedMetric(provider)}
+        WHERE organization_id = ${organizationId} AND period = ${period} AND metric = ${reservedMetric(provider)}
       `)
     }
     if (actual > 0) {
       await tx.execute(sql`
-        INSERT INTO marketing_usage (team_id, period, metric, units, updated_at)
-        VALUES (${teamId}, ${period}, ${costMetric(provider)}, ${actual}::bigint, now())
-        ON CONFLICT (team_id, period, metric)
+        INSERT INTO marketing_usage (organization_id, period, metric, units, updated_at)
+        VALUES (${organizationId}, ${period}, ${costMetric(provider)}, ${actual}::bigint, now())
+        ON CONFLICT (organization_id, period, metric)
         DO UPDATE SET units = marketing_usage.units + ${actual}::bigint, updated_at = now()
       `)
     }
@@ -211,8 +211,8 @@ export async function settleBudget(
 }
 
 /** Drops a reservation when the provider was not used (no key, validation failure, error before billing). */
-export function releaseBudget(teamId: string, provider: string, reservedMicros: number): Promise<void> {
-  return settleBudget(teamId, provider, reservedMicros, 0)
+export function releaseBudget(organizationId: string, provider: string, reservedMicros: number): Promise<void> {
+  return settleBudget(organizationId, provider, reservedMicros, 0)
 }
 
 /**
@@ -225,7 +225,7 @@ export async function resetStaleReservations(now: Date = new Date()): Promise<nu
     UPDATE marketing_usage
     SET units = 0
     WHERE metric LIKE 'llm:%:reserved_usd_micros' AND units > 0 AND updated_at < ${cutoff.toISOString()}::timestamptz
-    RETURNING team_id
+    RETURNING organization_id
   `)
   return result.rows.length
 }

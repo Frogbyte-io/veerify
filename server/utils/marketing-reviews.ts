@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { feedbackStatus, project } from '~/server/database/schema/feedback'
 import { reviewRequest, type ReviewPlatform, reviewRequestSettings } from '~/server/database/schema/marketing'
-import { teamModuleSettings } from '~/server/database/schema/teams'
 import { isMarketingOn, isRequestLinkExpired } from '~/server/services/marketing/reviews/guards'
 import { SYSTEM_STATUSES } from './project-statuses'
 import { createErrorResponse, ErrorCode } from './response'
@@ -85,7 +84,7 @@ export async function findReviewRequestByToken(token: string) {
     .select({
       id: reviewRequest.id,
       projectId: reviewRequest.projectId,
-      teamId: reviewRequest.teamId,
+      organizationId: project.organizationId,
       email: reviewRequest.email,
       emailHash: reviewRequest.emailHash,
       name: reviewRequest.name,
@@ -95,14 +94,12 @@ export async function findReviewRequestByToken(token: string) {
       createdAt: reviewRequest.createdAt,
       projectName: project.name,
       projectSettings: project.settings,
-      teamMarketingEnabled: teamModuleSettings.marketingEnabled,
       platforms: reviewRequestSettings.platforms,
       askForTestimonial: reviewRequestSettings.askForTestimonial,
       requestsEnabled: reviewRequestSettings.enabled,
     })
     .from(reviewRequest)
     .innerJoin(project, eq(project.id, reviewRequest.projectId))
-    .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, reviewRequest.teamId))
     .leftJoin(reviewRequestSettings, eq(reviewRequestSettings.projectId, reviewRequest.projectId))
     .where(eq(reviewRequest.token, token))
     .limit(1)
@@ -122,7 +119,6 @@ export function testimonialSubmissionState(
     sentAt: Date | null
     createdAt: Date
     projectSettings: Record<string, unknown> | null
-    teamMarketingEnabled: boolean | null
     requestsEnabled: boolean | null
     askForTestimonial: boolean | null
   },

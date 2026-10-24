@@ -192,7 +192,7 @@
               </div>
               <div>
                 <h3 class="font-medium text-card-foreground mb-1">Setting up SSO</h3>
-                <p class="text-sm text-muted-foreground">Configure single sign-on for your team</p>
+                <p class="text-sm text-muted-foreground">Configure single sign-on for your workspace</p>
               </div>
             </div>
 
@@ -221,8 +221,10 @@
                 <Icon name="lucide:users" class="w-4 h-4 text-orange-600 dark:text-orange-400" />
               </div>
               <div>
-                <h3 class="font-medium text-card-foreground mb-1">Team Management</h3>
-                <p class="text-sm text-muted-foreground">Add team members and manage permissions</p>
+                <h3 class="font-medium text-card-foreground mb-1">Workspace members</h3>
+                <p class="text-sm text-muted-foreground">
+                  Invite people to your workspace and choose which projects they can open
+                </p>
               </div>
             </div>
 
@@ -321,10 +323,11 @@
                 <div>
                   <h4 class="font-medium text-card-foreground mb-1">Add your own API keys</h4>
                   <p class="text-sm text-muted-foreground">
-                    Features that call AI models or outside services use keys from your team. You can add keys for
+                    Features that call AI models or outside services use keys from your workspace. You can add keys for
                     Anthropic, OpenAI, Gemini and Perplexity, plus Firecrawl (full site crawls) and PageSpeed (Core Web
                     Vitals). Keys are encrypted and never shown again after saving, only their last four characters.
-                    Only team admins can add or remove them.
+                    Only workspace owners and admins can add or remove them, under Workspace settings, AI &amp; API
+                    keys.
                   </p>
                 </div>
               </div>
@@ -470,7 +473,7 @@
                   <h4 class="font-medium text-card-foreground mb-1">Customer language</h4>
                   <p class="text-sm text-muted-foreground">
                     Finds the words customers use in feedback and support conversations, and turns them into keyword and
-                    prompt suggestions. Feedback and support text is only sent to an AI provider after a team admin
+                    prompt suggestions. Feedback and support text is only sent to an AI provider after a workspace admin
                     gives consent, separately for each source. You can withdraw consent at any time.
                     <NuxtLink to="/marketing/language" class="text-blue-600 dark:text-blue-400 hover:underline">
                       Open customer language
@@ -561,8 +564,8 @@
                 expire. Turning Marketing off hides your data but does not delete it.
               </li>
               <li>
-                In Marketing settings, the Privacy card lets team admins erase a person's data by email, export a
-                product's Marketing data as a JSON file, and delete it permanently. People who sent a testimonial can
+                In Workspace settings, Data &amp; privacy lets workspace admins erase a person's data by email, export a
+                project's Marketing data as a JSON file, and delete it permanently. People who sent a testimonial can
                 remove it from the public page with the link in their email, also after the 180 days.
               </li>
             </ul>
@@ -572,11 +575,11 @@
           <div>
             <h3 class="font-medium text-card-foreground mb-2">Marketing for self-hosters</h3>
             <p class="text-sm text-muted-foreground">
-              Every Marketing feature works on a self-hosted install. Set <code>SECRETS_ENCRYPTION_KEY</code> so teams
-              can save their own keys. The other settings are optional and each one unlocks a single capability, such as
-              <code>FIRECRAWL_API_KEY</code> for full crawls or <code>REDDIT_CLIENT_ID</code> for Reddit mentions. The
-              Marketing environment variables table in the project README lists them all. Marketing settings also shows
-              which integrations are configured.
+              Every Marketing feature works on a self-hosted install. Set <code>SECRETS_ENCRYPTION_KEY</code> so
+              workspaces can save their own keys. The other settings are optional and each one unlocks a single
+              capability, such as <code>FIRECRAWL_API_KEY</code> for full crawls or <code>REDDIT_CLIENT_ID</code> for
+              Reddit mentions. The Marketing environment variables table in the project README lists them all. Workspace
+              settings, Integrations also shows which integrations are configured.
             </p>
           </div>
         </div>

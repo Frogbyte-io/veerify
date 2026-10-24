@@ -74,6 +74,7 @@
  *               $ref: '#/components/schemas/Error'
  */
 
+import { registerOrgPublicDomainBestEffort } from '~/server/services/domains/domain-service'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
@@ -82,9 +83,8 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
-import { member, organization, session as sessionTable, team, teamMember } from '~/server/database/schema/auth'
+import { member, organization, session as sessionTable } from '~/server/database/schema/auth'
 import { assertOrganizationSlugAvailable } from '~/server/utils/organization-access'
-import { DEFAULT_TEAM_NAME } from '~/server/utils/team-context'
 
 const createOrganizationSchema = z.object({
   name: z.string().min(1, 'Organization name is required').max(100, 'Organization name too long'),
@@ -115,7 +115,6 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date()
   const organizationId = randomUUID()
-  const defaultTeamId = randomUUID()
 
   const createdOrganization = await db.transaction(async (tx) => {
     const [org] = await tx
@@ -139,37 +138,22 @@ export default defineEventHandler(async (event) => {
       updatedAt: now,
     })
 
-    await tx.insert(team).values({
-      id: defaultTeamId,
-      name: DEFAULT_TEAM_NAME,
-      slug: body.slug,
-      organizationId,
-      createdAt: now,
-      updatedAt: now,
-    })
-
-    await tx.insert(teamMember).values({
-      id: randomUUID(),
-      teamId: defaultTeamId,
-      userId: session.user.id,
-      createdAt: now,
-    })
-
     await tx
       .update(sessionTable)
       .set({
         activeOrganizationId: organizationId,
-        activeTeamId: defaultTeamId,
+        activeProjectId: null,
       })
       .where(eq(sessionTable.token, session.session.token))
 
     return org
   })
 
+  if (createdOrganization.slug) {
+    await registerOrgPublicDomainBestEffort(createdOrganization.slug, { organizationId: createdOrganization.id })
+  }
+
   setResponseStatus(event, 201)
 
-  return createSuccessResponse({
-    ...createdOrganization,
-    defaultTeamId,
-  })
+  return createSuccessResponse(createdOrganization)
 })

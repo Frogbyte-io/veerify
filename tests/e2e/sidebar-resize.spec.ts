@@ -8,13 +8,14 @@ test.describe('Sidebar resizing', () => {
   test('dragging the resize handle updates sidebar width', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
     await page.addInitScript(() => window.localStorage.setItem('veerify_sidebar_width', '256'))
-    const activeTeamResponse = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === '/api/teams/active' && response.request().method() === 'GET',
+    const activeProjectResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/projects/active' && response.request().method() === 'GET',
       { timeout: 20_000 }
     )
     await page.goto('/feedback')
     await expect(page).toHaveURL(/\/feedback/)
-    await activeTeamResponse
+    await activeProjectResponse
 
     const sidebar = page.locator('[data-testid="app-sidebar"]')
     const handle = page.locator('[data-testid="app-sidebar-resize-handle"]')

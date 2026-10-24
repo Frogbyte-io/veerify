@@ -25,17 +25,14 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = {
 /** Everything `enqueueReviewRequest` needs to know about a product, in one read. */
 export interface ReviewProjectContext {
   projectId: string
-  teamId: string
+  organizationId: string
   projectSettings: Record<string, unknown> | null
-  /** `null` when the team never opened the Tools tab (registry default applies) */
-  teamMarketingEnabled: boolean | null
   settings: ReviewSettings | null
 }
 
 export interface ReviewRequestInsert {
   id: string
   projectId: string
-  teamId: string
   email: string
   name: string | null
   trigger: ReviewRequestTrigger
@@ -46,7 +43,7 @@ export interface ReviewRequestInsert {
 export interface ClaimedReviewRequest {
   id: string
   projectId: string
-  teamId: string
+  organizationId: string
   email: string
   name: string | null
   trigger: ReviewRequestTrigger
@@ -56,7 +53,6 @@ export interface ClaimedReviewRequest {
   attempts: number
   projectName: string
   projectSettings: Record<string, unknown> | null
-  teamMarketingEnabled: boolean | null
   settings: ReviewSettings | null
   /** Title of the shipped feedback item, for the `shipped` trigger */
   feedbackTitle: string | null
@@ -83,12 +79,12 @@ export interface CsatContext {
 export interface ReviewsStore {
   loadProjectContext(projectId: string): Promise<ReviewProjectContext | null>
   /** Suppressed by address or by its keyed hash (an anonymised row's unsubscribe is hash-only). */
-  isSuppressed(teamId: string, email: string): Promise<boolean>
+  isSuppressed(organizationId: string, email: string): Promise<boolean>
   /**
    * Last check before the mailer is called: the row still exists and is still `sending` (a contact
    * erasure may have deleted it since the claim) and the address is not suppressed.
    */
-  stillSendable(id: string, teamId: string, email: string): Promise<boolean>
+  stillSendable(id: string, organizationId: string, email: string): Promise<boolean>
   /** A queued, sending or sent request for this product and address created at or after `since`. */
   hasRecentRequest(projectId: string, email: string, since: Date): Promise<boolean>
   /** A request that was actually sent at or after `since`, ignoring `excludeId`. Reads committed state. */
@@ -99,8 +95,8 @@ export interface ReviewsStore {
    * serialized per (product, address) and refused when a queued, sending or sent request exists since then.
    */
   insertRequest(row: ReviewRequestInsert, options?: { dedupeSince?: Date }): Promise<boolean>
-  /** Manual requests queued for a team since `since`, for the daily cap. */
-  countManualSince(teamId: string, since: Date): Promise<number>
+  /** Manual requests queued for a project since `since`, for the daily cap. */
+  countManualSince(projectId: string, since: Date): Promise<number>
   /**
    * Returns `sending` rows whose claim is older than `staleAfterMinutes` to `queued`, counting the lost
    * claim as an attempt (`failed` once `maxAttempts` is reached). Returns how many rows were touched.

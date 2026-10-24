@@ -26,17 +26,21 @@ test.describe.serial('support inbox responsive layout', () => {
     const context = await browser.newContext({ baseURL: getPlaywrightBaseURL(), viewport })
     contexts.push(context)
     const page = await context.newPage()
-    await loginViaProgrammaticPage(page, fixture.users.teamAdmin)
-    const activeTeam = await page.request.post('/api/teams/active', {
+    await loginViaProgrammaticPage(page, fixture.users.projectAdmin)
+    const activeProject = await page.request.post('/api/projects/active', {
       headers: withOriginHeaders('/support'),
-      data: { teamId: fixture.teamId },
+      data: { projectId: fixture.projectId },
     })
-    expect(activeTeam.ok()).toBe(true)
+    expect(activeProject.ok()).toBe(true)
 
     if (!conversationId) {
       const contacts = await page.request.post('/api/support/contacts', {
         headers: withOriginHeaders('/support'),
-        data: { teamId: fixture.teamId, name: 'Responsive Customer', email: `responsive-${Date.now()}@example.com` },
+        data: {
+          projectId: fixture.projectId,
+          name: 'Responsive Customer',
+          email: `responsive-${Date.now()}@example.com`,
+        },
       })
       expect(contacts.ok()).toBe(true)
       const contactId = (await contacts.json()).data.contact.id as string

@@ -462,13 +462,13 @@ export default {
     },
 
     async searchMergeCandidates() {
-      if (!this.contact?.teamId || !this.mergeSearch) {
+      if (!this.contact?.projectId || !this.mergeSearch) {
         this.mergeCandidates = []
         return
       }
       try {
         const response = await $fetch('/api/support/contacts', {
-          params: { teamId: this.contact.teamId, search: this.mergeSearch, limit: 10 },
+          params: { projectId: this.contact.projectId, search: this.mergeSearch, limit: 10 },
         })
         this.mergeCandidates = (response?.data?.contacts || []).filter((c) => c.id !== this.contactId())
       } catch {

@@ -31,7 +31,7 @@
  *     responses:
  *       200: { description: The saved draft }
  *       400: { description: Validation failed }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Entry or channel not found }
  */
 import { z } from 'zod'

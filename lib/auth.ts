@@ -1,9 +1,10 @@
 import { betterAuth } from 'better-auth'
+import { APIError } from 'better-auth/api'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { magicLink, multiSession, organization, testUtils, twoFactor } from 'better-auth/plugins'
-import { and, eq } from 'drizzle-orm'
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
+import { isReservedSlug } from '../server/utils/reserved-slugs'
 import {
   sendEmailVerificationEmail,
   sendMagicLinkEmail,
@@ -113,11 +114,16 @@ export const auth = betterAuth({
       organization: schema.organization,
       member: schema.member,
       invitation: schema.invitation,
-      team: schema.team,
-      teamMember: schema.teamMember,
       twoFactor: schema.twoFactor,
     },
   }),
+  session: {
+    // The project the user is working in; resolved and repaired server-side by
+    // server/utils/project-context.ts. Never set from client input.
+    additionalFields: {
+      activeProjectId: { type: 'string', required: false, input: false },
+    },
+  },
   emailAndPassword: {
     enabled: true,
     sendResetPassword: async ({ user, url, token }, _request) => {
@@ -155,17 +161,6 @@ export const auth = betterAuth({
       organizationLimit: 5,
       membershipLimit: 50,
       sendInvitationEmail: async (data, request) => {
-        let teamName = null
-
-        if (data.invitation.teamId) {
-          const [teamRecord] = await db
-            .select()
-            .from(schema.team)
-            .where(eq(schema.team.id, data.invitation.teamId))
-            .limit(1)
-          teamName = teamRecord?.name || null
-        }
-
         const invitationUrl = new URL(
           `/accept-invitation?id=${encodeURIComponent(data.id)}`,
           resolveInvitationBaseUrl(request)
@@ -177,90 +172,19 @@ export const auth = betterAuth({
           inviterName: data.inviter.user.name || data.inviter.user.email,
           inviteUrl: invitationUrl,
           role: data.role,
-          teamName,
         })
       },
-      teams: {
-        enabled: true,
-        defaultTeam: {
-          enabled: true,
-          customCreateDefaultTeam: async (org) => {
-            const now = new Date()
-
-            // Derive a slug from the org slug
-            const baseSlug = (org.slug || org.id.slice(0, 8))
-              .toLowerCase()
-              .replace(/[^a-z0-9-]/g, '-')
-              .replace(/-+/g, '-')
-              .replace(/^-|-$/g, '')
-
-            // Ensure uniqueness — append random suffix on conflict
-            let slug = baseSlug
-            let attempt = 0
-            while (attempt < 5) {
-              const [existing] = await db.select().from(schema.team).where(eq(schema.team.slug, slug)).limit(1)
-              if (!existing) break
-              slug = `${baseSlug}-${Math.random().toString(36).slice(2, 6)}`
-              attempt++
-            }
-
-            const [created] = await db
-              .insert(schema.team)
-              .values({
-                id: crypto.randomUUID(),
-                name: 'Default',
-                slug,
-                organizationId: org.id,
-                createdAt: now,
-                updatedAt: now,
-              })
-              .returning()
-
-            return created as any
-          },
-        },
-      },
       organizationHooks: {
-        // NOTE (BetterAuth 1.5): "after" hooks now run post-transaction. If this hook
-        // fails, the invitation acceptance is already committed — wrap in try/catch so
-        // the error is logged without surfacing a 500 to the user.
-        async afterAcceptInvitation({ invitation, user, organization }) {
-          // Organization-only invitations should place users in the default team.
-          if (invitation.teamId) {
-            return
+        // The organization slug is the workspace's public subdomain
+        // (<slug>.APP_DOMAIN): refuse reserved names, then register the hostname.
+        async beforeCreateOrganization({ organization: org }) {
+          if (org.slug && isReservedSlug(org.slug)) {
+            throw new APIError('BAD_REQUEST', { message: 'This workspace URL is reserved. Choose another one.' })
           }
-
-          try {
-            const [defaultTeam] = await db
-              .select()
-              .from(schema.team)
-              .where(and(eq(schema.team.organizationId, organization.id), eq(schema.team.name, 'Default')))
-              .limit(1)
-
-            if (!defaultTeam) {
-              return
-            }
-
-            const [existing] = await db
-              .select()
-              .from(schema.teamMember)
-              .where(and(eq(schema.teamMember.teamId, defaultTeam.id), eq(schema.teamMember.userId, user.id)))
-              .limit(1)
-
-            if (!existing) {
-              await db.insert(schema.teamMember).values({
-                id: crypto.randomUUID(),
-                teamId: defaultTeam.id,
-                userId: user.id,
-                createdAt: new Date(),
-              })
-            }
-          } catch (error) {
-            logger.error('afterAcceptInvitation: failed to add user to default team', {
-              userId: user.id,
-              error: error instanceof Error ? error.message : error,
-            })
-          }
+        },
+        async afterCreateOrganization({ organization: org }) {
+          const { registerOrgPublicDomainBestEffort } = await import('../server/services/domains/domain-service')
+          await registerOrgPublicDomainBestEffort(org.slug, { organizationId: org.id })
         },
       },
     }),

@@ -185,20 +185,6 @@ export async function revokeGscTokensForProject(projectId: string): Promise<void
   }
 }
 
-/** Best-effort revoke of every GSC token under a team, before it is deleted. Never throws. */
-export async function revokeGscTokensForTeam(teamId: string): Promise<void> {
-  try {
-    const rows = await db
-      .select({ siteId: gscConnection.siteId, encryptedRefreshToken: gscConnection.encryptedRefreshToken })
-      .from(gscConnection)
-      .innerJoin(marketingSite, eq(marketingSite.id, gscConnection.siteId))
-      .where(eq(marketingSite.teamId, teamId))
-    await revokeConnections(rows)
-  } catch {
-    // Best effort
-  }
-}
-
 /** Best-effort revoke of every GSC token under an organization (all its products), before deletion. Never throws. */
 export async function revokeGscTokensForOrganization(organizationId: string): Promise<void> {
   try {
@@ -294,11 +280,15 @@ const NONCE_RETENTION_MS = 24 * 60 * 60 * 1000
  * NOTHING; returns false when it was already consumed, so a replayed callback URL is rejected.
  * States expire after 10 minutes; consumed rows older than a day are pruned opportunistically.
  */
-export async function consumeOAuthNonce(teamId: string, nonce: string, now: Date = new Date()): Promise<boolean> {
+export async function consumeOAuthNonce(
+  organizationId: string,
+  nonce: string,
+  now: Date = new Date()
+): Promise<boolean> {
   const metric = `${NONCE_PREFIX}${nonce}`
   const inserted = await db
     .insert(marketingUsage)
-    .values({ teamId, period: NONCE_PERIOD, metric, units: 1 })
+    .values({ organizationId, period: NONCE_PERIOD, metric, units: 1 })
     .onConflictDoNothing()
     .returning({ metric: marketingUsage.metric })
   try {

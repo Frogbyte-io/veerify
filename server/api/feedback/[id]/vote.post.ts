@@ -3,10 +3,10 @@ import { eq, and, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
-import { requirePublicProject } from '~/server/utils/project-access'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import { feedback, vote } from '~/server/database/schema/feedback'
+import { requirePublicFeedback } from '~/server/utils/feedback-access'
 
 const bodySchema = z.object({
   type: z.enum(['upvote', 'downvote']).default('upvote'),
@@ -42,7 +42,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Verify the feedback's project is public (voting is public-facing feature)
-  await requirePublicProject(fb.projectId)
+  await requirePublicFeedback(fb)
 
   // Determine voter identity: authenticated user or anonymous session
   const userId = session?.user?.id || null

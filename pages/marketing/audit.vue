@@ -9,7 +9,7 @@
           </p>
         </div>
         <div class="flex items-center gap-2">
-          <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+          <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
           <Button
             v-if="showContent"
             :disabled="!canRun"
@@ -34,12 +34,12 @@
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a product first to run a site audit.</div>
+      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to run a site audit.</div>
 
-      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
       <div v-else-if="isLoading" class="space-y-4">
         <Skeleton class="h-40 w-full" />
@@ -111,7 +111,7 @@
                 <MarketingAuditSiteFiles :site-facts="detail.siteFacts" />
                 <MarketingAuditVitals :site-facts="detail.siteFacts" />
               </div>
-              <MarketingAuditPages :project-id="product.id" :audit-id="detail.id" />
+              <MarketingAuditPages :project-id="project.id" :audit-id="detail.id" />
             </template>
           </div>
 
@@ -136,7 +136,7 @@ export default {
 
   data() {
     return {
-      product: null,
+      project: null,
       pickerSettled: false,
       pickerError: false,
       isLoading: false,
@@ -165,7 +165,7 @@ export default {
     showContent() {
       return (
         this.pickerSettled &&
-        Boolean(this.product) &&
+        Boolean(this.project) &&
         !this.marketingOff &&
         !this.isLoading &&
         !this.error &&
@@ -195,20 +195,20 @@ export default {
   },
 
   methods: {
-    base(productId = this.product.id) {
-      return `/api/marketing/projects/${productId}/audits`
+    base(projectId = this.project.id) {
+      return `/api/marketing/projects/${projectId}/audits`
     },
 
     onPickerError() {
       this.stopPolling()
-      this.product = null
+      this.project = null
       this.pickerError = true
       this.pickerSettled = true
     },
 
-    async onProductChange(product) {
+    async onProjectChange(project) {
       this.stopPolling()
-      this.product = product
+      this.project = project
       this.pickerSettled = true
       this.pickerError = false
       this.isLoading = false
@@ -221,7 +221,7 @@ export default {
       this.selectedId = null
       this.audits = []
       this.site = null
-      if (product) await this.load()
+      if (project) await this.load()
     },
 
     applyList(data) {
@@ -234,21 +234,21 @@ export default {
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.isLoading = true
       this.error = null
       this.marketingOff = false
       try {
-        const response = await $fetch(this.base(productId))
-        if (this.product?.id !== productId) return
+        const response = await $fetch(this.base(projectId))
+        if (this.project?.id !== projectId) return
         this.applyList(response.data)
         if (this.audits.length) {
           this.selectedId = this.selectedId || this.audits[0].id
           await this.loadDetail()
         }
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.marketingOff = true
           this.disabledMessage = apiErrorMessage(err, '')
@@ -256,7 +256,7 @@ export default {
           this.error = apiErrorMessage(err, 'Failed to load audits')
         }
       } finally {
-        if (this.product?.id === productId) {
+        if (this.project?.id === projectId) {
           this.isLoading = false
           this.syncPolling()
         }
@@ -264,20 +264,20 @@ export default {
     },
 
     async loadDetail() {
-      if (!this.selectedId || !this.product) return
+      if (!this.selectedId || !this.project) return
       const id = this.selectedId
-      const productId = this.product.id
+      const projectId = this.project.id
       this.detailLoading = true
       this.detailError = null
       try {
-        const response = await $fetch(`${this.base(productId)}/${id}`)
-        if (this.product?.id === productId && id === this.selectedId) this.detail = response.data
+        const response = await $fetch(`${this.base(projectId)}/${id}`)
+        if (this.project?.id === projectId && id === this.selectedId) this.detail = response.data
       } catch (err) {
-        if (this.product?.id === productId && id === this.selectedId) {
+        if (this.project?.id === projectId && id === this.selectedId) {
           this.detailError = apiErrorMessage(err, 'Failed to load the audit')
         }
       } finally {
-        if (this.product?.id === productId && id === this.selectedId) this.detailLoading = false
+        if (this.project?.id === projectId && id === this.selectedId) this.detailLoading = false
       }
     },
 
@@ -324,24 +324,24 @@ export default {
      * the next tick retries.
      */
     async refresh() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       try {
-        const response = await $fetch(this.base(productId))
-        if (this.product?.id !== productId) return
+        const response = await $fetch(this.base(projectId))
+        if (this.project?.id !== projectId) return
         this.applyList(response.data)
         this.error = null
         if (!this.selectedId && this.audits.length) this.selectedId = this.audits[0].id
         await this.loadDetail()
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.stopPolling()
           this.marketingOff = true
           this.disabledMessage = apiErrorMessage(err, '')
         }
       }
-      if (this.product?.id === productId) this.syncPolling()
+      if (this.project?.id === projectId) this.syncPolling()
     },
 
     syncPolling() {

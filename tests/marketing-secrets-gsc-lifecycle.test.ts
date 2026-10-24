@@ -79,7 +79,7 @@ beforeEach(() => {
 
 type Row = { id: string; payload: string; aad: string }
 
-function memoryStore(tables: Record<'team_api_credential' | 'gsc_connection', Row[]>) {
+function memoryStore(tables: Record<'organization_api_credential' | 'gsc_connection', Row[]>) {
   const replaced: string[] = []
   const store: import('~/server/services/marketing/secrets-rotation').RotationStore = {
     loadOutdated: async (table, keyId, afterId, limit) =>
@@ -95,8 +95,9 @@ function memoryStore(tables: Record<'team_api_credential' | 'gsc_connection', Ro
       return true
     },
     countOutdated: async (keyId) =>
-      [...tables.team_api_credential, ...tables.gsc_connection].filter((r) => !r.payload.startsWith(`v1.${keyId}.`))
-        .length,
+      [...tables.organization_api_credential, ...tables.gsc_connection].filter(
+        (r) => !r.payload.startsWith(`v1.${keyId}.`)
+      ).length,
   }
   return { store, replaced }
 }
@@ -110,16 +111,16 @@ const encryptWith = (key: string, plaintext: string, aad: string) => {
 
 describe('rotateSecrets', () => {
   it('re-wraps only old-key rows, with each table AAD, and reports undecryptable ones', async () => {
-    const teamAad = 'team:t1:anthropic'
+    const orgAad = 'org:t1:anthropic'
     const gscAad = 'gsc:site-1'
-    const current = encryptWith(NEW_KEY, 'already-current', 'team:t9:openai')
+    const current = encryptWith(NEW_KEY, 'already-current', 'org:t9:openai')
     const tables = {
-      team_api_credential: [
-        { id: 'c1', payload: encryptWith(OLD_KEY, 'sk-team-secret', teamAad), aad: teamAad },
-        { id: 'c2', payload: current, aad: 'team:t9:openai' },
+      organization_api_credential: [
+        { id: 'c1', payload: encryptWith(OLD_KEY, 'sk-team-secret', orgAad), aad: orgAad },
+        { id: 'c2', payload: current, aad: 'org:t9:openai' },
         // Encrypted for another AAD than the row claims: must be reported, not crash
-        { id: 'c3', payload: encryptWith(OLD_KEY, 'x', 'team:other:openai'), aad: 'team:t3:openai' },
-        { id: 'c4', payload: 'not-a-payload', aad: 'team:t4:openai' },
+        { id: 'c3', payload: encryptWith(OLD_KEY, 'x', 'org:other:openai'), aad: 'org:t3:openai' },
+        { id: 'c4', payload: 'not-a-payload', aad: 'org:t4:openai' },
       ],
       gsc_connection: [{ id: 'site-1', payload: encryptWith(OLD_KEY, 'refresh-token', gscAad), aad: gscAad }],
     }
@@ -127,26 +128,26 @@ describe('rotateSecrets', () => {
 
     const summary = await rotation.rotateSecrets({}, store)
 
-    expect(replaced.sort()).toEqual(['gsc_connection:site-1', 'team_api_credential:c1'])
+    expect(replaced.sort()).toEqual(['gsc_connection:site-1', 'organization_api_credential:c1'])
     expect(summary.rewrapped).toBe(2)
     expect(summary.failed).toEqual([
-      { table: 'team_api_credential', id: 'c3' },
-      { table: 'team_api_credential', id: 'c4' },
+      { table: 'organization_api_credential', id: 'c3' },
+      { table: 'organization_api_credential', id: 'c4' },
     ])
     expect(summary.remaining).toBe(2)
     // Values round-trip with the correct AAD on the new key and the payloads moved to the current key
-    expect(tables.team_api_credential[0].payload.split('.')[1]).toBe(secrets.currentKeyId())
-    expect(secrets.decryptSecret(tables.team_api_credential[0].payload, teamAad)).toBe('sk-team-secret')
+    expect(tables.organization_api_credential[0].payload.split('.')[1]).toBe(secrets.currentKeyId())
+    expect(secrets.decryptSecret(tables.organization_api_credential[0].payload, orgAad)).toBe('sk-team-secret')
     expect(secrets.decryptSecret(tables.gsc_connection[0].payload, gscAad)).toBe('refresh-token')
-    expect(tables.team_api_credential[1].payload).toBe(current)
+    expect(tables.organization_api_credential[1].payload).toBe(current)
     // Never logs plaintext or ciphertext
     expect(JSON.stringify(state.logged)).not.toMatch(/sk-team-secret|refresh-token|not-a-payload/)
   })
 
   it('is idempotent: a second run changes nothing', async () => {
-    const aad = 'team:t1:anthropic'
+    const aad = 'org:t1:anthropic'
     const { store, replaced } = memoryStore({
-      team_api_credential: [{ id: 'c1', payload: encryptWith(OLD_KEY, 'k', aad), aad }],
+      organization_api_credential: [{ id: 'c1', payload: encryptWith(OLD_KEY, 'k', aad), aad }],
       gsc_connection: [],
     })
     await rotation.rotateSecrets({}, store)
@@ -158,23 +159,23 @@ describe('rotateSecrets', () => {
 
   it('works through batches, including past rows that keep failing', async () => {
     const rows = Array.from({ length: 5 }, (_, i) => {
-      const aad = `team:t${i}:openai`
+      const aad = `org:t${i}:openai`
       return { id: `c${i}`, payload: i === 0 ? 'bad' : encryptWith(OLD_KEY, `k${i}`, aad), aad }
     })
-    const { store } = memoryStore({ team_api_credential: rows, gsc_connection: [] })
+    const { store } = memoryStore({ organization_api_credential: rows, gsc_connection: [] })
     const summary = await rotation.rotateSecrets({ batchSize: 2 }, store)
     expect(summary.rewrapped).toBe(4)
-    expect(summary.failed).toEqual([{ table: 'team_api_credential', id: 'c0' }])
+    expect(summary.failed).toEqual([{ table: 'organization_api_credential', id: 'c0' }])
   })
 
   it('skips when encryption is not configured and never throws from the safe wrapper', async () => {
     vi.stubEnv('SECRETS_ENCRYPTION_KEY', '')
-    const { store } = memoryStore({ team_api_credential: [], gsc_connection: [] })
+    const { store } = memoryStore({ organization_api_credential: [], gsc_connection: [] })
     expect(await rotation.rotateSecrets({}, store)).toMatchObject({ skipped: true, rewrapped: 0 })
     withKey(NEW_KEY, OLD_KEY)
     // dbRotationStore hits the mocked db, which has no insert/update; the sweep must swallow that
     state.selects = [
-      [{ id: 'x', teamId: 't', provider: 'openai', payload: encryptWith(OLD_KEY, 'k', 'team:t:openai') }],
+      [{ id: 'x', organizationId: 't', provider: 'openai', payload: encryptWith(OLD_KEY, 'k', 'org:t:openai') }],
     ]
     await expect(rotation.rotateSecretsSafely()).resolves.toBeDefined()
   })
@@ -186,12 +187,8 @@ describe('GSC token revocation', () => {
     encryptedRefreshToken: secrets.encryptSecret(plaintext, `gsc:${siteId}`),
   })
 
-  it('revokes every token under a product, team and organization', async () => {
-    for (const fn of [
-      connection.revokeGscTokensForProject,
-      connection.revokeGscTokensForTeam,
-      connection.revokeGscTokensForOrganization,
-    ]) {
+  it('revokes every token under a project and organization', async () => {
+    for (const fn of [connection.revokeGscTokensForProject, connection.revokeGscTokensForOrganization]) {
       state.revoked = []
       state.selects = [[token('s1', 'tok-1'), token('s2', 'tok-2')]]
       await fn('id-1')
@@ -204,7 +201,7 @@ describe('GSC token revocation', () => {
     await expect(connection.revokeGscTokensForProject('p1')).resolves.toBeUndefined()
     expect(state.revoked).toEqual([])
     state.selectFails = true
-    await expect(connection.revokeGscTokensForTeam('t1')).resolves.toBeUndefined()
+    await expect(connection.revokeGscTokensForOrganization('t1')).resolves.toBeUndefined()
   })
 
   it('gives up after a short budget when Google hangs', async () => {

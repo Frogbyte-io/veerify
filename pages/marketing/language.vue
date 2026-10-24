@@ -9,7 +9,7 @@
           </p>
         </div>
         <div class="flex items-center gap-2">
-          <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+          <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
           <Button
             v-if="showContent"
             :disabled="!canRunNow"
@@ -41,12 +41,12 @@
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a product first to analyze language.</div>
+      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to analyze language.</div>
 
-      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
       <div v-else-if="isLoading" class="space-y-4">
         <Skeleton class="h-48 w-full" />
@@ -68,12 +68,7 @@
       </div>
 
       <div v-else class="grid gap-6 lg:grid-cols-[22rem_1fr]">
-        <MarketingLanguageConsent
-          :team-id="teamId"
-          :consent="consent"
-          :can-manage="consent.canManage"
-          @changed="refresh"
-        />
+        <MarketingLanguageConsent :consent="consent" :can-manage="consent.canManage" @changed="refresh" />
 
         <div>
           <div v-if="running" class="space-y-4">
@@ -113,7 +108,7 @@ export default {
 
   data() {
     return {
-      product: null,
+      project: null,
       pickerSettled: false,
       pickerError: false,
       isLoading: false,
@@ -121,7 +116,6 @@ export default {
       marketingOff: false,
       disabledMessage: '',
       noSite: false,
-      teamId: '',
       insight: null,
       consent: {
         allowFeedbackText: false,
@@ -145,7 +139,7 @@ export default {
     showContent() {
       return (
         this.pickerSettled &&
-        Boolean(this.product) &&
+        Boolean(this.project) &&
         !this.marketingOff &&
         !this.isLoading &&
         !this.error &&
@@ -157,24 +151,24 @@ export default {
     },
     runDisabledReason() {
       if (this.running) return ''
-      if (!this.consent.canManage) return 'Only team admins can run an analysis.'
+      if (!this.consent.canManage) return 'Only project admins can run an analysis.'
       return this.canRun ? '' : this.message || ''
     },
   },
 
   methods: {
-    base(productId = this.product.id) {
-      return `/api/marketing/projects/${productId}/language`
+    base(projectId = this.project.id) {
+      return `/api/marketing/projects/${projectId}/language`
     },
 
     onPickerError() {
-      this.product = null
+      this.project = null
       this.pickerError = true
       this.pickerSettled = true
     },
 
-    async onProductChange(product) {
-      this.product = product
+    async onProjectChange(project) {
+      this.project = project
       this.pickerSettled = true
       this.pickerError = false
       this.error = null
@@ -185,11 +179,10 @@ export default {
       this.insight = null
       this.running = false
       this.applying = false
-      if (product) await this.load()
+      if (project) await this.load()
     },
 
     applyLatest(data) {
-      this.teamId = data.teamId
       this.insight = data.insight
       this.consent = data.consent
       this.canRun = data.canRun
@@ -198,17 +191,17 @@ export default {
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.isLoading = true
       this.error = null
       this.marketingOff = false
       this.noSite = false
       try {
-        const response = await $fetch(`${this.base(productId)}/latest`)
-        if (this.product?.id === productId) this.applyLatest(response.data)
+        const response = await $fetch(`${this.base(projectId)}/latest`)
+        if (this.project?.id === projectId) this.applyLatest(response.data)
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.marketingOff = true
           this.disabledMessage = apiErrorMessage(err, '')
@@ -218,7 +211,7 @@ export default {
           this.error = apiErrorMessage(err, 'Failed to load customer language')
         }
       } finally {
-        if (this.product?.id === productId) this.isLoading = false
+        if (this.project?.id === projectId) this.isLoading = false
       }
     },
 
@@ -228,13 +221,13 @@ export default {
      * marketing was switched off in the meantime.
      */
     async refresh() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       try {
-        const response = await $fetch(`${this.base(productId)}/latest`)
-        if (this.product?.id === productId) this.applyLatest(response.data)
+        const response = await $fetch(`${this.base(projectId)}/latest`)
+        if (this.project?.id === projectId) this.applyLatest(response.data)
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.marketingOff = true
           this.disabledMessage = apiErrorMessage(err, '')
@@ -245,17 +238,17 @@ export default {
     },
 
     async run() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.running = true
       this.runError = null
       try {
-        await $fetch(`${this.base(productId)}/runs`, { method: 'POST' })
-        if (this.product?.id === productId) toast.success('Analysis complete')
+        await $fetch(`${this.base(projectId)}/runs`, { method: 'POST' })
+        if (this.project?.id === projectId) toast.success('Analysis complete')
       } catch (err) {
-        if (this.product?.id === productId) this.runError = apiErrorMessage(err, 'The analysis could not be run')
+        if (this.project?.id === projectId) this.runError = apiErrorMessage(err, 'The analysis could not be run')
       } finally {
-        if (this.product?.id === productId) {
+        if (this.project?.id === projectId) {
           this.running = false
           await this.refresh()
         }
@@ -263,13 +256,13 @@ export default {
     },
 
     async apply(selection) {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.applying = true
       this.applyError = null
       try {
-        const response = await $fetch(`${this.base(productId)}/apply`, { method: 'POST', body: selection })
-        if (this.product?.id !== productId) return
+        const response = await $fetch(`${this.base(projectId)}/apply`, { method: 'POST', body: selection })
+        if (this.project?.id !== projectId) return
         const { terms, prompts } = response.data
         const added = terms.added.length + prompts.added.length
         const skipped = terms.skipped.length + prompts.skipped.length
@@ -279,9 +272,9 @@ export default {
         this.selectionResetKey += 1
         await this.refresh()
       } catch (err) {
-        if (this.product?.id === productId) this.applyError = apiErrorMessage(err, 'Could not add the selection')
+        if (this.project?.id === projectId) this.applyError = apiErrorMessage(err, 'Could not add the selection')
       } finally {
-        if (this.product?.id === productId) this.applying = false
+        if (this.project?.id === projectId) this.applying = false
       }
     },
   },

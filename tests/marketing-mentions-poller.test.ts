@@ -15,12 +15,11 @@ const HOUR = 60 * 60 * 1000
 function site(overrides: Partial<CandidateSite> = {}): CandidateSite {
   return {
     siteId: 's1',
-    teamId: 't1',
+    organizationId: 'o1',
     projectId: 'p1',
     projectName: 'Acme',
     projectSlug: 'acme',
     projectSettings: { marketingEnabled: true },
-    teamMarketingEnabled: true,
     ...overrides,
   }
 }
@@ -92,9 +91,7 @@ describe('pollMentions eligibility', () => {
   it('skips sites with a module switch off or no terms, and unconfigured sources', async () => {
     const sites = [
       site({ siteId: 'on' }),
-      site({ siteId: 'team-off', teamMarketingEnabled: false }),
       site({ siteId: 'product-off', projectSettings: { marketingEnabled: false } }),
-      site({ siteId: 'no-team-row', teamMarketingEnabled: null }),
       site({ siteId: 'no-terms' }),
     ]
     const { store } = makeStore({ sites, terms: { 'no-terms': [] } })
@@ -189,7 +186,7 @@ describe('pollMentions ingestion', () => {
       since: new Date(lastPolledAt.getTime() - HOUR),
       limit: 50,
     })
-    expect(usage).toHaveBeenCalledWith('t1', 'mentions:hackernews:requests', 1)
+    expect(usage).toHaveBeenCalledWith('o1', 'mentions:hackernews:requests', 1)
     expect(cursorWrites).toEqual([
       ['s1', 'hackernews', NOW, null, { at: NOW, consecutiveFailures: 0, queryOffset: 0, cycleStartedAt: null }],
     ])

@@ -15,14 +15,14 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Tag deleted }
- *       403: { description: Not a member of the tag's team }
+ *       403: { description: Not a member of the tag's project }
  *       404: { description: Tag not found }
  */
 import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireSupportTeamRole } from '~/server/utils/support-access'
+import { requireSupportProjectRole } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
 import { contact, conversation, conversationTag, supportTag } from '~/server/database/schema/support'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
@@ -44,13 +44,13 @@ export default defineEventHandler(async (event) => {
   }
 
   // Resolve-then-check (rather than a helper like `requireCompanyAccess`, since
-  // there is no `requireTagAccess`) so a caller cannot delete another team's tag.
-  await requireSupportTeamRole(tag.teamId, session.user.id, 'supervisor')
+  // there is no `requireTagAccess`) so a caller cannot delete another project's tag.
+  await requireSupportProjectRole(tag.projectId, session.user.id, 'supervisor')
 
   const affected = await db
     .select({
       conversationId: conversation.id,
-      teamId: conversation.teamId,
+      projectId: conversation.projectId,
       inboxId: conversation.inboxId,
       priority: conversation.priority,
       firstResponseAt: conversation.firstResponseAt,
@@ -76,7 +76,7 @@ export default defineEventHandler(async (event) => {
         .where(eq(conversationTag.conversationId, row.conversationId))
       const sla = await resolveSlaAssignment(
         {
-          teamId: row.teamId,
+          projectId: row.projectId,
           inboxId: row.inboxId,
           priority: row.priority,
           companyId: contactRow?.companyId,
@@ -104,7 +104,7 @@ export default defineEventHandler(async (event) => {
   for (const row of affected) {
     await publishConversationEvent({
       type: 'conversation.updated',
-      teamId: row.teamId,
+      projectId: row.projectId,
       inboxId: row.inboxId,
       conversationId: row.conversationId,
     })

@@ -23,7 +23,7 @@ import {
   doublePrecision,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import { user, team } from './auth'
+import { user, organization } from './auth'
 import { project } from './feedback'
 import { changelogEntry } from './changelog'
 import { conversation } from './support'
@@ -75,9 +75,6 @@ export const marketingSite = pgTable(
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
-    teamId: text('team_id')
-      .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
     origin: text('origin').notNull(),
     verificationMethod: text('verification_method').$type<MarketingVerificationMethod>(),
     verificationToken: text('verification_token').notNull(),
@@ -92,20 +89,21 @@ export const marketingSite = pgTable(
   },
   (table) => ({
     uniqueProject: uniqueIndex('marketing_site_project_idx').on(table.projectId),
-    teamIdx: index('marketing_site_team_idx').on(table.teamId),
   })
 )
 
-// Team-supplied provider keys (bring your own key). `encryptedKey` is the
+// Workspace-supplied provider keys (bring your own key). `encryptedKey` is the
 // versioned AES-256-GCM envelope from `server/utils/secrets.ts`; it is never
 // returned by the API or logged. `keyHint` is the last few characters only.
-export const teamApiCredential = pgTable(
-  'team_api_credential',
+// Organization-level (replaces `team_api_credential`). Managed by
+// organization owners/admins; used by marketing in every project of the org.
+export const organizationApiCredential = pgTable(
+  'organization_api_credential',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    organizationId: text('organization_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     provider: text('provider').$type<ApiCredentialProvider>().notNull(),
     encryptedKey: text('encrypted_key').notNull(),
     keyHint: text('key_hint').notNull(),
@@ -119,26 +117,29 @@ export const teamApiCredential = pgTable(
     updatedAt: updatedAtColumn(),
   },
   (table) => ({
-    uniqueTeamProvider: uniqueIndex('team_api_credential_team_provider_idx').on(table.teamId, table.provider),
+    uniqueOrgProvider: uniqueIndex('organization_api_credential_org_provider_idx').on(
+      table.organizationId,
+      table.provider
+    ),
   })
 )
 
-// Monthly usage counters per team, incremented atomically by `recordUsage`.
+// Monthly usage counters per organization, incremented atomically by `recordUsage`.
 // `period` is UTC `YYYY-MM`; `metric` e.g. `llm:anthropic:input_tokens`.
-// Composite primary key: the (team, period, metric) triple is the identity.
+// Composite primary key: the (organization, period, metric) triple is the identity.
 export const marketingUsage = pgTable(
   'marketing_usage',
   {
-    teamId: text('team_id')
+    organizationId: text('organization_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     period: text('period').notNull(),
     metric: text('metric').notNull(),
     units: bigint('units', { mode: 'number' }).default(0).notNull(),
     updatedAt: updatedAtColumn(),
   },
   (table) => ({
-    pk: primaryKey({ columns: [table.teamId, table.period, table.metric] }),
+    pk: primaryKey({ columns: [table.organizationId, table.period, table.metric] }),
     // Spend-reservation sweep: only the `llm:*:reserved_usd_micros` rows.
     reservedIdx: index('marketing_usage_reserved_idx')
       .on(table.updatedAt)
@@ -460,9 +461,6 @@ export const reviewRequest = pgTable(
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
-    teamId: text('team_id')
-      .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
     // Replaced by `redacted:<id>` once the row is anonymised by the retention task.
     email: text('email').notNull(),
     // Keyed HMAC of the address (see server/utils/marketing-email-hash.ts); survives anonymisation.
@@ -502,8 +500,8 @@ export const reviewRequest = pgTable(
     projectEmailHashIdx: index('review_request_project_email_hash_idx').on(table.projectId, table.emailHash),
     projectEmailIdx: index('review_request_project_email_idx').on(table.projectId, table.email, table.createdAt),
     statusIdx: index('review_request_status_idx').on(table.status, table.createdAt),
-    teamTriggerCreatedIdx: index('review_request_team_trigger_created_idx').on(
-      table.teamId,
+    projectTriggerCreatedIdx: index('review_request_project_trigger_created_idx').on(
+      table.projectId,
       table.trigger,
       table.createdAt
     ),
@@ -511,13 +509,13 @@ export const reviewRequest = pgTable(
   })
 )
 
-// Per-team marketing email suppression. `email` is lower-cased in app code.
+// Per-organization marketing email suppression. `email` is lower-cased in app code.
 export const marketingEmailSuppression = pgTable(
   'marketing_email_suppression',
   {
-    teamId: text('team_id')
+    organizationId: text('organization_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => organization.id, { onDelete: 'cascade' }),
     // `hash:<emailHash>` for suppressions written from an anonymised row (the address is gone).
     email: text('email').notNull(),
     emailHash: text('email_hash'),
@@ -525,8 +523,8 @@ export const marketingEmailSuppression = pgTable(
     createdAt: createdAtColumn(),
   },
   (table) => ({
-    pk: primaryKey({ columns: [table.teamId, table.email] }),
-    uniqueHash: uniqueIndex('marketing_email_suppression_hash_idx').on(table.teamId, table.emailHash),
+    pk: primaryKey({ columns: [table.organizationId, table.email] }),
+    uniqueHash: uniqueIndex('marketing_email_suppression_hash_idx').on(table.organizationId, table.emailHash),
   })
 )
 
@@ -562,11 +560,11 @@ export const testimonial = pgTable(
   })
 )
 
-// Team-admin consent before feedback or support text is sent to an LLM provider.
+// Organization-admin consent before feedback or support text is sent to an LLM provider.
 export const marketingDataConsent = pgTable('marketing_data_consent', {
-  teamId: text('team_id')
+  organizationId: text('organization_id')
     .primaryKey()
-    .references(() => team.id, { onDelete: 'cascade' }),
+    .references(() => organization.id, { onDelete: 'cascade' }),
   allowFeedbackText: boolean('allow_feedback_text').default(false).notNull(),
   allowSupportText: boolean('allow_support_text').default(false).notNull(),
   consentedByUserId: text('consented_by_user_id').references(() => user.id, { onDelete: 'set null' }),

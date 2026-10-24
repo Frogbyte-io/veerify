@@ -22,6 +22,9 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('~/server/utils/auth-middleware', () => ({ optionalAuth: vi.fn(async () => state.session) }))
+vi.mock('~/server/utils/project-access', () => ({
+  hasProjectAccess: vi.fn(async () => state.membership.length > 0),
+}))
 vi.mock('~/server/utils/anonymous-session', () => ({ getAnonSession: vi.fn(async () => state.anon) }))
 vi.mock('~/server/database/drizzle', () => {
   const makeSelect = () => {
@@ -58,12 +61,19 @@ function stubGlobals() {
   vi.stubGlobal('createError', (input: any) => Object.assign(new Error(input?.data?.error?.message ?? 'err'), input))
 }
 
-function load(overrides: { feedback?: Record<string, unknown>; project?: Record<string, unknown> } = {}) {
+function load(
+  overrides: {
+    feedback?: Record<string, unknown>
+    project?: Record<string, unknown>
+    product?: Record<string, unknown>
+  } = {}
+) {
   state.selectQueue = [
     [
       {
         id: 'fb-1',
         projectId: 'p-1',
+        productId: 'pr-1',
         authorUserId: 'author',
         authorSessionId: 'anon-author',
         isHidden: false,
@@ -71,8 +81,8 @@ function load(overrides: { feedback?: Record<string, unknown>; project?: Record<
         ...overrides.feedback,
       },
     ],
-    [{ id: 'p-1', teamId: 't-1', isPublic: true, ...overrides.project }],
-    state.membership,
+    [{ id: 'p-1', organizationId: 'o-1', isPublic: true, ...overrides.project }],
+    [{ isPublic: true, ...overrides.product }],
   ]
   return loadFeedbackAttachmentContext({} as any, 'fb-1')
 }
@@ -90,8 +100,12 @@ describe('loadFeedbackAttachmentContext (authorization matrix against feedback r
     expect(ctx.access).toEqual({ canView: true, canUpload: false, canDelete: false })
   })
 
-  it('anonymous visitor: private product -> no view', async () => {
+  it('anonymous visitor: private project -> no view', async () => {
     expect((await load({ project: { isPublic: false } })).access.canView).toBe(false)
+  })
+
+  it('anonymous visitor: private product of a public project -> no view', async () => {
+    expect((await load({ product: { isPublic: false } })).access.canView).toBe(false)
   })
 
   it('anonymous visitor: hidden feedback -> no view', async () => {
@@ -114,12 +128,12 @@ describe('loadFeedbackAttachmentContext (authorization matrix against feedback r
     expect((await load()).access).toEqual({ canView: true, canUpload: false, canDelete: false })
   })
 
-  it('signed-in non-member on a private product -> no access', async () => {
+  it('signed-in non-member on a private project -> no access', async () => {
     state.session = { user: { id: 'stranger' } }
     expect((await load({ project: { isPublic: false } })).access.canView).toBe(false)
   })
 
-  it('team member sees hidden and support-derived feedback on private products and may delete', async () => {
+  it('project member sees hidden and support-derived feedback on private projects and may delete', async () => {
     state.session = { user: { id: 'member' } }
     state.membership = [{ id: 'tm-1' }]
     const ctx = await load({

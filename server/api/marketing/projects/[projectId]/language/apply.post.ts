@@ -37,7 +37,7 @@
  *     responses:
  *       200: { description: What was added and what was skipped, with reasons }
  *       400: { description: Validation failed }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: No marketing site is set up }
  */
 import { z } from 'zod'

@@ -3,7 +3,8 @@ import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { teamMember, organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { projectMember, project } from '../../server/database/schema/feedback'
 import {
   automationRule,
   automationRuleRun,
@@ -19,7 +20,7 @@ import { runAutomationRules, runTimeBasedAutomationSweep } from '../../server/ut
 
 const ids = {
   org: `automation_engine_org_${randomUUID()}`,
-  team: `automation_engine_team_${randomUUID()}`,
+  project: `automation_engine_project_${randomUUID()}`,
   user: `automation_engine_user_${randomUUID()}`,
   inbox: `automation_engine_inbox_${randomUUID()}`,
   company: `automation_engine_company_${randomUUID()}`,
@@ -44,10 +45,10 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(team).values({
-    id: ids.team,
-    name: 'Automation engine test team',
-    slug: `automation-engine-team-${randomUUID()}`,
+  await db.insert(project).values({
+    id: ids.project,
+    name: 'Automation engine test project',
+    slug: `automation-engine-project-${randomUUID()}`,
     organizationId: ids.org,
     createdAt: now,
     updatedAt: now,
@@ -59,16 +60,16 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(teamMember).values({
+  await db.insert(projectMember).values({
     id: `automation_engine_membership_${randomUUID()}`,
-    teamId: ids.team,
+    projectId: ids.project,
     userId: ids.user,
     role: 'member',
     createdAt: now,
   })
   await db.insert(supportInbox).values({
     id: ids.inbox,
-    teamId: ids.team,
+    projectId: ids.project,
     name: 'Automation engine inbox',
     slug: `automation-engine-inbox-${randomUUID()}`,
     createdAt: now,
@@ -76,7 +77,7 @@ beforeAll(async () => {
   })
   await db.insert(supportCompany).values({
     id: ids.company,
-    teamId: ids.team,
+    projectId: ids.project,
     name: 'Enterprise Co',
     domain: `automation-${randomUUID()}.example.com`,
     createdAt: now,
@@ -84,7 +85,7 @@ beforeAll(async () => {
   })
   await db.insert(contact).values({
     id: ids.contact,
-    teamId: ids.team,
+    projectId: ids.project,
     companyId: ids.company,
     name: 'Automation Customer',
     email: `automation-customer-${randomUUID()}@example.com`,
@@ -93,14 +94,14 @@ beforeAll(async () => {
   })
   await db.insert(supportTag).values({
     id: ids.tag,
-    teamId: ids.team,
+    projectId: ids.project,
     name: 'Escalated',
     createdAt: now,
   })
   await db.insert(conversation).values({
     id: ids.conversation,
     inboxId: ids.inbox,
-    teamId: ids.team,
+    projectId: ids.project,
     contactId: ids.contact,
     displayId: 1,
     status: 'open',
@@ -119,7 +120,7 @@ describe('automation engine (real Postgres)', () => {
   it('matches company and priority, applies actions, and audits the run', async () => {
     await db.insert(automationRule).values({
       id: ids.matchRule,
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       name: 'Enterprise escalation',
       trigger: 'conversation_created',
@@ -160,7 +161,7 @@ describe('automation engine (real Postgres)', () => {
   it('dry-runs actions without changing conversation state or writing runs', async () => {
     await db.insert(automationRule).values({
       id: ids.dryRunRule,
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       name: 'Dry run tag',
       trigger: 'conversation_updated',
@@ -187,7 +188,7 @@ describe('automation engine (real Postgres)', () => {
     await db.insert(automationRule).values([
       {
         id: ids.loopRule,
-        teamId: ids.team,
+        projectId: ids.project,
         inboxId: ids.inbox,
         name: 'Loop guard',
         trigger: 'conversation_updated',
@@ -198,7 +199,7 @@ describe('automation engine (real Postgres)', () => {
       },
       {
         id: ids.failureRule,
-        teamId: ids.team,
+        projectId: ids.project,
         inboxId: ids.inbox,
         name: 'Failure isolation',
         trigger: 'message_created',
@@ -233,7 +234,7 @@ describe('automation engine (real Postgres)', () => {
   it('evaluates active conversations from the time-based sweep', async () => {
     await db.insert(automationRule).values({
       id: ids.timeRule,
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       name: 'Time-based priority',
       trigger: 'time_based',
@@ -258,7 +259,7 @@ describe('automation engine (real Postgres)', () => {
     const note = `Escalation reminder ${randomUUID()}`
     await db.insert(automationRule).values({
       id: ids.repeatRule,
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       name: 'Time-based reminder',
       trigger: 'time_based',

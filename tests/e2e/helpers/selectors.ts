@@ -7,7 +7,6 @@ export const selectors = {
   settingsTabSecurity: '[data-testid="settings-tab-security"]',
   settingsTabNotifications: '[data-testid="settings-tab-notifications"]',
   settingsTabOrganization: '[data-testid="settings-tab-organization"]',
-  settingsTabTeam: '[data-testid="settings-tab-team"]',
   settingsTabBilling: '[data-testid="settings-tab-billing"]',
   settingsTabStatus: '[data-testid="settings-tab-status"]',
   settingsTabAppearance: '[data-testid="settings-tab-appearance"]',
@@ -24,17 +23,14 @@ export const selectors = {
   billingContactsAdd: '[data-testid="billing-contacts-add"]',
   billingContactsSave: '[data-testid="billing-contacts-save"]',
   billingContactItem: '[data-testid="billing-contact-item"]',
-  teamTitle: '[data-testid="team-title"]',
-  teamNameInput: '#team-name',
-  teamMembersCount: '[data-testid="team-members-count"]',
-  teamPendingInvitations: '[data-testid="team-pending-invitations"]',
-  teamPendingInvitationRow: '[data-testid="team-pending-invitation-row"]',
-  teamOpenCreateDialog: '[data-testid="team-open-create-dialog"]',
-  teamCreateName: '[data-testid="team-create-name"]',
-  teamCreateSubmit: '[data-testid="team-create-submit"]',
-  teamSwitcherTrigger: '[data-testid="team-switcher-trigger"]',
-  teamSwitcherActiveName: '[data-testid="team-switcher-active-name"]',
-  teamSwitcherActiveOrg: '[data-testid="team-switcher-active-org"]',
+  projectSwitcherTrigger: '[data-testid="project-switcher-trigger"]',
+  projectSwitcherActiveName: '[data-testid="project-switcher-active-name"]',
+  projectSwitcherActiveOrg: '[data-testid="project-switcher-active-org"]',
+  projectSwitcherNewProject: '[data-testid="project-switcher-new-project"]',
+  projectSwitcherCreate: '[data-testid="project-switcher-create"]',
+  projectCreateName: '[data-testid="project-create-name"]',
+  projectCreateSlug: '[data-testid="project-create-slug"]',
+  projectCreateSubmit: '[data-testid="project-create-submit"]',
   navUserLoading: '[data-testid="nav-user-loading"]',
   navUserTrigger: '[data-testid="nav-user-trigger"]',
   navUserName: '[data-testid="nav-user-name"]',
@@ -78,7 +74,7 @@ export const selectors = {
   supportAddInboxMember: '[data-testid="support-add-inbox-member"]',
   supportInboxSettingsSave: '[data-testid="support-inbox-settings-save"]',
   supportAddressAdd: '[data-testid="support-address-add"]',
-  supportTeamPolicy: '[data-testid="support-team-policy"]',
+  supportProjectPolicy: '[data-testid="support-project-policy"]',
   feedbackDetailPage: '[data-testid="feedback-detail-page"]',
   feedbackDetailMain: '[data-testid="feedback-detail-main"]',
   feedbackDetailSidebar: '[data-testid="feedback-detail-sidebar"]',
@@ -94,8 +90,15 @@ export const selectors = {
   feedbackDetailPin: '[data-testid="feedback-detail-pin"]',
   feedbackDetailVisibility: '[data-testid="feedback-detail-visibility"]',
   feedbackDetailLock: '[data-testid="feedback-detail-lock"]',
+  feedbackProductChips: '[data-testid="feedback-product-chips"]',
+  feedbackProductChipAll: '[data-testid="feedback-product-chip-all"]',
+  feedbackTabFeedback: '[data-testid="feedback-tab-feedback"]',
+  feedbackTabSettings: '[data-testid="feedback-tab-settings"]',
+  feedbackCreateProduct: '[data-testid="feedback-create-product"]',
 }
 
-export const teamSwitcherItemSelector = (teamId: string) => `[data-testid="team-switcher-item-${teamId}"]`
+export const workspaceTabSelector = (key: string) => `[data-testid="workspace-tab-${key}"]`
+export const projectSettingsTabSelector = (key: string) => `[data-testid="project-settings-tab-${key}"]`
+export const projectSwitcherItemSelector = (projectId: string) => `[data-testid="project-switcher-item-${projectId}"]`
 export const feedbackItemSelector = (id: string) => `[data-testid="feedback-item-${id}"]`
 export const feedbackItemDeleteSelector = (id: string) => `[data-testid="feedback-item-delete-${id}"]`

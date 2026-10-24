@@ -20,7 +20,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: The answer including its text }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Run or answer not found for this product }
  */
 import { and, eq } from 'drizzle-orm'

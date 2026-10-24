@@ -36,7 +36,7 @@
         v-if="isNote"
         data-testid="support-composer-note-caption"
         class="ml-auto text-xs font-medium text-amber-700 dark:text-amber-400"
-        >Only your team will see this</span
+        >Only your project will see this</span
       >
       <span v-else class="ml-auto text-xs text-muted-foreground">Visible to the customer</span>
     </div>
@@ -163,7 +163,7 @@
             type="button"
             data-testid="support-composer-canned-trigger"
             class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
-            :disabled="submitting || !teamId"
+            :disabled="submitting || !projectId"
             @click="toggleCannedResponses"
           >
             <Icon name="lucide:message-square-text" class="w-3.5 h-3.5" />Shortcodes
@@ -259,7 +259,7 @@ export default {
   name: 'SupportComposer',
   props: {
     conversationId: { type: String, required: true },
-    teamId: { type: String, default: '' },
+    projectId: { type: String, default: '' },
     contact: { type: Object, default: null },
     currentUserName: { type: String, default: '' },
   },
@@ -292,7 +292,7 @@ export default {
       return EXPIRED_COPY
     },
     placeholder() {
-      return this.isNote ? 'Write an internal note for your team…' : 'Write a reply to the customer…'
+      return this.isNote ? 'Write an internal note for your project…' : 'Write a reply to the customer…'
     },
     expiredAttachment() {
       return this.attachments.some((attachment) => attachment.phase === 'expired')
@@ -327,7 +327,7 @@ export default {
       this.showCannedResponses = false
       this.lastCursor = 0
     },
-    teamId() {
+    projectId() {
       this.cannedResponses = []
       this.showCannedResponses = false
       void this.loadCannedResponses()
@@ -367,11 +367,11 @@ export default {
     },
 
     async loadCannedResponses() {
-      if (!this.teamId) return
+      if (!this.projectId) return
       this.isLoadingCannedResponses = true
       this.cannedResponsesError = null
       try {
-        const response = await $fetch('/api/support/canned-responses', { params: { teamId: this.teamId } })
+        const response = await $fetch('/api/support/canned-responses', { params: { projectId: this.projectId } })
         this.cannedResponses = response?.data?.cannedResponses || []
       } catch {
         this.cannedResponses = []

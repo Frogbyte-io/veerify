@@ -4,7 +4,7 @@
  *   post:
  *     tags: [Marketing]
  *     summary: Mark competitor changes as seen
- *     description: Any team member with Marketing access. Marks every unseen change when `ids` is omitted.
+ *     description: Any project member with Marketing access. Marks every unseen change when `ids` is omitted.
  *     operationId: markMarketingCompetitorChangesSeen
  *     parameters:
  *       - in: path
@@ -21,7 +21,7 @@
  *               ids: { type: array, maxItems: 100, items: { type: string } }
  *     responses:
  *       200: { description: Changes marked as seen }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
@@ -30,10 +30,10 @@ import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { markSeenSchema } from '~/server/utils/marketing-competitors'
 import { findMarketingSite, requireRouteParam } from '~/server/utils/marketing-site'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   await requireMarketingAccess(projectId, session.user.id)
   const raw = await readBody(event).catch(() => null)

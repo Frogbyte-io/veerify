@@ -6,11 +6,11 @@
           <h1 class="text-3xl font-bold text-foreground">Announcements</h1>
           <p class="mt-1 text-sm text-muted-foreground">
             Draft posts for X, LinkedIn, Bluesky and your newsletter from each published changelog entry. Titles of
-            feedback linked to an entry are included only with your team's data consent for feedback text, and never for
-            hidden or support-derived items.
+            feedback linked to an entry are included only with your workspace's data consent for feedback text, and
+            never for hidden or support-derived items.
           </p>
         </div>
-        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
       </div>
 
       <p
@@ -29,14 +29,12 @@
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">
-        Create a product first to draft announcements.
-      </div>
+      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to draft announcements.</div>
 
-      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
       <div v-else-if="isLoading" class="space-y-4">
         <Skeleton class="h-48 w-full" />
@@ -53,10 +51,10 @@
         class="rounded-lg border border-border bg-card p-6"
         data-testid="announcements-changelog-off"
       >
-        <h2 class="text-lg font-semibold">The changelog is off for this product</h2>
+        <h2 class="text-lg font-semibold">The changelog is off for this project</h2>
         <p class="mt-1 text-sm text-muted-foreground">
-          Announcement drafts come from published changelog entries. Turn the changelog on for your team and for this
-          product, then publish an entry.
+          Announcement drafts come from published changelog entries. Turn the changelog on for this project, then
+          publish an entry.
         </p>
         <Button as-child variant="outline" class="mt-4">
           <NuxtLink to="/dashboard/changelog">
@@ -100,8 +98,8 @@
 
         <MarketingAnnouncementCard
           v-for="entry in entries"
-          :key="`${product.id}:${entry.id}`"
-          :project-id="product.id"
+          :key="`${project.id}:${entry.id}`"
+          :project-id="project.id"
           :entry="entry"
           :limits="limits"
           :has-usable-key="hasUsableKey"
@@ -135,7 +133,7 @@ export default {
 
   data() {
     return {
-      product: null,
+      project: null,
       pickerSettled: false,
       pickerError: false,
       isLoading: false,
@@ -155,18 +153,18 @@ export default {
   },
 
   methods: {
-    base(productId = this.product.id) {
-      return `/api/marketing/projects/${productId}/announcements`
+    base(projectId = this.project.id) {
+      return `/api/marketing/projects/${projectId}/announcements`
     },
 
     onPickerError() {
-      this.product = null
+      this.project = null
       this.pickerError = true
       this.pickerSettled = true
     },
 
-    async onProductChange(product) {
-      this.product = product
+    async onProjectChange(project) {
+      this.project = project
       this.pickerSettled = true
       this.pickerError = false
       this.isLoading = false
@@ -178,32 +176,32 @@ export default {
       this.loadingMore = false
       this.highlightId = null
       this.targetMissing = false
-      if (product) await this.load()
+      if (project) await this.load()
     },
 
-    async fetchPage(productId, cursor) {
-      const response = await $fetch(this.base(productId), { query: cursor ? { cursor } : {} })
+    async fetchPage(projectId, cursor) {
+      const response = await $fetch(this.base(projectId), { query: cursor ? { cursor } : {} })
       return response.data
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.isLoading = true
       this.error = null
       this.marketingOff = false
       this.targetMissing = false
       this.loadingMore = false
       try {
-        const data = await this.fetchPage(productId)
-        if (this.product?.id !== productId) return
+        const data = await this.fetchPage(projectId)
+        if (this.project?.id !== projectId) return
         this.changelogEnabled = data.changelogEnabled
         this.hasUsableKey = data.hasUsableKey
         this.limits = data.limits
         this.entries = data.entries
         this.nextCursor = data.nextCursor
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.marketingOff = true
           this.disabledMessage = apiErrorMessage(err, '')
@@ -211,35 +209,35 @@ export default {
           this.error = apiErrorMessage(err, 'Failed to load announcements')
         }
       } finally {
-        if (this.product?.id === productId) this.isLoading = false
+        if (this.project?.id === projectId) this.isLoading = false
       }
-      if (this.product?.id === productId && !this.error && !this.marketingOff) await this.focusTarget(productId)
+      if (this.project?.id === projectId && !this.error && !this.marketingOff) await this.focusTarget(projectId)
     },
 
     async loadMore() {
-      if (!this.product || !this.nextCursor || this.loadingMore) return
-      const productId = this.product.id
+      if (!this.project || !this.nextCursor || this.loadingMore) return
+      const projectId = this.project.id
       this.loadingMore = true
       this.loadMoreError = null
       try {
-        const data = await this.fetchPage(productId, this.nextCursor)
-        if (this.product?.id !== productId) return
+        const data = await this.fetchPage(projectId, this.nextCursor)
+        if (this.project?.id !== projectId) return
         this.entries = [...this.entries, ...data.entries]
         this.nextCursor = data.nextCursor
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         this.loadMoreError = apiErrorMessage(err, 'Failed to load more entries')
       } finally {
-        if (this.product?.id === productId) this.loadingMore = false
+        if (this.project?.id === projectId) this.loadingMore = false
       }
     },
 
     /** Scroll to and highlight the entry named by ?entry=, paging forward to find it. */
-    async focusTarget(productId) {
+    async focusTarget(projectId) {
       const target = this.$route.query.entry
       if (typeof target !== 'string' || !target) return
       for (let page = 0; page < MAX_TARGET_PAGES; page++) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (this.entries.some((e) => e.id === target)) {
           this.highlightId = target
           await this.$nextTick()
@@ -256,7 +254,7 @@ export default {
         // A failed page shows its own retry; the entry may still be further down
         if (this.loadMoreError) return
       }
-      if (this.product?.id === productId) this.targetMissing = true
+      if (this.project?.id === projectId) this.targetMissing = true
     },
   },
 }

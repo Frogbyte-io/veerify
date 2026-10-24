@@ -6,7 +6,7 @@ This file is the single source of truth for AI assistants working on this codeba
 
 ## Project Overview
 
-Veerify is a feedback management and verification platform built with **Nuxt 3**. It provides features for collecting user feedback, voting on feature requests, managing team workflows, and presenting public roadmaps. The application ships a full authentication system (email/password + OAuth-ready), organization management, two-factor authentication, and a transactional email layer.
+Veerify is a feedback management and verification platform built with **Nuxt 3**. It provides features for collecting user feedback, voting on feature requests, managing workspaces, projects and products, and presenting public roadmaps. The application ships a full authentication system (email/password + OAuth-ready), organization management, two-factor authentication, and a transactional email layer.
 
 ---
 
@@ -42,7 +42,7 @@ Veerify is a feedback management and verification platform built with **Nuxt 3**
 ├── assets/css/main.css          # Tailwind entry + CSS custom properties (light/dark)
 ├── components/
 │   ├── settings/                # Settings tab components (Profile, Security, etc.)
-│   ├── sidebar/                 # AppSidebar, NavUser, TeamSwitcher
+│   ├── sidebar/                 # AppSidebar, NavUser, ProjectSwitcher
 │   └── ui/                      # shadcn-vue auto-generated components — do NOT edit by hand
 ├── layouts/
 │   ├── clean.vue                # Minimal layout for auth pages
@@ -205,11 +205,11 @@ import { authClient, signIn, signUp, signOut, useSession } from '~/lib/auth-clie
 
 Runs on the **client only** (`process.server` check skips SSR/build). Categorises routes:
 
-| Category  | Routes                                                               | Behaviour                                  |
-| --------- | -------------------------------------------------------------------- | ------------------------------------------ |
-| Protected | `/dashboard`, `/settings`, `/team`, `/reports`, `/feedback`, `/help` | Redirect to `/login` if no session         |
-| Auth      | `/login`, `/signup`, `/auth`                                         | Redirect to `/dashboard` if session exists |
-| Public    | everything else                                                      | No redirect                                |
+| Category  | Routes                                                                                | Behaviour                                  |
+| --------- | ------------------------------------------------------------------------------------- | ------------------------------------------ |
+| Protected | `/dashboard`, `/settings`, `/workspace`, `/project`, `/reports`, `/feedback`, `/help` | Redirect to `/login` if no session         |
+| Auth      | `/login`, `/signup`, `/auth`                                                          | Redirect to `/dashboard` if session exists |
+| Public    | everything else                                                                       | No redirect                                |
 
 ---
 
@@ -409,35 +409,53 @@ throw createError({ statusCode: 500, statusMessage: 'Internal server error' })
 
 ### Multi-Tenant Data Isolation
 
-All feedback, votes, and comments are scoped to projects, which belong to teams, which belong to organizations. API endpoints enforce isolation at each level.
+The hierarchy is **Organization (UI: "workspace") → Project → Product**. There are no teams.
+
+- A **project** is a brand (e.g. _Dotmatrixlabs_). It owns the domain, appearance, statuses, categories, GitHub,
+  Marketing, Support (all support tables carry `projectId`) and its people.
+- A **product** (e.g. _dot x_, _Decker_) lives in a project. Each product has its own feedback board with its own
+  public/private flag (`feedback.productId` is required); roadmap and changelog are project-wide and filter/tag by
+  product. A project always has ≥ 1 product; with exactly one, the UI hides the product layer.
+- Tools are switched per project only, in `project.settings` (`feedbackEnabled`, `roadmapEnabled`,
+  `changelogEnabled`, `supportEnabled`, `marketingEnabled`; see `lib/modules.ts`).
+- Marketing provider keys, budgets/usage, email suppression and LLM data consent are organization-level.
+- The dashboard works in the session's **active project** (`session.activeProjectId`): use
+  `requireAuthWithResolvedProject(event)` or `requireAuthWithOrganization(event)` from `server/utils/project-context.ts`.
+
+Full contract: `docs/plans/2026-10-23-projects-products/design.md`.
 
 ### Project Access Utilities (`server/utils/project-access.ts`)
 
-| Function                                     | Purpose                                      | Throws                                     |
-| -------------------------------------------- | -------------------------------------------- | ------------------------------------------ |
-| `requireProjectAccess(projectId, userId)`    | Verify user is team member                   | 404 if project not found, 403 if no access |
-| `requireFeedbackAccess(feedbackId, userId)`  | Verify user has access to feedback's project | 404 if not found, 403 if no access         |
-| `requirePublicProject(projectId)`            | Verify project is public (for anonymous)     | 404 if not found, 403 if not public        |
-| `resolvePublicProject(orgSlug, projectSlug)` | Resolve public project by slugs              | 404 if not found, 403 if not public        |
+Organization owners/admins administer every project. Other organization members can open a project when its
+`accessMode` is `'workspace'` (the default) or when they have a `project_member` row (`'restricted'` projects).
+A `project_member` row with role `admin` makes them a project admin.
+
+| Function                                         | Purpose                                                   | Throws                                     |
+| ------------------------------------------------ | --------------------------------------------------------- | ------------------------------------------ |
+| `requireProjectAccess(projectId, userId)`        | Verify the user can open the project                      | 404 if project not found, 403 if no access |
+| `requireProjectAdmin(projectId, userId)`         | Verify the user administers the project                   | 404 / 403                                  |
+| `requireOrganizationAdmin(orgId, userId)`        | Verify organization owner/admin                           | 403                                        |
+| `requireFeedbackAccess(feedbackId, userId)`      | Verify user has access to feedback's project              | 404 if not found, 403 if no access         |
+| `requireProductInProject(projectId, productId?)` | Load a product of the project (default product if absent) | 404                                        |
+| `requirePublicProject(projectId)`                | Verify project is public (for anonymous)                  | 404 if not found, 403 if not public        |
+| `requirePublicProduct(project, productSlugOrId)` | Verify a product board is public                          | 404 for private products                   |
+| `resolvePublicProject(orgSlug, projectSlug)`     | Resolve public project by slugs                           | 404 if not found, 403 if not public        |
 
 ### Endpoint Authorization Rules
 
-| Endpoint                       | Auth     | Access Rule                                                                                      |
-| ------------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
-| `GET /api/feedback`            | Optional | Requires `projectId` parameter (mandatory)                                                       |
-| `POST /api/feedback`           | Optional | Authenticated: requires team membership for private projects. Anonymous: requires public project |
-| `GET /api/feedback/[id]`       | Optional | Authenticated: requires team membership. Anonymous: requires public project                      |
-| `DELETE /api/feedback/[id]`    | Required | Author OR team member of project's team                                                          |
-| `POST /api/feedback/[id]/vote` | Optional | Project must be public (voting is public-facing)                                                 |
+| Endpoint                       | Auth     | Access Rule                                                                                         |
+| ------------------------------ | -------- | --------------------------------------------------------------------------------------------------- |
+| `GET /api/feedback`            | Optional | Project access per requested project; anonymous callers see only public products of public projects |
+| `POST /api/feedback`           | Optional | Authenticated: project access. Anonymous: public project and public product                         |
+| `GET /api/feedback/[id]`       | Optional | Authenticated: project access. Anonymous: public project and public product                         |
+| `DELETE /api/feedback/[id]`    | Required | Author OR anyone with access to the project                                                         |
+| `POST /api/feedback/[id]/vote` | Optional | Project and product must be public (voting is public-facing)                                        |
 
-### Team Member Roles
+### Roles
 
-The `teamMember` table includes a `role` column:
-
-- `admin` - Team administrator (future: can manage team settings, add/remove members)
-- `member` - Regular team member (can create feedback, manage team projects)
-
-Currently, both roles have equivalent permissions. Future features will differentiate them.
+- Organization: `owner`, `admin` (administer every project, workspace settings, API keys), `member`.
+- Project (`project_member.role`): `admin` (tools, project settings, members) or `member` (use every tool).
+- Support inboxes keep their own roles (`agent`, `supervisor`, `admin`); project admins act as inbox admins.
 
 ---
 
@@ -506,5 +524,5 @@ Reusable skill prompts live in `.agents/skills/`. Use them when asked to scaffol
 12. **`cn()` for class merging.** Import from `~/lib/utils` — do not add new utility functions for this.
 13. **Do not remove or rename `auth-schema.ts`** at the project root — it exists as a BetterAuth schema reference and is imported by the auth configuration.
 14. **Always use project access utilities** when implementing new endpoints that interact with projects or feedback. Never rely solely on `projectId` parameter presence.
-15. **Public vs Private projects** — Public projects accept anonymous feedback/votes. Private projects require team membership for all operations.
+15. **Public vs Private projects** — Public projects accept anonymous feedback/votes. Private projects (and private products) require project access for all operations.
 16. **Always read `.agents/CLAUDE.md` first** — it is the authoritative source of project conventions. The root `CLAUDE.md` imports it via `@.agents/CLAUDE.md`.

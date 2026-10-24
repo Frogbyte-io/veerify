@@ -2,12 +2,13 @@ import { z } from 'zod'
 import { eq, and } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
-import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
+import { requireProjectAccess } from '~/server/utils/project-access'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackSubscription } from '~/server/database/schema/feedback'
 import { sendFeedbackSubscriptionConfirmationEmail } from '~/lib/email'
 import { createLogger } from '~/server/utils/logger'
+import { requirePublicFeedback } from '~/server/utils/feedback-access'
 
 const logger = createLogger('feedback')
 
@@ -45,10 +46,10 @@ export default defineEventHandler(async (event) => {
     try {
       await requireProjectAccess(fb.projectId, session.user.id)
     } catch {
-      await requirePublicProject(fb.projectId)
+      await requirePublicFeedback(fb)
     }
   } else {
-    await requirePublicProject(fb.projectId)
+    await requirePublicFeedback(fb)
   }
 
   // Determine subscriber email

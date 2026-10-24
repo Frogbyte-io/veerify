@@ -25,20 +25,20 @@ export interface DbLimitResult {
 }
 
 /**
- * Atomically consumes one unit of `key` for the team. One upsert: the insert
+ * Atomically consumes one unit of `key` for the workspace. One upsert: the insert
  * path takes the first unit, the conflict path only increments while the
  * counter is still below `limit` (the WHERE guard), so concurrent requests can
  * never push it past the limit. No returned row means the limit was reached.
  */
-export async function consumeDbLimit(teamId: string, key: string, limit: number): Promise<DbLimitResult> {
+export async function consumeDbLimit(organizationId: string, key: string, limit: number): Promise<DbLimitResult> {
   if (!Number.isFinite(limit) || limit < 1) return { allowed: false, remaining: 0 }
 
   const now = new Date()
   const rows = await db
     .insert(marketingUsage)
-    .values({ teamId, period: currentPeriod(now), metric: key, units: 1, updatedAt: now })
+    .values({ organizationId, period: currentPeriod(now), metric: key, units: 1, updatedAt: now })
     .onConflictDoUpdate({
-      target: [marketingUsage.teamId, marketingUsage.period, marketingUsage.metric],
+      target: [marketingUsage.organizationId, marketingUsage.period, marketingUsage.metric],
       set: { units: sql`${marketingUsage.units} + 1`, updatedAt: now },
       setWhere: sql`${marketingUsage.units} < ${limit}`,
     })
@@ -51,12 +51,12 @@ export async function consumeDbLimit(teamId: string, key: string, limit: number)
 
 /** `consumeDbLimit` that answers 429 with `message` once the limit is reached. */
 export async function requireDbLimit(
-  teamId: string,
+  organizationId: string,
   key: string,
   limit: number,
   message: string
 ): Promise<DbLimitResult> {
-  const result = await consumeDbLimit(teamId, key, limit)
+  const result = await consumeDbLimit(organizationId, key, limit)
   if (!result.allowed) {
     throw createError({
       statusCode: 429,

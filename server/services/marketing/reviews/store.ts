@@ -11,7 +11,6 @@ import {
   type ReviewRequestStatus,
 } from '~/server/database/schema/marketing'
 import { contact, conversation, csatResponse, supportInbox } from '~/server/database/schema/support'
-import { teamModuleSettings } from '~/server/database/schema/teams'
 import { hashEmail, hashEmailCandidates } from '~/server/utils/marketing-email-hash'
 import type { ReviewSettings, ReviewsStore } from './types'
 
@@ -45,33 +44,30 @@ export const dbReviewsStore: ReviewsStore = {
     const [row] = await db
       .select({
         projectId: project.id,
-        teamId: project.teamId,
+        organizationId: project.organizationId,
         projectSettings: project.settings,
-        teamMarketingEnabled: teamModuleSettings.marketingEnabled,
         settings: reviewRequestSettings,
       })
       .from(project)
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, project.teamId))
       .leftJoin(reviewRequestSettings, eq(reviewRequestSettings.projectId, project.id))
       .where(eq(project.id, projectId))
       .limit(1)
     if (!row) return null
     return {
       projectId: row.projectId,
-      teamId: row.teamId,
+      organizationId: row.organizationId,
       projectSettings: row.projectSettings,
-      teamMarketingEnabled: row.teamMarketingEnabled,
       settings: row.settings ? toReviewSettings(row.settings) : null,
     }
   },
 
-  async isSuppressed(teamId, email) {
+  async isSuppressed(organizationId, email) {
     const [row] = await db
       .select({ email: marketingEmailSuppression.email })
       .from(marketingEmailSuppression)
       .where(
         and(
-          eq(marketingEmailSuppression.teamId, teamId),
+          eq(marketingEmailSuppression.organizationId, organizationId),
           or(
             eq(marketingEmailSuppression.email, email),
             inArray(marketingEmailSuppression.emailHash, hashEmailCandidates(email))
@@ -82,14 +78,14 @@ export const dbReviewsStore: ReviewsStore = {
     return Boolean(row)
   },
 
-  async stillSendable(id, teamId, email) {
+  async stillSendable(id, organizationId, email) {
     const [row] = await db
       .select({ id: reviewRequest.id })
       .from(reviewRequest)
       .where(and(eq(reviewRequest.id, id), eq(reviewRequest.status, 'sending')))
       .limit(1)
     if (!row) return false
-    return !(await dbReviewsStore.isSuppressed(teamId, email))
+    return !(await dbReviewsStore.isSuppressed(organizationId, email))
   },
 
   async hasRecentRequest(projectId, email, since) {
@@ -153,12 +149,16 @@ export const dbReviewsStore: ReviewsStore = {
     })
   },
 
-  async countManualSince(teamId, since) {
+  async countManualSince(projectId, since) {
     const [row] = await db
       .select({ total: count() })
       .from(reviewRequest)
       .where(
-        and(eq(reviewRequest.teamId, teamId), eq(reviewRequest.trigger, 'manual'), gte(reviewRequest.createdAt, since))
+        and(
+          eq(reviewRequest.projectId, projectId),
+          eq(reviewRequest.trigger, 'manual'),
+          gte(reviewRequest.createdAt, since)
+        )
       )
     return Number(row?.total ?? 0)
   },
@@ -200,7 +200,7 @@ export const dbReviewsStore: ReviewsStore = {
       .select({
         id: reviewRequest.id,
         projectId: reviewRequest.projectId,
-        teamId: reviewRequest.teamId,
+        organizationId: project.organizationId,
         email: reviewRequest.email,
         name: reviewRequest.name,
         trigger: reviewRequest.trigger,
@@ -209,13 +209,11 @@ export const dbReviewsStore: ReviewsStore = {
         attempts: reviewRequest.attempts,
         projectName: project.name,
         projectSettings: project.settings,
-        teamMarketingEnabled: teamModuleSettings.marketingEnabled,
         settings: reviewRequestSettings,
         feedbackTitle: feedback.title,
       })
       .from(reviewRequest)
       .innerJoin(project, eq(project.id, reviewRequest.projectId))
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, reviewRequest.teamId))
       .leftJoin(reviewRequestSettings, eq(reviewRequestSettings.projectId, reviewRequest.projectId))
       .leftJoin(
         feedback,

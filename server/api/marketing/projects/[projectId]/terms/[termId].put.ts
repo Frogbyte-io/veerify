@@ -28,13 +28,13 @@
  *     responses:
  *       200: { description: Term updated }
  *       400: { description: Validation failed }
- *       403: { description: Not a team member, Marketing is off, or the competitor domain of a term with watched pages is changed by a non-admin }
+ *       403: { description: No access to this project, Marketing is off, or the competitor domain of a term with watched pages is changed by a non-admin }
  *       404: { description: Term or site not found }
  */
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { competitorWatch, marketingTerm } from '~/server/database/schema/marketing'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAccess, requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -48,7 +48,7 @@ import {
 } from '~/server/utils/marketing-terms'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   const termId = requireRouteParam(event, 'termId')
   await requireMarketingAccess(projectId, session.user.id)

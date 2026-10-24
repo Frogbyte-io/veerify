@@ -1,17 +1,18 @@
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireProjectAccess } from '~/server/utils/project-access'
+import { hasProjectAccess, requireProjectAccess, requireProductInProject } from '~/server/utils/project-access'
 import { validateBody } from '~/server/utils/validation'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, project } from '~/server/database/schema/feedback'
-import { teamMember } from '~/server/database/schema/auth'
+import { feedback, feedbackCategory, product } from '~/server/database/schema/feedback'
 
 const updateFeedbackSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(200, 'Title too long'),
   body: z.string().trim().min(1, 'Description is required').max(5000, 'Description too long'),
   categoryId: z.string().trim().optional().nullable(),
+  // Move to another product of the same project (project members only)
+  productId: z.string().trim().min(1).optional(),
   feedbackType: z.enum(['feature_request', 'bug_report', 'improvement', 'question', 'other']).optional().nullable(),
 })
 
@@ -41,6 +42,11 @@ export default defineEventHandler(async (event) => {
   const isAuthor = item.authorUserId === session.user.id
   let canManageProject = false
 
+  if (isAuthor) {
+    // Authors keep edit rights, but "manage" (moving products) needs project access
+    canManageProject = await hasProjectAccess(item.projectId, session.user.id)
+  }
+
   if (!isAuthor) {
     try {
       await requireProjectAccess(item.projectId, session.user.id)
@@ -51,21 +57,6 @@ export default defineEventHandler(async (event) => {
         statusMessage: 'Forbidden',
         data: createErrorResponse(ErrorCode.FORBIDDEN, 'You do not have permission to edit this feedback'),
       })
-    }
-  } else {
-    const [proj] = await db
-      .select({ teamId: project.teamId })
-      .from(project)
-      .where(eq(project.id, item.projectId))
-      .limit(1)
-
-    if (proj) {
-      const [membership] = await db
-        .select({ id: teamMember.id })
-        .from(teamMember)
-        .where(and(eq(teamMember.teamId, proj.teamId), eq(teamMember.userId, session.user.id)))
-        .limit(1)
-      canManageProject = Boolean(membership)
     }
   }
 
@@ -92,6 +83,18 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  let nextProductId = item.productId
+  if (body.productId !== undefined && body.productId !== item.productId) {
+    if (!canManageProject) {
+      throw createError({
+        statusCode: 403,
+        statusMessage: 'Forbidden',
+        data: createErrorResponse(ErrorCode.FORBIDDEN, 'Only project members can move feedback to another product'),
+      })
+    }
+    nextProductId = (await requireProductInProject(item.projectId, body.productId)).id
+  }
+
   const existingMetadata = item.metadata || {}
   const nextMetadata = {
     ...existingMetadata,
@@ -105,14 +108,22 @@ export default defineEventHandler(async (event) => {
       title: body.title,
       body: body.body,
       categoryId: nextCategoryId,
+      productId: nextProductId,
       metadata: nextMetadata,
       updatedAt: new Date(),
     })
     .where(eq(feedback.id, id))
     .returning()
 
+  const [productSummary] = await db
+    .select({ id: product.id, name: product.name, slug: product.slug })
+    .from(product)
+    .where(eq(product.id, updated.productId))
+    .limit(1)
+
   return createSuccessResponse({
     ...updated,
+    product: productSummary ?? null,
     tag: nextMetadata.feedbackType || null,
     canEdit: true,
     canDelete: true,

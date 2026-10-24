@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Tag removed }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found, or tag is not on the conversation }
  */
 import { and, eq } from 'drizzle-orm'
@@ -62,7 +62,7 @@ export default defineEventHandler(async (event) => {
       .where(eq(conversationTag.conversationId, conversationId))
     const sla = await resolveSlaAssignment(
       {
-        teamId: existing.teamId,
+        projectId: existing.projectId,
         inboxId: existing.inboxId,
         priority: existing.priority,
         companyId: contactRow?.companyId,
@@ -89,7 +89,7 @@ export default defineEventHandler(async (event) => {
   // Same event as the add path - see the comment there.
   await publishConversationEvent({
     type: 'conversation.updated',
-    teamId: existing.teamId,
+    projectId: existing.projectId,
     inboxId: existing.inboxId,
     conversationId,
   })

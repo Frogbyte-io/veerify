@@ -5,7 +5,7 @@ import {
   createDomainProvider,
   resolveDomainProviderName,
   shouldSendDomainVerifiedEmail,
-  buildTeamSubdomainHostname,
+  buildOrgSubdomainHostname,
   getCustomDomainValidationError,
   normalizeCustomDomainInput,
 } from '../server/services/domains/domain-service'
@@ -39,9 +39,9 @@ describe('domain service helpers', () => {
     expect(getCustomDomainValidationError('demo.localhost', options)).toMatch(/platform domain/i)
   })
 
-  it('builds production team subdomain hostnames', () => {
-    expect(buildTeamSubdomainHostname(' DotMatrixLabs ', 'Veerify.io.')).toBe('dotmatrixlabs.veerify.io')
-    expect(buildTeamSubdomainHostname('dotmatrixlabs', 'localhost')).toBeNull()
+  it('builds production workspace subdomain hostnames', () => {
+    expect(buildOrgSubdomainHostname(' DotMatrixLabs ', 'Veerify.io.')).toBe('dotmatrixlabs.veerify.io')
+    expect(buildOrgSubdomainHostname('dotmatrixlabs', 'localhost')).toBeNull()
   })
 
   it('deduplicates dns records by type, name, and value', () => {

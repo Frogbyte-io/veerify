@@ -4,7 +4,7 @@ import type { EventHandler } from 'h3'
 const state = vi.hoisted(() => ({
   body: {} as Record<string, unknown>,
   params: { id: 'response-1' } as Record<string, string>,
-  query: { teamId: 'team-1' } as Record<string, unknown>,
+  query: { projectId: 'project-1' } as Record<string, unknown>,
   queuedRows: [] as unknown[][],
   insertedValues: null as Record<string, unknown> | null,
   updatedSet: null as Record<string, unknown> | null,
@@ -13,8 +13,8 @@ const state = vi.hoisted(() => ({
 }))
 
 const access = vi.hoisted(() => ({
-  requireTeamMembership: vi.fn(async () => ({ id: 'member-1', role: 'member' })),
-  requireSupportTeamRole: vi.fn(async () => {
+  requireProjectAccess: vi.fn(async () => ({ id: 'member-1', role: 'member' })),
+  requireSupportProjectRole: vi.fn(async () => {
     throw Object.assign(new Error('role check should not run for canned responses'), { statusCode: 500 })
   }),
 }))
@@ -36,6 +36,7 @@ vi.mock('~/server/utils/auth-middleware', () => ({
 }))
 
 vi.mock('~/server/utils/support-access', () => access)
+vi.mock('~/server/utils/project-access', () => ({ requireProjectAccess: access.requireProjectAccess }))
 
 vi.mock('~/server/utils/support-errors', () => ({
   isUniqueViolation: (error: unknown) =>
@@ -76,7 +77,7 @@ vi.mock('~/server/database/drizzle', () => {
         return chain
       },
       where: () => chain,
-      returning: () => Promise.resolve([{ id: 'response-1', teamId: 'team-1', ...state.updatedSet }]),
+      returning: () => Promise.resolve([{ id: 'response-1', projectId: 'project-1', ...state.updatedSet }]),
     }
     return chain
   }
@@ -124,7 +125,7 @@ function asEvent(value: unknown): Parameters<Handler>[0] {
 beforeEach(() => {
   state.body = {}
   state.params = { id: 'response-1' }
-  state.query = { teamId: 'team-1' }
+  state.query = { projectId: 'project-1' }
   state.queuedRows = []
   state.insertedValues = null
   state.updatedSet = null
@@ -133,13 +134,13 @@ beforeEach(() => {
 })
 
 describe('support canned response routes', () => {
-  it('lists team-scoped responses for an ordinary support agent', async () => {
+  it('lists project-scoped responses for an ordinary support agent', async () => {
     expect(listHandler).not.toBeNull()
     state.queuedRows = [
       [
         {
           id: 'response-1',
-          teamId: 'team-1',
+          projectId: 'project-1',
           shortcode: 'greet',
           title: 'Greeting',
           body: 'Hi {{contact.name}}',
@@ -149,8 +150,8 @@ describe('support canned response routes', () => {
 
     const response = await listHandler!(asEvent({}))
 
-    expect(access.requireTeamMembership).toHaveBeenCalledWith('team-1', 'user-1')
-    expect(access.requireSupportTeamRole).not.toHaveBeenCalled()
+    expect(access.requireProjectAccess).toHaveBeenCalledWith('project-1', 'user-1')
+    expect(access.requireSupportProjectRole).not.toHaveBeenCalled()
     expect(response).toMatchObject({
       success: true,
       data: { cannedResponses: [{ id: 'response-1', shortcode: 'greet' }] },
@@ -160,7 +161,7 @@ describe('support canned response routes', () => {
   it('creates a response without an inbox scope or role gate', async () => {
     expect(createHandler).not.toBeNull()
     state.body = {
-      teamId: 'team-1',
+      projectId: 'project-1',
       shortcode: 'greet',
       title: 'Friendly greeting',
       body: 'Hi {{contact.name}}, {{agent.name}} here.',
@@ -170,7 +171,7 @@ describe('support canned response routes', () => {
     await expect(createHandler!(asEvent({}))).rejects.toMatchObject({ statusCode: 400 })
 
     state.body = {
-      teamId: 'team-1',
+      projectId: 'project-1',
       shortcode: 'greet',
       title: 'Friendly greeting',
       body: 'Hi {{contact.name}}, {{agent.name}} here.',
@@ -178,10 +179,10 @@ describe('support canned response routes', () => {
 
     const response = await createHandler!(asEvent({}))
 
-    expect(access.requireTeamMembership).toHaveBeenCalledWith('team-1', 'user-1')
-    expect(access.requireSupportTeamRole).not.toHaveBeenCalled()
+    expect(access.requireProjectAccess).toHaveBeenCalledWith('project-1', 'user-1')
+    expect(access.requireSupportProjectRole).not.toHaveBeenCalled()
     expect(state.insertedValues).toMatchObject({
-      teamId: 'team-1',
+      projectId: 'project-1',
       shortcode: 'greet',
       title: 'Friendly greeting',
       body: 'Hi {{contact.name}}, {{agent.name}} here.',
@@ -191,29 +192,31 @@ describe('support canned response routes', () => {
     expect(response).toMatchObject({ success: true, data: { cannedResponse: { shortcode: 'greet' } } })
   })
 
-  it('updates only after resolving the existing response team', async () => {
+  it('updates only after resolving the existing response project', async () => {
     expect(updateHandler).not.toBeNull()
-    state.queuedRows = [[{ id: 'response-1', teamId: 'team-2', shortcode: 'old', title: 'Old', body: 'Old body' }]]
+    state.queuedRows = [
+      [{ id: 'response-1', projectId: 'project-2', shortcode: 'old', title: 'Old', body: 'Old body' }],
+    ]
     state.body = { title: 'Updated', body: 'Updated body' }
 
     const response = await updateHandler!(asEvent({}))
 
-    expect(access.requireTeamMembership).toHaveBeenCalledWith('team-2', 'user-1')
-    expect(access.requireSupportTeamRole).not.toHaveBeenCalled()
+    expect(access.requireProjectAccess).toHaveBeenCalledWith('project-2', 'user-1')
+    expect(access.requireSupportProjectRole).not.toHaveBeenCalled()
     expect(state.updatedSet).toMatchObject({ title: 'Updated', body: 'Updated body' })
-    expect(state.updatedSet).not.toHaveProperty('teamId')
+    expect(state.updatedSet).not.toHaveProperty('projectId')
     expect(state.updatedSet).not.toHaveProperty('inboxId')
     expect(response).toMatchObject({ success: true, data: { cannedResponse: { title: 'Updated' } } })
   })
 
-  it('deletes only after resolving the existing response team', async () => {
+  it('deletes only after resolving the existing response project', async () => {
     expect(deleteHandler).not.toBeNull()
-    state.queuedRows = [[{ id: 'response-1', teamId: 'team-2' }]]
+    state.queuedRows = [[{ id: 'response-1', projectId: 'project-2' }]]
 
     const response = await deleteHandler!(asEvent({}))
 
-    expect(access.requireTeamMembership).toHaveBeenCalledWith('team-2', 'user-1')
-    expect(access.requireSupportTeamRole).not.toHaveBeenCalled()
+    expect(access.requireProjectAccess).toHaveBeenCalledWith('project-2', 'user-1')
+    expect(access.requireSupportProjectRole).not.toHaveBeenCalled()
     expect(state.deleteCalled).toBe(true)
     expect(response).toMatchObject({ success: true, data: { deleted: true } })
   })

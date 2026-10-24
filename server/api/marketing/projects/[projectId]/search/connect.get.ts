@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Start the Google Search Console connection
  *     description: >
- *       Team admins only. Returns the Google consent URL, carrying a signed state that binds the
+ *       Project admins only. Returns the Google consent URL, carrying a signed state that binds the
  *       flow to this site and user. The site must be verified. Returns 503 when the server has no
  *       Google OAuth app or no secrets encryption key.
  *     operationId: getSearchConnectUrl
@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: "`{ url }` to send the browser to" }
- *       403: { description: Team admin required, or Marketing is off }
+ *       403: { description: Project admin required, or Marketing is off }
  *       409: { description: The site is not set up or not verified }
  *       503: { description: Search Console is not configured on this server }
  */
@@ -26,10 +26,10 @@ import { requireGscConfig } from '~/server/services/marketing/search/connection'
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { findMarketingSite, requireRouteParam } from '~/server/utils/marketing-site'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   await requireMarketingAdmin(projectId, session.user.id)
 

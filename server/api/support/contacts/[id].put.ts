@@ -12,9 +12,9 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Contact updated }
- *       403: { description: Not a member of the contact's team }
+ *       403: { description: Not a member of the contact's project }
  *       404: { description: Contact not found }
- *       409: { description: Another contact in the team already uses this email }
+ *       409: { description: Another contact in the project already uses this email }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -28,7 +28,7 @@ import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, supportCompany } from '~/server/database/schema/support'
-import { lockContactTeam } from '~/server/utils/contact-lock'
+import { lockContactProject } from '~/server/utils/contact-lock'
 
 const bodySchema = z.object({
   name: z.string().trim().max(200).nullable().optional(),
@@ -48,9 +48,9 @@ export default defineEventHandler(async (event) => {
 
   try {
     return await db.transaction(async (tx) => {
-      await lockContactTeam(tx, accessibleContact.teamId)
+      await lockContactProject(tx, accessibleContact.projectId)
 
-      // The access check above establishes the caller's team membership. The
+      // The access check above establishes the caller's project membership. The
       // row itself must be re-read and locked here: a merge may have turned
       // this contact into a tombstone while the request was entering its
       // transaction.
@@ -77,14 +77,14 @@ export default defineEventHandler(async (event) => {
         const [company] = await tx
           .select({ id: supportCompany.id })
           .from(supportCompany)
-          .where(and(eq(supportCompany.id, body.companyId), eq(supportCompany.teamId, lockedContact.teamId)))
+          .where(and(eq(supportCompany.id, body.companyId), eq(supportCompany.projectId, lockedContact.projectId)))
           .limit(1)
 
         if (!company) {
           throw createError({
             statusCode: 400,
             statusMessage: 'Bad Request',
-            data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Company is not part of this team'),
+            data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Company is not part of this project'),
           })
         }
       }
@@ -122,7 +122,7 @@ export default defineEventHandler(async (event) => {
           await tx.insert(contactIdentity).values({
             id: randomUUID(),
             contactId,
-            teamId: lockedContact.teamId,
+            projectId: lockedContact.projectId,
             kind: 'email',
             value: body.email,
             createdAt: new Date(),
@@ -137,7 +137,7 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
-        data: createErrorResponse(ErrorCode.CONFLICT, 'Another contact in this team already uses this email'),
+        data: createErrorResponse(ErrorCode.CONFLICT, 'Another contact in this project already uses this email'),
       })
     }
     throw error

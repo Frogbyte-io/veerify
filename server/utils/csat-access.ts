@@ -3,20 +3,20 @@ import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
 export type CsatInboxAccess = {
   effectiveRole: 'agent' | 'supervisor' | 'admin'
-  isTeamAdmin: boolean
+  isProjectAdmin: boolean
 }
 
 export type CsatInboxScope =
   | { kind: 'all' }
-  | { kind: 'member'; teamId: string; userId: string }
+  | { kind: 'member'; projectId: string; userId: string }
   | { kind: 'explicit'; inboxId: string }
 
 type ResolveCsatInboxScopeInput = {
-  teamId: string
+  projectId: string
   userId: string
-  teamAccess: CsatInboxAccess
+  projectAccess: CsatInboxAccess
   requestedInboxId?: string
-  requestedInboxTeamId?: string
+  requestedInboxProjectId?: string
 }
 
 function throwForbidden(): never {
@@ -31,16 +31,16 @@ function throwForbidden(): never {
  * Resolve the row scope for the authenticated CSAT summary.
  *
  * Explicit inbox access is checked by `requireInboxAccess` before this helper
- * runs. The team-id comparison remains here so a member of an inbox in a
- * different team cannot use a valid inbox membership to cross the route's
- * team boundary.
+ * runs. The project-id comparison remains here so a member of an inbox in a
+ * different project cannot use a valid inbox membership to cross the route's
+ * project boundary.
  */
 export function resolveCsatInboxScope(input: ResolveCsatInboxScopeInput): CsatInboxScope {
   if (input.requestedInboxId) {
-    if (input.requestedInboxTeamId !== input.teamId) throwForbidden()
+    if (input.requestedInboxProjectId !== input.projectId) throwForbidden()
     return { kind: 'explicit', inboxId: input.requestedInboxId }
   }
 
-  if (input.teamAccess.isTeamAdmin) return { kind: 'all' }
-  return { kind: 'member', teamId: input.teamId, userId: input.userId }
+  if (input.projectAccess.isProjectAdmin) return { kind: 'all' }
+  return { kind: 'member', projectId: input.projectId, userId: input.userId }
 }

@@ -21,7 +21,7 @@ export async function findSiteForProject(projectId: string) {
 
 /**
  * Marketing access for the product, plus proof that the audit belongs to that
- * product's site. An audit id from another product or team reads as 404, so
+ * product's site. An audit id from another product or project reads as 404, so
  * ids cannot be probed across tenants.
  */
 export async function requireAuditAccess(projectId: string, auditId: string, userId: string) {

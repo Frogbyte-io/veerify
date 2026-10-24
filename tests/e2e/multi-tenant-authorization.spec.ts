@@ -16,54 +16,37 @@ function anonymousHeaders(refererPath = '/feedback') {
   }
 }
 
-async function getActiveTeamId(request: APIRequestContext, sessionCookie: string) {
-  const response = await request.get('/api/teams/active', {
-    headers: withAuthHeaders(sessionCookie),
-  })
-  const payload = await response.json()
-  expect(response.ok()).toBeTruthy()
-  return payload.data.id as string
-}
+type TestProject = { id: string; slug: string; productId: string; productSlug: string }
 
 async function createTestProject(
   request: APIRequestContext,
   sessionCookie: string,
-  teamId: string,
   slug: string,
   isPublic: boolean = true
-) {
-  const response = await request.post(`/api/teams/${teamId}/projects`, {
-    headers: withAuthHeaders(sessionCookie, '/products'),
+): Promise<TestProject> {
+  const response = await request.post('/api/projects', {
+    headers: withAuthHeaders(sessionCookie, '/workspace'),
     data: {
       name: `E2E Auth Test ${slug}`,
       slug,
       description: 'Created for multi-tenant auth testing',
-      customDomain: null,
+      isPublic,
     },
   })
   const payload = await response.json()
   expect(response.status(), `Create project failed: ${JSON.stringify(payload)}`).toBe(201)
+  expect(payload.data.project.isPublic).toBe(isPublic)
 
-  if (!isPublic) {
-    const visibilityResponse = await request.put(`/api/projects/${slug}`, {
-      headers: withAuthHeaders(sessionCookie, '/products'),
-      data: {
-        isPublic: false,
-      },
-    })
-    const visibilityPayload = await visibilityResponse.json().catch(() => ({}))
-    expect(
-      visibilityResponse.ok(),
-      `Failed to set project visibility: ${JSON.stringify(visibilityPayload)}`
-    ).toBeTruthy()
-    expect(visibilityPayload?.data?.isPublic).toBe(false)
+  return {
+    id: payload.data.project.id as string,
+    slug: payload.data.project.slug as string,
+    productId: payload.data.product.id as string,
+    productSlug: payload.data.product.slug as string,
   }
-
-  return payload.data.id as string
 }
 
-async function deleteTestProject(request: APIRequestContext, sessionCookie: string, teamId: string, projectId: string) {
-  await request.delete(`/api/teams/${teamId}/projects/${projectId}`, {
+async function deleteTestProject(request: APIRequestContext, sessionCookie: string, project: TestProject) {
+  await request.delete(`/api/projects/${project.slug}`, {
     headers: withAuthHeaders(sessionCookie),
   })
 }
@@ -108,13 +91,14 @@ test.describe('Multi-tenant authorization', () => {
 
   test('GET /api/feedback filters by projectId correctly', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create two projects
     const slug1 = `e2e-auth-proj1-${Date.now()}`
     const slug2 = `e2e-auth-proj2-${Date.now()}`
-    const projectId1 = await createTestProject(request, sessionCookie, teamId, slug1)
-    const projectId2 = await createTestProject(request, sessionCookie, teamId, slug2)
+    const project1 = await createTestProject(request, sessionCookie, slug1)
+    const projectId1 = project1.id
+    const project2 = await createTestProject(request, sessionCookie, slug2)
+    const projectId2 = project2.id
 
     // Create feedback in project 1
     const fb1Response = await request.post('/api/feedback', {
@@ -160,19 +144,19 @@ test.describe('Multi-tenant authorization', () => {
     expect(fb2Ids).not.toContain(fb1.data.id)
 
     // Cleanup
-    await deleteTestProject(request, sessionCookie, teamId, projectId1)
-    await deleteTestProject(request, sessionCookie, teamId, projectId2)
+    await deleteTestProject(request, sessionCookie, project1)
+    await deleteTestProject(request, sessionCookie, project2)
   })
 
-  test('POST /api/feedback to private project requires team membership', async ({ request }) => {
+  test('POST /api/feedback to private project requires project access', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create a private project (isPublic = false by default)
     const slug = `e2e-auth-private-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug, false)
+    const project = await createTestProject(request, sessionCookie, slug, false)
+    const projectId = project.id
 
-    // User who is team member can submit
+    // User with project access can submit
     const response = await request.post('/api/feedback', {
       headers: withAuthHeaders(sessionCookie),
       data: {
@@ -196,16 +180,16 @@ test.describe('Multi-tenant authorization', () => {
     expect(anonResponse.status()).toBe(403)
 
     // Cleanup
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('POST /api/feedback to public project allows anonymous submissions', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create a public project
     const slug = `e2e-auth-public-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+    const project = await createTestProject(request, sessionCookie, slug, true)
+    const projectId = project.id
 
     // Anonymous user can submit to public project
     const anonResponse = await request.post('/api/feedback', {
@@ -220,15 +204,15 @@ test.describe('Multi-tenant authorization', () => {
     expect(anonResponse.status()).toBe(201)
 
     // Cleanup
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('POST /api/feedback accepts blank optional identity fields for authenticated users', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     const slug = `e2e-feedback-auth-blank-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+    const project = await createTestProject(request, sessionCookie, slug, true)
+    const projectId = project.id
 
     const response = await request.post('/api/feedback', {
       headers: withAuthHeaders(sessionCookie),
@@ -244,15 +228,15 @@ test.describe('Multi-tenant authorization', () => {
     const payload = await response.json()
     expect(response.status(), `Authenticated feedback submit failed: ${JSON.stringify(payload)}`).toBe(201)
 
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('POST /api/feedback rejects blank anonymous author names after normalization', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     const slug = `e2e-feedback-anon-blank-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+    const project = await createTestProject(request, sessionCookie, slug, true)
+    const projectId = project.id
 
     const response = await request.post('/api/feedback', {
       headers: anonymousHeaders('/feedback'),
@@ -270,17 +254,17 @@ test.describe('Multi-tenant authorization', () => {
     expect(getErrorCode(payload)).toBe('VALIDATION_ERROR')
     expect(payload?.error?.message || payload?.data?.error?.message).toContain('Name is required')
 
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('POST /api/feedback/[id]/comments accepts blank optional identity fields for authenticated users', async ({
     request,
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     const slug = `e2e-comment-auth-blank-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+    const project = await createTestProject(request, sessionCookie, slug, true)
+    const projectId = project.id
     const feedbackId = await createFeedbackItem(request, sessionCookie, projectId, {
       title: 'Comment target for authenticated blank identity coverage',
     })
@@ -297,17 +281,17 @@ test.describe('Multi-tenant authorization', () => {
     const payload = await response.json()
     expect(response.status(), `Authenticated comment submit failed: ${JSON.stringify(payload)}`).toBe(201)
 
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('POST /api/feedback/[id]/comments rejects blank anonymous author names after normalization', async ({
     request,
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     const slug = `e2e-comment-anon-blank-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+    const project = await createTestProject(request, sessionCookie, slug, true)
+    const projectId = project.id
     const feedbackId = await createFeedbackItem(request, sessionCookie, projectId, {
       title: 'Comment target for anonymous blank identity coverage',
     })
@@ -326,16 +310,16 @@ test.describe('Multi-tenant authorization', () => {
     expect(getErrorCode(payload)).toBe('VALIDATION_ERROR')
     expect(payload?.error?.message || payload?.data?.error?.message).toContain('Name is required')
 
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('POST /api/feedback/[id]/vote only works on public projects', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create private project
     const privateSlug = `e2e-vote-private-${Date.now()}`
-    const privateProjectId = await createTestProject(request, sessionCookie, teamId, privateSlug, false)
+    const privateProject = await createTestProject(request, sessionCookie, privateSlug, false)
+    const privateProjectId = privateProject.id
 
     // Create feedback in private project
     const privateFbResponse = await request.post('/api/feedback', {
@@ -349,7 +333,7 @@ test.describe('Multi-tenant authorization', () => {
     expect(privateFbResponse.status()).toBe(201)
     const privateFb = await privateFbResponse.json()
 
-    // Try to vote on private project feedback (should fail even for team members via public endpoint)
+    // Try to vote on private project feedback (should fail even for project members via public endpoint)
     const votePrivateResponse = await request.post(`/api/feedback/${privateFb.data.id}/vote`, {
       headers: anonymousHeaders('/feedback'),
     })
@@ -357,7 +341,8 @@ test.describe('Multi-tenant authorization', () => {
 
     // Create public project
     const publicSlug = `e2e-vote-public-${Date.now()}`
-    const publicProjectId = await createTestProject(request, sessionCookie, teamId, publicSlug, true)
+    const publicProject = await createTestProject(request, sessionCookie, publicSlug, true)
+    const publicProjectId = publicProject.id
 
     // Create feedback in public project
     const publicFbResponse = await request.post('/api/feedback', {
@@ -378,17 +363,17 @@ test.describe('Multi-tenant authorization', () => {
     expect(votePublicResponse.status()).toBe(200)
 
     // Cleanup
-    await deleteTestProject(request, sessionCookie, teamId, privateProjectId)
-    await deleteTestProject(request, sessionCookie, teamId, publicProjectId)
+    await deleteTestProject(request, sessionCookie, privateProject)
+    await deleteTestProject(request, sessionCookie, publicProject)
   })
 
   test('GET /api/feedback/[id] verifies project access', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create private project with feedback
     const slug = `e2e-get-private-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug, false)
+    const project = await createTestProject(request, sessionCookie, slug, false)
+    const projectId = project.id
 
     const fbResponse = await request.post('/api/feedback', {
       headers: withAuthHeaders(sessionCookie),
@@ -400,7 +385,7 @@ test.describe('Multi-tenant authorization', () => {
     })
     const fb = await fbResponse.json()
 
-    // Team member can access
+    // Project member can access
     const memberGetResponse = await request.get(`/api/feedback/${fb.data.id}`, {
       headers: withAuthHeaders(sessionCookie),
     })
@@ -413,16 +398,16 @@ test.describe('Multi-tenant authorization', () => {
     expect(anonGetResponse.status()).toBe(403)
 
     // Cleanup
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('GET /api/feedback/[id] allows access to public project feedback', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create public project with feedback
     const slug = `e2e-get-public-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug, true)
+    const project = await createTestProject(request, sessionCookie, slug, true)
+    const projectId = project.id
 
     const fbResponse = await request.post('/api/feedback', {
       headers: withAuthHeaders(sessionCookie),
@@ -443,6 +428,78 @@ test.describe('Multi-tenant authorization', () => {
     expect(anonPayload.data.id).toBe(fb.data.id)
 
     // Cleanup
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
+  })
+
+  test('feedback in a private product is hidden from anonymous callers while the project stays public', async ({
+    request,
+  }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const slug = `e2e-private-product-${Date.now()}`
+    const project = await createTestProject(request, sessionCookie, slug, true)
+
+    const productResponse = await request.put(`/api/projects/${project.slug}/products/${project.productId}`, {
+      headers: withAuthHeaders(sessionCookie, '/project/settings'),
+      data: { isPublic: false },
+    })
+    expect(productResponse.ok(), await productResponse.text()).toBeTruthy()
+
+    const feedbackId = await createFeedbackItem(request, sessionCookie, project.id, {
+      productId: project.productId,
+      title: 'Private product feedback',
+    })
+
+    // Anonymous callers cannot post to, read, or vote on a private product's board.
+    const anonPost = await request.post('/api/feedback', {
+      headers: anonymousHeaders('/feedback'),
+      data: { projectId: project.id, productId: project.productId, title: 'Nope', body: 'x', authorName: 'Anon' },
+    })
+    expect([403, 404]).toContain(anonPost.status())
+
+    const anonGet = await request.get(`/api/feedback/${feedbackId}`, { headers: anonymousHeaders('/feedback') })
+    expect([403, 404]).toContain(anonGet.status())
+
+    const anonVote = await request.post(`/api/feedback/${feedbackId}/vote`, { headers: anonymousHeaders('/feedback') })
+    expect([403, 404]).toContain(anonVote.status())
+
+    // The public product endpoint treats a private product as not found.
+    const publicBoard = await request.get(
+      `/api/public/o/preview-org/${project.slug}/products/${project.productSlug}/feedback`,
+      { headers: anonymousHeaders('/') }
+    )
+    expect(publicBoard.status()).toBe(404)
+
+    // Project members still see it.
+    const memberGet = await request.get(`/api/feedback/${feedbackId}`, { headers: withAuthHeaders(sessionCookie) })
+    expect(memberGet.status()).toBe(200)
+
+    await deleteTestProject(request, sessionCookie, project)
+  })
+
+  test('GET /api/feedback denies access to projects the caller cannot open', async ({ request }) => {
+    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const slug = `e2e-restricted-${Date.now()}`
+    const project = await createTestProject(request, sessionCookie, slug, false)
+
+    const restrict = await request.put(`/api/projects/${project.slug}`, {
+      headers: withAuthHeaders(sessionCookie, '/project/settings'),
+      data: { accessMode: 'restricted' },
+    })
+    expect(restrict.ok(), await restrict.text()).toBeTruthy()
+
+    // Another user outside the project's access list gets 403/404.
+    const otherCookie = await signInAndGetSessionCookie(request, {
+      email: 'personal@preview.local',
+      password: TEST_PASSWORD,
+    })
+    const denied = await request.get(`/api/feedback?projectId=${project.id}`, {
+      headers: withAuthHeaders(otherCookie),
+    })
+    expect([403, 404]).toContain(denied.status())
+
+    const anon = await request.get(`/api/feedback?projectId=${project.id}`, { headers: anonymousHeaders() })
+    expect([401, 403, 404]).toContain(anon.status())
+
+    await deleteTestProject(request, sessionCookie, project)
   })
 })

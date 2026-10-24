@@ -1,12 +1,20 @@
 import { eq, and, count } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
-import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
+import { requireProjectAccess } from '~/server/utils/project-access'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, vote, project, feedbackSubscription } from '~/server/database/schema/feedback'
+import {
+  feedback,
+  feedbackCategory,
+  vote,
+  project,
+  product,
+  feedbackSubscription,
+} from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
 import { conversation } from '~/server/database/schema/support'
+import { requirePublicFeedback } from '~/server/utils/feedback-access'
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
@@ -54,11 +62,11 @@ export default defineEventHandler(async (event) => {
       isTeamMember = true
     } catch {
       if (!isOwn) {
-        await requirePublicProject(item.feedback.projectId)
+        await requirePublicFeedback(item.feedback, { allowHidden: isOwn })
       }
     }
   } else {
-    await requirePublicProject(item.feedback.projectId)
+    await requirePublicFeedback(item.feedback, { allowHidden: isOwn })
   }
 
   let linkedConversationCount: number | null = null
@@ -93,6 +101,12 @@ export default defineEventHandler(async (event) => {
     })
     .from(project)
     .where(eq(project.id, item.feedback.projectId))
+    .limit(1)
+
+  const [productSummary] = await db
+    .select({ id: product.id, name: product.name, slug: product.slug })
+    .from(product)
+    .where(eq(product.id, item.feedback.productId))
     .limit(1)
 
   // Check if viewer has voted and which direction
@@ -146,6 +160,8 @@ export default defineEventHandler(async (event) => {
     category: item.category,
     author: publicSafeAuthor,
     project: proj,
+    productId: item.feedback.productId,
+    product: productSummary ?? null,
     tag: item.feedback.metadata?.feedbackType || null,
     hasVoted: voteType !== null,
     voteType,

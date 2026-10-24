@@ -1,44 +1,45 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray, ne } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { contact, contactIdentity, contactLink, supportCompany } from '../../server/database/schema/support'
-import { team } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { signInAndGetSessionCookie, withAuthHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
-  const response = await request.get('/api/teams/active', { headers: withAuthHeaders(sessionCookie) })
+async function activeProjectId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
+  const response = await request.get('/api/projects/active', { headers: withAuthHeaders(sessionCookie) })
   const payload = await response.json()
   expect(response.ok()).toBeTruthy()
-  return payload.data.id as string
+  return await enableProjectSupport(payload.data.project.id as string)
 }
 
 test.describe.serial('support contact integrity', () => {
-  test('rejects a company from another team on create and update', async ({ request }) => {
+  test('rejects a company from another project on create and update', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await activeTeamId(request, sessionCookie)
-    const [otherTeam] = await db.select({ id: team.id }).from(team).where(ne(team.id, teamId)).limit(1)
+    const projectId = await activeProjectId(request, sessionCookie)
+    const [otherProject] = await db.select({ id: project.id }).from(project).where(ne(project.id, projectId)).limit(1)
 
-    // A deployment with only one seeded team cannot exercise cross-team FK
+    // A deployment with only one seeded project cannot exercise cross-project FK
     // isolation; the production check is still covered by the transaction.
-    if (!otherTeam) test.skip()
+    if (!otherProject) test.skip()
 
     const companyId = randomUUID()
-    await db.insert(supportCompany).values({ id: companyId, teamId: otherTeam.id, name: `foreign-${companyId}` })
+    await db.insert(supportCompany).values({ id: companyId, projectId: otherProject.id, name: `foreign-${companyId}` })
 
     try {
       const createResponse = await request.post('/api/support/contacts', {
         headers: withAuthHeaders(sessionCookie),
-        data: { teamId, name: 'cross-team create', companyId },
+        data: { projectId, name: 'cross-project create', companyId },
       })
       expect(createResponse.status()).toBe(400)
 
       const createOwnResponse = await request.post('/api/support/contacts', {
         headers: withAuthHeaders(sessionCookie),
-        data: { teamId, name: 'cross-team update' },
+        data: { projectId, name: 'cross-project update' },
       })
       expect(createOwnResponse.ok()).toBeTruthy()
       const created = await createOwnResponse.json()
@@ -55,20 +56,20 @@ test.describe.serial('support contact integrity', () => {
 
   test('paginates equal-timestamp contacts without skipping the id tie-breaker', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await activeTeamId(request, sessionCookie)
+    const projectId = await activeProjectId(request, sessionCookie)
     const createdAt = new Date('2020-01-01T00:00:00.000Z')
     const ids: string[] = [randomUUID(), randomUUID(), randomUUID()]
 
     await db
       .insert(contact)
-      .values(ids.map((id) => ({ id, teamId, name: `cursor-${id}`, createdAt, updatedAt: createdAt })))
+      .values(ids.map((id) => ({ id, projectId, name: `cursor-${id}`, createdAt, updatedAt: createdAt })))
 
     try {
       const seen: string[] = []
       let cursor: string | null = null
       do {
         const response = await request.get(
-          `/api/support/contacts?teamId=${teamId}&limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
+          `/api/support/contacts?projectId=${projectId}&limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
           { headers: withAuthHeaders(sessionCookie) }
         )
         expect(response.ok()).toBeTruthy()
@@ -89,12 +90,12 @@ test.describe.serial('support contact integrity', () => {
 
   test('rejects updates to a merged tombstone', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await activeTeamId(request, sessionCookie)
+    const projectId = await activeProjectId(request, sessionCookie)
     const ids: string[] = [randomUUID(), randomUUID()]
 
     await db
       .insert(contact)
-      .values(ids.map((id) => ({ id, teamId, name: id, createdAt: new Date(), updatedAt: new Date() })))
+      .values(ids.map((id) => ({ id, projectId, name: id, createdAt: new Date(), updatedAt: new Date() })))
 
     try {
       const mergeResponse = await request.post(`/api/support/contacts/${ids[0]}/merge`, {
@@ -119,7 +120,7 @@ test.describe.serial('support contact integrity', () => {
 
   test('serializes concurrent inverse merges and preserves identities and links', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await activeTeamId(request, sessionCookie)
+    const projectId = await activeProjectId(request, sessionCookie)
 
     // Repeat the actual inverse race. The a/b prefixes make the first request
     // and second request acquire rows in opposite request order when an
@@ -128,12 +129,12 @@ test.describe.serial('support contact integrity', () => {
     for (let iteration = 0; iteration < 5; iteration += 1) {
       const ids: string[] = [`merge-race-${iteration}-a-${randomUUID()}`, `merge-race-${iteration}-b-${randomUUID()}`]
       const createdAt = new Date()
-      await db.insert(contact).values(ids.map((id) => ({ id, teamId, name: id, createdAt, updatedAt: createdAt })))
+      await db.insert(contact).values(ids.map((id) => ({ id, projectId, name: id, createdAt, updatedAt: createdAt })))
       await db.insert(contactIdentity).values(
         ids.map((id, index) => ({
           id: randomUUID(),
           contactId: id,
-          teamId,
+          projectId,
           kind: 'email',
           value: `merge-${iteration}-${index}-${id}@example.com`,
           createdAt,

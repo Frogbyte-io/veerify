@@ -2,7 +2,7 @@ import type { AutomationRuleAction } from '~/server/database/schema/support'
 
 export type AutomationActionContext = {
   conversationId: string
-  teamId?: string
+  projectId?: string
   inboxId?: string
   actorUserId?: string
   cascadeDepth?: number

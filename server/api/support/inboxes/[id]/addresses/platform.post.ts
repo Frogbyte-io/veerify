@@ -6,7 +6,7 @@
  *     summary: Get or create the inbox's platform forwarding address
  *     description: >
  *       Idempotent. Returns the inbox's existing platform address, or creates
- *       one (`<team>-<inbox>-<random>@SUPPORT_PLATFORM_MAIL_DOMAIN`) for inboxes
+ *       one (`<project>-<inbox>-<random>@SUPPORT_PLATFORM_MAIL_DOMAIN`) for inboxes
  *       that predate the feature. Customers forward their own support address
  *       to it. Platform addresses cannot be deleted; send `regenerate: true` to
  *       replace the address with a fresh one (the old address stops receiving).
@@ -33,13 +33,12 @@
  *       404: { description: "Inbox not found, or platform forwarding addresses are not enabled" }
  */
 import { z } from 'zod'
-import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireInboxRole } from '~/server/utils/support-access'
 import { db } from '~/server/database/drizzle'
-import { team } from '~/server/database/schema/auth'
+import { getProjectById } from '~/server/utils/project-access'
 import { ensurePlatformAddress, findPlatformAddress, getPlatformMailDomain } from '~/server/utils/platform-address'
 
 const bodySchema = z.object({ regenerate: z.boolean().optional().default(false) }).strict()
@@ -70,14 +69,20 @@ export default defineEventHandler(async (event) => {
 
   const existing = parsed.data.regenerate ? null : await findPlatformAddress(inboxId)
 
+  const owningProject = existing ? null : await getProjectById(inbox.projectId)
+
   const address =
     existing ??
     (await db.transaction(async (tx) => {
-      const [owningTeam] = await tx.select({ slug: team.slug }).from(team).where(eq(team.id, inbox.teamId)).limit(1)
-      if (!owningTeam) return null
-      return ensurePlatformAddress(tx, { id: inbox.id, slug: inbox.slug }, owningTeam.slug, {
-        regenerate: parsed.data.regenerate,
-      })
+      if (!owningProject) return null
+      return ensurePlatformAddress(
+        tx,
+        { id: inbox.id, slug: inbox.slug, projectId: inbox.projectId },
+        owningProject.slug,
+        {
+          regenerate: parsed.data.regenerate,
+        }
+      )
     }))
 
   if (!address) {

@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import { registerOrgPublicDomainBestEffort } from '~/server/services/domains/domain-service'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { organization } from '~/server/database/schema/auth'
@@ -168,6 +169,10 @@ export default defineEventHandler(async (event) => {
         })
       })
     }
+  }
+
+  if (updatedOrg.slug && updatedOrg.slug !== org.slug) {
+    await registerOrgPublicDomainBestEffort(updatedOrg.slug, { organizationId: updatedOrg.id })
   }
 
   const data = await getOrganizationDetails(updatedOrg.id, session.user.id)

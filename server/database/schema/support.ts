@@ -42,7 +42,7 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import { user, team } from './auth'
+import { user } from './auth'
 import { project, feedback } from './feedback'
 import type { SendingDomainDnsRecord } from '../../../lib/support-sending-domains'
 
@@ -53,9 +53,9 @@ export const supportCompany = pgTable(
   'support_company',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     domain: text('domain'),
     attributes: jsonb('attributes').$type<Record<string, any>>(),
@@ -68,9 +68,9 @@ export const supportCompany = pgTable(
   },
   (table) => ({
     // Unique domain within a team (NULLs distinct - multiple domain-less companies are fine)
-    uniqueTeamDomain: uniqueIndex('support_company_team_domain_idx').on(table.teamId, table.domain),
+    uniqueProjectDomain: uniqueIndex('support_company_project_domain_idx').on(table.projectId, table.domain),
     // Unique name within a team
-    uniqueTeamName: uniqueIndex('support_company_team_name_idx').on(table.teamId, table.name),
+    uniqueProjectName: uniqueIndex('support_company_project_name_idx').on(table.projectId, table.name),
   })
 )
 
@@ -81,9 +81,9 @@ export const contact = pgTable(
   'contact',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     name: text('name'),
     email: text('email'),
     phone: text('phone'),
@@ -107,9 +107,9 @@ export const contact = pgTable(
   },
   (table) => ({
     // Unique email within a team (NULLs distinct - multiple email-less contacts are fine and intended)
-    uniqueTeamEmail: uniqueIndex('contact_team_email_idx').on(table.teamId, table.email),
+    uniqueProjectEmail: uniqueIndex('contact_project_email_idx').on(table.projectId, table.email),
     // Index for team timelines
-    teamCreatedAtIdx: index('contact_team_created_at_idx').on(table.teamId, table.createdAt),
+    projectCreatedAtIdx: index('contact_project_created_at_idx').on(table.projectId, table.createdAt),
     // Index for querying contacts by company
     companyIdx: index('contact_company_idx').on(table.companyId),
     // Index for querying contacts by linked user account
@@ -127,9 +127,9 @@ export const contactIdentity = pgTable(
     contactId: text('contact_id')
       .notNull()
       .references(() => contact.id, { onDelete: 'cascade' }),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     // 'email' | 'user' | 'anon_session' | 'chat_token'
     kind: text('kind').notNull(),
     value: text('value').notNull(),
@@ -141,7 +141,11 @@ export const contactIdentity = pgTable(
   (table) => ({
     // Unique identifier within a team - makes an email (or other identifier) resolve
     // to at most one contact per team, and makes contact merge tractable
-    uniqueTeamKindValue: uniqueIndex('contact_identity_team_kind_value_idx').on(table.teamId, table.kind, table.value),
+    uniqueProjectKindValue: uniqueIndex('contact_identity_project_kind_value_idx').on(
+      table.projectId,
+      table.kind,
+      table.value
+    ),
     // Index for querying all identities of a contact
     contactIdx: index('contact_identity_contact_idx').on(table.contactId),
   })
@@ -181,16 +185,13 @@ export const contactLink = pgTable(
   })
 )
 
-// Team-scoped support policy. This intentionally does not live in generic
-// team JSON: support privacy controls need an explicit ownership boundary.
-export const supportTeamSettings = pgTable('support_team_settings', {
-  teamId: text('team_id')
+// Project-scoped support policy.
+export const supportProjectSettings = pgTable('support_project_settings', {
+  projectId: text('project_id')
     .primaryKey()
-    .references(() => team.id, { onDelete: 'cascade' }),
+    .references(() => project.id, { onDelete: 'cascade' }),
   autoLinkFeedback: boolean('auto_link_feedback').default(false).notNull(),
-  // Reporting dates are bucketed using this team-owned calendar. UTC keeps
-  // existing teams deterministic until an administrator chooses another IANA
-  // timezone.
+  // Reporting dates are bucketed using this project-owned calendar.
   reportingTimezone: text('reporting_timezone').default('UTC').notNull(),
   createdAt: timestamp('created_at')
     .$defaultFn(() => new Date())
@@ -214,11 +215,10 @@ export const supportInbox = pgTable(
   'support_inbox',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
-      .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
     // Optional single-product link for teams that don't need multi-address routing
-    projectId: text('project_id').references(() => project.id, { onDelete: 'set null' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     // 'email' | 'chat' | 'whatsapp' | … (Stage 02 ships 'email' only)
@@ -242,13 +242,12 @@ export const supportInbox = pgTable(
       .notNull(),
   },
   (table) => ({
-    uniqueTeamSlug: uniqueIndex('support_inbox_team_slug_idx').on(table.teamId, table.slug),
+    uniqueProjectSlug: uniqueIndex('support_inbox_project_slug_idx').on(table.projectId, table.slug),
     // Required as the referenced key for team-scoped child records. Keeping
     // the team in the key prevents a child row from pairing this inbox with
     // a different team's identifier.
-    uniqueTeamId: uniqueIndex('support_inbox_team_id_idx').on(table.teamId, table.id),
+    uniqueProjectId: uniqueIndex('support_inbox_project_id_idx').on(table.projectId, table.id),
     uniqueEmailAddress: uniqueIndex('support_inbox_email_address_idx').on(table.emailAddress),
-    teamIdx: index('support_inbox_team_idx').on(table.teamId),
     projectIdx: index('support_inbox_project_idx').on(table.projectId),
   })
 )
@@ -265,7 +264,9 @@ export const supportInboxAddress = pgTable(
       .notNull()
       .references(() => supportInbox.id, { onDelete: 'cascade' }),
     address: text('address').notNull(),
-    projectId: text('project_id').references(() => project.id, { onDelete: 'set null' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
     isPrimary: boolean('is_primary').default(false).notNull(),
     // 'platform' rows are system-generated forwarding addresses on
     // SUPPORT_PLATFORM_MAIL_DOMAIN; 'custom' rows are entered by the team.
@@ -325,9 +326,9 @@ export const businessHours = pgTable(
   'business_hours',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     timezone: text('timezone').notNull(),
     weeklySchedule: jsonb('weekly_schedule').$type<BusinessHoursWeeklySchedule>().notNull(),
@@ -341,8 +342,8 @@ export const businessHours = pgTable(
       .notNull(),
   },
   (table) => ({
-    teamIdx: index('business_hours_team_idx').on(table.teamId),
-    defaultIdx: index('business_hours_default_idx').on(table.teamId, table.isDefault),
+    projectIdx: index('business_hours_project_idx').on(table.projectId),
+    defaultIdx: index('business_hours_default_idx').on(table.projectId, table.isDefault),
   })
 )
 
@@ -363,9 +364,9 @@ export const slaPolicy = pgTable(
   'sla_policy',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     businessHoursId: text('business_hours_id').references(() => businessHours.id, { onDelete: 'set null' }),
     conditions: jsonb('conditions').$type<SlaConditions>().notNull(),
@@ -380,8 +381,8 @@ export const slaPolicy = pgTable(
       .notNull(),
   },
   (table) => ({
-    teamIdx: index('sla_policy_team_idx').on(table.teamId),
-    orderIdx: index('sla_policy_team_order_idx').on(table.teamId, table.sortOrder),
+    projectIdx: index('sla_policy_project_idx').on(table.projectId),
+    orderIdx: index('sla_policy_project_order_idx').on(table.projectId, table.sortOrder),
   })
 )
 
@@ -415,9 +416,9 @@ export const slaTarget = pgTable(
 // conversation insert - not a sequence, because the number must be per-team
 // and gap-free enough to read as a ticket number.
 export const supportCounter = pgTable('support_counter', {
-  teamId: text('team_id')
+  projectId: text('project_id')
     .primaryKey()
-    .references(() => team.id, { onDelete: 'cascade' }),
+    .references(() => project.id, { onDelete: 'cascade' }),
   nextConversationDisplayId: integer('next_conversation_display_id').default(1).notNull(),
 })
 
@@ -430,14 +431,13 @@ export const conversation = pgTable(
       .notNull()
       .references(() => supportInbox.id, { onDelete: 'restrict' }),
     // Denormalized for team-scoped queries and isolation checks
-    teamId: text('team_id')
-      .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
     contactId: text('contact_id')
       .notNull()
       .references(() => contact.id, { onDelete: 'restrict' }),
     // Resolved product - from the receiving address's mapping, or an agent override (delta D-27)
-    projectId: text('project_id').references(() => project.id, { onDelete: 'set null' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
     displayId: integer('display_id').notNull(),
     subject: text('subject'),
     // 'open' | 'pending' | 'resolved' | 'snoozed' | 'closed'
@@ -469,9 +469,9 @@ export const conversation = pgTable(
       .notNull(),
   },
   (table) => ({
-    uniqueTeamDisplayId: uniqueIndex('conversation_team_display_id_idx').on(table.teamId, table.displayId),
-    teamStatusActivityIdx: index('conversation_team_status_activity_idx').on(
-      table.teamId,
+    uniqueProjectDisplayId: uniqueIndex('conversation_project_display_id_idx').on(table.projectId, table.displayId),
+    projectStatusActivityIdx: index('conversation_project_status_activity_idx').on(
+      table.projectId,
       table.status,
       table.lastActivityAt
     ),
@@ -491,9 +491,9 @@ export const conversationStatusEvent = pgTable(
   'conversation_status_event',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     inboxId: text('inbox_id')
       .notNull()
       .references(() => supportInbox.id, { onDelete: 'cascade' }),
@@ -509,7 +509,10 @@ export const conversationStatusEvent = pgTable(
       .notNull(),
   },
   (table) => ({
-    teamOccurredAtIdx: index('conversation_status_event_team_occurred_at_idx').on(table.teamId, table.occurredAt),
+    projectOccurredAtIdx: index('conversation_status_event_project_occurred_at_idx').on(
+      table.projectId,
+      table.occurredAt
+    ),
     conversationOccurredAtIdx: index('conversation_status_event_conversation_occurred_at_idx').on(
       table.conversationId,
       table.occurredAt
@@ -726,9 +729,9 @@ export const supportTag = pgTable(
   'support_tag',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     color: text('color'),
     createdAt: timestamp('created_at')
@@ -736,7 +739,7 @@ export const supportTag = pgTable(
       .notNull(),
   },
   (table) => ({
-    uniqueTeamName: uniqueIndex('support_tag_team_name_idx').on(table.teamId, table.name),
+    uniqueProjectName: uniqueIndex('support_tag_project_name_idx').on(table.projectId, table.name),
   })
 )
 
@@ -902,9 +905,9 @@ export const csatSurvey = pgTable(
   'csat_survey',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     // NULL means the survey applies to every inbox owned by the team.
     inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
@@ -925,9 +928,9 @@ export const csatSurvey = pgTable(
       .notNull(),
   },
   (table) => ({
-    teamIdx: index('csat_survey_team_idx').on(table.teamId),
+    projectIdx: index('csat_survey_project_idx').on(table.projectId),
     inboxIdx: index('csat_survey_inbox_idx').on(table.inboxId),
-    enabledIdx: index('csat_survey_enabled_idx').on(table.teamId, table.isEnabled),
+    enabledIdx: index('csat_survey_enabled_idx').on(table.projectId, table.isEnabled),
     validScale: check('csat_survey_scale_check', sql`${table.scale} in ('csat_5','thumbs','nps_10')`),
     validTrigger: check('csat_survey_trigger_check', sql`${table.sendTrigger} in ('on_resolve','on_close')`),
     validDelay: check('csat_survey_delay_check', sql`${table.delayMinutes} >= 0`),
@@ -986,9 +989,9 @@ export const cannedResponse = pgTable(
   'canned_response',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     shortcode: text('shortcode').notNull(),
     title: text('title').notNull(),
     body: text('body').notNull(),
@@ -1001,7 +1004,7 @@ export const cannedResponse = pgTable(
       .notNull(),
   },
   (table) => ({
-    uniqueTeamShortcode: uniqueIndex('canned_response_team_shortcode_idx').on(table.teamId, table.shortcode),
+    uniqueProjectShortcode: uniqueIndex('canned_response_project_shortcode_idx').on(table.projectId, table.shortcode),
   })
 )
 
@@ -1049,9 +1052,9 @@ export const automationRule = pgTable(
   'automation_rule',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     // NULL means the rule applies to every inbox owned by the team.
     inboxId: text('inbox_id').references(() => supportInbox.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
@@ -1070,9 +1073,9 @@ export const automationRule = pgTable(
       .notNull(),
   },
   (table) => ({
-    teamIdx: index('automation_rule_team_idx').on(table.teamId),
+    projectIdx: index('automation_rule_project_idx').on(table.projectId),
     inboxIdx: index('automation_rule_inbox_idx').on(table.inboxId),
-    enabledOrderIdx: index('automation_rule_enabled_order_idx').on(table.teamId, table.isEnabled, table.sortOrder),
+    enabledOrderIdx: index('automation_rule_enabled_order_idx').on(table.projectId, table.isEnabled, table.sortOrder),
     validTrigger: check(
       'automation_rule_trigger_check',
       sql`${table.trigger} in ('conversation_created','conversation_updated','message_created','time_based')`
@@ -1116,9 +1119,9 @@ export const supportMetricDaily = pgTable(
   'support_metric_daily',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     inboxId: text('inbox_id')
       .notNull()
       .references(() => supportInbox.id, { onDelete: 'cascade' }),
@@ -1136,17 +1139,17 @@ export const supportMetricDaily = pgTable(
       .notNull(),
   },
   (table) => ({
-    uniqueNullAgent: uniqueIndex('support_metric_daily_team_inbox_date_tz_metric_null_idx')
-      .on(table.teamId, table.inboxId, table.date, table.timezone, table.metric)
+    uniqueNullAgent: uniqueIndex('support_metric_daily_project_inbox_date_tz_metric_null_idx')
+      .on(table.projectId, table.inboxId, table.date, table.timezone, table.metric)
       .where(sql`${table.agentUserId} is null`),
-    uniqueAgent: uniqueIndex('support_metric_daily_team_inbox_agent_date_tz_metric_idx')
-      .on(table.teamId, table.inboxId, table.agentUserId, table.date, table.timezone, table.metric)
+    uniqueAgent: uniqueIndex('support_metric_daily_project_inbox_agent_date_tz_metric_idx')
+      .on(table.projectId, table.inboxId, table.agentUserId, table.date, table.timezone, table.metric)
       .where(sql`${table.agentUserId} is not null`),
-    teamDateIdx: index('support_metric_daily_team_date_idx').on(table.teamId, table.date),
-    teamInboxOwnershipFk: foreignKey({
-      columns: [table.teamId, table.inboxId],
-      foreignColumns: [supportInbox.teamId, supportInbox.id],
-      name: 'support_metric_daily_team_inbox_ownership_fk',
+    projectDateIdx: index('support_metric_daily_project_date_idx').on(table.projectId, table.date),
+    projectInboxOwnershipFk: foreignKey({
+      columns: [table.projectId, table.inboxId],
+      foreignColumns: [supportInbox.projectId, supportInbox.id],
+      name: 'support_metric_daily_project_inbox_ownership_fk',
     }).onDelete('cascade'),
     sampleCountCheck: check('support_metric_daily_sample_count_check', sql`${table.sampleCount} >= 0`),
     finiteValueCheck: check(
@@ -1162,9 +1165,9 @@ export const supportSendingDomain = pgTable(
   'support_sending_domain',
   {
     id: text('id').primaryKey(),
-    teamId: text('team_id')
+    projectId: text('project_id')
       .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
+      .references(() => project.id, { onDelete: 'cascade' }),
     // Normalized ASCII (lowercase, no trailing dot, punycode).
     domain: text('domain').notNull(),
     // Registrable domain (tldts getDomain); advisory-lock and hierarchy key.
@@ -1199,7 +1202,7 @@ export const supportSendingDomain = pgTable(
   },
   (table) => ({
     uniqueDomain: uniqueIndex('support_sending_domain_domain_idx').on(table.domain),
-    teamIdx: index('support_sending_domain_team_idx').on(table.teamId),
+    projectIdx: index('support_sending_domain_project_idx').on(table.projectId),
     registrableIdx: index('support_sending_domain_registrable_idx').on(table.registrableDomain),
     dueIdx: index('support_sending_domain_due_idx').on(table.status, table.nextCheckAt),
     validStatus: check(

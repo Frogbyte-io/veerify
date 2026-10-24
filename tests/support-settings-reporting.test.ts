@@ -6,7 +6,7 @@ const state = vi.hoisted(() => ({
   values: null as Record<string, unknown> | null,
   conflictSet: null as Record<string, unknown> | null,
   updated: {
-    teamId: 'team-1',
+    projectId: 'project-1',
     autoLinkFeedback: false,
     reportingTimezone: 'UTC',
     createdAt: new Date('2026-09-18T00:00:00Z'),
@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
-vi.stubGlobal('getRouterParam', () => 'team-1')
+vi.stubGlobal('getRouterParam', () => 'project-1')
 vi.stubGlobal('readBody', async () => state.body)
 vi.stubGlobal('createError', (input: Record<string, unknown>) =>
   Object.assign(new Error(String(input.statusMessage)), input)
@@ -26,13 +26,16 @@ vi.mock('~/server/utils/auth-middleware', () => ({
 }))
 
 vi.mock('~/server/utils/support-access', () => ({
-  requireTeamAdmin: vi.fn(async () => ({ id: 'member-1', role: 'admin' })),
-  resolveSupportTeamRole: vi.fn(async () => ({ effectiveRole: 'admin', isTeamAdmin: true })),
-  capabilitiesForRole: vi.fn(() => ({ canManageTeamSupport: true })),
+  resolveSupportProjectRole: vi.fn(async () => ({ effectiveRole: 'admin', isProjectAdmin: true })),
+  capabilitiesForRole: vi.fn(() => ({ canManageProjectSupport: true })),
+}))
+
+vi.mock('~/server/utils/project-access', () => ({
+  requireProjectAdmin: vi.fn(async () => ({ id: 'project-1' })),
 }))
 
 vi.mock('~/server/utils/contact-lock', () => ({
-  lockContactTeam: vi.fn(async () => undefined),
+  lockContactProject: vi.fn(async () => undefined),
 }))
 
 vi.mock('~/server/database/drizzle', () => ({
@@ -63,8 +66,8 @@ vi.mock('~/server/database/drizzle', () => ({
   },
 }))
 
-const getHandler = (await import('~/server/api/support/teams/[teamId]/settings.get')).default
-const putHandler = (await import('~/server/api/support/teams/[teamId]/settings.put')).default
+const getHandler = (await import('~/server/api/support/projects/[projectId]/settings.get')).default
+const putHandler = (await import('~/server/api/support/projects/[projectId]/settings.put')).default
 
 describe('support reporting timezone settings', () => {
   beforeEach(() => {
@@ -74,11 +77,11 @@ describe('support reporting timezone settings', () => {
     state.conflictSet = null
   })
 
-  it('returns UTC when a team has no support settings row', async () => {
+  it('returns UTC when a project has no support settings row', async () => {
     const result = (await getHandler({} as never)) as { data: { settings: Record<string, unknown> } }
 
     expect(result.data.settings).toMatchObject({
-      teamId: 'team-1',
+      projectId: 'project-1',
       autoLinkFeedback: false,
       reportingTimezone: 'UTC',
     })

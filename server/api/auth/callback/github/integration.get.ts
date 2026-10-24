@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const { project } = await requireProjectCategoryAccessBySlug(event, stateCookie.projectSlug)
+  const { project } = await requireProjectCategoryAccessBySlug(event, stateCookie.projectSlug, { admin: true })
 
   const clientId = process.env.GITHUB_CLIENT_ID
   const clientSecret = process.env.GITHUB_CLIENT_SECRET

@@ -7,8 +7,8 @@
  *     operationId: createSupportContact
  *     responses:
  *       200: { description: Contact created }
- *       403: { description: Not a member of the team }
- *       409: { description: A contact with this email already exists in the team }
+ *       403: { description: Not a member of the project }
+ *       409: { description: A contact with this email already exists in the project }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -16,15 +16,15 @@ import { createError } from 'h3'
 import { and, eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { requireTeamMembership } from '~/server/utils/support-access'
+import { requireProjectAccess } from '~/server/utils/project-access'
 import { isUniqueViolation } from '~/server/utils/support-errors'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, supportCompany } from '~/server/database/schema/support'
-import { lockContactTeam } from '~/server/utils/contact-lock'
+import { lockContactProject } from '~/server/utils/contact-lock'
 
 const bodySchema = z.object({
-  teamId: z.string().min(1),
+  projectId: z.string().min(1),
   name: z.string().trim().max(200).optional(),
   email: z.string().trim().toLowerCase().email().max(320).optional(),
   phone: z.string().trim().max(50).optional(),
@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const body = await validateBody(event, bodySchema)
 
-  await requireTeamMembership(body.teamId, session.user.id)
+  await requireProjectAccess(body.projectId, session.user.id)
 
   const now = new Date()
   const contactId = randomUUID()
@@ -46,20 +46,20 @@ export default defineEventHandler(async (event) => {
     // contact cannot be resolved from an inbound message, which is the only way
     // contacts get matched. Doing it in one transaction avoids that orphan state.
     return await db.transaction(async (tx) => {
-      await lockContactTeam(tx, body.teamId)
+      await lockContactProject(tx, body.projectId)
 
       if (body.companyId) {
         const [company] = await tx
           .select({ id: supportCompany.id })
           .from(supportCompany)
-          .where(and(eq(supportCompany.id, body.companyId), eq(supportCompany.teamId, body.teamId)))
+          .where(and(eq(supportCompany.id, body.companyId), eq(supportCompany.projectId, body.projectId)))
           .limit(1)
 
         if (!company) {
           throw createError({
             statusCode: 400,
             statusMessage: 'Bad Request',
-            data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Company is not part of this team'),
+            data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Company is not part of this project'),
           })
         }
       }
@@ -68,7 +68,7 @@ export default defineEventHandler(async (event) => {
         .insert(contact)
         .values({
           id: contactId,
-          teamId: body.teamId,
+          projectId: body.projectId,
           name: body.name ?? null,
           email: body.email ?? null,
           phone: body.phone ?? null,
@@ -83,7 +83,7 @@ export default defineEventHandler(async (event) => {
         await tx.insert(contactIdentity).values({
           id: randomUUID(),
           contactId,
-          teamId: body.teamId,
+          projectId: body.projectId,
           kind: 'email',
           value: body.email,
           createdAt: now,
@@ -97,7 +97,7 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
-        data: createErrorResponse(ErrorCode.CONFLICT, 'A contact with this email already exists in this team'),
+        data: createErrorResponse(ErrorCode.CONFLICT, 'A contact with this email already exists in this project'),
       })
     }
     throw error

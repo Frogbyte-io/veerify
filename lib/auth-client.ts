@@ -5,12 +5,7 @@ const configuredBaseURL = process.env.BETTER_AUTH_URL
 
 export const authClient = createAuthClient({
   ...(configuredBaseURL ? { baseURL: configuredBaseURL } : {}),
-  plugins: [
-    magicLinkClient(),
-    multiSessionClient(),
-    organizationClient({ teams: { enabled: true } }),
-    twoFactorClient(),
-  ],
+  plugins: [magicLinkClient(), multiSessionClient(), organizationClient(), twoFactorClient()],
 })
 
 // Export commonly used methods for convenience

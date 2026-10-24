@@ -33,14 +33,14 @@ export function parseAskHostname(raw: unknown): string | null {
 }
 
 /**
- * Extract the team slug from a hostname directly under the app domain.
+ * Extract the workspace (organization) slug from a hostname directly under the app domain.
  *
  * Returns null when the hostname is not a single label under `appDomain` — a
- * deeper name like `a.b.veerify.io` is not a team subdomain and must not be
- * treated as one. The caller still has to confirm the team exists; matching the
+ * deeper name like `a.b.veerify.io` is not a workspace subdomain and must not be
+ * treated as one. The caller still has to confirm the organization exists; matching the
  * shape alone would mint a certificate for any label.
  */
-export function extractTeamSlug(hostname: string, appDomain: string): string | null {
+export function extractOrgSlug(hostname: string, appDomain: string): string | null {
   const suffix = appDomain.trim().toLowerCase()
   if (!suffix) return null
   if (!hostname.endsWith(`.${suffix}`)) return null

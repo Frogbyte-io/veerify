@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   access: 'on' as 'on' | 'forbidden',
   limited: false,
   dbLimited: false,
-  dbLimits: [] as Array<{ teamId: string; key: string; limit: number }>,
+  dbLimits: [] as Array<{ organizationId: string; key: string; limit: number }>,
   queue: [] as unknown[][],
   drafts: new Map<string, Record<string, any>>(),
   deleted: [] as unknown[],
@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   llmInputs: [] as string[],
   rateLimits: [] as unknown[],
   wheres: [] as unknown[],
+  settings: { changelogEnabled: true } as Record<string, unknown>,
 }))
 
 const httpError = (statusCode: number, message = String(statusCode)) =>
@@ -46,16 +47,22 @@ vi.mock('~/server/utils/marketing-access', () => ({
     return {
       project: {
         id: projectId,
-        teamId: 't1',
+        organizationId: 'o1',
         name: 'Acme',
         description: 'Feedback tool',
         slug: 'acme',
         customDomain: null,
-        settings: { changelogEnabled: true },
+        settings: state.settings,
       },
-      teamId: 't1',
+      organizationId: 'o1',
     }
   }),
+}))
+
+// B's new signature: orgSlug-based URL
+vi.mock('~/lib/public-board-url', () => ({
+  buildPublicBoardUrl: (input: { orgSlug: string; projectSlug: string; appDomain: string; protocol: string }) =>
+    `${input.protocol}//${input.orgSlug}.${input.appDomain}/${input.projectSlug}`,
 }))
 
 vi.mock('~/server/utils/rate-limit', () => ({
@@ -67,8 +74,8 @@ vi.mock('~/server/utils/rate-limit', () => ({
 
 vi.mock('~/server/utils/marketing-db-limit', () => ({
   dayStamp: () => '2026-10-10',
-  requireDbLimit: vi.fn(async (teamId: string, key: string, limit: number) => {
-    state.dbLimits.push({ teamId, key, limit })
+  requireDbLimit: vi.fn(async (organizationId: string, key: string, limit: number) => {
+    state.dbLimits.push({ organizationId, key, limit })
     if (state.dbLimited) throw httpError(429)
     return { allowed: true, remaining: limit - 1 }
   }),
@@ -93,11 +100,11 @@ vi.mock('~/server/services/marketing/llm-call', () => ({
       data: { success: false, error: { code, message } },
     })
   },
-  callTeamLlm: (...args: unknown[]) => state.llm(...args),
+  callOrgLlm: (...args: unknown[]) => state.llm(...args),
 }))
 
-vi.mock('~/server/utils/team-credentials', () => ({
-  listTeamCredentials: vi.fn(async () => [{ provider: 'anthropic', status: 'valid' }]),
+vi.mock('~/server/utils/org-credentials', () => ({
+  listOrgCredentials: vi.fn(async () => [{ provider: 'anthropic', status: 'valid' }]),
 }))
 
 vi.mock('~/server/database/drizzle', () => {
@@ -186,6 +193,7 @@ beforeEach(() => {
   state.deleted = []
   state.rateLimits = []
   state.wheres = []
+  state.settings = { changelogEnabled: true }
   state.llmInputs = []
   state.llm.mockReset().mockImplementation(async (_team: string, request: { input: string }) => {
     state.llmInputs.push(request.input)
@@ -231,7 +239,7 @@ describe('generate', () => {
     queueGenerate()
     await expect(call(generatePost)).rejects.toMatchObject({ statusCode: 429 })
     expect(state.llm).not.toHaveBeenCalled()
-    expect(state.dbLimits[0]).toEqual({ teamId: 't1', key: 'ratelimit:announce:p1:2026-10-10', limit: 50 })
+    expect(state.dbLimits[0]).toEqual({ organizationId: 'o1', key: 'ratelimit:announce:p1:2026-10-10', limit: 50 })
   })
 
   it('404s for an entry that belongs to another product', async () => {
@@ -419,8 +427,8 @@ describe('list', () => {
       model: 'm',
       updatedAt: new Date('2026-10-02T00:00:00Z'),
     }
-    // module settings row, entries, drafts
-    state.queue = [[{ changelogEnabled: true }], [entry(), entry({ id: 'e2', slug: 'two' })], [draft]]
+    // entries, drafts
+    state.queue = [[entry(), entry({ id: 'e2', slug: 'two' })], [draft]]
     const { data } = await call(listGet)
     expect(data.changelogEnabled).toBe(true)
     expect(data.hasUsableKey).toBe(true)
@@ -441,7 +449,8 @@ describe('list', () => {
   })
 
   it('reports changelog off without listing entries', async () => {
-    state.queue = [[]]
+    state.settings = {}
+    state.queue = []
     const { data } = await call(listGet)
     expect(data.changelogEnabled).toBe(false)
     expect(data.entries).toEqual([])
@@ -449,7 +458,7 @@ describe('list', () => {
 
   it('returns a cursor when there are more entries than a page', async () => {
     const many = Array.from({ length: 21 }, (_, i) => entry({ id: `e${i}`, slug: `s${i}` }))
-    state.queue = [[{ changelogEnabled: true }], many, []]
+    state.queue = [many, []]
     const { data } = await call(listGet)
     expect(data.entries).toHaveLength(20)
     expect(data.nextCursor).toBe(`${new Date('2026-10-01T00:00:00Z').getTime()}_e19`)
@@ -458,7 +467,7 @@ describe('list', () => {
   it('compares the cursor as an ISO timestamp string cast to timestamp, not a raw Date', async () => {
     const at = new Date('2026-10-01T00:00:00Z')
     state.query = { cursor: `${at.getTime()}_e5` }
-    state.queue = [[{ changelogEnabled: true }], [], []]
+    state.queue = [[], []]
     await call(listGet)
     const q = new PgDialect().sqlToQuery(state.wheres[state.wheres.length - 1] as never)
     expect(q.params).toContain(at.toISOString())
@@ -468,7 +477,7 @@ describe('list', () => {
 
   it('rejects a malformed cursor', async () => {
     state.query = { cursor: 'garbage' }
-    state.queue = [[{ changelogEnabled: true }]]
+    state.queue = []
     await expect(call(listGet)).rejects.toMatchObject({ statusCode: 400 })
   })
 })

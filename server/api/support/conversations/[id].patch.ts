@@ -17,12 +17,12 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Conversation updated }
- *       400: { description: assigneeUserId or projectId does not belong to this team }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       400: { description: assigneeUserId does not belong to this project }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found }
  */
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
@@ -37,8 +37,6 @@ import { notifyUser } from '~/server/utils/notifications'
 import { validateBody } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { contact, conversation, conversationTag } from '~/server/database/schema/support'
-import { teamMember } from '~/server/database/schema/auth'
-import { project } from '~/server/database/schema/feedback'
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 
@@ -47,7 +45,6 @@ const bodySchema = z.object({
   priority: z.enum(['low', 'normal', 'high', 'urgent']).nullable().optional(),
   assigneeUserId: z.string().nullable().optional(),
   subject: z.string().trim().max(500).nullable().optional(),
-  projectId: z.string().nullable().optional(),
 })
 
 export default defineEventHandler(async (event) => {
@@ -58,36 +55,14 @@ export default defineEventHandler(async (event) => {
   const existing = await requireConversationAccess(conversationId, session.user.id)
 
   // A foreign key proves the user and project exist, not that they belong to
-  // this conversation's team - same cross-tenant gap Stage 01 closed for
+  // this conversation's project - same cross-tenant gap Stage 01 closed for
   // contacts and companies.
   if (body.assigneeUserId) {
-    const [membership] = await db
-      .select({ id: teamMember.id })
-      .from(teamMember)
-      .where(and(eq(teamMember.teamId, existing.teamId), eq(teamMember.userId, body.assigneeUserId)))
-      .limit(1)
-
-    if (!membership) {
+    if (!(await hasProjectAccess(existing.projectId, body.assigneeUserId))) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Assignee is not a member of this team'),
-      })
-    }
-  }
-
-  if (body.projectId) {
-    const [matchedProject] = await db
-      .select({ id: project.id })
-      .from(project)
-      .where(and(eq(project.id, body.projectId), eq(project.teamId, existing.teamId)))
-      .limit(1)
-
-    if (!matchedProject) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Project is not part of this team'),
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Assignee is not a member of this project'),
       })
     }
   }
@@ -112,7 +87,7 @@ export default defineEventHandler(async (event) => {
       .from(conversationTag)
       .where(eq(conversationTag.conversationId, existing.id))
     sla = await resolveSlaAssignment({
-      teamId: existing.teamId,
+      projectId: existing.projectId,
       inboxId: existing.inboxId,
       priority: nextPriority,
       companyId: contactRow?.companyId,
@@ -144,7 +119,7 @@ export default defineEventHandler(async (event) => {
     const statusChange = changes.find((change) => change.field === 'status')
     if (statusChange) {
       await recordConversationStatusEvent(tx, {
-        teamId: existing.teamId,
+        projectId: existing.projectId,
         inboxId: existing.inboxId,
         conversationId,
         fromStatus: statusChange.from,
@@ -159,7 +134,7 @@ export default defineEventHandler(async (event) => {
 
   await publishConversationEvent({
     type: 'conversation.updated',
-    teamId: existing.teamId,
+    projectId: existing.projectId,
     inboxId: existing.inboxId,
     conversationId,
   })

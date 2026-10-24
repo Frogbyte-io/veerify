@@ -17,8 +17,8 @@ vi.mock('~/server/services/sending-domains/ownership', () => ({
 }))
 vi.mock('~/server/utils/sending-domains', () => ({
   isSendingDomainsEnabled: vi.fn(() => true),
-  resolveSenderPolicy: vi.fn(() => 'team'),
-  resolveTeamSenderAuthorization: vi.fn(),
+  resolveSenderPolicy: vi.fn(() => 'project'),
+  resolveProjectSenderAuthorization: vi.fn(),
 }))
 const {
   computePendingNextCheckAt,
@@ -45,7 +45,7 @@ const minutes = (n: number) => n * 60_000
 function row(overrides: Partial<Row> = {}): Row {
   return {
     id: 'sd-1',
-    teamId: 'team-1',
+    projectId: 'project-1',
     domain: 'acme.com',
     registrableDomain: 'acme.com',
     status: 'pending',
@@ -491,7 +491,7 @@ describe('checkSendingDomainClaim', () => {
       await runSendingDomainPoll({
         clock: () => NOW,
         enabled: () => true,
-        policy: () => 'team',
+        policy: () => 'project',
         provider: listOnly(),
         claim: async () => queue.splice(0, 25),
         save: async (_r, patch) => {
@@ -741,7 +741,7 @@ describe('runSendingDomainPoll', () => {
       clock: () => NOW,
       random: () => 0.5,
       enabled: () => true,
-      policy: () => 'team' as const,
+      policy: () => 'project' as const,
       provider,
       claim: vi.fn(async ({ limit }: { limit: number }) => queue.splice(0, limit)),
       save: vi.fn(async (r: Row, patch: Record<string, unknown>) => {
@@ -1118,7 +1118,7 @@ describe('runSendingDomainPoll', () => {
   })
 })
 
-describe('saveSendingDomainPatch: detaching other teams on every verification', () => {
+describe('saveSendingDomainPatch: detaching other projects on every verification', () => {
   function fakeDb(updated: { id: string }[]) {
     const updates: Record<string, unknown>[] = []
     const chain = (rows: { id: string }[]) => ({
@@ -1133,7 +1133,7 @@ describe('saveSendingDomainPatch: detaching other teams on every verification', 
     return { tx, updates }
   }
 
-  const target = { id: 'sd-1', teamId: 'team-1', domain: 'acme.com' }
+  const target = { id: 'sd-1', projectId: 'project-1', domain: 'acme.com' }
 
   it('detaches inside the same transaction when a claim becomes verified, and records the metric', async () => {
     const { tx } = fakeDb([{ id: 'sd-1' }])
@@ -1142,7 +1142,7 @@ describe('saveSendingDomainPatch: detaching other teams on every verification', 
     const saved = await saveSendingDomainPatch(
       { ...target, status: 'suspended' },
       { status: 'verified' },
-      { policy: () => 'team', detach, metric }
+      { policy: () => 'project', detach, metric }
     )
     expect(saved).toBe(true)
     expect(detach).toHaveBeenCalledWith(expect.objectContaining(target), tx)
@@ -1155,7 +1155,7 @@ describe('saveSendingDomainPatch: detaching other teams on every verification', 
     const saved = await saveSendingDomainPatch(
       { ...target, status: 'pending' },
       { status: 'verified' },
-      { policy: () => 'team', detach }
+      { policy: () => 'project', detach }
     )
     expect(saved).toBe(false)
     expect(detach).not.toHaveBeenCalled()
@@ -1167,12 +1167,12 @@ describe('saveSendingDomainPatch: detaching other teams on every verification', 
     await saveSendingDomainPatch(
       { ...target, status: 'verified' },
       { status: 'verified' },
-      { policy: () => 'team', detach }
+      { policy: () => 'project', detach }
     )
     await saveSendingDomainPatch(
       { ...target, status: 'pending' },
       { status: 'pending' },
-      { policy: () => 'team', detach }
+      { policy: () => 'project', detach }
     )
     await saveSendingDomainPatch(
       { ...target, status: 'pending' },
@@ -1188,16 +1188,20 @@ describe('saveSendingDomainPatch: detaching other teams on every verification', 
       throw new Error('db down')
     })
     await expect(
-      saveSendingDomainPatch({ ...target, status: 'pending' }, { status: 'verified' }, { policy: () => 'team', detach })
+      saveSendingDomainPatch(
+        { ...target, status: 'pending' },
+        { status: 'verified' },
+        { policy: () => 'project', detach }
+      )
     ).rejects.toThrow('db down')
   })
 })
 
 describe('suspendClaimForSenderRejection', () => {
   it('suspends the verified claim covering the address and records sender_rejected', async () => {
-    const { resolveTeamSenderAuthorization } = await import('~/server/utils/sending-domains')
+    const { resolveProjectSenderAuthorization } = await import('~/server/utils/sending-domains')
     const { suspendClaimForSenderRejection } = await import('~/server/utils/sending-domain-poller')
-    vi.mocked(resolveTeamSenderAuthorization).mockResolvedValueOnce({
+    vi.mocked(resolveProjectSenderAuthorization).mockResolvedValueOnce({
       status: 'authorized',
       domain: { id: 'sd-1', domain: 'acme.com' },
     })
@@ -1210,7 +1214,7 @@ describe('suspendClaimForSenderRejection', () => {
     }))
     const metric = vi.fn(() => true)
     const suspended = await suspendClaimForSenderRejection(
-      'team-1',
+      'project-1',
       'support@acme.com',
       '553 5.7.1 sender not allowed',
       {
@@ -1227,16 +1231,16 @@ describe('suspendClaimForSenderRejection', () => {
     )
   })
 
-  it('does nothing for an address no verified claim of the team covers', async () => {
-    const { resolveTeamSenderAuthorization } = await import('~/server/utils/sending-domains')
+  it('does nothing for an address no verified claim of the project covers', async () => {
+    const { resolveProjectSenderAuthorization } = await import('~/server/utils/sending-domains')
     const { suspendClaimForSenderRejection } = await import('~/server/utils/sending-domain-poller')
-    vi.mocked(resolveTeamSenderAuthorization).mockResolvedValueOnce({
+    vi.mocked(resolveProjectSenderAuthorization).mockResolvedValueOnce({
       status: 'unauthorized',
       reason: 'not_owned',
-      teamDomains: [],
+      projectDomains: [],
     })
     dbMock.update = vi.fn()
-    expect(await suspendClaimForSenderRejection('team-1', 'x@other.com', 'refused')).toBe(false)
+    expect(await suspendClaimForSenderRejection('project-1', 'x@other.com', 'refused')).toBe(false)
     expect(dbMock.update).not.toHaveBeenCalled()
   })
 })

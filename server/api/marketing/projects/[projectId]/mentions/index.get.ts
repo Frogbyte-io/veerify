@@ -34,7 +34,7 @@
  *     responses:
  *       200: { description: Mentions page }
  *       400: { description: Invalid query or cursor }
- *       403: { description: Not a team member, or Marketing is not enabled }
+ *       403: { description: No access to this project, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
 import { and, count, desc, eq, gte, lt, or, type SQL } from 'drizzle-orm'
@@ -47,7 +47,7 @@ import { decodeListCursor, encodeListCursor } from '~/server/utils/list-cursor'
 import { findMentionsSite, requireRouterParam } from '~/server/utils/marketing-mentions'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateQuery } from '~/server/utils/validation'
 
 // Matches the poller's retention window: older rows are deleted anyway, so counting them is wasted work.
@@ -62,15 +62,15 @@ const querySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  await requireMarketingAccess(projectId, session.user.id)
 
   const query = validateQuery(event, querySchema)
   const cursor = query.cursor ? decodeListCursor(query.cursor, 'mention') : null
 
   const counts = { new: 0, seen: 0, dismissed: 0, escalated: 0 }
-  const canEscalate = await canEscalateMentions(teamId, projectId, session.user.id)
+  const canEscalate = await canEscalateMentions(projectId, session.user.id)
   const site = await findMentionsSite(projectId)
   if (!site) {
     return createSuccessResponse({

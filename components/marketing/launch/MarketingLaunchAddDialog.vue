@@ -4,7 +4,7 @@
       <DialogHeader>
         <DialogTitle>Add custom directory</DialogTitle>
         <DialogDescription>
-          Track a niche directory, newsletter or community that is not in the list. Up to {{ maxCustom }} per product.
+          Track a niche directory, newsletter or community that is not in the list. Up to {{ maxCustom }} per project.
         </DialogDescription>
       </DialogHeader>
 

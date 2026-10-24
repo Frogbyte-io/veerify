@@ -17,7 +17,7 @@
  *     responses:
  *       200: { description: Prompt updated }
  *       400: { description: Validation failed }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Prompt not found for this product }
  *       409: { description: Active-prompt cap reached }
  */

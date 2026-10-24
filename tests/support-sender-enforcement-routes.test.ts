@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * Route-level enforcement of the team sender policy (design §4.5, §9). The WP1
+ * Route-level enforcement of the project sender policy (design §4.5, §9). The WP1
  * helpers and the WP2 provider are mocked; the database is a queue of rows.
  * Postgres-backed coverage lives in tests/integration/sender-enforcement.test.ts.
  */
@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   body: {} as Record<string, unknown>,
   params: { id: 'inbox-1', addressId: 'address-1' } as Record<string, string>,
   queuedRows: [] as unknown[][],
-  inbox: { id: 'inbox-1', teamId: 'team-1', slug: 'support', emailAddress: 'support@acme.com' } as Record<
+  inbox: { id: 'inbox-1', projectId: 'project-1', slug: 'support', emailAddress: 'support@acme.com' } as Record<
     string,
     unknown
   >,
@@ -18,11 +18,11 @@ const state = vi.hoisted(() => ({
 }))
 
 const sendingDomains = vi.hoisted(() => ({
-  resolveSenderPolicy: vi.fn<() => 'legacy' | 'team'>(() => 'legacy'),
-  resolveEffectiveSenderPolicy: vi.fn(async (): Promise<'legacy' | 'team'> => 'legacy'),
-  isDomainClaimedByOtherTeam: vi.fn(async () => false),
+  resolveSenderPolicy: vi.fn<() => 'legacy' | 'project'>(() => 'legacy'),
+  resolveEffectiveSenderPolicy: vi.fn(async (): Promise<'legacy' | 'project'> => 'legacy'),
+  isDomainClaimedByOtherProject: vi.fn(async () => false),
   isSendingDomainsEnabled: vi.fn(() => false),
-  resolveTeamSenderAuthorization: vi.fn(),
+  resolveProjectSenderAuthorization: vi.fn(),
   assertSenderAddressAllowedForInbox: vi.fn(async () => undefined),
   assertReceivingAddressAllowed: vi.fn(async () => undefined),
 }))
@@ -50,12 +50,15 @@ vi.mock('~/server/utils/support-access', () => ({
   requireInboxRole: vi.fn(async () => ({ ...state.inbox })),
   requireConversationAccess: vi.fn(async () => ({
     id: 'conversation-1',
-    teamId: 'team-1',
+    projectId: 'project-1',
     inboxId: 'inbox-1',
     contactId: 'contact-1',
     subject: 'Hi',
   })),
-  requireTeamAdmin: vi.fn(async () => ({ id: 'tm-1', role: 'admin' })),
+}))
+vi.mock('~/server/utils/project-access', () => ({
+  requireProjectAdmin: vi.fn(async () => ({ id: 'project-1', slug: 'acme' })),
+  getProjectById: vi.fn(async () => ({ id: 'project-1', slug: 'acme' })),
 }))
 vi.mock('~/server/utils/sending-domains', () => sendingDomains)
 vi.mock('~/server/services/sending-domains', () => ({ getSendingDomainProvider: () => provider.current }))
@@ -120,7 +123,7 @@ beforeEach(() => {
   state.body = {}
   state.params = { id: 'inbox-1', addressId: 'address-1' }
   state.queuedRows = []
-  state.inbox = { id: 'inbox-1', teamId: 'team-1', slug: 'support', emailAddress: 'support@acme.com' }
+  state.inbox = { id: 'inbox-1', projectId: 'project-1', slug: 'support', emailAddress: 'support@acme.com' }
   state.driverVerdict = { status: 'unauthorized' }
   sendingDomains.resolveSenderPolicy.mockReturnValue('legacy')
   sendingDomains.isSendingDomainsEnabled.mockReturnValue(false)
@@ -135,10 +138,10 @@ describe('sending-status', () => {
     expect(response.data).toEqual({
       address: 'support@acme.com',
       policy: 'legacy',
-      authorization: { status: 'unauthorized', reason: 'not_owned', teamDomains: [] },
+      authorization: { status: 'unauthorized', reason: 'not_owned', projectDomains: [] },
     })
     expect(JSON.stringify(response)).not.toContain('verifiedDomains')
-    expect(sendingDomains.resolveTeamSenderAuthorization).not.toHaveBeenCalled()
+    expect(sendingDomains.resolveProjectSenderAuthorization).not.toHaveBeenCalled()
   })
 
   it('passes a legacy authorized and unknown verdict through', async () => {
@@ -152,24 +155,24 @@ describe('sending-status', () => {
     })
   })
 
-  it('under team policy returns the team-scoped verdict, ignoring the provider-wide driver verdict', async () => {
-    sendingDomains.resolveSenderPolicy.mockReturnValue('team')
+  it('under project policy returns the project-scoped verdict, ignoring the provider-wide driver verdict', async () => {
+    sendingDomains.resolveSenderPolicy.mockReturnValue('project')
     state.driverVerdict = { status: 'authorized' }
-    sendingDomains.resolveTeamSenderAuthorization.mockResolvedValue({
+    sendingDomains.resolveProjectSenderAuthorization.mockResolvedValue({
       status: 'unauthorized',
       reason: 'not_owned',
-      teamDomains: ['mine.com'],
+      projectDomains: ['mine.com'],
     })
 
     const response = (await sendingStatus(event)) as { data: Record<string, any> }
 
-    expect(response.data.policy).toBe('team')
+    expect(response.data.policy).toBe('project')
     expect(response.data.authorization).toEqual({
       status: 'unauthorized',
       reason: 'not_owned',
-      teamDomains: ['mine.com'],
+      projectDomains: ['mine.com'],
     })
-    expect(sendingDomains.resolveTeamSenderAuthorization).toHaveBeenCalledWith('team-1', 'support@acme.com', {})
+    expect(sendingDomains.resolveProjectSenderAuthorization).toHaveBeenCalledWith('project-1', 'support@acme.com', {})
   })
 
   it('has nothing to check without an address', async () => {
@@ -210,26 +213,26 @@ describe('inbox update', () => {
 
     await inboxUpdate(event)
 
-    expect(sendingDomains.assertSenderAddressAllowedForInbox).toHaveBeenCalledWith('team-1', 'anything@other.com')
+    expect(sendingDomains.assertSenderAddressAllowedForInbox).toHaveBeenCalledWith('project-1', 'anything@other.com')
   })
 
-  it('under team policy refuses an address the team does not own, before writing', async () => {
-    sendingDomains.resolveSenderPolicy.mockReturnValue('team')
+  it('under project policy refuses an address the project does not own, before writing', async () => {
+    sendingDomains.resolveSenderPolicy.mockReturnValue('project')
     sendingDomains.assertSenderAddressAllowedForInbox.mockRejectedValueOnce(
       Object.assign(new Error('nope'), { statusCode: 422 })
     )
-    state.body = { emailAddress: 'support@teamb.com' }
+    state.body = { emailAddress: 'support@projectb.com' }
     state.queuedRows = [[{ id: 'inbox-1' }]]
 
     await expect(inboxUpdate(event)).rejects.toMatchObject({ statusCode: 422 })
 
-    expect(sendingDomains.assertSenderAddressAllowedForInbox).toHaveBeenCalledWith('team-1', 'support@teamb.com')
+    expect(sendingDomains.assertSenderAddressAllowedForInbox).toHaveBeenCalledWith('project-1', 'support@projectb.com')
     // The update was never reached: the queued row is still there.
     expect(state.queuedRows).toHaveLength(1)
   })
 
-  it('under team policy skips the check for an unchanged address and for clearing it', async () => {
-    sendingDomains.resolveSenderPolicy.mockReturnValue('team')
+  it('under project policy skips the check for an unchanged address and for clearing it', async () => {
+    sendingDomains.resolveSenderPolicy.mockReturnValue('project')
 
     state.body = { emailAddress: 'Support@Acme.com'.toLowerCase(), name: 'x' }
     state.queuedRows = [[{ id: 'inbox-1' }]]
@@ -244,27 +247,27 @@ describe('inbox update', () => {
 })
 
 describe('receiving address creation', () => {
-  it('under team policy refuses a domain claimed by another team before inserting', async () => {
-    sendingDomains.resolveSenderPolicy.mockReturnValue('team')
+  it('under project policy refuses a domain claimed by another project before inserting', async () => {
+    sendingDomains.resolveSenderPolicy.mockReturnValue('project')
     sendingDomains.assertReceivingAddressAllowed.mockRejectedValueOnce(
       Object.assign(new Error('claimed'), { statusCode: 409 })
     )
-    state.body = { address: 'support@teamb.com' }
-    state.queuedRows = [[{ id: 'a1', address: 'support@teamb.com' }]]
+    state.body = { address: 'support@projectb.com' }
+    state.queuedRows = [[{ id: 'a1', address: 'support@projectb.com' }]]
 
     await expect(addressCreate(event)).rejects.toMatchObject({ statusCode: 409 })
 
-    expect(sendingDomains.assertReceivingAddressAllowed).toHaveBeenCalledWith('team-1', 'support@teamb.com')
+    expect(sendingDomains.assertReceivingAddressAllowed).toHaveBeenCalledWith('project-1', 'support@projectb.com')
     expect(state.queuedRows).toHaveLength(1)
   })
 
   it('leaves the legacy decision to the receiving-address helper', async () => {
-    state.body = { address: 'support@teamb.com' }
-    state.queuedRows = [[{ id: 'a1', address: 'support@teamb.com' }]]
+    state.body = { address: 'support@projectb.com' }
+    state.queuedRows = [[{ id: 'a1', address: 'support@projectb.com' }]]
 
     await expect(addressCreate(event)).resolves.toMatchObject({ success: true })
 
-    expect(sendingDomains.assertReceivingAddressAllowed).toHaveBeenCalledWith('team-1', 'support@teamb.com')
+    expect(sendingDomains.assertReceivingAddressAllowed).toHaveBeenCalledWith('project-1', 'support@projectb.com')
   })
 })
 
@@ -310,14 +313,13 @@ describe('platform address creation', () => {
     platform.getPlatformMailDomain.mockReturnValue('veerifymail.com')
     platform.findPlatformAddress.mockResolvedValue(null)
     platform.ensurePlatformAddress.mockResolvedValue({ id: 'p2', address: 'acme-support-zzzzzz@veerifymail.com' })
-    state.queuedRows = [[{ slug: 'acme' }]]
 
     const response = (await platformCreate(event)) as { data: Record<string, any> }
 
     expect(response.data.created).toBe(true)
     expect(platform.ensurePlatformAddress).toHaveBeenCalledWith(
       expect.anything(),
-      { id: 'inbox-1', slug: 'support' },
+      { id: 'inbox-1', slug: 'support', projectId: 'project-1' },
       'acme',
       { regenerate: false }
     )
@@ -327,7 +329,6 @@ describe('platform address creation', () => {
     platform.getPlatformMailDomain.mockReturnValue('veerifymail.com')
     platform.ensurePlatformAddress.mockResolvedValue({ id: 'p3', address: 'acme-support-new000@veerifymail.com' })
     state.body = { regenerate: true }
-    state.queuedRows = [[{ slug: 'acme' }]]
 
     await platformCreate(event)
 
@@ -348,9 +349,9 @@ describe('platform address creation', () => {
 describe('agent reply', () => {
   const reply = { kind: 'outgoing', body: 'Hello' }
 
-  it('under team policy answers 409 SENDER_NOT_VERIFIED before reserving or writing anything', async () => {
-    sendingDomains.resolveSenderPolicy.mockReturnValue('team')
-    sendingDomains.resolveTeamSenderAuthorization.mockResolvedValue({
+  it('under project policy answers 409 SENDER_NOT_VERIFIED before reserving or writing anything', async () => {
+    sendingDomains.resolveSenderPolicy.mockReturnValue('project')
+    sendingDomains.resolveProjectSenderAuthorization.mockResolvedValue({
       status: 'pending',
       domain: { id: 'd1', domain: 'acme.com', status: 'pending' },
     })
@@ -369,7 +370,7 @@ describe('agent reply', () => {
   })
 
   it('does not check the sender for an internal note', async () => {
-    sendingDomains.resolveSenderPolicy.mockReturnValue('team')
+    sendingDomains.resolveSenderPolicy.mockReturnValue('project')
     state.body = { kind: 'note', body: 'private' }
 
     // No database rows are queued: a note never reaches the inbox lookup, so
@@ -377,6 +378,6 @@ describe('agent reply', () => {
     // the sender check never ran.
     await messageCreate(event).catch(() => undefined)
 
-    expect(sendingDomains.resolveTeamSenderAuthorization).not.toHaveBeenCalled()
+    expect(sendingDomains.resolveProjectSenderAuthorization).not.toHaveBeenCalled()
   })
 })

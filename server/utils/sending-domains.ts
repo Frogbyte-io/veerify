@@ -1,5 +1,5 @@
 /**
- * Customer sending domains: claim rules and team-scoped sender authorization
+ * Customer sending domains: claim rules and project-scoped sender authorization
  * (design: docs/plans/2026-10-22-custom-sending-domains/design.md §4, §7.4, §9.3).
  *
  * Everything here is a database read or a rule check. Provider calls live in
@@ -14,8 +14,8 @@ import { createError } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { supportInbox, supportInboxAddress, supportSendingDomain } from '~/server/database/schema/support'
 import {
-  MAX_DOMAINS_PER_TEAM,
-  MAX_PENDING_PER_TEAM,
+  MAX_DOMAINS_PER_PROJECT,
+  MAX_PENDING_PER_PROJECT,
   OWNERSHIP_RECORD_LABEL,
   OWNERSHIP_RECORD_PREFIX,
   PENDING_TTL_DAYS,
@@ -30,7 +30,7 @@ import {
   type SendingDomainView,
   type SenderPolicy,
   type SupportSendingDomainStatus,
-  type TeamSenderVerdict,
+  type ProjectSenderVerdict,
 } from '~/lib/support-sending-domains'
 import { emailDomain, matchVerifiedDomain } from '~/server/services/support-channels/types'
 import { getSendingDomainProvider } from '~/server/services/sending-domains'
@@ -68,13 +68,15 @@ export function isSendingDomainsEnabled(): boolean {
 }
 
 /**
- * `team` whenever management is enabled (a shared provider project is unsafe
- * without team scope, even if `legacy` is set), otherwise whatever
+ * `project` whenever management is enabled (a shared provider project is unsafe
+ * without project scope, even if `legacy` is set), otherwise whatever
  * `SUPPORT_SENDER_POLICY` asks for, defaulting to `legacy`.
  */
 export function resolveSenderPolicy(): SenderPolicy {
-  if (isSendingDomainsEnabled()) return 'team'
-  return envValue('SUPPORT_SENDER_POLICY').toLowerCase() === 'team' ? 'team' : 'legacy'
+  if (isSendingDomainsEnabled()) return 'project'
+  // `team` is the pre-restructure spelling of `project`; keep existing deployments working.
+  const value = envValue('SUPPORT_SENDER_POLICY').toLowerCase()
+  return value === 'project' || value === 'team' ? 'project' : 'legacy'
 }
 
 const CLAIMS_EXIST_TTL_MS = 30_000
@@ -96,15 +98,15 @@ export async function anySendingDomainClaimsExist(): Promise<boolean> {
 
 /**
  * The policy enforcement points must use. Like `resolveSenderPolicy()`, but
- * also `team` whenever any claim exists, even with the flag off or `legacy`
- * set: rolling management back must not reopen cross-team sending in a shared
+ * also `project` whenever any claim exists, even with the flag off or `legacy`
+ * set: rolling management back must not reopen cross-project sending in a shared
  * provider project. A database read (cached briefly), hence async; the
  * synchronous `resolveSenderPolicy()` stays for callers that only need the
  * configured policy.
  */
 export async function resolveEffectiveSenderPolicy(): Promise<SenderPolicy> {
-  if (resolveSenderPolicy() === 'team') return 'team'
-  return (await anySendingDomainClaimsExist()) ? 'team' : 'legacy'
+  if (resolveSenderPolicy() === 'project') return 'project'
+  return (await anySendingDomainClaimsExist()) ? 'project' : 'legacy'
 }
 
 /** The domain part of `Name <a@b.example>`, `a@b.example`, or a bare host. */
@@ -117,7 +119,7 @@ function domainFromEnvAddress(value: string): string | null {
   return normalized || null
 }
 
-/** Domains no team may claim (design §4.2 rule 2), excluding the static mailbox-provider list. */
+/** Domains no project may claim (design §4.2 rule 2), excluding the static mailbox-provider list. */
 export function reservedSendingDomains(): string[] {
   const reserved = new Set<string>()
   const add = (value: string | null) => {
@@ -180,7 +182,7 @@ function sendingDomainError(statusCode: number, statusMessage: string, code: str
 // ---------------------------------------------------------------------------
 
 export interface CreateSendingDomainClaimInput {
-  teamId: string
+  projectId: string
   domain: string
   userId: string
   provider: string
@@ -190,7 +192,7 @@ export interface CreateSendingDomainClaimInput {
 }
 
 /**
- * Claim `domain` for `teamId` as a `provisioning` row (design §4.2).
+ * Claim `domain` for `projectId` as a `provisioning` row (design §4.2).
  *
  * Takes an advisory lock on the registrable domain so every claim under
  * `acme.com` is serialized and the ancestor/descendant check cannot race. The
@@ -214,10 +216,10 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
 
   try {
     const created = await db.transaction(async (tx) => {
-      // Per-team lock first (then per-domain), so the per-team limits below
+      // Per-project lock first (then per-domain), so the per-project limits below
       // cannot be raced by concurrent claims for different domains.
       await tx.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain_team:${input.teamId}`}, 0))`
+        sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain_project:${input.projectId}`}, 0))`
       )
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${`support_sending_domain:${registrableDomain}`}, 0))`
@@ -226,12 +228,12 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
       const related = await tx
         .select({
           domain: supportSendingDomain.domain,
-          teamId: supportSendingDomain.teamId,
+          projectId: supportSendingDomain.projectId,
         })
         .from(supportSendingDomain)
         .where(eq(supportSendingDomain.registrableDomain, registrableDomain))
 
-      if (findHierarchyConflict(domain, input.teamId, related)) {
+      if (findHierarchyConflict(domain, input.projectId, related)) {
         throw sendingDomainError(
           409,
           'Conflict',
@@ -239,36 +241,36 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
           'This domain, or a parent or subdomain of it, is already registered by another Veerify workspace.'
         )
       }
-      if (related.some((claim) => claim.teamId === input.teamId && claim.domain === domain)) {
+      if (related.some((claim) => claim.projectId === input.projectId && claim.domain === domain)) {
         throw sendingDomainError(
           409,
           'Conflict',
           'DOMAIN_ALREADY_REGISTERED',
-          'Your team has already registered this domain.'
+          'Your project has already registered this domain.'
         )
       }
 
       const own = await tx
         .select({ status: supportSendingDomain.status })
         .from(supportSendingDomain)
-        .where(and(eq(supportSendingDomain.teamId, input.teamId), ne(supportSendingDomain.status, 'deleting')))
-      if (own.length >= MAX_DOMAINS_PER_TEAM) {
+        .where(and(eq(supportSendingDomain.projectId, input.projectId), ne(supportSendingDomain.status, 'deleting')))
+      if (own.length >= MAX_DOMAINS_PER_PROJECT) {
         throw sendingDomainError(
           409,
           'Conflict',
           'DOMAIN_LIMIT_REACHED',
-          `A team can register at most ${MAX_DOMAINS_PER_TEAM} sending domains.`
+          `A project can register at most ${MAX_DOMAINS_PER_PROJECT} sending domains.`
         )
       }
       if (
         own.filter((claim) => UNVERIFIED_STATUSES.includes(claim.status as SupportSendingDomainStatus)).length >=
-        MAX_PENDING_PER_TEAM
+        MAX_PENDING_PER_PROJECT
       ) {
         throw sendingDomainError(
           409,
           'Conflict',
           'PENDING_LIMIT_REACHED',
-          `A team can have at most ${MAX_PENDING_PER_TEAM} domains waiting for verification. Verify or delete one first.`
+          `A project can have at most ${MAX_PENDING_PER_PROJECT} domains waiting for verification. Verify or delete one first.`
         )
       }
 
@@ -285,7 +287,7 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
         .insert(supportSendingDomain)
         .values({
           id: randomUUID(),
-          teamId: input.teamId,
+          projectId: input.projectId,
           domain,
           registrableDomain,
           status: 'provisioning',
@@ -317,27 +319,27 @@ export async function createSendingDomainClaim(input: CreateSendingDomainClaimIn
     }
     if (error && typeof error === 'object' && 'statusCode' in error) throw error
     log.error('Could not create a sending domain claim', {
-      teamId: input.teamId,
+      projectId: input.projectId,
       error: error instanceof Error ? error.message : String(error),
     })
     throw error
   }
 }
 
-export async function listTeamSendingDomains(teamId: string): Promise<SupportSendingDomainRow[]> {
+export async function listProjectSendingDomains(projectId: string): Promise<SupportSendingDomainRow[]> {
   return db
     .select()
     .from(supportSendingDomain)
-    .where(eq(supportSendingDomain.teamId, teamId))
+    .where(eq(supportSendingDomain.projectId, projectId))
     .orderBy(asc(supportSendingDomain.createdAt), asc(supportSendingDomain.domain))
 }
 
-/** 404 (never 403) across teams, so claim ids stay opaque. */
-export async function getTeamSendingDomain(teamId: string, id: string): Promise<SupportSendingDomainRow> {
+/** 404 (never 403) across projects, so claim ids stay opaque. */
+export async function getProjectSendingDomain(projectId: string, id: string): Promise<SupportSendingDomainRow> {
   const [row] = await db
     .select()
     .from(supportSendingDomain)
-    .where(and(eq(supportSendingDomain.id, id), eq(supportSendingDomain.teamId, teamId)))
+    .where(and(eq(supportSendingDomain.id, id), eq(supportSendingDomain.projectId, projectId)))
     .limit(1)
 
   if (!row) {
@@ -385,19 +387,19 @@ export function toSendingDomainView(
 // Sender authorization
 // ---------------------------------------------------------------------------
 
-export interface ResolveTeamSenderOptions {
+export interface ResolveProjectSenderOptions {
   executor?: Pick<typeof db, 'select'>
   provider?: { name: string; accountKey: string; authorizesSubdomains: boolean }
 }
 
-function isPlatformAddressOfTeam(executor: Pick<typeof db, 'select'>, teamId: string, address: string) {
+function isPlatformAddressOfProject(executor: Pick<typeof db, 'select'>, projectId: string, address: string) {
   return executor
     .select({ id: supportInboxAddress.id })
     .from(supportInboxAddress)
     .innerJoin(supportInbox, eq(supportInbox.id, supportInboxAddress.inboxId))
     .where(
       and(
-        eq(supportInbox.teamId, teamId),
+        eq(supportInbox.projectId, projectId),
         eq(supportInboxAddress.kind, 'platform'),
         eq(supportInboxAddress.address, address)
       )
@@ -407,12 +409,12 @@ function isPlatformAddressOfTeam(executor: Pick<typeof db, 'select'>, teamId: st
 
 /**
  * Whether `domain`, or a parent of it at a label boundary, sits on another
- * team's claim in any status (including `deleting`). Applies under every
+ * project's claim in any status (including `deleting`). Applies under every
  * policy: a shared provider project would make such a From usable by the
- * wrong team.
+ * wrong project.
  */
-export async function isDomainClaimedByOtherTeam(
-  teamId: string,
+export async function isDomainClaimedByOtherProject(
+  projectId: string,
   domain: string,
   executor: Pick<typeof db, 'select'> = db
 ): Promise<boolean> {
@@ -421,25 +423,25 @@ export async function isDomainClaimedByOtherTeam(
   const [other] = await executor
     .select({ id: supportSendingDomain.id })
     .from(supportSendingDomain)
-    .where(and(inArray(supportSendingDomain.domain, names), ne(supportSendingDomain.teamId, teamId)))
+    .where(and(inArray(supportSendingDomain.domain, names), ne(supportSendingDomain.projectId, projectId)))
     .limit(1)
   return Boolean(other)
 }
 
 /**
- * Team-scoped verdict for using `address` as From (design §4.4, §7.3). A pure
+ * Project-scoped verdict for using `address` as From (design §4.4, §7.3). A pure
  * database read: it never calls the provider.
  *
- * Authorized only for the team's own `verified` claims that were registered
- * under the provider currently configured, or the team's own platform
+ * Authorized only for the project's own `verified` claims that were registered
+ * under the provider currently configured, or the project's own platform
  * addresses. Subdomains follow `matchVerifiedDomain` when the provider
  * authorizes them.
  */
-export async function resolveTeamSenderAuthorization(
-  teamId: string,
+export async function resolveProjectSenderAuthorization(
+  projectId: string,
   address: string,
-  opts: ResolveTeamSenderOptions = {}
-): Promise<TeamSenderVerdict> {
+  opts: ResolveProjectSenderOptions = {}
+): Promise<ProjectSenderVerdict> {
   const executor = opts.executor ?? db
   const provider = opts.provider ?? currentSendingProviderIdentity()
   const normalizedAddress = address.trim().toLowerCase()
@@ -448,7 +450,7 @@ export async function resolveTeamSenderAuthorization(
     return { status: 'unknown', reason: `Could not read a domain from "${address}"` }
   }
 
-  const [platform] = await isPlatformAddressOfTeam(executor, teamId, normalizedAddress)
+  const [platform] = await isPlatformAddressOfProject(executor, projectId, normalizedAddress)
   if (platform) return { status: 'authorized', domain: null, platform: true }
 
   const claims = await executor
@@ -460,19 +462,19 @@ export async function resolveTeamSenderAuthorization(
       providerAccountKey: supportSendingDomain.providerAccountKey,
     })
     .from(supportSendingDomain)
-    .where(eq(supportSendingDomain.teamId, teamId))
+    .where(eq(supportSendingDomain.projectId, projectId))
 
   const sameProvider = (c: (typeof claims)[number]) =>
     c.provider === provider.name && c.providerAccountKey === provider.accountKey
 
-  // Another team's claim on this domain or a parent always wins, whatever the
-  // flags or this team's own rows say.
-  if (await isDomainClaimedByOtherTeam(teamId, domain, executor)) {
+  // Another project's claim on this domain or a parent always wins, whatever the
+  // flags or this project's own rows say.
+  if (await isDomainClaimedByOtherProject(projectId, domain, executor)) {
     const own = claims
       .filter((c) => c.status === 'verified' && sameProvider(c))
       .map((c) => c.domain)
       .sort()
-    return { status: 'unauthorized', reason: 'not_owned', teamDomains: own }
+    return { status: 'unauthorized', reason: 'not_owned', projectDomains: own }
   }
 
   const options = { includeSubdomains: provider.authorizesSubdomains }
@@ -497,38 +499,38 @@ export async function resolveTeamSenderAuthorization(
     }
   }
 
-  const teamDomains = live
+  const projectDomains = live
     .filter((c) => c.status === 'verified' && sameProvider(c))
     .map((c) => c.domain)
     .sort()
 
   if (matching(live.filter((c) => c.status === 'suspended'))) {
-    return { status: 'unauthorized', reason: 'suspended', teamDomains }
+    return { status: 'unauthorized', reason: 'suspended', projectDomains }
   }
   if (matching(live.filter((c) => c.status === 'verified' && !sameProvider(c)))) {
-    return { status: 'unauthorized', reason: 'provider_mismatch', teamDomains }
+    return { status: 'unauthorized', reason: 'provider_mismatch', projectDomains }
   }
-  return { status: 'unauthorized', reason: 'not_owned', teamDomains }
+  return { status: 'unauthorized', reason: 'not_owned', projectDomains }
 }
 
 /**
- * The inbox-save rule (design §4.5): under `team` policy the From address must
- * sit on one of the team's own claims (any status except `deleting`; a pending
- * domain is allowed so teams can set up ahead of verification) or be one of its
- * platform addresses. Under `legacy` policy only another team's claim is refused.
+ * The inbox-save rule (design §4.5): under `project` policy the From address must
+ * sit on one of the project's own claims (any status except `deleting`; a pending
+ * domain is allowed so projects can set up ahead of verification) or be one of its
+ * platform addresses. Under `legacy` policy only another project's claim is refused.
  */
-export async function assertSenderAddressAllowedForInbox(teamId: string, address: string): Promise<void> {
+export async function assertSenderAddressAllowedForInbox(projectId: string, address: string): Promise<void> {
   const normalizedAddress = address.trim().toLowerCase()
   const domain = emailDomain(normalizedAddress)
-  if ((await resolveEffectiveSenderPolicy()) !== 'team') {
-    // Legacy keeps free-text From addresses, except on another team's claim
+  if ((await resolveEffectiveSenderPolicy()) !== 'project') {
+    // Legacy keeps free-text From addresses, except on another project's claim
     // (uncached read: a rare write, and a stale cache must not let it through).
-    if (domain && (await isDomainClaimedByOtherTeam(teamId, domain))) {
+    if (domain && (await isDomainClaimedByOtherProject(projectId, domain))) {
       throw sendingDomainError(
         422,
         'Unprocessable Entity',
         'SENDER_DOMAIN_NOT_OWNED',
-        `${domain} is not a sending domain of this team.`
+        `${domain} is not a sending domain of this project.`
       )
     }
     return
@@ -539,19 +541,19 @@ export async function assertSenderAddressAllowedForInbox(teamId: string, address
       'Unprocessable Entity',
       'SENDER_DOMAIN_NOT_OWNED',
       domain
-        ? `${domain} is not a sending domain of this team. Add and verify it in Support settings first.`
+        ? `${domain} is not a sending domain of this project. Add and verify it in Support settings first.`
         : 'Enter a valid From address.'
     )
   if (!domain) throw denied()
 
-  const [platform] = await isPlatformAddressOfTeam(db, teamId, normalizedAddress)
+  const [platform] = await isPlatformAddressOfProject(db, projectId, normalizedAddress)
   if (platform) return
 
   const provider = currentSendingProviderIdentity()
   const claims = await db
     .select({ domain: supportSendingDomain.domain })
     .from(supportSendingDomain)
-    .where(and(eq(supportSendingDomain.teamId, teamId), ne(supportSendingDomain.status, 'deleting')))
+    .where(and(eq(supportSendingDomain.projectId, projectId), ne(supportSendingDomain.status, 'deleting')))
 
   const owned = matchVerifiedDomain(
     domain,
@@ -579,15 +581,15 @@ export function providerRoutesInboundByHeader(): boolean {
 }
 
 /**
- * The receiving-address rule (design §9.3): under `team` policy, an address may
- * not sit on or under another team's claim (any status), and may not use the
+ * The receiving-address rule (design §9.3): under `project` policy, an address may
+ * not sit on or under another project's claim (any status), and may not use the
  * platform domain (those addresses are system-generated). On a provider that
- * routes by header (Postmark) the domain must also be on the team's own
+ * routes by header (Postmark) the domain must also be on the project's own
  * verified claim (`422 ADDRESS_DOMAIN_UNVERIFIED`); elsewhere unclaimed
  * domains stay allowed. A no-op under `legacy` policy.
  */
-export async function assertReceivingAddressAllowed(teamId: string, address: string): Promise<void> {
-  if ((await resolveEffectiveSenderPolicy()) !== 'team') return
+export async function assertReceivingAddressAllowed(projectId: string, address: string): Promise<void> {
+  if ((await resolveEffectiveSenderPolicy()) !== 'project') return
 
   const domain = emailDomain(address.trim().toLowerCase())
   if (!domain) return
@@ -606,7 +608,10 @@ export async function assertReceivingAddressAllowed(teamId: string, address: str
     .select({ id: supportSendingDomain.id })
     .from(supportSendingDomain)
     .where(
-      and(inArray(supportSendingDomain.domain, domainAndAncestors(domain)), ne(supportSendingDomain.teamId, teamId))
+      and(
+        inArray(supportSendingDomain.domain, domainAndAncestors(domain)),
+        ne(supportSendingDomain.projectId, projectId)
+      )
     )
     .limit(1)
 
@@ -626,7 +631,7 @@ export async function assertReceivingAddressAllowed(teamId: string, address: str
       .from(supportSendingDomain)
       .where(
         and(
-          eq(supportSendingDomain.teamId, teamId),
+          eq(supportSendingDomain.projectId, projectId),
           eq(supportSendingDomain.status, 'verified'),
           eq(supportSendingDomain.provider, provider.name),
           eq(supportSendingDomain.providerAccountKey, provider.accountKey)

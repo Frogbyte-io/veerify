@@ -1,3 +1,4 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { inArray } from 'drizzle-orm'
@@ -21,9 +22,9 @@ test('support search finds a resolved conversation from Unassigned by email and 
 }) => {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const headers = withAuthHeaders(sessionCookie, '/support')
-  const teamResponse = await request.get('/api/teams/active', { headers })
-  expect(teamResponse.ok()).toBeTruthy()
-  const teamId = (await teamResponse.json()).data.id as string
+  const projectResponse = await request.get('/api/projects/active', { headers })
+  expect(projectResponse.ok()).toBeTruthy()
+  const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
   const sessionResponse = await request.get('/api/auth/session', { headers })
   expect(sessionResponse.ok()).toBeTruthy()
   const userId = (await sessionResponse.json()).data.user.id as string
@@ -46,7 +47,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
     await db.insert(supportInbox).values([
       {
         id: inboxId,
-        teamId,
+        projectId,
         name: `Search ${suffix}`,
         slug: `search-${suffix}`,
         createdAt: now,
@@ -54,7 +55,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
       },
       {
         id: otherInboxId,
-        teamId,
+        projectId,
         name: `Search other ${suffix}`,
         slug: `search-other-${suffix}`,
         createdAt: now,
@@ -80,7 +81,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
     await db.insert(contact).values([
       {
         id: resolvedContactId,
-        teamId,
+        projectId,
         name: `Search Resolved ${suffix}`,
         email: customerEmail,
         createdAt: now,
@@ -88,7 +89,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
       },
       {
         id: openContactId,
-        teamId,
+        projectId,
         name: `Search Open ${suffix}`,
         email: `search-open-${suffix}@example.com`,
         createdAt: now,
@@ -96,7 +97,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
       },
       {
         id: otherContactId,
-        teamId,
+        projectId,
         name: `Search Other ${suffix}`,
         email: `search-other-${suffix}@example.com`,
         createdAt: now,
@@ -107,7 +108,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
       {
         id: resolvedConversationId,
         inboxId,
-        teamId,
+        projectId,
         contactId: resolvedContactId,
         displayId,
         subject: `Resolved search target ${suffix}`,
@@ -122,7 +123,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
       {
         id: openConversationId,
         inboxId,
-        teamId,
+        projectId,
         contactId: openContactId,
         displayId: displayId + 1,
         subject: `Visible unassigned ${suffix}`,
@@ -136,7 +137,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
       {
         id: otherConversationId,
         inboxId: otherInboxId,
-        teamId,
+        projectId,
         contactId: otherContactId,
         displayId: displayId + 2,
         subject: `Other inbox search target ${suffix}`,
@@ -151,7 +152,7 @@ test('support search finds a resolved conversation from Unassigned by email and 
     ])
     await db.insert(csatSurvey).values({
       id: surveyId,
-      teamId,
+      projectId,
       inboxId,
       name: `Search CSAT ${suffix}`,
       scale: 'csat_5',

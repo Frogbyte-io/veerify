@@ -9,8 +9,7 @@ import {
   type MentionKind,
   type MentionSource,
 } from '~/server/database/schema/marketing'
-import { teamModuleSettings } from '~/server/database/schema/teams'
-import { DEFAULT_TEAM_MODULES, resolveProductModules } from '~/lib/modules'
+import { isModuleEnabled } from '~/lib/modules'
 import { sqlTimestamp } from '~/server/utils/sql-timestamp'
 import type { MatchTerm } from '~/server/services/social-sources'
 
@@ -21,13 +20,11 @@ const BACKOFF_MAX_SECONDS = 6 * 60 * 60
 
 export interface CandidateSite {
   siteId: string
-  teamId: string
+  organizationId: string
   projectId: string
   projectName: string
   projectSlug: string
   projectSettings: Record<string, unknown> | null
-  /** `null` when the team never opened the Tools tab (registry default applies) */
-  teamMarketingEnabled: boolean | null
 }
 
 export interface MentionInsert {
@@ -59,10 +56,9 @@ export interface SourceCursorRow {
   cycleStartedAt?: Date | null
 }
 
-/** Both module switches must be on (D-31); a missing team row reads as the registry default. */
-export function isMarketingOn(site: CandidateSite): boolean {
-  const teamOn = site.teamMarketingEnabled ?? DEFAULT_TEAM_MODULES.marketingEnabled
-  return teamOn && resolveProductModules(site.projectSettings).marketingEnabled === true
+/** Marketing must be switched on for the project (default off). */
+export function isMarketingOn(site: Pick<CandidateSite, 'projectSettings'>): boolean {
+  return isModuleEnabled(site.projectSettings, 'marketingEnabled')
 }
 
 /** Persistence seam for the mentions poller and digest, so both can be tested without a database. */
@@ -70,7 +66,7 @@ export interface MentionsStore {
   /** Verified sites with their module switches; callers filter with `isMarketingOn`. */
   loadVerifiedSites(): Promise<CandidateSite[]>
   /**
-   * Candidate sites for a poll run, selected in SQL: verified, Marketing on for team and product,
+   * Candidate sites for a poll run, selected in SQL: verified, Marketing on for the project,
    * at least one term, and at least one of `sourceIds` due (never polled, or past its interval or
    * failure backoff). Least recently attempted first, at most `limit`.
    */
@@ -104,22 +100,19 @@ export const dbMentionsStore: MentionsStore = {
     const rows = await db
       .select({
         siteId: marketingSite.id,
-        teamId: marketingSite.teamId,
+        organizationId: project.organizationId,
         projectId: project.id,
         projectName: project.name,
         projectSlug: project.slug,
         projectSettings: project.settings,
-        teamMarketingEnabled: teamModuleSettings.marketingEnabled,
       })
       .from(marketingSite)
       .innerJoin(project, eq(project.id, marketingSite.projectId))
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
       .where(isNotNull(marketingSite.verifiedAt))
 
     return rows.map((row) => ({
       ...row,
       projectSettings: (row.projectSettings as Record<string, unknown> | null) ?? null,
-      teamMarketingEnabled: row.teamMarketingEnabled ?? null,
     }))
   },
 
@@ -131,17 +124,15 @@ export const dbMentionsStore: MentionsStore = {
     )
     const res = await db.execute<{
       site_id: string
-      team_id: string
+      organization_id: string
       project_id: string
       name: string
       slug: string
       settings: Record<string, unknown> | null
-      marketing_enabled: boolean | null
     }>(sql`
-      SELECT s.id AS site_id, s.team_id, p.id AS project_id, p.name, p.slug, p.settings, t.marketing_enabled
+      SELECT s.id AS site_id, p.organization_id, p.id AS project_id, p.name, p.slug, p.settings
       FROM marketing_site s
       JOIN project p ON p.id = s.project_id
-      LEFT JOIN team_module_settings t ON t.team_id = s.team_id
       JOIN LATERAL (
         SELECT min(CASE WHEN c.site_id IS NULL THEN '-infinity'::timestamp
                         ELSE coalesce(c.last_attempt_at, c.last_polled_at) END) AS oldest
@@ -157,7 +148,6 @@ export const dbMentionsStore: MentionsStore = {
               ) <= ${sqlTimestamp(now)}
       ) due ON due.oldest IS NOT NULL
       WHERE s.verified_at IS NOT NULL
-        AND coalesce(t.marketing_enabled, ${DEFAULT_TEAM_MODULES.marketingEnabled}::boolean) = true
         AND p.settings ->> 'marketingEnabled' = 'true'
         AND EXISTS (SELECT 1 FROM marketing_term mt WHERE mt.site_id = s.id)
       ORDER BY due.oldest ASC, s.id ASC
@@ -165,12 +155,11 @@ export const dbMentionsStore: MentionsStore = {
     `)
     return res.rows.map((row) => ({
       siteId: row.site_id,
-      teamId: row.team_id,
+      organizationId: row.organization_id,
       projectId: row.project_id,
       projectName: row.name,
       projectSlug: row.slug,
       projectSettings: row.settings ?? null,
-      teamMarketingEnabled: row.marketing_enabled ?? null,
     }))
   },
 
