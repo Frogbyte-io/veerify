@@ -1,124 +1,491 @@
-<!doctype html><html><head><meta charset="utf-8"><style>
-  :root { --r: var(--radius, 8px); }
-  * { box-sizing: border-box; }
-  body { font-family: var(--font-sans); color: var(--foreground); font-size: 14px; line-height: 1.5; }
-  h2 { font-size: 17px; margin: 28px 0 8px; }
-  p { margin: 6px 0; }
-  .muted { color: var(--muted-foreground); } .small { font-size: 12px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
-  .card { border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; background: var(--card); color: var(--card-foreground); }
-  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-foreground); white-space: nowrap; }
-  .pill.b1 { border-color: var(--chart-2); color: var(--chart-2); } .pill.b2 { border-color: var(--chart-4); color: var(--chart-4); }
-  .tree { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; white-space: pre; overflow-x: auto; }
-  .tree .k { color: var(--muted-foreground); }
-  .win { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--card); color: var(--card-foreground); font-size: 12px; }
-  .win-bar { display: flex; gap: 5px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--muted); }
-  .win-bar i { width: 8px; height: 8px; border-radius: 50%; background: var(--border); display: inline-block; }
-  .win-bar span { margin-left: 8px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
-  .app { display: grid; grid-template-columns: 180px 1fr; min-height: 330px; }
-  @media (max-width: 560px) { .app { grid-template-columns: 1fr; } .side { border-right: 0 !important; border-bottom: 1px solid var(--border); } }
-  .side { border-right: 1px solid var(--border); padding: 10px 8px; background: var(--background); }
-  .main { padding: 14px 16px; min-width: 0; }
-  .switch { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; display: flex; align-items: center; gap: 7px; margin-bottom: 8px; background: var(--card); }
-  .logo { width: 20px; height: 20px; border-radius: 5px; background: var(--chart-3); flex: none; }
-  .switch .t { line-height: 1.2; } .switch .t small { display: block; color: var(--muted-foreground); font-size: 10px; }
-  .switch .chev { margin-left: auto; color: var(--muted-foreground); }
-  .glabel { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); margin: 10px 6px 3px; }
-  .nav { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 5px; }
-  .nav .ic { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid currentColor; opacity: .7; flex: none; }
-  .nav.sub { padding-left: 25px; color: var(--muted-foreground); }
-  .nav.sub .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-  .nav.sel { background: var(--accent-surface); color: var(--accent-surface-foreground); font-weight: 600; }
-  .nav .end { margin-left: auto; font-size: 10px; color: var(--muted-foreground); }
-  .crumb { color: var(--muted-foreground); font-size: 11px; margin-bottom: 4px; } .crumb b { color: var(--foreground); }
-  .mh { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; } .mh h4 { margin: 0; font-size: 15px; }
-  .btn { display: inline-block; border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; font-size: 11px; background: var(--card); white-space: nowrap; }
-  .btn.pri { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
-  .ml { margin-left: auto; }
-  .chips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
-  .chip { border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-size: 11px; }
-  .chip.sel { background: var(--foreground); color: var(--background); border-color: transparent; }
-  .fb { display: flex; gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); }
-  .fb .v { width: 30px; text-align: center; border: 1px solid var(--border); border-radius: 5px; font-size: 11px; padding: 2px 0; flex: none; }
-  .fb .d { flex: 1; min-width: 0; } .fb .d small { display: block; color: var(--muted-foreground); }
-  .pub { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--card); font-size: 12px; }
-  .pub-h { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-  .pub-h .tabs { display: flex; gap: 12px; margin-left: auto; color: var(--muted-foreground); flex-wrap: wrap; }
-  .pub-h .tabs b { color: var(--foreground); }
-  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px 14px; }
-  .colx { border: 1px solid var(--border); border-radius: 6px; padding: 8px; min-height: 90px; }
-  .colx .it { border: 1px solid var(--border); border-radius: 5px; padding: 5px 7px; margin-top: 6px; }
-  table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.t th, table.t td { border-bottom: 1px solid var(--border); padding: 6px; text-align: left; vertical-align: top; }
-  table.t th { color: var(--muted-foreground); font-weight: 600; font-size: 11.5px; }
-  code { font-family: var(--font-mono); font-size: 11.5px; background: var(--code-background); color: var(--code-foreground); padding: 0 4px; border-radius: 4px; }
-</style></head><body>
-<h2 style="margin-top:0">Model: Workspace → Brand → Products</h2>
-<div class="grid2">
-  <div class="card tree">Frogbyte <span class="k">(workspace: you, billing, API keys)</span>
-├─ Veerify <span class="k">(brand)</span>
-│   └─ Veerify <span class="k">(single product, hidden in UI)</span>
-└─ Dotmatrixlabs <span class="k">(brand)</span>
-    ├─ dot x <span class="k">(product)</span>
-    └─ Decker <span class="k">(product)</span></div>
-  <div class="card small">
-    <b>Brand</b> has the domain, look, people, Marketing, Support, statuses and categories.<br>
-    <b>Product</b> has its own feedback board and is a filter/tag on Roadmap and Changelog.<br>
-    <span class="muted">With one product, the product layer disappears from the UI, so Veerify looks exactly like today.</span>
-  </div>
-</div>
-
-<h2>Which level each tool lives on</h2>
-<table class="t">
-  <tr><th>Tool</th><th>Lives on</th><th>Per product?</th></tr>
-  <tr><td>Feedback</td><td>Brand</td><td>One board per product (public page each), plus an "All products" triage view</td></tr>
-  <tr><td>Roadmap</td><td>Brand</td><td>Items tagged with a product. The public roadmap filters by product.</td></tr>
-  <tr><td>Changelog</td><td>Brand</td><td>Entries tagged with one or more products. Subscribers can follow just one.</td></tr>
-  <tr><td>Marketing</td><td>Brand</td><td>No. One site, one set of mentions and competitors.</td></tr>
-  <tr><td>Support</td><td>Brand</td><td>No, but a conversation can be tagged with a product.</td></tr>
-  <tr><td>Domain &amp; appearance</td><td>Brand</td><td>No. <code>feedback.dotmatrixlabs.com/dot-x</code> and <code>/decker</code>.</td></tr>
-</table>
-
-<h2>Admin: Dotmatrixlabs</h2>
-<div class="win">
-  <div class="win-bar"><i></i><i></i><i></i><span>/dotmatrixlabs/feedback?product=all</span></div>
-  <div class="app">
-    <div class="side">
-      <div class="switch"><div class="logo"></div><div class="t"><b>Dotmatrixlabs</b><small>Brand · 2 products</small></div><span class="chev">⌄</span></div>
-      <div class="nav"><span class="ic"></span>Overview</div>
-      <div class="nav sel"><span class="ic"></span>Feedback<span class="end">17</span></div>
-      <div class="nav sub"><span class="dot" style="background:var(--chart-2)"></span>dot x<span class="end">11</span></div>
-      <div class="nav sub"><span class="dot" style="background:var(--chart-4)"></span>Decker<span class="end">6</span></div>
-      <div class="nav"><span class="ic"></span>Roadmap</div>
-      <div class="nav"><span class="ic"></span>Changelog</div>
-      <div class="nav"><span class="ic"></span>Marketing</div>
-      <div class="nav"><span class="ic"></span>Support<span class="end">3</span></div>
-      <div class="nav"><span class="ic"></span>Contacts</div>
-      <div class="nav"><span class="ic"></span>Brand settings</div>
-      <div class="glabel">Workspace</div>
-      <div class="nav"><span class="ic"></span>Workspace settings</div>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --r: var(--radius, 8px);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: var(--font-sans);
+        color: var(--foreground);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 28px 0 8px;
+      }
+      p {
+        margin: 6px 0;
+      }
+      .muted {
+        color: var(--muted-foreground);
+      }
+      .small {
+        font-size: 12px;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      @media (max-width: 560px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: 12px 14px;
+        background: var(--card);
+        color: var(--card-foreground);
+      }
+      .pill {
+        display: inline-block;
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted-foreground);
+        white-space: nowrap;
+      }
+      .pill.b1 {
+        border-color: var(--chart-2);
+        color: var(--chart-2);
+      }
+      .pill.b2 {
+        border-color: var(--chart-4);
+        color: var(--chart-4);
+      }
+      .tree {
+        font-family: var(--font-mono);
+        font-size: 12.5px;
+        line-height: 1.7;
+        white-space: pre;
+        overflow-x: auto;
+      }
+      .tree .k {
+        color: var(--muted-foreground);
+      }
+      .win {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        overflow: hidden;
+        background: var(--card);
+        color: var(--card-foreground);
+        font-size: 12px;
+      }
+      .win-bar {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
+      }
+      .win-bar i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border);
+        display: inline-block;
+      }
+      .win-bar span {
+        margin-left: 8px;
+        color: var(--muted-foreground);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        min-height: 330px;
+      }
+      @media (max-width: 560px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .side {
+          border-right: 0 !important;
+          border-bottom: 1px solid var(--border);
+        }
+      }
+      .side {
+        border-right: 1px solid var(--border);
+        padding: 10px 8px;
+        background: var(--background);
+      }
+      .main {
+        padding: 14px 16px;
+        min-width: 0;
+      }
+      .switch {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 8px;
+        background: var(--card);
+      }
+      .logo {
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: var(--chart-3);
+        flex: none;
+      }
+      .switch .t {
+        line-height: 1.2;
+      }
+      .switch .t small {
+        display: block;
+        color: var(--muted-foreground);
+        font-size: 10px;
+      }
+      .switch .chev {
+        margin-left: auto;
+        color: var(--muted-foreground);
+      }
+      .glabel {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted-foreground);
+        margin: 10px 6px 3px;
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 6px;
+        border-radius: 5px;
+      }
+      .nav .ic {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        border: 1.5px solid currentColor;
+        opacity: 0.7;
+        flex: none;
+      }
+      .nav.sub {
+        padding-left: 25px;
+        color: var(--muted-foreground);
+      }
+      .nav.sub .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .nav.sel {
+        background: var(--accent-surface);
+        color: var(--accent-surface-foreground);
+        font-weight: 600;
+      }
+      .nav .end {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--muted-foreground);
+      }
+      .crumb {
+        color: var(--muted-foreground);
+        font-size: 11px;
+        margin-bottom: 4px;
+      }
+      .crumb b {
+        color: var(--foreground);
+      }
+      .mh {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      .mh h4 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .btn {
+        display: inline-block;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 3px 9px;
+        font-size: 11px;
+        background: var(--card);
+        white-space: nowrap;
+      }
+      .btn.pri {
+        background: var(--primary);
+        color: var(--primary-foreground);
+        border-color: transparent;
+      }
+      .ml {
+        margin-left: auto;
+      }
+      .chips {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+      .chip {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 9px;
+        font-size: 11px;
+      }
+      .chip.sel {
+        background: var(--foreground);
+        color: var(--background);
+        border-color: transparent;
+      }
+      .fb {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .fb .v {
+        width: 30px;
+        text-align: center;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        font-size: 11px;
+        padding: 2px 0;
+        flex: none;
+      }
+      .fb .d {
+        flex: 1;
+        min-width: 0;
+      }
+      .fb .d small {
+        display: block;
+        color: var(--muted-foreground);
+      }
+      .pub {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        overflow: hidden;
+        background: var(--card);
+        font-size: 12px;
+      }
+      .pub-h {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+      .pub-h .tabs {
+        display: flex;
+        gap: 12px;
+        margin-left: auto;
+        color: var(--muted-foreground);
+        flex-wrap: wrap;
+      }
+      .pub-h .tabs b {
+        color: var(--foreground);
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        padding: 12px 14px;
+      }
+      .colx {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px;
+        min-height: 90px;
+      }
+      .colx .it {
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 5px 7px;
+        margin-top: 6px;
+      }
+      table.t {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      table.t th,
+      table.t td {
+        border-bottom: 1px solid var(--border);
+        padding: 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.t th {
+        color: var(--muted-foreground);
+        font-weight: 600;
+        font-size: 11.5px;
+      }
+      code {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        background: var(--code-background);
+        color: var(--code-foreground);
+        padding: 0 4px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2 style="margin-top: 0">Model: Workspace → Brand → Products</h2>
+    <div class="grid2">
+      <div class="card tree">
+        Frogbyte <span class="k">(workspace: you, billing, API keys)</span> ├─ Veerify <span class="k">(brand)</span> │
+        └─ Veerify <span class="k">(single product, hidden in UI)</span> └─ Dotmatrixlabs
+        <span class="k">(brand)</span> ├─ dot x <span class="k">(product)</span> └─ Decker
+        <span class="k">(product)</span>
+      </div>
+      <div class="card small">
+        <b>Brand</b> has the domain, look, people, Marketing, Support, statuses and categories.<br />
+        <b>Product</b> has its own feedback board and is a filter/tag on Roadmap and Changelog.<br />
+        <span class="muted"
+          >With one product, the product layer disappears from the UI, so Veerify looks exactly like today.</span
+        >
+      </div>
     </div>
-    <div class="main">
-      <div class="crumb">Frogbyte › Dotmatrixlabs › <b>Feedback</b></div>
-      <div class="mh"><h4>Feedback</h4><span class="btn ml">Settings</span><span class="btn pri">+ Add product</span></div>
-      <div class="chips"><span class="chip sel">All products</span><span class="chip">dot x</span><span class="chip">Decker</span></div>
-      <div class="fb"><span class="v">▲ 24</span><div class="d"><b>Export to SVG</b><small>Planned · 3 comments</small></div><span class="pill b1">dot x</span></div>
-      <div class="fb"><span class="v">▲ 15</span><div class="d"><b>Presenter notes on second screen</b><small>Open · 7 comments</small></div><span class="pill b2">Decker</span></div>
-      <div class="fb"><span class="v">▲ 9</span><div class="d"><b>Dark mode for the editor</b><small>In progress</small></div><span class="pill b1">dot x</span></div>
-      <div class="fb"><span class="v">▲ 4</span><div class="d"><b>Import from Keynote</b><small>Open</small></div><span class="pill b2">Decker</span></div>
-    </div>
-  </div>
-</div>
 
-<h2>Public: feedback.dotmatrixlabs.com</h2>
-<div class="pub">
-  <div class="pub-h"><span class="logo"></span><b>Dotmatrixlabs</b><div class="tabs"><span>dot x</span><span>Decker</span><span>·</span><b>Roadmap</b><span>Changelog</span><span>Support</span></div></div>
-  <div class="cols">
-    <div class="colx"><b>Planned</b><div class="it">Export to SVG <span class="pill b1">dot x</span></div></div>
-    <div class="colx"><b>In progress</b><div class="it">Dark mode <span class="pill b1">dot x</span></div><div class="it">Speaker timer <span class="pill b2">Decker</span></div></div>
-    <div class="colx"><b>Shipped</b><div class="it">Grid snapping <span class="pill b1">dot x</span></div></div>
-  </div>
-</div>
-<p class="muted small">One hub per brand, one tab per product's board. Roadmap and Changelog are shared and show product badges, with a filter. A brand with a single product shows today's layout with no product tabs.</p>
-</body></html>
+    <h2>Which level each tool lives on</h2>
+    <table class="t">
+      <tr>
+        <th>Tool</th>
+        <th>Lives on</th>
+        <th>Per product?</th>
+      </tr>
+      <tr>
+        <td>Feedback</td>
+        <td>Brand</td>
+        <td>One board per product (public page each), plus an "All products" triage view</td>
+      </tr>
+      <tr>
+        <td>Roadmap</td>
+        <td>Brand</td>
+        <td>Items tagged with a product. The public roadmap filters by product.</td>
+      </tr>
+      <tr>
+        <td>Changelog</td>
+        <td>Brand</td>
+        <td>Entries tagged with one or more products. Subscribers can follow just one.</td>
+      </tr>
+      <tr>
+        <td>Marketing</td>
+        <td>Brand</td>
+        <td>No. One site, one set of mentions and competitors.</td>
+      </tr>
+      <tr>
+        <td>Support</td>
+        <td>Brand</td>
+        <td>No, but a conversation can be tagged with a product.</td>
+      </tr>
+      <tr>
+        <td>Domain &amp; appearance</td>
+        <td>Brand</td>
+        <td>No. <code>feedback.dotmatrixlabs.com/dot-x</code> and <code>/decker</code>.</td>
+      </tr>
+    </table>
+
+    <h2>Admin: Dotmatrixlabs</h2>
+    <div class="win">
+      <div class="win-bar"><i></i><i></i><i></i><span>/dotmatrixlabs/feedback?product=all</span></div>
+      <div class="app">
+        <div class="side">
+          <div class="switch">
+            <div class="logo"></div>
+            <div class="t"><b>Dotmatrixlabs</b><small>Brand · 2 products</small></div>
+            <span class="chev">⌄</span>
+          </div>
+          <div class="nav"><span class="ic"></span>Overview</div>
+          <div class="nav sel"><span class="ic"></span>Feedback<span class="end">17</span></div>
+          <div class="nav sub">
+            <span class="dot" style="background: var(--chart-2)"></span>dot x<span class="end">11</span>
+          </div>
+          <div class="nav sub">
+            <span class="dot" style="background: var(--chart-4)"></span>Decker<span class="end">6</span>
+          </div>
+          <div class="nav"><span class="ic"></span>Roadmap</div>
+          <div class="nav"><span class="ic"></span>Changelog</div>
+          <div class="nav"><span class="ic"></span>Marketing</div>
+          <div class="nav"><span class="ic"></span>Support<span class="end">3</span></div>
+          <div class="nav"><span class="ic"></span>Contacts</div>
+          <div class="nav"><span class="ic"></span>Brand settings</div>
+          <div class="glabel">Workspace</div>
+          <div class="nav"><span class="ic"></span>Workspace settings</div>
+        </div>
+        <div class="main">
+          <div class="crumb">Frogbyte › Dotmatrixlabs › <b>Feedback</b></div>
+          <div class="mh">
+            <h4>Feedback</h4>
+            <span class="btn ml">Settings</span><span class="btn pri">+ Add product</span>
+          </div>
+          <div class="chips">
+            <span class="chip sel">All products</span><span class="chip">dot x</span><span class="chip">Decker</span>
+          </div>
+          <div class="fb">
+            <span class="v">▲ 24</span>
+            <div class="d"><b>Export to SVG</b><small>Planned · 3 comments</small></div>
+            <span class="pill b1">dot x</span>
+          </div>
+          <div class="fb">
+            <span class="v">▲ 15</span>
+            <div class="d"><b>Presenter notes on second screen</b><small>Open · 7 comments</small></div>
+            <span class="pill b2">Decker</span>
+          </div>
+          <div class="fb">
+            <span class="v">▲ 9</span>
+            <div class="d"><b>Dark mode for the editor</b><small>In progress</small></div>
+            <span class="pill b1">dot x</span>
+          </div>
+          <div class="fb">
+            <span class="v">▲ 4</span>
+            <div class="d"><b>Import from Keynote</b><small>Open</small></div>
+            <span class="pill b2">Decker</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Public: feedback.dotmatrixlabs.com</h2>
+    <div class="pub">
+      <div class="pub-h">
+        <span class="logo"></span><b>Dotmatrixlabs</b>
+        <div class="tabs">
+          <span>dot x</span><span>Decker</span><span>·</span><b>Roadmap</b><span>Changelog</span><span>Support</span>
+        </div>
+      </div>
+      <div class="cols">
+        <div class="colx">
+          <b>Planned</b>
+          <div class="it">Export to SVG <span class="pill b1">dot x</span></div>
+        </div>
+        <div class="colx">
+          <b>In progress</b>
+          <div class="it">Dark mode <span class="pill b1">dot x</span></div>
+          <div class="it">Speaker timer <span class="pill b2">Decker</span></div>
+        </div>
+        <div class="colx">
+          <b>Shipped</b>
+          <div class="it">Grid snapping <span class="pill b1">dot x</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="muted small">
+      One hub per brand, one tab per product's board. Roadmap and Changelog are shared and show product badges, with a
+      filter. A brand with a single product shows today's layout with no product tabs.
+    </p>
+  </body>
+</html>

@@ -1,336 +1,1107 @@
 <!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<style>
-  :root { --r: var(--radius, 8px); }
-  * { box-sizing: border-box; }
-  body { font-family: var(--font-sans); color: var(--foreground); font-size: 14px; line-height: 1.5; }
-  h2 { font-size: 17px; margin: 28px 0 8px; }
-  h3 { font-size: 14px; margin: 18px 0 6px; }
-  p { margin: 6px 0; }
-  .muted { color: var(--muted-foreground); }
-  .small { font-size: 12px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
-  .card { border: 1px solid var(--border); border-radius: var(--r); padding: 12px 14px; background: var(--card); color: var(--card-foreground); }
-  .pain b { display: block; margin-bottom: 2px; }
-  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-foreground); white-space: nowrap; }
-  .pill.on { background: var(--success); color: var(--success-foreground); border-color: transparent; }
-  .pill.acc { background: var(--accent-surface); color: var(--accent-surface-foreground); border-color: transparent; }
-  .pill.warn { background: var(--warning-surface); color: var(--warning-foreground); border-color: transparent; }
-  ol.principles { padding-left: 20px; margin: 6px 0; }
-  ol.principles li { margin: 4px 0; }
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --r: var(--radius, 8px);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: var(--font-sans);
+        color: var(--foreground);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 28px 0 8px;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 18px 0 6px;
+      }
+      p {
+        margin: 6px 0;
+      }
+      .muted {
+        color: var(--muted-foreground);
+      }
+      .small {
+        font-size: 12px;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      @media (max-width: 560px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: 12px 14px;
+        background: var(--card);
+        color: var(--card-foreground);
+      }
+      .pain b {
+        display: block;
+        margin-bottom: 2px;
+      }
+      .pill {
+        display: inline-block;
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted-foreground);
+        white-space: nowrap;
+      }
+      .pill.on {
+        background: var(--success);
+        color: var(--success-foreground);
+        border-color: transparent;
+      }
+      .pill.acc {
+        background: var(--accent-surface);
+        color: var(--accent-surface-foreground);
+        border-color: transparent;
+      }
+      .pill.warn {
+        background: var(--warning-surface);
+        color: var(--warning-foreground);
+        border-color: transparent;
+      }
+      ol.principles {
+        padding-left: 20px;
+        margin: 6px 0;
+      }
+      ol.principles li {
+        margin: 4px 0;
+      }
 
-  /* tabs */
-  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 12px; }
-  .tab { cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--foreground); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; }
-  .tab[aria-selected="true"] { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
-  .panel { display: none; }
-  .panel.active { display: block; }
+      /* tabs */
+      .tabs {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 10px 0 12px;
+      }
+      .tab {
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--foreground);
+        border-radius: 999px;
+        padding: 5px 12px;
+        font: inherit;
+        font-size: 13px;
+      }
+      .tab[aria-selected='true'] {
+        background: var(--primary);
+        color: var(--primary-foreground);
+        border-color: transparent;
+      }
+      .panel {
+        display: none;
+      }
+      .panel.active {
+        display: block;
+      }
 
-  /* mock app window */
-  .win { border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; background: var(--card); color: var(--card-foreground); font-size: 12px; }
-  .win-bar { display: flex; gap: 5px; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--muted); }
-  .win-bar i { width: 8px; height: 8px; border-radius: 50%; background: var(--border); display: inline-block; }
-  .win-bar span { margin-left: 8px; color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
-  .app { display: grid; grid-template-columns: 180px 1fr; min-height: 340px; }
-  @media (max-width: 560px) { .app { grid-template-columns: 1fr; } .side { border-right: 0 !important; border-bottom: 1px solid var(--border); } }
-  .side { border-right: 1px solid var(--border); padding: 10px 8px; background: var(--background); }
-  .main { padding: 14px 16px; min-width: 0; }
-  .switch { border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; display: flex; align-items: center; gap: 7px; margin-bottom: 8px; background: var(--card); }
-  .logo { width: 20px; height: 20px; border-radius: 5px; background: var(--accent); flex: none; }
-  .logo.b { background: var(--chart-2); } .logo.c { background: var(--chart-3); }
-  .switch .t { line-height: 1.2; min-width: 0; }
-  .switch .t small { display: block; color: var(--muted-foreground); font-size: 10px; }
-  .switch .chev { margin-left: auto; color: var(--muted-foreground); }
-  .glabel { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted-foreground); margin: 10px 6px 3px; }
-  .nav { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 5px; color: var(--foreground); }
-  .nav .ic { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid currentColor; opacity: .7; flex: none; }
-  .nav.sel { background: var(--accent-surface); color: var(--accent-surface-foreground); font-weight: 600; }
-  .nav.off { color: var(--muted-foreground); }
-  .nav.off .ic { border-style: dashed; }
-  .nav .end { margin-left: auto; font-size: 10px; color: var(--muted-foreground); }
-  .crumb { color: var(--muted-foreground); font-size: 11px; margin-bottom: 4px; }
-  .crumb b { color: var(--foreground); font-weight: 600; }
-  .mh { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-  .mh h4 { margin: 0; font-size: 15px; }
-  .btn { display: inline-block; border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; font-size: 11px; background: var(--card); }
-  .btn.pri { background: var(--primary); color: var(--primary-foreground); border-color: transparent; }
-  .ml { margin-left: auto; }
-  .subtabs { display: flex; gap: 14px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
-  .subtabs span { padding: 4px 0 6px; color: var(--muted-foreground); }
-  .subtabs span.sel { color: var(--foreground); border-bottom: 2px solid var(--foreground); font-weight: 600; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
-  .tile { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
-  .tile.dim { border-style: dashed; color: var(--muted-foreground); }
-  .tile b { display: block; font-size: 12px; }
-  .tile .row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
-  .lock { font-size: 11px; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; margin-top: 8px; background: var(--muted); }
-  .chips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 10px; }
-  .chip { border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-size: 11px; }
-  .chip.sel { background: var(--foreground); color: var(--background); border-color: transparent; }
-  .set-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
-  .set-row:last-child { border-bottom: 0; }
-  .set-row .d { flex: 1; min-width: 0; }
-  .set-row .d small { display: block; color: var(--muted-foreground); }
-  .tg { width: 26px; height: 15px; border-radius: 999px; background: var(--border); position: relative; flex: none; }
-  .tg::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--background); }
-  .tg.on { background: var(--success); }
-  .tg.on::after { left: 13px; }
-  .tg.locked { opacity: .45; }
-  table.mx { width: 100%; border-collapse: collapse; font-size: 11.5px; }
-  table.mx th, table.mx td { border-bottom: 1px solid var(--border); padding: 6px 5px; text-align: center; }
-  table.mx th:first-child, table.mx td:first-child { text-align: left; }
-  table.mx th { font-weight: 600; color: var(--muted-foreground); font-size: 11px; }
-  .tgc { display: inline-block; vertical-align: middle; }
-  .col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-  .pros, .cons { font-size: 12px; }
-  .pros ul, .cons ul { margin: 4px 0; padding-left: 16px; }
-  .pros b { color: var(--success); } .cons b { color: var(--destructive); }
-  .flow { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; margin-top: 8px; }
-  .step { flex: 1 1 120px; border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; font-size: 12px; }
-  .step em { font-style: normal; font-size: 10px; color: var(--muted-foreground); display: block; }
-  .arrow { align-self: center; color: var(--muted-foreground); }
-  .score { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); }
+      /* mock app window */
+      .win {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        overflow: hidden;
+        background: var(--card);
+        color: var(--card-foreground);
+        font-size: 12px;
+      }
+      .win-bar {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
+      }
+      .win-bar i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border);
+        display: inline-block;
+      }
+      .win-bar span {
+        margin-left: 8px;
+        color: var(--muted-foreground);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        min-height: 340px;
+      }
+      @media (max-width: 560px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .side {
+          border-right: 0 !important;
+          border-bottom: 1px solid var(--border);
+        }
+      }
+      .side {
+        border-right: 1px solid var(--border);
+        padding: 10px 8px;
+        background: var(--background);
+      }
+      .main {
+        padding: 14px 16px;
+        min-width: 0;
+      }
+      .switch {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 8px;
+        background: var(--card);
+      }
+      .logo {
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: var(--accent);
+        flex: none;
+      }
+      .logo.b {
+        background: var(--chart-2);
+      }
+      .logo.c {
+        background: var(--chart-3);
+      }
+      .switch .t {
+        line-height: 1.2;
+        min-width: 0;
+      }
+      .switch .t small {
+        display: block;
+        color: var(--muted-foreground);
+        font-size: 10px;
+      }
+      .switch .chev {
+        margin-left: auto;
+        color: var(--muted-foreground);
+      }
+      .glabel {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted-foreground);
+        margin: 10px 6px 3px;
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 6px;
+        border-radius: 5px;
+        color: var(--foreground);
+      }
+      .nav .ic {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        border: 1.5px solid currentColor;
+        opacity: 0.7;
+        flex: none;
+      }
+      .nav.sel {
+        background: var(--accent-surface);
+        color: var(--accent-surface-foreground);
+        font-weight: 600;
+      }
+      .nav.off {
+        color: var(--muted-foreground);
+      }
+      .nav.off .ic {
+        border-style: dashed;
+      }
+      .nav .end {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--muted-foreground);
+      }
+      .crumb {
+        color: var(--muted-foreground);
+        font-size: 11px;
+        margin-bottom: 4px;
+      }
+      .crumb b {
+        color: var(--foreground);
+        font-weight: 600;
+      }
+      .mh {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      .mh h4 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .btn {
+        display: inline-block;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 3px 9px;
+        font-size: 11px;
+        background: var(--card);
+      }
+      .btn.pri {
+        background: var(--primary);
+        color: var(--primary-foreground);
+        border-color: transparent;
+      }
+      .ml {
+        margin-left: auto;
+      }
+      .subtabs {
+        display: flex;
+        gap: 14px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 10px;
+      }
+      .subtabs span {
+        padding: 4px 0 6px;
+        color: var(--muted-foreground);
+      }
+      .subtabs span.sel {
+        color: var(--foreground);
+        border-bottom: 2px solid var(--foreground);
+        font-weight: 600;
+      }
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 8px;
+      }
+      .tile {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      .tile.dim {
+        border-style: dashed;
+        color: var(--muted-foreground);
+      }
+      .tile b {
+        display: block;
+        font-size: 12px;
+      }
+      .tile .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 6px;
+      }
+      .lock {
+        font-size: 11px;
+        color: var(--muted-foreground);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 8px;
+        margin-top: 8px;
+        background: var(--muted);
+      }
+      .chips {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+      .chip {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 9px;
+        font-size: 11px;
+      }
+      .chip.sel {
+        background: var(--foreground);
+        color: var(--background);
+        border-color: transparent;
+      }
+      .set-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .set-row:last-child {
+        border-bottom: 0;
+      }
+      .set-row .d {
+        flex: 1;
+        min-width: 0;
+      }
+      .set-row .d small {
+        display: block;
+        color: var(--muted-foreground);
+      }
+      .tg {
+        width: 26px;
+        height: 15px;
+        border-radius: 999px;
+        background: var(--border);
+        position: relative;
+        flex: none;
+      }
+      .tg::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--background);
+      }
+      .tg.on {
+        background: var(--success);
+      }
+      .tg.on::after {
+        left: 13px;
+      }
+      .tg.locked {
+        opacity: 0.45;
+      }
+      table.mx {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11.5px;
+      }
+      table.mx th,
+      table.mx td {
+        border-bottom: 1px solid var(--border);
+        padding: 6px 5px;
+        text-align: center;
+      }
+      table.mx th:first-child,
+      table.mx td:first-child {
+        text-align: left;
+      }
+      table.mx th {
+        font-weight: 600;
+        color: var(--muted-foreground);
+        font-size: 11px;
+      }
+      .tgc {
+        display: inline-block;
+        vertical-align: middle;
+      }
+      .col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .pros,
+      .cons {
+        font-size: 12px;
+      }
+      .pros ul,
+      .cons ul {
+        margin: 4px 0;
+        padding-left: 16px;
+      }
+      .pros b {
+        color: var(--success);
+      }
+      .cons b {
+        color: var(--destructive);
+      }
+      .flow {
+        display: flex;
+        gap: 6px;
+        align-items: stretch;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .step {
+        flex: 1 1 120px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 9px;
+        font-size: 12px;
+      }
+      .step em {
+        font-style: normal;
+        font-size: 10px;
+        color: var(--muted-foreground);
+        display: block;
+      }
+      .arrow {
+        align-self: center;
+        color: var(--muted-foreground);
+      }
+      .score {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted-foreground);
+      }
 
-  /* modal mock */
-  .modal { max-width: 430px; margin: 18px auto 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--popover); color: var(--popover-foreground); padding: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.18); font-size: 12px; }
-  .modal h4 { margin: 0 0 2px; font-size: 14px; }
-  .stepper { display: flex; gap: 4px; margin: 10px 0; }
-  .stepper div { flex: 1; height: 3px; border-radius: 2px; background: var(--border); }
-  .stepper div.on { background: var(--accent); }
-  .opt { display: flex; gap: 8px; align-items: flex-start; border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; margin: 5px 0; }
-  .opt .bx { width: 13px; height: 13px; border: 1.5px solid var(--muted-foreground); border-radius: 3px; margin-top: 2px; flex: none; }
-  .opt .bx.on { background: var(--accent); border-color: var(--accent); }
-  .opt small { display: block; color: var(--muted-foreground); }
+      /* modal mock */
+      .modal {
+        max-width: 430px;
+        margin: 18px auto 4px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--popover);
+        color: var(--popover-foreground);
+        padding: 16px;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+        font-size: 12px;
+      }
+      .modal h4 {
+        margin: 0 0 2px;
+        font-size: 14px;
+      }
+      .stepper {
+        display: flex;
+        gap: 4px;
+        margin: 10px 0;
+      }
+      .stepper div {
+        flex: 1;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      .stepper div.on {
+        background: var(--accent);
+      }
+      .opt {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 9px;
+        margin: 5px 0;
+      }
+      .opt .bx {
+        width: 13px;
+        height: 13px;
+        border: 1.5px solid var(--muted-foreground);
+        border-radius: 3px;
+        margin-top: 2px;
+        flex: none;
+      }
+      .opt .bx.on {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .opt small {
+        display: block;
+        color: var(--muted-foreground);
+      }
 
-  /* data tables */
-  table.t { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.t th, table.t td { border-bottom: 1px solid var(--border); padding: 6px 6px; text-align: left; vertical-align: top; }
-  table.t th { color: var(--muted-foreground); font-weight: 600; font-size: 11.5px; }
-  table.t td.c, table.t th.c { text-align: center; }
-  code { font-family: var(--font-mono); font-size: 11.5px; background: var(--code-background); color: var(--code-foreground); padding: 0 4px; border-radius: 4px; }
-  .yes { color: var(--success); font-weight: 700; } .no { color: var(--muted-foreground); }
-  .rec { border: 1px solid var(--accent); border-radius: var(--r); padding: 12px 14px; background: var(--accent-surface); color: var(--accent-surface-foreground); }
-</style>
-</head>
-<body>
-
-<h2 style="margin-top:0">What's confusing today</h2>
-<div class="grid2">
-  <div class="card pain"><b>Settings live in 5 places</b><span class="muted small"><code>/settings#tools</code> (team), product <em>Features</em> tab, product Feedback/Categories/Statuses/GitHub tabs, <code>/marketing/settings</code> (with its own product picker), <code>/support/settings</code> (per inbox). Roadmap and Changelog have no settings page at all.</span></div>
-  <div class="card pain"><b>Two switches per tool</b><span class="muted small">A tool shows for a product only when the <em>team</em> toggle and the <em>product</em> toggle are both on. Roadmap, Changelog and Marketing default to off at both levels, so turning one on in Settings → Tools changes nothing for any product.</span></div>
-  <div class="card pain"><b>Tools that are off disappear</b><span class="muted small">Disabled modules are removed from the sidebar, so people can't find them. Members get no "ask an admin" path, and admins get no "enable" path from where they are working.</span></div>
-  <div class="card pain"><b>Three role systems, none shown up front</b><span class="muted small">Workspace owner/admin/member, team admin/member, and inbox agent/supervisor/admin. You only learn you lack a permission from a disabled switch or a read-only banner once you're on the page.</span></div>
-  <div class="card pain"><b>The current scope is unclear</b><span class="muted small">The team switcher mixes organizations and teams (the "Default" team shows as the workspace name or "All projects"). Marketing has its own product picker, Feedback has a filter, and Support is scoped to the team.</span></div>
-  <div class="card pain"><b>Personal and admin settings are mixed</b><span class="muted small"><code>/settings</code> puts Profile/Security/Appearance next to Workspace/Teams/Tools. The sidebar's "Members" and "Notifications" links go to hash tabs in the same page.</span></div>
-</div>
-
-<h2>Proposed principles (apply to every variation)</h2>
-<ol class="principles">
-  <li><b>Always show the scope.</b> A breadcrumb <span class="pill">Workspace › Team › Product</span> on every page, and one switcher (no second picker inside Marketing).</li>
-  <li><b>One switch per tool.</b> Tools are turned on <em>per product</em>. The team level is derived ("on for 2 of 3 products"), so the team toggle goes away. Support is the exception: it is team-scoped, and creating an inbox turns it on.</li>
-  <li><b>Each tool has its settings in the same place.</b> Every tool gets a <span class="pill">Settings</span> tab in the same spot (Feedback → categories, statuses, GitHub; Marketing → site, keys; Support → inbox, SLA, automations). Product settings keep only product-wide items: name, visibility, domain, appearance, embed, danger.</li>
-  <li><b>Never hide without a way back.</b> Tools that are off show greyed under "More tools", with <em>Enable</em> for admins and <em>Request</em> for members.</li>
-  <li><b>Show permissions before people try.</b> A lock line under anything they can't change: "Team admins manage this · Ask Kari".</li>
-  <li><b>Separate personal from admin settings.</b> The avatar menu holds Profile, Security, Notifications and Appearance. A separate "Workspace settings" holds Members, Teams, Tools, Billing and Integrations.</li>
-</ol>
-
-<h2>Variations</h2>
-<div class="tabs" role="tablist">
-  <button class="tab" role="tab" aria-selected="true" data-p="a">A · Product-first</button>
-  <button class="tab" role="tab" aria-selected="false" data-p="b">B · Tool-first</button>
-  <button class="tab" role="tab" aria-selected="false" data-p="c">C · Admin console</button>
-  <button class="tab" role="tab" aria-selected="false" data-p="flow">Enable-a-tool flow</button>
-</div>
-
-<!-- ============ A ============ -->
-<div class="panel active" id="p-a">
-  <p class="muted">The product is the main context, similar to how Vercel or Linear handle projects. Pick a product in the sidebar and see only the tools that are on for it. Tools scoped to the team (Support) sit in their own section below.</p>
-  <div class="win">
-    <div class="win-bar"><i></i><i></i><i></i><span>/acme/acme-app/overview</span></div>
-    <div class="app">
-      <div class="side">
-        <div class="switch"><div class="logo"></div><div class="t"><b>Acme Inc</b><small>Team · Mobile</small></div><span class="chev">⌄</span></div>
-        <div class="switch"><div class="logo b"></div><div class="t"><b>Acme App</b><small>Product · Public</small></div><span class="chev">⌄</span></div>
-        <div class="nav sel"><span class="ic"></span>Overview</div>
-        <div class="nav"><span class="ic"></span>Feedback<span class="end">12</span></div>
-        <div class="nav"><span class="ic"></span>Roadmap</div>
-        <div class="nav"><span class="ic"></span>Changelog</div>
-        <div class="nav"><span class="ic"></span>Marketing</div>
-        <div class="nav off"><span class="ic"></span>+ Add tool</div>
-        <div class="glabel">Team · Mobile</div>
-        <div class="nav"><span class="ic"></span>Support inbox<span class="end">3</span></div>
-        <div class="nav"><span class="ic"></span>Contacts</div>
-        <div class="nav"><span class="ic"></span>Members</div>
-        <div class="glabel">You</div>
-        <div class="nav"><span class="ic"></span>My submissions</div>
-        <div class="nav"><span class="ic"></span>Inbox &amp; notifications</div>
+      /* data tables */
+      table.t {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      table.t th,
+      table.t td {
+        border-bottom: 1px solid var(--border);
+        padding: 6px 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.t th {
+        color: var(--muted-foreground);
+        font-weight: 600;
+        font-size: 11.5px;
+      }
+      table.t td.c,
+      table.t th.c {
+        text-align: center;
+      }
+      code {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        background: var(--code-background);
+        color: var(--code-foreground);
+        padding: 0 4px;
+        border-radius: 4px;
+      }
+      .yes {
+        color: var(--success);
+        font-weight: 700;
+      }
+      .no {
+        color: var(--muted-foreground);
+      }
+      .rec {
+        border: 1px solid var(--accent);
+        border-radius: var(--r);
+        padding: 12px 14px;
+        background: var(--accent-surface);
+        color: var(--accent-surface-foreground);
+      }
+    </style>
+  </head>
+  <body>
+    <h2 style="margin-top: 0">What's confusing today</h2>
+    <div class="grid2">
+      <div class="card pain">
+        <b>Settings live in 5 places</b
+        ><span class="muted small"
+          ><code>/settings#tools</code> (team), product <em>Features</em> tab, product
+          Feedback/Categories/Statuses/GitHub tabs, <code>/marketing/settings</code> (with its own product picker),
+          <code>/support/settings</code> (per inbox). Roadmap and Changelog have no settings page at all.</span
+        >
       </div>
-      <div class="main">
-        <div class="crumb">Acme Inc › Mobile › <b>Acme App</b></div>
-        <div class="mh"><h4>Acme App</h4><span class="pill on">Public</span><span class="btn ml">Product settings</span></div>
-        <div class="tiles">
-          <div class="tile"><b>Feedback</b><span class="muted">48 open · 12 new</span><div class="row"><span class="pill on">On</span><span class="muted">Settings ›</span></div></div>
-          <div class="tile"><b>Roadmap</b><span class="muted">9 planned</span><div class="row"><span class="pill on">On</span><span class="muted">Settings ›</span></div></div>
-          <div class="tile"><b>Changelog</b><span class="muted">Last post 4d ago</span><div class="row"><span class="pill on">On</span><span class="muted">Settings ›</span></div></div>
-          <div class="tile"><b>Marketing</b><span class="muted">Audit score 82</span><div class="row"><span class="pill on">On</span><span class="muted">Settings ›</span></div></div>
-          <div class="tile dim"><b>Public widget</b>Embed feedback in your app<div class="row"><span class="pill acc">Enable</span></div></div>
+      <div class="card pain">
+        <b>Two switches per tool</b
+        ><span class="muted small"
+          >A tool shows for a product only when the <em>team</em> toggle and the <em>product</em> toggle are both on.
+          Roadmap, Changelog and Marketing default to off at both levels, so turning one on in Settings → Tools changes
+          nothing for any product.</span
+        >
+      </div>
+      <div class="card pain">
+        <b>Tools that are off disappear</b
+        ><span class="muted small"
+          >Disabled modules are removed from the sidebar, so people can't find them. Members get no "ask an admin" path,
+          and admins get no "enable" path from where they are working.</span
+        >
+      </div>
+      <div class="card pain">
+        <b>Three role systems, none shown up front</b
+        ><span class="muted small"
+          >Workspace owner/admin/member, team admin/member, and inbox agent/supervisor/admin. You only learn you lack a
+          permission from a disabled switch or a read-only banner once you're on the page.</span
+        >
+      </div>
+      <div class="card pain">
+        <b>The current scope is unclear</b
+        ><span class="muted small"
+          >The team switcher mixes organizations and teams (the "Default" team shows as the workspace name or "All
+          projects"). Marketing has its own product picker, Feedback has a filter, and Support is scoped to the
+          team.</span
+        >
+      </div>
+      <div class="card pain">
+        <b>Personal and admin settings are mixed</b
+        ><span class="muted small"
+          ><code>/settings</code> puts Profile/Security/Appearance next to Workspace/Teams/Tools. The sidebar's
+          "Members" and "Notifications" links go to hash tabs in the same page.</span
+        >
+      </div>
+    </div>
+
+    <h2>Proposed principles (apply to every variation)</h2>
+    <ol class="principles">
+      <li>
+        <b>Always show the scope.</b> A breadcrumb <span class="pill">Workspace › Team › Product</span> on every page,
+        and one switcher (no second picker inside Marketing).
+      </li>
+      <li>
+        <b>One switch per tool.</b> Tools are turned on <em>per product</em>. The team level is derived ("on for 2 of 3
+        products"), so the team toggle goes away. Support is the exception: it is team-scoped, and creating an inbox
+        turns it on.
+      </li>
+      <li>
+        <b>Each tool has its settings in the same place.</b> Every tool gets a <span class="pill">Settings</span> tab in
+        the same spot (Feedback → categories, statuses, GitHub; Marketing → site, keys; Support → inbox, SLA,
+        automations). Product settings keep only product-wide items: name, visibility, domain, appearance, embed,
+        danger.
+      </li>
+      <li>
+        <b>Never hide without a way back.</b> Tools that are off show greyed under "More tools", with
+        <em>Enable</em> for admins and <em>Request</em> for members.
+      </li>
+      <li>
+        <b>Show permissions before people try.</b> A lock line under anything they can't change: "Team admins manage
+        this · Ask Kari".
+      </li>
+      <li>
+        <b>Separate personal from admin settings.</b> The avatar menu holds Profile, Security, Notifications and
+        Appearance. A separate "Workspace settings" holds Members, Teams, Tools, Billing and Integrations.
+      </li>
+    </ol>
+
+    <h2>Variations</h2>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-p="a">A · Product-first</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="b">B · Tool-first</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="c">C · Admin console</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="flow">Enable-a-tool flow</button>
+    </div>
+
+    <!-- ============ A ============ -->
+    <div class="panel active" id="p-a">
+      <p class="muted">
+        The product is the main context, similar to how Vercel or Linear handle projects. Pick a product in the sidebar
+        and see only the tools that are on for it. Tools scoped to the team (Support) sit in their own section below.
+      </p>
+      <div class="win">
+        <div class="win-bar"><i></i><i></i><i></i><span>/acme/acme-app/overview</span></div>
+        <div class="app">
+          <div class="side">
+            <div class="switch">
+              <div class="logo"></div>
+              <div class="t"><b>Acme Inc</b><small>Team · Mobile</small></div>
+              <span class="chev">⌄</span>
+            </div>
+            <div class="switch">
+              <div class="logo b"></div>
+              <div class="t"><b>Acme App</b><small>Product · Public</small></div>
+              <span class="chev">⌄</span>
+            </div>
+            <div class="nav sel"><span class="ic"></span>Overview</div>
+            <div class="nav"><span class="ic"></span>Feedback<span class="end">12</span></div>
+            <div class="nav"><span class="ic"></span>Roadmap</div>
+            <div class="nav"><span class="ic"></span>Changelog</div>
+            <div class="nav"><span class="ic"></span>Marketing</div>
+            <div class="nav off"><span class="ic"></span>+ Add tool</div>
+            <div class="glabel">Team · Mobile</div>
+            <div class="nav"><span class="ic"></span>Support inbox<span class="end">3</span></div>
+            <div class="nav"><span class="ic"></span>Contacts</div>
+            <div class="nav"><span class="ic"></span>Members</div>
+            <div class="glabel">You</div>
+            <div class="nav"><span class="ic"></span>My submissions</div>
+            <div class="nav"><span class="ic"></span>Inbox &amp; notifications</div>
+          </div>
+          <div class="main">
+            <div class="crumb">Acme Inc › Mobile › <b>Acme App</b></div>
+            <div class="mh">
+              <h4>Acme App</h4>
+              <span class="pill on">Public</span><span class="btn ml">Product settings</span>
+            </div>
+            <div class="tiles">
+              <div class="tile">
+                <b>Feedback</b><span class="muted">48 open · 12 new</span>
+                <div class="row"><span class="pill on">On</span><span class="muted">Settings ›</span></div>
+              </div>
+              <div class="tile">
+                <b>Roadmap</b><span class="muted">9 planned</span>
+                <div class="row"><span class="pill on">On</span><span class="muted">Settings ›</span></div>
+              </div>
+              <div class="tile">
+                <b>Changelog</b><span class="muted">Last post 4d ago</span>
+                <div class="row"><span class="pill on">On</span><span class="muted">Settings ›</span></div>
+              </div>
+              <div class="tile">
+                <b>Marketing</b><span class="muted">Audit score 82</span>
+                <div class="row"><span class="pill on">On</span><span class="muted">Settings ›</span></div>
+              </div>
+              <div class="tile dim">
+                <b>Public widget</b>Embed feedback in your app
+                <div class="row"><span class="pill acc">Enable</span></div>
+              </div>
+            </div>
+            <div class="lock">
+              <b>Locked ·</b> You're a <b>member</b> of Mobile. Team admins (Kari N., Ola H.) can add or remove tools.
+              <u>Request a tool</u>
+            </div>
+          </div>
         </div>
-        <div class="lock"><b>Locked ·</b> You're a <b>member</b> of Mobile. Team admins (Kari N., Ola H.) can add or remove tools. <u>Request a tool</u></div>
+      </div>
+      <div class="col">
+        <div class="card pros">
+          <b>Strengths</b>
+          <ul>
+            <li>Answers "where do I change X?": go to the product, then the tool, then Settings.</li>
+            <li>Matches how the data is stored (feedback, roadmap and changelog are scoped to products).</li>
+            <li>Removes Marketing's second picker.</li>
+          </ul>
+        </div>
+        <div class="card cons">
+          <b>Trade-offs</b>
+          <ul>
+            <li>Triage across products needs an "All products" entry in the switcher.</li>
+            <li>
+              Teams with one product get an extra switcher they don't need (auto-hide it when there is only one
+              product).
+            </li>
+          </ul>
+        </div>
+      </div>
+      <p class="score">
+        Enable Roadmap for a product: 2 clicks (+ Add tool → Roadmap) · Find Feedback statuses: Feedback → Settings
+      </p>
+    </div>
+
+    <!-- ============ B ============ -->
+    <div class="panel" id="p-b">
+      <p class="muted">
+        The tool is the main context. This is closest to today's sidebar. Each tool page has a row of product chips at
+        the top and the same Board/List/Settings tabs. Tool settings are split into "this product" and "all products in
+        team".
+      </p>
+      <div class="win">
+        <div class="win-bar"><i></i><i></i><i></i><span>/feedback/settings?product=acme-app</span></div>
+        <div class="app">
+          <div class="side">
+            <div class="switch">
+              <div class="logo"></div>
+              <div class="t"><b>Acme Inc</b><small>Team · Mobile</small></div>
+              <span class="chev">⌄</span>
+            </div>
+            <div class="nav"><span class="ic"></span>Home</div>
+            <div class="glabel">Tools</div>
+            <div class="nav sel"><span class="ic"></span>Feedback<span class="end">12</span></div>
+            <div class="nav"><span class="ic"></span>Roadmap</div>
+            <div class="nav"><span class="ic"></span>Changelog</div>
+            <div class="nav"><span class="ic"></span>Support<span class="end">3</span></div>
+            <div class="glabel">More tools</div>
+            <div class="nav off"><span class="ic"></span>Marketing<span class="end">Enable</span></div>
+            <div class="glabel">Manage</div>
+            <div class="nav"><span class="ic"></span>Products</div>
+            <div class="nav"><span class="ic"></span>Workspace settings</div>
+          </div>
+          <div class="main">
+            <div class="crumb">Acme Inc › Mobile › <b>Feedback</b></div>
+            <div class="chips">
+              <span class="chip">All products</span><span class="chip sel">Acme App</span
+              ><span class="chip">Acme API</span><span class="chip">Docs site</span>
+            </div>
+            <div class="subtabs"><span>Board</span><span>List</span><span class="sel">Settings</span></div>
+            <div class="set-row">
+              <div class="d"><b>Feedback on for Acme App</b><small>Public board at feedback.acme.com</small></div>
+              <span class="tg on"></span>
+            </div>
+            <div class="set-row">
+              <div class="d"><b>Categories</b><small>Bug, Idea, Question +2</small></div>
+              <span class="btn">Edit</span>
+            </div>
+            <div class="set-row">
+              <div class="d"><b>Statuses</b><small>Open → Planned → Shipped</small></div>
+              <span class="btn">Edit</span>
+            </div>
+            <div class="set-row">
+              <div class="d"><b>GitHub sync</b><small>acme/app · issues mirrored</small></div>
+              <span class="btn">Configure</span>
+            </div>
+            <div class="set-row">
+              <div class="d"><b>Anonymous submissions</b><small>Applies to: all products in Mobile</small></div>
+              <span class="tg on locked"></span>
+            </div>
+            <div class="lock">
+              <b>Locked ·</b> Settings that apply to the whole team can only be changed by team admins.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card pros">
+          <b>Strengths</b>
+          <ul>
+            <li>Smallest change from today; works with existing routes.</li>
+            <li>Triage across products is the default ("All products" chip).</li>
+            <li>Every tool's settings sit one tab away.</li>
+          </ul>
+        </div>
+        <div class="card cons">
+          <b>Trade-offs</b>
+          <ul>
+            <li>Product-wide things (domain, embed, appearance) still need a separate Products page.</li>
+            <li>The product chip state must carry across tools, or users lose context.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="score">
+        Enable Marketing: 2 clicks (More tools → Marketing → choose products) · Find Feedback statuses: Feedback →
+        Settings
+      </p>
+    </div>
+
+    <!-- ============ C ============ -->
+    <div class="panel" id="p-c">
+      <p class="muted">
+        Work pages and configuration are fully separate, as in Slack or Notion admin. The sidebar only has work pages.
+        All configuration lives in one admin console with a <b>Tools × Products matrix</b> and a roles page.
+      </p>
+      <div class="win">
+        <div class="win-bar"><i></i><i></i><i></i><span>/admin/tools</span></div>
+        <div class="app">
+          <div class="side">
+            <div class="switch">
+              <div class="logo"></div>
+              <div class="t"><b>Workspace settings</b><small>Acme Inc</small></div>
+              <span class="chev">←</span>
+            </div>
+            <div class="glabel">Workspace</div>
+            <div class="nav"><span class="ic"></span>General</div>
+            <div class="nav"><span class="ic"></span>Members &amp; roles</div>
+            <div class="nav"><span class="ic"></span>Teams</div>
+            <div class="nav"><span class="ic"></span>Products</div>
+            <div class="nav sel"><span class="ic"></span>Tools</div>
+            <div class="nav"><span class="ic"></span>Integrations</div>
+            <div class="nav"><span class="ic"></span>Billing</div>
+            <div class="glabel">Tool settings</div>
+            <div class="nav"><span class="ic"></span>Feedback</div>
+            <div class="nav"><span class="ic"></span>Support</div>
+            <div class="nav"><span class="ic"></span>Marketing</div>
+          </div>
+          <div class="main">
+            <div class="crumb">Workspace settings › <b>Tools</b></div>
+            <div class="mh">
+              <h4>Tools</h4>
+              <span class="chip sel" style="margin-left: 6px">Team: Mobile ⌄</span>
+            </div>
+            <table class="mx">
+              <tr>
+                <th>Product</th>
+                <th>Feedback</th>
+                <th>Roadmap</th>
+                <th>Changelog</th>
+                <th>Marketing</th>
+              </tr>
+              <tr>
+                <td><b>Acme App</b></td>
+                <td><span class="tg on tgc"></span></td>
+                <td><span class="tg on tgc"></span></td>
+                <td><span class="tg on tgc"></span></td>
+                <td><span class="tg on tgc"></span></td>
+              </tr>
+              <tr>
+                <td><b>Acme API</b></td>
+                <td><span class="tg on tgc"></span></td>
+                <td><span class="tg tgc"></span></td>
+                <td><span class="tg on tgc"></span></td>
+                <td><span class="tg tgc"></span></td>
+              </tr>
+              <tr>
+                <td><b>Docs site</b></td>
+                <td><span class="tg on tgc"></span></td>
+                <td><span class="tg tgc"></span></td>
+                <td><span class="tg tgc"></span></td>
+                <td><span class="tg tgc"></span></td>
+              </tr>
+              <tr>
+                <td class="muted">Managed by</td>
+                <td class="muted">Team admin</td>
+                <td class="muted">Team admin</td>
+                <td class="muted">Team admin</td>
+                <td class="muted">Ws admin</td>
+              </tr>
+            </table>
+            <div class="set-row" style="margin-top: 6px">
+              <div class="d">
+                <b>Support</b> <span class="pill">team tool</span
+                ><small>2 inboxes · support@acme.com, billing@acme.com</small>
+              </div>
+              <span class="btn">Manage inboxes</span>
+            </div>
+            <div class="lock">
+              Changes take effect right away for everyone on the team. Turning a tool off keeps its data.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card pros">
+          <b>Strengths</b>
+          <ul>
+            <li>One place shows what is on for which products.</li>
+            <li>Clear for admins and buyers, and makes plan or billing gating easy to add.</li>
+            <li>Members never see configuration they can't use.</li>
+          </ul>
+        </div>
+        <div class="card cons">
+          <b>Trade-offs</b>
+          <ul>
+            <li>Switching between work and configuration (changing a status means leaving the board).</li>
+            <li>Admins who also triage go back and forth more.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="score">
+        Enable Roadmap: 3 clicks (Settings → Tools → toggle) · Find Feedback statuses: Settings → Feedback
+      </p>
+    </div>
+
+    <!-- ============ FLOW ============ -->
+    <div class="panel" id="p-flow">
+      <p class="muted">
+        The same activation flow for every variation. It replaces "team toggle + product toggle + hunt for settings"
+        with one guided step.
+      </p>
+      <div class="flow">
+        <div class="step"><em>1 · Discover</em>Greyed tool in sidebar, or "+ Add tool"</div>
+        <span class="arrow">→</span>
+        <div class="step"><em>2 · Permission check</em>Admin: wizard · Member: "Request" notifies team admins</div>
+        <span class="arrow">→</span>
+        <div class="step"><em>3 · Choose products</em>Checkboxes; the current product is pre-ticked</div>
+        <span class="arrow">→</span>
+        <div class="step"><em>4 · Essentials</em>2–3 key settings with sensible defaults</div>
+        <span class="arrow">→</span>
+        <div class="step"><em>5 · Land in tool</em>Empty state with next step</div>
+      </div>
+      <div class="modal">
+        <h4>Add Roadmap</h4>
+        <span class="muted">Share what's planned and let users follow progress.</span>
+        <div class="stepper">
+          <div class="on"></div>
+          <div class="on"></div>
+          <div></div>
+        </div>
+        <b>Which products?</b>
+        <div class="opt">
+          <span class="bx on"></span>
+          <div>Acme App<small>Public · feedback board already on</small></div>
+        </div>
+        <div class="opt">
+          <span class="bx"></span>
+          <div>Acme API<small>Private · visible to team only</small></div>
+        </div>
+        <div class="opt">
+          <span class="bx"></span>
+          <div>Docs site<small>Public</small></div>
+        </div>
+        <div style="display: flex; gap: 6px; margin-top: 10px">
+          <span class="muted small" style="align-self: center">You're a team admin of Mobile</span
+          ><span class="btn ml">Back</span><span class="btn pri">Next: visibility</span>
+        </div>
       </div>
     </div>
-  </div>
-  <div class="col">
-    <div class="card pros"><b>Strengths</b><ul><li>Answers "where do I change X?": go to the product, then the tool, then Settings.</li><li>Matches how the data is stored (feedback, roadmap and changelog are scoped to products).</li><li>Removes Marketing's second picker.</li></ul></div>
-    <div class="card cons"><b>Trade-offs</b><ul><li>Triage across products needs an "All products" entry in the switcher.</li><li>Teams with one product get an extra switcher they don't need (auto-hide it when there is only one product).</li></ul></div>
-  </div>
-  <p class="score">Enable Roadmap for a product: 2 clicks (+ Add tool → Roadmap) · Find Feedback statuses: Feedback → Settings</p>
-</div>
 
-<!-- ============ B ============ -->
-<div class="panel" id="p-b">
-  <p class="muted">The tool is the main context. This is closest to today's sidebar. Each tool page has a row of product chips at the top and the same Board/List/Settings tabs. Tool settings are split into "this product" and "all products in team".</p>
-  <div class="win">
-    <div class="win-bar"><i></i><i></i><i></i><span>/feedback/settings?product=acme-app</span></div>
-    <div class="app">
-      <div class="side">
-        <div class="switch"><div class="logo"></div><div class="t"><b>Acme Inc</b><small>Team · Mobile</small></div><span class="chev">⌄</span></div>
-        <div class="nav"><span class="ic"></span>Home</div>
-        <div class="glabel">Tools</div>
-        <div class="nav sel"><span class="ic"></span>Feedback<span class="end">12</span></div>
-        <div class="nav"><span class="ic"></span>Roadmap</div>
-        <div class="nav"><span class="ic"></span>Changelog</div>
-        <div class="nav"><span class="ic"></span>Support<span class="end">3</span></div>
-        <div class="glabel">More tools</div>
-        <div class="nav off"><span class="ic"></span>Marketing<span class="end">Enable</span></div>
-        <div class="glabel">Manage</div>
-        <div class="nav"><span class="ic"></span>Products</div>
-        <div class="nav"><span class="ic"></span>Workspace settings</div>
-      </div>
-      <div class="main">
-        <div class="crumb">Acme Inc › Mobile › <b>Feedback</b></div>
-        <div class="chips"><span class="chip">All products</span><span class="chip sel">Acme App</span><span class="chip">Acme API</span><span class="chip">Docs site</span></div>
-        <div class="subtabs"><span>Board</span><span>List</span><span class="sel">Settings</span></div>
-        <div class="set-row"><div class="d"><b>Feedback on for Acme App</b><small>Public board at feedback.acme.com</small></div><span class="tg on"></span></div>
-        <div class="set-row"><div class="d"><b>Categories</b><small>Bug, Idea, Question +2</small></div><span class="btn">Edit</span></div>
-        <div class="set-row"><div class="d"><b>Statuses</b><small>Open → Planned → Shipped</small></div><span class="btn">Edit</span></div>
-        <div class="set-row"><div class="d"><b>GitHub sync</b><small>acme/app · issues mirrored</small></div><span class="btn">Configure</span></div>
-        <div class="set-row"><div class="d"><b>Anonymous submissions</b><small>Applies to: all products in Mobile</small></div><span class="tg on locked"></span></div>
-        <div class="lock"><b>Locked ·</b> Settings that apply to the whole team can only be changed by team admins.</div>
-      </div>
+    <h2>Who can do what (proposed, simplified)</h2>
+    <p class="muted small">
+      Keep the existing roles but show them in one table under Members &amp; roles. Support roles become a column in the
+      team member list instead of a separate per-inbox screen.
+    </p>
+    <table class="t">
+      <tr>
+        <th>Action</th>
+        <th class="c">Ws owner/admin</th>
+        <th class="c">Team admin</th>
+        <th class="c">Team member</th>
+        <th class="c">Support agent</th>
+      </tr>
+      <tr>
+        <td>Invite people, create teams, billing</td>
+        <td class="c yes">✓</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+      </tr>
+      <tr>
+        <td>Create / delete products, custom domain</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+      </tr>
+      <tr>
+        <td>Turn tools on/off for a product</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c no">request</td>
+        <td class="c no">—</td>
+      </tr>
+      <tr>
+        <td>Change tool settings (statuses, SLA, site…)</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c no">view</td>
+        <td class="c no">supervisor+</td>
+      </tr>
+      <tr>
+        <td>Use tools (triage, post changelog, reply)</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">inbox only</td>
+      </tr>
+      <tr>
+        <td>Marketing API keys &amp; spend budgets</td>
+        <td class="c yes">✓</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+      </tr>
+    </table>
+
+    <h2>Where things move</h2>
+    <table class="t">
+      <tr>
+        <th>Today</th>
+        <th>Proposed (A + matrix)</th>
+      </tr>
+      <tr>
+        <td><code>/settings</code> Profile, Security, Notifications, Appearance</td>
+        <td>Avatar menu → <code>/account/*</code></td>
+      </tr>
+      <tr>
+        <td><code>/settings</code> Workspace, Teams, Tools</td>
+        <td>
+          <code>/settings/*</code> = Workspace settings (Members &amp; roles, Teams, Tools matrix, Integrations,
+          Billing)
+        </td>
+      </tr>
+      <tr>
+        <td>Product → Features tab + Settings → Tools (two toggles)</td>
+        <td>One toggle per product: "+ Add tool" or the Tools matrix</td>
+      </tr>
+      <tr>
+        <td>Product → Feedback / Categories / Statuses / GitHub</td>
+        <td>Feedback → Settings tab</td>
+      </tr>
+      <tr>
+        <td><code>/marketing/settings</code> + its own product picker</td>
+        <td>Marketing → Settings tab (product from the main switcher); API keys → Workspace › Integrations</td>
+      </tr>
+      <tr>
+        <td><code>/support/settings</code> (one 2,800-line page)</td>
+        <td>Support → Settings with sub-tabs: Inbox, Channels, Agents, SLA, Automations, Canned replies</td>
+      </tr>
+      <tr>
+        <td>Roadmap / Changelog: no settings</td>
+        <td>Roadmap → Settings (columns, visibility); Changelog → Settings (labels, subscribers)</td>
+      </tr>
+    </table>
+
+    <h2>Recommendation</h2>
+    <div class="rec">
+      <b>Use A (product-first) as the main structure and add C's Tools matrix</b> as a page in Workspace settings. A
+      answers "where are the settings?" (product, then tool, then Settings). The matrix answers "what is on, and who
+      controls it?" in one place. Take B's "All products" option for triage across products.
+      <p class="small" style="margin-top: 8px">
+        Suggested order: ① remove the team-level toggle (make it derived) and add a Settings tab to each tool; ② split
+        personal and workspace settings and add lock lines with "Request"; ③ add the product switcher and breadcrumb,
+        and remove the Marketing picker; ④ build the Tools matrix and the guided "Add tool" flow.
+      </p>
     </div>
-  </div>
-  <div class="col">
-    <div class="card pros"><b>Strengths</b><ul><li>Smallest change from today; works with existing routes.</li><li>Triage across products is the default ("All products" chip).</li><li>Every tool's settings sit one tab away.</li></ul></div>
-    <div class="card cons"><b>Trade-offs</b><ul><li>Product-wide things (domain, embed, appearance) still need a separate Products page.</li><li>The product chip state must carry across tools, or users lose context.</li></ul></div>
-  </div>
-  <p class="score">Enable Marketing: 2 clicks (More tools → Marketing → choose products) · Find Feedback statuses: Feedback → Settings</p>
-</div>
 
-<!-- ============ C ============ -->
-<div class="panel" id="p-c">
-  <p class="muted">Work pages and configuration are fully separate, as in Slack or Notion admin. The sidebar only has work pages. All configuration lives in one admin console with a <b>Tools × Products matrix</b> and a roles page.</p>
-  <div class="win">
-    <div class="win-bar"><i></i><i></i><i></i><span>/admin/tools</span></div>
-    <div class="app">
-      <div class="side">
-        <div class="switch"><div class="logo"></div><div class="t"><b>Workspace settings</b><small>Acme Inc</small></div><span class="chev">←</span></div>
-        <div class="glabel">Workspace</div>
-        <div class="nav"><span class="ic"></span>General</div>
-        <div class="nav"><span class="ic"></span>Members &amp; roles</div>
-        <div class="nav"><span class="ic"></span>Teams</div>
-        <div class="nav"><span class="ic"></span>Products</div>
-        <div class="nav sel"><span class="ic"></span>Tools</div>
-        <div class="nav"><span class="ic"></span>Integrations</div>
-        <div class="nav"><span class="ic"></span>Billing</div>
-        <div class="glabel">Tool settings</div>
-        <div class="nav"><span class="ic"></span>Feedback</div>
-        <div class="nav"><span class="ic"></span>Support</div>
-        <div class="nav"><span class="ic"></span>Marketing</div>
-      </div>
-      <div class="main">
-        <div class="crumb">Workspace settings › <b>Tools</b></div>
-        <div class="mh"><h4>Tools</h4><span class="chip sel" style="margin-left:6px">Team: Mobile ⌄</span></div>
-        <table class="mx">
-          <tr><th>Product</th><th>Feedback</th><th>Roadmap</th><th>Changelog</th><th>Marketing</th></tr>
-          <tr><td><b>Acme App</b></td><td><span class="tg on tgc"></span></td><td><span class="tg on tgc"></span></td><td><span class="tg on tgc"></span></td><td><span class="tg on tgc"></span></td></tr>
-          <tr><td><b>Acme API</b></td><td><span class="tg on tgc"></span></td><td><span class="tg tgc"></span></td><td><span class="tg on tgc"></span></td><td><span class="tg tgc"></span></td></tr>
-          <tr><td><b>Docs site</b></td><td><span class="tg on tgc"></span></td><td><span class="tg tgc"></span></td><td><span class="tg tgc"></span></td><td><span class="tg tgc"></span></td></tr>
-          <tr><td class="muted">Managed by</td><td class="muted">Team admin</td><td class="muted">Team admin</td><td class="muted">Team admin</td><td class="muted">Ws admin</td></tr>
-        </table>
-        <div class="set-row" style="margin-top:6px"><div class="d"><b>Support</b> <span class="pill">team tool</span><small>2 inboxes · support@acme.com, billing@acme.com</small></div><span class="btn">Manage inboxes</span></div>
-        <div class="lock">Changes take effect right away for everyone on the team. Turning a tool off keeps its data.</div>
-      </div>
-    </div>
-  </div>
-  <div class="col">
-    <div class="card pros"><b>Strengths</b><ul><li>One place shows what is on for which products.</li><li>Clear for admins and buyers, and makes plan or billing gating easy to add.</li><li>Members never see configuration they can't use.</li></ul></div>
-    <div class="card cons"><b>Trade-offs</b><ul><li>Switching between work and configuration (changing a status means leaving the board).</li><li>Admins who also triage go back and forth more.</li></ul></div>
-  </div>
-  <p class="score">Enable Roadmap: 3 clicks (Settings → Tools → toggle) · Find Feedback statuses: Settings → Feedback</p>
-</div>
-
-<!-- ============ FLOW ============ -->
-<div class="panel" id="p-flow">
-  <p class="muted">The same activation flow for every variation. It replaces "team toggle + product toggle + hunt for settings" with one guided step.</p>
-  <div class="flow">
-    <div class="step"><em>1 · Discover</em>Greyed tool in sidebar, or "+ Add tool"</div><span class="arrow">→</span>
-    <div class="step"><em>2 · Permission check</em>Admin: wizard · Member: "Request" notifies team admins</div><span class="arrow">→</span>
-    <div class="step"><em>3 · Choose products</em>Checkboxes; the current product is pre-ticked</div><span class="arrow">→</span>
-    <div class="step"><em>4 · Essentials</em>2–3 key settings with sensible defaults</div><span class="arrow">→</span>
-    <div class="step"><em>5 · Land in tool</em>Empty state with next step</div>
-  </div>
-  <div class="modal">
-    <h4>Add Roadmap</h4>
-    <span class="muted">Share what's planned and let users follow progress.</span>
-    <div class="stepper"><div class="on"></div><div class="on"></div><div></div></div>
-    <b>Which products?</b>
-    <div class="opt"><span class="bx on"></span><div>Acme App<small>Public · feedback board already on</small></div></div>
-    <div class="opt"><span class="bx"></span><div>Acme API<small>Private · visible to team only</small></div></div>
-    <div class="opt"><span class="bx"></span><div>Docs site<small>Public</small></div></div>
-    <div style="display:flex;gap:6px;margin-top:10px"><span class="muted small" style="align-self:center">You're a team admin of Mobile</span><span class="btn ml">Back</span><span class="btn pri">Next: visibility</span></div>
-  </div>
-</div>
-
-<h2>Who can do what (proposed, simplified)</h2>
-<p class="muted small">Keep the existing roles but show them in one table under Members &amp; roles. Support roles become a column in the team member list instead of a separate per-inbox screen.</p>
-<table class="t">
-  <tr><th>Action</th><th class="c">Ws owner/admin</th><th class="c">Team admin</th><th class="c">Team member</th><th class="c">Support agent</th></tr>
-  <tr><td>Invite people, create teams, billing</td><td class="c yes">✓</td><td class="c no">—</td><td class="c no">—</td><td class="c no">—</td></tr>
-  <tr><td>Create / delete products, custom domain</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c no">—</td><td class="c no">—</td></tr>
-  <tr><td>Turn tools on/off for a product</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c no">request</td><td class="c no">—</td></tr>
-  <tr><td>Change tool settings (statuses, SLA, site…)</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c no">view</td><td class="c no">supervisor+</td></tr>
-  <tr><td>Use tools (triage, post changelog, reply)</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">✓</td><td class="c yes">inbox only</td></tr>
-  <tr><td>Marketing API keys &amp; spend budgets</td><td class="c yes">✓</td><td class="c no">—</td><td class="c no">—</td><td class="c no">—</td></tr>
-</table>
-
-<h2>Where things move</h2>
-<table class="t">
-  <tr><th>Today</th><th>Proposed (A + matrix)</th></tr>
-  <tr><td><code>/settings</code> Profile, Security, Notifications, Appearance</td><td>Avatar menu → <code>/account/*</code></td></tr>
-  <tr><td><code>/settings</code> Workspace, Teams, Tools</td><td><code>/settings/*</code> = Workspace settings (Members &amp; roles, Teams, Tools matrix, Integrations, Billing)</td></tr>
-  <tr><td>Product → Features tab + Settings → Tools (two toggles)</td><td>One toggle per product: "+ Add tool" or the Tools matrix</td></tr>
-  <tr><td>Product → Feedback / Categories / Statuses / GitHub</td><td>Feedback → Settings tab</td></tr>
-  <tr><td><code>/marketing/settings</code> + its own product picker</td><td>Marketing → Settings tab (product from the main switcher); API keys → Workspace › Integrations</td></tr>
-  <tr><td><code>/support/settings</code> (one 2,800-line page)</td><td>Support → Settings with sub-tabs: Inbox, Channels, Agents, SLA, Automations, Canned replies</td></tr>
-  <tr><td>Roadmap / Changelog: no settings</td><td>Roadmap → Settings (columns, visibility); Changelog → Settings (labels, subscribers)</td></tr>
-</table>
-
-<h2>Recommendation</h2>
-<div class="rec">
-  <b>Use A (product-first) as the main structure and add C's Tools matrix</b> as a page in Workspace settings. A answers "where are the settings?" (product, then tool, then Settings). The matrix answers "what is on, and who controls it?" in one place. Take B's "All products" option for triage across products.
-  <p class="small" style="margin-top:8px">Suggested order: ① remove the team-level toggle (make it derived) and add a Settings tab to each tool; ② split personal and workspace settings and add lock lines with "Request"; ③ add the product switcher and breadcrumb, and remove the Marketing picker; ④ build the Tools matrix and the guided "Add tool" flow.</p>
-</div>
-
-<script>
-  document.querySelectorAll('.tab').forEach(function (t) {
-    t.addEventListener('click', function () {
-      document.querySelectorAll('.tab').forEach(function (x) { x.setAttribute('aria-selected', x === t ? 'true' : 'false') })
-      document.querySelectorAll('.panel').forEach(function (p) { p.classList.toggle('active', p.id === 'p-' + t.dataset.p) })
-    })
-  })
-</script>
-</body>
+    <script>
+      document.querySelectorAll('.tab').forEach(function (t) {
+        t.addEventListener('click', function () {
+          document.querySelectorAll('.tab').forEach(function (x) {
+            x.setAttribute('aria-selected', x === t ? 'true' : 'false')
+          })
+          document.querySelectorAll('.panel').forEach(function (p) {
+            p.classList.toggle('active', p.id === 'p-' + t.dataset.p)
+          })
+        })
+      })
+    </script>
+  </body>
 </html>
