@@ -130,7 +130,7 @@ describe('RealtimeClient — connection and dispatch', () => {
   it('dispatches event frames with the envelope nested under `event`, not spread (D-02)', async () => {
     const client = makeClient()
     const onEvent = vi.fn()
-    client.subscribe('team:t1', { onEvent })
+    client.subscribe('project:t1', { onEvent })
     await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
     const socket = latestSocket()
     socket.open()
@@ -138,18 +138,18 @@ describe('RealtimeClient — connection and dispatch', () => {
     socket.message(
       JSON.stringify({
         type: 'event',
-        channel: 'team:t1',
-        event: { v: 1, type: 'conversation.updated', teamId: 't1' },
+        channel: 'project:t1',
+        event: { v: 1, type: 'conversation.updated', projectId: 't1' },
       })
     )
 
-    expect(onEvent).toHaveBeenCalledWith({ v: 1, type: 'conversation.updated', teamId: 't1' }, 'team:t1')
+    expect(onEvent).toHaveBeenCalledWith({ v: 1, type: 'conversation.updated', projectId: 't1' }, 'project:t1')
   })
 
   it('ignores legacy `notification` frames entirely', async () => {
     const client = makeClient()
     const onEvent = vi.fn()
-    client.subscribe('team:t1', { onEvent })
+    client.subscribe('project:t1', { onEvent })
     await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
     const socket = latestSocket()
     socket.open()
@@ -165,17 +165,19 @@ describe('RealtimeClient — reference counting', () => {
     const onEventA = vi.fn()
     const onEventB = vi.fn()
 
-    const unsubA = client.subscribe('team:t1', { onEvent: onEventA })
+    const unsubA = client.subscribe('project:t1', { onEvent: onEventA })
     await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
     const socket = latestSocket()
     socket.open()
 
-    const unsubB = client.subscribe('team:t1', { onEvent: onEventB })
+    const unsubB = client.subscribe('project:t1', { onEvent: onEventB })
 
     expect(subscribeFrames(socket)).toHaveLength(1)
 
     // Both still receive events while both are subscribed.
-    socket.message(JSON.stringify({ type: 'event', channel: 'team:t1', event: { v: 1, type: 'x', teamId: 't1' } }))
+    socket.message(
+      JSON.stringify({ type: 'event', channel: 'project:t1', event: { v: 1, type: 'x', projectId: 't1' } })
+    )
     expect(onEventA).toHaveBeenCalledTimes(1)
     expect(onEventB).toHaveBeenCalledTimes(1)
 
@@ -183,7 +185,9 @@ describe('RealtimeClient — reference counting', () => {
     unsubA()
     expect(unsubscribeFrames(socket)).toHaveLength(0)
 
-    socket.message(JSON.stringify({ type: 'event', channel: 'team:t1', event: { v: 1, type: 'y', teamId: 't1' } }))
+    socket.message(
+      JSON.stringify({ type: 'event', channel: 'project:t1', event: { v: 1, type: 'y', projectId: 't1' } })
+    )
     expect(onEventA).toHaveBeenCalledTimes(1) // unchanged
     expect(onEventB).toHaveBeenCalledTimes(2)
 
@@ -196,15 +200,15 @@ describe('RealtimeClient — reference counting', () => {
 describe('RealtimeClient — resubscribe on reconnect', () => {
   it('resubscribes all previously held channels on a new socket without the caller re-registering', async () => {
     const client = makeClient()
-    client.subscribe('team:t1')
-    client.subscribe('team:t2')
+    client.subscribe('project:t1')
+    client.subscribe('project:t2')
     await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
     const first = latestSocket()
     first.open()
     expect(subscribeFrames(first).sort()).toEqual(
       [
-        JSON.stringify({ action: 'subscribe', channel: 'team:t1' }),
-        JSON.stringify({ action: 'subscribe', channel: 'team:t2' }),
+        JSON.stringify({ action: 'subscribe', channel: 'project:t1' }),
+        JSON.stringify({ action: 'subscribe', channel: 'project:t2' }),
       ].sort()
     )
 
@@ -220,8 +224,8 @@ describe('RealtimeClient — resubscribe on reconnect', () => {
 
     expect(subscribeFrames(second).sort()).toEqual(
       [
-        JSON.stringify({ action: 'subscribe', channel: 'team:t1' }),
-        JSON.stringify({ action: 'subscribe', channel: 'team:t2' }),
+        JSON.stringify({ action: 'subscribe', channel: 'project:t1' }),
+        JSON.stringify({ action: 'subscribe', channel: 'project:t2' }),
       ].sort()
     )
   })
@@ -231,7 +235,7 @@ describe('RealtimeClient — resubscribe on reconnect', () => {
     const onReconnect = vi.fn()
     client.onReconnect(onReconnect)
 
-    client.subscribe('team:t1')
+    client.subscribe('project:t1')
     await vi.waitFor(() => expect(FakeSocket.instances).toHaveLength(1))
     const first = latestSocket()
     first.open()

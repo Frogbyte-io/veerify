@@ -4,7 +4,7 @@
  * dispatch) are the first real consumers of `defineScheduledTask`.
  *
  * Imported by both backend adapters (`server/tasks/example/ping.ts` for
- * self-hosted, `server/api/cron/example-ping.get.ts` for Vercel) so
+ * in-process, `server/api/cron/example-ping.get.ts` for HTTP) so
  * registration happens exactly once regardless of which backend is active.
  */
 import { createLogger } from '~/server/utils/logger'

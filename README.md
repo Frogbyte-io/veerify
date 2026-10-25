@@ -9,7 +9,7 @@ A modern feedback management platform built with Nuxt 3, TypeScript, and shadcn-
 - **Feedback Collection** - Capture user feedback and feature requests
 - **Voting System** - Let users upvote their favorite features
 - **Status Management** - Track feedback from submission to completion
-- **Team Collaboration** - Role-based access with team management
+- **Workspaces, projects and products** - Role-based access per project, with a feedback board per product
 - **Analytics Dashboard** - Insights into user engagement and feedback trends
 - **Public Roadmap** - Share your product development timeline
 - **User Management** - Organize and segment your user base
@@ -145,13 +145,13 @@ range of migrations. For large installations, run the migration command as a
 single controlled deployment job and monitor long-running backfills before
 starting application replicas.
 
-Preview/test data is always an explicit operation (`yarn db:seed` or `yarn db:seed:e2e`) and must never be part of a build or package-install hook. Vercel's `vercel-build` command runs deployment migration first and compilation second, without seeding.
+Preview/test data is always an explicit operation (`yarn db:seed` or `yarn db:seed:e2e`) and must never be part of a build or package-install hook. The container entrypoint runs deployment migration on start; compilation never seeds.
 
 #### Configure the PostgreSQL database
 
 You can connect to PostgreSQL in two ways:
 
-**Option A — single connection string (recommended for hosted databases like Neon):**
+**Option A — single connection string (recommended for hosted databases):**
 
 ```env
 DATABASE_URL=postgres://user:password@host:5432/dbname?sslmode=require
@@ -171,14 +171,14 @@ PGDATABASE=veerifydb
 
 #### Configure app and public-board domains
 
-Use separate domains for the dashboard app and team public boards:
+Use separate domains for the dashboard app and workspace public boards:
 
 ```env
 # Dashboard app host (main app)
 BETTER_AUTH_URL=https://app.veerify.io
 APP_DASHBOARD_DOMAIN=app.veerify.io
 
-# Public board base host (team subdomains)
+# Public board base host (workspace subdomains)
 APP_DOMAIN=veerify.io
 
 # Optional deployment mode override ("self-hosted" or "cloud")
@@ -254,9 +254,9 @@ broker for realtime + rate limiting), MinIO (S3-compatible object storage), and 
 - A VM (or bare-metal host) with Docker Engine and the Compose plugin installed.
 - DNS `A`/`AAAA` records pointed at the VM's public IP:
   - `APP_DASHBOARD_DOMAIN` (e.g. `app.veerify.io`) — the dashboard/login/API host.
-  - `APP_DOMAIN` (e.g. `veerify.io`) — the base host for team public boards.
+  - `APP_DOMAIN` (e.g. `veerify.io`) — the base host for workspace public boards.
   - `*.APP_DOMAIN` (e.g. `*.veerify.io`) — a wildcard record required for
-    team public boards at `<team-slug>.APP_DOMAIN`; the base `APP_DOMAIN` record
+    workspace public boards at `<workspace-slug>.APP_DOMAIN/<project>`; the base `APP_DOMAIN` record
     is still needed for the root host.
 - A third record for `STORAGE_DOMAIN` (e.g. `assets.veerify.io`) pointed at the same IP. Uploads (logos,
   banners) are presigned directly against MinIO, so this host must be reachable from customers' browsers —
@@ -277,31 +277,31 @@ credentials — there is no separate MinIO admin password to set.
 
 #### Marketing (optional)
 
-The Marketing module works on self-hosted installs. Teams bring their own Claude, OpenAI, Firecrawl and
+The Marketing module works on self-hosted installs. Workspaces bring their own Claude, OpenAI, Firecrawl and
 PageSpeed keys in Marketing settings; to let them save keys, set `SECRETS_ENCRYPTION_KEY`
 (`openssl rand -base64 32`). Everything else is optional and only unlocks one capability:
 
 | Variable                                                        | Unlocks                                                                                                                                                                                                                                |
 | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`                        | Full site crawl for every team (point the URL at a self-hosted Firecrawl if you run one). Without it, teams without their own key get a basic audit of robots.txt, llms.txt, sitemap and home page                                     |
+| `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`                        | Full site crawl for every workspace (point the URL at a self-hosted Firecrawl if you run one). Without it, workspaces without their own key get a basic audit of robots.txt, llms.txt, sitemap and home page                           |
 | `PAGESPEED_API_KEY`                                             | Core Web Vitals in site audits                                                                                                                                                                                                         |
 | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT` | Reddit mentions (register your own Reddit app; you are bound by Reddit's API terms)                                                                                                                                                    |
 | `BLUESKY_IDENTIFIER`, `BLUESKY_APP_PASSWORD`                    | Bluesky mentions (use an app password)                                                                                                                                                                                                 |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`                      | Google Search Console data (clicks, impressions, queries). Create a Google OAuth web client with the Search Console API enabled and the redirect URI `<BETTER_AUTH_URL>/api/marketing/google/callback`; needs `SECRETS_ENCRYPTION_KEY` |
 | `MARKETING_MAX_AUDIT_PAGES`, `MARKETING_MANUAL_AUDITS_PER_DAY`  | Crawl limits (defaults 50 pages, 3 manual audits per product per day; hard cap 500 pages)                                                                                                                                              |
 
-To rotate `SECRETS_ENCRYPTION_KEY`, move the old value to `SECRETS_ENCRYPTION_KEY_PREVIOUS` and set a new key. Stored keys keep decrypting, but nothing re-encrypts them automatically, so keep the old key there until teams have re-saved their keys. Run exactly one app replica: the scheduled tasks run inside every app process. Deployment details are in `docs/plans/2026-09-21-coolify-deployment.md`.
+To rotate `SECRETS_ENCRYPTION_KEY`, move the old value to `SECRETS_ENCRYPTION_KEY_PREVIOUS` and set a new key. Stored keys keep decrypting, but nothing re-encrypts them automatically, so keep the old key there until workspaces have re-saved their keys. Run exactly one app replica: the scheduled tasks run inside every app process. Deployment details are in `docs/plans/2026-09-21-coolify-deployment.md`.
 
 Hacker News mentions need nothing. Marketing settings shows an integration status panel listing what is
 configured. After setting the variables and restarting, open Marketing settings, go to Integration status and
-choose **Test all** (team admins only). Each integration runs its cheapest real check (key validation, one
+choose **Test all** (workspace owners and admins only). Each integration runs its cheapest real check (key validation, one
 search, an encryption round trip, a Search Console token refresh) and shows what worked or what to fix;
-nothing is generated and no key is shown. Tests are limited to 10 per hour per team, and Test all skips
+nothing is generated and no key is shown. Tests are limited to 10 per hour per workspace, and Test all skips
 integrations that are not configured.
 
 ##### Rotating `SECRETS_ENCRYPTION_KEY`
 
-Team API keys and Google refresh tokens are encrypted with `SECRETS_ENCRYPTION_KEY`; each stored value records
+Workspace API keys and Google refresh tokens are encrypted with `SECRETS_ENCRYPTION_KEY`; each stored value records
 which key wrapped it. To rotate:
 
 1. Generate a new key (`openssl rand -base64 32`).
@@ -310,7 +310,7 @@ which key wrapped it. To rotate:
 3. The hourly `marketing:visibility-schedule` task re-encrypts everything still on an old key. Marketing settings
    > Integration status (Key encryption) shows "N keys are still encrypted with the previous key" until it reaches 0.
 4. Once nothing is left, remove `SECRETS_ENCRYPTION_KEY_PREVIOUS`. A value that cannot be decrypted (for example a
-   lost key) is reported in the server log by id and left alone; teams re-enter that key or reconnect Google.
+   lost key) is reported in the server log by id and left alone; workspaces re-enter that key or reconnect Google.
 
 ##### Search Console and site address changes
 
@@ -336,10 +336,10 @@ single migration/backfill service before the app begins serving and brings Caddy
 
 #### Custom domains (`project.customDomain`)
 
-When a team points a customer-owned domain at a project's public board, Caddy issues that domain's TLS
+When a project points a customer-owned domain at a project's public board, Caddy issues that domain's TLS
 certificate automatically on first request (on-demand TLS) — no manual cert management, no restart. The
 customer only needs a `CNAME`/`A` record pointing their domain at this VM; verification and DNS-target
-guidance is the same as on the CNAME/Vercel-based flow (see `CNAME_TARGET` above).
+guidance is the same as on the CNAME-based flow (see `CNAME_TARGET` above).
 
 Certificate issuance for arbitrary hosts is gated by an `ask` check in `Caddyfile` so the proxy can't be
 abused as an open certificate-issuance relay — see the comments in `Caddyfile` and D-07 in
@@ -353,7 +353,7 @@ yarn preview
 
 **Test credentials on preview deployments:**
 
-Two seed accounts are available — one with a full org/team/project setup, one standalone personal account with no org affiliation:
+Two seed accounts are available — one with a full workspace/project setup, one standalone personal account with no org affiliation:
 
 | Account  | Email                    | Password      | Has org? |
 | -------- | ------------------------ | ------------- | -------- |
@@ -373,7 +373,8 @@ veerify/
 ├── pages/
 │   ├── dashboard/        # Main dashboard
 │   ├── feedback/         # Feedback management
-│   ├── team/            # Team management
+│   ├── workspace/       # Workspace settings (members, projects, API keys)
+│   ├── project/         # Project settings (products, access, tools)
 │   ├── reports/         # Analytics and reporting
 │   ├── help/            # Help center
 │   └── settings/        # Application settings
@@ -436,7 +437,8 @@ The shadcn-vue configuration is stored in `components.json`:
 - **Dashboard** (`/dashboard`) - Overview of feedback metrics and activity
 - **Feedback** (`/feedback`) - Main feedback management interface
 - **Analytics** (`/reports`) - Detailed analytics and insights
-- **Team** (`/team`) - Team member management and permissions
+- **Workspace** (`/workspace`) - Members, projects, API keys and integrations
+- **Project settings** (`/project/settings`) - Products, members & access, tools, domain
 - **Help Center** (`/help`) - User documentation and support
 - **Settings** (`/settings`) - Application configuration
 - **API Docs** (`/api-docs`) - Interactive Scalar reference backed by `/api/openapi.json`

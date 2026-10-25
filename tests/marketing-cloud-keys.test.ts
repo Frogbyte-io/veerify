@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ credentials: [] as Array<Record<string, unknown>> }))
 
-vi.mock('~/server/utils/team-credentials', () => ({
-  listTeamCredentials: vi.fn(async () => state.credentials),
+vi.mock('~/server/utils/org-credentials', () => ({
+  listOrgCredentials: vi.fn(async () => state.credentials),
 }))
 vi.mock('~/server/utils/secrets', () => ({ isSecretsConfigured: () => true }))
 
@@ -13,7 +13,7 @@ const { getIntegrationStatus } = await import('~/server/utils/marketing-integrat
 
 beforeEach(() => {
   state.credentials = []
-  for (const key of ['APP_DEPLOYMENT_MODE', 'MARKETING_ALLOW_INSTANCE_KEYS', 'VERCEL', 'VERCEL_ENV']) {
+  for (const key of ['APP_DEPLOYMENT_MODE', 'MARKETING_ALLOW_INSTANCE_KEYS']) {
     vi.stubEnv(key, '')
   }
   vi.stubEnv('FIRECRAWL_API_KEY', 'instance-fc')
@@ -25,15 +25,14 @@ afterEach(() => {
 })
 
 describe('deployment mode', () => {
-  it('detects cloud from APP_DEPLOYMENT_MODE, self-hosted otherwise, Vercel only when unset', () => {
+  it('detects cloud only from APP_DEPLOYMENT_MODE, self-hosted otherwise', () => {
     expect(isCloudDeployment()).toBe(false)
     vi.stubEnv('APP_DEPLOYMENT_MODE', 'cloud')
     expect(isCloudDeployment()).toBe(true)
     vi.stubEnv('APP_DEPLOYMENT_MODE', 'self-hosted')
-    vi.stubEnv('VERCEL', '1')
     expect(isCloudDeployment()).toBe(false)
     vi.stubEnv('APP_DEPLOYMENT_MODE', '')
-    expect(isCloudDeployment()).toBe(true)
+    expect(isCloudDeployment()).toBe(false)
   })
 })
 

@@ -6,10 +6,10 @@ import type { SendingDomainProvider } from '~/server/services/sending-domains/ty
 import { getSendingDomainProvider } from '~/server/services/sending-domains'
 import { isSendingDomainsEnabled } from '~/server/utils/sending-domains'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
-import { resolveSupportTeamRole } from '~/server/utils/support-access'
+import { resolveSupportProjectRole } from '~/server/utils/support-access'
 import type { RegisterOutcome, SendingDomainRow } from '~/server/utils/sending-domain-poller'
 
-/** Shared helpers for the team sending-domain routes (design §7). */
+/** Shared helpers for the project sending-domain routes (design §7). */
 
 export interface SendingDomainInboxRef {
   id: string
@@ -27,9 +27,9 @@ export function requireSendingDomainsEnabled(): void {
   }
 }
 
-/** Any support role, or a team admin, may read. Non-members are rejected by the resolver. */
-export async function requireSendingDomainReader(teamId: string, userId: string) {
-  const access = await resolveSupportTeamRole(teamId, userId)
+/** Any support role, or a project admin, may read. Non-members are rejected by the resolver. */
+export async function requireSendingDomainReader(projectId: string, userId: string) {
+  const access = await resolveSupportProjectRole(projectId, userId)
   if (!access) {
     throw createError({
       statusCode: 403,
@@ -58,7 +58,7 @@ export function domainBusyError() {
  * someone else holds an unexpired lease. Every result patch clears the lease.
  */
 export async function acquireSendingDomainLease(
-  row: Pick<SendingDomainRow, 'id' | 'teamId'>,
+  row: Pick<SendingDomainRow, 'id' | 'projectId'>,
   now: Date = new Date()
 ): Promise<boolean> {
   const taken = await db
@@ -67,7 +67,7 @@ export async function acquireSendingDomainLease(
     .where(
       and(
         eq(supportSendingDomain.id, row.id),
-        eq(supportSendingDomain.teamId, row.teamId),
+        eq(supportSendingDomain.projectId, row.projectId),
         or(isNull(supportSendingDomain.leaseExpiresAt), lt(supportSendingDomain.leaseExpiresAt, now))
       )
     )
@@ -133,28 +133,28 @@ export function registerOutcomeToError(outcome: Exclude<RegisterOutcome, { kind:
 }
 
 /**
- * Inboxes of the team whose From address is on this claim's domain (or, where the
+ * Inboxes of the project whose From address is on this claim's domain (or, where the
  * provider authorizes subdomains, a subdomain of it that no more specific claim of
- * the team covers).
+ * the project covers).
  */
 export async function listInboxesUsingDomain(
-  row: Pick<SendingDomainRow, 'id' | 'teamId' | 'domain'>,
+  row: Pick<SendingDomainRow, 'id' | 'projectId' | 'domain'>,
   provider: Pick<SendingDomainProvider, 'capabilities'> | null,
-  otherTeamDomains: string[]
+  otherProjectDomains: string[]
 ): Promise<SendingDomainInboxRef[]> {
   const candidates = await db
     .select({ id: supportInbox.id, name: supportInbox.name, emailAddress: supportInbox.emailAddress })
     .from(supportInbox)
     .where(
       and(
-        eq(supportInbox.teamId, row.teamId),
+        eq(supportInbox.projectId, row.projectId),
         or(like(supportInbox.emailAddress, `%@${row.domain}`), like(supportInbox.emailAddress, `%@%.${row.domain}`))
       )
     )
   return filterInboxesUsingDomain(
     row.domain,
     candidates,
-    otherTeamDomains,
+    otherProjectDomains,
     provider?.capabilities.authorizesSubdomains ?? false
   )
 }
@@ -163,7 +163,7 @@ export async function listInboxesUsingDomain(
 export function filterInboxesUsingDomain(
   domain: string,
   inboxes: SendingDomainInboxRef[],
-  otherTeamDomains: string[],
+  otherProjectDomains: string[],
   authorizesSubdomains: boolean
 ): SendingDomainInboxRef[] {
   return inboxes.filter((inbox) => {
@@ -171,8 +171,8 @@ export function filterInboxesUsingDomain(
     if (!host) return false
     if (host === domain) return true
     if (!authorizesSubdomains || !host.endsWith(`.${domain}`)) return false
-    // A longer claim of the same team that also covers this host wins.
-    return !otherTeamDomains.some(
+    // A longer claim of the same project that also covers this host wins.
+    return !otherProjectDomains.some(
       (other) => other.length > domain.length && (host === other || host.endsWith(`.${other}`))
     )
   })

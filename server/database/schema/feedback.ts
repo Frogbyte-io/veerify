@@ -9,10 +9,13 @@ import {
   index,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
-import { user, organization, team } from './auth'
+import { user, organization } from './auth'
 
-// Projects table - operational workspaces scoped to teams.
-// organizationId is retained for public URL resolution and org governance.
+export type ProjectAccessMode = 'workspace' | 'restricted'
+export type ProjectMemberRole = 'admin' | 'member'
+
+// Projects - the top level inside an organization (workspace). A project owns its
+// domain, appearance, statuses/categories, marketing and support; products live inside it.
 export const project = pgTable(
   'project',
   {
@@ -20,9 +23,6 @@ export const project = pgTable(
     organizationId: text('organization_id')
       .notNull()
       .references(() => organization.id, { onDelete: 'cascade' }),
-    teamId: text('team_id')
-      .notNull()
-      .references(() => team.id, { onDelete: 'restrict' }),
     slug: text('slug').notNull(),
     name: text('name').notNull(),
     description: text('description'),
@@ -32,6 +32,9 @@ export const project = pgTable(
     // Controls who can submit feedback: 'anonymous' allows anonymous + optional email, 'account_required' requires login
     submissionMode: text('submission_mode').default('anonymous').notNull(),
     customDomain: text('custom_domain'),
+    // Who can open the project: 'workspace' = every organization member,
+    // 'restricted' = organization owners/admins plus `project_member` rows only.
+    accessMode: text('access_mode').$type<ProjectAccessMode>().default('workspace').notNull(),
     settings: jsonb('settings').$type<Record<string, any>>(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
@@ -41,14 +44,12 @@ export const project = pgTable(
       .notNull(),
   },
   (table) => ({
-    // Unique slug within a team URL namespace
-    uniqueTeamSlug: uniqueIndex('project_team_slug_idx').on(table.teamId, table.slug),
+    // Unique slug within an organization URL namespace
+    uniqueOrgSlug: uniqueIndex('project_org_slug_idx').on(table.organizationId, table.slug),
     // Index for governance/public URL lookups by organization
     orgIdx: index('project_org_idx').on(table.organizationId),
-    // Index for querying projects by team
-    teamIdx: index('project_team_idx').on(table.teamId),
-    // Index for team timelines
-    teamCreatedAtIdx: index('project_team_created_at_idx').on(table.teamId, table.createdAt),
+    // Index for organization timelines
+    orgCreatedAtIdx: index('project_org_created_at_idx').on(table.organizationId, table.createdAt),
     // Index for public projects
     publicIdx: index('project_public_idx').on(table.isPublic),
     // Unique custom domain per project
@@ -56,28 +57,57 @@ export const project = pgTable(
   })
 )
 
-// App keys - project-scoped public keys that let desktop apps post feedback.
-// Only the SHA-256 hex hash is stored; the full key is shown once at creation.
-export const projectApiKey = pgTable(
-  'project_api_key',
+// Explicit project membership. Organization owners/admins never need a row:
+// they administer every project. In 'workspace' access mode, organization
+// members without a row are plain members; a row with role 'admin' makes them
+// project admins.
+export const projectMember = pgTable(
+  'project_member',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    role: text('role').$type<ProjectMemberRole>().default('member').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    projectUserUnique: uniqueIndex('project_member_project_user_idx').on(table.projectId, table.userId),
+    userIdx: index('project_member_user_idx').on(table.userId),
+  })
+)
+
+// Products inside a project. Each product has its own feedback board; roadmap
+// and changelog are project-wide and filter by product. Every project has at
+// least one product; with exactly one, the UI hides the product layer.
+export const product = pgTable(
+  'product',
   {
     id: text('id').primaryKey(),
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
-    keyPrefix: text('key_prefix').notNull(),
-    keyHash: text('key_hash').notNull(),
-    createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+    slug: text('slug').notNull(),
+    description: text('description'),
+    // A product's board is public only when the project is public too.
+    isPublic: boolean('is_public').default(true).notNull(),
+    sortOrder: integer('sort_order').default(0).notNull(),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
-    lastUsedAt: timestamp('last_used_at'),
-    revokedAt: timestamp('revoked_at'),
+    updatedAt: timestamp('updated_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
   },
   (table) => ({
-    keyHashIdx: uniqueIndex('project_api_key_hash_idx').on(table.keyHash),
-    projectIdx: index('project_api_key_project_idx').on(table.projectId),
+    projectSlugUnique: uniqueIndex('product_project_slug_idx').on(table.projectId, table.slug),
+    projectOrderIdx: index('product_project_order_idx').on(table.projectId, table.sortOrder),
   })
 )
 
@@ -211,6 +241,9 @@ export const feedback = pgTable(
     projectId: text('project_id')
       .notNull()
       .references(() => project.id, { onDelete: 'cascade' }),
+    productId: text('product_id')
+      .notNull()
+      .references(() => product.id, { onDelete: 'restrict' }),
     categoryId: text('category_id').references(() => feedbackCategory.id, { onDelete: 'set null' }),
     title: text('title').notNull(),
     body: text('body'),
@@ -238,9 +271,6 @@ export const feedback = pgTable(
       .$defaultFn(() => false)
       .notNull(),
     metadata: jsonb('metadata').$type<Record<string, any>>(),
-    // Set when submitted through an app key; sourceLabel is the public origin label
-    apiKeyId: text('api_key_id').references(() => projectApiKey.id, { onDelete: 'set null' }),
-    sourceLabel: text('source_label'),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())
       .notNull(),
@@ -251,6 +281,8 @@ export const feedback = pgTable(
   (table) => ({
     // Index for querying feedback by project
     projectIdx: index('feedback_project_idx').on(table.projectId),
+    // Index for per-product boards
+    projectProductIdx: index('feedback_project_product_idx').on(table.projectId, table.productId),
     // Index for querying by category
     categoryIdx: index('feedback_category_idx').on(table.categoryId),
     // Index for querying by status
@@ -302,48 +334,6 @@ export const vote = pgTable(
     userIdx: index('vote_user_idx').on(table.voterUserId),
     // Index for querying votes by session
     sessionIdx: index('vote_session_idx').on(table.voterSessionId),
-  })
-)
-
-// Roadmap items - roadmap entries, optionally linked to feedback
-export const roadmapItem = pgTable(
-  'roadmap_item',
-  {
-    id: text('id').primaryKey(),
-    projectId: text('project_id')
-      .notNull()
-      .references(() => project.id, { onDelete: 'cascade' }),
-    title: text('title').notNull(),
-    description: text('description'),
-    status: text('status')
-      .$defaultFn(() => 'planned')
-      .notNull(), // planned, in_progress, completed, cancelled
-    priority: text('priority'), // low, medium, high, critical
-    quarter: text('quarter'), // e.g., "Q1 2024", "Q2 2024"
-    startDate: timestamp('start_date'),
-    targetDate: timestamp('target_date'),
-    completedDate: timestamp('completed_date'),
-    sortOrder: integer('sort_order')
-      .$defaultFn(() => 0)
-      .notNull(),
-    linkedFeedbackIds: jsonb('linked_feedback_ids').$type<string[]>(), // Array of feedback IDs
-    metadata: jsonb('metadata').$type<Record<string, any>>(),
-    createdAt: timestamp('created_at')
-      .$defaultFn(() => new Date())
-      .notNull(),
-    updatedAt: timestamp('updated_at')
-      .$defaultFn(() => new Date())
-      .notNull(),
-  },
-  (table) => ({
-    // Index for querying roadmap items by project
-    projectIdx: index('roadmap_project_idx').on(table.projectId),
-    // Index for querying by status
-    statusIdx: index('roadmap_status_idx').on(table.status),
-    // Index for querying by priority
-    priorityIdx: index('roadmap_priority_idx').on(table.priority),
-    // Composite index for project + status queries
-    projectStatusIdx: index('roadmap_project_status_idx').on(table.projectId, table.status),
   })
 )
 

@@ -7,6 +7,7 @@ const inboundRequest = vi.hoisted(() => ({
   rawBody: JSON.stringify({ MessageID: 'provider-1' }) as string | Buffer,
   multipart: undefined as { name?: string; filename?: string; type?: string; data: Buffer }[] | undefined,
 }))
+const projectState = vi.hoisted(() => ({ supportEnabled: true }))
 const inboundDriver = vi.hoisted(() => ({ current: null as null | Record<string, unknown> }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
@@ -65,20 +66,22 @@ vi.mock('~/server/utils/inbound-events', () => ({
   recordInboundRawKey: vi.fn(async () => true),
   rejectInboundEvent,
 }))
+vi.mock('~/server/utils/project-access', () => ({
+  getProjectById: vi.fn(async () => ({ id: 'project-1', settings: { supportEnabled: projectState.supportEnabled } })),
+}))
 vi.mock('~/server/utils/support-access', () => ({
   resolveInboxByAddress: vi.fn(async () => ({
     inbox: {
       id: 'inbox-1',
-      teamId: 'team-1',
+      projectId: 'project-1',
       isEnabled: true,
       autoReplyEnabled: false,
       autoReplyTemplate: null,
       emailAddress: null,
       fromName: null,
       signature: null,
-      projectId: 'legacy-project',
     },
-    address: { projectId: null },
+    address: { projectId: 'project-1' },
   })),
 }))
 vi.mock('~/server/utils/storage', () => ({ getStorageProvider: () => ({ putObject: vi.fn(async () => undefined) }) }))
@@ -121,6 +124,7 @@ describe('inbound route claim-loss control', () => {
     inboundRequest.rawBody = JSON.stringify({ MessageID: 'provider-1' })
     inboundRequest.multipart = undefined
     inboundDriver.current = null
+    projectState.supportEnabled = true
     attachInboundEventInbox.mockClear()
     rejectInboundEvent.mockClear()
     failInboundEvent.mockClear()
@@ -196,7 +200,7 @@ describe('inbound route claim-loss control', () => {
           inReplyTo: null,
           references: [],
           from: { address: 'customer@example.com' },
-          to: [{ address: 'other-team@example.com' }],
+          to: [{ address: 'other-project@example.com' }],
           cc: [{ address: 'support@example.com' }],
           envelopeRecipients,
           subject: 'Subject',
@@ -257,7 +261,7 @@ describe('inbound route claim-loss control', () => {
 
       await expect(handler({} as Parameters<Handler>[0])).rejects.toMatchObject({ statusCode: 500 })
 
-      expect(resolveInbox.mock.calls).toEqual([['other-team@example.com'], ['support@example.com']])
+      expect(resolveInbox.mock.calls).toEqual([['other-project@example.com'], ['support@example.com']])
     })
   })
 
@@ -271,15 +275,12 @@ describe('inbound route claim-loss control', () => {
 
   it('returns retryable 500 when deliberate rejection loses ownership', async () => {
     attachInboundEventInbox.mockResolvedValueOnce(true)
-    const db = await import('../server/database/drizzle')
-    ;(db.db as unknown as { select: ReturnType<typeof vi.fn> }).select = vi.fn(() => ({
-      from: () => ({ where: () => ({ limit: async () => [{ supportEnabled: false }] }) }),
-    }))
+    projectState.supportEnabled = false
 
     await expect(handler({} as Parameters<Handler>[0])).rejects.toMatchObject({ statusCode: 500 })
     expect(rejectInboundEvent).toHaveBeenCalledWith(
       { eventId: claim.eventId, attemptCount: claim.attemptCount },
-      'Support is disabled for this team'
+      'Support is disabled for this project'
     )
     expect(failInboundEvent).toHaveBeenCalledWith(
       { eventId: claim.eventId, attemptCount: claim.attemptCount },
@@ -290,10 +291,7 @@ describe('inbound route claim-loss control', () => {
   it('files an email already in this inbox under another delivery key once, as a duplicate', async () => {
     // Two aliases of one inbox: one email, two provider callbacks.
     attachInboundEventInbox.mockResolvedValueOnce(true)
-    const db = await import('../server/database/drizzle')
-    ;(db.db as unknown as { select: ReturnType<typeof vi.fn> }).select = vi.fn(() => ({
-      from: () => ({ where: () => ({ limit: async () => [{ supportEnabled: true }] }) }),
-    }))
+    projectState.supportEnabled = true
     findInboxIncomingMessage.mockResolvedValueOnce({ conversationId: 'conversation-1' })
 
     await expect(handler({} as Parameters<Handler>[0])).resolves.toMatchObject({

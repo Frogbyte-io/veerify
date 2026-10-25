@@ -1,11 +1,11 @@
 <template>
   <div>
     <PublicFeedbackBoard
-      v-if="teamSubdomain && publicProjectSlug"
-      :team-slug="teamSubdomain"
+      v-if="publicOrgSlug && publicProjectSlug"
+      :org-slug="publicOrgSlug"
       :project-slug="publicProjectSlug"
     />
-    <PublicTeamProducts v-else-if="teamSubdomain" :team-slug="teamSubdomain" />
+    <PublicOrgProjects v-else-if="publicOrgSlug" :org-slug="publicOrgSlug" />
     <NuxtLayout v-else name="clean">
       <div class="min-h-screen flex items-center justify-center bg-background">
         <div class="text-center">
@@ -25,15 +25,15 @@ import { authClient } from '~/lib/auth-client'
 export default {
   name: 'IndexPage',
   computed: {
-    teamSubdomain() {
-      return useState('teamSubdomain').value
+    publicOrgSlug() {
+      return useState('publicOrgSlug').value
     },
     publicProjectSlug() {
       return useState('publicProjectSlug').value
     },
   },
   async mounted() {
-    if (import.meta.client && !this.teamSubdomain) {
+    if (import.meta.client && !this.publicOrgSlug) {
       try {
         const { data: session } = await authClient.useSession(useFetch)
 

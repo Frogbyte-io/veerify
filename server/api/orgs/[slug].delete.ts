@@ -1,7 +1,7 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
-import { organization, session as sessionTable, team } from '~/server/database/schema/auth'
+import { organization, session as sessionTable } from '~/server/database/schema/auth'
 import { revokeGscTokensForOrganization } from '~/server/services/marketing/search/connection'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireOrganizationRoleBySlug } from '~/server/utils/organization-access'
@@ -41,24 +41,13 @@ export default defineEventHandler(async (event) => {
   await revokeGscTokensForOrganization(org.id)
 
   await db.transaction(async (tx) => {
-    const teams = await tx.select({ id: team.id }).from(team).where(eq(team.organizationId, org.id))
-
-    const teamIds = teams.map((item) => item.id)
-
     await tx
       .update(sessionTable)
       .set({
         activeOrganizationId: null,
-        activeTeamId: null,
+        activeProjectId: null,
       })
       .where(eq(sessionTable.activeOrganizationId, org.id))
-
-    if (teamIds.length > 0) {
-      await tx
-        .update(sessionTable)
-        .set({ activeTeamId: null })
-        .where(and(inArray(sessionTable.activeTeamId, teamIds), isNull(sessionTable.activeOrganizationId)))
-    }
 
     await tx.delete(organization).where(eq(organization.id, org.id))
   })

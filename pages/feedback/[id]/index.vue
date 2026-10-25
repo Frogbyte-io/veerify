@@ -50,14 +50,14 @@
               <NuxtLink to="/feedback" prefetch-on="interaction" class="hover:text-foreground">Feedback</NuxtLink>
               <Icon name="lucide:chevron-right" class="h-4 w-4" />
               <NuxtLink
-                v-if="item.project"
-                :to="`/feedback?projectId=${item.project.id}`"
+                v-if="showProductBreadcrumb"
+                :to="`/feedback?product=${item.product.slug}`"
                 prefetch-on="interaction"
                 class="hover:text-foreground"
               >
-                {{ item.project.name }}
+                {{ item.product.name }}
               </NuxtLink>
-              <Icon v-if="item.project" name="lucide:chevron-right" class="h-4 w-4" />
+              <Icon v-if="showProductBreadcrumb" name="lucide:chevron-right" class="h-4 w-4" />
               <span class="text-foreground">{{ item.title }}</span>
             </div>
             <Button variant="ghost" size="sm" class="-ml-2 w-fit" @click="$router.back()">
@@ -158,9 +158,24 @@
                         </div>
                       </div>
                     </div>
-                    <div class="rounded-xl bg-background/80 p-4">
+                    <div v-if="!hasMultipleProducts" class="rounded-xl bg-background/80 p-4">
                       <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Project</div>
                       <div class="mt-2 text-sm font-medium">{{ item.project?.name || 'Unknown' }}</div>
+                    </div>
+                    <div v-else class="rounded-xl bg-background/80 p-4" data-testid="feedback-detail-product">
+                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Product</div>
+                      <select
+                        v-if="canManageFeedback"
+                        :value="item.productId"
+                        :disabled="isMovingProduct"
+                        data-testid="feedback-detail-product-select"
+                        aria-label="Move to product"
+                        class="mt-2 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                        @change="moveToProduct($event.target.value)"
+                      >
+                        <option v-for="p in projectProducts" :key="p.id" :value="p.id">{{ p.name }}</option>
+                      </select>
+                      <div v-else class="mt-2 text-sm font-medium">{{ item.product?.name || 'Unknown' }}</div>
                     </div>
                     <div class="rounded-xl bg-background/80 p-4">
                       <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Created</div>
@@ -504,7 +519,7 @@
                       {{
                         item.isLocked
                           ? 'Allow the thread to continue.'
-                          : 'Freeze new replies while the team resolves the item.'
+                          : 'Freeze new replies while the item is being resolved.'
                       }}
                     </div>
                   </div>
@@ -609,6 +624,8 @@ export default {
       comments: [],
       categories: [],
       availableStatuses: [],
+      projectProducts: [],
+      isMovingProduct: false,
       isLoading: true,
       error: null,
       isCommentsLoading: false,
@@ -672,6 +689,13 @@ export default {
     canManageFeedback() {
       return Boolean(this.item?.canManage)
     },
+    // The product layer only exists for projects with more than one product
+    hasMultipleProducts() {
+      return this.projectProducts.length > 1
+    },
+    showProductBreadcrumb() {
+      return this.hasMultipleProducts && Boolean(this.item?.product?.slug)
+    },
     displayAuthorName() {
       return this.item?.authorName || this.item?.author?.name || 'Anonymous'
     },
@@ -712,7 +736,14 @@ export default {
     async loadProjectControls() {
       this.availableStatuses = []
       this.categories = []
-      if (!this.item?.project?.slug || !this.canManageFeedback) return
+      this.projectProducts = []
+      if (!this.item?.project?.slug) return
+
+      // Products drive the breadcrumb and the product badge; readable by every project member
+      const productsResult = await $fetch(`/api/projects/${this.item.project.slug}/products`).catch(() => null)
+      this.projectProducts = Array.isArray(productsResult?.data) ? productsResult.data : []
+
+      if (!this.canManageFeedback) return
 
       const [statusesResult, categoriesResult] = await Promise.allSettled([
         $fetch(`/api/projects/${this.item.project.slug}/statuses`),
@@ -763,6 +794,25 @@ export default {
         alert(err?.data?.error?.message || 'Failed to update vote')
       } finally {
         this.isVoting = false
+      }
+    },
+
+    async moveToProduct(productId) {
+      if (!this.item || !this.canManageFeedback || !productId || productId === this.item.productId) return
+      this.isMovingProduct = true
+      try {
+        await $fetch(`/api/feedback/${this.feedbackId}`, { method: 'PATCH', body: { productId } })
+        const product = this.projectProducts.find((p) => p.id === productId)
+        this.item = {
+          ...this.item,
+          productId,
+          product: product ? { id: product.id, name: product.name, slug: product.slug } : this.item.product,
+        }
+      } catch (err) {
+        console.error('Error moving feedback:', err)
+        alert(err?.data?.error?.message || 'Failed to move the feedback item')
+      } finally {
+        this.isMovingProduct = false
       }
     },
 

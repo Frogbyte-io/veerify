@@ -3,22 +3,26 @@ import { projectPaths, shellTitle } from '~/lib/public-shell'
 import { isModuleOffMessage } from '~/lib/changelog-editor'
 
 describe('projectPaths', () => {
-  it('addresses sub-pages without the product slug on a custom domain', () => {
-    expect(projectPaths('acme', true)).toEqual({
+  it('addresses sub-pages without the project slug on a custom domain', () => {
+    const paths = projectPaths('acme', true)
+    expect(paths).toMatchObject({
       feedback: '/',
       roadmap: '/roadmap',
       changelog: '/changelog',
       testimonials: '/testimonials',
     })
+    expect(paths.product('decker')).toBe('/decker')
   })
 
-  it('prefixes the product slug on team subdomains', () => {
-    expect(projectPaths('acme', false)).toEqual({
+  it('prefixes the project slug on workspace subdomains', () => {
+    const paths = projectPaths('acme', false)
+    expect(paths).toMatchObject({
       feedback: '/acme',
       roadmap: '/acme/roadmap',
       changelog: '/acme/changelog',
       testimonials: '/acme/testimonials',
     })
+    expect(paths.product('decker')).toBe('/acme/decker')
   })
 })
 
@@ -32,8 +36,7 @@ describe('shellTitle', () => {
 
 describe('isModuleOffMessage', () => {
   it('separates "module off" from a non-member 403', () => {
-    expect(isModuleOffMessage('Changelog is not enabled for this team')).toBe(true)
-    expect(isModuleOffMessage('Changelog is not enabled for this product')).toBe(true)
+    expect(isModuleOffMessage('Changelog is not enabled for this project')).toBe(true)
     expect(isModuleOffMessage('You do not have access to this project')).toBe(false)
     expect(isModuleOffMessage('')).toBe(false)
   })

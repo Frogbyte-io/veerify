@@ -9,14 +9,14 @@ import {
   seedOrganization,
   seedQueuedDelivery,
   seedSendingDomain,
-  seedTeamWithInbox,
-  type SeededTeam,
+  seedProjectWithInbox,
+  type SeededProject,
 } from './helpers/sender-seed'
 
 /**
  * Retry endpoint and thread flags for blocked senders, against real Postgres.
  * Management is "off" (no env flag) with a claim present, which is the rollback
- * case: the retry must still refuse a sender that is not the team's.
+ * case: the retry must still refuse a sender that is not the project's.
  */
 
 const provider = vi.hoisted(() => ({
@@ -24,7 +24,7 @@ const provider = vi.hoisted(() => ({
 }))
 const state = vi.hoisted(() => ({
   params: {} as Record<string, string>,
-  teamId: '',
+  projectId: '',
   conversationId: '',
   worker: vi.fn(async () => ({ processed: 0 })),
 }))
@@ -41,7 +41,7 @@ vi.mock('h3', async (importOriginal) => ({
 }))
 vi.mock('~/server/utils/auth-middleware', () => ({ requireAuth: vi.fn(async () => ({ user: { id: 'user-1' } })) }))
 vi.mock('~/server/utils/support-access', () => ({
-  requireConversationAccess: vi.fn(async () => ({ id: state.conversationId, teamId: state.teamId })),
+  requireConversationAccess: vi.fn(async () => ({ id: state.conversationId, projectId: state.projectId })),
 }))
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
 vi.stubGlobal('getRouterParam', (_event: unknown, name: string) => state.params[name])
@@ -62,10 +62,10 @@ const ownedDomain = fresh()
 const foreignDomain = fresh()
 
 let orgId: string
-let teamA: SeededTeam
-let teamB: SeededTeam
+let projectA: SeededProject
+let projectB: SeededProject
 
-async function failedDelivery(seed: SeededTeam, from: string, lastError: string) {
+async function failedDelivery(seed: SeededProject, from: string, lastError: string) {
   const queued = await seedQueuedDelivery(seed, from)
   await db
     .update(supportOutboundDelivery)
@@ -78,8 +78,8 @@ async function failedDelivery(seed: SeededTeam, from: string, lastError: string)
   return queued
 }
 
-function actAs(seed: SeededTeam, messageId = '') {
-  state.teamId = seed.teamId
+function actAs(seed: SeededProject, messageId = '') {
+  state.projectId = seed.projectId
   state.conversationId = seed.conversationId
   state.params = { id: seed.conversationId, messageId }
 }
@@ -93,10 +93,10 @@ async function rejection(promise: Promise<unknown>) {
 
 beforeAll(async () => {
   orgId = await seedOrganization('retry')
-  teamA = await seedTeamWithInbox(orgId, 'retrya', `support@${ownedDomain}`)
-  teamB = await seedTeamWithInbox(orgId, 'retryb', 'support@teamb.example.net')
-  await seedSendingDomain({ teamId: teamA.teamId, domain: ownedDomain })
-  await seedSendingDomain({ teamId: teamB.teamId, domain: foreignDomain })
+  projectA = await seedProjectWithInbox(orgId, 'retrya', `support@${ownedDomain}`)
+  projectB = await seedProjectWithInbox(orgId, 'retryb', 'support@projectb.example.net')
+  await seedSendingDomain({ projectId: projectA.projectId, domain: ownedDomain })
+  await seedSendingDomain({ projectId: projectB.projectId, domain: foreignDomain })
 })
 
 afterAll(async () => {
@@ -114,8 +114,8 @@ beforeEach(() => {
 
 describe('retry of a blocked outgoing reply', () => {
   it('answers 409 SENDER_NOT_VERIFIED while the stored sender is still unauthorized, and resets nothing', async () => {
-    const queued = await failedDelivery(teamA, `support@${foreignDomain}`, SENDER_DOMAIN_NOT_AUTHORIZED)
-    actAs(teamA, queued.messageId)
+    const queued = await failedDelivery(projectA, `support@${foreignDomain}`, SENDER_DOMAIN_NOT_AUTHORIZED)
+    actAs(projectA, queued.messageId)
 
     const error = await rejection(retry(event))
 
@@ -130,8 +130,8 @@ describe('retry of a blocked outgoing reply', () => {
   })
 
   it('retries once the sender is authorized, reporting no duplicate risk for a sender block', async () => {
-    const queued = await failedDelivery(teamA, `support@${ownedDomain}`, SENDER_DOMAIN_NOT_AUTHORIZED)
-    actAs(teamA, queued.messageId)
+    const queued = await failedDelivery(projectA, `support@${ownedDomain}`, SENDER_DOMAIN_NOT_AUTHORIZED)
+    actAs(projectA, queued.messageId)
 
     const response = (await retry(event)) as { data: { retried: boolean; previousSubmissionAttempted: boolean } }
 
@@ -140,8 +140,8 @@ describe('retry of a blocked outgoing reply', () => {
   })
 
   it('still reports a possible duplicate for any other failure', async () => {
-    const queued = await failedDelivery(teamA, `support@${ownedDomain}`, 'connection reset')
-    actAs(teamA, queued.messageId)
+    const queued = await failedDelivery(projectA, `support@${ownedDomain}`, 'connection reset')
+    actAs(projectA, queued.messageId)
 
     const response = (await retry(event)) as { data: { previousSubmissionAttempted: boolean } }
 
@@ -149,12 +149,12 @@ describe('retry of a blocked outgoing reply', () => {
   })
 
   it('has no retry for a CSAT delivery (404), the thread marks it retryable: false', async () => {
-    const queued = await failedDelivery(teamA, `support@${ownedDomain}`, 'connection reset')
+    const queued = await failedDelivery(projectA, `support@${ownedDomain}`, 'connection reset')
     await db
       .update(supportOutboundDelivery)
       .set({ kind: 'csat' })
       .where(eq(supportOutboundDelivery.id, queued.deliveryId))
-    actAs(teamA, queued.messageId)
+    actAs(projectA, queued.messageId)
 
     expect((await rejection(retry(event)))?.statusCode).toBe(404)
 
@@ -166,10 +166,10 @@ describe('retry of a blocked outgoing reply', () => {
 
 describe('thread delivery flags', () => {
   it('exposes deliveryError, senderBlocked and retryable per message', async () => {
-    const blocked = await failedDelivery(teamB, `support@${ownedDomain}`, SENDER_DOMAIN_NOT_AUTHORIZED)
-    const maybeAccepted = await failedDelivery(teamB, 'support@teamb.example.net', 'DELIVERY_ABANDONED')
-    const pending = await seedQueuedDelivery(teamB, 'support@teamb.example.net')
-    actAs(teamB)
+    const blocked = await failedDelivery(projectB, `support@${ownedDomain}`, SENDER_DOMAIN_NOT_AUTHORIZED)
+    const maybeAccepted = await failedDelivery(projectB, 'support@projectb.example.net', 'DELIVERY_ABANDONED')
+    const pending = await seedQueuedDelivery(projectB, 'support@projectb.example.net')
+    actAs(projectB)
 
     const response = (await list(event)) as { data: { messages: Array<Record<string, unknown>> } }
     const byId = new Map(response.data.messages.map((m) => [m.id, m]))

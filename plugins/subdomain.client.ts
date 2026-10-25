@@ -4,25 +4,25 @@ export default defineNuxtPlugin(() => {
   const dashboardDomain = (config.public.dashboardDomain as string) || appDomain
   const host = window.location.hostname
 
-  let teamSlug: string | null = null
+  let orgSlug: string | null = null
 
   if (host === appDomain || host === dashboardDomain) {
-    teamSlug = null
+    orgSlug = null
   } else if (host.endsWith('.' + appDomain)) {
     const subdomain = host.slice(0, -(appDomain.length + 1))
     if (subdomain && !subdomain.includes('.')) {
-      teamSlug = subdomain
+      orgSlug = subdomain
     }
   } else if (appDomain === 'localhost' && host.endsWith('.localhost')) {
     const subdomain = host.slice(0, -'.localhost'.length)
     if (subdomain && !subdomain.includes('.')) {
-      teamSlug = subdomain
+      orgSlug = subdomain
     }
   }
 
-  const teamSubdomainState = useState<string | null>('teamSubdomain', () => null)
-  if (!teamSubdomainState.value && teamSlug) {
-    teamSubdomainState.value = teamSlug
+  const publicOrgSlugState = useState<string | null>('publicOrgSlug', () => null)
+  if (!publicOrgSlugState.value && orgSlug) {
+    publicOrgSlugState.value = orgSlug
   }
 
   useState<string | null>('publicProjectSlug', () => null)

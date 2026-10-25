@@ -126,7 +126,6 @@ interface OrganizationInvitationOptions {
   inviterName: string
   inviteUrl: string
   role: string
-  teamName?: string | null
 }
 
 interface CustomDomainNotificationOptions {
@@ -269,7 +268,6 @@ export function getOrganizationInvitationTemplate({
   inviterName,
   inviteUrl,
   role,
-  teamName,
 }: OrganizationInvitationOptions) {
   const subject = `You're invited to join ${organizationName} on Veerify`
 
@@ -277,13 +275,11 @@ export function getOrganizationInvitationTemplate({
   const safeInviterName = escapeHtml(inviterName)
   const safeInviteUrl = escapeHtml(inviteUrl)
   const safeRole = escapeHtml(role)
-  const safeTeamName = teamName ? escapeHtml(teamName) : ''
-  const teamCopy = safeTeamName ? ` and join the ${safeTeamName} team` : ''
 
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h1 style="color: #333;">Join ${safeOrganizationName} on Veerify</h1>
-      <p>${safeInviterName} invited you to collaborate in <strong>${safeOrganizationName}</strong>${teamCopy}.</p>
+      <p>${safeInviterName} invited you to collaborate in <strong>${safeOrganizationName}</strong>.</p>
       <p>Your access will be set up with the <strong>${safeRole}</strong> role once you accept the invitation.</p>
       <div style="text-align: center; margin: 30px 0;">
         <a href="${safeInviteUrl}"
@@ -303,7 +299,7 @@ export function getOrganizationInvitationTemplate({
 
   const text = `Join ${organizationName} on Veerify
 
-${inviterName} invited you to collaborate in ${organizationName}${teamName ? ` and join the ${teamName} team` : ''}.
+${inviterName} invited you to collaborate in ${organizationName}.
 
 Your access will be set up with the ${role} role once you accept the invitation.
 
@@ -617,15 +613,15 @@ export function marketingCredentialInvalidTemplate({
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
       <h2 style="color:#1a1a1a">Your ${safeProvider} API key was rejected</h2>
-      <p style="color:#444">${safeProvider} rejected the API key your team added for Marketing. AI visibility runs that use ${safeProvider} are paused until you replace the key.</p>
+      <p style="color:#444">${safeProvider} rejected the API key your workspace added for Marketing. AI visibility runs that use ${safeProvider} are paused until you replace the key.</p>
       <p><a href="${safeUrl}" style="color:#6366f1">Update the key in Marketing settings</a></p>
-      <p style="color:#999;font-size:12px">You are receiving this because you are a team admin. Powered by Veerify</p>
+      <p style="color:#999;font-size:12px">You are receiving this because you are a workspace admin. Powered by Veerify</p>
     </div>
   `
 
   const text = `Your ${providerLabel} API key was rejected
 
-${providerLabel} rejected the API key your team added for Marketing. AI visibility runs that use ${providerLabel} are paused until you replace the key.
+${providerLabel} rejected the API key your workspace added for Marketing. AI visibility runs that use ${providerLabel} are paused until you replace the key.
 
 Update the key in Marketing settings: ${settingsUrl}
 `

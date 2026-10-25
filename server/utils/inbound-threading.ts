@@ -83,7 +83,7 @@ export function normalizeSubject(subject: string | null): string {
 
 export async function resolveThread(
   tx: Tx,
-  inbox: { id: string; teamId: string },
+  inbox: { id: string; projectId: string },
   message: ThreadableMessage,
   contactId: string
 ): Promise<ThreadResolution> {
@@ -93,7 +93,7 @@ export async function resolveThread(
   //    Deliberately NOT scoped to `contactId`: a CC'd participant replying is a
   //    different contact on the same thread, and dropping to the subject
   //    heuristic there would be strictly worse. It IS scoped to the inbox, so a
-  //    Message-ID cannot pull a message into another team's conversation.
+  //    Message-ID cannot pull a message into another project's conversation.
   //
   //    Both the Message-ID Veerify generated and the one the provider reports
   //    having sent under are matched: SES (behind Frogmail) rewrites it, and a

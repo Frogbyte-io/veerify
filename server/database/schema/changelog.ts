@@ -9,7 +9,7 @@
 import { pgTable, primaryKey, text, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { user } from './auth'
-import { project, feedback } from './feedback'
+import { project, feedback, product } from './feedback'
 
 export type ChangelogEntryStatus = 'draft' | 'published'
 export type ChangelogLabel = 'new' | 'improved' | 'fixed'
@@ -73,5 +73,22 @@ export const changelogEntryFeedback = pgTable(
   (table) => ({
     pk: primaryKey({ columns: [table.entryId, table.feedbackId] }),
     feedbackIdx: index('changelog_entry_feedback_feedback_idx').on(table.feedbackId),
+  })
+)
+
+// Products a changelog entry applies to. No rows means the whole project.
+export const changelogEntryProduct = pgTable(
+  'changelog_entry_product',
+  {
+    entryId: text('entry_id')
+      .notNull()
+      .references(() => changelogEntry.id, { onDelete: 'cascade' }),
+    productId: text('product_id')
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.entryId, table.productId] }),
+    productIdx: index('changelog_entry_product_product_idx').on(table.productId),
   })
 )

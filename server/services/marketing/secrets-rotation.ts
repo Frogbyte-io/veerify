@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, notLike, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { gscConnection, teamApiCredential } from '~/server/database/schema/marketing'
+import { gscConnection, organizationApiCredential } from '~/server/database/schema/marketing'
 import { gscAad } from '~/server/services/marketing/search/connection'
 import { createLogger } from '~/server/utils/logger'
 import {
@@ -15,7 +15,7 @@ import {
  * Re-wraps stored secrets that were encrypted with a key other than the current
  * SECRETS_ENCRYPTION_KEY, so SECRETS_ENCRYPTION_KEY_PREVIOUS can eventually be dropped.
  *
- * Covers team_api_credential.encryptedKey (AAD `team:<teamId>:<provider>`, see team-credentials.ts)
+ * Covers organization_api_credential.encryptedKey (AAD `org:<organizationId>:<provider>`, see org-credentials.ts)
  * and gsc_connection.encryptedRefreshToken (AAD `gsc:<siteId>`, see search/connection.ts).
  * Idempotent: rows already on the current key are never selected. Rows are updated only if the
  * stored value is unchanged since it was read, so a concurrent re-save of the secret wins.
@@ -27,7 +27,7 @@ const logger = createLogger('marketing-secrets-rotation')
 export const ROTATION_BATCH_SIZE = 100
 export const ROTATION_MAX_ROWS = 2000
 
-export type RotationTable = 'team_api_credential' | 'gsc_connection'
+export type RotationTable = 'organization_api_credential' | 'gsc_connection'
 
 /** A row holding one secret; `id` is the row id (credential id or site id). */
 export interface RotationRow {
@@ -61,19 +61,21 @@ const prefix = (keyId: string) => `v1.${keyId}.%`
 
 export const dbRotationStore: RotationStore = {
   async loadOutdated(table, keyId, afterId, limit) {
-    if (table === 'team_api_credential') {
+    if (table === 'organization_api_credential') {
       const rows = await db
         .select({
-          id: teamApiCredential.id,
-          teamId: teamApiCredential.teamId,
-          provider: teamApiCredential.provider,
-          payload: teamApiCredential.encryptedKey,
+          id: organizationApiCredential.id,
+          organizationId: organizationApiCredential.organizationId,
+          provider: organizationApiCredential.provider,
+          payload: organizationApiCredential.encryptedKey,
         })
-        .from(teamApiCredential)
-        .where(and(notLike(teamApiCredential.encryptedKey, prefix(keyId)), gt(teamApiCredential.id, afterId)))
-        .orderBy(asc(teamApiCredential.id))
+        .from(organizationApiCredential)
+        .where(
+          and(notLike(organizationApiCredential.encryptedKey, prefix(keyId)), gt(organizationApiCredential.id, afterId))
+        )
+        .orderBy(asc(organizationApiCredential.id))
         .limit(limit)
-      return rows.map((r) => ({ id: r.id, payload: r.payload, aad: `team:${r.teamId}:${r.provider}` }))
+      return rows.map((r) => ({ id: r.id, payload: r.payload, aad: `org:${r.organizationId}:${r.provider}` }))
     }
     const rows = await db
       .select({ siteId: gscConnection.siteId, payload: gscConnection.encryptedRefreshToken })
@@ -85,12 +87,12 @@ export const dbRotationStore: RotationStore = {
   },
 
   async replace(table, id, previousPayload, nextPayload) {
-    if (table === 'team_api_credential') {
+    if (table === 'organization_api_credential') {
       const done = await db
-        .update(teamApiCredential)
+        .update(organizationApiCredential)
         .set({ encryptedKey: nextPayload })
-        .where(and(eq(teamApiCredential.id, id), eq(teamApiCredential.encryptedKey, previousPayload)))
-        .returning({ id: teamApiCredential.id })
+        .where(and(eq(organizationApiCredential.id, id), eq(organizationApiCredential.encryptedKey, previousPayload)))
+        .returning({ id: organizationApiCredential.id })
       return done.length > 0
     }
     const done = await db
@@ -104,8 +106,8 @@ export const dbRotationStore: RotationStore = {
   async countOutdated(keyId) {
     const [a] = await db
       .select({ n: sql<number>`count(*)::int` })
-      .from(teamApiCredential)
-      .where(notLike(teamApiCredential.encryptedKey, prefix(keyId)))
+      .from(organizationApiCredential)
+      .where(notLike(organizationApiCredential.encryptedKey, prefix(keyId)))
     const [b] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(gscConnection)
@@ -128,7 +130,7 @@ export async function rotateSecrets(
   // One budget per table, so a table full of undecryptable rows cannot starve the other one. Rows that
   // fail to decrypt are remembered for this run and do not use up the budget; the id cursor moves past
   // them, so they are not read again within the run.
-  for (const table of ['team_api_credential', 'gsc_connection'] as const) {
+  for (const table of ['organization_api_credential', 'gsc_connection'] as const) {
     let afterId = ''
     let budget = maxRows
     const failedIds = new Set<string>()

@@ -20,13 +20,31 @@
         <Skeleton v-for="i in 6" :key="i" class="h-16 w-full" />
       </div>
 
+      <!-- Support switched off for this project -->
+      <Card v-else-if="supportDisabled" data-testid="support-disabled">
+        <CardContent class="text-center py-10 space-y-3">
+          <Icon name="lucide:life-buoy" class="w-8 h-8 text-muted-foreground mx-auto" />
+          <p class="font-medium">Support is switched off for this project</p>
+          <template v-if="projectRole === 'admin'">
+            <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
+            <Button as-child variant="outline">
+              <NuxtLink to="/project/settings#tools">Project settings: Tools</NuxtLink>
+            </Button>
+          </template>
+          <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">
+            <Icon name="lucide:lock" class="w-3.5 h-3.5" />
+            Project admins can switch Support on.
+          </p>
+        </CardContent>
+      </Card>
+
       <!-- Error -->
       <Card v-else-if="error">
         <CardContent class="text-center py-8">
           <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
           <p class="font-medium mb-2">Failed to load contacts</p>
           <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
-          <Button variant="outline" @click="loadContacts(true)">
+          <Button variant="outline" @click="initProjectContext">
             <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
             Try again
           </Button>
@@ -43,7 +61,7 @@
           </div>
           <p class="font-medium text-lg mb-1">{{ search ? 'No contacts match your search' : 'No contacts yet' }}</p>
           <p class="text-sm text-muted-foreground max-w-sm mx-auto">
-            Contacts appear here once someone reaches out to your team through support.
+            Contacts appear here once someone reaches out to your project through support.
           </p>
         </CardContent>
       </Card>
@@ -89,7 +107,7 @@
 </template>
 
 <script>
-const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 const SEARCH_DEBOUNCE_MS = 300
 
 export default {
@@ -97,7 +115,9 @@ export default {
 
   data() {
     return {
-      activeTeamId: '',
+      activeProjectId: '',
+      projectRole: null,
+      supportDisabled: false,
       contacts: [],
       isLoading: true,
       isLoadingMore: false,
@@ -110,39 +130,45 @@ export default {
   },
 
   async mounted() {
-    await this.initTeamContext()
+    await this.initProjectContext()
     if (import.meta.client) {
-      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+      window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.handleActiveProjectChanged)
     }
   },
 
   beforeUnmount() {
     if (import.meta.client) {
-      window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.handleActiveProjectChanged)
     }
     if (this.searchDebounceTimer) clearTimeout(this.searchDebounceTimer)
   },
 
   methods: {
-    async handleActiveTeamChanged() {
-      await this.initTeamContext()
+    async handleActiveProjectChanged() {
+      await this.initProjectContext()
     },
 
-    async initTeamContext() {
+    async initProjectContext() {
       this.isLoading = true
       this.error = null
 
       try {
-        const teamResponse = await $fetch('/api/teams/active')
-        const activeTeamData = teamResponse?.data
+        const projectResponse = await $fetch('/api/projects/active')
+        const activeProjectData = projectResponse?.data?.project
 
-        if (!activeTeamData?.id) {
-          this.error = 'No active team found'
+        if (!activeProjectData?.id) {
+          this.error = 'No active project found'
           this.isLoading = false
           return
         }
 
-        this.activeTeamId = activeTeamData.id
+        this.activeProjectId = activeProjectData.id
+        this.projectRole = activeProjectData.role || null
+        this.supportDisabled = projectResponse.data.modules?.supportEnabled === false
+        if (this.supportDisabled) {
+          this.isLoading = false
+          return
+        }
         await this.loadContacts(true)
       } catch {
         this.error = 'Something went wrong. Please try again.'
@@ -158,7 +184,7 @@ export default {
     },
 
     async loadContacts(reset) {
-      if (!this.activeTeamId) return
+      if (!this.activeProjectId) return
 
       if (reset) {
         this.isLoading = true
@@ -171,7 +197,7 @@ export default {
       try {
         const response = await $fetch('/api/support/contacts', {
           params: {
-            teamId: this.activeTeamId,
+            projectId: this.activeProjectId,
             search: this.search || undefined,
             limit: 25,
             cursor: reset ? undefined : this.nextCursor || undefined,

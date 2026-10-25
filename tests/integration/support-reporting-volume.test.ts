@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { asc, eq, sql } from 'drizzle-orm'
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -24,9 +25,9 @@ vi.mock('node:crypto', async () => ({
 const suffix = globalThis.crypto.randomUUID()
 const ids = {
   organization: `volume_org_${suffix}`,
-  team: `volume_team_${suffix}`,
+  project: `volume_project_${suffix}`,
   otherOrganization: `volume_other_org_${suffix}`,
-  otherTeam: `volume_other_team_${suffix}`,
+  otherProject: `volume_other_project_${suffix}`,
   inbox: `volume_inbox_${suffix}`,
   zeroInbox: `volume_zero_inbox_${suffix}`,
   otherInbox: `volume_other_inbox_${suffix}`,
@@ -37,7 +38,7 @@ const ids = {
   mismatchedConversation: `volume_mismatched_conversation_${suffix}`,
   otherConversation: `volume_other_conversation_${suffix}`,
   agent: `volume_agent_${suffix}`,
-  otherTeamMetric: `volume_other_team_metric_${suffix}`,
+  otherProjectMetric: `volume_other_project_metric_${suffix}`,
   otherDateMetric: `volume_other_date_metric_${suffix}`,
   otherTimezoneMetric: `volume_other_timezone_metric_${suffix}`,
 }
@@ -49,7 +50,7 @@ const metricKeys = ['conversations_created', 'conversations_resolved', 'conversa
 
 function sourceConversation(
   id: string,
-  teamId: string,
+  projectId: string,
   inboxId: string,
   contactId: string,
   displayId: number,
@@ -57,7 +58,7 @@ function sourceConversation(
 ) {
   return {
     id,
-    teamId,
+    projectId,
     inboxId,
     contactId,
     displayId,
@@ -70,7 +71,7 @@ function sourceConversation(
 function statusEvent(
   id: string,
   conversationId: string,
-  teamId: string,
+  projectId: string,
   inboxId: string,
   fromStatus: string | null,
   toStatus: string,
@@ -79,7 +80,7 @@ function statusEvent(
   return {
     id,
     conversationId,
-    teamId,
+    projectId,
     inboxId,
     fromStatus,
     toStatus,
@@ -95,11 +96,11 @@ describe('support reporting volume (real Postgres)', () => {
       { id: ids.organization, name: 'Volume Org', slug: `volume-${suffix}` },
       { id: ids.otherOrganization, name: 'Other Volume Org', slug: `other-volume-${suffix}` },
     ])
-    await db.insert(team).values([
-      { id: ids.team, name: 'Volume Team', slug: `volume-${suffix}`, organizationId: ids.organization },
+    await db.insert(project).values([
+      { id: ids.project, name: 'Volume Project', slug: `volume-${suffix}`, organizationId: ids.organization },
       {
-        id: ids.otherTeam,
-        name: 'Other Volume Team',
+        id: ids.otherProject,
+        name: 'Other Volume Project',
         slug: `other-volume-${suffix}`,
         organizationId: ids.otherOrganization,
       },
@@ -110,32 +111,32 @@ describe('support reporting volume (real Postgres)', () => {
       email: `volume-${suffix}@example.com`,
     })
     await db.insert(supportInbox).values([
-      { id: ids.inbox, teamId: ids.team, name: 'Volume Inbox', slug: `volume-${suffix}` },
-      { id: ids.zeroInbox, teamId: ids.team, name: 'Zero Inbox', slug: `zero-${suffix}` },
-      { id: ids.otherInbox, teamId: ids.otherTeam, name: 'Other Inbox', slug: `other-${suffix}` },
+      { id: ids.inbox, projectId: ids.project, name: 'Volume Inbox', slug: `volume-${suffix}` },
+      { id: ids.zeroInbox, projectId: ids.project, name: 'Zero Inbox', slug: `zero-${suffix}` },
+      { id: ids.otherInbox, projectId: ids.otherProject, name: 'Other Inbox', slug: `other-${suffix}` },
     ])
     await db.insert(contact).values([
-      { id: ids.contact, teamId: ids.team, name: 'Volume Contact' },
-      { id: ids.otherContact, teamId: ids.otherTeam, name: 'Other Contact' },
+      { id: ids.contact, projectId: ids.project, name: 'Volume Contact' },
+      { id: ids.otherContact, projectId: ids.otherProject, name: 'Other Contact' },
     ])
     await db.insert(conversation).values([
       // 06:00Z is 01:00 local on the DST transition date and is included.
-      sourceConversation(ids.conversation, ids.team, ids.inbox, ids.contact, 1, '2026-03-08T06:00:00.000Z'),
+      sourceConversation(ids.conversation, ids.project, ids.inbox, ids.contact, 1, '2026-03-08T06:00:00.000Z'),
       // 04:59Z is before the local date and is excluded.
-      sourceConversation(ids.outsideConversation, ids.team, ids.inbox, ids.contact, 2, '2026-03-08T04:59:00.000Z'),
-      // This row disagrees with its inbox's denormalized team and is excluded.
+      sourceConversation(ids.outsideConversation, ids.project, ids.inbox, ids.contact, 2, '2026-03-08T04:59:00.000Z'),
+      // This row disagrees with its inbox's denormalized project and is excluded.
       sourceConversation(
         ids.mismatchedConversation,
-        ids.team,
+        ids.project,
         ids.otherInbox,
         ids.contact,
         3,
         '2026-03-08T07:00:00.000Z'
       ),
-      // Another team's source row is excluded.
+      // Another project's source row is excluded.
       sourceConversation(
         ids.otherConversation,
-        ids.otherTeam,
+        ids.otherProject,
         ids.otherInbox,
         ids.otherContact,
         4,
@@ -146,7 +147,7 @@ describe('support reporting volume (real Postgres)', () => {
       statusEvent(
         `${ids.conversation}_initial`,
         ids.conversation,
-        ids.team,
+        ids.project,
         ids.inbox,
         null,
         'resolved',
@@ -155,7 +156,7 @@ describe('support reporting volume (real Postgres)', () => {
       statusEvent(
         `${ids.conversation}_resolve_1`,
         ids.conversation,
-        ids.team,
+        ids.project,
         ids.inbox,
         'open',
         'resolved',
@@ -165,7 +166,7 @@ describe('support reporting volume (real Postgres)', () => {
       statusEvent(
         `${ids.conversation}_close_1`,
         ids.conversation,
-        ids.team,
+        ids.project,
         ids.inbox,
         'resolved',
         'closed',
@@ -174,7 +175,7 @@ describe('support reporting volume (real Postgres)', () => {
       statusEvent(
         `${ids.conversation}_reopen`,
         ids.conversation,
-        ids.team,
+        ids.project,
         ids.inbox,
         'closed',
         'pending',
@@ -183,17 +184,17 @@ describe('support reporting volume (real Postgres)', () => {
       statusEvent(
         `${ids.conversation}_resolve_2`,
         ids.conversation,
-        ids.team,
+        ids.project,
         ids.inbox,
         'pending',
         'closed',
         '2026-03-08T09:00:00.000Z'
       ),
-      // This event's denormalized team disagrees with its conversation and is excluded.
+      // This event's denormalized project disagrees with its conversation and is excluded.
       statusEvent(
-        `${ids.conversation}_wrong_team`,
+        `${ids.conversation}_wrong_project`,
         ids.conversation,
-        ids.otherTeam,
+        ids.otherProject,
         ids.inbox,
         'closed',
         'open',
@@ -203,17 +204,17 @@ describe('support reporting volume (real Postgres)', () => {
       statusEvent(
         `${ids.conversation}_wrong_inbox`,
         ids.conversation,
-        ids.team,
+        ids.project,
         ids.otherInbox,
         'closed',
         'open',
         '2026-03-08T10:01:00.000Z'
       ),
-      // This source row belongs to the other team and is excluded.
+      // This source row belongs to the other project and is excluded.
       statusEvent(
         `${ids.otherConversation}_resolve`,
         ids.otherConversation,
-        ids.otherTeam,
+        ids.otherProject,
         ids.otherInbox,
         'open',
         'resolved',
@@ -226,9 +227,9 @@ describe('support reporting volume (real Postgres)', () => {
     await db
       .delete(supportMetricDaily)
       .where(
-        sql`${supportMetricDaily.id} in (${ids.otherTeamMetric}, ${ids.otherDateMetric}, ${ids.otherTimezoneMetric})`
+        sql`${supportMetricDaily.id} in (${ids.otherProjectMetric}, ${ids.otherDateMetric}, ${ids.otherTimezoneMetric})`
       )
-    await db.delete(supportMetricDaily).where(eq(supportMetricDaily.teamId, ids.team))
+    await db.delete(supportMetricDaily).where(eq(supportMetricDaily.projectId, ids.project))
     await db
       .delete(conversation)
       .where(
@@ -237,7 +238,7 @@ describe('support reporting volume (real Postgres)', () => {
     await db.delete(contact).where(sql`${contact.id} in (${ids.contact}, ${ids.otherContact})`)
     await db.delete(supportInbox).where(sql`${supportInbox.id} in (${ids.inbox}, ${ids.zeroInbox}, ${ids.otherInbox})`)
     await db.delete(user).where(eq(user.id, ids.agent))
-    await db.delete(team).where(sql`${team.id} in (${ids.team}, ${ids.otherTeam})`)
+    await db.delete(project).where(sql`${project.id} in (${ids.project}, ${ids.otherProject})`)
     await db.delete(organization).where(sql`${organization.id} in (${ids.organization}, ${ids.otherOrganization})`)
   })
 
@@ -245,7 +246,7 @@ describe('support reporting volume (real Postgres)', () => {
     await db.insert(supportMetricDaily).values([
       {
         id: `unrelated_${suffix}`,
-        teamId: ids.team,
+        projectId: ids.project,
         inboxId: ids.inbox,
         agentUserId: null,
         date,
@@ -256,7 +257,7 @@ describe('support reporting volume (real Postgres)', () => {
       },
       {
         id: `agent_${suffix}`,
-        teamId: ids.team,
+        projectId: ids.project,
         inboxId: ids.inbox,
         agentUserId: ids.agent,
         date,
@@ -266,8 +267,8 @@ describe('support reporting volume (real Postgres)', () => {
         sampleCount: 99,
       },
       {
-        id: ids.otherTeamMetric,
-        teamId: ids.otherTeam,
+        id: ids.otherProjectMetric,
+        projectId: ids.otherProject,
         inboxId: ids.otherInbox,
         agentUserId: null,
         date,
@@ -278,7 +279,7 @@ describe('support reporting volume (real Postgres)', () => {
       },
       {
         id: ids.otherDateMetric,
-        teamId: ids.team,
+        projectId: ids.project,
         inboxId: ids.inbox,
         agentUserId: null,
         date: '2026-03-07',
@@ -289,7 +290,7 @@ describe('support reporting volume (real Postgres)', () => {
       },
       {
         id: ids.otherTimezoneMetric,
-        teamId: ids.team,
+        projectId: ids.project,
         inboxId: ids.inbox,
         agentUserId: null,
         date,
@@ -300,7 +301,7 @@ describe('support reporting volume (real Postgres)', () => {
       },
     ])
 
-    const result = await recomputeSupportVolumeDay({ teamId: ids.team, date, timezone })
+    const result = await recomputeSupportVolumeDay({ projectId: ids.project, date, timezone })
     expect(result).toEqual([
       { inboxId: ids.inbox, created: 1, resolved: 2, reopened: 1 },
       { inboxId: ids.zeroInbox, created: 0, resolved: 0, reopened: 0 },
@@ -309,20 +310,20 @@ describe('support reporting volume (real Postgres)', () => {
     const beforeRead = await db
       .select()
       .from(supportMetricDaily)
-      .where(eq(supportMetricDaily.teamId, ids.team))
+      .where(eq(supportMetricDaily.projectId, ids.project))
       .orderBy(asc(supportMetricDaily.id))
-    expect(await readSupportVolumeDay({ teamId: ids.team, date, timezone })).toEqual(result)
+    expect(await readSupportVolumeDay({ projectId: ids.project, date, timezone })).toEqual(result)
     expect(
       await db
         .select()
         .from(supportMetricDaily)
-        .where(eq(supportMetricDaily.teamId, ids.team))
+        .where(eq(supportMetricDaily.projectId, ids.project))
         .orderBy(asc(supportMetricDaily.id))
     ).toEqual(beforeRead)
 
     await Promise.all([
-      recomputeSupportVolumeDay({ teamId: ids.team, date, timezone }),
-      recomputeSupportVolumeDay({ teamId: ids.team, date, timezone }),
+      recomputeSupportVolumeDay({ projectId: ids.project, date, timezone }),
+      recomputeSupportVolumeDay({ projectId: ids.project, date, timezone }),
     ])
     const replaced = await db
       .select({
@@ -333,7 +334,7 @@ describe('support reporting volume (real Postgres)', () => {
       })
       .from(supportMetricDaily)
       .where(
-        sql`${supportMetricDaily.teamId} = ${ids.team} and ${supportMetricDaily.date} = ${date} and ${supportMetricDaily.timezone} = ${timezone} and ${supportMetricDaily.agentUserId} is null`
+        sql`${supportMetricDaily.projectId} = ${ids.project} and ${supportMetricDaily.date} = ${date} and ${supportMetricDaily.timezone} = ${timezone} and ${supportMetricDaily.agentUserId} is null`
       )
     const replacementRows = replaced.filter((row) => metricKeys.includes(row.metric as (typeof metricKeys)[number]))
     expect(replacementRows).toHaveLength(6)
@@ -371,11 +372,11 @@ describe('support reporting volume (real Postgres)', () => {
         .select({ id: supportMetricDaily.id, value: supportMetricDaily.value })
         .from(supportMetricDaily)
         .where(
-          sql`${supportMetricDaily.id} in (${ids.otherTeamMetric}, ${ids.otherDateMetric}, ${ids.otherTimezoneMetric})`
+          sql`${supportMetricDaily.id} in (${ids.otherProjectMetric}, ${ids.otherDateMetric}, ${ids.otherTimezoneMetric})`
         )
     ).toEqual(
       expect.arrayContaining([
-        { id: ids.otherTeamMetric, value: 11 },
+        { id: ids.otherProjectMetric, value: 11 },
         { id: ids.otherDateMetric, value: 12 },
         { id: ids.otherTimezoneMetric, value: 13 },
       ])
@@ -384,42 +385,42 @@ describe('support reporting volume (real Postgres)', () => {
     const beforeFailedReplacement = await db
       .select()
       .from(supportMetricDaily)
-      .where(eq(supportMetricDaily.teamId, ids.team))
+      .where(eq(supportMetricDaily.projectId, ids.project))
       .orderBy(asc(supportMetricDaily.id))
     randomUuidMock.fn.mockImplementationOnce(() => `unrelated_${suffix}`)
-    await expect(recomputeSupportVolumeDay({ teamId: ids.team, date, timezone })).rejects.toThrow()
+    await expect(recomputeSupportVolumeDay({ projectId: ids.project, date, timezone })).rejects.toThrow()
     expect(
       await db
         .select()
         .from(supportMetricDaily)
-        .where(eq(supportMetricDaily.teamId, ids.team))
+        .where(eq(supportMetricDaily.projectId, ids.project))
         .orderBy(asc(supportMetricDaily.id))
     ).toEqual(beforeFailedReplacement)
 
     await db
       .insert(conversation)
       .values(
-        sourceConversation(`volume_added_${suffix}`, ids.team, ids.inbox, ids.contact, 5, '2026-03-08T11:00:00.000Z')
+        sourceConversation(`volume_added_${suffix}`, ids.project, ids.inbox, ids.contact, 5, '2026-03-08T11:00:00.000Z')
       )
-    expect(await readSupportVolumeDay({ teamId: ids.team, date, timezone })).toEqual([
+    expect(await readSupportVolumeDay({ projectId: ids.project, date, timezone })).toEqual([
       { inboxId: ids.inbox, created: 2, resolved: 2, reopened: 1 },
       { inboxId: ids.zeroInbox, created: 0, resolved: 0, reopened: 0 },
     ])
-    const updated = await recomputeSupportVolumeDay({ teamId: ids.team, date, timezone })
+    const updated = await recomputeSupportVolumeDay({ projectId: ids.project, date, timezone })
     expect(updated[0]).toEqual({ inboxId: ids.inbox, created: 2, resolved: 2, reopened: 1 })
     await db.delete(conversation).where(eq(conversation.id, `volume_added_${suffix}`))
 
     const storedBeforeInvalid = await db
       .select()
       .from(supportMetricDaily)
-      .where(eq(supportMetricDaily.teamId, ids.team))
+      .where(eq(supportMetricDaily.projectId, ids.project))
       .orderBy(asc(supportMetricDaily.id))
-    await expect(recomputeSupportVolumeDay({ teamId: ids.team, date: '2026-02-30', timezone })).rejects.toThrow()
+    await expect(recomputeSupportVolumeDay({ projectId: ids.project, date: '2026-02-30', timezone })).rejects.toThrow()
     expect(
       await db
         .select()
         .from(supportMetricDaily)
-        .where(eq(supportMetricDaily.teamId, ids.team))
+        .where(eq(supportMetricDaily.projectId, ids.project))
         .orderBy(asc(supportMetricDaily.id))
     ).toEqual(storedBeforeInvalid)
   })

@@ -110,31 +110,31 @@ describe('getRegistrableDomain', () => {
 
 describe('findHierarchyConflict', () => {
   const claims = [
-    { domain: 'acme.com', teamId: 'team-a' },
-    { domain: 'deep.sub.other.org', teamId: 'team-a' },
+    { domain: 'acme.com', projectId: 'project-a' },
+    { domain: 'deep.sub.other.org', projectId: 'project-a' },
   ]
 
-  it('conflicts with the same domain of another team', () => {
-    expect(findHierarchyConflict('acme.com', 'team-b', claims)).toEqual({ domain: 'acme.com' })
+  it('conflicts with the same domain of another project', () => {
+    expect(findHierarchyConflict('acme.com', 'project-b', claims)).toEqual({ domain: 'acme.com' })
   })
 
-  it('conflicts with a descendant of another team claim (ancestor owned)', () => {
-    expect(findHierarchyConflict('mail.acme.com', 'team-b', claims)).toEqual({ domain: 'acme.com' })
+  it('conflicts with a descendant of another project claim (ancestor owned)', () => {
+    expect(findHierarchyConflict('mail.acme.com', 'project-b', claims)).toEqual({ domain: 'acme.com' })
   })
 
-  it('conflicts with an ancestor of another team claim (descendant owned)', () => {
-    expect(findHierarchyConflict('other.org', 'team-b', claims)).toEqual({ domain: 'deep.sub.other.org' })
-    expect(findHierarchyConflict('sub.other.org', 'team-b', claims)).toEqual({ domain: 'deep.sub.other.org' })
+  it('conflicts with an ancestor of another project claim (descendant owned)', () => {
+    expect(findHierarchyConflict('other.org', 'project-b', claims)).toEqual({ domain: 'deep.sub.other.org' })
+    expect(findHierarchyConflict('sub.other.org', 'project-b', claims)).toEqual({ domain: 'deep.sub.other.org' })
   })
 
   it('matches on label boundaries only', () => {
-    expect(findHierarchyConflict('badacme.com', 'team-b', claims)).toBeNull()
-    expect(findHierarchyConflict('acme.com.evil.io', 'team-b', claims)).toBeNull()
+    expect(findHierarchyConflict('badacme.com', 'project-b', claims)).toBeNull()
+    expect(findHierarchyConflict('acme.com.evil.io', 'project-b', claims)).toBeNull()
   })
 
-  it('allows nesting within the same team', () => {
-    expect(findHierarchyConflict('mail.acme.com', 'team-a', claims)).toBeNull()
-    expect(findHierarchyConflict('acme.com', 'team-a', claims)).toBeNull()
+  it('allows nesting within the same project', () => {
+    expect(findHierarchyConflict('mail.acme.com', 'project-a', claims)).toBeNull()
+    expect(findHierarchyConflict('acme.com', 'project-a', claims)).toBeNull()
   })
 })
 

@@ -23,6 +23,7 @@ export interface EditorPayload {
   summary: string | null
   body: string
   labels: string[]
+  productIds: string[]
   feedbackIds: string[]
 }
 
@@ -33,6 +34,7 @@ export function snapshotPayload(payload: EditorPayload): string {
     payload.summary,
     payload.body,
     [...payload.labels].sort(),
+    [...(payload.productIds ?? [])].sort(),
     [...payload.feedbackIds].sort(),
   ])
 }
@@ -43,5 +45,5 @@ export function hasUnsavedChanges(payload: EditorPayload, savedSnapshot: string 
 
 /** The 403 from `requireChangelogAccess` when a module switch is off (vs. a non-member 403). */
 export function isModuleOffMessage(message: string): boolean {
-  return /^Changelog is not enabled for this (team|product)$/.test(message)
+  return /^Changelog is not enabled for this project$/.test(message)
 }

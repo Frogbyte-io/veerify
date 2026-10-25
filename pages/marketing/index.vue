@@ -4,27 +4,27 @@
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing</h1>
-          <p class="text-muted-foreground mt-1">Get your product found by search engines, AI assistants and people</p>
+          <p class="text-muted-foreground mt-1">Get your project found by search engines, AI assistants and people</p>
         </div>
-        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
       </div>
 
       <p v-if="pickerError" class="text-sm text-muted-foreground" data-testid="marketing-picker-error">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </p>
 
       <template v-else-if="pickerReady">
-        <Card v-if="!product">
+        <Card v-if="!project">
           <CardContent class="py-10 text-center">
-            <p class="font-medium mb-1">No products yet</p>
-            <p class="text-sm text-muted-foreground mb-4">Marketing works on a product. Create one to get started.</p>
+            <p class="font-medium mb-1">No project yet</p>
+            <p class="text-sm text-muted-foreground mb-4">Marketing works on a project. Create one to get started.</p>
             <Button as-child variant="outline">
-              <NuxtLink to="/products">Go to products</NuxtLink>
+              <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
             </Button>
           </CardContent>
         </Card>
 
-        <MarketingDisabled v-else-if="disabledMessage !== null" :product="product" :message="disabledMessage" />
+        <MarketingDisabled v-else-if="disabledMessage !== null" :project="project" :message="disabledMessage" />
 
         <div v-else-if="isLoading" class="space-y-6">
           <Skeleton class="h-40 w-full" />
@@ -80,7 +80,7 @@
                       class="text-xs text-muted-foreground"
                       :data-testid="`setup-${step.key}-admin-note`"
                     >
-                      Ask a team admin
+                      Ask a project admin
                     </span>
                     <Button v-else as-child size="sm" variant="outline">
                       <NuxtLink :to="`${settingsLink}#${step.section}`">{{ step.action }}</NuxtLink>
@@ -116,7 +116,7 @@
                 </template>
                 <p v-else class="text-sm text-muted-foreground">No audit yet.</p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/audit')">Open audit</NuxtLink>
+                  <NuxtLink to="/marketing/audit">Open audit</NuxtLink>
                 </Button>
               </CardContent>
             </Card>
@@ -143,7 +143,7 @@
                 </p>
                 <p v-else class="text-sm text-muted-foreground">No run yet.</p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/ai-visibility')">Open AI visibility</NuxtLink>
+                  <NuxtLink to="/marketing/ai-visibility">Open AI visibility</NuxtLink>
                 </Button>
               </CardContent>
             </Card>
@@ -161,7 +161,7 @@
                   new {{ overview?.newMentions === 1 ? 'mention' : 'mentions' }}
                 </p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/mentions')">Open mentions</NuxtLink>
+                  <NuxtLink to="/marketing/mentions">Open mentions</NuxtLink>
                 </Button>
               </CardContent>
             </Card>
@@ -191,7 +191,7 @@
                   Connect Search Console to see clicks and impressions.
                 </p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/search')">
+                  <NuxtLink to="/marketing/search">
                     {{ overview.search?.connected ? 'Open search' : 'Connect Search Console' }}
                   </NuxtLink>
                 </Button>
@@ -219,7 +219,7 @@
                   Review requests are off. Ask happy customers for reviews and testimonials.
                 </p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/reviews')">
+                  <NuxtLink to="/marketing/reviews">
                     {{ overview.reviews?.enabled ? 'Open reviews' : 'Turn on review requests' }}
                   </NuxtLink>
                 </Button>
@@ -244,7 +244,7 @@
                   Changelog is off. Turn it on to draft announcements for what you ship.
                 </p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/announcements')">Open announcements</NuxtLink>
+                  <NuxtLink to="/marketing/announcements">Open announcements</NuxtLink>
                 </Button>
               </CardContent>
             </Card>
@@ -268,7 +268,7 @@
                   Give consent to analyse customer feedback and learn the words they use.
                 </p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/language')">
+                  <NuxtLink to="/marketing/language">
                     {{ overview.language?.consented ? 'Open customer language' : 'Give consent to analyse' }}
                   </NuxtLink>
                 </Button>
@@ -292,9 +292,9 @@
                 <p v-else-if="overview.changelog?.enabled" class="text-sm text-muted-foreground">
                   Nothing published yet.
                 </p>
-                <p v-else class="text-sm text-muted-foreground">Changelog is off for this product.</p>
+                <p v-else class="text-sm text-muted-foreground">Changelog is off for this project.</p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/dashboard/changelog')">Open changelog</NuxtLink>
+                  <NuxtLink to="/dashboard/changelog">Open changelog</NuxtLink>
                 </Button>
               </CardContent>
             </Card>
@@ -319,7 +319,7 @@
                   Watch competitors' pricing and changelog pages for changes.
                 </p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/competitors')">
+                  <NuxtLink to="/marketing/competitors">
                     {{
                       overview.competitors?.watching || overview.competitors?.unseenChanges
                         ? 'Review changes'
@@ -349,7 +349,7 @@
                   progress
                 </p>
                 <Button as-child variant="outline" size="sm">
-                  <NuxtLink :to="withProduct('/marketing/launch')">Open launch kit</NuxtLink>
+                  <NuxtLink to="/marketing/launch">Open launch kit</NuxtLink>
                 </Button>
               </CardContent>
             </Card>
@@ -358,7 +358,9 @@
           <Card data-testid="marketing-usage">
             <CardHeader>
               <CardTitle role="heading" aria-level="2" class="text-base">Usage this month</CardTitle>
-              <CardDescription>Counted for your whole team. Provider invoices are the source of truth.</CardDescription>
+              <CardDescription
+                >Counted for your whole workspace. Provider invoices are the source of truth.</CardDescription
+              >
             </CardHeader>
             <CardContent>
               <dl class="grid gap-4 sm:grid-cols-2">
@@ -396,7 +398,7 @@ export default {
   data() {
     return {
       pickerReady: false,
-      product: null,
+      project: null,
       overview: null,
       isLoading: false,
       error: null,
@@ -457,7 +459,7 @@ export default {
     },
 
     settingsLink() {
-      return this.withProduct('/marketing/settings')
+      return '/marketing/settings'
     },
 
     auditSummary() {
@@ -517,10 +519,6 @@ export default {
   },
 
   methods: {
-    withProduct(path) {
-      return this.product ? `${path}?product=${encodeURIComponent(this.product.slug)}` : path
-    },
-
     formatNumber(value) {
       return new Intl.NumberFormat().format(value || 0)
     },
@@ -531,52 +529,52 @@ export default {
     },
 
     onPickerError() {
-      this.product = null
+      this.project = null
       this.overview = null
       this.pickerError = true
       this.pickerReady = true
     },
 
-    async loadCanManage(productId) {
+    async loadCanManage(projectId) {
       try {
-        const response = await $fetch(`/api/marketing/projects/${productId}/site`)
-        if (this.product?.id === productId) this.canManageSite = response?.data?.canManage ?? null
+        const response = await $fetch(`/api/marketing/projects/${projectId}/site`)
+        if (this.project?.id === projectId) this.canManageSite = response?.data?.canManage ?? null
       } catch {
         // Unknown: keep the action buttons rather than hide them wrongly
       }
     },
 
-    async onProductChange(product) {
+    async onProjectChange(project) {
       this.pickerReady = true
       this.pickerError = false
-      this.product = product
+      this.project = project
       this.canManageSite = null
       this.overview = null
       this.disabledMessage = null
       this.error = null
-      if (product) await this.load()
+      if (project) await this.load()
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.isLoading = true
       this.error = null
       this.disabledMessage = null
-      this.loadCanManage(productId)
+      this.loadCanManage(projectId)
       try {
-        const response = await $fetch(`/api/marketing/projects/${productId}/overview`)
-        if (this.product?.id !== productId) return
+        const response = await $fetch(`/api/marketing/projects/${projectId}/overview`)
+        if (this.project?.id !== projectId) return
         this.overview = response?.data || null
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.disabledMessage = apiErrorMessage(err, '')
         } else {
           this.error = apiErrorMessage(err, 'Failed to load the overview')
         }
       } finally {
-        if (this.product?.id === productId) this.isLoading = false
+        if (this.project?.id === projectId) this.isLoading = false
       }
     },
   },

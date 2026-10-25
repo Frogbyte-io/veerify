@@ -3,17 +3,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq, inArray } from 'drizzle-orm'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, teamMember, user } from '../../server/database/schema/auth'
-import { feedback, project } from '../../server/database/schema/feedback'
+import { organization, user } from '../../server/database/schema/auth'
+import { feedback, product, project, projectMember } from '../../server/database/schema/feedback'
 import { contact, contactLink } from '../../server/database/schema/support'
 import { DEFAULT_TIMELINE_LIMIT, getContactTimeline, MAX_TIMELINE_LIMIT } from '../../server/utils/support-timeline'
 
 const ids = {
   org: `timeline_page_org_${randomUUID()}`,
-  team: `timeline_page_team_${randomUUID()}`,
+  project: `timeline_page_project_${randomUUID()}`,
   member: `timeline_page_member_${randomUUID()}`,
   user: `timeline_page_user_${randomUUID()}`,
-  project: `timeline_page_project_${randomUUID()}`,
+  product: `timeline_page_product_${randomUUID()}`,
   contact: `timeline_page_contact_${randomUUID()}`,
   otherContact: `timeline_page_other_contact_${randomUUID()}`,
 }
@@ -30,10 +30,10 @@ describe('support contact timeline pagination (real Postgres)', () => {
       createdAt: now,
       updatedAt: now,
     })
-    await db.insert(team).values({
-      id: ids.team,
-      name: 'Timeline pagination team',
-      slug: `timeline-pagination-team-${randomUUID()}`,
+    await db.insert(project).values({
+      id: ids.project,
+      name: 'Timeline pagination project',
+      slug: `timeline-pagination-project-${randomUUID()}`,
       organizationId: ids.org,
       createdAt: now,
       updatedAt: now,
@@ -45,33 +45,31 @@ describe('support contact timeline pagination (real Postgres)', () => {
       createdAt: now,
       updatedAt: now,
     })
-    await db.insert(teamMember).values({
+    await db.insert(projectMember).values({
       id: ids.member,
-      teamId: ids.team,
+      projectId: ids.project,
       userId: ids.user,
       role: 'member',
       createdAt: now,
     })
-    await db.insert(project).values({
-      id: ids.project,
-      organizationId: ids.org,
-      teamId: ids.team,
-      slug: `timeline-pagination-project-${randomUUID()}`,
-      name: 'Timeline pagination project',
-      description: 'Fixture',
+    await db.insert(product).values({
+      id: ids.product,
+      projectId: ids.project,
+      name: 'Timeline pagination product',
+      slug: 'main',
       createdAt: now,
       updatedAt: now,
     })
     await db.insert(contact).values([
       {
         id: ids.contact,
-        teamId: ids.team,
+        projectId: ids.project,
         name: 'Timeline contact',
         email: 'timeline@example.com',
         createdAt: now,
         updatedAt: now,
       },
-      { id: ids.otherContact, teamId: ids.team, name: 'Other timeline contact', createdAt: now, updatedAt: now },
+      { id: ids.otherContact, projectId: ids.project, name: 'Other timeline contact', createdAt: now, updatedAt: now },
     ])
   })
 
@@ -86,7 +84,7 @@ describe('support contact timeline pagination (real Postgres)', () => {
     await db.delete(feedback).where(inArray(feedback.id, feedbackIds))
     await db.delete(contact).where(inArray(contact.id, contactIds))
     await db.delete(project).where(eq(project.id, ids.project))
-    await db.delete(teamMember).where(eq(teamMember.id, ids.member))
+    await db.delete(projectMember).where(eq(projectMember.id, ids.member))
     await db.delete(user).where(eq(user.id, ids.user))
     await db.delete(organization).where(eq(organization.id, ids.org))
   })
@@ -96,6 +94,7 @@ describe('support contact timeline pagination (real Postgres)', () => {
     await db.insert(feedback).values({
       id,
       projectId: ids.project,
+      productId: ids.product,
       title: id,
       authorEmail: 'timeline@example.com',
       createdAt,
@@ -129,7 +128,7 @@ describe('support contact timeline pagination (real Postgres)', () => {
     expect(MAX_TIMELINE_LIMIT).toBe(100)
 
     const first = await getContactTimeline(
-      { id: ids.contact, teamId: ids.team, email: 'timeline@example.com', userId: null },
+      { id: ids.contact, projectId: ids.project, email: 'timeline@example.com', userId: null },
       { limit: 1 }
     )
     expect(first.linked.map((row) => row.entityId)).toEqual(['timeline-page-linked-b'])
@@ -139,14 +138,14 @@ describe('support contact timeline pagination (real Postgres)', () => {
     expect(first.probableFeedback.map((row) => row.id)).not.toContain('timeline-page-excluded')
 
     const linkedNext = await getContactTimeline(
-      { id: ids.contact, teamId: ids.team, email: 'timeline@example.com', userId: null },
+      { id: ids.contact, projectId: ids.project, email: 'timeline@example.com', userId: null },
       { limit: 1, linkedCursor: first.linkedNextCursor! }
     )
     expect(linkedNext.linked.map((row) => row.entityId)).toEqual(['timeline-page-linked-a'])
     expect(linkedNext.probableFeedback.map((row) => row.id)).toEqual(['timeline-page-probable-b'])
 
     const probableNext = await getContactTimeline(
-      { id: ids.contact, teamId: ids.team, email: 'timeline@example.com', userId: null },
+      { id: ids.contact, projectId: ids.project, email: 'timeline@example.com', userId: null },
       { limit: 1, probableCursor: first.probableNextCursor! }
     )
     expect(probableNext.linked.map((row) => row.entityId)).toEqual(['timeline-page-linked-b'])

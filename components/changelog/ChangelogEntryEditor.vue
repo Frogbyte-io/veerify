@@ -35,7 +35,7 @@
           </a>
           <NuxtLink
             v-if="isPublished && !isNew"
-            :to="{ path: '/marketing/announcements', query: { product: project.slug, entry: entryId } }"
+            :to="{ path: '/marketing/announcements', query: { entry: entryId } }"
             class="inline-flex items-center gap-1 text-sm text-primary hover:underline"
             data-testid="changelog-announcements-link"
           >
@@ -89,6 +89,33 @@
           rows="2"
           placeholder="One or two sentences shown in the list"
         />
+      </div>
+
+      <div v-if="products.length > 1" class="space-y-2" data-testid="changelog-products">
+        <Label>Products</Label>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            :class="chipClass(productIds.length === 0)"
+            :aria-pressed="productIds.length === 0"
+            data-testid="changelog-product-all"
+            @click="productIds = []"
+          >
+            All products
+          </button>
+          <button
+            v-for="product in products"
+            :key="product.id"
+            type="button"
+            :class="chipClass(productIds.includes(product.id))"
+            :aria-pressed="productIds.includes(product.id)"
+            :data-testid="`changelog-product-${product.slug}`"
+            @click="toggleProduct(product.id)"
+          >
+            {{ product.name }}
+          </button>
+        </div>
+        <p class="text-xs text-muted-foreground">Leave on "All products" for a project-wide update.</p>
       </div>
 
       <div class="space-y-2">
@@ -209,6 +236,7 @@
 <script>
 import { toast } from 'vue-sonner'
 import { apiErrorMessage } from '~/lib/api-error'
+import { cn } from '~/lib/utils'
 import { buildPublicBoardUrl } from '~/lib/public-board-url'
 import { hasUnsavedChanges, resolveLinkedFeedback, snapshotPayload } from '~/lib/changelog-editor'
 
@@ -218,8 +246,13 @@ export default {
   name: 'ChangelogEntryEditor',
 
   props: {
+    // Active project (from /api/projects/active)
     project: { type: Object, required: true },
-    teamSlug: { type: String, default: '' },
+    orgSlug: { type: String, default: '' },
+    // Products of the project; the product tags only show with more than one
+    products: { type: Array, default: () => [] },
+    // Pre-selected product tag for a new entry (the list's current filter)
+    initialProductId: { type: String, default: '' },
     // 'new' creates a draft on first save
     entryId: { type: String, required: true },
   },
@@ -236,6 +269,7 @@ export default {
       summary: '',
       body: '',
       labels: [],
+      productIds: [],
       linkedFeedback: [],
       labelOptions: ['new', 'improved', 'fixed'],
       isSaving: false,
@@ -276,9 +310,12 @@ export default {
     },
     publicUrl() {
       if (!import.meta.client || !this.slug) return ''
+      const customDomain =
+        this.project.customDomain && this.project.settings?.domainStatus === 'active' ? this.project.customDomain : null
       const boardUrl = buildPublicBoardUrl({
-        project: this.project,
-        teamSlug: this.teamSlug || '...',
+        orgSlug: this.orgSlug || '...',
+        projectSlug: this.project.slug,
+        customDomain,
         appDomain: useRuntimeConfig().public.appDomain || 'localhost',
         protocol: window.location.protocol,
         port: window.location.port,
@@ -322,6 +359,7 @@ export default {
       this.summary = entry.summary || ''
       this.body = entry.body || ''
       this.labels = [...(entry.labels || [])]
+      this.productIds = [...(entry.productIds || [])]
       this.linkedFeedback = resolveLinkedFeedback(this.linkedFeedback, entry)
       this.savedSnapshot = snapshotPayload(this.payload())
     },
@@ -341,6 +379,7 @@ export default {
         this.summary = ''
         this.body = ''
         this.labels = []
+        this.productIds = this.initialProductId ? [this.initialProductId] : []
         this.linkedFeedback = []
         this.savedSnapshot = snapshotPayload(this.payload())
         this.isLoading = false
@@ -363,6 +402,7 @@ export default {
         summary: this.summary.trim() || null,
         body: this.body,
         labels: this.labels,
+        productIds: this.productIds,
         feedbackIds: this.linkedFeedback.map((item) => item.id),
       }
     },
@@ -429,13 +469,26 @@ export default {
         await $fetch(`${this.base}/entries/${this.id}`, { method: 'DELETE' })
         toast.success('Entry deleted')
         this.showDelete = false
-        await navigateTo({ path: '/dashboard/changelog', query: { product: this.project.slug } })
+        await navigateTo({ path: '/dashboard/changelog' })
       } catch (err) {
         this.showDelete = false
         this.actionError = apiErrorMessage(err, 'Failed to delete the entry')
       } finally {
         this.isDeleting = false
       }
+    },
+
+    chipClass(active) {
+      return cn(
+        'rounded-full border px-3 py-1 text-sm transition-colors',
+        active ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-accent'
+      )
+    },
+
+    toggleProduct(id) {
+      this.productIds = this.productIds.includes(id)
+        ? this.productIds.filter((p) => p !== id)
+        : [...this.productIds, id]
     },
 
     toggleLabel(label) {

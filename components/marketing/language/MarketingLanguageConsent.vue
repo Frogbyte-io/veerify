@@ -6,7 +6,8 @@
         Data sent to your AI provider
       </CardTitle>
       <CardDescription>
-        Nothing is sent unless you switch a source on. Both sources are off by default and apply to your whole team.
+        Nothing is sent unless you switch a source on. Both sources are off by default and apply to your whole
+        workspace.
       </CardDescription>
     </CardHeader>
 
@@ -64,7 +65,7 @@
       </div>
 
       <p v-if="!canManage" class="text-sm text-muted-foreground" data-testid="language-consent-readonly">
-        Only team admins can change these settings.
+        Only workspace owners and admins can change these settings.
       </p>
       <p v-if="consent.consentedAt" class="text-xs text-muted-foreground">
         Last changed by {{ consent.consentedBy || 'a former member' }} on {{ formatDate(consent.consentedAt) }}.
@@ -106,7 +107,6 @@ export default {
   name: 'MarketingLanguageConsent',
 
   props: {
-    teamId: { type: String, required: true },
     consent: { type: Object, required: true },
     canManage: { type: Boolean, default: false },
   },
@@ -148,7 +148,7 @@ export default {
       this.saving = true
       this.error = null
       try {
-        await $fetch(`/api/marketing/teams/${this.teamId}/data-consent`, {
+        await $fetch(`/api/workspace/data-consent`, {
           method: 'PUT',
           body: {
             allowFeedbackText: this.consent.allowFeedbackText,

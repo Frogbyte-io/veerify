@@ -1,19 +1,22 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from './helpers/db'
 import { ensureVerifiedSendingDomain } from './helpers/sending-domains'
 import { contact, conversation, supportInbox } from '../../server/database/schema/support'
-import { account, session, teamMember, user, verification } from '../../server/database/schema/auth'
+import { account, member, session, user, verification } from '../../server/database/schema/auth'
+import { projectMember } from '../../server/database/schema/feedback'
 import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders, withOriginHeaders } from './helpers/auth'
 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
+const SEEDED_ORG_ID = 'seed_preview_org'
 
-async function activeTeamId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
-  const response = await request.get('/api/teams/active', { headers: withAuthHeaders(sessionCookie) })
+async function activeProjectId(request: Parameters<typeof signInAndGetSessionCookie>[0], sessionCookie: string) {
+  const response = await request.get('/api/projects/active', { headers: withAuthHeaders(sessionCookie) })
   expect(response.ok()).toBeTruthy()
-  return (await response.json()).data.id as string
+  return await enableProjectSupport((await response.json()).data.project.id as string)
 }
 
 /**
@@ -34,47 +37,66 @@ test.describe.serial('support conversation flow', () => {
     // conversation before exercising the UI; Neon-backed CI can spend most
     // of the default test budget on those setup requests alone.
     test.setTimeout(120_000)
-    const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const headers = withAuthHeaders(sessionCookie, '/support')
-    const teamId = await activeTeamId(request, sessionCookie)
-    await ensureVerifiedSendingDomain(teamId)
+    const ownerCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const projectId = await activeProjectId(request, ownerCookie)
+    await ensureVerifiedSendingDomain(projectId)
 
     const suffix = randomUUID().slice(0, 8)
     const adminCredentials = { email: `support-flow-admin-${suffix}@example.com`, password: TEST_PASSWORD }
+    const agentCredentials = { email: `support-flow-agent-${suffix}@example.com`, password: TEST_PASSWORD }
     let adminUserId: string | undefined
-    let teamMemberId: string | undefined
+    let agentUserId = ''
+    let projectMemberId: string | undefined
+    const orgMemberIds: string[] = []
     const createdInboxIds: string[] = []
     const createdContactIds: string[] = []
     const createdConversationIds: string[] = []
 
     try {
-      // The creator is added as a supportInboxMember with role 'admin', which
-      // is what grants access below — the seed user's teamMember role is only
-      // 'member', so inbox access cannot be coming from the team-admin bypass.
+      // The workspace owner is a project admin by definition, so the "ordinary agent" of this flow is a
+      // plain workspace member. Inbox access for that member can only come from the inbox membership
+      // added below, never from the project-admin bypass.
+      const signUp = async (name: string, credentials: { email: string; password: string }) => {
+        const response = await request.post('/api/auth/sign-up/email', {
+          headers: withOriginHeaders('/signup'),
+          data: { name, ...credentials },
+        })
+        expect(response.ok()).toBeTruthy()
+        const id = ((await response.json()).user?.id || '') as string
+        expect(id).toBeTruthy()
+        const orgMemberId = randomUUID()
+        orgMemberIds.push(orgMemberId)
+        await db.insert(member).values({
+          id: orgMemberId,
+          organizationId: SEEDED_ORG_ID,
+          userId: id,
+          role: 'member',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+        return id
+      }
+      adminUserId = await signUp('Support flow setup admin', adminCredentials)
+      agentUserId = await signUp('Support flow agent', agentCredentials)
+      projectMemberId = randomUUID()
+      await db
+        .insert(projectMember)
+        .values({ id: projectMemberId, projectId, userId: adminUserId, role: 'admin', createdAt: new Date() })
+
+      const agentCookie = await signInAndGetSessionCookie(request, agentCredentials)
+      const headers = withAuthHeaders(agentCookie, '/support')
       const deniedResponse = await request.post('/api/support/inboxes', {
         headers,
-        data: { teamId, name: `Denied E2E Inbox ${suffix}`, slug: `denied-e2e-inbox-${suffix}` },
+        data: { projectId, name: `Denied E2E Inbox ${suffix}`, slug: `denied-e2e-inbox-${suffix}` },
       })
       expect(deniedResponse.status()).toBe(403)
       expect(await deniedResponse.text()).toContain('FORBIDDEN')
-
-      const signupResponse = await request.post('/api/auth/sign-up/email', {
-        headers: withOriginHeaders('/signup'),
-        data: { name: 'Support flow setup admin', ...adminCredentials },
-      })
-      expect(signupResponse.ok()).toBeTruthy()
-      adminUserId = ((await signupResponse.json()).user?.id || '') as string
-      expect(adminUserId).toBeTruthy()
-      teamMemberId = randomUUID()
-      await db
-        .insert(teamMember)
-        .values({ id: teamMemberId, teamId, userId: adminUserId, role: 'admin', createdAt: new Date() })
 
       const adminCookie = await signInAndGetSessionCookie(request, adminCredentials)
       const adminHeaders = withAuthHeaders(adminCookie, '/support')
       const inboxResponse = await request.post('/api/support/inboxes', {
         headers: adminHeaders,
-        data: { teamId, name: `E2E Inbox ${suffix}`, slug: `e2e-inbox-${suffix}` },
+        data: { projectId, name: `E2E Inbox ${suffix}`, slug: `e2e-inbox-${suffix}` },
       })
       if (!inboxResponse.ok())
         throw new Error(`Inbox setup failed: ${inboxResponse.status()} ${await inboxResponse.text()}`)
@@ -84,7 +106,7 @@ test.describe.serial('support conversation flow', () => {
       const agentSessionResponse = await request.get('/api/auth/session', { headers })
       expect(agentSessionResponse.ok()).toBeTruthy()
       const agentSession = (await agentSessionResponse.json()).data.user as { id: string; name: string }
-      const agentUserId = agentSession.id
+      expect(agentSession.id).toBe(agentUserId)
       const addAgentResponse = await request.post(`/api/support/inboxes/${inboxId}/members`, {
         headers: adminHeaders,
         data: { userId: agentUserId, role: 'agent' },
@@ -95,7 +117,7 @@ test.describe.serial('support conversation flow', () => {
 
       const visibleInboxesResponse = await request.get('/api/support/inboxes', {
         headers,
-        params: { teamId },
+        params: { projectId },
       })
       expect(visibleInboxesResponse.ok()).toBeTruthy()
       const visibleInbox = (await visibleInboxesResponse.json()).data.inboxes.find(
@@ -105,7 +127,7 @@ test.describe.serial('support conversation flow', () => {
 
       const contactResponse = await request.post('/api/support/contacts', {
         headers,
-        data: { teamId, name: 'E2E Customer', email: `e2e-conv-${suffix}@example.com` },
+        data: { projectId, name: 'E2E Customer', email: `e2e-conv-${suffix}@example.com` },
       })
       expect(contactResponse.ok()).toBeTruthy()
       const contactId = (await contactResponse.json()).data.contact.id as string
@@ -146,12 +168,12 @@ test.describe.serial('support conversation flow', () => {
       // 2. An internal note on an unassigned conversation stays unassigned.
       // `isPrivate` is derived server-side from `kind`, so this also asserts
       // the note cannot accidentally become customer-visible.
-      await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-      const activeTeamResponse = await page.request.post('/api/teams/active', {
+      await loginViaProgrammaticPage(page, agentCredentials)
+      const activeProjectResponse = await page.request.post('/api/projects/active', {
         headers: withOriginHeaders('/support'),
-        data: { teamId },
+        data: { projectId },
       })
-      expect(activeTeamResponse.ok()).toBeTruthy()
+      expect(activeProjectResponse.ok()).toBeTruthy()
       await page.goto(`/support?inboxId=${inboxId}&conversationId=${conversationId}`, {
         waitUntil: 'domcontentloaded',
       })
@@ -294,12 +316,17 @@ test.describe.serial('support conversation flow', () => {
       for (const inboxId of createdInboxIds) {
         await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
       }
-      if (teamMemberId) await db.delete(teamMember).where(eq(teamMember.id, teamMemberId))
-      if (adminUserId) {
-        await db.delete(verification).where(eq(verification.identifier, adminCredentials.email))
-        await db.delete(session).where(eq(session.userId, adminUserId))
-        await db.delete(account).where(eq(account.userId, adminUserId))
-        await db.delete(user).where(eq(user.id, adminUserId))
+      if (projectMemberId) await db.delete(projectMember).where(eq(projectMember.id, projectMemberId))
+      if (orgMemberIds.length > 0) await db.delete(member).where(inArray(member.id, orgMemberIds))
+      for (const [userId, email] of [
+        [adminUserId, adminCredentials.email],
+        [agentUserId, agentCredentials.email],
+      ] as const) {
+        if (!userId) continue
+        await db.delete(verification).where(eq(verification.identifier, email))
+        await db.delete(session).where(eq(session.userId, userId))
+        await db.delete(account).where(eq(account.userId, userId))
+        await db.delete(user).where(eq(user.id, userId))
       }
     }
   })

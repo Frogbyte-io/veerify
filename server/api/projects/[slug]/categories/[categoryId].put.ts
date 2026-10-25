@@ -20,7 +20,7 @@ const updateCategorySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const { project } = await requireProjectCategoryAccess(event)
+  const { project } = await requireProjectCategoryAccess(event, { admin: true })
   const categoryId = getRouterParam(event, 'categoryId')
   if (!categoryId) {
     throw createError({

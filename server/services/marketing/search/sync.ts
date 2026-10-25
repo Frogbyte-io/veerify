@@ -1,9 +1,7 @@
 import { and, desc, eq, inArray, isNotNull, lt, or, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { DEFAULT_TEAM_MODULES } from '~/lib/modules'
 import { project } from '~/server/database/schema/feedback'
 import { gscConnection, gscDailyMetric, gscQueryStat, marketingSite } from '~/server/database/schema/marketing'
-import { teamModuleSettings } from '~/server/database/schema/teams'
 import {
   getGoogleOAuthConfig,
   GoogleApiError,
@@ -127,9 +125,8 @@ function chunks<T>(items: T[], size: number): T[][] {
   return result
 }
 
-/** `coalesce(team switch, default)`; the registry default for both switches is off. */
-const teamMarketingOn = sql`coalesce(${teamModuleSettings.marketingEnabled}, ${DEFAULT_TEAM_MODULES.marketingEnabled})`
-const productMarketingOn = sql`coalesce(${project.settings}->'marketingEnabled' = 'true'::jsonb, false)`
+/** The registry default for the Marketing switch is off. */
+const projectMarketingOn = sql`coalesce(${project.settings}->'marketingEnabled' = 'true'::jsonb, false)`
 
 export const dbSearchSyncStore: SearchSyncStore = {
   async claim(siteId, cutoff, now) {
@@ -152,13 +149,12 @@ export const dbSearchSyncStore: SearchSyncStore = {
     const rows = await db
       .select({
         siteId: marketingSite.id,
-        teamId: marketingSite.teamId,
+        organizationId: project.organizationId,
         origin: marketingSite.origin,
         projectId: project.id,
         projectName: project.name,
         projectSlug: project.slug,
         projectSettings: project.settings,
-        teamMarketingEnabled: teamModuleSettings.marketingEnabled,
         propertyUrl: gscConnection.propertyUrl,
         encryptedRefreshToken: gscConnection.encryptedRefreshToken,
         lastSyncAt: gscConnection.lastSyncAt,
@@ -166,15 +162,13 @@ export const dbSearchSyncStore: SearchSyncStore = {
       .from(gscConnection)
       .innerJoin(marketingSite, eq(marketingSite.id, gscConnection.siteId))
       .innerJoin(project, eq(project.id, marketingSite.projectId))
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, marketingSite.teamId))
       .where(
         and(
           eq(gscConnection.status, 'connected'),
           isNotNull(gscConnection.propertyUrl),
           isNotNull(marketingSite.verifiedAt),
-          // Module switches are part of the query so sites with marketing off cannot fill the LIMIT
-          teamMarketingOn,
-          productMarketingOn,
+          // The module switch is part of the query so sites with marketing off cannot fill the LIMIT
+          projectMarketingOn,
           or(sql`${gscConnection.lastSyncAt} is null`, lt(gscConnection.lastSyncAt, cutoff))
         )
       )
@@ -185,7 +179,6 @@ export const dbSearchSyncStore: SearchSyncStore = {
       ...row,
       propertyUrl: row.propertyUrl as string,
       projectSettings: (row.projectSettings as Record<string, unknown> | null) ?? null,
-      teamMarketingEnabled: row.teamMarketingEnabled ?? null,
     }))
   },
 

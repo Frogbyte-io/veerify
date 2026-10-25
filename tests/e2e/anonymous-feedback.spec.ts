@@ -4,16 +4,16 @@ import { loginViaProgrammatic, loginViaProgrammaticPage } from './helpers/auth'
 /**
  * Anonymous feedback e2e tests.
  *
- * These tests exercise the public feedback page on the team subdomain:
- * http://{team}.localhost:{port}/{project}
+ * These tests exercise the public feedback page on the workspace subdomain:
+ * http://{workspace}.localhost:{port}/{project}
  * which is seeded by the db:seed script. The anonymous session is managed
  * through an HttpOnly cookie `veerify_anon_session`.
  */
 
 const PORT = Number(process.env.PLAYWRIGHT_PORT || 4173)
-const TEAM_SLUG = process.env.E2E_TEAM_SLUG || 'preview-org'
+const ORG_SLUG = process.env.E2E_ORG_SLUG || 'preview-org'
 const PROJECT_SLUG = process.env.E2E_PROJECT_SLUG || 'demo'
-const PUBLIC_PAGE = process.env.E2E_PUBLIC_PAGE_URL || `http://${TEAM_SLUG}.localhost:${PORT}/${PROJECT_SLUG}`
+const PUBLIC_PAGE = process.env.E2E_PUBLIC_PAGE_URL || `http://${ORG_SLUG}.localhost:${PORT}/${PROJECT_SLUG}`
 const CUSTOM_DOMAIN = process.env.E2E_CUSTOM_DOMAIN || 'feedback.demo.localhost'
 const CUSTOM_DOMAIN_PAGE = `http://${CUSTOM_DOMAIN}:${PORT}`
 const DASHBOARD_ORIGIN = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${PORT}`
@@ -108,6 +108,17 @@ async function sortFeedbackByNewest(page: Page) {
   await sortSelect.selectOption('createdAt')
 }
 
+/** The dashboard follows the session's active project; point it at the seeded demo project. */
+async function activateDemoProject(page: Page) {
+  const listResponse = await page.request.get('/api/projects')
+  expect(listResponse.ok()).toBe(true)
+  const projects = ((await listResponse.json())?.data ?? []) as Array<{ id: string; slug: string }>
+  const demo = projects.find((project) => project.slug === PROJECT_SLUG)
+  expect(demo, `Project ${PROJECT_SLUG} not accessible`).toBeTruthy()
+  const activeResponse = await page.request.post('/api/projects/active', { data: { projectId: demo!.id } })
+  expect(activeResponse.ok()).toBe(true)
+}
+
 async function signInOnPublicHost(page: Page, opts: { email: string; password: string }) {
   const publicOrigin = new URL(PUBLIC_PAGE).origin
   const response = await page.request.post(`${publicOrigin}/api/auth/sign-in/email`, {
@@ -131,7 +142,7 @@ test.describe('Anonymous feedback sessions', () => {
   test('public board supports filtering feedback by tags', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
 
-    const projectResponse = await page.request.get(`/api/public/t/${TEAM_SLUG}/${PROJECT_SLUG}`)
+    const projectResponse = await page.request.get(`/api/public/o/${ORG_SLUG}/${PROJECT_SLUG}`)
     expect(projectResponse.ok()).toBe(true)
     const projectPayload = await projectResponse.json()
     const projectId = projectPayload?.data?.project?.id
@@ -176,6 +187,8 @@ test.describe('Anonymous feedback sessions', () => {
     await expect(page.getByText(bugTitle)).toHaveCount(0)
 
     await tagFilter.selectOption('')
+    // The seeded demo board accumulates items across runs; look at the newest page.
+    await sortFeedbackByNewest(page)
     await expect(page.getByText(bugTitle)).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText(featureTitle)).toBeVisible({ timeout: 10_000 })
   })
@@ -597,7 +610,8 @@ test.describe('Anonymous feedback sessions', () => {
 
   test('appearance footer toggles control public board footer visibility', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.goto('/products/demo#appearance')
+    await activateDemoProject(page)
+    await page.goto('/project/settings#appearance')
     await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
 
     const poweredByToggle = page.locator('[data-testid="appearance-toggle-powered-by"]')
@@ -639,7 +653,8 @@ test.describe('Anonymous feedback sessions', () => {
 
   test('custom footer replaces default public board footer links', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.goto('/products/demo#appearance')
+    await activateDemoProject(page)
+    await page.goto('/project/settings#appearance')
     await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
 
     const customFooterToggle = page.locator('[data-testid="appearance-toggle-custom-footer"]')
@@ -701,7 +716,8 @@ test.describe('Anonymous feedback sessions', () => {
     test.skip(STORAGE_DRIVER !== 'local', 'Upload e2e currently runs in local storage mode only')
 
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.goto('/products/demo#appearance')
+    await activateDemoProject(page)
+    await page.goto('/project/settings#appearance')
     await expect(page.getByRole('heading', { name: 'Board Appearance' })).toBeVisible()
 
     const logoInput = page.locator('[data-testid="appearance-logo-upload-input"]')
@@ -727,6 +743,10 @@ test.describe('Anonymous feedback sessions', () => {
       await saveButton.click()
       const firstSaveResponse = await firstSaveResponsePromise
       expect(firstSaveResponse.ok()).toBe(true)
+
+      // Wait for the save to settle (and the settings to reload) before selecting replacement files.
+      await expect(page.getByText('Appearance settings saved').first()).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByText('Unsaved changes.')).toHaveCount(0)
 
       const firstSettingsResponse = await page.request.get('/api/projects/demo')
       const firstSettingsPayload = await firstSettingsResponse.json()
@@ -792,7 +812,8 @@ test.describe('Anonymous feedback sessions', () => {
       await expect(page.locator('img[data-testid="public-board-logo"]')).toHaveCount(0)
       await expect(fallbackBanner).toBeVisible()
       await expect(page.locator('[data-testid="public-board-banner"] img')).toHaveCount(0)
-      await expect(fallbackBanner.getByText('Feedback Board')).toBeVisible()
+      // The fallback banner is decorative: no text that the parallax overhang could clip.
+      await expect(fallbackBanner).toHaveText('')
     } finally {
       const resetResponse = await page.request.put('/api/projects/demo', {
         data: { settings: null },
@@ -802,18 +823,20 @@ test.describe('Anonymous feedback sessions', () => {
     }
   })
 
-  test('product GitHub settings shows connect flow controls', async ({ page }) => {
+  test('feedback settings GitHub settings shows connect flow controls', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.goto('/products/demo#github')
+    await activateDemoProject(page)
+    await page.goto('/feedback?view=settings&section=github')
     await expect(page.getByRole('heading', { name: 'GitHub Integration' })).toBeVisible()
 
     await expect(page.locator('[data-testid="github-connect"]')).toBeVisible()
     await expect(page.locator('[data-testid="github-repo-select"]')).toBeVisible()
   })
 
-  test('product GitHub connect flow uses callback under Better Auth GitHub path', async ({ page }) => {
+  test('feedback settings GitHub connect flow uses callback under Better Auth GitHub path', async ({ page }) => {
     await loginViaProgrammaticPage(page, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    await page.goto('/products/demo#github')
+    await activateDemoProject(page)
+    await page.goto('/feedback?view=settings&section=github')
     await expect(page.getByRole('heading', { name: 'GitHub Integration' })).toBeVisible()
 
     const response = await page.request.get('/api/projects/demo/github/connect')

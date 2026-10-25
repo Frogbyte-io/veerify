@@ -39,20 +39,22 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string
   Object.assign(new Error(input.statusMessage), input)
 )
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: 'u1' } })),
 }))
+
+vi.mock('~/server/utils/project-statuses', () => ({ SYSTEM_STATUSES: [{ value: 'completed', name: 'Completed' }] }))
 
 vi.mock('~/server/utils/marketing-access', () => ({
   requireMarketingAccess: vi.fn(async () => {
     if (state.access === 'forbidden') throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
-    return { project: {}, teamId: 't1' }
+    return { project: {}, organizationId: 'o1' }
   }),
   requireMarketingAdmin: vi.fn(async () => {
     if (state.access === 'forbidden' || state.admin === 'forbidden') {
       throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
     }
-    return { project: {}, teamId: 't1' }
+    return { project: {}, organizationId: 'o1' }
   }),
 }))
 
@@ -65,18 +67,11 @@ vi.mock('~/server/utils/rate-limit', () => ({
 }))
 
 vi.mock('~/server/utils/project-access', () => ({
-  resolvePublicProjectByTeam: vi.fn(async () => ({ team: { id: 't1' }, project: { id: 'p1' } })),
+  isProjectAdmin: vi.fn(async () => state.teamAdmin),
 }))
 
 vi.mock('~/server/utils/public-modules', () => ({
   isModuleEnabledForProject: vi.fn(async () => state.marketingOn),
-}))
-
-vi.mock('~/server/utils/support-access', () => ({
-  requireTeamAdmin: vi.fn(async () => {
-    if (!state.teamAdmin) throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
-    return { role: 'admin' }
-  }),
 }))
 
 vi.mock('~/server/services/marketing/reviews/service', () => ({
@@ -158,7 +153,6 @@ const goHandler = (await import('~/server/api/marketing/r/[token]/go.get')).defa
 const unsubGet = (await import('~/server/api/marketing/r/[token]/unsubscribe.get')).default
 const unsubPost = (await import('~/server/api/marketing/r/[token]/unsubscribe.post')).default
 const submitHandler = (await import('~/server/api/marketing/r/[token]/testimonial.post')).default
-const publicWall = (await import('~/server/api/public/t/[teamSlug]/[projectSlug]/testimonials.get')).default
 const patchHandler = (await import('~/server/api/marketing/projects/[projectId]/testimonials/[id].patch')).default
 const deleteHandler = (await import('~/server/api/marketing/projects/[projectId]/testimonials/[id].delete')).default
 const settingsPut = (await import('~/server/api/marketing/projects/[projectId]/reviews/settings.put')).default
@@ -169,7 +163,7 @@ const testimonialsGet = (await import('~/server/api/marketing/projects/[projectI
 const requestRow = (overrides: Record<string, unknown> = {}) => ({
   id: 'rr-1',
   projectId: 'p1',
-  teamId: 'team-1',
+  organizationId: 'org-1',
   email: 'Jane@Example.com',
   name: 'Jane Doe',
   clickedAt: null,
@@ -178,7 +172,6 @@ const requestRow = (overrides: Record<string, unknown> = {}) => ({
   createdAt: new Date(),
   projectName: 'Acme',
   projectSettings: { marketingEnabled: true },
-  teamMarketingEnabled: true,
   platforms: [{ id: 'g2', label: 'G2', url: 'https://www.g2.com/products/acme/reviews' }],
   askForTestimonial: true,
   requestsEnabled: true,
@@ -197,7 +190,6 @@ const submitRow = (overrides: Record<string, unknown> = {}) => ({
   sentAt: daysAgo(1),
   createdAt: daysAgo(1),
   projectSettings: { marketingEnabled: true },
-  teamMarketingEnabled: true,
   requestsEnabled: true,
   askForTestimonial: true,
   ...overrides,
@@ -338,13 +330,13 @@ describe('unsubscribe', () => {
     expect(state.inserts).toHaveLength(0)
   })
 
-  it('POST writes a per-team suppression for the lower-cased address', async () => {
+  it('POST writes a per-workspace suppression for the lower-cased address', async () => {
     state.selectQueue = [[requestRow()]]
     const html = (await unsubPost({} as never)) as string
     expect(html).toContain('You are unsubscribed')
     expect(state.inserts).toHaveLength(1)
     expect(state.inserts[0].values).toEqual({
-      teamId: 'team-1',
+      organizationId: 'org-1',
       email: 'jane@example.com',
       emailHash: hashEmail('jane@example.com'),
       reason: 'unsubscribed',
@@ -358,7 +350,7 @@ describe('unsubscribe', () => {
     expect(html).toContain('You are unsubscribed')
     expect(state.inserts).toHaveLength(1)
     expect(state.inserts[0].values).toEqual({
-      teamId: 'team-1',
+      organizationId: 'org-1',
       email: 'hash:abc123',
       emailHash: 'abc123',
       reason: 'unsubscribed',
@@ -445,36 +437,6 @@ describe('POST /api/marketing/r/[token]/testimonial', () => {
     state.selectQueue = [[submitRow({ email: 'a@b.co' })], []]
     await submitHandler({} as never)
     expect(state.inserts[0].values).toMatchObject({ rating: null, authorTitle: null, authorCompany: null })
-  })
-})
-
-describe('GET public testimonial wall', () => {
-  it('only returns approved, consented testimonials, featured first, without private fields', async () => {
-    state.selectQueue = [[{ id: 't1', authorName: 'Jane' }]]
-    const response = (await publicWall({} as never)) as { data: { items: unknown[] } }
-    expect(response.data.items).toHaveLength(1)
-    expect(state.headers['Cache-Control']).toBe('public, max-age=60, stale-while-revalidate=300')
-
-    const { sql, params } = sqlOf(state.wheres[0])
-    expect(sql).toContain('"testimonial"."project_id"')
-    expect(sql).toContain('"testimonial"."status"')
-    expect(sql).toContain('"testimonial"."consent_public"')
-    expect(params).toEqual(expect.arrayContaining(['p1', 'approved', true]))
-
-    const fields = Object.keys(state.selectedFields[0] ?? {})
-    expect(fields.sort()).toEqual(
-      ['authorCompany', 'authorName', 'authorTitle', 'createdAt', 'id', 'quote', 'rating'].sort()
-    )
-    expect(fields).not.toContain('authorEmail')
-  })
-})
-
-describe('GET public testimonial wall: Marketing toggle', () => {
-  it('404s without reading testimonials when Marketing is off for the team or product', async () => {
-    state.marketingOn = false
-    state.selectQueue = [[{ id: 't1', authorName: 'Jane' }]]
-    await expect(publicWall({} as never)).rejects.toMatchObject({ statusCode: 404 })
-    expect(state.wheres).toHaveLength(0)
   })
 })
 
@@ -695,8 +657,7 @@ describe('testimonial POST guards', () => {
     ['requests disabled', { requestsEnabled: false }],
     ['no settings row', { requestsEnabled: null, askForTestimonial: null }],
     ['testimonial ask off', { askForTestimonial: false }],
-    ['team marketing off', { teamMarketingEnabled: false }],
-    ['product marketing off', { projectSettings: { marketingEnabled: false } }],
+    ['project marketing off', { projectSettings: { marketingEnabled: false } }],
   ])('404s for a request that is %s', async (_label, patch) => {
     state.selectQueue = [[submitRow(patch)], []]
     await expect(submitHandler({} as never)).rejects.toMatchObject({ statusCode: 404 })
@@ -769,7 +730,7 @@ describe('GET reviews settings canManage', () => {
   const settingsGet = async () =>
     (await import('~/server/api/marketing/projects/[projectId]/reviews/settings.get')).default
 
-  it('is true for a team admin', async () => {
+  it('is true for a project admin', async () => {
     state.selectQueue = [[], []]
     const handler = await settingsGet()
     const response = (await handler({} as never)) as { data: { canManage: boolean; settings: { enabled: boolean } } }
@@ -793,9 +754,10 @@ describe('GET reviews settings canManage', () => {
 })
 
 describe('GET testimonials list', () => {
-  it('returns the team slug for the public wall link', async () => {
-    state.selectQueue = [[], [], [{ slug: 'acme' }]]
-    const response = (await testimonialsGet({} as never)) as { data: { teamSlug: string | null } }
-    expect(response.data.teamSlug).toBe('acme')
+  it('returns the workspace and project slugs for the public wall link', async () => {
+    // The slug lookup starts first (it is awaited inside its own async helper), so it takes the first queued rows
+    state.selectQueue = [[{ slug: 'acme' }], [], []]
+    const response = (await testimonialsGet({} as never)) as { data: { orgSlug: string | null; projectSlug: string } }
+    expect(response.data.orgSlug).toBe('acme')
   })
 })

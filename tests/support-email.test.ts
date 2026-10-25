@@ -144,13 +144,13 @@ describe('appendSignature', () => {
   })
 
   it('appends the signature to text behind the conventional "-- " delimiter', () => {
-    const result = appendSignature({ html: '<p>hi</p>', text: 'hi', signature: 'Jane\nSupport Team' })
-    expect(result.text).toBe('hi\n\n-- \nJane\nSupport Team')
+    const result = appendSignature({ html: '<p>hi</p>', text: 'hi', signature: 'Jane\nSupport Project' })
+    expect(result.text).toBe('hi\n\n-- \nJane\nSupport Project')
   })
 
   it('appends an escaped, line-broken signature to html', () => {
-    const result = appendSignature({ html: '<p>hi</p>', text: 'hi', signature: 'Jane\nSupport Team' })
-    expect(result.html).toBe('<p>hi</p><br><br>Jane<br>Support Team')
+    const result = appendSignature({ html: '<p>hi</p>', text: 'hi', signature: 'Jane\nSupport Project' })
+    expect(result.html).toBe('<p>hi</p><br><br>Jane<br>Support Project')
   })
 
   it('escapes HTML-hostile characters in the signature', () => {

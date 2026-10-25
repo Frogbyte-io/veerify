@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Competitors with their watched pages and recent changes
  *     description: >
- *       Any team member with Marketing access. Lists the competitor terms of the site
+ *       Any project member with Marketing access. Lists the competitor terms of the site
  *       with their watched pages, the 50 most recent detected changes (newest first)
  *       and the number of unseen changes.
  *     operationId: getMarketingCompetitors
@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Competitors, watches and changes }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  */
 import { desc, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
@@ -30,15 +30,15 @@ import {
   serializeChange,
   serializeWatch,
 } from '~/server/utils/marketing-competitors'
-import { findMarketingSite, isTeamAdminOf, requireRouteParam, serializeSite } from '~/server/utils/marketing-site'
+import { findMarketingSite, isMarketingAdminOf, requireRouteParam, serializeSite } from '~/server/utils/marketing-site'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
-  const { project, teamId } = await requireMarketingAccess(projectId, session.user.id)
-  const canManage = await isTeamAdminOf(teamId, session.user.id)
+  const { project, organizationId } = await requireMarketingAccess(projectId, session.user.id)
+  const canManage = await isMarketingAdminOf(projectId, session.user.id)
   const summariesEnabled = (project.settings as Record<string, unknown> | null)?.[SUMMARY_SETTING_KEY] === true
 
   const site = await findMarketingSite(projectId)

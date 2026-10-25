@@ -5,11 +5,11 @@
  *     tags: [Marketing]
  *     summary: Send review requests manually
  *     description: >
- *       Team admins only. Queues a request for up to 20 email addresses. The same
+ *       Project admins only. Queues a request for up to 20 email addresses. The same
  *       guards as automatic requests apply (enabled, suppression list, cooldown).
  *       Each address gets its own result (invalid addresses and skipped addresses
  *       are reported per address, not queued). Limited to 10 calls per hour per
- *       product and 100 manually queued requests per team per day
+ *       product and 100 manually queued requests per project per day
  *       (reason `daily_limit`).
  *     operationId: createMarketingReviewRequests
  *     parameters:
@@ -29,7 +29,7 @@
  *     responses:
  *       200: { description: Per-address results }
  *       400: { description: Validation failed }
- *       403: { description: Not a team admin, or Marketing is not enabled }
+ *       403: { description: Not a project admin, or Marketing is not enabled }
  *       404: { description: Product not found }
  *       429: { description: Rate limited }
  */
@@ -39,7 +39,7 @@ import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { requireRouterParam } from '~/server/utils/marketing-mentions'
 import { rateLimits, requireRateLimit } from '~/server/utils/rate-limit'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody } from '~/server/utils/validation'
 
 const MAX_MANUAL_REQUESTS = 20
@@ -56,7 +56,7 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   await requireMarketingAdmin(projectId, session.user.id)
   // Per product (the subject replaces the client IP), so several admins share one budget.

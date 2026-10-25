@@ -18,11 +18,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return
   }
 
-  // On team subdomains and custom domains, all routes are public. Redirect app
+  // On workspace subdomains and custom domains, all routes are public. Redirect app
   // routes to the root. `/changelog` is deliberately not an app route: it is the
   // public changelog here (the dashboard one is `/dashboard/changelog`).
-  const teamSubdomain = useState('teamSubdomain')
-  if (teamSubdomain.value) {
+  // Public routing state (set by the subdomain plugin): workspace slug and/or project slug.
+  const publicOrgSlug = useState('publicOrgSlug')
+  const publicProjectSlug = useState('publicProjectSlug')
+  if (publicOrgSlug.value || publicProjectSlug.value) {
     if (resolvePublicHostRedirect(to.path)) {
       return navigateTo('/')
     }
@@ -35,7 +37,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo(legacyChangelog, { replace: true })
   }
 
-  // Bare /roadmap is only public on team/custom domains (handled above)
+  // Bare /roadmap is only public on workspace/custom domains (handled above)
   const legacyRoadmap = legacyRoadmapRedirect(to.path, to.fullPath.slice(to.path.length))
   if (legacyRoadmap) {
     return navigateTo(legacyRoadmap, { replace: true })

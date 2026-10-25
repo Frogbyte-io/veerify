@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // WP1/WP2 modules are not part of this branch; every collaborator is mocked.
 const state = vi.hoisted(() => ({
-  params: { teamId: 'team-1', id: 'sd-1' } as Record<string, string>,
+  params: { projectId: 'project-1', id: 'sd-1' } as Record<string, string>,
   body: {} as unknown,
   query: {} as Record<string, unknown>,
   enabled: true,
@@ -34,16 +34,16 @@ const provider = vi.hoisted(() => ({
 }))
 
 const access = vi.hoisted(() => ({
-  requireTeamAdmin: vi.fn(async () => ({ id: 'tm-1', role: 'admin' })),
-  resolveSupportTeamRole: vi.fn(async () =>
-    state.supportRole ? { effectiveRole: state.supportRole, isTeamAdmin: state.isAdmin } : null
+  requireProjectAdmin: vi.fn(async () => ({ id: 'tm-1', role: 'admin' })),
+  resolveSupportProjectRole: vi.fn(async () =>
+    state.supportRole ? { effectiveRole: state.supportRole, isProjectAdmin: state.isAdmin } : null
   ),
 }))
 
 const claims = vi.hoisted(() => ({
   createSendingDomainClaim: vi.fn(),
-  getTeamSendingDomain: vi.fn(),
-  listTeamSendingDomains: vi.fn(),
+  getProjectSendingDomain: vi.fn(),
+  listProjectSendingDomains: vi.fn(),
 }))
 
 const poller = vi.hoisted(() => ({
@@ -56,7 +56,7 @@ const metrics = vi.hoisted(() => ({ recordSupportMetric: vi.fn(() => true) }))
 
 const NOW_ROW = {
   id: 'sd-1',
-  teamId: 'team-1',
+  projectId: 'project-1',
   domain: 'acme.com',
   registrableDomain: 'acme.com',
   status: 'provisioning',
@@ -102,6 +102,9 @@ vi.mock('h3', () => ({
 }))
 vi.mock('~/server/utils/auth-middleware', () => ({ requireAuth: vi.fn(async () => ({ user: { id: 'user-1' } })) }))
 vi.mock('~/server/utils/support-access', () => access)
+vi.mock('~/server/utils/project-access', () => ({
+  requireProjectAdmin: (...args: unknown[]) => (access.requireProjectAdmin as (...a: unknown[]) => unknown)(...args),
+}))
 vi.mock('~/server/utils/rate-limit', () => rateLimit)
 vi.mock('~/server/utils/support-observability', () => metrics)
 vi.mock('~/server/database/drizzle', () => {
@@ -121,7 +124,7 @@ vi.mock('~/server/database/drizzle', () => {
 vi.mock('~/server/services/sending-domains', () => ({ getSendingDomainProvider: vi.fn(() => provider) }))
 vi.mock('~/server/utils/sending-domains', () => ({
   isSendingDomainsEnabled: () => state.enabled,
-  resolveSenderPolicy: () => 'team',
+  resolveSenderPolicy: () => 'project',
   toSendingDomainView: (row: Record<string, unknown>, p: unknown) => ({
     id: row.id,
     domain: row.domain,
@@ -167,11 +170,11 @@ vi.mock('~/server/utils/sending-domain-api', async () => {
 })
 
 const { SendingDomainProviderError } = await import('~/server/services/sending-domains/types')
-const list = (await import('~/server/api/support/teams/[teamId]/sending-domains/index.get')).default
-const create = (await import('~/server/api/support/teams/[teamId]/sending-domains/index.post')).default
-const detail = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id].get')).default
-const verify = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id]/verify.post')).default
-const remove = (await import('~/server/api/support/teams/[teamId]/sending-domains/[id].delete')).default
+const list = (await import('~/server/api/support/projects/[projectId]/sending-domains/index.get')).default
+const create = (await import('~/server/api/support/projects/[projectId]/sending-domains/index.post')).default
+const detail = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id].get')).default
+const verify = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id]/verify.post')).default
+const remove = (await import('~/server/api/support/projects/[projectId]/sending-domains/[id].delete')).default
 const { filterInboxesUsingDomain } = await import('~/server/utils/sending-domain-api')
 
 const event = {} as never
@@ -184,7 +187,7 @@ const notFound = () => Promise.reject(Object.assign(new Error('not found'), { st
 
 beforeEach(() => {
   vi.clearAllMocks()
-  state.params = { teamId: 'team-1', id: 'sd-1' }
+  state.params = { projectId: 'project-1', id: 'sd-1' }
   state.body = { domain: 'acme.com' }
   state.query = {}
   state.enabled = true
@@ -204,16 +207,16 @@ beforeEach(() => {
   provider.verify.mockResolvedValue(activeResult)
   provider.remove.mockResolvedValue({ cleanup: null })
   claims.createSendingDomainClaim.mockImplementation(async () => ({ ...NOW_ROW }))
-  claims.getTeamSendingDomain.mockImplementation(async () => ({ ...state.row }))
-  claims.listTeamSendingDomains.mockImplementation(async () => state.rows)
-  access.requireTeamAdmin.mockImplementation(async () => ({ id: 'tm-1', role: 'admin' }))
+  claims.getProjectSendingDomain.mockImplementation(async () => ({ ...state.row }))
+  claims.listProjectSendingDomains.mockImplementation(async () => state.rows)
+  access.requireProjectAdmin.mockImplementation(async () => ({ id: 'tm-1', role: 'admin' }))
 })
 
 describe('GET sending-domains', () => {
   it('rejects a caller with no support role', async () => {
     state.supportRole = null
     await expect(call(list)).rejects.toMatchObject({ statusCode: 403 })
-    expect(claims.listTeamSendingDomains).not.toHaveBeenCalled()
+    expect(claims.listProjectSendingDomains).not.toHaveBeenCalled()
   })
 
   it('lets any support role read, and only admins manage', async () => {
@@ -221,20 +224,20 @@ describe('GET sending-domains', () => {
     state.isAdmin = false
     state.rows = [{ ...NOW_ROW, status: 'pending' }]
     const res = await call(list)
-    expect(res.data).toMatchObject({ enabled: true, canManage: false, provider: 'mailgun', policy: 'team' })
+    expect(res.data).toMatchObject({ enabled: true, canManage: false, provider: 'mailgun', policy: 'project' })
     expect(res.data.domains).toHaveLength(1)
 
     state.supportRole = 'admin'
     state.isAdmin = true
     expect((await call(list)).data.canManage).toBe(true)
-    expect(claims.listTeamSendingDomains).toHaveBeenLastCalledWith('team-1')
+    expect(claims.listProjectSendingDomains).toHaveBeenLastCalledWith('project-1')
   })
 
   it('reports enabled:false without reading claims when the feature is off', async () => {
     state.enabled = false
     const res = await call(list)
     expect(res.data).toMatchObject({ enabled: false, domains: [], canManage: false })
-    expect(claims.listTeamSendingDomains).not.toHaveBeenCalled()
+    expect(claims.listProjectSendingDomains).not.toHaveBeenCalled()
   })
 
   it('names missing provider settings only', async () => {
@@ -249,11 +252,11 @@ describe('GET sending-domains/[id]', () => {
     state.inboxes = [{ id: 'inbox-1', name: 'Support', emailAddress: 'support@acme.com' }]
     const res = await call(detail)
     expect(res.data).toMatchObject({ id: 'sd-1', inboxes: state.inboxes })
-    expect(claims.getTeamSendingDomain).toHaveBeenCalledWith('team-1', 'sd-1')
+    expect(claims.getProjectSendingDomain).toHaveBeenCalledWith('project-1', 'sd-1')
   })
 
-  it('surfaces the 404 for a claim of another team', async () => {
-    claims.getTeamSendingDomain.mockImplementationOnce(notFound)
+  it('surfaces the 404 for a claim of another project', async () => {
+    claims.getProjectSendingDomain.mockImplementationOnce(notFound)
     await expect(call(detail)).rejects.toMatchObject({ statusCode: 404 })
   })
 
@@ -264,10 +267,10 @@ describe('GET sending-domains/[id]', () => {
 })
 
 describe('POST sending-domains', () => {
-  it('requires a team admin before anything else', async () => {
-    access.requireTeamAdmin.mockImplementationOnce(forbidden)
+  it('requires a project admin before anything else', async () => {
+    access.requireProjectAdmin.mockImplementationOnce(forbidden)
     await expect(call(create)).rejects.toMatchObject({ statusCode: 403 })
-    expect(access.requireTeamAdmin).toHaveBeenCalledWith('team-1', 'user-1')
+    expect(access.requireProjectAdmin).toHaveBeenCalledWith('project-1', 'user-1')
     expect(rateLimit.requireRateLimit).not.toHaveBeenCalled()
     expect(claims.createSendingDomainClaim).not.toHaveBeenCalled()
   })
@@ -287,13 +290,13 @@ describe('POST sending-domains', () => {
     }
   )
 
-  it('applies the per-team and per-user rate limits', async () => {
+  it('applies the per-project and per-user rate limits', async () => {
     await call(create)
     expect(rateLimit.requireRateLimit).toHaveBeenCalledWith(
       event,
       expect.objectContaining({
         identifier: 'sending-domain-create',
-        subject: 'team:team-1',
+        subject: 'project:project-1',
         maxRequests: 10,
         windowSeconds: 3600,
       })
@@ -321,7 +324,7 @@ describe('POST sending-domains', () => {
   it('claims with the current provider identity, registers and answers 201', async () => {
     const res = await call(create)
     expect(claims.createSendingDomainClaim).toHaveBeenCalledWith({
-      teamId: 'team-1',
+      projectId: 'project-1',
       domain: 'acme.com',
       userId: 'user-1',
       provider: 'mailgun',
@@ -390,7 +393,7 @@ describe('POST sending-domains', () => {
     provider.register.mockRejectedValueOnce(new SendingDomainProviderError('missing_scope', 'domains:manage', false))
     const failure = await call(create).catch((e) => e)
     expect(failure).toMatchObject({ statusCode: 503, data: { error: { code: 'PROVIDER_MISCONFIGURED' } } })
-    // The operator-facing scope name must not reach the team admin.
+    // The operator-facing scope name must not reach the project admin.
     expect(JSON.stringify(failure.data)).not.toContain('domains:manage')
     expect(poller.deleteSendingDomainRow).toHaveBeenCalledTimes(1)
     expect(metrics.recordSupportMetric).toHaveBeenCalledWith('support.sending_domain.provider_misconfigured', {
@@ -400,19 +403,19 @@ describe('POST sending-domains', () => {
 })
 
 describe('POST sending-domains/[id]/verify', () => {
-  it('requires a team admin', async () => {
-    access.requireTeamAdmin.mockImplementationOnce(forbidden)
+  it('requires a project admin', async () => {
+    access.requireProjectAdmin.mockImplementationOnce(forbidden)
     await expect(call(verify)).rejects.toMatchObject({ statusCode: 403 })
-    expect(claims.getTeamSendingDomain).not.toHaveBeenCalled()
+    expect(claims.getProjectSendingDomain).not.toHaveBeenCalled()
   })
 
-  it('is 404 for another team claim, before consuming any rate limit', async () => {
-    claims.getTeamSendingDomain.mockImplementationOnce(notFound)
+  it('is 404 for another project claim, before consuming any rate limit', async () => {
+    claims.getProjectSendingDomain.mockImplementationOnce(notFound)
     await expect(call(verify)).rejects.toMatchObject({ statusCode: 404 })
     expect(rateLimit.requireRateLimit).not.toHaveBeenCalled()
   })
 
-  it('limits to one verify per 20 seconds per domain and 60 per hour per team', async () => {
+  it('limits to one verify per 20 seconds per domain and 60 per hour per project', async () => {
     state.row = { ...NOW_ROW, status: 'pending' }
     await call(verify)
     expect(rateLimit.requireRateLimit).toHaveBeenCalledWith(
@@ -427,8 +430,8 @@ describe('POST sending-domains/[id]/verify', () => {
     expect(rateLimit.requireRateLimit).toHaveBeenCalledWith(
       event,
       expect.objectContaining({
-        identifier: 'sending-domain-verify-team',
-        subject: 'team:team-1',
+        identifier: 'sending-domain-verify-project',
+        subject: 'project:project-1',
         maxRequests: 60,
         windowSeconds: 3600,
       })
@@ -561,14 +564,14 @@ describe('DELETE sending-domains/[id]', () => {
     state.markedRows = [{ ...NOW_ROW, status: 'deleting', providerOwnership: 'created' }]
   })
 
-  it('requires a team admin', async () => {
-    access.requireTeamAdmin.mockImplementationOnce(forbidden)
+  it('requires a project admin', async () => {
+    access.requireProjectAdmin.mockImplementationOnce(forbidden)
     await expect(call(remove)).rejects.toMatchObject({ statusCode: 403 })
     expect(provider.remove).not.toHaveBeenCalled()
   })
 
-  it('is 404 for another team claim', async () => {
-    claims.getTeamSendingDomain.mockImplementationOnce(notFound)
+  it('is 404 for another project claim', async () => {
+    claims.getProjectSendingDomain.mockImplementationOnce(notFound)
     await expect(call(remove)).rejects.toMatchObject({ statusCode: 404 })
     expect(provider.remove).not.toHaveBeenCalled()
   })
@@ -682,7 +685,7 @@ describe('filterInboxesUsingDomain', () => {
     expect(filterInboxesUsingDomain('acme.com', inboxes, [], false).map((i) => i.id)).toEqual(['a@acme.com'])
   })
 
-  it('skips subdomains covered by a more specific claim of the same team', () => {
+  it('skips subdomains covered by a more specific claim of the same project', () => {
     const inboxes = [inbox('b@help.acme.com'), inbox('c@other.acme.com')]
     expect(filterInboxesUsingDomain('acme.com', inboxes, ['help.acme.com'], true).map((i) => i.id)).toEqual([
       'c@other.acme.com',

@@ -19,7 +19,7 @@ const presignSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const { project, session } = await requireProjectCategoryAccess(event)
+  const { project, session } = await requireProjectCategoryAccess(event, { admin: true })
   const body = await validateBody(event, presignSchema)
 
   const kind = body.kind as UploadAssetKind

@@ -16,7 +16,7 @@
  *     responses:
  *       200: { description: Merged }
  *       400: { description: Contacts cannot be merged }
- *       403: { description: Not a member of the contact's team }
+ *       403: { description: Not a member of the contact's project }
  *       404: { description: Contact not found }
  */
 import { z } from 'zod'

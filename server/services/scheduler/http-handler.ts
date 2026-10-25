@@ -6,10 +6,9 @@ import { getScheduledTask } from './registry'
 const logger = createLogger('scheduler')
 
 /**
- * Build the event handler for a per-task Vercel Cron endpoint.
+ * Build the event handler for a per-task cron HTTP endpoint.
  *
- * `taskName` is baked in at the route level (one file per task, matching the
- * `vercel.json` `crons` entry) rather than read from a route param, so a
+ * `taskName` is baked in at the route level (one file per task) rather than read from a route param, so a
  * caller can never probe the registry for arbitrary task names.
  */
 export function createCronHttpHandler(taskName: string) {

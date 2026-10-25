@@ -14,12 +14,36 @@ function nextResult() {
 }
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
-vi.stubGlobal('getQuery', () => ({ teamId: 'team-1' }))
-vi.stubGlobal('getRouterParam', (_event: unknown, name: string) => (name === 'teamId' ? 'team-1' : 'inbox-2'))
+vi.stubGlobal('getQuery', () => ({ projectId: 'project-1' }))
+vi.stubGlobal('getRouterParam', (_event: unknown, name: string) => (name === 'projectId' ? 'project-1' : 'inbox-2'))
 
 vi.mock('~/server/utils/auth-middleware', () => ({
   requireAuth: vi.fn(async () => ({ user: { id: authState.userId } })),
 }))
+
+// Project access is its own module (covered by its own tests). The first queued
+// row stands in for the caller's membership: absent means no access.
+vi.mock('~/server/utils/project-access', () => {
+  const forbidden = () =>
+    Object.assign(new Error('Forbidden'), { statusCode: 403, statusMessage: 'Forbidden', data: {} })
+  const membership = () => {
+    const row = queued.shift()?.[0] as { role: string } | undefined
+    if (!row) throw forbidden()
+    return row
+  }
+  return {
+    requireProjectAccess: vi.fn(async () => membership()),
+    requireProjectRole: vi.fn(async () => {
+      const row = membership()
+      return { project: row, role: row.role }
+    }),
+    requireProjectAdmin: vi.fn(async () => {
+      const row = membership()
+      if (row.role !== 'admin') throw forbidden()
+      return row
+    }),
+  }
+})
 
 vi.mock('~/server/database/drizzle', () => {
   const makeChain = () => {
@@ -42,14 +66,14 @@ vi.mock('~/server/database/drizzle', () => {
         return Promise.resolve(
           rows.filter((row) => {
             const candidate = row as {
-              inbox?: { teamId?: string }
-              supportInbox?: { teamId?: string }
+              inbox?: { projectId?: string }
+              supportInbox?: { projectId?: string }
               supportInboxMember?: { userId?: string }
             }
-            const inbox = candidate.inbox ?? candidate.supportInbox ?? (candidate as { teamId?: string })
-            if (candidate.inbox) return inbox.teamId === 'team-1'
+            const inbox = candidate.inbox ?? candidate.supportInbox ?? (candidate as { projectId?: string })
+            if (candidate.inbox) return inbox.projectId === 'project-1'
             const member = candidate.supportInboxMember ?? (candidate as { userId?: string })
-            return inbox.teamId === 'team-1' && member.userId === authState.userId
+            return inbox.projectId === 'project-1' && member.userId === authState.userId
           })
         )
       },
@@ -75,7 +99,7 @@ vi.mock('~/server/database/drizzle', () => {
 
 const listHandler = (await import('~/server/api/support/inboxes/index.get')).default as EventHandler
 const detailHandler = (await import('~/server/api/support/inboxes/[id].get')).default as EventHandler
-const settingsHandler = (await import('~/server/api/support/teams/[teamId]/settings.get')).default as EventHandler
+const settingsHandler = (await import('~/server/api/support/projects/[projectId]/settings.get')).default as EventHandler
 
 function asEvent(value: unknown): Parameters<EventHandler>[0] {
   return value as Parameters<EventHandler>[0]
@@ -94,18 +118,18 @@ beforeEach(() => {
 describe('support inbox list authorization', () => {
   it('returns only assigned inboxes with agent capabilities', async () => {
     authState.userId = 'agent-1'
-    queueResult([{ id: 'team-member-1', role: 'member' }])
+    queueResult([{ id: 'project-member-1', role: 'member' }])
     queueResult([
       {
-        inbox: { id: 'inbox-1', teamId: 'team-1', name: 'Assigned inbox' },
+        inbox: { id: 'inbox-1', projectId: 'project-1', name: 'Assigned inbox' },
         role: 'agent',
       },
       {
-        inbox: { id: 'inbox-invalid', teamId: 'team-1', name: 'Invalid inbox' },
+        inbox: { id: 'inbox-invalid', projectId: 'project-1', name: 'Invalid inbox' },
         role: 'owner',
       },
       {
-        inbox: { id: 'inbox-missing-role', teamId: 'team-1', name: 'Missing role inbox' },
+        inbox: { id: 'inbox-missing-role', projectId: 'project-1', name: 'Missing role inbox' },
       },
     ])
 
@@ -119,13 +143,13 @@ describe('support inbox list authorization', () => {
             id: 'inbox-1',
             name: 'Assigned inbox',
             effectiveRole: 'agent',
-            isTeamAdmin: false,
+            isProjectAdmin: false,
             capabilities: {
               canWorkConversations: true,
               canManageTagVocabulary: false,
               canManageMembers: false,
               canManageInbox: false,
-              canManageTeamSupport: false,
+              canManageProjectSupport: false,
             },
           },
         ],
@@ -138,16 +162,16 @@ describe('support inbox list authorization', () => {
       expect.arrayContaining([expect.objectContaining({ id: 'inbox-missing-role' })])
     )
     expect(queryTrace.joinedQueries).toBe(1)
-    expect(queryTrace.whereQueries).toBe(2)
+    expect(queryTrace.whereQueries).toBe(1)
     expect(queryTrace.projectedQueries).toBe(1)
   })
 
-  it('returns every team inbox with effective admin capabilities for team admins', async () => {
+  it('returns every project inbox with effective admin capabilities for project admins', async () => {
     authState.userId = 'admin-1'
-    queueResult([{ id: 'team-admin-1', role: 'admin' }])
+    queueResult([{ id: 'project-admin-1', role: 'admin' }])
     queueResult([
-      { id: 'inbox-1', teamId: 'team-1', name: 'First inbox' },
-      { id: 'inbox-2', teamId: 'team-1', name: 'Second inbox' },
+      { id: 'inbox-1', projectId: 'project-1', name: 'First inbox' },
+      { id: 'inbox-2', projectId: 'project-1', name: 'Second inbox' },
     ])
 
     const result = await listHandler(asEvent({}))
@@ -158,19 +182,19 @@ describe('support inbox list authorization', () => {
         expect.objectContaining({
           id: 'inbox-2',
           effectiveRole: 'admin',
-          isTeamAdmin: true,
+          isProjectAdmin: true,
           capabilities: expect.objectContaining({
             canManageInbox: true,
-            canManageTeamSupport: true,
+            canManageProjectSupport: true,
           }),
         }),
       ])
     )
   })
 
-  it('returns an empty list for an unassigned team member', async () => {
+  it('returns an empty list for an unassigned project member', async () => {
     authState.userId = 'unassigned-1'
-    queueResult([{ id: 'team-member-2', role: 'member' }])
+    queueResult([{ id: 'project-member-2', role: 'member' }])
     queueResult([])
 
     const result = await listHandler(asEvent({}))
@@ -178,11 +202,11 @@ describe('support inbox list authorization', () => {
     expect(result).toMatchObject({ success: true, data: { inboxes: [] } })
   })
 
-  it('returns the highest assigned support role in team settings', async () => {
+  it('returns the highest assigned support role in project settings', async () => {
     authState.userId = 'supervisor-1'
-    queueResult([{ id: 'team-member-3', role: 'member' }])
+    queueResult([{ id: 'project-member-3', role: 'member' }])
     queueResult([{ role: 'agent' }, { role: 'supervisor' }])
-    queueResult([{ teamId: 'team-1', autoLinkFeedback: false }])
+    queueResult([{ projectId: 'project-1', autoLinkFeedback: false }])
 
     const result = await settingsHandler(asEvent({}))
 
@@ -190,7 +214,7 @@ describe('support inbox list authorization', () => {
       success: true,
       data: {
         effectiveRole: 'supervisor',
-        isTeamAdmin: false,
+        isProjectAdmin: false,
         capabilities: {
           canWorkConversations: true,
           canManageTagVocabulary: true,
@@ -199,14 +223,14 @@ describe('support inbox list authorization', () => {
     })
   })
 
-  // Settings stay readable for a team member who belongs to no inbox - the page
+  // Settings stay readable for a project member who belongs to no inbox - the page
   // still renders - but they carry no support capability. The approved matrix's
-  // "Unassigned team member" column is `No` for every conversation capability,
+  // "Unassigned project member" column is `No` for every conversation capability,
   // and the previous `agent` fallback made the UI advertise controls that every
   // server-side check then refused.
   it('grants no support capability in settings for an unassigned member', async () => {
     authState.userId = 'unassigned-settings-1'
-    queueResult([{ id: 'team-member-4', role: 'member' }])
+    queueResult([{ id: 'project-member-4', role: 'member' }])
     queueResult([])
     queueResult([])
 
@@ -216,21 +240,21 @@ describe('support inbox list authorization', () => {
       success: true,
       data: {
         effectiveRole: null,
-        isTeamAdmin: false,
+        isProjectAdmin: false,
         capabilities: {
           canWorkConversations: false,
           canManageTagVocabulary: false,
           canManageMembers: false,
           canManageInbox: false,
-          canManageTeamSupport: false,
+          canManageProjectSupport: false,
         },
       },
     })
   })
 
-  it('keeps team admins effective admin in settings', async () => {
+  it('keeps project admins effective admin in settings', async () => {
     authState.userId = 'admin-settings-1'
-    queueResult([{ id: 'team-admin-2', role: 'admin' }])
+    queueResult([{ id: 'project-admin-2', role: 'admin' }])
     queueResult([])
 
     const result = await settingsHandler(asEvent({}))
@@ -239,8 +263,8 @@ describe('support inbox list authorization', () => {
       success: true,
       data: {
         effectiveRole: 'admin',
-        isTeamAdmin: true,
-        capabilities: { canManageTeamSupport: true },
+        isProjectAdmin: true,
+        capabilities: { canManageProjectSupport: true },
       },
     })
   })
@@ -249,7 +273,7 @@ describe('support inbox list authorization', () => {
 describe('support inbox detail authorization', () => {
   it('does not disclose inaccessible inbox metadata to an unassigned member', async () => {
     authState.userId = 'unassigned-1'
-    queueResult([{ id: 'inbox-2', teamId: 'team-1', name: 'Private inbox' }])
+    queueResult([{ id: 'inbox-2', projectId: 'project-1', name: 'Private inbox' }])
     queueResult([])
     queueResult([])
 

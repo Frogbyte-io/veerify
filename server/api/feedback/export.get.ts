@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import { eq, and, desc, asc, count, inArray, or, ilike } from 'drizzle-orm'
+import { eq, and, desc, asc, or, ilike } from 'drizzle-orm'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, githubIssueLink, project } from '~/server/database/schema/feedback'
+import { feedback, feedbackCategory, githubIssueLink, product, project } from '~/server/database/schema/feedback'
+import { resolveFeedbackListScope } from '~/server/utils/feedback-access'
 
 const exportQuerySchema = z
   .object({
@@ -21,6 +22,7 @@ const exportQuerySchema = z
       ),
     status: z.enum(['open', 'in_progress', 'planned', 'completed', 'closed', 'declined']).optional(),
     categoryId: z.string().optional(),
+    productId: z.string().min(1).optional(),
     search: z.string().optional(),
     sortBy: z.enum(['createdAt', 'updatedAt', 'voteCount', 'title']).default('createdAt'),
     sortOrder: z.enum(['asc', 'desc']).default('desc'),
@@ -40,16 +42,17 @@ function escapeCsvField(value: string | null | undefined): string {
 }
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event)
+  const session = await requireAuth(event)
   const query = validateQuery(event, exportQuerySchema)
   const requestedProjectIds = query.projectIds.length > 0 ? query.projectIds : query.projectId ? [query.projectId] : []
 
-  const conditions = []
-  if (requestedProjectIds.length === 1) {
-    conditions.push(eq(feedback.projectId, requestedProjectIds[0]))
-  } else {
-    conditions.push(inArray(feedback.projectId, requestedProjectIds))
-  }
+  // Export contains author emails: project members only (no public view).
+  const { condition: scopeCondition } = await resolveFeedbackListScope(requestedProjectIds, session.user.id, {
+    membersOnly: true,
+  })
+
+  const conditions = [scopeCondition]
+  if (query.productId) conditions.push(eq(feedback.productId, query.productId))
   if (query.status) conditions.push(eq(feedback.status, query.status))
   if (query.categoryId) conditions.push(eq(feedback.categoryId, query.categoryId))
   if (query.search) {
@@ -76,6 +79,11 @@ export default defineEventHandler(async (event) => {
         name: project.name,
         slug: project.slug,
       },
+      product: {
+        id: product.id,
+        name: product.name,
+        slug: product.slug,
+      },
       githubIssue: {
         issueNumber: githubIssueLink.issueNumber,
         issueUrl: githubIssueLink.issueUrl,
@@ -85,6 +93,7 @@ export default defineEventHandler(async (event) => {
     .from(feedback)
     .leftJoin(feedbackCategory, eq(feedback.categoryId, feedbackCategory.id))
     .leftJoin(project, eq(feedback.projectId, project.id))
+    .leftJoin(product, eq(feedback.productId, product.id))
     .leftJoin(githubIssueLink, eq(githubIssueLink.feedbackId, feedback.id))
     .where(whereClause)
     .orderBy(desc(feedback.isPinned), orderFn(sortColumn))
@@ -93,6 +102,7 @@ export default defineEventHandler(async (event) => {
     'Title',
     'Status',
     'Category',
+    'Project',
     'Product',
     'Votes',
     'Comments',
@@ -108,6 +118,7 @@ export default defineEventHandler(async (event) => {
     escapeCsvField(item.feedback.status),
     escapeCsvField(item.category?.name),
     escapeCsvField(item.project?.name),
+    escapeCsvField(item.product?.name),
     String(item.feedback.voteCount ?? 0),
     String(item.feedback.commentCount ?? 0),
     escapeCsvField(item.feedback.authorName),

@@ -23,14 +23,14 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string
   Object.assign(new Error(input.statusMessage), input)
 )
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: 'u1' } })),
 }))
 
 vi.mock('~/server/utils/marketing-access', () => ({
   requireMarketingAccess: vi.fn(async () => {
     if (state.access === 'forbidden') throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
-    return { project: { id: 'p1', teamId: 't1', settings: {} }, teamId: 't1' }
+    return { project: { id: 'p1', organizationId: 'o1', settings: {} }, organizationId: 'o1' }
   }),
 }))
 
@@ -68,13 +68,13 @@ vi.mock('~/server/utils/support-realtime', () => ({
 vi.mock('~/server/database/drizzle', async () => {
   const schema = await import('~/server/database/schema/support')
   const marketing = await import('~/server/database/schema/marketing')
-  const teams = await import('~/server/database/schema/teams')
+  const feedback = await import('~/server/database/schema/feedback')
 
   function rowsFor(table: unknown): unknown[] {
     if (table === marketing.mention) return state.mentionRow ? [state.mentionRow] : []
     if (table === schema.conversation) return state.existingConversation ? [state.existingConversation] : []
     if (table === schema.supportInbox) return state.inbox ? [{ id: state.inbox.id, projectId: null }] : []
-    if (table === teams.teamModuleSettings) return state.settingsRow ? [state.settingsRow] : []
+    if (table === feedback.project) return [{ settings: state.settingsRow ?? {} }]
     if (table === schema.contactIdentity) return [{ contactId: 'system-contact' }]
     return []
   }
@@ -157,7 +157,7 @@ describe('POST escalate gating', () => {
     expect(state.inserts).toHaveLength(0)
   })
 
-  it('returns 409 with a clear message when support is off for the team', async () => {
+  it('returns 409 with a clear message when support is off for the project', async () => {
     state.settingsRow = { supportEnabled: false }
     await expect(handler({})).rejects.toMatchObject({ statusCode: 409 })
     await expect(handler({})).rejects.toMatchObject({
@@ -166,7 +166,7 @@ describe('POST escalate gating', () => {
     expect(state.inserts).toHaveLength(0)
   })
 
-  it('returns 409 when the team has no support row (registry default off)', async () => {
+  it('returns 409 when the project has no support setting (registry default off)', async () => {
     state.settingsRow = null
     await expect(handler({})).rejects.toMatchObject({ statusCode: 409 })
   })
@@ -200,7 +200,7 @@ describe('POST escalate creation', () => {
     expect(result.data).toMatchObject({ inboxId: 'inbox-1', displayId: 42, alreadyEscalated: false })
 
     const conv = state.inserts.find((i) => i.table === schema.conversation)!.values
-    expect(conv).toMatchObject({ inboxId: 'inbox-1', teamId: 't1', projectId: 'p1', displayId: 42 })
+    expect(conv).toMatchObject({ inboxId: 'inbox-1', projectId: 'p1', displayId: 42 })
     expect(conv.contactId).toBe('system-contact')
 
     const message = state.inserts.find((i) => i.table === schema.conversationMessage)!.values
@@ -216,7 +216,7 @@ describe('POST escalate creation', () => {
     expect(state.updates[0].values).toMatchObject({ status: 'escalated', conversationId: conv.id })
     expect(state.updates[0].values.escalatedAt).toBeInstanceOf(Date)
     expect(state.published).toEqual([
-      { type: 'conversation.created', teamId: 't1', inboxId: 'inbox-1', conversationId: conv.id },
+      { type: 'conversation.created', projectId: 'p1', inboxId: 'inbox-1', conversationId: conv.id },
     ])
   })
 
@@ -319,16 +319,16 @@ describe('internal note content', () => {
 
 describe('canEscalateMentions (list route flag)', () => {
   it('is true when support is on and the user can work an inbox', async () => {
-    await expect(escalation.canEscalateMentions('t1', 'p1', 'u1')).resolves.toBe(true)
+    await expect(escalation.canEscalateMentions('p1', 'u1')).resolves.toBe(true)
   })
 
   it('is false when support is off', async () => {
     state.settingsRow = { supportEnabled: false }
-    await expect(escalation.canEscalateMentions('t1', 'p1', 'u1')).resolves.toBe(false)
+    await expect(escalation.canEscalateMentions('p1', 'u1')).resolves.toBe(false)
   })
 
   it('is false when the user has no support inbox access', async () => {
     state.inbox = null
-    await expect(escalation.canEscalateMentions('t1', 'p1', 'u1')).resolves.toBe(false)
+    await expect(escalation.canEscalateMentions('p1', 'u1')).resolves.toBe(false)
   })
 })

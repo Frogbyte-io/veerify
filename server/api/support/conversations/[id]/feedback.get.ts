@@ -17,8 +17,8 @@
  *         name: limit
  *         schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
  *     responses:
- *       200: { description: Matching team feedback items }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       200: { description: Matching project feedback items }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found }
  */
 import { z } from 'zod'
@@ -28,7 +28,7 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireConversationAccess } from '~/server/utils/support-access'
 import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, project } from '~/server/database/schema/feedback'
+import { feedback, feedbackCategory, product } from '~/server/database/schema/feedback'
 
 const querySchema = z.object({
   search: z.string().trim().max(200).optional(),
@@ -41,7 +41,7 @@ export default defineEventHandler(async (event) => {
   const query = validateQuery(event, querySchema)
   const accessibleConversation = await requireConversationAccess(conversationId, session.user.id)
 
-  const conditions = [eq(project.teamId, accessibleConversation.teamId)]
+  const conditions = [eq(feedback.projectId, accessibleConversation.projectId)]
   if (query.search) {
     const pattern = `%${query.search}%`
     conditions.push(or(ilike(feedback.title, pattern), ilike(feedback.body, pattern))!)
@@ -54,11 +54,11 @@ export default defineEventHandler(async (event) => {
       body: feedback.body,
       status: feedback.status,
       voteCount: feedback.voteCount,
-      project: { id: project.id, name: project.name, slug: project.slug },
+      product: { id: product.id, name: product.name, slug: product.slug },
       category: { id: feedbackCategory.id, name: feedbackCategory.name },
     })
     .from(feedback)
-    .innerJoin(project, eq(project.id, feedback.projectId))
+    .innerJoin(product, eq(product.id, feedback.productId))
     .leftJoin(feedbackCategory, eq(feedbackCategory.id, feedback.categoryId))
     .where(and(...conditions))
     .orderBy(desc(feedback.updatedAt), desc(feedback.id))

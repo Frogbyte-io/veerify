@@ -18,7 +18,7 @@ function fakeExecutable(directory: string, name: string) {
   writeFileSync(`${script}.cmd`, `@node "${script}" %*\r\n`)
 }
 
-function runLifecycle(script: 'build' | 'vercel-build'): string[] {
+function runLifecycle(script: 'build'): string[] {
   const fixture = mkdtempSync(join(tmpdir(), 'veerify-build-lifecycle-'))
   temporaryDirectories.push(fixture)
   const binaryDirectory = join(fixture, 'bin')
@@ -46,9 +46,5 @@ afterEach(() => {
 describe('build lifecycle', () => {
   it('generates the OpenAPI artifact before compiling', () => {
     expect(runLifecycle('build')).toEqual(['tsx', 'nuxt'])
-  })
-
-  it('runs deployment migration and OpenAPI generation before Vercel compilation', () => {
-    expect(runLifecycle('vercel-build')).toEqual(['drizzle-kit', 'tsx', 'tsx', 'nuxt'])
   })
 })

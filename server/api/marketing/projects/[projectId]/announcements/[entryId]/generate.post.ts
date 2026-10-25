@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Generate announcement drafts for a published changelog entry
  *     description: >
- *       Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Regenerating overwrites
+ *       Uses the workspace's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Regenerating overwrites
  *       existing drafts, hand edits included. Nothing is ever posted.
  *     operationId: generateMarketingAnnouncements
  *     parameters:
@@ -29,7 +29,7 @@
  *     responses:
  *       200: { description: The generated drafts }
  *       400: { description: Validation failed }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Entry not found for this product }
  *       409: { description: Entry unpublished, no usable LLM key, budget reached, quota or key rejected }
  *       429: { description: Rate limit (20 per hour and 50 per day per product) or provider rate limit }
@@ -56,10 +56,10 @@ export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   const entryId = requireRouteParam(event, 'entryId')
-  const { teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { organizationId } = await requireMarketingAccess(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
-  // Each call spends the team's own provider credit: 20 per hour per product
+  // Each call spends the workspace's own provider credit: 20 per hour per product
   await requireRateLimit(event, {
     maxRequests: 20,
     windowSeconds: 3600,
@@ -69,7 +69,7 @@ export default defineEventHandler(async (event) => {
 
   // Counted in the database so the cap holds across serverless instances
   await requireDbLimit(
-    teamId,
+    organizationId,
     `ratelimit:announce:${projectId}:${dayStamp()}`,
     GENERATIONS_PER_DAY,
     'Daily limit of announcement generations reached for this product. Try again tomorrow'

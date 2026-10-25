@@ -3,7 +3,8 @@ import { asc, eq, sql } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import {
   automationRule,
   contact,
@@ -24,7 +25,7 @@ import { runAutomationRules } from '../../server/utils/automation-engine'
 const suffix = randomUUID()
 const ids = {
   organization: `status_event_org_${suffix}`,
-  team: `status_event_team_${suffix}`,
+  project: `status_event_project_${suffix}`,
   inbox: `status_event_inbox_${suffix}`,
   user: `status_event_user_${suffix}`,
   contact: `status_event_contact_${suffix}`,
@@ -37,9 +38,9 @@ describe('conversation status events (real Postgres)', () => {
     await db
       .insert(organization)
       .values({ id: ids.organization, name: 'Status events', slug: `status-events-${suffix}` })
-    await db.insert(team).values({
-      id: ids.team,
-      name: 'Status events team',
+    await db.insert(project).values({
+      id: ids.project,
+      name: 'Status events project',
       slug: `status-events-${suffix}`,
       organizationId: ids.organization,
     })
@@ -50,14 +51,14 @@ describe('conversation status events (real Postgres)', () => {
     })
     await db.insert(supportInbox).values({
       id: ids.inbox,
-      teamId: ids.team,
+      projectId: ids.project,
       name: 'Status Inbox',
       slug: `status-events-${suffix}`,
     })
-    await db.insert(contact).values({ id: ids.contact, teamId: ids.team, name: 'Customer' })
+    await db.insert(contact).values({ id: ids.contact, projectId: ids.project, name: 'Customer' })
     await db.insert(conversation).values({
       id: ids.conversation,
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       contactId: ids.contact,
       displayId: 9917,
@@ -70,7 +71,7 @@ describe('conversation status events (real Postgres)', () => {
     await db.delete(contact).where(eq(contact.id, ids.contact))
     await db.delete(supportInbox).where(eq(supportInbox.id, ids.inbox))
     await db.delete(user).where(eq(user.id, ids.user))
-    await db.delete(team).where(eq(team.id, ids.team))
+    await db.delete(project).where(eq(project.id, ids.project))
     await db.delete(organization).where(eq(organization.id, ids.organization))
   })
 
@@ -89,7 +90,7 @@ describe('conversation status events (real Postgres)', () => {
       const statusChange = changes.find((change) => change.field === 'status')
       if (statusChange) {
         await recordConversationStatusEvent(tx as any, {
-          teamId: ids.team,
+          projectId: ids.project,
           inboxId: ids.inbox,
           conversationId: ids.conversation,
           fromStatus: statusChange.from,
@@ -125,7 +126,12 @@ describe('conversation status events (real Postgres)', () => {
       .from(conversationMessage)
       .where(eq(conversationMessage.conversationId, ids.conversation))
     expect(events).toHaveLength(1)
-    expect(events[0]).toMatchObject({ fromStatus: 'open', toStatus: 'resolved', teamId: ids.team, inboxId: ids.inbox })
+    expect(events[0]).toMatchObject({
+      fromStatus: 'open',
+      toStatus: 'resolved',
+      projectId: ids.project,
+      inboxId: ids.inbox,
+    })
     expect(activities.filter((message) => message.kind === 'activity')).toHaveLength(1)
   })
 
@@ -133,7 +139,7 @@ describe('conversation status events (real Postgres)', () => {
     await db.delete(conversationStatusEvent).where(eq(conversationStatusEvent.conversationId, ids.conversation))
 
     await recordConversationStatusEvent(db as any, {
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       conversationId: ids.conversation,
       fromStatus: null,
@@ -142,7 +148,7 @@ describe('conversation status events (real Postgres)', () => {
       occurredAt: new Date('2026-09-18T12:00:01.000Z'),
     })
     await recordConversationStatusEvent(db as any, {
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       conversationId: ids.conversation,
       fromStatus: 'open',
@@ -159,7 +165,7 @@ describe('conversation status events (real Postgres)', () => {
 
     expect(events).toHaveLength(2)
     expect(events.map((event) => event.toStatus)).toEqual(['open', 'resolved'])
-    expect(events[1]).toMatchObject({ teamId: ids.team, inboxId: ids.inbox, actorUserId: ids.user })
+    expect(events[1]).toMatchObject({ projectId: ids.project, inboxId: ids.inbox, actorUserId: ids.user })
   })
 
   it('rolls back a status update and event together', async () => {
@@ -177,7 +183,7 @@ describe('conversation status events (real Postgres)', () => {
           ids.user
         )
         await recordConversationStatusEvent(tx as any, {
-          teamId: ids.team,
+          projectId: ids.project,
           inboxId: ids.inbox,
           conversationId: ids.conversation,
           fromStatus: 'open',
@@ -210,7 +216,7 @@ describe('conversation status events (real Postgres)', () => {
     await expect(
       db.insert(conversationStatusEvent).values({
         id: randomUUID(),
-        teamId: ids.team,
+        projectId: ids.project,
         inboxId: ids.inbox,
         conversationId: ids.conversation,
         fromStatus: 'invalid',
@@ -227,7 +233,7 @@ describe('conversation status events (real Postgres)', () => {
     `)
     expect(indexes.rows.map((row) => row.indexname)).toEqual(
       expect.arrayContaining([
-        'conversation_status_event_team_occurred_at_idx',
+        'conversation_status_event_project_occurred_at_idx',
         'conversation_status_event_conversation_occurred_at_idx',
       ])
     )
@@ -263,7 +269,7 @@ describe('conversation status events (real Postgres)', () => {
           null
         )
         await recordConversationStatusEvent(tx as any, {
-          teamId: ids.team,
+          projectId: ids.project,
           inboxId: ids.inbox,
           conversationId: ids.conversation,
           fromStatus,
@@ -294,7 +300,7 @@ describe('conversation status events (real Postgres)', () => {
     await db.update(conversation).set({ status: 'open', resolvedAt: null }).where(eq(conversation.id, ids.conversation))
     await db.insert(automationRule).values({
       id: ruleId,
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       name: 'Automation status event',
       trigger: 'conversation_created',
@@ -355,7 +361,7 @@ describe('conversation status events (real Postgres)', () => {
       db.transaction(async (tx) => {
         await applyConversationStatusTransition(tx as any, {
           conversationId: ids.conversation,
-          teamId: ids.team,
+          projectId: ids.project,
           inboxId: ids.inbox,
           toStatus: 'resolved',
           actorUserId: ids.user,
@@ -384,7 +390,7 @@ describe('conversation status events (real Postgres)', () => {
   it('preserves the status event and nulls its actor when the user is deleted', async () => {
     await db.delete(conversationStatusEvent).where(eq(conversationStatusEvent.conversationId, ids.conversation))
     await recordConversationStatusEvent(db as any, {
-      teamId: ids.team,
+      projectId: ids.project,
       inboxId: ids.inbox,
       conversationId: ids.conversation,
       fromStatus: 'open',

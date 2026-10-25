@@ -27,7 +27,6 @@ const settings = (overrides: Partial<ReviewSettings> = {}): ReviewSettings => ({
 
 interface FakeState {
   settings: ReviewSettings | null
-  teamMarketingEnabled: boolean | null
   projectSettings: Record<string, unknown> | null
   suppressed: Set<string>
   recent: boolean
@@ -65,9 +64,8 @@ function makeStore(state: FakeState): ReviewsStore {
   return {
     loadProjectContext: async (projectId) => ({
       projectId,
-      teamId: 'team-1',
+      organizationId: 'org-1',
       projectSettings: state.projectSettings,
-      teamMarketingEnabled: state.teamMarketingEnabled,
       settings: state.settings,
     }),
     isSuppressed: async (_team, email) => state.suppressed.has(email),
@@ -117,7 +115,6 @@ let store: ReviewsStore
 beforeEach(() => {
   state = {
     settings: settings(),
-    teamMarketingEnabled: true,
     projectSettings: { marketingEnabled: true },
     suppressed: new Set(),
     recent: false,
@@ -160,7 +157,6 @@ describe('enqueueReviewRequest guards', () => {
     expect(state.inserted).toHaveLength(1)
     expect(state.inserted[0].email).toBe('jane@example.com')
     expect(state.inserted[0].token).toMatch(/^[A-Za-z0-9_-]{32,}$/)
-    expect(state.inserted[0].teamId).toBe('team-1')
   })
 
   it('does nothing when there is no settings row or it is disabled', async () => {
@@ -179,10 +175,7 @@ describe('enqueueReviewRequest guards', () => {
     expect((await enqueue()).queued).toBe(true)
   })
 
-  it('does nothing when the team or product marketing toggle is off', async () => {
-    state.teamMarketingEnabled = false
-    expect(await enqueue()).toEqual({ queued: false, reason: 'marketing_off' })
-    state.teamMarketingEnabled = true
+  it('does nothing when the project marketing toggle is off', async () => {
     state.projectSettings = { marketingEnabled: false }
     expect(await enqueue()).toEqual({ queued: false, reason: 'marketing_off' })
     expect(state.inserted).toHaveLength(0)
@@ -283,7 +276,7 @@ describe('manual requests', () => {
     ])
   })
 
-  it('stops at the daily cap per team', async () => {
+  it('stops at the daily cap per project', async () => {
     state.manualCount = service.MANUAL_DAILY_CAP - 1
     const results = await service.enqueueManualReviewRequests(
       { projectId: 'p1', emails: ['a@x.io', 'b@x.io', 'c@x.io'] },
@@ -434,7 +427,7 @@ describe('processReviewRequests', () => {
   const claimed = (overrides: Partial<ClaimedReviewRequest> = {}): ClaimedReviewRequest => ({
     id: 'rr-1',
     projectId: 'p1',
-    teamId: 'team-1',
+    organizationId: 'org-1',
     email: 'jane@example.com',
     name: 'Jane Doe',
     trigger: 'shipped',
@@ -443,7 +436,6 @@ describe('processReviewRequests', () => {
     attempts: 0,
     projectName: 'Acme',
     projectSettings: { marketingEnabled: true },
-    teamMarketingEnabled: true,
     settings: settings({ platforms: [{ id: 'g2', label: 'G2', url: 'https://g2.com/x' }] }),
     feedbackTitle: 'Dark mode',
     ...overrides,
@@ -500,7 +492,7 @@ describe('processReviewRequests', () => {
     await run()
     queue(claimed({ id: 'd', settings: null }))
     await run()
-    queue(claimed({ id: 'e', teamMarketingEnabled: false }))
+    queue(claimed({ id: 'e', projectSettings: { marketingEnabled: false } }))
     const { sendEmail } = await run()
 
     expect(sendEmail).not.toHaveBeenCalled()

@@ -22,21 +22,29 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string
   Object.assign(new Error(input.statusMessage), input)
 )
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: 'u1' } })),
 }))
 
-vi.mock('~/server/utils/support-access', () => ({
-  requireTeamAdmin: vi.fn(async () => {
+vi.mock('~/server/utils/project-context', () => ({
+  requireAuthWithOrganization: vi.fn(async () => ({
+    session: { user: { id: 'u1' } },
+    organizationId: 'org-1',
+    organizationRole: 'admin',
+  })),
+}))
+
+vi.mock('~/server/utils/project-access', () => ({
+  requireOrganizationAdmin: vi.fn(async () => {
     if (!state.admin) throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
-    return { role: 'admin' }
+    return 'admin'
   }),
 }))
 
 vi.mock('~/server/utils/marketing-access', () => ({
   requireMarketingDataAdmin: vi.fn(async () => {
     if (!state.admin) throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
-    return { project: { id: 'p1', slug: state.slug, teamId: 't1' }, teamId: 't1' }
+    return { project: { id: 'p1', slug: state.slug, organizationId: 'o1' }, organizationId: 'o1' }
   }),
 }))
 
@@ -55,8 +63,8 @@ vi.mock('~/server/utils/marketing-reviews', () => ({
 }))
 
 vi.mock('~/server/services/marketing/privacy', () => ({
-  eraseContact: vi.fn(async (teamId: string, email: string) => {
-    state.erase.push([teamId, email])
+  eraseContact: vi.fn(async (organizationId: string, email: string) => {
+    state.erase.push([organizationId, email])
     return { reviewRequestsDeleted: 1, testimonialsDeleted: 2, suppressed: true }
   }),
   withdrawTestimonialConsent: vi.fn(async (id: string) => {
@@ -76,7 +84,7 @@ vi.mock('~/server/services/marketing/data-export', () => ({
   }),
 }))
 
-const erase = (await import('~/server/api/marketing/teams/[teamId]/erase-contact.post')).default as any
+const erase = (await import('~/server/api/workspace/erase-contact.post')).default as any
 const withdraw = (await import('~/server/api/marketing/r/[token]/withdraw.post')).default as any
 const exportRoute = (await import('~/server/api/marketing/projects/[projectId]/export.get')).default as any
 const deleteRoute = (await import('~/server/api/marketing/projects/[projectId]/data.delete')).default as any
@@ -97,24 +105,21 @@ beforeEach(() => {
 })
 
 describe('POST erase-contact', () => {
-  it('erases for the route team and returns counts', async () => {
-    state.params = { teamId: 'team-1' }
+  it('erases for the active workspace and returns counts', async () => {
     state.body = { email: ' Jane@Example.com ' }
     const result = await erase({})
-    expect(state.erase).toEqual([['team-1', 'Jane@Example.com']])
+    expect(state.erase).toEqual([['org-1', 'Jane@Example.com']])
     expect(result.data).toEqual({ reviewRequestsDeleted: 1, testimonialsDeleted: 2, suppressed: true })
   })
 
-  it('needs a team admin', async () => {
+  it('needs a workspace owner or admin', async () => {
     state.admin = false
-    state.params = { teamId: 'team-1' }
     state.body = { email: 'jane@example.com' }
     await expect(erase({})).rejects.toMatchObject({ statusCode: 403 })
     expect(state.erase).toEqual([])
   })
 
   it('rejects an invalid email', async () => {
-    state.params = { teamId: 'team-1' }
     state.body = { email: 'not-an-email' }
     await expect(erase({})).rejects.toMatchObject({ statusCode: 400 })
     expect(state.erase).toEqual([])
@@ -154,7 +159,7 @@ describe('GET export', () => {
     expect(state.headers['cache-control']).toBe('no-store')
   })
 
-  it('needs a team admin', async () => {
+  it('needs a project admin', async () => {
     state.admin = false
     state.params = { projectId: 'p1' }
     await expect(exportRoute({})).rejects.toMatchObject({ statusCode: 403 })
@@ -182,7 +187,7 @@ describe('DELETE data', () => {
     expect(result.data).toEqual({ siteDeleted: true })
   })
 
-  it('needs a team admin', async () => {
+  it('needs a project admin', async () => {
     state.admin = false
     state.params = { projectId: 'p1' }
     state.body = { confirm: 'acme' }

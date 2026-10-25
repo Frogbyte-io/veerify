@@ -1,7 +1,7 @@
 /**
  * Site audit contract: page facts extracted from HTML, site-level facts, and
  * the issues the rules produce. Rules are code, not data, so audit results
- * mean the same thing for every team.
+ * mean the same thing for every workspace.
  */
 
 export type IssueSeverity = 'error' | 'warning' | 'notice'

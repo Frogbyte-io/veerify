@@ -68,8 +68,8 @@ export interface PollDeps {
   clock?: () => number
   store?: MentionsStore
   sources?: SocialSource[]
-  recordUsage?: (teamId: string, metric: string, units: number) => Promise<void>
-  publishNew?: (input: { teamId: string; projectId: string; count: number }) => Promise<void>
+  recordUsage?: (organizationId: string, metric: string, units: number) => Promise<void>
+  publishNew?: (input: { projectId: string; count: number }) => Promise<void>
 }
 
 /** Start of the search window: one hour before the last poll, never older than seven days. */
@@ -354,7 +354,7 @@ export async function pollMentions(options: PollOptions = {}, deps: PollDeps = {
           }
         )
       }
-      if (requests > 0) await usage(site.teamId, `mentions:${source.id}:requests`, requests)
+      if (requests > 0) await usage(site.organizationId, `mentions:${source.id}:requests`, requests)
     } catch (error) {
       summary.errors += 1
       logger.error('Failed to store mentions', {
@@ -381,7 +381,7 @@ export async function pollMentions(options: PollOptions = {}, deps: PollDeps = {
     const count = siteInserted.get(site.siteId) ?? 0
     if (count > 0) {
       try {
-        await publishNew({ teamId: site.teamId, projectId: site.projectId, count })
+        await publishNew({ projectId: site.projectId, count })
       } catch (error) {
         logger.warn('Mentions realtime publish failed', {
           siteId: site.siteId,

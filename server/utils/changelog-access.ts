@@ -1,10 +1,7 @@
-import { eq } from 'drizzle-orm'
 // Imported explicitly rather than relying on Nuxt's auto-import, so this module
 // can be unit tested outside the Nitro runtime.
 import { createError } from 'h3'
-import { db } from '~/server/database/drizzle'
-import { teamModuleSettings } from '~/server/database/schema/teams'
-import { DEFAULT_TEAM_MODULES, resolveProductModules } from '~/lib/modules'
+import { isModuleEnabled } from '~/lib/modules'
 import { requireProjectAccess } from './project-access'
 import { createErrorResponse, ErrorCode } from './response'
 
@@ -19,29 +16,15 @@ function forbidden(message: string): never {
 /**
  * Authorizes a changelog endpoint for a project.
  *
- * Verifies team membership (404 unknown project, 403 non-member), then that the
- * Changelog module is on for both the team and the product. A team that never
- * opened the Tools tab has no `team_module_settings` row and reads as the
- * registry default (off).
+ * Verifies project access (404 unknown project, 403 no access), then that the
+ * Changelog tool is switched on in `project.settings` (default: off).
  */
 export async function requireChangelogAccess(projectId: string, userId: string) {
   const project = await requireProjectAccess(projectId, userId)
 
-  const [row] = await db
-    .select({ changelogEnabled: teamModuleSettings.changelogEnabled })
-    .from(teamModuleSettings)
-    .where(eq(teamModuleSettings.teamId, project.teamId))
-    .limit(1)
-
-  const teamEnabled = row ? row.changelogEnabled === true : DEFAULT_TEAM_MODULES.changelogEnabled
-  if (!teamEnabled) {
-    forbidden('Changelog is not enabled for this team')
+  if (!isModuleEnabled(project.settings as Record<string, unknown> | null, 'changelogEnabled')) {
+    forbidden('Changelog is not enabled for this project')
   }
 
-  const productModules = resolveProductModules(project.settings as Record<string, unknown> | null)
-  if (!productModules.changelogEnabled) {
-    forbidden('Changelog is not enabled for this product')
-  }
-
-  return { project, teamId: project.teamId }
+  return { project }
 }

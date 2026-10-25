@@ -1,9 +1,7 @@
 /**
- * Cloud (Vercel Cron) side of the trivial `example:ping` scheduled task.
- *
- * Matched by the `vercel.json` `crons` entry for this path. Vercel triggers
- * cron jobs with an HTTP GET request carrying `Authorization: Bearer
- * <CRON_SECRET>` — `createCronHttpHandler` rejects anything else with 401
+ * HTTP side of the trivial `example:ping` scheduled task, for external
+ * schedulers. A caller triggers it with a GET request carrying
+ * `Authorization: Bearer <CRON_SECRET>` — `createCronHttpHandler` rejects anything else with 401
  * before touching the registry, using a timing-safe comparison (see
  * `cron-auth.ts`).
  *
@@ -11,9 +9,9 @@
  * /api/cron/example-ping:
  *   get:
  *     tags: [Internal]
- *     summary: Scheduled task trigger (Vercel Cron only)
+ *     summary: Scheduled task trigger (external trigger)
  *     description: >
- *       Invoked by Vercel Cron on the schedule declared in vercel.json.
+ *       Optional external trigger; the in-process scheduler normally runs this task.
  *       Requires a bearer CRON_SECRET; not intended for manual calls.
  *     operationId: cronExamplePing
  *     responses:

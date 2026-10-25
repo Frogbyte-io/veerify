@@ -16,20 +16,20 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Custom directory deleted, or catalog directory reset }
- *       403: { description: Not a team member, or Marketing is off }
+ *       403: { description: No access to this project, or Marketing is off }
  *       404: { description: Unknown directory }
  */
 import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { launchKitItem } from '~/server/database/schema/marketing'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireRouteParam } from '~/server/utils/marketing-site'
 import { getLaunchDirectory, isCustomId, launchKitNotFound } from '~/server/utils/marketing-launch-kit'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   const directoryId = requireRouteParam(event, 'directoryId')
   await requireMarketingAccess(projectId, session.user.id)

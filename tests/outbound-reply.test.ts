@@ -102,12 +102,12 @@ describe('buildOutgoingReply', () => {
 
   it('appends the inbox signature to both html and text bodies', () => {
     const input = baseInput()
-    input.inbox.signature = 'Acme Support Team'
+    input.inbox.signature = 'Acme Support Project'
 
     const result = buildOutgoingReply(input)
 
-    expect(result.deliveryPayload.text).toContain('-- \nAcme Support Team')
-    expect(result.deliveryPayload.html).toContain('Acme Support Team')
+    expect(result.deliveryPayload.text).toContain('-- \nAcme Support Project')
+    expect(result.deliveryPayload.html).toContain('Acme Support Project')
   })
 
   it('passes attachments through unchanged, as storage-key references', () => {

@@ -16,7 +16,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Attachment bytes }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Attachment not found }
  */
 import { createError, getRouterParam, setResponseHeader } from 'h3'

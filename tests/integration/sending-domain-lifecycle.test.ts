@@ -3,7 +3,8 @@ import { eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team } from '../../server/database/schema/auth'
+import { organization } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { supportInbox, supportInboxAddress, supportSendingDomain } from '../../server/database/schema/support'
 import {
   deleteSendingDomainRow,
@@ -38,8 +39,10 @@ vi.mock('h3', () => ({
 }))
 vi.mock('~/server/utils/auth-middleware', () => ({ requireAuth: vi.fn(async () => ({ user: { id: 'user-1' } })) }))
 vi.mock('~/server/utils/support-access', () => ({
-  requireTeamAdmin: vi.fn(async () => ({ id: 'tm-1', role: 'admin' })),
-  resolveSupportTeamRole: vi.fn(async () => ({ effectiveRole: 'admin', isTeamAdmin: true })),
+  resolveSupportProjectRole: vi.fn(async () => ({ effectiveRole: 'admin', isProjectAdmin: true })),
+}))
+vi.mock('~/server/utils/project-access', () => ({
+  requireProjectAdmin: vi.fn(async () => ({ id: 'project-1' })),
 }))
 vi.mock('~/server/utils/rate-limit', () => ({ requireRateLimit: vi.fn(async () => undefined) }))
 vi.mock('~/server/utils/validation', () => ({
@@ -54,15 +57,15 @@ vi.mock('~/server/services/sending-domains/ownership', async () => {
   return { ...actual, checkOwnershipTxt: vi.fn(async () => 'valid'), checkDmarc: vi.fn(async () => null) }
 })
 
-const verifyRoute = (await import('../../server/api/support/teams/[teamId]/sending-domains/[id]/verify.post'))
+const verifyRoute = (await import('../../server/api/support/projects/[projectId]/sending-domains/[id]/verify.post'))
   .default as unknown as (event: unknown) => Promise<{ data: { status: string } }>
-const deleteRoute = (await import('../../server/api/support/teams/[teamId]/sending-domains/[id].delete'))
+const deleteRoute = (await import('../../server/api/support/projects/[projectId]/sending-domains/[id].delete'))
   .default as unknown as (event: unknown) => Promise<{ data: Record<string, unknown> }>
 
 const run = randomUUID().slice(0, 8)
 const orgId = `sdl_org_${run}`
-const teamA = `sdl_team_a_${run}`
-const teamB = `sdl_team_b_${run}`
+const projectA = `sdl_project_a_${run}`
+const projectB = `sdl_project_b_${run}`
 const inboxA = `sdl_inbox_a_${run}`
 const inboxB = `sdl_inbox_b_${run}`
 const inboxB2 = `sdl_inbox_b2_${run}`
@@ -104,7 +107,7 @@ function makeProvider(overrides: Record<string, unknown> = {}) {
 }
 
 async function addClaim(
-  teamId: string,
+  projectId: string,
   domain: string,
   status: string,
   overrides: Partial<typeof supportSendingDomain.$inferInsert> = {}
@@ -113,7 +116,7 @@ async function addClaim(
   claimIds.push(id)
   await db.insert(supportSendingDomain).values({
     id,
-    teamId,
+    projectId,
     domain,
     registrableDomain: domain.split('.').slice(-2).join('.'),
     status,
@@ -132,7 +135,14 @@ async function addAddress(
   overrides: Partial<typeof supportInboxAddress.$inferInsert> = {}
 ) {
   const id = `sdl_addr_${randomUUID()}`
-  await db.insert(supportInboxAddress).values({ id, inboxId, address, kind: 'custom', ...overrides })
+  const [owner] = await db
+    .select({ projectId: supportInbox.projectId })
+    .from(supportInbox)
+    .where(eq(supportInbox.id, inboxId))
+    .limit(1)
+  await db
+    .insert(supportInboxAddress)
+    .values({ id, inboxId, projectId: owner.projectId, address, kind: 'custom', ...overrides })
   return id
 }
 
@@ -145,7 +155,7 @@ function poll(ids: string[], provider: unknown, deps: Record<string, unknown> = 
   const batches = [ids]
   return runSendingDomainPoll({
     enabled: () => true,
-    policy: () => 'team',
+    policy: () => 'project',
     provider: provider as never,
     claim: async () => {
       const batch = batches.shift()
@@ -169,8 +179,8 @@ beforeAll(async () => {
   await db
     .insert(organization)
     .values({ id: orgId, name: 'SDL org', slug: `sdl-${run}`, createdAt: now(), updatedAt: now() })
-  await db.insert(team).values(
-    [teamA, teamB].map((id) => ({
+  await db.insert(project).values(
+    [projectA, projectB].map((id) => ({
       id,
       name: id,
       slug: id,
@@ -181,12 +191,12 @@ beforeAll(async () => {
   )
   await db.insert(supportInbox).values(
     [
-      { id: inboxA, teamId: teamA },
-      { id: inboxB, teamId: teamB },
-      { id: inboxB2, teamId: teamB },
-    ].map(({ id, teamId }) => ({
+      { id: inboxA, projectId: projectA },
+      { id: inboxB, projectId: projectB },
+      { id: inboxB2, projectId: projectB },
+    ].map(({ id, projectId }) => ({
       id,
-      teamId,
+      projectId,
       name: id,
       slug: id,
       emailAddress: `${id}@inbox.example.net`,
@@ -210,14 +220,14 @@ beforeEach(async () => {
 afterAll(async () => {
   process.env = savedEnv
   await db.delete(supportSendingDomain).where(inArray(supportSendingDomain.id, claimIds))
-  await db.delete(team).where(inArray(team.id, [teamA, teamB]))
+  await db.delete(project).where(inArray(project.id, [projectA, projectB]))
   await db.delete(organization).where(eq(organization.id, orgId))
 })
 
-describe('verifying a claim detaches other teams (H2, M1)', () => {
-  it('manual Verify now removes the other team address and From on the domain and its subdomains', async () => {
+describe('verifying a claim detaches other projects (H2, M1)', () => {
+  it('manual Verify now removes the other project address and From on the domain and its subdomains', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'pending', {
+    const claim = await addClaim(projectA, domain, 'pending', {
       expiresAt: future(7 * DAY),
       providerState: 'unverified',
     })
@@ -234,7 +244,7 @@ describe('verifying a claim detaches other teams (H2, M1)', () => {
     const unrelated = await addAddress(inboxB, `hello@other-${domain}`)
     const own = await addAddress(inboxA, `own@${domain}`)
 
-    stubs.params = { teamId: teamA, id: claim }
+    stubs.params = { projectId: projectA, id: claim }
     const res = await verifyRoute({})
 
     expect(res.data.status).toBe('verified')
@@ -252,7 +262,7 @@ describe('verifying a claim detaches other teams (H2, M1)', () => {
 
   it('does not detach anything when the claim does not verify', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'pending', { expiresAt: future(7 * DAY) })
+    const claim = await addClaim(projectA, domain, 'pending', { expiresAt: future(7 * DAY) })
     stubs.provider = makeProvider({ verify: vi.fn(async (d: string) => activeResult(d, { state: 'unverified' })) })
     await db
       .update(supportInbox)
@@ -260,7 +270,7 @@ describe('verifying a claim detaches other teams (H2, M1)', () => {
       .where(eq(supportInbox.id, inboxB))
     const foreign = await addAddress(inboxB, `support@${domain}`)
 
-    stubs.params = { teamId: teamA, id: claim }
+    stubs.params = { projectId: projectA, id: claim }
     expect((await verifyRoute({})).data.status).toBe('pending')
 
     expect(await db.select().from(supportInboxAddress).where(eq(supportInboxAddress.id, foreign))).toHaveLength(1)
@@ -270,7 +280,7 @@ describe('verifying a claim detaches other teams (H2, M1)', () => {
 
   it('the poller detaches through the same path, and recovery from suspended detaches too', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'suspended', {
+    const claim = await addClaim(projectA, domain, 'suspended', {
       verifiedAt: past(),
       expiresAt: future(10 * DAY),
       providerState: 'unverified',
@@ -292,7 +302,7 @@ describe('verifying a claim detaches other teams (H2, M1)', () => {
 
   it('rolls the verification back when the detach fails, so the claim is retried', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'pending', { expiresAt: future(7 * DAY) })
+    const claim = await addClaim(projectA, domain, 'pending', { expiresAt: future(7 * DAY) })
     const { summary } = await poll([claim], stubs.provider, {
       detach: async () => {
         throw new Error('boom')
@@ -304,14 +314,14 @@ describe('verifying a claim detaches other teams (H2, M1)', () => {
     expect(row!.lastErrorCode).toBe('internal_error')
   })
 
-  it('detachForeignAddresses never touches the claiming team', async () => {
+  it('detachForeignAddresses never touches the claiming project', async () => {
     const domain = fresh()
     await db
       .update(supportInbox)
       .set({ emailAddress: `a@${domain}` })
       .where(eq(supportInbox.id, inboxA))
     await addAddress(inboxA, `a@${domain}`)
-    expect(await detachForeignAddresses({ id: 'x', teamId: teamA, domain })).toBe(0)
+    expect(await detachForeignAddresses({ id: 'x', projectId: projectA, domain })).toBe(0)
     expect((await db.select().from(supportInbox).where(eq(supportInbox.id, inboxA)))[0]!.emailAddress).toBe(
       `a@${domain}`
     )
@@ -321,7 +331,7 @@ describe('verifying a claim detaches other teams (H2, M1)', () => {
 describe('status machine on real rows', () => {
   it('keeps the suspension reason and starts the suspension clock', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'verified', { verifiedAt: past(), ownershipFailures: 2 })
+    const claim = await addClaim(projectA, domain, 'verified', { verifiedAt: past(), ownershipFailures: 2 })
     await poll([claim], stubs.provider, { checkOwnership: async () => 'invalid' })
     const row = await claimRow(claim)
     expect(row).toMatchObject({ status: 'suspended', lastErrorCode: 'ownership_missing' })
@@ -331,14 +341,17 @@ describe('status machine on real rows', () => {
 
   it('keeps a created domain created through register and needs_register', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'provisioning', {
+    const claim = await addClaim(projectA, domain, 'provisioning', {
       providerOwnership: 'created',
       expiresAt: future(7 * DAY),
     })
     await poll([claim], stubs.provider)
     expect(await claimRow(claim)).toMatchObject({ status: 'pending', providerOwnership: 'created' })
 
-    const lost = await addClaim(teamA, fresh(), 'pending', { providerOwnership: 'created', expiresAt: future(7 * DAY) })
+    const lost = await addClaim(projectA, fresh(), 'pending', {
+      providerOwnership: 'created',
+      expiresAt: future(7 * DAY),
+    })
     stubs.provider = makeProvider({ get: vi.fn(async () => null) })
     await poll([lost], stubs.provider, { batchSize: 1 })
     expect((await claimRow(lost))!.status).toBe('provisioning')
@@ -347,7 +360,7 @@ describe('status machine on real rows', () => {
   })
 
   it('infers created when an adoption follows one of our own failed attempts', async () => {
-    const claim = await addClaim(teamA, fresh(), 'failed', {
+    const claim = await addClaim(projectA, fresh(), 'failed', {
       providerOwnership: null,
       attemptCount: 2,
       expiresAt: future(7 * DAY),
@@ -357,7 +370,7 @@ describe('status machine on real rows', () => {
   })
 
   it('list-only provider: stays pending, runs the TXT check, and does not ping-pong', async () => {
-    const claim = await addClaim(teamA, fresh(), 'pending', {
+    const claim = await addClaim(projectA, fresh(), 'pending', {
       provider: 'postmark',
       providerAccountKey: 'pm-1',
       providerOwnership: 'adopted',
@@ -386,7 +399,7 @@ describe('status machine on real rows', () => {
   })
 
   it('a suspended claim whose provider domain is gone re-registers instead of waiting for expiry', async () => {
-    const claim = await addClaim(teamA, fresh(), 'suspended', {
+    const claim = await addClaim(projectA, fresh(), 'suspended', {
       providerOwnership: 'created',
       verifiedAt: past(),
       expiresAt: future(3 * DAY),
@@ -399,7 +412,7 @@ describe('status machine on real rows', () => {
   })
 
   it('expires suspended claims after their clock runs out', async () => {
-    const claim = await addClaim(teamA, fresh(), 'suspended', { verifiedAt: past(), expiresAt: past() })
+    const claim = await addClaim(projectA, fresh(), 'suspended', { verifiedAt: past(), expiresAt: past() })
     const { summary } = await poll([claim], makeProvider())
     expect(summary.expired).toBe(1)
     expect(await claimRow(claim)).toBeUndefined()
@@ -407,8 +420,8 @@ describe('status machine on real rows', () => {
 
   it('aborts on the first rate limit and leaves later rows leased free', async () => {
     const [a, b] = [
-      await addClaim(teamA, fresh(), 'pending', { expiresAt: future(7 * DAY) }),
-      await addClaim(teamA, fresh(), 'pending', { expiresAt: future(7 * DAY) }),
+      await addClaim(projectA, fresh(), 'pending', { expiresAt: future(7 * DAY) }),
+      await addClaim(projectA, fresh(), 'pending', { expiresAt: future(7 * DAY) }),
     ]
     const provider = makeProvider({
       get: vi.fn(async () => {
@@ -423,9 +436,9 @@ describe('status machine on real rows', () => {
 
 describe('guarded deletes (6e)', () => {
   it('expiry deletes only a row that is still expired and still in the status seen', async () => {
-    const stillExpired = await addClaim(teamA, fresh(), 'pending', { expiresAt: past() })
-    const reRegistered = await addClaim(teamA, fresh(), 'pending', { expiresAt: future(7 * DAY) })
-    const verifiedMeanwhile = await addClaim(teamA, fresh(), 'verified', { expiresAt: null, verifiedAt: past() })
+    const stillExpired = await addClaim(projectA, fresh(), 'pending', { expiresAt: past() })
+    const reRegistered = await addClaim(projectA, fresh(), 'pending', { expiresAt: future(7 * DAY) })
+    const verifiedMeanwhile = await addClaim(projectA, fresh(), 'verified', { expiresAt: null, verifiedAt: past() })
 
     expect(await deleteSendingDomainRow({ id: reRegistered, status: 'pending' }, { expiredBy: now() })).toBe(false)
     expect(await deleteSendingDomainRow({ id: verifiedMeanwhile, status: 'pending' }, { expiredBy: now() })).toBe(false)
@@ -435,7 +448,7 @@ describe('guarded deletes (6e)', () => {
   })
 
   it('the poller leaves an expiring row alone when a concurrent verify already moved it', async () => {
-    const claim = await addClaim(teamA, fresh(), 'pending', { expiresAt: past() })
+    const claim = await addClaim(projectA, fresh(), 'pending', { expiresAt: past() })
     const { summary } = await poll([claim], makeProvider(), {
       // The row was verified between the claim and the delete.
       deleteRow: async (row: { id: string; status: string }, opts: { expiredBy?: Date }) => {
@@ -453,7 +466,7 @@ describe('guarded deletes (6e)', () => {
 
 describe('removal that cannot succeed (§5.3)', () => {
   it('releases a deleting row after a permanent refusal and asks the operator to clean up', async () => {
-    const claim = await addClaim(teamA, fresh(), 'deleting', { providerOwnership: 'created' })
+    const claim = await addClaim(projectA, fresh(), 'deleting', { providerOwnership: 'created' })
     const provider = makeProvider({
       remove: vi.fn(async () => {
         throw new SendingDomainProviderError('unknown', 'refused', false)
@@ -466,7 +479,7 @@ describe('removal that cannot succeed (§5.3)', () => {
   })
 
   it('bounds the retries for a credential failure so the row cannot block the domain forever', async () => {
-    const claim = await addClaim(teamA, fresh(), 'deleting', { providerOwnership: 'created' })
+    const claim = await addClaim(projectA, fresh(), 'deleting', { providerOwnership: 'created' })
     const provider = makeProvider({
       remove: vi.fn(async () => {
         throw new SendingDomainProviderError('unauthorized', 'bad key', false)
@@ -491,8 +504,8 @@ describe('removal that cannot succeed (§5.3)', () => {
 
 describe('busy rows (6d)', () => {
   it('refuses an admin delete with 409 DOMAIN_BUSY while a register holds the lease, then deletes after', async () => {
-    const claim = await addClaim(teamA, fresh(), 'provisioning', { leaseExpiresAt: future(60_000) })
-    stubs.params = { teamId: teamA, id: claim }
+    const claim = await addClaim(projectA, fresh(), 'provisioning', { leaseExpiresAt: future(60_000) })
+    stubs.params = { projectId: projectA, id: claim }
     await expect(deleteRoute({})).rejects.toMatchObject({ statusCode: 409, data: { error: { code: 'DOMAIN_BUSY' } } })
     expect((await claimRow(claim))!.status).toBe('provisioning')
 
@@ -506,7 +519,7 @@ describe('busy rows (6d)', () => {
 describe('direct-receiving routes reconcile (§9.2)', () => {
   it('retries failed routes and creates missing ones on the exact claimed domain only', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'verified', { verifiedAt: past(), receivesViaProvider: true })
+    const claim = await addClaim(projectA, domain, 'verified', { verifiedAt: past(), receivesViaProvider: true })
     const failed = await addAddress(inboxA, `failed@${domain}`, { providerRouteStatus: 'failed' })
     const missing = await addAddress(inboxA, `Missing@${domain.toUpperCase()}`)
     const active = await addAddress(inboxA, `ok@${domain}`, {
@@ -515,37 +528,37 @@ describe('direct-receiving routes reconcile (§9.2)', () => {
     })
     const subdomain = await addAddress(inboxA, `help@eu.${domain}`)
     const platform = await addAddress(inboxA, `plat-${run}@veerifymail.test`, { kind: 'platform' })
-    const foreignTeam = await addAddress(inboxB, `b@${domain}`)
+    const foreignProject = await addAddress(inboxB, `b@${domain}`)
 
     const provider = makeProvider()
-    const result = await reconcileDirectRoutes({ id: claim, teamId: teamA, domain }, provider as never)
+    const result = await reconcileDirectRoutes({ id: claim, projectId: projectA, domain }, provider as never)
 
     expect(result).toEqual({ created: 2, failed: 0, misconfigured: false })
     expect(provider.createInboundRoute).toHaveBeenCalledTimes(2)
     const rows = await db
       .select()
       .from(supportInboxAddress)
-      .where(inArray(supportInboxAddress.id, [failed, missing, active, subdomain, platform, foreignTeam]))
+      .where(inArray(supportInboxAddress.id, [failed, missing, active, subdomain, platform, foreignProject]))
     const byId = new Map(rows.map((r) => [r.id, r]))
     expect(byId.get(failed)).toMatchObject({ providerRouteStatus: 'active' })
     expect(byId.get(failed)!.providerRouteId).toMatch(/^route_/)
     expect(byId.get(missing)).toMatchObject({ providerRouteStatus: 'active' })
     expect(byId.get(active)).toMatchObject({ providerRouteId: 'route_existing' })
-    for (const untouched of [subdomain, platform, foreignTeam]) {
+    for (const untouched of [subdomain, platform, foreignProject]) {
       expect(byId.get(untouched)).toMatchObject({ providerRouteId: null, providerRouteStatus: null })
     }
   })
 
   it('marks a route failed when creation fails, and reports a missing scope', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'verified', { verifiedAt: past(), receivesViaProvider: true })
+    const claim = await addClaim(projectA, domain, 'verified', { verifiedAt: past(), receivesViaProvider: true })
     const addr = await addAddress(inboxA, `a@${domain}`)
     const flaky = makeProvider({
       createInboundRoute: vi.fn(async () => {
         throw new SendingDomainProviderError('provider_unavailable', 'down', true)
       }),
     })
-    expect(await reconcileDirectRoutes({ id: claim, teamId: teamA, domain }, flaky as never)).toEqual({
+    expect(await reconcileDirectRoutes({ id: claim, projectId: projectA, domain }, flaky as never)).toEqual({
       created: 0,
       failed: 1,
       misconfigured: false,
@@ -563,7 +576,7 @@ describe('direct-receiving routes reconcile (§9.2)', () => {
       [claim],
       makeProvider({ get: vi.fn(async (d: string) => activeResult(d, { receivesMail: true })) }),
       {
-        reconcileRoutes: (row: { id: string; teamId: string; domain: string }) =>
+        reconcileRoutes: (row: { id: string; projectId: string; domain: string }) =>
           reconcileDirectRoutes(row, noScope as never),
       }
     )
@@ -575,7 +588,7 @@ describe('direct-receiving routes reconcile (§9.2)', () => {
 
   it('the daily verified pass runs the reconcile with the real function', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'verified', { verifiedAt: past(), receivesViaProvider: true })
+    const claim = await addClaim(projectA, domain, 'verified', { verifiedAt: past(), receivesViaProvider: true })
     const addr = await addAddress(inboxA, `a@${domain}`, { providerRouteStatus: 'failed' })
     const provider = makeProvider({ get: vi.fn(async (d: string) => activeResult(d, { receivesMail: true })) })
     await poll([claim], provider)
@@ -589,7 +602,7 @@ describe('direct-receiving routes reconcile (§9.2)', () => {
 describe('suspendClaimForSenderRejection (§14)', () => {
   it('suspends the verified claim covering the From, with the sender_rejected reason', async () => {
     const domain = fresh()
-    const claim = await addClaim(teamA, domain, 'verified', { verifiedAt: past(), expiresAt: null })
+    const claim = await addClaim(projectA, domain, 'verified', { verifiedAt: past(), expiresAt: null })
     const metrics: { name: string; fields: unknown }[] = []
     const metric = (name: string, fields: unknown) => {
       metrics.push({ name, fields })
@@ -597,7 +610,7 @@ describe('suspendClaimForSenderRejection (§14)', () => {
     }
 
     expect(
-      await suspendClaimForSenderRejection(teamA, `Support@eu.${domain}`, '553 sender not allowed', {
+      await suspendClaimForSenderRejection(projectA, `Support@eu.${domain}`, '553 sender not allowed', {
         metric: metric as never,
       })
     ).toBe(true)
@@ -613,18 +626,18 @@ describe('suspendClaimForSenderRejection (§14)', () => {
     ])
 
     // Already suspended: nothing more to do.
-    expect(await suspendClaimForSenderRejection(teamA, `support@${domain}`, 'again')).toBe(false)
+    expect(await suspendClaimForSenderRejection(projectA, `support@${domain}`, 'again')).toBe(false)
   })
 
-  it('does nothing for another team, an uncovered domain, or a pending claim', async () => {
+  it('does nothing for another project, an uncovered domain, or a pending claim', async () => {
     const domain = fresh()
-    const verified = await addClaim(teamA, domain, 'verified', { verifiedAt: past() })
+    const verified = await addClaim(projectA, domain, 'verified', { verifiedAt: past() })
     const pendingDomain = fresh()
-    const pending = await addClaim(teamA, pendingDomain, 'pending', { expiresAt: future(DAY) })
+    const pending = await addClaim(projectA, pendingDomain, 'pending', { expiresAt: future(DAY) })
 
-    expect(await suspendClaimForSenderRejection(teamB, `x@${domain}`, 'refused')).toBe(false)
-    expect(await suspendClaimForSenderRejection(teamA, 'x@unclaimed.example.org', 'refused')).toBe(false)
-    expect(await suspendClaimForSenderRejection(teamA, `x@${pendingDomain}`, 'refused')).toBe(false)
+    expect(await suspendClaimForSenderRejection(projectB, `x@${domain}`, 'refused')).toBe(false)
+    expect(await suspendClaimForSenderRejection(projectA, 'x@unclaimed.example.org', 'refused')).toBe(false)
+    expect(await suspendClaimForSenderRejection(projectA, `x@${pendingDomain}`, 'refused')).toBe(false)
     expect((await claimRow(verified))!.status).toBe('verified')
     expect((await claimRow(pending))!.status).toBe('pending')
   })

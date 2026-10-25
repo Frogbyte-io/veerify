@@ -75,15 +75,15 @@ export default defineEventHandler(async (event) => {
   if (state.userId !== session.user.id) return back(event, { error: 'user_mismatch' })
 
   const slug = await slugFor(state.projectId)
-  let teamId: string
+  let organizationId: string
   try {
-    ;({ teamId } = await requireMarketingAdmin(state.projectId, session.user.id))
+    ;({ organizationId } = await requireMarketingAdmin(state.projectId, session.user.id))
   } catch {
     return back(event, { error: 'forbidden' }, slug)
   }
 
   // Single-use state: a replayed callback URL (history, logs, referrer) is rejected
-  if (!(await consumeOAuthNonce(teamId, state.nonce))) return back(event, { error: 'invalid_state' }, slug)
+  if (!(await consumeOAuthNonce(organizationId, state.nonce))) return back(event, { error: 'invalid_state' }, slug)
 
   if (str(query.error)) {
     return back(event, { error: str(query.error) === 'access_denied' ? 'access_denied' : 'google_error' }, slug)

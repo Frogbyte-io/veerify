@@ -16,7 +16,7 @@ import { createLogger } from '~/server/utils/logger'
 const logger = createLogger('projects')
 
 export default defineEventHandler(async (event) => {
-  const { session, project: selectedProject } = await requireProjectCategoryAccess(event)
+  const { session, project: selectedProject } = await requireProjectCategoryAccess(event, { admin: true })
 
   const query = getQuery(event)
   const domain = normalizeCustomDomainInput((query.domain as string | undefined) || null)

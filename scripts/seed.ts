@@ -32,8 +32,10 @@ const IDS = {
   personalAccount: 'seed_preview_personal_account',
   org: 'seed_preview_org',
   member: 'seed_preview_member',
-  team: 'seed_preview_team',
-  teamMember: 'seed_preview_team_member',
+  projectMember: 'seed_preview_project_member',
+  product: 'seed_preview_product',
+  product2: 'seed_preview_product_2',
+  product3: 'seed_preview_product_3',
   project: 'seed_preview_project',
   project2: 'seed_preview_project_2',
   project3: 'seed_preview_project_3',
@@ -47,8 +49,6 @@ const IDS = {
   feedback2: 'seed_preview_feedback_2',
   feedback3: 'seed_preview_feedback_3',
 }
-
-const SEED_TEAM_SLUG = 'preview-org'
 
 function createClient() {
   return process.env.DATABASE_URL
@@ -66,49 +66,42 @@ async function clean(client: Client) {
   // Delete in FK-safe order (children first)
   // Note: Some deletions use specific IDs, others delete by foreign key reference
 
-  // 1. Delete ALL projects that reference the seed team (not just the seed project)
-  const { rowCount: projectCount } = await client.query(`DELETE FROM "project" WHERE team_id = $1`, [IDS.team])
+  // 1. Delete ALL projects in the seed organization (not just the seed projects). Products, project
+  //    members and categories cascade; feedback is removed first because feedback.product_id is RESTRICT.
+  await client.query(
+    `DELETE FROM "feedback" WHERE project_id IN (SELECT id FROM "project" WHERE organization_id = $1)`,
+    [IDS.org]
+  )
+  const { rowCount: projectCount } = await client.query(`DELETE FROM "project" WHERE organization_id = $1`, [IDS.org])
   if (projectCount && projectCount > 0) {
-    console.log(`[seed:clean] Deleted ${projectCount} project(s) referencing seed team`)
+    console.log(`[seed:clean] Deleted ${projectCount} project(s) in the seed organization`)
   }
 
-  // 2. Delete team member
-  const { rowCount: teamMemberCount } = await client.query(`DELETE FROM "team_member" WHERE id = $1`, [IDS.teamMember])
-  if (teamMemberCount && teamMemberCount > 0) {
-    console.log(`[seed:clean] Deleted team_member (${IDS.teamMember})`)
-  }
-
-  // 3. Delete team
-  const { rowCount: teamCount } = await client.query(`DELETE FROM "team" WHERE id = $1`, [IDS.team])
-  if (teamCount && teamCount > 0) {
-    console.log(`[seed:clean] Deleted team (${IDS.team})`)
-  }
-
-  // 4. Delete organization member
+  // 2. Delete organization member
   const { rowCount: memberCount } = await client.query(`DELETE FROM "member" WHERE id = $1`, [IDS.member])
   if (memberCount && memberCount > 0) {
     console.log(`[seed:clean] Deleted member (${IDS.member})`)
   }
 
-  // 5. Delete account
+  // 3. Delete account
   const { rowCount: accountCount } = await client.query(`DELETE FROM "account" WHERE id = $1`, [IDS.account])
   if (accountCount && accountCount > 0) {
     console.log(`[seed:clean] Deleted account (${IDS.account})`)
   }
 
-  // 6. Delete organization
+  // 4. Delete organization
   const { rowCount: orgCount } = await client.query(`DELETE FROM "organization" WHERE id = $1`, [IDS.org])
   if (orgCount && orgCount > 0) {
     console.log(`[seed:clean] Deleted organization (${IDS.org})`)
   }
 
-  // 7. Delete user
+  // 5. Delete user
   const { rowCount: userCount } = await client.query(`DELETE FROM "user" WHERE id = $1`, [IDS.user])
   if (userCount && userCount > 0) {
     console.log(`[seed:clean] Deleted user (${IDS.user})`)
   }
 
-  // 8. Delete personal user account + user
+  // 6. Delete personal user account + user
   const { rowCount: personalAccountCount } = await client.query(`DELETE FROM "account" WHERE id = $1`, [
     IDS.personalAccount,
   ])
@@ -148,7 +141,7 @@ async function seed(client: Client) {
     [IDS.account, TEST_EMAIL, IDS.user, passwordHash, now]
   )
 
-  // Personal user — no org, team, or project affiliation
+  // Personal user — no org or project affiliation
   await client.query(
     `INSERT INTO "user" (id, name, email, email_verified, created_at, updated_at, two_factor_enabled)
      VALUES ($1, $2, $3, true, $4, $4, false)`,
@@ -173,35 +166,32 @@ async function seed(client: Client) {
     [IDS.member, IDS.org, IDS.user, now]
   )
 
-  await client.query(
-    `INSERT INTO "team" (id, name, slug, organization_id, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $5)`,
-    [IDS.team, 'Default', SEED_TEAM_SLUG, IDS.org, now]
-  )
+  const projects = [
+    [IDS.project, 'demo', 'Demo Project', 'A sample project for testing feedback flows', IDS.product],
+    [IDS.project2, 'mobile-app', 'Mobile App', 'iOS and Android mobile application', IDS.product2],
+    [IDS.project3, 'api-platform', 'API Platform', 'REST and GraphQL API services', IDS.product3],
+  ]
 
-  await client.query(
-    `INSERT INTO "team_member" (id, team_id, user_id, created_at)
-     VALUES ($1, $2, $3, $4)`,
-    [IDS.teamMember, IDS.team, IDS.user, now]
-  )
+  for (const [id, slug, name, description, productId] of projects) {
+    await client.query(
+      `INSERT INTO "project" (id, organization_id, slug, name, description, is_public, submission_mode, access_mode, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, true, 'anonymous', 'workspace', $6, $6)`,
+      [id, IDS.org, slug, name, description, now]
+    )
 
-  await client.query(
-    `INSERT INTO "project" (id, organization_id, team_id, slug, name, description, is_public, submission_mode, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, true, 'anonymous', $7, $7)`,
-    [IDS.project, IDS.org, IDS.team, 'demo', 'Demo Project', 'A sample project for testing feedback flows', now]
-  )
+    // Every project has a default product with the project's own name and slug
+    await client.query(
+      `INSERT INTO "product" (id, project_id, name, slug, description, is_public, sort_order, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, true, 0, $6, $6)`,
+      [productId, id, name, slug, description, now]
+    )
+  }
 
-  // Additional test projects
+  // Explicit project admin row for the owner on the demo project (owners administer every project anyway)
   await client.query(
-    `INSERT INTO "project" (id, organization_id, team_id, slug, name, description, is_public, submission_mode, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, true, 'anonymous', $7, $7)`,
-    [IDS.project2, IDS.org, IDS.team, 'mobile-app', 'Mobile App', 'iOS and Android mobile application', now]
-  )
-
-  await client.query(
-    `INSERT INTO "project" (id, organization_id, team_id, slug, name, description, is_public, submission_mode, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, true, 'anonymous', $7, $7)`,
-    [IDS.project3, IDS.org, IDS.team, 'api-platform', 'API Platform', 'REST and GraphQL API services', now]
+    `INSERT INTO "project_member" (id, project_id, user_id, role, created_at)
+     VALUES ($1, $2, $3, 'admin', $4)`,
+    [IDS.projectMember, IDS.project, IDS.user, now]
   )
 
   // Categories for each project (Bug + Feature)
@@ -285,17 +275,16 @@ async function seed(client: Client) {
 
   for (const [id, projectId, categoryId, title, body, status, voteCount] of feedbackItems) {
     await client.query(
-      `INSERT INTO "feedback" (id, project_id, category_id, title, body, status, author_user_id, author_name, vote_count, comment_count, is_pinned, is_locked, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, false, false, $10, $10)`,
-      [id, projectId, categoryId, title, body, status, IDS.user, 'Preview User', voteCount, now]
+      `INSERT INTO "feedback" (id, project_id, product_id, category_id, title, body, status, author_user_id, author_name, vote_count, comment_count, is_pinned, is_locked, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, false, false, $11, $11)`,
+      [id, projectId, IDS.product, categoryId, title, body, status, IDS.user, 'Preview User', voteCount, now]
     )
   }
 
   console.log(`[seed] Created org user:      ${TEST_EMAIL} / ${TEST_PASSWORD}`)
   console.log(`[seed] Created personal user: ${PERSONAL_EMAIL} / ${PERSONAL_PASSWORD}`)
   console.log('[seed] Created org: Preview Org (preview-org)')
-  console.log('[seed] Created team: Default')
-  console.log('[seed] Created projects: Demo Project, Mobile App, API Platform')
+  console.log('[seed] Created projects (each with a default product): Demo Project, Mobile App, API Platform')
   console.log('[seed] Created categories: Bug + Feature for each project')
   console.log('[seed] Created 3 feedback items for Demo Project')
 }
@@ -307,14 +296,11 @@ async function seed(client: Client) {
  * (`test@preview.local` / `password123`). Seeding is an explicit development
  * or test operation and is never part of build/package lifecycle hooks.
  *
- * The original guard only checked `VERCEL_ENV`, which left self-hosted
- * deployments and any local production build unprotected. `NODE_ENV` covers
- * those. `ALLOW_PRODUCTION_SEED=true` exists for the rare deliberate case, e.g.
+ * `NODE_ENV=production` blocks the run. `ALLOW_PRODUCTION_SEED=true` exists for the rare deliberate case, e.g.
  * seeding a staging database that legitimately reports itself as production.
  */
 function productionSeedBlockReason(): string | null {
   if (process.env.ALLOW_PRODUCTION_SEED === 'true') return null
-  if (process.env.VERCEL_ENV === 'production') return 'VERCEL_ENV=production'
   if (process.env.NODE_ENV === 'production') return 'NODE_ENV=production'
   return null
 }

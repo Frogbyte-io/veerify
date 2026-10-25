@@ -81,13 +81,12 @@ const config = { clientId: 'c', clientSecret: 's', redirectUri: 'https://app.tes
 function candidate(overrides: Partial<SyncCandidate> = {}): SyncCandidate {
   return {
     siteId: 's1',
-    teamId: 't1',
+    organizationId: 't1',
     projectId: 'p1',
     origin: 'https://acme.com',
     projectName: 'Acme',
     projectSlug: 'acme',
     projectSettings: { marketingEnabled: true },
-    teamMarketingEnabled: true,
     propertyUrl: 'sc-domain:acme.com',
     encryptedRefreshToken: 'v1.x',
     lastSyncAt: null,
@@ -230,7 +229,6 @@ describe('syncSearchConsole', () => {
 
   it('skips sites where marketing is off', async () => {
     const { store, calls } = makeStore([
-      candidate({ siteId: 'off-team', teamMarketingEnabled: false }),
       candidate({ siteId: 'off-product', projectSettings: { marketingEnabled: false } }),
       candidate({ siteId: 'on' }),
     ])
@@ -295,7 +293,7 @@ describe('dbSearchSyncStore', () => {
     expect(sql).toContain('"gsc_connection"."status" = $1')
     expect(sql).toContain('"gsc_connection"."property_url" is not null')
     expect(sql).toContain('"marketing_site"."verified_at" is not null')
-    expect(sql).toContain('"team_module_settings"."marketing_enabled"')
+    expect(sql).not.toContain('team_module_settings')
     expect(sql).toContain("'marketingEnabled'")
     expect(sql).toContain('"gsc_connection"."last_sync_at" is null')
     expect(sql).toContain('"gsc_connection"."last_sync_at" < $')

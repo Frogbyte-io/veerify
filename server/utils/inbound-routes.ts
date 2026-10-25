@@ -12,7 +12,7 @@ const logger = createLogger('support-inbound-routes')
  * Direct receiving through provider routes (design §9.2).
  *
  * Only for a `custom` address whose domain is exactly a *verified* claim of the
- * inbox's team that the provider reports as receiving mail. Subdomain addresses
+ * inbox's project that the provider reports as receiving mail. Subdomain addresses
  * cannot receive directly (a provider limitation), so only the exact claimed
  * domain matches. A route failure never fails the address operation: the row
  * is marked `failed` and the poller retries on its daily pass.
@@ -30,7 +30,7 @@ function inboundForwardUrl(providerName: string): string {
  * applies. Returns the resulting route status, or null when it does not apply.
  */
 export async function createDirectRouteForAddress(input: {
-  teamId: string
+  projectId: string
   inboxId: string
   address: { id: string; address: string; kind: string }
 }): Promise<'active' | 'failed' | null> {
@@ -47,7 +47,7 @@ export async function createDirectRouteForAddress(input: {
     .from(supportSendingDomain)
     .where(
       and(
-        eq(supportSendingDomain.teamId, input.teamId),
+        eq(supportSendingDomain.projectId, input.projectId),
         eq(supportSendingDomain.domain, domain),
         eq(supportSendingDomain.status, 'verified'),
         eq(supportSendingDomain.receivesViaProvider, true),

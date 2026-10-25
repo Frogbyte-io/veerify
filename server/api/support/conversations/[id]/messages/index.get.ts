@@ -28,7 +28,7 @@
  *         schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
  *     responses:
  *       200: { description: Message thread, oldest first }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found }
  */
 import { z } from 'zod'

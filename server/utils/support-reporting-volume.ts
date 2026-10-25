@@ -13,7 +13,7 @@ export interface SupportVolumeBucket {
 }
 
 export interface SupportVolumeDayInput {
-  teamId: string
+  projectId: string
   date: string
   timezone: string
 }
@@ -31,7 +31,7 @@ const METRIC_KEYS = ['conversations_created', 'conversations_resolved', 'convers
 
 function validateInput(input: SupportVolumeDayInput): { bounds: { start: Date; end: Date }; key: string } {
   if (!input || typeof input !== 'object') throw new RangeError('Volume input is required')
-  if (typeof input.teamId !== 'string' || input.teamId.length === 0) throw new RangeError('Team is required')
+  if (typeof input.projectId !== 'string' || input.projectId.length === 0) throw new RangeError('Project is required')
   if (typeof input.date !== 'string' || typeof input.timezone !== 'string') {
     throw new RangeError('Date and timezone are required')
   }
@@ -41,7 +41,7 @@ function validateInput(input: SupportVolumeDayInput): { bounds: { start: Date; e
   const bounds = reportingDayBounds(input.date, input.timezone)
   return {
     bounds,
-    key: JSON.stringify(['support-volume-v1', input.teamId, input.date, input.timezone]),
+    key: JSON.stringify(['support-volume-v1', input.projectId, input.date, input.timezone]),
   }
 }
 
@@ -56,8 +56,8 @@ async function readSourceCounts(
       from conversation c
       inner join support_inbox source_inbox
         on source_inbox.id = c.inbox_id
-       and source_inbox.team_id = c.team_id
-      where c.team_id = ${input.teamId}
+       and source_inbox.project_id = c.project_id
+      where c.project_id = ${input.projectId}
         and c.created_at >= ${bounds.start}
         and c.created_at < ${bounds.end}
       group by c.inbox_id
@@ -75,12 +75,12 @@ async function readSourceCounts(
       from conversation_status_event e
       inner join conversation c
         on c.id = e.conversation_id
-       and c.team_id = e.team_id
+       and c.project_id = e.project_id
        and c.inbox_id = e.inbox_id
       inner join support_inbox source_inbox
         on source_inbox.id = e.inbox_id
-       and source_inbox.team_id = e.team_id
-      where e.team_id = ${input.teamId}
+       and source_inbox.project_id = e.project_id
+      where e.project_id = ${input.projectId}
         and e.occurred_at >= ${bounds.start}
         and e.occurred_at < ${bounds.end}
       group by e.inbox_id
@@ -92,7 +92,7 @@ async function readSourceCounts(
     from support_inbox owned
     left join created_counts on created_counts.inbox_id = owned.id
     left join status_counts on status_counts.inbox_id = owned.id
-    where owned.team_id = ${input.teamId}
+    where owned.project_id = ${input.projectId}
     order by owned.id asc
   `)
 
@@ -126,7 +126,7 @@ export async function recomputeSupportVolumeDay(input: SupportVolumeDayInput): P
       )
       await tx.execute(sql`
         delete from support_metric_daily
-        where team_id = ${input.teamId}
+        where project_id = ${input.projectId}
           and date = ${input.date}
           and timezone = ${input.timezone}
           and agent_user_id is null
@@ -138,7 +138,7 @@ export async function recomputeSupportVolumeDay(input: SupportVolumeDayInput): P
           buckets.flatMap((bucket) => [
             {
               id: randomUUID(),
-              teamId: input.teamId,
+              projectId: input.projectId,
               inboxId: bucket.inboxId,
               agentUserId: null,
               date: input.date,
@@ -149,7 +149,7 @@ export async function recomputeSupportVolumeDay(input: SupportVolumeDayInput): P
             },
             {
               id: randomUUID(),
-              teamId: input.teamId,
+              projectId: input.projectId,
               inboxId: bucket.inboxId,
               agentUserId: null,
               date: input.date,
@@ -160,7 +160,7 @@ export async function recomputeSupportVolumeDay(input: SupportVolumeDayInput): P
             },
             {
               id: randomUUID(),
-              teamId: input.teamId,
+              projectId: input.projectId,
               inboxId: bucket.inboxId,
               agentUserId: null,
               date: input.date,

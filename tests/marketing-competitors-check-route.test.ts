@@ -16,8 +16,8 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage?: strin
   Object.assign(new Error(input.statusMessage ?? ''), input)
 )
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: 'u1' } })),
 }))
 vi.mock('~/server/utils/marketing-access', () => ({ requireMarketingAdmin: vi.fn(async () => ({})) }))
 vi.mock('~/server/utils/marketing-site', () => ({ requireRouteParam: (_e: unknown, name: string) => name }))

@@ -28,7 +28,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Answers with citations and analysis }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Run or prompt not found for this product }
  */
 import { and, asc, eq, sql } from 'drizzle-orm'

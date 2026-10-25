@@ -49,7 +49,7 @@ function fakeTx({ selectResults, insertResults = [] }: FakeTxOptions) {
 
 describe('allocateConversationDisplayId', () => {
   it('allocates the current value and increments the existing row', async () => {
-    const { tx, updates } = fakeTx({ selectResults: [[{ teamId: 't1', nextConversationDisplayId: 5 }]] })
+    const { tx, updates } = fakeTx({ selectResults: [[{ projectId: 't1', nextConversationDisplayId: 5 }]] })
 
     await expect(allocateConversationDisplayId(tx as any, 't1')).resolves.toBe(5)
     expect(updates).toEqual([{ nextConversationDisplayId: 6 }])
@@ -58,7 +58,7 @@ describe('allocateConversationDisplayId', () => {
   it('allocates 1 and creates the counter row when none exists yet', async () => {
     const { tx, updates } = fakeTx({
       selectResults: [[]],
-      insertResults: [[{ teamId: 't1' }]],
+      insertResults: [[{ projectId: 't1' }]],
     })
 
     await expect(allocateConversationDisplayId(tx as any, 't1')).resolves.toBe(1)
@@ -68,10 +68,10 @@ describe('allocateConversationDisplayId', () => {
   })
 
   it('falls back to locking the row when it loses the bootstrap race', async () => {
-    // Two transactions raced to create the row for the same team; this one's
+    // Two transactions raced to create the row for the same project; this one's
     // INSERT ... ON CONFLICT DO NOTHING found the other had already won.
     const { tx, updates } = fakeTx({
-      selectResults: [[], [{ teamId: 't1', nextConversationDisplayId: 7 }]],
+      selectResults: [[], [{ projectId: 't1', nextConversationDisplayId: 7 }]],
       insertResults: [[]],
     })
 

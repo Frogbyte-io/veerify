@@ -3,7 +3,6 @@ import { eq } from 'drizzle-orm'
 import type { db } from '~/server/database/drizzle'
 import { conversation, conversationMessage, conversationStatusEvent } from '~/server/database/schema/support'
 import { user } from '~/server/database/schema/auth'
-import { project } from '~/server/database/schema/feedback'
 
 /**
  * Activity messages for the Chatwoot-style inline event feed (`design.md` →
@@ -21,7 +20,7 @@ import { project } from '~/server/database/schema/feedback'
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export interface ConversationChange {
-  field: 'status' | 'priority' | 'assigneeUserId' | 'projectId'
+  field: 'status' | 'priority' | 'assigneeUserId'
   from: string | null
   to: string | null
 }
@@ -31,14 +30,13 @@ export interface ConversationChange {
  * deliberately absent: it is updatable, but renaming a ticket is not an
  * operational event the thread should narrate.
  */
-const TRACKED_FIELDS = ['status', 'priority', 'assigneeUserId', 'projectId'] as const
+const TRACKED_FIELDS = ['status', 'priority', 'assigneeUserId'] as const
 
 export interface ConversationPatch {
   status?: string
   priority?: string | null
   assigneeUserId?: string | null
   subject?: string | null
-  projectId?: string | null
 }
 
 interface ConversationState {
@@ -46,7 +44,6 @@ interface ConversationState {
   priority?: string | null
   assigneeUserId?: string | null
   subject?: string | null
-  projectId?: string | null
 }
 
 export interface ConversationPatchDiff {
@@ -55,7 +52,7 @@ export interface ConversationPatchDiff {
 }
 
 export interface ConversationStatusEventInput {
-  teamId: string
+  projectId: string
   inboxId: string
   conversationId: string
   fromStatus: string | null
@@ -75,7 +72,7 @@ export async function recordConversationStatusEvent(tx: Tx, input: ConversationS
 
 export interface ApplyConversationStatusTransitionInput {
   conversationId: string
-  teamId: string
+  projectId: string
   inboxId: string
   toStatus: string
   actorUserId: string | null
@@ -117,7 +114,7 @@ export async function applyConversationStatusTransition(
   const statusChange = changes.find((change) => change.field === 'status')
   if (statusChange) {
     await recordConversationStatusEvent(tx, {
-      teamId: input.teamId,
+      projectId: input.projectId,
       inboxId: input.inboxId,
       conversationId: input.conversationId,
       fromStatus: statusChange.from,
@@ -187,16 +184,6 @@ async function describeChange(tx: Tx, change: ConversationChange): Promise<strin
       if (!change.to) return `Unassigned.`
       const [assignee] = await tx.select({ name: user.name }).from(user).where(eq(user.id, change.to)).limit(1)
       return `Assigned to ${assignee?.name ?? change.to}.`
-    }
-
-    case 'projectId': {
-      if (!change.to) return `Product cleared.`
-      const [matchedProject] = await tx
-        .select({ name: project.name })
-        .from(project)
-        .where(eq(project.id, change.to))
-        .limit(1)
-      return `Product set to ${matchedProject?.name ?? change.to}.`
     }
   }
 }

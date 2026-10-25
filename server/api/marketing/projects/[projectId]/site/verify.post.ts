@@ -4,7 +4,7 @@
  *   post:
  *     tags: [Marketing]
  *     summary: Check site ownership with a DNS record, meta tag or file
- *     description: Team admins only. Rate limited to 10 checks per hour per site.
+ *     description: Project admins only. Rate limited to 10 checks per hour per site.
  *     operationId: verifyMarketingSite
  *     parameters:
  *       - in: path
@@ -22,7 +22,7 @@
  *               method: { type: string, enum: [dns, meta, file] }
  *     responses:
  *       200: { description: Updated site; `site.verified` tells whether the check passed }
- *       403: { description: Team admin required, or Marketing is off }
+ *       403: { description: Project admin required, or Marketing is off }
  *       404: { description: No site added yet }
  *       429: { description: Too many verification attempts }
  */
@@ -30,7 +30,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { marketingSite } from '~/server/database/schema/marketing'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -41,7 +41,7 @@ import { checkVerification } from '~/server/services/marketing/site-verification
 const bodySchema = z.object({ method: z.enum(['dns', 'meta', 'file']) })
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   await requireMarketingAdmin(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)

@@ -3,14 +3,15 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { eq, sql } from 'drizzle-orm'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { supportInbox, supportMetricDaily } from '../../server/database/schema/support'
 
 const ids = {
   organization: `reporting_org_${randomUUID()}`,
-  team: `reporting_team_${randomUUID()}`,
+  project: `reporting_project_${randomUUID()}`,
   otherOrganization: `reporting_org_${randomUUID()}`,
-  otherTeam: `reporting_team_${randomUUID()}`,
+  otherProject: `reporting_project_${randomUUID()}`,
   inbox: `reporting_inbox_${randomUUID()}`,
   secondInbox: `reporting_inbox_${randomUUID()}`,
   otherInbox: `reporting_inbox_${randomUUID()}`,
@@ -26,9 +27,9 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(team).values({
-    id: ids.team,
-    name: 'Reporting Team',
+  await db.insert(project).values({
+    id: ids.project,
+    name: 'Reporting Project',
     slug: `reporting-${randomUUID()}`,
     organizationId: ids.organization,
     createdAt: now,
@@ -41,9 +42,9 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(team).values({
-    id: ids.otherTeam,
-    name: 'Other Reporting Team',
+  await db.insert(project).values({
+    id: ids.otherProject,
+    name: 'Other Reporting Project',
     slug: `reporting-${randomUUID()}`,
     organizationId: ids.otherOrganization,
     createdAt: now,
@@ -58,7 +59,7 @@ beforeAll(async () => {
   })
   await db.insert(supportInbox).values({
     id: ids.inbox,
-    teamId: ids.team,
+    projectId: ids.project,
     name: 'Reporting Inbox',
     slug: `reporting-${randomUUID()}`,
     createdAt: now,
@@ -66,7 +67,7 @@ beforeAll(async () => {
   })
   await db.insert(supportInbox).values({
     id: ids.secondInbox,
-    teamId: ids.team,
+    projectId: ids.project,
     name: 'Reporting Inbox 2',
     slug: `reporting-${randomUUID()}`,
     createdAt: now,
@@ -74,7 +75,7 @@ beforeAll(async () => {
   })
   await db.insert(supportInbox).values({
     id: ids.otherInbox,
-    teamId: ids.otherTeam,
+    projectId: ids.otherProject,
     name: 'Other Reporting Inbox',
     slug: `reporting-${randomUUID()}`,
     createdAt: now,
@@ -89,12 +90,12 @@ afterAll(async () => {
 })
 
 afterEach(async () => {
-  await db.delete(supportMetricDaily).where(eq(supportMetricDaily.teamId, ids.team))
+  await db.delete(supportMetricDaily).where(eq(supportMetricDaily.projectId, ids.project))
 })
 
 const bucket = (id: string, agentUserId: string | null = null) => ({
   id,
-  teamId: ids.team,
+  projectId: ids.project,
   inboxId: ids.inbox,
   agentUserId,
   date: '2026-01-02',
@@ -183,13 +184,13 @@ describe('support metric daily (integration)', () => {
     )
   })
 
-  it('does not allow a bucket to pair an inbox from another team', async () => {
+  it('does not allow a bucket to pair an inbox from another project', async () => {
     await expectForeignKeyViolation(
       db.insert(supportMetricDaily).values({
         ...bucket(`bucket_${randomUUID()}`),
         inboxId: ids.otherInbox,
       }),
-      'support_metric_daily_team_inbox_ownership_fk'
+      'support_metric_daily_project_inbox_ownership_fk'
     )
   })
 
@@ -204,12 +205,12 @@ describe('support metric daily (integration)', () => {
     const date = '2026-01-03'
     const first = bucket(`bucket_${randomUUID()}`)
     await db.insert(supportMetricDaily).values({ ...first, date })
-    await db.execute(sql`insert into support_metric_daily (id, team_id, inbox_id, date, timezone, metric, value, sample_count, created_at, updated_at)
-      values (${`bucket_${randomUUID()}`}, ${ids.team}, ${ids.inbox}, ${date}, 'UTC', 'volume', 9, 4, now(), now())
-      on conflict (team_id, inbox_id, date, timezone, metric) where agent_user_id is null
+    await db.execute(sql`insert into support_metric_daily (id, project_id, inbox_id, date, timezone, metric, value, sample_count, created_at, updated_at)
+      values (${`bucket_${randomUUID()}`}, ${ids.project}, ${ids.inbox}, ${date}, 'UTC', 'volume', 9, 4, now(), now())
+      on conflict (project_id, inbox_id, date, timezone, metric) where agent_user_id is null
       do update set value = excluded.value, sample_count = excluded.sample_count, updated_at = excluded.updated_at`)
     const rows = await db.execute<{ value: number; sample_count: number }>(
-      sql`select value, sample_count from support_metric_daily where team_id = ${ids.team} and inbox_id = ${ids.inbox} and date = ${date} and timezone = 'UTC' and metric = 'volume' and agent_user_id is null`
+      sql`select value, sample_count from support_metric_daily where project_id = ${ids.project} and inbox_id = ${ids.inbox} and date = ${date} and timezone = 'UTC' and metric = 'volume' and agent_user_id is null`
     )
     expect(rows.rows).toEqual([{ value: 9, sample_count: 4 }])
   })

@@ -1,3 +1,4 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
@@ -15,40 +16,40 @@ import {
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-async function activeTeamAndUser(request: Parameters<typeof signInAndGetSessionCookie>[0]) {
+async function activeProjectAndUser(request: Parameters<typeof signInAndGetSessionCookie>[0]) {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const headers = withAuthHeaders(sessionCookie, '/support')
-  const [teamResponse, sessionResponse] = await Promise.all([
-    request.get('/api/teams/active', { headers }),
+  const [projectResponse, sessionResponse] = await Promise.all([
+    request.get('/api/projects/active', { headers }),
     request.get('/api/auth/session', { headers }),
   ])
-  expect(teamResponse.ok()).toBeTruthy()
+  expect(projectResponse.ok()).toBeTruthy()
   expect(sessionResponse.ok()).toBeTruthy()
   const sessionPayload = await sessionResponse.json()
   return {
-    teamId: (await teamResponse.json()).data.id as string,
+    projectId: await enableProjectSupport((await projectResponse.json()).data.project.id as string),
     userId: sessionPayload.data.user.id as string,
     userName: (sessionPayload.data.user.name || sessionPayload.data.user.email) as string,
   }
 }
 
-async function loginAndActivateTeam(page: import('@playwright/test').Page, teamId: string) {
+async function loginAndActivateProject(page: import('@playwright/test').Page, projectId: string) {
   const sessionCookie = await signInAndGetSessionCookie(page.request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const activeTeamResponse = await page.request.post('/api/teams/active', {
+  const activeProjectResponse = await page.request.post('/api/projects/active', {
     headers: withAuthHeaders(sessionCookie, '/support'),
-    data: { teamId },
+    data: { projectId },
   })
-  if (!activeTeamResponse.ok()) {
+  if (!activeProjectResponse.ok()) {
     throw new Error(
-      `Could not activate support team: ${activeTeamResponse.status()} ${await activeTeamResponse.text()}`
+      `Could not activate support project: ${activeProjectResponse.status()} ${await activeProjectResponse.text()}`
     )
   }
 }
 
 test.describe.serial('support canned responses', () => {
-  test('an ordinary inbox agent can create, edit, and delete team canned responses', async ({ page, request }) => {
-    const { teamId, userId } = await activeTeamAndUser(request)
-    await ensureVerifiedSendingDomain(teamId)
+  test('an ordinary inbox agent can create, edit, and delete project canned responses', async ({ page, request }) => {
+    const { projectId, userId } = await activeProjectAndUser(request)
+    await ensureVerifiedSendingDomain(projectId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `canned-crud-inbox-${suffix}`
     const membershipId = `canned-crud-member-${suffix}`
@@ -57,7 +58,7 @@ test.describe.serial('support canned responses', () => {
     try {
       await db.insert(supportInbox).values({
         id: inboxId,
-        teamId,
+        projectId,
         name: `Canned CRUD ${suffix}`,
         slug: `canned-crud-${suffix}`,
         emailAddress: `canned-crud-${suffix}@example.com`,
@@ -73,7 +74,7 @@ test.describe.serial('support canned responses', () => {
         createdAt: now,
       })
 
-      await loginAndActivateTeam(page, teamId)
+      await loginAndActivateProject(page, projectId)
       await page.goto(`/support/settings?inboxId=${inboxId}`, { waitUntil: 'domcontentloaded' })
 
       const section = page.getByTestId('support-canned-responses')
@@ -112,14 +113,14 @@ test.describe.serial('support canned responses', () => {
       expect((await deleteResponse).ok()).toBeTruthy()
       await expect(row).toHaveCount(0)
     } finally {
-      await db.delete(cannedResponse).where(eq(cannedResponse.teamId, teamId))
+      await db.delete(cannedResponse).where(eq(cannedResponse.projectId, projectId))
       await db.delete(supportInboxMember).where(eq(supportInboxMember.id, membershipId))
       await db.delete(supportInbox).where(eq(supportInbox.id, inboxId))
     }
   })
 
   test('composer inserts a shortcode at the cursor with contact and agent substitution', async ({ page, request }) => {
-    const { teamId, userId, userName } = await activeTeamAndUser(request)
+    const { projectId, userId, userName } = await activeProjectAndUser(request)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `canned-compose-inbox-${suffix}`
     const membershipId = `canned-compose-member-${suffix}`
@@ -131,7 +132,7 @@ test.describe.serial('support canned responses', () => {
     try {
       await db.insert(supportInbox).values({
         id: inboxId,
-        teamId,
+        projectId,
         name: `Canned Composer ${suffix}`,
         slug: `canned-compose-${suffix}`,
         emailAddress: `canned-compose-${suffix}@example.com`,
@@ -148,7 +149,7 @@ test.describe.serial('support canned responses', () => {
       })
       await db.insert(contact).values({
         id: contactId,
-        teamId,
+        projectId,
         name: 'Canned Customer',
         email: `canned-customer-${suffix}@example.com`,
         createdAt: now,
@@ -157,7 +158,7 @@ test.describe.serial('support canned responses', () => {
       await db.insert(conversation).values({
         id: conversationId,
         inboxId,
-        teamId,
+        projectId,
         contactId,
         displayId: 860000 + (Number.parseInt(suffix, 16) % 10000),
         subject: 'Canned response insertion',
@@ -169,7 +170,7 @@ test.describe.serial('support canned responses', () => {
       })
       await db.insert(cannedResponse).values({
         id: cannedResponseId,
-        teamId,
+        projectId,
         shortcode: `saved_${suffix}`,
         title: 'Saved reply',
         body: 'Hi {{contact.name}}, {{agent.name}} can help.',
@@ -178,7 +179,7 @@ test.describe.serial('support canned responses', () => {
         updatedAt: now,
       })
 
-      await loginAndActivateTeam(page, teamId)
+      await loginAndActivateProject(page, projectId)
       await page.goto(`/support?inboxId=${inboxId}&view=all&conversationId=${conversationId}`, {
         waitUntil: 'domcontentloaded',
       })

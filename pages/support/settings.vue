@@ -1,10 +1,34 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6 max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight text-foreground">Support settings</h1>
-        <p class="text-muted-foreground mt-1">Configure your team's shared inbox</p>
+    <div class="w-full min-w-0 p-0 sm:p-2 lg:p-6 max-w-4xl mx-auto space-y-6">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Support settings</h1>
+          <p class="text-muted-foreground mt-1">Configure your project's shared inbox</p>
+        </div>
+        <Button variant="outline" size="sm" as-child>
+          <NuxtLink to="/support">
+            <Icon name="lucide:inbox" class="w-4 h-4 mr-2" />
+            Back to inbox
+          </NuxtLink>
+        </Button>
       </div>
+
+      <nav
+        v-if="!isLoading && !error && sectionLinks.length > 1"
+        aria-label="Support settings sections"
+        data-testid="support-settings-section-nav"
+        class="sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      >
+        <a
+          v-for="link in sectionLinks"
+          :key="link.id"
+          :href="`#${link.id}`"
+          class="shrink-0 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          {{ link.label }}
+        </a>
+      </nav>
 
       <div
         v-if="inboxAccessError"
@@ -36,12 +60,30 @@
         </CardContent>
       </Card>
 
+      <!-- Support switched off for this project -->
+      <Card v-else-if="supportDisabled" data-testid="support-disabled">
+        <CardContent class="text-center py-10 space-y-3">
+          <Icon name="lucide:life-buoy" class="w-8 h-8 text-muted-foreground mx-auto" />
+          <p class="font-medium">Support is switched off for this project</p>
+          <template v-if="activeProject?.role === 'admin'">
+            <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
+            <Button as-child variant="outline">
+              <NuxtLink to="/project/settings#tools">Project settings: Tools</NuxtLink>
+            </Button>
+          </template>
+          <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">
+            <Icon name="lucide:lock" class="w-3.5 h-3.5" />
+            Project admins can switch Support on.
+          </p>
+        </CardContent>
+      </Card>
+
       <!-- No inbox yet -->
-      <Card v-else-if="!hasInboxes && canManageTeamSupport">
+      <Card v-else-if="!hasInboxes && canManageProjectSupport">
         <CardHeader>
           <CardTitle>Create your support inbox</CardTitle>
           <CardDescription>
-            Your team doesn't have a support inbox yet. Create one to start receiving and managing customer
+            Your project doesn't have a support inbox yet. Create one to start receiving and managing customer
             conversations.
           </CardDescription>
         </CardHeader>
@@ -94,28 +136,33 @@
       </Card>
 
       <template v-else>
-        <Card v-if="canManageTeamSupport" data-testid="support-team-policy">
+        <Card
+          v-if="canManageProjectSupport"
+          id="project-policy"
+          class="scroll-mt-16"
+          data-testid="support-project-policy"
+        >
           <CardHeader>
-            <CardTitle>Team support policy</CardTitle>
+            <CardTitle>Project support policy</CardTitle>
             <CardDescription>Controls how signed-in customer feedback is linked to support contacts.</CardDescription>
           </CardHeader>
           <CardContent>
             <div class="flex items-center justify-between gap-4 rounded-lg border p-4">
-              <Label for="support-team-policy-toggle" class="text-sm font-medium">
+              <Label for="support-project-policy-toggle" class="text-sm font-medium">
                 Automatically link signed-in customer feedback
               </Label>
               <Switch
-                id="support-team-policy-toggle"
+                id="support-project-policy-toggle"
                 v-model="autoLinkFeedback"
-                data-testid="support-team-policy-toggle"
-                :disabled="isSavingTeamPolicy"
-                @update:model-value="saveTeamPolicy"
+                data-testid="support-project-policy-toggle"
+                :disabled="isSavingProjectPolicy"
+                @update:model-value="saveProjectPolicy"
               />
             </div>
           </CardContent>
         </Card>
 
-        <Card v-if="canManageTeamSupport" data-testid="support-sla-settings">
+        <Card v-if="canManageProjectSupport" id="sla" class="scroll-mt-16" data-testid="support-sla-settings">
           <CardHeader>
             <CardTitle>SLA commitments</CardTitle>
             <CardDescription>Set the working week and the default response and resolution targets.</CardDescription>
@@ -221,7 +268,7 @@
           </CardContent>
         </Card>
 
-        <Card v-if="canManageTeamSupport" data-testid="support-csat-settings">
+        <Card v-if="canManageProjectSupport" id="csat" class="scroll-mt-16" data-testid="support-csat-settings">
           <CardHeader>
             <div class="flex items-start justify-between gap-4">
               <div>
@@ -372,7 +419,12 @@
         </Card>
 
         <!-- Automation control room -->
-        <Card v-if="canManageTeamSupport" data-testid="support-automation-settings" class="overflow-hidden">
+        <Card
+          v-if="canManageProjectSupport"
+          id="automation"
+          data-testid="support-automation-settings"
+          class="overflow-hidden scroll-mt-16"
+        >
           <CardHeader class="border-b bg-[#16211f] text-[#f5f1e8] dark:bg-[#111917]">
             <div class="flex items-start justify-between gap-4">
               <div>
@@ -642,9 +694,11 @@
 
         <!-- Sending domains -->
         <SupportSendingDomains
-          v-if="activeTeamId"
-          :team-id="activeTeamId"
-          @loaded="(info, loadedTeamId) => onSendingDomainsLoaded(info, loadedTeamId)"
+          v-if="activeProjectId"
+          id="sending-domains"
+          class="scroll-mt-16"
+          :project-id="activeProjectId"
+          @loaded="(info, loadedProjectId) => onSendingDomainsLoaded(info, loadedProjectId)"
         />
 
         <!-- Inbox settings -->
@@ -662,7 +716,7 @@
           </div>
 
           <!-- General -->
-          <Card>
+          <Card id="general" class="scroll-mt-16">
             <CardHeader>
               <CardTitle>General</CardTitle>
               <CardDescription>Basic identity for this inbox.</CardDescription>
@@ -749,9 +803,9 @@
                   <span v-if="sendingStatus.authorization.platform"
                     >"{{ sendingStatus.address }}" is your Veerify address and is ready to send.</span
                   >
-                  <span v-else-if="sendingStatus.policy === 'team' && sendingStatus.authorization.domain"
-                    >Your team has verified {{ sendingStatus.authorization.domain.domain }}, so replies can be sent as
-                    "{{ sendingStatus.address }}".</span
+                  <span v-else-if="sendingStatus.policy === 'project' && sendingStatus.authorization.domain"
+                    >Your project has verified {{ sendingStatus.authorization.domain.domain }}, so replies can be sent
+                    as "{{ sendingStatus.address }}".</span
                   >
                   <span v-else>Your provider is verified to send as "{{ sendingStatus.address }}".</span>
                 </div>
@@ -795,10 +849,10 @@
           </Card>
 
           <!-- Canned responses -->
-          <Card data-testid="support-canned-responses">
+          <Card id="canned-responses" class="scroll-mt-16" data-testid="support-canned-responses">
             <CardHeader>
               <CardTitle>Canned responses</CardTitle>
-              <CardDescription>Team shortcuts agents can insert from the support composer.</CardDescription>
+              <CardDescription>Shortcuts agents can insert from the support composer.</CardDescription>
             </CardHeader>
             <CardContent class="space-y-4">
               <div v-if="isLoadingCannedResponses" class="space-y-2">
@@ -914,7 +968,7 @@
           </Card>
 
           <!-- Channel (SUP-03-13) -->
-          <Card data-testid="support-settings-channel">
+          <Card id="channel" class="scroll-mt-16" data-testid="support-settings-channel">
             <CardHeader>
               <CardTitle>Channel</CardTitle>
               <CardDescription>
@@ -987,8 +1041,8 @@
                     <Button variant="outline" size="sm" @click="copy(primaryAddress)">Copy</Button>
                   </div>
                   <p class="text-xs text-muted-foreground">
-                    Point an MX record or a forwarding rule at this address. Add more addresses below to route different
-                    products into this inbox.
+                    Point an MX record or a forwarding rule at this address. Add more addresses below to receive mail
+                    from other addresses in this inbox.
                   </p>
                 </div>
                 <p v-else class="text-sm text-muted-foreground">
@@ -1048,12 +1102,12 @@
           </Card>
 
           <!-- Agents -->
-          <Card>
+          <Card id="agents" class="scroll-mt-16">
             <CardHeader>
               <CardTitle>Agents</CardTitle>
               <CardDescription>
-                People who can work this inbox. Inbox access is separate from team membership — a team member does not
-                automatically get access to this inbox.
+                People who can work this inbox. Inbox access is separate from project membership — a project member does
+                not automatically get access to this inbox.
               </CardDescription>
             </CardHeader>
             <CardContent class="space-y-4">
@@ -1104,18 +1158,18 @@
 
               <Separator />
 
-              <p v-if="!isSwitchingInbox && availableTeamMembers.length === 0" class="text-sm text-muted-foreground">
-                Every team member already has access to this inbox.
+              <p v-if="!isSwitchingInbox && availableProjectMembers.length === 0" class="text-sm text-muted-foreground">
+                Every project member already has access to this inbox.
               </p>
               <div
                 v-else-if="!isSwitchingInbox && canManageMembers"
                 class="flex flex-col sm:flex-row gap-2 sm:items-end"
               >
                 <div class="flex-1">
-                  <Label for="new-member-select">Team member</Label>
+                  <Label for="new-member-select">Project member</Label>
                   <select id="new-member-select" v-model="newMemberUserId" :class="selectClasses + ' mt-2'">
-                    <option value="" disabled>Select a team member</option>
-                    <option v-for="tm in availableTeamMembers" :key="tm.id" :value="tm.userId">
+                    <option value="" disabled>Select a project member</option>
+                    <option v-for="tm in availableProjectMembers" :key="tm.id" :value="tm.userId">
                       {{ tm.userName || tm.userEmail }}
                     </option>
                   </select>
@@ -1142,12 +1196,12 @@
           </Card>
 
           <!-- Receiving addresses -->
-          <Card>
+          <Card id="addresses" class="scroll-mt-16">
             <CardHeader>
               <CardTitle>Receiving addresses</CardTitle>
               <CardDescription>
-                An inbound email carries no product signal of its own — the address it arrived at is what attributes it
-                to a product. Setting a new primary address clears the previous one.
+                Mail sent to any of these addresses lands in this inbox. Setting a new primary address clears the
+                previous one.
               </CardDescription>
             </CardHeader>
             <CardContent class="space-y-4">
@@ -1165,17 +1219,13 @@
                     class="flex items-center justify-between rounded-lg border p-3"
                   >
                     <div class="min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span class="font-mono text-sm truncate">{{ address.address }}</span>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="font-mono text-sm break-all">{{ address.address }}</span>
                         <Badge v-if="address.isPrimary" variant="outline" class="text-xs">Primary</Badge>
                         <Badge v-if="address.kind === 'platform'" variant="outline" class="text-xs"
                           >Veerify forwarding</Badge
                         >
                       </div>
-                      <p class="text-sm mt-0.5">
-                        <span v-if="productName(address.projectId)">{{ productName(address.projectId) }}</span>
-                        <span v-else class="text-muted-foreground">Unattributed</span>
-                      </p>
                     </div>
                     <Button
                       v-if="canManageInbox && address.kind !== 'platform'"
@@ -1195,7 +1245,7 @@
               <Separator />
 
               <div v-if="!isSwitchingInbox && canManageInbox" class="space-y-3">
-                <div class="grid gap-4 sm:grid-cols-2">
+                <div class="grid gap-4">
                   <div>
                     <Label for="new-address">Email address</Label>
                     <Input
@@ -1206,13 +1256,6 @@
                       class="mt-2"
                       :disabled="isAddingAddress"
                     />
-                  </div>
-                  <div>
-                    <Label for="new-address-project">Product</Label>
-                    <select id="new-address-project" v-model="newAddressProjectId" :class="selectClasses + ' mt-2'">
-                      <option value="">Unattributed</option>
-                      <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-                    </select>
                   </div>
                 </div>
                 <div class="flex items-center justify-between">
@@ -1241,8 +1284,8 @@
           <DialogHeader>
             <DialogTitle>Remove agent</DialogTitle>
             <DialogDescription v-if="isSelfRemoval">
-              You are removing your own access. You will lose access to this inbox immediately; a team admin can add you
-              back later.
+              You are removing your own access. You will lose access to this inbox immediately; a project admin can add
+              you back later.
             </DialogDescription>
             <DialogDescription v-else>
               Are you sure you want to remove "{{ memberPendingRemoval?.userName || memberPendingRemoval?.userEmail }}"
@@ -1335,22 +1378,23 @@
 <script>
 import { toast } from 'vue-sonner'
 
-const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 
 export default {
   name: 'SupportSettingsPage',
 
   data() {
     return {
-      activeTeamId: '',
+      activeProjectId: '',
+      activeProject: null,
+      supportDisabled: false,
       inboxes: [],
       selectedInboxId: '',
       members: [],
       addresses: [],
-      teamMembers: [],
-      projects: [],
-      teamSettings: null,
-      teamSettingsCapabilities: {},
+      projectMembers: [],
+      projectSettings: null,
+      projectSettingsCapabilities: {},
       autoLinkFeedback: false,
       slaSettings: null,
       isLoadingSla: false,
@@ -1424,7 +1468,7 @@ export default {
       isLoading: true,
       error: null,
       isSwitchingInbox: false,
-      isSavingTeamPolicy: false,
+      isSavingProjectPolicy: false,
 
       roleDescriptions: {
         agent: 'Works conversations and applies existing tags.',
@@ -1486,7 +1530,6 @@ export default {
 
       // receiving addresses
       newAddress: '',
-      newAddressProjectId: '',
       newAddressIsPrimary: false,
       isAddingAddress: false,
       removingAddressId: null,
@@ -1496,6 +1539,31 @@ export default {
   },
 
   computed: {
+    sectionLinks() {
+      const links = []
+      if (this.canManageProjectSupport && this.hasInboxes && this.selectedInboxId) {
+        links.push(
+          { id: 'project-policy', label: 'Policy' },
+          { id: 'sla', label: 'SLA' },
+          { id: 'csat', label: 'CSAT' },
+          { id: 'automation', label: 'Automation' }
+        )
+      }
+      if (this.sendingDomainsInfo?.enabled === true && this.selectedInboxId) {
+        links.push({ id: 'sending-domains', label: 'Sending domains' })
+      }
+      if (this.hasInboxes && this.selectedInboxId) {
+        links.push(
+          { id: 'general', label: 'General' },
+          { id: 'canned-responses', label: 'Canned responses' },
+          { id: 'channel', label: 'Channel' },
+          { id: 'agents', label: 'Agents' },
+          { id: 'addresses', label: 'Addresses' }
+        )
+      }
+      return links
+    },
+
     hasInboxes() {
       return this.inboxes.length > 0
     },
@@ -1516,17 +1584,18 @@ export default {
       return this.selectedCapabilities.canManageMembers === true
     },
 
-    canManageTeamSupport() {
-      return this.teamSettingsCapabilities.canManageTeamSupport === true
+    canManageProjectSupport() {
+      const caps = this.projectSettingsCapabilities
+      return caps.canManageProjectSupport === true || caps.canManageProjectSupport === true
     },
 
     isSelfRemoval() {
       return this.memberPendingRemoval?.userId === this.currentUserId
     },
 
-    availableTeamMembers() {
+    availableProjectMembers() {
       const memberUserIds = new Set(this.members.map((m) => m.userId))
-      return this.teamMembers.filter((tm) => !memberUserIds.has(tm.userId))
+      return this.projectMembers.filter((tm) => !memberUserIds.has(tm.userId))
     },
 
     generalHasChanges() {
@@ -1557,9 +1626,9 @@ export default {
     },
 
     senderPolicy() {
-      // The server decides: SUPPORT_SENDER_POLICY=team applies even when the sending-domains feature is off.
+      // The server decides: SUPPORT_SENDER_POLICY=project applies even when the sending-domains feature is off.
       const policy = this.sendingDomainsInfo?.policy ?? this.sendingStatus?.policy
-      return policy === 'team' ? 'team' : 'legacy'
+      return policy === 'project' ? 'project' : 'legacy'
     },
 
     /** The inbox's Veerify forwarding address (kind 'platform'), from channel-status or the address list. */
@@ -1574,7 +1643,7 @@ export default {
     sendingUnauthorizedMessage() {
       const status = this.sendingStatus
       const address = status?.address
-      if (!status || status.policy !== 'team') {
+      if (!status || status.policy !== 'project') {
         // legacy policy keeps the provider-wide wording
         return `"${address}" is not on a domain your provider is verified to send from. Replies sent as this address may be rejected. Verify the domain with your provider, or use an address on a verified domain.`
       }
@@ -1585,10 +1654,10 @@ export default {
       if (reason === 'provider_mismatch') {
         return `"${address}" was verified with a different mail provider configuration. Register the domain again in Sending domains above.`
       }
-      const owned = status.authorization.teamDomains || []
+      const owned = status.authorization.projectDomains || status.authorization.teamDomains || []
       return owned.length
-        ? `"${address}" is not on a domain your team has verified. Replies are blocked. Use an address on ${owned.join(', ')}.`
-        : `"${address}" is not on a domain your team has verified. Replies are blocked. Add and verify the domain in Sending domains above.`
+        ? `"${address}" is not on a domain your project has verified. Replies are blocked. Use an address on ${owned.join(', ')}.`
+        : `"${address}" is not on a domain your project has verified. Replies are blocked. Add and verify the domain in Sending domains above.`
     },
 
     slaWeekdays() {
@@ -1599,18 +1668,18 @@ export default {
   async mounted() {
     await this.initPage()
     if (import.meta.client) {
-      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+      window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.handleActiveProjectChanged)
     }
   },
 
   beforeUnmount() {
     if (import.meta.client) {
-      window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.handleActiveProjectChanged)
     }
   },
 
   methods: {
-    async handleActiveTeamChanged() {
+    async handleActiveProjectChanged() {
       await this.initPage()
     },
 
@@ -1625,41 +1694,50 @@ export default {
       this.resetSendingDomainsState()
 
       try {
-        const [teamResponse, sessionResponse] = await Promise.all([
-          $fetch('/api/teams/active'),
+        const [projectResponse, sessionResponse] = await Promise.all([
+          $fetch('/api/projects/active'),
           $fetch('/api/auth/session'),
         ])
-        const activeTeamData = teamResponse?.data
+        const activeContext = projectResponse?.data
+        const activeProjectData = activeContext?.project
         if (token !== this.requestToken) return
         this.currentUserId = sessionResponse?.data?.user?.id || ''
 
-        if (!activeTeamData?.id) {
+        if (!activeProjectData?.id) {
           if (token === this.requestToken) {
-            this.error = 'No active team found'
+            this.error = 'No active project found'
             this.isLoading = false
           }
           return
         }
 
-        this.activeTeamId = activeTeamData.id
+        this.activeProjectId = activeProjectData.id
+        this.activeProject = activeProjectData
+        this.supportDisabled = activeContext.modules?.supportEnabled === false
+        if (this.supportDisabled) {
+          this.isLoading = false
+          return
+        }
 
-        const [inboxesResponse, teamMembersResponse, projectsResponse, teamSettingsResponse] = await Promise.all([
-          $fetch('/api/support/inboxes', { params: { teamId: this.activeTeamId } }),
-          $fetch('/api/teams/members', { params: { teamId: this.activeTeamId } }),
-          $fetch(`/api/teams/${this.activeTeamId}/projects`),
-          $fetch(`/api/support/teams/${this.activeTeamId}/settings`),
+        const [inboxesResponse, projectMembersResponse, projectSettingsResponse] = await Promise.all([
+          $fetch('/api/support/inboxes', { params: { projectId: this.activeProjectId } }),
+          $fetch(`/api/projects/${encodeURIComponent(activeProjectData.slug)}/members`),
+          $fetch(`/api/support/projects/${this.activeProjectId}/settings`),
         ])
         if (token !== this.requestToken) return
 
         this.inboxes = inboxesResponse?.data?.inboxes || []
-        // These two endpoints return the array directly as `data`, not wrapped
-        // in a named property like the inbox endpoints above.
-        this.teamMembers = teamMembersResponse?.data || []
-        this.projects = projectsResponse?.data || []
-        this.teamSettings = teamSettingsResponse?.data?.settings || null
-        this.teamSettingsCapabilities = teamSettingsResponse?.data?.capabilities || {}
-        this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
-        if (this.canManageTeamSupport) {
+        // Shape project members like the old member list the template reads.
+        this.projectMembers = (projectMembersResponse?.data?.members || []).map((member) => ({
+          id: member.userId,
+          userId: member.userId,
+          userName: member.name,
+          userEmail: member.email,
+        }))
+        this.projectSettings = projectSettingsResponse?.data?.settings || null
+        this.projectSettingsCapabilities = projectSettingsResponse?.data?.capabilities || {}
+        this.autoLinkFeedback = this.projectSettings?.autoLinkFeedback === true
+        if (this.canManageProjectSupport) {
           await Promise.all([this.loadSlaSettings(), this.loadCsatSurveys(), this.loadAutomationRules()])
         }
 
@@ -1678,7 +1756,7 @@ export default {
           this.inboxAccessError = 'You do not have access to this support inbox'
           await this.replaceInboxQuery(null)
         }
-        if (token === this.requestToken) await this.loadCannedResponses({ token, teamId: this.activeTeamId })
+        if (token === this.requestToken) await this.loadCannedResponses({ token, projectId: this.activeProjectId })
       } catch (error) {
         if (token !== this.requestToken) return
         if (this.isForbiddenError(error)) {
@@ -1691,7 +1769,7 @@ export default {
       }
     },
 
-    /** Team-scoped sending-domain state; a team switch must not leak the previous team's list into the picker. */
+    /** Project-scoped sending-domain state; a project switch must not leak the previous project's list into the picker. */
     resetSendingDomainsState() {
       this.sendingDomainsInfo = null
       this.sendingDomainsLoaded = false
@@ -1727,57 +1805,57 @@ export default {
     },
 
     async recoverFromForbiddenInbox({
-      teamId = this.activeTeamId,
+      projectId = this.activeProjectId,
       sourceToken = this.requestToken,
       sourceInboxId = this.selectedInboxId,
     } = {}) {
       if (this.isRecoveringInbox) return
-      if (!this.isCurrentRequest(sourceToken, teamId, sourceInboxId)) return
+      if (!this.isCurrentRequest(sourceToken, projectId, sourceInboxId)) return
       this.isRecoveringInbox = true
       this.inboxAccessError = 'You do not have access to this support inbox'
       this.clearInboxScopedState()
       const token = ++this.requestToken
       this.recoveryOwnerToken = token
       try {
-        if (!this.isCurrentRecovery(token, teamId)) return
-        const response = await $fetch('/api/support/inboxes', { params: { teamId } })
-        if (!this.isCurrentRecovery(token, teamId)) return
+        if (!this.isCurrentRecovery(token, projectId)) return
+        const response = await $fetch('/api/support/inboxes', { params: { projectId } })
+        if (!this.isCurrentRecovery(token, projectId)) return
         this.inboxes = response?.data?.inboxes || []
         try {
-          if (!this.isCurrentRecovery(token, teamId)) return
-          const settingsResponse = await $fetch(`/api/support/teams/${teamId}/settings`)
-          if (this.isCurrentRecovery(token, teamId)) {
-            this.teamSettings = settingsResponse?.data?.settings || null
-            this.teamSettingsCapabilities = settingsResponse?.data?.capabilities || {}
-            this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
+          if (!this.isCurrentRecovery(token, projectId)) return
+          const settingsResponse = await $fetch(`/api/support/projects/${projectId}/settings`)
+          if (this.isCurrentRecovery(token, projectId)) {
+            this.projectSettings = settingsResponse?.data?.settings || null
+            this.projectSettingsCapabilities = settingsResponse?.data?.capabilities || {}
+            this.autoLinkFeedback = this.projectSettings?.autoLinkFeedback === true
           }
         } catch {
-          if (this.isCurrentRecovery(token, teamId)) {
-            this.teamSettings = null
-            this.teamSettingsCapabilities = {}
+          if (this.isCurrentRecovery(token, projectId)) {
+            this.projectSettings = null
+            this.projectSettingsCapabilities = {}
             this.autoLinkFeedback = false
           }
         }
-        if (!this.isCurrentRecovery(token, teamId)) return
+        if (!this.isCurrentRecovery(token, projectId)) return
         const fallback = this.inboxes[0]?.id || null
-        if (!this.isCurrentRecovery(token, teamId)) return
+        if (!this.isCurrentRecovery(token, projectId)) return
         await this.replaceInboxQuery(fallback)
-        if (!this.isCurrentRecovery(token, teamId)) return
+        if (!this.isCurrentRecovery(token, projectId)) return
         if (fallback) {
           this.selectedInboxId = fallback
-          if (!this.isCurrentRecovery(token, teamId)) return
+          if (!this.isCurrentRecovery(token, projectId)) return
           this.syncGeneralForm()
           const loaded = await this.loadInboxContext({ recovering: true })
-          if (loaded === false && this.isCurrentRecovery(token, teamId)) {
+          if (loaded === false && this.isCurrentRecovery(token, projectId)) {
             this.clearInboxScopedState()
-            if (!this.isCurrentRecovery(token, teamId)) return
+            if (!this.isCurrentRecovery(token, projectId)) return
             await this.replaceInboxQuery(null)
           }
         }
       } catch {
-        if (this.isCurrentRecovery(token, teamId)) this.inboxes = []
+        if (this.isCurrentRecovery(token, projectId)) this.inboxes = []
       } finally {
-        if (this.recoveryOwnerToken === token && this.isCurrentRequest(token, teamId, null)) {
+        if (this.recoveryOwnerToken === token && this.isCurrentRequest(token, projectId, null)) {
           this.isRecoveringInbox = false
           this.recoveryOwnerToken = null
           this.isLoading = false
@@ -1785,13 +1863,15 @@ export default {
       }
     },
 
-    isCurrentRecovery(token, teamId) {
-      return this.recoveryOwnerToken === token && this.isCurrentRequest(token, teamId, null)
+    isCurrentRecovery(token, projectId) {
+      return this.recoveryOwnerToken === token && this.isCurrentRequest(token, projectId, null)
     },
 
-    isCurrentRequest(token, teamId = this.activeTeamId, inboxId = this.selectedInboxId) {
+    isCurrentRequest(token, projectId = this.activeProjectId, inboxId = this.selectedInboxId) {
       return (
-        token === this.requestToken && teamId === this.activeTeamId && (!inboxId || inboxId === this.selectedInboxId)
+        token === this.requestToken &&
+        projectId === this.activeProjectId &&
+        (!inboxId || inboxId === this.selectedInboxId)
       )
     },
 
@@ -1803,29 +1883,29 @@ export default {
       this.fromPickerValid = true
     },
 
-    async saveTeamPolicy(value) {
-      if (!this.canManageTeamSupport) return
+    async saveProjectPolicy(value) {
+      if (!this.canManageProjectSupport) return
       const token = this.requestToken
-      const teamId = this.activeTeamId
-      this.isSavingTeamPolicy = true
+      const projectId = this.activeProjectId
+      this.isSavingProjectPolicy = true
       try {
-        const response = await $fetch(`/api/support/teams/${teamId}/settings`, {
+        const response = await $fetch(`/api/support/projects/${projectId}/settings`, {
           method: 'PUT',
           body: { autoLinkFeedback: value === true },
         })
-        if (!this.isCurrentRequest(token, teamId)) return
-        this.teamSettings = response?.data?.settings || this.teamSettings
-        this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
+        if (!this.isCurrentRequest(token, projectId)) return
+        this.projectSettings = response?.data?.settings || this.projectSettings
+        this.autoLinkFeedback = this.projectSettings?.autoLinkFeedback === true
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId)) return
+        if (!this.isCurrentRequest(token, projectId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: this.selectedInboxId })
+          await this.recoverFromForbiddenInbox({ projectId, sourceToken: token, sourceInboxId: this.selectedInboxId })
           return
         }
-        this.autoLinkFeedback = this.teamSettings?.autoLinkFeedback === true
-        toast.error(this.extractErrorMessage(err, 'Failed to save team support policy'))
+        this.autoLinkFeedback = this.projectSettings?.autoLinkFeedback === true
+        toast.error(this.extractErrorMessage(err, 'Failed to save project support policy'))
       } finally {
-        if (this.isCurrentRequest(token, teamId)) this.isSavingTeamPolicy = false
+        if (this.isCurrentRequest(token, projectId)) this.isSavingProjectPolicy = false
       }
     },
 
@@ -1884,11 +1964,11 @@ export default {
     },
 
     async loadSlaSettings() {
-      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      if (!this.activeProjectId || !this.canManageProjectSupport) return
       this.isLoadingSla = true
       this.slaError = null
       try {
-        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/sla`)
+        const response = await $fetch(`/api/support/projects/${this.activeProjectId}/sla`)
         this.slaSettings = response?.data || null
         this.syncSlaDraft(this.slaSettings)
       } catch {
@@ -1899,14 +1979,14 @@ export default {
     },
 
     async saveSlaSettings() {
-      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      if (!this.activeProjectId || !this.canManageProjectSupport) return
       this.isSavingSla = true
       try {
         const holidays = this.slaHolidayText
           .split(',')
           .map((value) => value.trim())
           .filter(Boolean)
-        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/sla`, {
+        const response = await $fetch(`/api/support/projects/${this.activeProjectId}/sla`, {
           method: 'PUT',
           body: {
             businessHours: {
@@ -1957,11 +2037,11 @@ export default {
     },
 
     async loadCsatSurveys() {
-      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      if (!this.activeProjectId || !this.canManageProjectSupport) return
       this.isLoadingCsatSurveys = true
       this.csatSurveysError = null
       try {
-        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/csat-surveys`)
+        const response = await $fetch(`/api/support/projects/${this.activeProjectId}/csat-surveys`)
         this.csatSurveys = response?.data?.surveys || []
       } catch (error) {
         this.csatSurveys = []
@@ -1987,7 +2067,7 @@ export default {
     },
 
     async saveCsatSurvey() {
-      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      if (!this.activeProjectId || !this.canManageProjectSupport) return
       if (!this.csatDraft.name.trim() || !this.csatDraft.question.trim()) {
         toast.error('Add a survey name and question')
         return
@@ -2006,8 +2086,8 @@ export default {
           isEnabled: this.csatDraft.isEnabled === true,
         }
         const endpoint = this.csatDraft.id
-          ? `/api/support/teams/${this.activeTeamId}/csat-surveys/${this.csatDraft.id}`
-          : `/api/support/teams/${this.activeTeamId}/csat-surveys`
+          ? `/api/support/projects/${this.activeProjectId}/csat-surveys/${this.csatDraft.id}`
+          : `/api/support/projects/${this.activeProjectId}/csat-surveys`
         await $fetch(endpoint, { method: this.csatDraft.id ? 'PUT' : 'POST', body })
         await this.loadCsatSurveys()
         this.resetCsatDraft()
@@ -2021,7 +2101,7 @@ export default {
 
     async toggleCsatSurvey(survey, value) {
       try {
-        await $fetch(`/api/support/teams/${this.activeTeamId}/csat-surveys/${survey.id}`, {
+        await $fetch(`/api/support/projects/${this.activeProjectId}/csat-surveys/${survey.id}`, {
           method: 'PUT',
           body: { isEnabled: value === true },
         })
@@ -2034,7 +2114,7 @@ export default {
     async deleteCsatSurvey(survey) {
       if (!confirm(`Delete CSAT survey “${survey.name}”?`)) return
       try {
-        await $fetch(`/api/support/teams/${this.activeTeamId}/csat-surveys/${survey.id}`, { method: 'DELETE' })
+        await $fetch(`/api/support/projects/${this.activeProjectId}/csat-surveys/${survey.id}`, { method: 'DELETE' })
         this.csatSurveys = this.csatSurveys.filter((item) => item.id !== survey.id)
         if (this.csatDraft.id === survey.id) this.resetCsatDraft()
         toast.success('CSAT survey deleted')
@@ -2059,11 +2139,11 @@ export default {
     },
 
     async loadAutomationRules() {
-      if (!this.activeTeamId || !this.canManageTeamSupport) return
+      if (!this.activeProjectId || !this.canManageProjectSupport) return
       this.isLoadingAutomationRules = true
       this.automationRulesError = null
       try {
-        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules`)
+        const response = await $fetch(`/api/support/projects/${this.activeProjectId}/automation-rules`)
         this.automationRules = response?.data?.rules || []
       } catch (error) {
         this.automationRules = []
@@ -2137,7 +2217,7 @@ export default {
     },
 
     async saveAutomationRule() {
-      if (!this.activeTeamId || !this.canManageTeamSupport || !this.automationDraft.name.trim()) {
+      if (!this.activeProjectId || !this.canManageProjectSupport || !this.automationDraft.name.trim()) {
         toast.error('Add a name for this automation rule')
         return
       }
@@ -2159,8 +2239,8 @@ export default {
           sortOrder: this.automationDraft.sortOrder,
         }
         const endpoint = this.automationDraft.id
-          ? `/api/support/teams/${this.activeTeamId}/automation-rules/${this.automationDraft.id}`
-          : `/api/support/teams/${this.activeTeamId}/automation-rules`
+          ? `/api/support/projects/${this.activeProjectId}/automation-rules/${this.automationDraft.id}`
+          : `/api/support/projects/${this.activeProjectId}/automation-rules`
         await $fetch(endpoint, { method: this.automationDraft.id ? 'PUT' : 'POST', body })
         await this.loadAutomationRules()
         this.resetAutomationDraft()
@@ -2174,7 +2254,7 @@ export default {
 
     async toggleAutomationRule(rule, value) {
       try {
-        await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules/${rule.id}`, {
+        await $fetch(`/api/support/projects/${this.activeProjectId}/automation-rules/${rule.id}`, {
           method: 'PUT',
           body: { isEnabled: value === true },
         })
@@ -2188,7 +2268,7 @@ export default {
     async deleteAutomationRule(rule) {
       if (!confirm(`Delete automation rule “${rule.name}”?`)) return
       try {
-        await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules/${rule.id}`, { method: 'DELETE' })
+        await $fetch(`/api/support/projects/${this.activeProjectId}/automation-rules/${rule.id}`, { method: 'DELETE' })
         this.automationRules = this.automationRules.filter((item) => item.id !== rule.id)
         if (this.automationDraft.id === rule.id) this.resetAutomationDraft()
         toast.success('Automation rule deleted')
@@ -2199,7 +2279,7 @@ export default {
 
     async loadAutomationRuns(rule) {
       try {
-        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules/${rule.id}/runs`)
+        const response = await $fetch(`/api/support/projects/${this.activeProjectId}/automation-rules/${rule.id}/runs`)
         this.automationRuns = response?.data?.runs || []
       } catch (error) {
         toast.error(this.extractErrorMessage(error, 'Failed to load run history'))
@@ -2207,7 +2287,7 @@ export default {
     },
 
     async runAutomationDryRun() {
-      if (!this.activeTeamId || !this.automationDryRunConversationId.trim()) {
+      if (!this.activeProjectId || !this.automationDryRunConversationId.trim()) {
         this.automationDryRunError = 'Enter a conversation id first.'
         return
       }
@@ -2215,7 +2295,7 @@ export default {
       this.automationDryRunError = null
       this.automationDryRunResult = null
       try {
-        const response = await $fetch(`/api/support/teams/${this.activeTeamId}/automation-rules/dry-run`, {
+        const response = await $fetch(`/api/support/projects/${this.activeProjectId}/automation-rules/dry-run`, {
           method: 'POST',
           body: { conversationId: this.automationDryRunConversationId.trim(), trigger: 'conversation_updated' },
         })
@@ -2230,7 +2310,7 @@ export default {
     async loadInboxContext({ recovering = false } = {}) {
       if (!this.selectedInboxId) return false
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       const inboxId = this.selectedInboxId
       this.isSwitchingInbox = true
       this.members = []
@@ -2243,17 +2323,17 @@ export default {
           $fetch(`/api/support/inboxes/${inboxId}/members`),
           $fetch(`/api/support/inboxes/${inboxId}/addresses`),
         ])
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         this.members = membersResponse?.data?.members || []
         this.addresses = addressesResponse?.data?.addresses || []
       } catch (err) {
         if (this.isForbiddenError(err)) {
-          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!this.isCurrentRequest(token, projectId, inboxId)) return false
           if (!recovering) {
-            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+            await this.recoverFromForbiddenInbox({ projectId, sourceToken: token, sourceInboxId: inboxId })
             return false
           }
-          if (this.isCurrentRequest(token, teamId, inboxId)) {
+          if (this.isCurrentRequest(token, projectId, inboxId)) {
             this.clearInboxScopedState()
             await this.replaceInboxQuery(null)
           }
@@ -2261,69 +2341,69 @@ export default {
         }
         if (!recovering) toast.error('Failed to load inbox details')
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.isSwitchingInbox = false
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.isSwitchingInbox = false
       }
 
-      if (this.isCurrentRequest(token, teamId, inboxId)) {
+      if (this.isCurrentRequest(token, projectId, inboxId)) {
         const statuses = await Promise.all([
-          this.loadSendingStatus({ recovering, token, teamId, inboxId }),
-          this.loadChannelStatus({ recovering, token, teamId, inboxId }),
+          this.loadSendingStatus({ recovering, token, projectId, inboxId }),
+          this.loadChannelStatus({ recovering, token, projectId, inboxId }),
         ])
-        if (statuses.some((loaded) => loaded === false) && this.isCurrentRequest(token, teamId, inboxId)) {
+        if (statuses.some((loaded) => loaded === false) && this.isCurrentRequest(token, projectId, inboxId)) {
           this.clearInboxScopedState()
           await this.replaceInboxQuery(null)
           return false
         }
       }
-      return this.isCurrentRequest(token, teamId, inboxId)
+      return this.isCurrentRequest(token, projectId, inboxId)
     },
 
-    async loadCannedResponses({ token = this.requestToken, teamId = this.activeTeamId } = {}) {
-      if (!teamId || token !== this.requestToken) return false
+    async loadCannedResponses({ token = this.requestToken, projectId = this.activeProjectId } = {}) {
+      if (!projectId || token !== this.requestToken) return false
       this.isLoadingCannedResponses = true
       this.cannedResponsesError = null
       try {
-        const response = await $fetch('/api/support/canned-responses', { params: { teamId } })
-        if (token !== this.requestToken || teamId !== this.activeTeamId) return false
+        const response = await $fetch('/api/support/canned-responses', { params: { projectId } })
+        if (token !== this.requestToken || projectId !== this.activeProjectId) return false
         this.cannedResponses = response?.data?.cannedResponses || []
         return true
       } catch (err) {
-        if (token !== this.requestToken || teamId !== this.activeTeamId) return false
+        if (token !== this.requestToken || projectId !== this.activeProjectId) return false
         this.cannedResponses = []
         this.cannedResponsesError = this.extractErrorMessage(err, 'Failed to load canned responses')
         return false
       } finally {
-        if (token === this.requestToken && teamId === this.activeTeamId) this.isLoadingCannedResponses = false
+        if (token === this.requestToken && projectId === this.activeProjectId) this.isLoadingCannedResponses = false
       }
     },
 
     async loadSendingStatus({
       recovering = false,
       token = this.requestToken,
-      teamId = this.activeTeamId,
+      projectId = this.activeProjectId,
       inboxId = this.selectedInboxId,
     } = {}) {
-      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
+      if (!inboxId || !this.isCurrentRequest(token, projectId, inboxId)) return false
       this.isLoadingSendingStatus = true
       this.sendingStatusError = null
 
       try {
         const response = await $fetch(`/api/support/inboxes/${inboxId}/sending-status`)
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.sendingStatus = response?.data || null
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.sendingStatus = response?.data || null
       } catch (err) {
         if (this.isForbiddenError(err)) {
-          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!this.isCurrentRequest(token, projectId, inboxId)) return false
           if (!recovering) {
-            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+            await this.recoverFromForbiddenInbox({ projectId, sourceToken: token, sourceInboxId: inboxId })
           }
           return false
         }
-        if (this.isCurrentRequest(token, teamId, inboxId))
+        if (this.isCurrentRequest(token, projectId, inboxId))
           this.sendingStatusError = this.extractErrorMessage(err, 'Failed to check sending authorization')
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.isLoadingSendingStatus = false
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.isLoadingSendingStatus = false
       }
-      return this.isCurrentRequest(token, teamId, inboxId)
+      return this.isCurrentRequest(token, projectId, inboxId)
     },
 
     async handleInboxSwitch() {
@@ -2370,27 +2450,27 @@ export default {
 
       this.isCreatingInbox = true
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
 
       try {
         const response = await $fetch('/api/support/inboxes', {
           method: 'POST',
           body: {
-            teamId,
+            projectId,
             name: this.newInboxName.trim(),
             slug: this.newInboxSlug.trim(),
           },
         })
         const created = response?.data?.inbox
-        if (!this.isCurrentRequest(token, teamId, null)) return
+        if (!this.isCurrentRequest(token, projectId, null)) return
 
         toast.success('Inbox created')
         this.newInboxName = ''
         this.newInboxSlug = ''
         this.slugManuallyEdited = false
 
-        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId } })
-        if (!this.isCurrentRequest(token, teamId, null)) return
+        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { projectId } })
+        if (!this.isCurrentRequest(token, projectId, null)) return
         this.inboxes = inboxesResponse?.data?.inboxes || []
         this.selectedInboxId = created?.id || this.inboxes[0]?.id || ''
 
@@ -2399,14 +2479,14 @@ export default {
           await this.loadInboxContext()
         }
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, null)) return
+        if (!this.isCurrentRequest(token, projectId, null)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: null })
+          await this.recoverFromForbiddenInbox({ projectId, sourceToken: token, sourceInboxId: null })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to create inbox'))
       } finally {
-        if (this.isCurrentRequest(token, teamId, null)) this.isCreatingInbox = false
+        if (this.isCurrentRequest(token, projectId, null)) this.isCreatingInbox = false
       }
     },
 
@@ -2414,7 +2494,7 @@ export default {
       if (!this.selectedInbox) return
       this.isSavingGeneral = true
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       const inboxId = this.selectedInboxId
 
       try {
@@ -2428,21 +2508,21 @@ export default {
           },
         })
 
-        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { teamId } })
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        const inboxesResponse = await $fetch('/api/support/inboxes', { params: { projectId } })
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         this.inboxes = inboxesResponse?.data?.inboxes || []
         this.syncGeneralForm()
         toast.success('Inbox settings saved')
-        await this.loadSendingStatus({ token, teamId, inboxId })
+        await this.loadSendingStatus({ token, projectId, inboxId })
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
+          await this.recoverFromForbiddenInbox({ projectId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to save inbox settings'))
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.isSavingGeneral = false
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.isSavingGeneral = false
       }
     },
 
@@ -2463,7 +2543,7 @@ export default {
     },
 
     async saveCannedResponse() {
-      if (!this.activeTeamId) return
+      if (!this.activeProjectId) return
       if (!this.cannedResponseShortcode.trim() || !this.cannedResponseTitle.trim() || !this.cannedResponseBody.trim()) {
         toast.error('Shortcode, title, and body are required')
         return
@@ -2471,7 +2551,7 @@ export default {
 
       this.isSavingCannedResponse = true
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       const editingId = this.editingCannedResponseId
       const payload = {
         shortcode: this.cannedResponseShortcode.trim(),
@@ -2483,67 +2563,67 @@ export default {
         if (editingId) {
           await $fetch(`/api/support/canned-responses/${editingId}`, { method: 'PUT', body: payload })
         } else {
-          await $fetch('/api/support/canned-responses', { method: 'POST', body: { teamId, ...payload } })
+          await $fetch('/api/support/canned-responses', { method: 'POST', body: { projectId, ...payload } })
         }
 
-        if (token !== this.requestToken || teamId !== this.activeTeamId) return
+        if (token !== this.requestToken || projectId !== this.activeProjectId) return
         toast.success(editingId ? 'Canned response saved' : 'Canned response added')
         this.resetCannedResponseForm()
-        await this.loadCannedResponses({ token, teamId })
+        await this.loadCannedResponses({ token, projectId })
       } catch (err) {
-        if (token !== this.requestToken || teamId !== this.activeTeamId) return
+        if (token !== this.requestToken || projectId !== this.activeProjectId) return
         toast.error(this.extractErrorMessage(err, 'Failed to save canned response'))
       } finally {
-        if (token === this.requestToken && teamId === this.activeTeamId) this.isSavingCannedResponse = false
+        if (token === this.requestToken && projectId === this.activeProjectId) this.isSavingCannedResponse = false
       }
     },
 
     async deleteCannedResponse(response) {
-      if (!response?.id || !this.activeTeamId) return
+      if (!response?.id || !this.activeProjectId) return
       this.deletingCannedResponseId = response.id
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       try {
         await $fetch(`/api/support/canned-responses/${response.id}`, { method: 'DELETE' })
-        if (token !== this.requestToken || teamId !== this.activeTeamId) return
+        if (token !== this.requestToken || projectId !== this.activeProjectId) return
         toast.success('Canned response deleted')
         if (this.editingCannedResponseId === response.id) this.resetCannedResponseForm()
-        await this.loadCannedResponses({ token, teamId })
+        await this.loadCannedResponses({ token, projectId })
       } catch (err) {
-        if (token !== this.requestToken || teamId !== this.activeTeamId) return
+        if (token !== this.requestToken || projectId !== this.activeProjectId) return
         toast.error(this.extractErrorMessage(err, 'Failed to delete canned response'))
       } finally {
-        if (token === this.requestToken && teamId === this.activeTeamId) this.deletingCannedResponseId = null
+        if (token === this.requestToken && projectId === this.activeProjectId) this.deletingCannedResponseId = null
       }
     },
 
     async reloadMembers({
       token = this.requestToken,
-      teamId = this.activeTeamId,
+      projectId = this.activeProjectId,
       inboxId = this.selectedInboxId,
     } = {}) {
-      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
+      if (!inboxId || !this.isCurrentRequest(token, projectId, inboxId)) return false
       try {
         const membersResponse = await $fetch(`/api/support/inboxes/${inboxId}/members`)
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return false
         this.members = membersResponse?.data?.members || []
         return true
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
-        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ teamId })
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return false
+        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ projectId })
         throw err
       }
     },
 
     async addMember() {
       if (!this.newMemberUserId) {
-        toast.error('Select a team member to add')
+        toast.error('Select a project member to add')
         return
       }
 
       this.isAddingMember = true
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       const inboxId = this.selectedInboxId
 
       try {
@@ -2552,20 +2632,20 @@ export default {
           body: { userId: this.newMemberUserId, role: this.newMemberRole },
         })
 
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         toast.success('Agent added')
         this.newMemberUserId = ''
         this.newMemberRole = 'agent'
-        await this.reloadMembers({ token, teamId, inboxId })
+        await this.reloadMembers({ token, projectId, inboxId })
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
+          await this.recoverFromForbiddenInbox({ projectId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to add agent'))
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.isAddingMember = false
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.isAddingMember = false
       }
     },
 
@@ -2579,32 +2659,32 @@ export default {
       const memberId = this.memberPendingRemoval.id
       this.removingMemberId = memberId
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       const inboxId = this.selectedInboxId
 
       try {
         await $fetch(`/api/support/inboxes/${inboxId}/members/${memberId}`, { method: 'DELETE' })
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         toast.success('Agent removed')
         this.isRemoveMemberDialogOpen = false
         this.memberPendingRemoval = null
-        await this.reloadMembers({ token, teamId, inboxId })
+        await this.reloadMembers({ token, projectId, inboxId })
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
+          await this.recoverFromForbiddenInbox({ projectId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to remove agent'))
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.removingMemberId = null
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.removingMemberId = null
       }
     },
 
     async loadChannelStatus({
       recovering = false,
       token = this.requestToken,
-      teamId = this.activeTeamId,
+      projectId = this.activeProjectId,
       inboxId = this.selectedInboxId,
     } = {}) {
       if (!inboxId) {
@@ -2612,31 +2692,31 @@ export default {
         this.isLoadingChannel = false
         return false
       }
-      if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+      if (!this.isCurrentRequest(token, projectId, inboxId)) return false
       this.isLoadingChannel = true
       this.channelError = null
       try {
         const response = await $fetch('/api/support/channel-status', { params: { inboxId } })
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.channel = response?.data || null
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.channel = response?.data || null
       } catch (err) {
         if (this.isForbiddenError(err)) {
-          if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+          if (!this.isCurrentRequest(token, projectId, inboxId)) return false
           if (!recovering) {
-            await this.recoverFromForbiddenInbox({ teamId, sourceToken: token, sourceInboxId: inboxId })
+            await this.recoverFromForbiddenInbox({ projectId, sourceToken: token, sourceInboxId: inboxId })
           }
           return false
         }
-        if (this.isCurrentRequest(token, teamId, inboxId))
+        if (this.isCurrentRequest(token, projectId, inboxId))
           this.channelError = err?.data?.error?.message || 'Failed to load channel status'
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.isLoadingChannel = false
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.isLoadingChannel = false
       }
-      return this.isCurrentRequest(token, teamId, inboxId)
+      return this.isCurrentRequest(token, projectId, inboxId)
     },
 
-    onSendingDomainsLoaded(info, loadedTeamId) {
-      // Ignore a response that belongs to a team we have already switched away from.
-      if (loadedTeamId && loadedTeamId !== this.activeTeamId) return
+    onSendingDomainsLoaded(info, loadedProjectId) {
+      // Ignore a response that belongs to a project we have already switched away from.
+      if (loadedProjectId && loadedProjectId !== this.activeProjectId) return
       const signature = (value) => (value?.domains || []).map((row) => `${row.id}:${row.status}`).join('|')
       const changed = this.sendingDomainsLoaded && signature(info) !== signature(this.sendingDomainsInfo)
       this.sendingDomainsInfo = info
@@ -2668,7 +2748,7 @@ export default {
     async regeneratePlatformAddress() {
       const inboxId = this.selectedInboxId
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       if (!inboxId || this.isRegeneratingPlatformAddress) return
       this.isRegeneratingPlatformAddress = true
       try {
@@ -2676,19 +2756,19 @@ export default {
           method: 'POST',
           body: { regenerate: true },
         })
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         this.isRegenerateDialogOpen = false
         await Promise.all([
-          this.loadChannelStatus({ token, teamId, inboxId }),
-          this.reloadAddresses({ token, teamId, inboxId }),
-          this.loadSendingStatus({ token, teamId, inboxId }),
+          this.loadChannelStatus({ token, projectId, inboxId }),
+          this.reloadAddresses({ token, projectId, inboxId }),
+          this.loadSendingStatus({ token, projectId, inboxId }),
         ])
         toast.success('Forwarding address regenerated. The previous address no longer receives mail.')
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         toast.error(this.extractErrorMessage(err, 'Failed to regenerate forwarding address'))
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.isRegeneratingPlatformAddress = false
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.isRegeneratingPlatformAddress = false
       }
     },
 
@@ -2704,18 +2784,18 @@ export default {
 
     async reloadAddresses({
       token = this.requestToken,
-      teamId = this.activeTeamId,
+      projectId = this.activeProjectId,
       inboxId = this.selectedInboxId,
     } = {}) {
-      if (!inboxId || !this.isCurrentRequest(token, teamId, inboxId)) return false
+      if (!inboxId || !this.isCurrentRequest(token, projectId, inboxId)) return false
       try {
         const addressesResponse = await $fetch(`/api/support/inboxes/${inboxId}/addresses`)
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return false
         this.addresses = addressesResponse?.data?.addresses || []
         return true
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return false
-        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ teamId })
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return false
+        if (this.isForbiddenError(err)) return this.recoverFromForbiddenInbox({ projectId })
         throw err
       }
     },
@@ -2728,7 +2808,7 @@ export default {
 
       this.isAddingAddress = true
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       const inboxId = this.selectedInboxId
 
       try {
@@ -2736,26 +2816,24 @@ export default {
           method: 'POST',
           body: {
             address: this.newAddress.trim(),
-            projectId: this.newAddressProjectId || undefined,
             isPrimary: this.newAddressIsPrimary,
           },
         })
 
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         toast.success('Address added')
         this.newAddress = ''
-        this.newAddressProjectId = ''
         this.newAddressIsPrimary = false
-        await this.reloadAddresses({ token, teamId, inboxId })
+        await this.reloadAddresses({ token, projectId, inboxId })
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
+          await this.recoverFromForbiddenInbox({ projectId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to add address'))
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.isAddingAddress = false
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.isAddingAddress = false
       }
     },
 
@@ -2769,32 +2847,26 @@ export default {
       const addressId = this.addressPendingRemoval.id
       this.removingAddressId = addressId
       const token = this.requestToken
-      const teamId = this.activeTeamId
+      const projectId = this.activeProjectId
       const inboxId = this.selectedInboxId
 
       try {
         await $fetch(`/api/support/inboxes/${inboxId}/addresses/${addressId}`, { method: 'DELETE' })
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         toast.success('Address removed')
         this.isRemoveAddressDialogOpen = false
         this.addressPendingRemoval = null
-        await this.reloadAddresses({ token, teamId, inboxId })
+        await this.reloadAddresses({ token, projectId, inboxId })
       } catch (err) {
-        if (!this.isCurrentRequest(token, teamId, inboxId)) return
+        if (!this.isCurrentRequest(token, projectId, inboxId)) return
         if (this.isForbiddenError(err)) {
-          await this.recoverFromForbiddenInbox({ teamId })
+          await this.recoverFromForbiddenInbox({ projectId })
           return
         }
         toast.error(this.extractErrorMessage(err, 'Failed to remove address'))
       } finally {
-        if (this.isCurrentRequest(token, teamId, inboxId)) this.removingAddressId = null
+        if (this.isCurrentRequest(token, projectId, inboxId)) this.removingAddressId = null
       }
-    },
-
-    productName(projectId) {
-      if (!projectId) return null
-      const found = this.projects.find((p) => p.id === projectId)
-      return found ? found.name : 'Unknown product'
     },
 
     initials(value) {

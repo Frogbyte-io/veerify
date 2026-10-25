@@ -1,0 +1,814 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --r: var(--radius, 8px);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: var(--font-sans);
+        color: var(--foreground);
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 28px 0 8px;
+      }
+      h3 {
+        font-size: 14px;
+        margin: 18px 0 6px;
+      }
+      p {
+        margin: 6px 0;
+      }
+      .muted {
+        color: var(--muted-foreground);
+      }
+      .small {
+        font-size: 12px;
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      @media (max-width: 560px) {
+        .grid2 {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        padding: 12px 14px;
+        background: var(--card);
+        color: var(--card-foreground);
+      }
+      .pain b {
+        display: block;
+        margin-bottom: 2px;
+      }
+      .pill {
+        display: inline-block;
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted-foreground);
+        white-space: nowrap;
+      }
+      .pill.on {
+        background: var(--success);
+        color: var(--success-foreground);
+        border-color: transparent;
+      }
+      .pill.acc {
+        background: var(--accent-surface);
+        color: var(--accent-surface-foreground);
+        border-color: transparent;
+      }
+      .pill.warn {
+        background: var(--warning-surface);
+        color: var(--warning-foreground);
+        border-color: transparent;
+      }
+      ol.principles {
+        padding-left: 20px;
+        margin: 6px 0;
+      }
+      ol.principles li {
+        margin: 4px 0;
+      }
+
+      /* tabs */
+      .tabs {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin: 10px 0 12px;
+      }
+      .tab {
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--foreground);
+        border-radius: 999px;
+        padding: 5px 12px;
+        font: inherit;
+        font-size: 13px;
+      }
+      .tab[aria-selected='true'] {
+        background: var(--primary);
+        color: var(--primary-foreground);
+        border-color: transparent;
+      }
+      .panel {
+        display: none;
+      }
+      .panel.active {
+        display: block;
+      }
+
+      /* mock app window */
+      .win {
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        overflow: hidden;
+        background: var(--card);
+        color: var(--card-foreground);
+        font-size: 12px;
+      }
+      .win-bar {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--border);
+        background: var(--muted);
+      }
+      .win-bar i {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--border);
+        display: inline-block;
+      }
+      .win-bar span {
+        margin-left: 8px;
+        color: var(--muted-foreground);
+        font-family: var(--font-mono);
+        font-size: 11px;
+      }
+      .app {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        min-height: 340px;
+      }
+      @media (max-width: 560px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .side {
+          border-right: 0 !important;
+          border-bottom: 1px solid var(--border);
+        }
+      }
+      .side {
+        border-right: 1px solid var(--border);
+        padding: 10px 8px;
+        background: var(--background);
+      }
+      .main {
+        padding: 14px 16px;
+        min-width: 0;
+      }
+      .switch {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 6px 8px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 8px;
+        background: var(--card);
+      }
+      .logo {
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: var(--accent);
+        flex: none;
+      }
+      .logo.b {
+        background: var(--chart-2);
+      }
+      .logo.c {
+        background: var(--chart-3);
+      }
+      .switch .t {
+        line-height: 1.2;
+        min-width: 0;
+      }
+      .switch .t small {
+        display: block;
+        color: var(--muted-foreground);
+        font-size: 10px;
+      }
+      .switch .chev {
+        margin-left: auto;
+        color: var(--muted-foreground);
+      }
+      .glabel {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted-foreground);
+        margin: 10px 6px 3px;
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 4px 6px;
+        border-radius: 5px;
+        color: var(--foreground);
+      }
+      .nav .ic {
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        border: 1.5px solid currentColor;
+        opacity: 0.7;
+        flex: none;
+      }
+      .nav.sel {
+        background: var(--accent-surface);
+        color: var(--accent-surface-foreground);
+        font-weight: 600;
+      }
+      .nav.off {
+        color: var(--muted-foreground);
+      }
+      .nav.off .ic {
+        border-style: dashed;
+      }
+      .nav .end {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--muted-foreground);
+      }
+      .crumb {
+        color: var(--muted-foreground);
+        font-size: 11px;
+        margin-bottom: 4px;
+      }
+      .crumb b {
+        color: var(--foreground);
+        font-weight: 600;
+      }
+      .mh {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+      .mh h4 {
+        margin: 0;
+        font-size: 15px;
+      }
+      .btn {
+        display: inline-block;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 3px 9px;
+        font-size: 11px;
+        background: var(--card);
+      }
+      .btn.pri {
+        background: var(--primary);
+        color: var(--primary-foreground);
+        border-color: transparent;
+      }
+      .ml {
+        margin-left: auto;
+      }
+      .subtabs {
+        display: flex;
+        gap: 14px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 10px;
+      }
+      .subtabs span {
+        padding: 4px 0 6px;
+        color: var(--muted-foreground);
+      }
+      .subtabs span.sel {
+        color: var(--foreground);
+        border-bottom: 2px solid var(--foreground);
+        font-weight: 600;
+      }
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 8px;
+      }
+      .tile {
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+      .tile.dim {
+        border-style: dashed;
+        color: var(--muted-foreground);
+      }
+      .tile b {
+        display: block;
+        font-size: 12px;
+      }
+      .tile .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 6px;
+      }
+      .lock {
+        font-size: 11px;
+        color: var(--muted-foreground);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 5px 8px;
+        margin-top: 8px;
+        background: var(--muted);
+      }
+      .chips {
+        display: flex;
+        gap: 5px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+      .chip {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 9px;
+        font-size: 11px;
+      }
+      .chip.sel {
+        background: var(--foreground);
+        color: var(--background);
+        border-color: transparent;
+      }
+      .set-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .set-row:last-child {
+        border-bottom: 0;
+      }
+      .set-row .d {
+        flex: 1;
+        min-width: 0;
+      }
+      .set-row .d small {
+        display: block;
+        color: var(--muted-foreground);
+      }
+      .tg {
+        width: 26px;
+        height: 15px;
+        border-radius: 999px;
+        background: var(--border);
+        position: relative;
+        flex: none;
+      }
+      .tg::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--background);
+      }
+      .tg.on {
+        background: var(--success);
+      }
+      .tg.on::after {
+        left: 13px;
+      }
+      .tg.locked {
+        opacity: 0.45;
+      }
+      table.mx {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11.5px;
+      }
+      table.mx th,
+      table.mx td {
+        border-bottom: 1px solid var(--border);
+        padding: 6px 5px;
+        text-align: center;
+      }
+      table.mx th:first-child,
+      table.mx td:first-child {
+        text-align: left;
+      }
+      table.mx th {
+        font-weight: 600;
+        color: var(--muted-foreground);
+        font-size: 11px;
+      }
+      .tgc {
+        display: inline-block;
+        vertical-align: middle;
+      }
+      .col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .pros,
+      .cons {
+        font-size: 12px;
+      }
+      .pros ul,
+      .cons ul {
+        margin: 4px 0;
+        padding-left: 16px;
+      }
+      .pros b {
+        color: var(--success);
+      }
+      .cons b {
+        color: var(--destructive);
+      }
+      .flow {
+        display: flex;
+        gap: 6px;
+        align-items: stretch;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .step {
+        flex: 1 1 120px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 9px;
+        font-size: 12px;
+      }
+      .step em {
+        font-style: normal;
+        font-size: 10px;
+        color: var(--muted-foreground);
+        display: block;
+      }
+      .arrow {
+        align-self: center;
+        color: var(--muted-foreground);
+      }
+      .score {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--muted-foreground);
+      }
+
+      /* modal mock */
+      .modal {
+        max-width: 430px;
+        margin: 18px auto 4px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--popover);
+        color: var(--popover-foreground);
+        padding: 16px;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
+        font-size: 12px;
+      }
+      .modal h4 {
+        margin: 0 0 2px;
+        font-size: 14px;
+      }
+      .stepper {
+        display: flex;
+        gap: 4px;
+        margin: 10px 0;
+      }
+      .stepper div {
+        flex: 1;
+        height: 3px;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      .stepper div.on {
+        background: var(--accent);
+      }
+      .opt {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 7px 9px;
+        margin: 5px 0;
+      }
+      .opt .bx {
+        width: 13px;
+        height: 13px;
+        border: 1.5px solid var(--muted-foreground);
+        border-radius: 3px;
+        margin-top: 2px;
+        flex: none;
+      }
+      .opt .bx.on {
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+      .opt small {
+        display: block;
+        color: var(--muted-foreground);
+      }
+
+      /* data tables */
+      table.t {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+      }
+      table.t th,
+      table.t td {
+        border-bottom: 1px solid var(--border);
+        padding: 6px 6px;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.t th {
+        color: var(--muted-foreground);
+        font-weight: 600;
+        font-size: 11.5px;
+      }
+      table.t td.c,
+      table.t th.c {
+        text-align: center;
+      }
+      code {
+        font-family: var(--font-mono);
+        font-size: 11.5px;
+        background: var(--code-background);
+        color: var(--code-foreground);
+        padding: 0 4px;
+        border-radius: 4px;
+      }
+      .yes {
+        color: var(--success);
+        font-weight: 700;
+      }
+      .no {
+        color: var(--muted-foreground);
+      }
+      .rec {
+        border: 1px solid var(--accent);
+        border-radius: var(--r);
+        padding: 12px 14px;
+        background: var(--accent-surface);
+        color: var(--accent-surface-foreground);
+      }
+    </style>
+  </head>
+  <body>
+    <h2 style="margin-top: 0">Revised model: Workspace → Products → Tools</h2>
+    <div class="grid2">
+      <div class="card">
+        <b>Structure</b>
+        <ul class="small" style="margin: 4px 0; padding-left: 16px">
+          <li><b>Workspace</b> (org): people, billing, API keys, Support inboxes and contacts</li>
+          <li><b>Product</b>: tools (Feedback, Roadmap, Changelog, Marketing), public board, domain</li>
+          <li>No teams. People get access to products directly.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <b>Access</b>
+        <ul class="small" style="margin: 4px 0; padding-left: 16px">
+          <li>Workspace <b>owner/admin</b>: everything, every product</li>
+          <li>Product <b>admin</b>: turn tools on/off and change tool and product settings</li>
+          <li>Product <b>member</b>: use every tool on the product, including Marketing</li>
+          <li>
+            Each product is either <b>open to everyone in the workspace</b> (default) or
+            <b>restricted to invited people</b>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>Sidebar + product access</h2>
+    <div class="win">
+      <div class="win-bar"><i></i><i></i><i></i><span>/acme-app/settings/access</span></div>
+      <div class="app">
+        <div class="side">
+          <div class="switch">
+            <div class="logo b"></div>
+            <div class="t"><b>Acme App</b><small>Acme Inc · Public</small></div>
+            <span class="chev">⌄</span>
+          </div>
+          <div class="nav"><span class="ic"></span>Overview</div>
+          <div class="nav"><span class="ic"></span>Feedback<span class="end">12</span></div>
+          <div class="nav"><span class="ic"></span>Roadmap</div>
+          <div class="nav"><span class="ic"></span>Changelog</div>
+          <div class="nav"><span class="ic"></span>Marketing</div>
+          <div class="nav off"><span class="ic"></span>+ Add tool</div>
+          <div class="nav sel"><span class="ic"></span>Product settings</div>
+          <div class="glabel">Workspace</div>
+          <div class="nav"><span class="ic"></span>Support inbox<span class="end">3</span></div>
+          <div class="nav"><span class="ic"></span>Contacts</div>
+          <div class="nav"><span class="ic"></span>Workspace settings</div>
+          <div class="glabel">You</div>
+          <div class="nav"><span class="ic"></span>My submissions</div>
+          <div class="nav"><span class="ic"></span>Notifications</div>
+        </div>
+        <div class="main">
+          <div class="crumb">Acme Inc › Acme App › Settings › <b>Members &amp; access</b></div>
+          <div class="subtabs">
+            <span>General</span><span>Appearance</span><span>Domain</span><span>Embed</span
+            ><span class="sel">Members &amp; access</span><span>Danger</span>
+          </div>
+          <b>Who can open Acme App</b>
+          <div class="opt">
+            <span class="bx"></span>
+            <div>Everyone in Acme Inc<small>All 9 workspace members, as product members</small></div>
+          </div>
+          <div class="opt">
+            <span class="bx on"></span>
+            <div>Only people added below<small>Workspace admins always have access</small></div>
+          </div>
+          <div class="mh" style="margin-top: 10px"><b>People (4)</b><span class="btn pri ml">+ Add people</span></div>
+          <div class="set-row">
+            <div class="d"><b>Andreas F.</b><small>Workspace owner: full access</small></div>
+            <span class="pill">Owner</span>
+          </div>
+          <div class="set-row">
+            <div class="d"><b>Kari N.</b><small>kari@acme.com</small></div>
+            <span class="btn">Product admin ⌄</span>
+          </div>
+          <div class="set-row">
+            <div class="d"><b>Ola H.</b><small>ola@acme.com</small></div>
+            <span class="btn">Member ⌄</span>
+          </div>
+          <div class="set-row">
+            <div class="d"><b>Lena B.</b><small>lena@acme.com</small></div>
+            <span class="btn">Member ⌄</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="muted small">
+      The product switcher replaces the team switcher. Workspaces appear as a section inside it only for people in more
+      than one workspace. The "Add people" picker lists workspace members, and an email that isn't a member sends a
+      workspace invite with this product pre-selected.
+    </p>
+
+    <h2>Workspace settings: API keys move out of Marketing</h2>
+    <div class="win">
+      <div class="win-bar"><i></i><i></i><i></i><span>/settings/ai-keys</span></div>
+      <div class="app">
+        <div class="side">
+          <div class="switch">
+            <div class="logo"></div>
+            <div class="t"><b>Workspace settings</b><small>Acme Inc</small></div>
+            <span class="chev">←</span>
+          </div>
+          <div class="nav"><span class="ic"></span>General</div>
+          <div class="nav"><span class="ic"></span>Members</div>
+          <div class="nav"><span class="ic"></span>Products &amp; tools</div>
+          <div class="nav sel"><span class="ic"></span>AI &amp; API keys</div>
+          <div class="nav"><span class="ic"></span>Integrations</div>
+          <div class="nav"><span class="ic"></span>Support</div>
+          <div class="nav"><span class="ic"></span>Billing</div>
+        </div>
+        <div class="main">
+          <div class="crumb">Workspace settings › <b>AI &amp; API keys</b></div>
+          <div class="mh"><h4>AI &amp; API keys</h4></div>
+          <p class="muted" style="margin-top: 0">
+            Marketing tools use these keys for every product in the workspace. Anyone with product access can run audits
+            and visibility checks within the budgets below.
+          </p>
+          <div class="set-row">
+            <div class="d"><b>Anthropic (Claude)</b><small>sk-ant-…4f2a · $18.40 of $50 this month</small></div>
+            <span class="pill on">Valid</span><span class="btn">Budget</span>
+          </div>
+          <div class="set-row">
+            <div class="d"><b>OpenAI</b><small>sk-…91bc · $6.10 of $25 this month</small></div>
+            <span class="pill on">Valid</span><span class="btn">Budget</span>
+          </div>
+          <div class="set-row">
+            <div class="d"><b>Perplexity</b><small>Not connected · AI visibility skips this engine</small></div>
+            <span class="btn pri">Add key</span>
+          </div>
+          <div class="set-row">
+            <div class="d"><b>Firecrawl</b><small>Not connected · site audit uses the built-in crawler</small></div>
+            <span class="btn pri">Add key</span>
+          </div>
+          <div class="lock"><b>Locked ·</b> Only workspace owners and admins see this page.</div>
+        </div>
+      </div>
+    </div>
+
+    <h2>Where today's Marketing settings go</h2>
+    <table class="t">
+      <tr>
+        <th>Today in <code>/marketing/settings</code></th>
+        <th>Moves to</th>
+        <th>Who can change it</th>
+      </tr>
+      <tr>
+        <td>API keys &amp; budgets</td>
+        <td>Workspace settings › AI &amp; API keys</td>
+        <td>Workspace admin</td>
+      </tr>
+      <tr>
+        <td>Integration status (Google Search Console etc.)</td>
+        <td>Workspace settings › Integrations</td>
+        <td>Workspace admin</td>
+      </tr>
+      <tr>
+        <td>Site URL &amp; verification</td>
+        <td>Marketing › Settings (per product)</td>
+        <td>Product admin</td>
+      </tr>
+      <tr>
+        <td>Terms / privacy &amp; data consent</td>
+        <td>Marketing › Settings (per product)</td>
+        <td>Product admin</td>
+      </tr>
+      <tr>
+        <td>Running audits, prompts, competitors, mentions, launch kit</td>
+        <td>Marketing pages (unchanged)</td>
+        <td>Any product member</td>
+      </tr>
+    </table>
+
+    <h2>Who can do what</h2>
+    <table class="t">
+      <tr>
+        <th>Action</th>
+        <th class="c">Ws owner/admin</th>
+        <th class="c">Product admin</th>
+        <th class="c">Product member</th>
+        <th class="c">Ws member, no access</th>
+      </tr>
+      <tr>
+        <td>Invite to workspace, billing, API keys</td>
+        <td class="c yes">✓</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+      </tr>
+      <tr>
+        <td>Create / delete products</td>
+        <td class="c yes">✓</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+      </tr>
+      <tr>
+        <td>Manage product access, domain, appearance</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c no">—</td>
+        <td class="c no">—</td>
+      </tr>
+      <tr>
+        <td>Turn tools on/off, change tool settings</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c no">request</td>
+        <td class="c no">—</td>
+      </tr>
+      <tr>
+        <td>Use Feedback, Roadmap, Changelog, Marketing</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c yes">✓</td>
+        <td class="c no">—</td>
+      </tr>
+      <tr>
+        <td>Support inbox</td>
+        <td class="c yes">✓</td>
+        <td class="c" colspan="3">per inbox role (agent / supervisor), as today</td>
+      </tr>
+    </table>
+
+    <h2>Migration path</h2>
+    <div class="flow">
+      <div class="step">
+        <em>1 · Product access</em>Add <code>project_member</code> + access mode. Backfill from each product's team
+        (team admin → product admin). Switch <code>requireProjectAccess</code> over.
+      </div>
+      <div class="step">
+        <em>2 · One switch per tool</em>Drop <code>team_module_settings</code>. Only the product toggle remains, and
+        Support becomes a workspace toggle.
+      </div>
+      <div class="step">
+        <em>3 · Collapse teams</em>Move products and support data from extra teams into the workspace's Default team.
+        Keep the old <code>/team/product</code> URLs as redirects.
+      </div>
+      <div class="step">
+        <em>4 · UI</em>Product switcher, breadcrumb, settings split, API keys page. Remove team screens.
+      </div>
+    </div>
+    <p class="muted small">
+      Steps 1, 2 and 4 make teams invisible without touching the 300+ places that read <code>teamId</code>, because the
+      Default team becomes the workspace's internal data scope. Step 3 is only needed for workspaces that have more than
+      one team. Renaming <code>teamId</code> → <code>workspaceId</code> in code can wait and is optional.
+    </p>
+  </body>
+</html>

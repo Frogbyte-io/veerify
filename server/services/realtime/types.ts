@@ -17,12 +17,11 @@ export const REALTIME_ENVELOPE_VERSION = 1
 export const REALTIME_ENVELOPE_FIELDS = [
   'v',
   'type',
-  'teamId',
+  'projectId',
   'userId',
   'inboxId',
   'conversationId',
   'messageId',
-  'projectId',
   'count',
 ] as const
 
@@ -35,18 +34,16 @@ export interface RealtimeEnvelope {
    * Scope identifiers. At least one is required, and it must match the channel
    * the envelope is published on — see `envelopeMatchesChannel`.
    *
-   * `teamId` is not universally mandatory: a `user:<id>` event is scoped by the
-   * user, who may belong to several teams, so demanding a team there would be
+   * `projectId` is not universally mandatory: a `user:<id>` event is scoped by the
+   * user, who may belong to several projects, so demanding a project there would be
    * meaningless. The invariant is "every envelope is scoped", not "every
-   * envelope has a teamId".
+   * envelope has a projectId".
    */
-  teamId?: string
+  projectId?: string
   userId?: string
   inboxId?: string
   conversationId?: string
   messageId?: string
-  /** Marketing events: the product the event is about. An id, never content. */
-  projectId?: string
   /** Marketing events: how many new records arrived. A number, never content. */
   count?: number
 }
@@ -65,12 +62,12 @@ export interface RealtimeDriver {
 /* Channels                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export type RealtimeChannelScope = 'team' | 'inbox' | 'conversation' | 'user'
+export type RealtimeChannelScope = 'project' | 'inbox' | 'conversation' | 'user'
 
-const CHANNEL_SCOPES: RealtimeChannelScope[] = ['team', 'inbox', 'conversation', 'user']
+const CHANNEL_SCOPES: RealtimeChannelScope[] = ['project', 'inbox', 'conversation', 'user']
 
-export function teamChannel(teamId: string): string {
-  return `team:${teamId}`
+export function projectChannel(projectId: string): string {
+  return `project:${projectId}`
 }
 
 export function inboxChannel(inboxId: string): string {
@@ -135,18 +132,17 @@ export function sanitizeEnvelope(input: unknown): RealtimeEnvelope | null {
     type: raw.type,
   }
 
-  if (isNonEmptyString(raw.teamId)) envelope.teamId = raw.teamId
+  if (isNonEmptyString(raw.projectId)) envelope.projectId = raw.projectId
   if (isNonEmptyString(raw.userId)) envelope.userId = raw.userId
   if (isNonEmptyString(raw.inboxId)) envelope.inboxId = raw.inboxId
   if (isNonEmptyString(raw.conversationId)) envelope.conversationId = raw.conversationId
   if (isNonEmptyString(raw.messageId)) envelope.messageId = raw.messageId
-  if (isNonEmptyString(raw.projectId)) envelope.projectId = raw.projectId
   if (typeof raw.count === 'number' && Number.isInteger(raw.count) && raw.count >= 0) envelope.count = raw.count
 
   // An unscoped envelope has nothing to authorize against and nothing to route
   // by, so it is rejected outright rather than delivered to whoever happens to
   // be listening.
-  if (!envelope.teamId && !envelope.userId && !envelope.inboxId && !envelope.conversationId) {
+  if (!envelope.projectId && !envelope.userId && !envelope.inboxId && !envelope.conversationId) {
     return null
   }
 
@@ -156,8 +152,8 @@ export function sanitizeEnvelope(input: unknown): RealtimeEnvelope | null {
 /**
  * Does this envelope belong on this channel?
  *
- * Checked at publish time. Without it, nothing stops a `team:A` event being
- * published to `team:B` — subscribe-time authorization proves a listener may
+ * Checked at publish time. Without it, nothing stops a `project:A` event being
+ * published to `project:B` — subscribe-time authorization proves a listener may
  * hear channel B, not that the payload was ever meant for it. Both halves are
  * needed for tenant isolation to actually hold.
  */
@@ -166,8 +162,8 @@ export function envelopeMatchesChannel(envelope: RealtimeEnvelope, channel: stri
   if (!parsed) return false
 
   switch (parsed.scope) {
-    case 'team':
-      return envelope.teamId === parsed.id
+    case 'project':
+      return envelope.projectId === parsed.id
     case 'user':
       return envelope.userId === parsed.id
     case 'inbox':
@@ -193,7 +189,7 @@ export function createEnvelope(input: Omit<RealtimeEnvelope, 'v'> & { v?: number
   const envelope = sanitizeEnvelope({ ...input, v: input.v ?? REALTIME_ENVELOPE_VERSION })
   if (!envelope) {
     throw new Error(
-      'Invalid realtime envelope: `type` is required, plus at least one scope id (teamId, userId, inboxId, or conversationId)'
+      'Invalid realtime envelope: `type` is required, plus at least one scope id (projectId, userId, inboxId, or conversationId)'
     )
   }
   return envelope

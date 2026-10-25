@@ -1,60 +1,52 @@
-import { getTableColumns } from 'drizzle-orm'
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_TEAM_MODULES, MODULE_KEYS, pickTeamModules, resolveProductModules } from '../lib/modules'
-import { teamModuleSettings } from '../server/database/schema/teams'
+import {
+  DEFAULT_PROJECT_MODULES,
+  MODULE_KEYS,
+  MODULES,
+  isModuleEnabled,
+  isModuleKey,
+  resolveProjectModules,
+} from '../lib/modules'
 
 describe('module registry', () => {
-  it('has a team_module_settings column for every module, with a matching default', () => {
-    const columns = getTableColumns(teamModuleSettings) as Record<string, { default?: unknown }>
-
-    for (const key of MODULE_KEYS) {
-      expect(columns[key], `missing column for ${key}`).toBeDefined()
-      expect(columns[key].default, `default for ${key}`).toBe(DEFAULT_TEAM_MODULES[key])
+  it('has a unique key and a default for every module', () => {
+    expect(new Set(MODULE_KEYS).size).toBe(MODULES.length)
+    for (const module of MODULES) {
+      expect(DEFAULT_PROJECT_MODULES[module.key], `default for ${module.key}`).toBe(module.default)
     }
   })
 
-  it('has a module for every boolean column in team_module_settings', () => {
-    const columns = getTableColumns(teamModuleSettings) as Record<string, { dataType: string }>
-    const booleanColumns = Object.entries(columns)
-      .filter(([, column]) => column.dataType === 'boolean')
-      .map(([name]) => name)
-
-    expect(booleanColumns.sort()).toEqual([...MODULE_KEYS].sort())
+  it('recognises module keys', () => {
+    expect(isModuleKey('supportEnabled')).toBe(true)
+    expect(isModuleKey('theme')).toBe(false)
+    expect(isModuleKey(undefined)).toBe(false)
   })
 
-  it('picks only module columns from a settings row', () => {
-    expect(
-      pickTeamModules({
-        teamId: 'team-1',
-        feedbackEnabled: false,
-        roadmapEnabled: true,
-        changelogEnabled: false,
-        supportEnabled: true,
-        marketingEnabled: true,
-        updatedAt: new Date(),
-      })
-    ).toEqual({
-      feedbackEnabled: false,
-      roadmapEnabled: true,
-      changelogEnabled: false,
-      supportEnabled: true,
-      marketingEnabled: true,
-    })
-  })
-
-  it('applies product defaults when project settings leave a module unset', () => {
-    expect(resolveProductModules(null)).toEqual({
+  it('applies defaults when project settings leave a tool unset', () => {
+    expect(resolveProjectModules(null)).toEqual({
       feedbackEnabled: true,
       roadmapEnabled: false,
       changelogEnabled: false,
+      supportEnabled: false,
       marketingEnabled: false,
     })
-    expect(resolveProductModules({ feedbackEnabled: false, roadmapEnabled: true, theme: 'dark' })).toEqual({
+  })
+
+  it('lets project settings override defaults and ignores unrelated keys', () => {
+    expect(
+      resolveProjectModules({ feedbackEnabled: false, supportEnabled: true, theme: 'dark', roadmapEnabled: 'yes' })
+    ).toEqual({
       feedbackEnabled: false,
-      roadmapEnabled: true,
+      roadmapEnabled: false,
       changelogEnabled: false,
+      supportEnabled: true,
       marketingEnabled: false,
     })
+  })
+
+  it('checks a single tool', () => {
+    expect(isModuleEnabled({ marketingEnabled: true }, 'marketingEnabled')).toBe(true)
+    expect(isModuleEnabled({}, 'marketingEnabled')).toBe(false)
   })
 })

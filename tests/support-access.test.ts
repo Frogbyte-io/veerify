@@ -12,6 +12,32 @@ function queueResult(rows: unknown[]) {
   queued.push(rows)
 }
 
+/**
+ * Project access (org owner/admin, project_member, accessMode) lives in
+ * `project-access.ts` and is covered by its own tests; here it is a controllable
+ * stub so these tests only exercise what support-access adds on top.
+ */
+const projectAccess = vi.hoisted(() => ({
+  role: null as 'admin' | 'member' | null,
+}))
+
+vi.mock('~/server/utils/project-access', async () => {
+  const { createError } = await import('h3')
+  const forbidden = () =>
+    createError({ statusCode: 403, statusMessage: 'Forbidden', data: { error: { message: 'no project access' } } })
+  return {
+    resolveProjectRole: vi.fn(async () => projectAccess.role),
+    requireProjectRole: vi.fn(async () => {
+      if (!projectAccess.role) throw forbidden()
+      return { project: { id: 'p' }, role: projectAccess.role }
+    }),
+    requireProjectAccess: vi.fn(async () => {
+      if (!projectAccess.role) throw forbidden()
+      return { id: 'p' }
+    }),
+  }
+})
+
 vi.mock('~/server/database/drizzle', () => {
   const chain = () => {
     const result = queued.shift() ?? []
@@ -32,11 +58,9 @@ vi.mock('~/server/database/drizzle', () => {
 const {
   requireContactAccess,
   requireCompanyAccess,
-  requireTeamMembership,
   requireInboxAccess,
   requireInboxRole,
-  requireTeamAdmin,
-  requireSupportTeamRole,
+  requireSupportProjectRole,
   capabilitiesForRole,
   requireConversationAccess,
   resolveInboxByAddress,
@@ -48,14 +72,14 @@ async function expectStatus(promise: Promise<unknown>, statusCode: number) {
 
 beforeEach(() => {
   queued.length = 0
+  projectAccess.role = 'member'
 })
 
 describe('requireContactAccess', () => {
-  it('returns the contact when the user is a member of its team', async () => {
-    queueResult([{ id: 'c1', teamId: 't1', email: 'a@example.com' }])
-    queueResult([{ id: 'm1', role: 'member' }])
+  it('returns the contact when the user is a member of its project', async () => {
+    queueResult([{ id: 'c1', projectId: 't1', email: 'a@example.com' }])
 
-    await expect(requireContactAccess('c1', 'u1')).resolves.toMatchObject({ id: 'c1', teamId: 't1' })
+    await expect(requireContactAccess('c1', 'u1')).resolves.toMatchObject({ id: 'c1', projectId: 't1' })
   })
 
   it('throws 404 when the contact does not exist', async () => {
@@ -64,11 +88,11 @@ describe('requireContactAccess', () => {
     await expectStatus(requireContactAccess('missing', 'u1'), 404)
   })
 
-  it('throws 403 when the contact exists but the user is not in its team', async () => {
+  it('throws 403 when the contact exists but the user is not in its project', async () => {
     // The distinction matters: 404 means "no such contact", 403 means "exists,
     // not yours". Collapsing them would hide cross-tenant access attempts.
-    queueResult([{ id: 'c1', teamId: 't1' }])
-    queueResult([])
+    queueResult([{ id: 'c1', projectId: 't1' }])
+    projectAccess.role = null
 
     await expectStatus(requireContactAccess('c1', 'outsider'), 403)
   })
@@ -84,11 +108,10 @@ describe('requireContactAccess', () => {
 })
 
 describe('requireCompanyAccess', () => {
-  it('returns the company when the user is a member of its team', async () => {
-    queueResult([{ id: 'co1', teamId: 't1', name: 'Acme' }])
-    queueResult([{ id: 'm1', role: 'member' }])
+  it('returns the company when the user is a member of its project', async () => {
+    queueResult([{ id: 'co1', projectId: 't1', name: 'Acme' }])
 
-    await expect(requireCompanyAccess('co1', 'u1')).resolves.toMatchObject({ id: 'co1', teamId: 't1' })
+    await expect(requireCompanyAccess('co1', 'u1')).resolves.toMatchObject({ id: 'co1', projectId: 't1' })
   })
 
   it('throws 404 when the company does not exist', async () => {
@@ -97,43 +120,30 @@ describe('requireCompanyAccess', () => {
     await expectStatus(requireCompanyAccess('missing', 'u1'), 404)
   })
 
-  it('throws 403 when the company exists but the user is not in its team', async () => {
-    queueResult([{ id: 'co1', teamId: 't1' }])
-    queueResult([])
+  it('throws 403 when the company exists but the user is not in its project', async () => {
+    queueResult([{ id: 'co1', projectId: 't1' }])
+    projectAccess.role = null
 
     await expectStatus(requireCompanyAccess('co1', 'outsider'), 403)
   })
 })
 
-describe('requireTeamMembership', () => {
-  it('returns the membership row when the user is a member', async () => {
-    queueResult([{ id: 'm1', role: 'admin' }])
-
-    await expect(requireTeamMembership('t1', 'u1')).resolves.toMatchObject({ role: 'admin' })
-  })
-
-  it('throws 403 when the user is not a member', async () => {
-    queueResult([])
-
-    await expectStatus(requireTeamMembership('t1', 'u1'), 403)
-  })
-})
-
 describe('requireInboxAccess', () => {
   it('returns the inbox when the user is a supportInboxMember', async () => {
-    queueResult([{ id: 'i1', teamId: 't1' }])
+    queueResult([{ id: 'i1', projectId: 't1' }])
     queueResult([{ id: 'sim1', role: 'agent' }])
-    queueResult([])
+    queueResult([{ id: 'p1' }])
 
     await expect(requireInboxAccess('i1', 'u1')).resolves.toMatchObject({ id: 'i1' })
   })
 
-  it('returns the inbox when the user is not a member but is a team admin', async () => {
+  it('returns the inbox when the user is not a member but is a project admin', async () => {
     // The bypass this stage adds: a support lead must be able to reach an
     // inbox before anyone has explicitly added them as a supportInboxMember.
-    queueResult([{ id: 'i1', teamId: 't1' }])
+    queueResult([{ id: 'i1', projectId: 't1' }])
     queueResult([])
-    queueResult([{ id: 'm1' }])
+    queueResult([{ id: 'p1' }])
+    projectAccess.role = 'admin'
 
     await expect(requireInboxAccess('i1', 'admin1')).resolves.toMatchObject({ id: 'i1' })
   })
@@ -144,10 +154,10 @@ describe('requireInboxAccess', () => {
     await expectStatus(requireInboxAccess('missing', 'u1'), 404)
   })
 
-  it('throws 403 when the user is neither a member nor a team admin', async () => {
-    queueResult([{ id: 'i1', teamId: 't1' }])
+  it('throws 403 when the user is neither a member nor a project admin', async () => {
+    queueResult([{ id: 'i1', projectId: 't1' }])
     queueResult([])
-    queueResult([])
+    queueResult([{ id: 'p1' }])
 
     await expect(requireInboxAccess('i1', 'outsider')).rejects.toMatchObject({
       statusCode: 403,
@@ -160,9 +170,9 @@ describe('requireInboxAccess', () => {
   })
 
   it('does not disclose the inbox name in the forbidden response', async () => {
-    queueResult([{ id: 'i1', teamId: 't1', name: 'Private VIP Inbox' }])
+    queueResult([{ id: 'i1', projectId: 't1', name: 'Private VIP Inbox' }])
     queueResult([])
-    queueResult([])
+    queueResult([{ id: 'p1' }])
 
     const result = requireInboxAccess('i1', 'outsider')
     await expect(result).rejects.toMatchObject({
@@ -178,35 +188,37 @@ describe('requireInboxAccess', () => {
     })
   })
 
-  it('returns effective admin access for a team admin', async () => {
-    queueResult([{ id: 'i1', teamId: 't1', name: 'Private VIP Inbox' }])
+  it('returns effective admin access for a project admin', async () => {
+    queueResult([{ id: 'i1', projectId: 't1', name: 'Private VIP Inbox' }])
     queueResult([])
-    queueResult([{ id: 'm1', role: 'admin' }])
+    queueResult([{ id: 'p1' }])
+    projectAccess.role = 'admin'
 
     await expect(requireInboxAccess('i1', 'admin1')).resolves.toMatchObject({
       id: 'i1',
       effectiveRole: 'admin',
-      isTeamAdmin: true,
+      isProjectAdmin: true,
     })
   })
 
-  it('gives a team admin effective admin access even when assigned as an agent', async () => {
-    queueResult([{ id: 'i1', teamId: 't1', name: 'Shared inbox' }])
+  it('gives a project admin effective admin access even when assigned as an agent', async () => {
+    queueResult([{ id: 'i1', projectId: 't1', name: 'Shared inbox' }])
     queueResult([{ id: 'sim1', role: 'agent' }])
-    queueResult([{ id: 'm1', role: 'admin' }])
+    queueResult([{ id: 'p1' }])
+    projectAccess.role = 'admin'
 
     await expect(requireInboxAccess('i1', 'admin1')).resolves.toMatchObject({
       effectiveRole: 'admin',
-      isTeamAdmin: true,
+      isProjectAdmin: true,
     })
   })
 
   it.each([['owner'], [undefined]] as const)(
     'fails closed for an inbox member with an invalid or missing role',
     async (role) => {
-      queueResult([{ id: 'i1', teamId: 't1', name: 'Private inbox' }])
+      queueResult([{ id: 'i1', projectId: 't1', name: 'Private inbox' }])
       queueResult([{ id: 'sim1', role }])
-      queueResult([])
+      queueResult([{ id: 'p1' }])
 
       await expect(requireInboxAccess('i1', 'u1')).rejects.toMatchObject({
         statusCode: 403,
@@ -215,10 +227,10 @@ describe('requireInboxAccess', () => {
     }
   )
 
-  it('checks team-admin precedence even when already a supportInboxMember', async () => {
-    queueResult([{ id: 'i1', teamId: 't1' }])
+  it('checks project-admin precedence even when already a supportInboxMember', async () => {
+    queueResult([{ id: 'i1', projectId: 't1' }])
     queueResult([{ id: 'sim1', role: 'agent' }])
-    queueResult([])
+    queueResult([{ id: 'p1' }])
 
     await requireInboxAccess('i1', 'u1')
     expect(queued.length).toBe(0)
@@ -232,15 +244,15 @@ describe('support capabilities', () => {
       canManageTagVocabulary: false,
       canManageMembers: false,
       canManageInbox: false,
-      canManageTeamSupport: false,
+      canManageProjectSupport: false,
     })
     expect(capabilitiesForRole('supervisor', false).canManageTagVocabulary).toBe(true)
     expect(capabilitiesForRole('admin', false).canManageInbox).toBe(true)
-    expect(capabilitiesForRole('admin', true).canManageTeamSupport).toBe(true)
+    expect(capabilitiesForRole('admin', true).canManageProjectSupport).toBe(true)
   })
 
-  it('grants no support capability to a team member who belongs to no inbox', () => {
-    // `resolveSupportTeamRole` returns null for this caller. Defaulting them to
+  it('grants no support capability to a project member who belongs to no inbox', () => {
+    // `resolveSupportProjectRole` returns null for this caller. Defaulting them to
     // `agent` made the UI advertise conversation controls that every server
     // check then refused.
     expect(capabilitiesForRole(null, false)).toEqual({
@@ -248,17 +260,17 @@ describe('support capabilities', () => {
       canManageTagVocabulary: false,
       canManageMembers: false,
       canManageInbox: false,
-      canManageTeamSupport: false,
+      canManageProjectSupport: false,
     })
   })
 
-  it('still reports team-support administration for a team admin with no inbox role', () => {
-    expect(capabilitiesForRole(null, true).canManageTeamSupport).toBe(true)
+  it('still reports project-support administration for a project admin with no inbox role', () => {
+    expect(capabilitiesForRole(null, true).canManageProjectSupport).toBe(true)
     expect(capabilitiesForRole(null, true).canWorkConversations).toBe(false)
   })
 
   it('enforces the minimum ranked inbox role', async () => {
-    queueResult([{ id: 'i1', teamId: 't1' }])
+    queueResult([{ id: 'i1', projectId: 't1' }])
     queueResult([{ id: 'sim1', role: 'agent' }])
 
     await expect(requireInboxRole('i1', 'u1', 'supervisor')).rejects.toMatchObject({
@@ -267,32 +279,21 @@ describe('support capabilities', () => {
     })
   })
 
-  it('requires a team administrator for team-level support administration', async () => {
-    queueResult([{ id: 'm1', role: 'member' }])
-
-    await expect(requireTeamAdmin('t1', 'u1')).rejects.toMatchObject({
-      statusCode: 403,
-      data: { error: { message: 'You do not have access to this support inbox' } },
-    })
-  })
-
-  it('resolves the highest support role available in a team', async () => {
-    queueResult([{ id: 'm1', role: 'member' }])
+  it('resolves the highest support role available in a project', async () => {
     queueResult([{ role: 'agent' }, { role: 'supervisor' }])
 
-    await expect(requireSupportTeamRole('t1', 'u1', 'supervisor')).resolves.toEqual({
+    await expect(requireSupportProjectRole('t1', 'u1', 'supervisor')).resolves.toEqual({
       effectiveRole: 'supervisor',
-      isTeamAdmin: false,
+      isProjectAdmin: false,
     })
   })
 
   it.each([['owner'], [undefined]] as const)(
-    'fails closed when a support-team membership has an invalid or missing role',
+    'fails closed when a support-project membership has an invalid or missing role',
     async (role) => {
-      queueResult([{ id: 'm1', role: 'member' }])
       queueResult([{ role }])
 
-      await expect(requireSupportTeamRole('t1', 'u1', 'agent')).rejects.toMatchObject({
+      await expect(requireSupportProjectRole('t1', 'u1', 'agent')).rejects.toMatchObject({
         statusCode: 403,
         data: { error: { message: 'You do not have access to this support inbox' } },
       })
@@ -303,9 +304,9 @@ describe('support capabilities', () => {
 describe('requireConversationAccess', () => {
   it('returns the conversation when the user has inbox access', async () => {
     queueResult([{ id: 'c1', inboxId: 'i1' }])
-    queueResult([{ id: 'i1', teamId: 't1' }])
+    queueResult([{ id: 'i1', projectId: 't1' }])
     queueResult([{ id: 'sim1', role: 'agent' }])
-    queueResult([])
+    queueResult([{ id: 'p1' }])
 
     await expect(requireConversationAccess('c1', 'u1')).resolves.toMatchObject({ id: 'c1' })
   })
@@ -318,9 +319,9 @@ describe('requireConversationAccess', () => {
 
   it('throws 403 when the user has no access to the parent inbox', async () => {
     queueResult([{ id: 'c1', inboxId: 'i1' }])
-    queueResult([{ id: 'i1', teamId: 't1' }])
+    queueResult([{ id: 'i1', projectId: 't1' }])
     queueResult([])
-    queueResult([])
+    queueResult([{ id: 'p1' }])
 
     await expectStatus(requireConversationAccess('c1', 'outsider'), 403)
   })
@@ -329,7 +330,7 @@ describe('requireConversationAccess', () => {
 describe('resolveInboxByAddress', () => {
   it('returns the inbox and matched address on an exact match', async () => {
     queueResult([{ id: 'addr1', inboxId: 'i1', address: 'support@acme.com', projectId: null }])
-    queueResult([{ id: 'i1', teamId: 't1' }])
+    queueResult([{ id: 'i1', projectId: 't1' }])
 
     await expect(resolveInboxByAddress('support@acme.com')).resolves.toMatchObject({
       inbox: { id: 'i1' },
@@ -339,7 +340,7 @@ describe('resolveInboxByAddress', () => {
 
   it('matches case-insensitively', async () => {
     queueResult([{ id: 'addr1', inboxId: 'i1', address: 'support@acme.com', projectId: null }])
-    queueResult([{ id: 'i1', teamId: 't1' }])
+    queueResult([{ id: 'i1', projectId: 't1' }])
 
     await expect(resolveInboxByAddress('Support@Acme.com')).resolves.toMatchObject({ inbox: { id: 'i1' } })
   })

@@ -15,8 +15,8 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Participant added }
- *       400: { description: Neither or both of contactId/userId set, or the target does not belong to this team }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       400: { description: Neither or both of contactId/userId set, or the target does not belong to this project }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found }
  *       409: { description: This participant is already on the conversation }
  */
@@ -33,7 +33,6 @@ import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { db } from '~/server/database/drizzle'
 import { contact, conversationParticipant } from '~/server/database/schema/support'
-import { teamMember } from '~/server/database/schema/auth'
 
 const bodySchema = z
   .object({
@@ -63,36 +62,30 @@ export default defineEventHandler(async (event) => {
   const existing = await requireConversationAccess(conversationId, session.user.id)
 
   // A foreign key proves the contact/user exists, not that it belongs to
-  // this conversation's team - same cross-tenant gap Stage 01 closed for
+  // this conversation's project - same cross-tenant gap Stage 01 closed for
   // contacts.
   if (body.contactId) {
     const [matchedContact] = await db
       .select({ id: contact.id })
       .from(contact)
-      .where(and(eq(contact.id, body.contactId), eq(contact.teamId, existing.teamId)))
+      .where(and(eq(contact.id, body.contactId), eq(contact.projectId, existing.projectId)))
       .limit(1)
 
     if (!matchedContact) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Contact is not part of this team'),
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Contact is not part of this project'),
       })
     }
   }
 
   if (body.userId) {
-    const [matchedMember] = await db
-      .select({ id: teamMember.id })
-      .from(teamMember)
-      .where(and(eq(teamMember.teamId, existing.teamId), eq(teamMember.userId, body.userId)))
-      .limit(1)
-
-    if (!matchedMember) {
+    if (!(await hasProjectAccess(existing.projectId, body.userId))) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'User is not a member of this team'),
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'User is not a member of this project'),
       })
     }
   }
@@ -117,7 +110,7 @@ export default defineEventHandler(async (event) => {
     // successful write into a failed request.
     await publishConversationEvent({
       type: 'conversation.updated',
-      teamId: existing.teamId,
+      projectId: existing.projectId,
       inboxId: existing.inboxId,
       conversationId,
     })

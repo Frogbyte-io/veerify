@@ -14,36 +14,62 @@ const UI_WORKFLOW_TIMEOUT = 120_000
 
 test.setTimeout(60_000)
 
-async function getActiveTeamId(request: APIRequestContext, sessionCookie: string) {
-  const response = await request.get('/api/teams/active', {
-    headers: withAuthHeaders(sessionCookie),
-  })
-  const payload = await response.json()
-  expect(response.ok()).toBeTruthy()
-  expect(payload?.data?.id).toBeTruthy()
-  return payload.data.id as string
-}
+type TestProject = { id: string; slug: string; name: string; productId: string; productSlug: string }
 
-async function createTestProject(request: APIRequestContext, sessionCookie: string, teamId: string, slug: string) {
-  const response = await request.post(`/api/teams/${teamId}/projects`, {
-    headers: withAuthHeaders(sessionCookie, '/products'),
+async function createTestProject(
+  request: APIRequestContext,
+  sessionCookie: string,
+  slug: string
+): Promise<TestProject> {
+  const response = await request.post('/api/projects', {
+    headers: withAuthHeaders(sessionCookie, '/workspace'),
     data: {
       name: `E2E Feedback ${slug}`,
       slug,
       description: 'Created by Playwright admin feedback test',
-      customDomain: null,
     },
   })
   const payload = await response.json()
   expect(response.status(), `Create project failed: ${JSON.stringify(payload)}`).toBe(201)
-  return payload.data.id as string
+  return {
+    id: payload.data.project.id as string,
+    slug: payload.data.project.slug as string,
+    name: payload.data.project.name as string,
+    productId: payload.data.product.id as string,
+    productSlug: payload.data.product.slug as string,
+  }
 }
 
-async function deleteTestProject(request: APIRequestContext, sessionCookie: string, teamId: string, projectId: string) {
-  const response = await request.delete(`/api/teams/${teamId}/projects/${projectId}`, {
+async function addProduct(request: APIRequestContext, sessionCookie: string, project: TestProject, name: string) {
+  const response = await request.post(`/api/projects/${project.slug}/products`, {
+    headers: withAuthHeaders(sessionCookie, '/project/settings'),
+    data: { name },
+  })
+  const payload = await response.json()
+  expect(response.status(), `Create product failed: ${JSON.stringify(payload)}`).toBeLessThan(300)
+  return payload.data as { id: string; name: string; slug: string }
+}
+
+async function deleteTestProject(request: APIRequestContext, sessionCookie: string, project: TestProject) {
+  const response = await request.delete(`/api/projects/${project.slug}`, {
     headers: withAuthHeaders(sessionCookie),
   })
   expect(response.ok()).toBeTruthy()
+}
+
+async function activateProject(page: Page, project: TestProject) {
+  const response = await page.request.post('/api/projects/active', { data: { projectId: project.id } })
+  expect(response.ok()).toBeTruthy()
+  await expect
+    .poll(
+      async () => {
+        const active = await page.request.get('/api/projects/active')
+        if (!active.ok()) return null
+        return (await active.json())?.data?.project?.id ?? null
+      },
+      { timeout: 20_000, intervals: [500, 1_000, 2_000] }
+    )
+    .toBe(project.id)
 }
 
 async function gotoWithRetry(page: Page, path: string) {
@@ -63,19 +89,19 @@ async function gotoWithRetry(page: Page, path: string) {
 }
 
 test.describe('Admin feedback workflow', () => {
-  test('API: create product, add feedback, delete feedback, delete product', async ({ request }) => {
+  test('API: create project, add feedback, delete feedback, delete project', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create test product
     const slug = `e2e-fb-api-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug)
+    const project = await createTestProject(request, sessionCookie, slug)
 
     // Create feedback
     const createFbRes = await request.post('/api/feedback', {
       headers: withAuthHeaders(sessionCookie),
       data: {
-        projectId,
+        projectId: project.id,
+        productId: project.productId,
         title: 'API test feedback item',
         body: 'Created by Playwright API test for admin feedback workflow',
         feedbackType: 'bug_report',
@@ -85,10 +111,11 @@ test.describe('Admin feedback workflow', () => {
     const createFbPayload = await createFbRes.json()
     expect(createFbPayload?.success).toBeTruthy()
     expect(createFbPayload?.data?.metadata?.feedbackType).toBe('bug_report')
+    expect(createFbPayload?.data?.productId).toBe(project.productId)
     const feedbackId = createFbPayload.data.id as string
 
     // Verify feedback appears in list
-    const listRes = await request.get(`/api/feedback?projectId=${projectId}`, {
+    const listRes = await request.get(`/api/feedback?projectId=${project.id}`, {
       headers: withAuthHeaders(sessionCookie),
     })
     const listPayload = await listRes.json()
@@ -104,14 +131,14 @@ test.describe('Admin feedback workflow', () => {
     expect(deleteFbPayload.data.deleted).toBeTruthy()
 
     // Verify feedback is gone
-    const listAfterRes = await request.get(`/api/feedback?projectId=${projectId}`, {
+    const listAfterRes = await request.get(`/api/feedback?projectId=${project.id}`, {
       headers: withAuthHeaders(sessionCookie),
     })
     const listAfterPayload = await listAfterRes.json()
     expect(listAfterPayload.data.items.some((i: any) => i.id === feedbackId)).toBeFalsy()
 
     // Cleanup: delete the project
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('UI: feedback page loads, add and delete feedback', async ({ request, page }) => {
@@ -123,84 +150,25 @@ test.describe('Admin feedback workflow', () => {
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
-    // Create a test product via API for isolation
-    const teamId = await getActiveTeamId(request, sessionCookie)
+    // Create an isolated single-product project via API and make it the active one
     const slug = `e2e-fb-ui-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug)
-    const setActiveTeamResponse = await page.request.post('/api/teams/active', {
-      data: { teamId },
-    })
-    expect(setActiveTeamResponse.ok()).toBeTruthy()
-    await expect
-      .poll(
-        async () => {
-          const activeTeamResponse = await page.request.get('/api/teams/active')
-          if (!activeTeamResponse.ok()) return false
-          const activeTeamPayload = await activeTeamResponse.json()
-          if (activeTeamPayload?.data?.id !== teamId) return false
+    const project = await createTestProject(request, sessionCookie, slug)
+    await activateProject(page, project)
 
-          const projectsResponse = await page.request.get(`/api/teams/${teamId}/projects`)
-          if (!projectsResponse.ok()) return false
-          const payload = await projectsResponse.json()
-          return (payload?.data || []).some((project: { id?: string }) => project.id === projectId)
-        },
-        { timeout: 20_000, intervals: [500, 1_000, 2_000] }
-      )
-      .toBe(true)
-
-    // Verify product cards navigate to their settings page.
-    const browserProjectsResponsePromise = page.waitForResponse(
-      (response) => {
-        if (response.request().method() !== 'GET' || !response.url().includes(`/api/teams/${teamId}/projects`))
-          return false
-        return true
-      },
-      { timeout: 60_000 }
-    )
-    await gotoWithRetry(page, '/products')
-    const browserProjectsResponse = await browserProjectsResponsePromise
-    expect(browserProjectsResponse.ok()).toBeTruthy()
-    const browserProjectsPayload = await browserProjectsResponse.json()
-    expect(
-      (browserProjectsPayload?.data || []).some((project: { id?: string }) => project.id === projectId)
-    ).toBeTruthy()
-    await expect(page.getByRole('heading', { name: 'Products' })).toBeVisible()
-    const productCard = page.getByRole('link', { name: new RegExp(`E2E Feedback ${slug}`) }).first()
-    await expect(productCard).toBeVisible({ timeout: 30_000 })
-    await expect(productCard).toHaveAttribute('href', `/products/${slug}`)
-    await productCard.click()
-    await expect(page).toHaveURL(new RegExp(`/products/${slug}$`))
-
-    // Navigate to feedback page with explicit project preselected
-    await gotoWithRetry(page, `/feedback?projectId=${projectId}`)
+    // The Feedback page follows the active project; no query parameters needed.
+    await gotoWithRetry(page, '/feedback')
     await expect(page).toHaveURL(/\/feedback/)
 
     // Verify page title and Add Feedback button
     await expect(page.getByRole('heading', { name: 'Feedback' })).toBeVisible()
-    await expect(page.locator(selectors.feedbackProductsFilterTrigger)).toBeVisible()
     await expect(page.locator(selectors.feedbackAddButton)).toBeVisible()
+    await expect(page.locator(selectors.feedbackAddButton)).toBeEnabled({ timeout: 20_000 })
 
-    // Verify product filter menu includes the ALL option.
-    // Retry opening the dropdown to absorb transient render/loading timing.
-    await expect
-      .poll(
-        async () => {
-          await page.locator(selectors.feedbackProductsFilterTrigger).click()
-          const isVisible = await page
-            .locator(selectors.feedbackProductsFilterAll)
-            .isVisible()
-            .catch(() => false)
-          if (!isVisible) {
-            await page.keyboard.press('Escape').catch(() => {})
-          }
-          return isVisible
-        },
-        {
-          timeout: 30_000,
-        }
-      )
-      .toBe(true)
-    await page.keyboard.press('Escape')
+    // Single-product projects hide the product layer: no product chips.
+    await expect(page.locator(selectors.feedbackProductChips)).toHaveCount(0)
+
+    // The Settings tab is available inside the tool.
+    await expect(page.locator(selectors.feedbackTabSettings)).toBeVisible()
 
     // Kanban is the default: search is always visible, table-only controls are hidden.
     await expect(page.locator(selectors.feedbackViewKanban)).toBeVisible()
@@ -283,7 +251,7 @@ test.describe('Admin feedback workflow', () => {
     await expect(page.getByText('UI Test Feedback Item')).not.toBeVisible({ timeout: 10_000 })
 
     // Cleanup: delete the test project via API
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    await deleteTestProject(request, sessionCookie, project)
   })
 
   test('UI: feedback detail page supports edit, comment moderation, and admin controls', async ({ request, page }) => {
@@ -293,19 +261,15 @@ test.describe('Admin feedback workflow', () => {
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
-    const teamId = await getActiveTeamId(request, sessionCookie)
     const slug = `e2e-fb-detail-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug)
-    const setActiveTeamResponse = await page.request.post('/api/teams/active', {
-      data: { teamId },
-    })
-    expect(setActiveTeamResponse.ok()).toBeTruthy()
+    const project = await createTestProject(request, sessionCookie, slug)
+    await activateProject(page, project)
 
     try {
       const createFeedbackResponse = await request.post('/api/feedback', {
         headers: withAuthHeaders(sessionCookie),
         data: {
-          projectId,
+          projectId: project.id,
           title: 'UI detail feedback item',
           body: 'Created for the feedback detail page workflow test.',
           feedbackType: 'feature_request',
@@ -366,38 +330,39 @@ test.describe('Admin feedback workflow', () => {
       await editingCommentCard.locator('[data-testid^="comment-delete-btn-"]').click()
       await expect(page.getByText(editedCommentBody)).not.toBeVisible({ timeout: 15_000 })
     } finally {
-      await deleteTestProject(request, sessionCookie, teamId, projectId)
+      await deleteTestProject(request, sessionCookie, project)
     }
   })
 
   test('API: delete project cascades feedback', async ({ request }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     // Create project
     const slug = `e2e-cascade-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug)
+    const project = await createTestProject(request, sessionCookie, slug)
 
     // Create feedback
     const createRes = await request.post('/api/feedback', {
       headers: withAuthHeaders(sessionCookie),
       data: {
-        projectId,
+        projectId: project.id,
         title: 'Will be cascaded',
         body: 'Testing cascade delete',
       },
     })
     expect(createRes.status()).toBe(201)
+    const createdId = (await createRes.json()).data.id as string
 
-    // Delete project (should cascade feedback)
-    await deleteTestProject(request, sessionCookie, teamId, projectId)
+    // Delete project (should cascade products and feedback)
+    await deleteTestProject(request, sessionCookie, project)
 
-    // Verify feedback for that project returns empty
-    const feedbackRes = await request.get(`/api/feedback?projectId=${projectId}`, {
+    // The project is gone (404), and so is its feedback row.
+    const feedbackRes = await request.get(`/api/feedback?projectId=${project.id}`, {
       headers: withAuthHeaders(sessionCookie),
     })
-    const payload = await feedbackRes.json()
-    expect(payload.data.items.length).toBe(0)
+    expect(feedbackRes.status()).toBe(404)
+    const itemRes = await request.get(`/api/feedback/${createdId}`, { headers: withAuthHeaders(sessionCookie) })
+    expect(itemRes.status()).toBe(404)
   })
 
   test('API: delete nonexistent feedback returns 404', async ({ request }) => {
@@ -413,7 +378,6 @@ test.describe('Admin feedback workflow', () => {
     test.skip(STORAGE_DRIVER !== 'local', 'This API upload flow test currently runs in local storage mode only')
 
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
     const unauthorizedPresign = await request.post('/api/projects/demo/assets/presign', {
       headers: { cookie: '' },
@@ -427,7 +391,7 @@ test.describe('Admin feedback workflow', () => {
     expect(unauthorizedPresign.status()).toBe(401)
 
     const invalidMimePresign = await request.post('/api/projects/demo/assets/presign', {
-      headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+      headers: withAuthHeaders(sessionCookie, '/project/settings#appearance'),
       data: {
         kind: 'logo',
         filename: 'logo.gif',
@@ -438,7 +402,7 @@ test.describe('Admin feedback workflow', () => {
     expect(invalidMimePresign.status()).toBe(400)
 
     const largeLogoPresign = await request.post('/api/projects/demo/assets/presign', {
-      headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+      headers: withAuthHeaders(sessionCookie, '/project/settings#appearance'),
       data: {
         kind: 'logo',
         filename: 'logo.png',
@@ -449,11 +413,11 @@ test.describe('Admin feedback workflow', () => {
     expect(largeLogoPresign.status()).toBe(400)
 
     const slug = `e2e-upload-${Date.now()}`
-    const projectId = await createTestProject(request, sessionCookie, teamId, slug)
+    const project = await createTestProject(request, sessionCookie, slug)
 
     try {
       const otherProjectPresign = await request.post(`/api/projects/${slug}/assets/presign`, {
-        headers: withAuthHeaders(sessionCookie, `/products/${slug}#appearance`),
+        headers: withAuthHeaders(sessionCookie, '/project/settings#appearance'),
         data: {
           kind: 'logo',
           filename: 'logo.png',
@@ -473,7 +437,7 @@ test.describe('Admin feedback workflow', () => {
       expect(otherUploadResult.ok()).toBeTruthy()
 
       const mismatchedUpdate = await request.put('/api/projects/demo', {
-        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        headers: withAuthHeaders(sessionCookie, '/project/settings#appearance'),
         data: {
           settings: {
             logoUploadId: otherUpload.uploadId,
@@ -483,7 +447,7 @@ test.describe('Admin feedback workflow', () => {
       expect(mismatchedUpdate.status()).toBe(400)
 
       const validPresign = await request.post('/api/projects/demo/assets/presign', {
-        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        headers: withAuthHeaders(sessionCookie, '/project/settings#appearance'),
         data: {
           kind: 'logo',
           filename: 'logo.png',
@@ -502,7 +466,7 @@ test.describe('Admin feedback workflow', () => {
       expect(validUploadResult.ok()).toBeTruthy()
 
       const updateWithUpload = await request.put('/api/projects/demo', {
-        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        headers: withAuthHeaders(sessionCookie, '/project/settings#appearance'),
         data: {
           settings: {
             logoUploadId: validUpload.uploadId,
@@ -515,7 +479,7 @@ test.describe('Admin feedback workflow', () => {
       expect(updatedPayload?.data?.settings?.logoAssetKey).toContain('projects/')
 
       const clearLogoUpdate = await request.put('/api/projects/demo', {
-        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        headers: withAuthHeaders(sessionCookie, '/project/settings#appearance'),
         data: {
           settings: {
             logoUrl: null,
@@ -526,117 +490,79 @@ test.describe('Admin feedback workflow', () => {
       expect(clearLogoUpdate.ok()).toBeTruthy()
     } finally {
       await request.put('/api/projects/demo', {
-        headers: withAuthHeaders(sessionCookie, '/products/demo#appearance'),
+        headers: withAuthHeaders(sessionCookie, '/project/settings#appearance'),
         data: { settings: null },
       })
-      await deleteTestProject(request, sessionCookie, teamId, projectId)
+      await deleteTestProject(request, sessionCookie, project)
     }
   })
 
-  test('UI: multi-product picker shown when 2 products selected, skipped for single', async ({ request, page }) => {
+  test('UI: product picker shown for multi-product projects, skipped for single-product', async ({ request, page }) => {
+    test.setTimeout(UI_WORKFLOW_TIMEOUT)
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
-    const teamId = await getActiveTeamId(request, sessionCookie)
 
-    const slugA = `e2e-picker-a-${Date.now()}`
-    const slugB = `e2e-picker-b-${Date.now() + 1}`
-    const projectIdA = await createTestProject(request, sessionCookie, teamId, slugA)
-    const projectIdB = await createTestProject(request, sessionCookie, teamId, slugB)
+    const single = await createTestProject(request, sessionCookie, `e2e-picker-single-${Date.now()}`)
+    const multi = await createTestProject(request, sessionCookie, `e2e-picker-multi-${Date.now() + 1}`)
+    const secondProduct = await addProduct(request, sessionCookie, multi, 'Second product')
 
-    // Transfer auth cookies to browser context
     const authCookies = (await request.storageState()).cookies.filter((c) => isBetterAuthCookie(c.name))
     expect(authCookies.length).toBeGreaterThan(0)
     await page.context().addCookies(authCookies)
 
-    const setActiveTeamResponse = await page.request.post('/api/teams/active', { data: { teamId } })
-    expect(setActiveTeamResponse.ok()).toBeTruthy()
-
     try {
-      // ─── Multi-product flow: picker should appear ───────────────────────────
-
-      // Pre-select both products via query param
-      await gotoWithRetry(page, `/feedback?projectIds=${projectIdA},${projectIdB}`)
+      // --- Multi-product project: chips + product select in the form ---------
+      await activateProject(page, multi)
+      await gotoWithRetry(page, '/feedback')
       await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
 
-      // Product filter dropdown should stay open while selecting multiple products.
-      await page.locator(selectors.feedbackProductsFilterTrigger).click()
-      const filterItemA = page.locator(`[data-testid="feedback-products-filter-item-${projectIdA}"]`)
-      const filterItemB = page.locator(`[data-testid="feedback-products-filter-item-${projectIdB}"]`)
-      await expect(filterItemA).toBeVisible()
-      await expect(filterItemB).toBeVisible()
-      await filterItemA.click()
-      await expect(filterItemB).toBeVisible()
-      await filterItemA.click()
-      await expect(filterItemB).toBeVisible()
-      await page.keyboard.press('Escape')
+      await expect(page.locator(selectors.feedbackProductChips)).toBeVisible({ timeout: 20_000 })
+      await expect(page.locator(selectors.feedbackProductChipAll)).toBeVisible()
+      await expect(page.locator(`[data-testid="feedback-product-chip-${multi.productSlug}"]`)).toBeVisible()
+      await expect(page.locator(`[data-testid="feedback-product-chip-${secondProduct.slug}"]`)).toBeVisible()
 
-      // Add Feedback button must be enabled when multiple products are selected
-      const addBtn = page.locator(selectors.feedbackAddButton)
-      await expect(addBtn).toBeEnabled({ timeout: 10_000 })
+      // Filtering by a product reflects in the URL and keeps the board usable.
+      await page.locator(`[data-testid="feedback-product-chip-${secondProduct.slug}"]`).click()
+      await expect(page).toHaveURL(new RegExp(`product=${secondProduct.slug}`))
 
-      // Click Add Feedback — step 1 (project picker) should open
-      await addBtn.click()
-      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible({
-        timeout: 5_000,
+      await expect(page.locator(selectors.feedbackAddButton)).toBeEnabled({ timeout: 10_000 })
+      await page.locator(selectors.feedbackAddButton).click()
+      await page.locator('[data-testid="feedback-create-type-feature_request"]').click()
+      await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
+      await expect(page.locator(selectors.feedbackCreateProduct)).toBeVisible()
+
+      const title = `Multi product item ${Date.now()}`
+      await page.locator(selectors.feedbackCreateProduct).selectOption(secondProduct.id)
+      await page.locator(selectors.feedbackCreateTitle).fill(title)
+      await page.locator(selectors.feedbackCreateBody).fill('Created through the product select in the create dialog')
+      await page.locator(selectors.feedbackCreateSubmit).click()
+      await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 15_000 })
+
+      // The item landed in the chosen product.
+      const listRes = await request.get(`/api/feedback?projectId=${multi.id}&productId=${secondProduct.id}`, {
+        headers: withAuthHeaders(sessionCookie),
       })
-      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdB}"]`)).toBeVisible()
+      const list = await listRes.json()
+      expect(list.data.items.some((i: any) => i.title === title && i.productId === secondProduct.id)).toBeTruthy()
+      const otherRes = await request.get(`/api/feedback?projectId=${multi.id}&productId=${multi.productId}`, {
+        headers: withAuthHeaders(sessionCookie),
+      })
+      const other = await otherRes.json()
+      expect(other.data.items.some((i: any) => i.title === title)).toBeFalsy()
 
-      // The feedback form inputs should NOT be visible yet (still in step 1)
-      await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
-
-      // Clicking a project card advances to step 2 (type picker)
-      await page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`).click()
-      await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible({ timeout: 5_000 })
-      await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
-
-      // Clicking a type advances to step 3 (feedback form)
-      await page.locator('[data-testid="feedback-create-type-feature_request"]').click()
-      await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
-
-      // Back button is visible since we came from multi-product step 1
-      const backButton = page.getByRole('button', { name: 'Back', exact: true })
-      await expect(backButton).toBeVisible()
-
-      // Back from form returns to type picker.
-      await backButton.click()
-      await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible()
-      await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
-
-      // Back from type picker returns to product picker.
-      await page.getByRole('button', { name: 'Back', exact: true }).click()
-      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).toBeVisible()
-      await expect(page.locator(selectors.feedbackCreateTitle)).not.toBeVisible()
-
-      // Cancel closes the dialog entirely
-      await page.getByRole('button', { name: 'Cancel' }).click()
-      await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 5_000 })
-
-      // ─── Single-product flow: picker should be skipped ──────────────────────
-
-      // Navigate with only project A selected
-      await gotoWithRetry(page, `/feedback?projectId=${projectIdA}`)
+      // --- Single-product project: product layer hidden ----------------------
+      await activateProject(page, single)
+      await gotoWithRetry(page, '/feedback')
       await expect(page.locator(selectors.feedbackLoading)).not.toBeVisible({ timeout: 30_000 })
+      await expect(page.locator(selectors.feedbackAddButton)).toBeEnabled({ timeout: 10_000 })
+      await expect(page.locator(selectors.feedbackProductChips)).toHaveCount(0)
 
-      await expect(addBtn).toBeEnabled({ timeout: 10_000 })
-      await addBtn.click()
-
-      // Should jump to type picker first — no project cards visible.
-      await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible({ timeout: 5_000 })
-      await expect(page.locator(`[data-testid="feedback-create-project-${projectIdA}"]`)).not.toBeVisible()
-
+      await page.locator(selectors.feedbackAddButton).click()
       await page.locator('[data-testid="feedback-create-type-feature_request"]').click()
       await expect(page.locator(selectors.feedbackCreateTitle)).toBeVisible({ timeout: 5_000 })
-
-      // Back button should return to type picker in single-product mode.
-      const singleProductBackButton = page.getByRole('button', { name: 'Back', exact: true })
-      await expect(singleProductBackButton).toBeVisible()
-      await singleProductBackButton.click()
-      await expect(page.locator('[data-testid="feedback-create-type-feature_request"]')).toBeVisible()
-
-      await page.getByRole('button', { name: 'Cancel' }).click()
-      await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 5_000 })
+      await expect(page.locator(selectors.feedbackCreateProduct)).toHaveCount(0)
     } finally {
-      await deleteTestProject(request, sessionCookie, teamId, projectIdA)
-      await deleteTestProject(request, sessionCookie, teamId, projectIdB)
+      await deleteTestProject(request, sessionCookie, single)
+      await deleteTestProject(request, sessionCookie, multi)
     }
   })
 })

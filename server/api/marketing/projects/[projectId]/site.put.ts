@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Add or change the marketing site origin
  *     description: >
- *       Team admins only. Changing the origin resets verification and issues a
+ *       Project admins only. Changing the origin resets verification and issues a
  *       new token. A site covered by one of the product's verified custom
  *       domains is verified immediately (method `domain`). It also disconnects Search Console (token revoked,
  *       metrics deleted) and deletes SEO audits and competitor watches on the old host; terms, AI visibility
@@ -28,7 +28,7 @@
  *     responses:
  *       200: { description: Site saved }
  *       400: { description: Invalid site address }
- *       403: { description: Team admin required, or Marketing is off }
+ *       403: { description: Project admin required, or Marketing is off }
  */
 import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
@@ -36,7 +36,7 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { projectDomain } from '~/server/database/schema/feedback'
 import { marketingSite } from '~/server/database/schema/marketing'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -52,9 +52,9 @@ import {
 const bodySchema = z.object({ origin: z.string().trim().min(1).max(255) })
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
-  const { teamId } = await requireMarketingAdmin(projectId, session.user.id)
+  await requireMarketingAdmin(projectId, session.user.id)
   const body = await validateBody(event, bodySchema)
 
   let origin: string
@@ -126,7 +126,6 @@ export default defineEventHandler(async (event) => {
       .values({
         id: randomUUID(),
         projectId,
-        teamId,
         origin,
         verificationToken: generateVerificationToken(),
         ...verification,

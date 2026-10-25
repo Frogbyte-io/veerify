@@ -1,12 +1,12 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { feedback, project } from '~/server/database/schema/feedback'
-import { teamMember } from '~/server/database/schema/auth'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { feedback } from '~/server/database/schema/feedback'
+import { requireAuth } from '~/server/utils/auth-middleware'
+import { hasProjectAccess } from '~/server/utils/project-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
 
   const id = getRouterParam(event, 'id')
   if (!id) {
@@ -30,23 +30,8 @@ export default defineEventHandler(async (event) => {
   const isAuthor = item.authorUserId === session.user.id
 
   if (!isAuthor) {
-    // Check if user is a team member of the project's team
-    const [proj] = await db.select().from(project).where(eq(project.id, item.projectId)).limit(1)
-    if (!proj) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Not Found',
-        data: createErrorResponse(ErrorCode.NOT_FOUND, 'Parent project not found'),
-      })
-    }
-
-    const [membership] = await db
-      .select()
-      .from(teamMember)
-      .where(and(eq(teamMember.teamId, proj.teamId), eq(teamMember.userId, session.user.id)))
-      .limit(1)
-
-    if (!membership) {
+    // Otherwise the caller must have access to the feedback's project
+    if (!(await hasProjectAccess(item.projectId, session.user.id))) {
       throw createError({
         statusCode: 403,
         statusMessage: 'Forbidden',
