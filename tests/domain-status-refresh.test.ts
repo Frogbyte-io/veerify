@@ -13,7 +13,7 @@ const now = new Date('2026-10-25T12:00:00.000Z')
 const due = (hostname: string, over: Partial<DueDomain> = {}): DueDomain => ({
   id: `row-${hostname}`,
   projectId: `project-${hostname}`,
-  teamId: 'team-1',
+  organizationId: 'org-1',
   projectName: 'Acme feedback',
   hostname,
   providerDomainId: `cf-${hostname}`,
@@ -48,7 +48,7 @@ function setup(rows: DueDomain[], cloudflare: Record<string, DomainProviderResul
       applied.push({ hostname: domain.hostname, status: res.status })
       return notifyFor.has(domain.hostname)
     },
-    listTeamAdmins: async () => [
+    listOrganizationAdmins: async () => [
       { email: 'owner@acme.com', name: 'Owner' },
       { email: 'admin@acme.com', name: null },
     ],
@@ -84,7 +84,7 @@ describe('runDomainStatusRefresh', () => {
     expect(summary).toMatchObject({ checked: 2, changed: 0, activated: 0, failed: 0, notified: 0 })
   })
 
-  it('emails every team admin when a domain goes live and the store says to notify', async () => {
+  it('emails every organization owner and admin when a domain goes live and the store says to notify', async () => {
     const ctx = setup([due('new.acme.com')], { 'new.acme.com': result('new.acme.com', 'active') })
     ctx.notifyFor.add('new.acme.com')
 

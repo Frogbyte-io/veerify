@@ -150,7 +150,7 @@ customer keys.
   status is refreshed when the owner presses verify in project settings, and by the
   `domains:status-refresh` task every 10 minutes: domains that are not active yet are re-checked after
   10 minutes, active ones after 6 hours, 25 per run. The task only reads from Cloudflare (it never
-  registers, re-validates or deletes), emails the team admins once when a domain goes live, and marks a
+  registers, re-validates or deletes), emails the organization owners and admins once when a domain goes live, and marks a
   hostname Cloudflare no longer has as `error`. It does nothing unless `DOMAIN_PROVIDER=cloudflare-saas`.
   The stored Cloudflare id is kept in `domain.provider_domain_id` (lookup falls back to the hostname).
 - **Removal:** detaching a domain deletes the custom hostname (already gone counts as success).

@@ -1,7 +1,7 @@
-import { and, asc, eq, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import { sendCustomDomainVerifiedEmail } from '~/lib/email'
 import { db } from '~/server/database/drizzle'
-import { teamMember, user } from '~/server/database/schema/auth'
+import { member, user } from '~/server/database/schema/auth'
 import { project, projectDomain } from '~/server/database/schema/feedback'
 import { createLogger } from '~/server/utils/logger'
 import type { DomainDnsRecord, DomainProviderResult } from './provider'
@@ -31,7 +31,7 @@ export const ACTIVE_RECHECK_MS = 6 * 60 * 60 * 1000
 export interface DueDomain {
   id: string
   projectId: string
-  teamId: string
+  organizationId: string
   projectName: string
   hostname: string
   providerDomainId: string | null
@@ -53,7 +53,7 @@ export interface RefreshStore {
   touch(domain: DueDomain, now: Date): Promise<void>
   /** Persists the result. Returns true when the "domain verified" email should go out. */
   apply(domain: DueDomain, result: DomainProviderResult, now: Date): Promise<boolean>
-  listTeamAdmins(teamId: string): Promise<Array<{ email: string; name: string | null }>>
+  listOrganizationAdmins(organizationId: string): Promise<Array<{ email: string; name: string | null }>>
 }
 
 export interface RefreshSummary {
@@ -149,7 +149,7 @@ export async function runDomainStatusRefresh(options: {
     if (result.verified && domain.status !== 'active') summary.activated++
 
     if (notify) {
-      const admins = await store.listTeamAdmins(domain.teamId)
+      const admins = await store.listOrganizationAdmins(domain.organizationId)
       for (const admin of admins) {
         try {
           await sendVerifiedEmail({
@@ -181,7 +181,7 @@ export function createDrizzleRefreshStore(): RefreshStore {
         .select({
           id: projectDomain.id,
           projectId: projectDomain.projectId,
-          teamId: project.teamId,
+          organizationId: project.organizationId,
           projectName: project.name,
           hostname: projectDomain.hostname,
           providerDomainId: projectDomain.providerDomainId,
@@ -277,12 +277,12 @@ export function createDrizzleRefreshStore(): RefreshStore {
       })
     },
 
-    async listTeamAdmins(teamId) {
+    async listOrganizationAdmins(organizationId) {
       return db
         .select({ email: user.email, name: user.name })
-        .from(teamMember)
-        .innerJoin(user, eq(user.id, teamMember.userId))
-        .where(and(eq(teamMember.teamId, teamId), eq(teamMember.role, 'admin')))
+        .from(member)
+        .innerJoin(user, eq(user.id, member.userId))
+        .where(and(eq(member.organizationId, organizationId), inArray(member.role, ['owner', 'admin'])))
     },
   }
 }

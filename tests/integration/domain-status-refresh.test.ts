@@ -15,7 +15,7 @@ vi.hoisted(() => {
 
 /* eslint-disable import/first -- the env must be set before the database module loads */
 import { db } from '../../server/database/drizzle'
-import { organization, team, teamMember, user } from '../../server/database/schema/auth'
+import { member, organization, user } from '../../server/database/schema/auth'
 import { project, projectDomain } from '../../server/database/schema/feedback'
 import type { DomainProviderResult } from '../../server/services/domains/provider'
 import {
@@ -29,8 +29,7 @@ import {
 const run = randomUUID().slice(0, 8)
 const now = new Date('2026-10-25T12:00:00.000Z')
 const orgId = `dr_org_${run}`
-const teamId = `dr_team_${run}`
-const users = { admin: `dr_admin_${run}`, member: `dr_member_${run}` }
+const users = { owner: `dr_owner_${run}`, admin: `dr_admin_${run}`, member: `dr_member_${run}` }
 const projectIds: string[] = []
 const store = createDrizzleRefreshStore()
 
@@ -46,7 +45,6 @@ async function addDomain(
   await db.insert(project).values({
     id: projectId,
     organizationId: orgId,
-    teamId,
     slug: projectId,
     name: `Project ${label}`,
     customDomain: over.customDomain === undefined ? hostname : over.customDomain,
@@ -95,21 +93,26 @@ beforeAll(async () => {
   expect(process.env.PGDATABASE).toBe('veerify_domain_refresh')
   await db.insert(organization).values({ id: orgId, name: 'DR org', slug: `dr-${run}`, createdAt: now, updatedAt: now })
   await db.insert(user).values([
+    { id: users.owner, name: 'Owner', email: `dr-owner-${run}@example.com`, createdAt: now, updatedAt: now },
     { id: users.admin, name: 'Admin', email: `dr-admin-${run}@example.com`, createdAt: now, updatedAt: now },
     { id: users.member, name: 'Member', email: `dr-member-${run}@example.com`, createdAt: now, updatedAt: now },
   ])
-  await db
-    .insert(team)
-    .values({ id: teamId, name: teamId, slug: teamId, organizationId: orgId, createdAt: now, updatedAt: now })
-  await db.insert(teamMember).values([
-    { id: `dr_m_${run}_1`, teamId, userId: users.admin, role: 'admin', createdAt: now },
-    { id: `dr_m_${run}_2`, teamId, userId: users.member, role: 'member', createdAt: now },
+  await db.insert(member).values([
+    { id: `dr_m_${run}_0`, organizationId: orgId, userId: users.owner, role: 'owner', createdAt: now, updatedAt: now },
+    { id: `dr_m_${run}_1`, organizationId: orgId, userId: users.admin, role: 'admin', createdAt: now, updatedAt: now },
+    {
+      id: `dr_m_${run}_2`,
+      organizationId: orgId,
+      userId: users.member,
+      role: 'member',
+      createdAt: now,
+      updatedAt: now,
+    },
   ])
 })
 
 afterAll(async () => {
   await db.delete(project).where(inArray(project.id, projectIds))
-  await db.delete(team).where(eq(team.id, teamId))
   await db.delete(organization).where(eq(organization.id, orgId))
   await db.delete(user).where(inArray(user.id, Object.values(users)))
 })
@@ -137,7 +140,7 @@ describe('domain status refresh store', () => {
     }
   })
 
-  it('activates a domain, keeps email flags, and notifies only the admins once', async () => {
+  it('activates a domain, keeps email flags, and notifies only the owners and admins once', async () => {
     const { hostname, projectId } = await addDomain('goes-live', {
       lastCheckedAt: ago(PENDING_RECHECK_MS + 1000),
       settings: { domainConnectedEmailSentFor: 'goes-live', other: 'kept' },
@@ -168,7 +171,7 @@ describe('domain status refresh store', () => {
     const ourEmails = (sendVerifiedEmail.mock.calls as unknown as Array<[{ to: string; domain: string }]>)
       .map(([o]) => o)
       .filter((o) => o.domain === hostname)
-    expect(ourEmails.map((o) => o.to)).toEqual([`dr-admin-${run}@example.com`])
+    expect(ourEmails.map((o) => o.to).sort()).toEqual([`dr-admin-${run}@example.com`, `dr-owner-${run}@example.com`])
 
     // A later check (6h on) does not email again or move activatedAt.
     const later = new Date(now.getTime() + ACTIVE_RECHECK_MS + 1000)
