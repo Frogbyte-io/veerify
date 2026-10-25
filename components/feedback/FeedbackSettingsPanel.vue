@@ -79,6 +79,7 @@ import FeedbackSettingsDefaults from '~/components/feedback/settings/FeedbackSet
 import FeedbackSettingsCategories from '~/components/feedback/settings/FeedbackSettingsCategories.vue'
 import FeedbackSettingsStatuses from '~/components/feedback/settings/FeedbackSettingsStatuses.vue'
 import FeedbackSettingsGithub from '~/components/feedback/settings/FeedbackSettingsGithub.vue'
+import FeedbackSettingsAppKeys from '~/components/feedback/settings/FeedbackSettingsAppKeys.vue'
 import { apiErrorMessage } from '~/lib/api-error'
 
 const DEFAULT_FEEDBACK_QUERY = {
@@ -114,6 +115,15 @@ const SECTIONS = [
     adminOnly: true,
   },
   { id: 'github', label: 'GitHub', icon: 'lucide:github', component: 'FeedbackSettingsGithub', adminOnly: true },
+  // Key management endpoints are project-admin only, so members do not see this tab at all.
+  {
+    id: 'app-keys',
+    label: 'App keys',
+    icon: 'lucide:key-round',
+    component: 'FeedbackSettingsAppKeys',
+    adminOnly: true,
+    hiddenForMembers: true,
+  },
 ]
 
 function createResourceState(initialData = null, status = 'idle') {
@@ -132,7 +142,7 @@ function createResources() {
 
 /**
  * Feedback tool settings for the active project: manage list, categories,
- * statuses and the GitHub integration. The section lives in `?section=` so it
+ * statuses, the GitHub integration and app keys (admins). The section lives in `?section=` so it
  * can be linked. Members see the admin-only sections read-only with a lock line.
  */
 export default {
@@ -143,6 +153,7 @@ export default {
     FeedbackSettingsCategories,
     FeedbackSettingsStatuses,
     FeedbackSettingsGithub,
+    FeedbackSettingsAppKeys,
   },
 
   props: {
@@ -162,14 +173,14 @@ export default {
 
   computed: {
     sections() {
-      return SECTIONS
+      return SECTIONS.filter((s) => this.isAdmin || !s.hiddenForMembers)
     },
     activeSection() {
       const wanted = String(this.$route.query.section || '')
-      return SECTIONS.some((s) => s.id === wanted) ? wanted : 'defaults'
+      return this.sections.some((s) => s.id === wanted) ? wanted : 'defaults'
     },
     section() {
-      return SECTIONS.find((s) => s.id === this.activeSection)
+      return this.sections.find((s) => s.id === this.activeSection)
     },
     sectionProps() {
       const base = { project: this.projectData }
