@@ -1,10 +1,7 @@
 import { createSuccessResponse, createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
-import {
-  requireOrganizationMembershipBySlug,
-  getOrganizationMembersWithTeams,
-} from '~/server/utils/organization-access'
+import { requireOrganizationMembershipBySlug, getOrganizationMembers } from '~/server/utils/organization-access'
 
 export default defineEventHandler(async (event) => {
   const session = await requireAuth(event)
@@ -20,7 +17,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const { org } = await requireOrganizationMembershipBySlug(session, slug)
-  const data = await getOrganizationMembersWithTeams(org.id)
+  const data = await getOrganizationMembers(org.id)
 
   return createSuccessResponse(data)
 })

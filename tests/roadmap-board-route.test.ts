@@ -4,17 +4,34 @@ const state = vi.hoisted(() => ({
   results: [] as unknown[][],
   selects: 0,
   project: {} as Record<string, unknown>,
+  products: [] as any[],
+  query: {} as Record<string, unknown>,
 }))
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
+vi.stubGlobal('getQuery', () => state.query)
 vi.stubGlobal('getRequestURL', () => ({ protocol: 'https:', port: '' }))
 vi.stubGlobal('useRuntimeConfig', () => ({ public: { appDomain: 'veerify.test' } }))
 
-vi.mock('~/server/utils/team-context', () => ({
-  requireAuthWithResolvedTeam: vi.fn(async () => ({ session: { user: { id: 'u1' } } })),
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: vi.fn(async () => ({ user: { id: 'u1' } })),
+}))
+vi.mock('~/server/utils/project-access', () => ({
+  listProducts: vi.fn(async () => state.products),
+  requireProductInProject: vi.fn(async (_projectId: string, productId: string) => {
+    const found = state.products.find((p: any) => p.id === productId)
+    if (!found) throw Object.assign(new Error('Not Found'), { statusCode: 404 })
+    return found
+  }),
 }))
 vi.mock('~/server/utils/marketing-site', () => ({
   requireRouteParam: (event: { projectId: string }) => event.projectId,
+}))
+vi.mock('~/server/utils/project-statuses', () => ({
+  SYSTEM_STATUSES: [
+    { value: 'open', name: 'Open', color: null, sortOrder: 0 },
+    { value: 'planned', name: 'Planned', color: null, sortOrder: 1 },
+  ],
 }))
 vi.mock('~/server/utils/response', () => ({
   createSuccessResponse: (data: unknown) => ({ success: true, data }),
@@ -22,7 +39,7 @@ vi.mock('~/server/utils/response', () => ({
 vi.mock('~/server/utils/roadmap-access', () => ({
   requireRoadmapAccess: vi.fn(async (projectId: string) => {
     if (projectId === 'foreign') throw Object.assign(new Error('Forbidden'), { statusCode: 403 })
-    return { project: state.project, teamId: 't1' }
+    return { project: state.project }
   }),
 }))
 vi.mock('~/server/database/drizzle', () => ({
@@ -60,7 +77,20 @@ const row = (over: Record<string, unknown>, category: unknown = null) => ({
 
 beforeEach(() => {
   state.selects = 0
-  state.project = { id: 'p1', name: 'App', slug: 'app', isPublic: true, customDomain: null, settings: {} }
+  state.query = {}
+  state.products = [
+    { id: 'pr1', projectId: 'p1', name: 'App', slug: 'app', description: null, isPublic: true, sortOrder: 0 },
+    { id: 'pr2', projectId: 'p1', name: 'Beta', slug: 'beta', description: null, isPublic: false, sortOrder: 1 },
+  ]
+  state.project = {
+    id: 'p1',
+    organizationId: 'o1',
+    name: 'App',
+    slug: 'app',
+    isPublic: true,
+    customDomain: null,
+    settings: {},
+  }
   state.results = [
     [], // no custom statuses -> system statuses
     [
@@ -82,7 +112,7 @@ describe('GET /api/roadmap/projects/[projectId]', () => {
     expect(byId.a).toMatchObject({ voteCount: 3, commentCount: 0, isPinned: false, category: { name: 'UI' } })
   })
 
-  it('returns the public roadmap URL for public products, null otherwise', async () => {
+  it('returns the public roadmap URL for public projects, null otherwise', async () => {
     const { data } = await handler({ projectId: 'p1' })
     expect(data.publicUrl).toBe('https://acme.veerify.test/app/roadmap')
 
@@ -92,7 +122,7 @@ describe('GET /api/roadmap/projects/[projectId]', () => {
     expect(priv.publicUrl).toBeNull()
   })
 
-  it('rejects other teams products before reading any data', async () => {
+  it('rejects projects without access before reading any data', async () => {
     await expect(handler({ projectId: 'foreign' })).rejects.toMatchObject({ statusCode: 403 })
     expect(state.selects).toBe(0)
   })

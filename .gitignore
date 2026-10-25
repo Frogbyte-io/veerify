@@ -24,7 +24,6 @@ test-results
 .env
 .env.*
 !.env.example
-.vercel
 
 # Agent git worktrees (nested checkouts of this repo)
 .claude/worktrees/

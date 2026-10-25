@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
           id: session.session.id,
           expiresAt: session.session.expiresAt,
           activeOrganizationId: session.session.activeOrganizationId || null,
-          activeTeamId: session.session.activeTeamId || null,
+          activeProjectId: session.session.activeProjectId || null,
         }
       : null,
     user: session

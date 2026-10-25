@@ -184,7 +184,6 @@ interface OrganizationInvitationEmailOptions {
   inviterName: string
   inviteUrl: string
   role: string
-  teamName?: string | null
 }
 
 interface FeedbackConfirmationEmailOptions {

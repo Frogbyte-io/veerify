@@ -6,9 +6,9 @@
           <h1 class="text-3xl font-bold tracking-tight text-foreground">Changelog</h1>
           <p class="text-muted-foreground mt-1">Tell your users what shipped</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2">
           <ChangelogProductPicker @change="onProductChange" />
-          <Button v-if="product && !disabledMessage" as-child data-testid="changelog-new-entry">
+          <Button v-if="project && !disabledMessage" as-child data-testid="changelog-new-entry">
             <NuxtLink :to="newEntryLink">
               <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
               New entry
@@ -18,17 +18,7 @@
       </div>
 
       <template v-if="pickerReady">
-        <Card v-if="!product">
-          <CardContent class="py-10 text-center">
-            <p class="font-medium mb-1">No products yet</p>
-            <p class="text-sm text-muted-foreground mb-4">The changelog works on a product. Create one first.</p>
-            <Button as-child variant="outline">
-              <NuxtLink to="/products">Go to products</NuxtLink>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card v-else-if="disabledMessage !== null" data-testid="changelog-disabled">
+        <Card v-if="disabledMessage !== null" data-testid="changelog-disabled">
           <CardContent class="py-10 text-center space-y-4">
             <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <Icon name="lucide:newspaper" class="w-6 h-6 text-muted-foreground" />
@@ -36,19 +26,16 @@
             <div class="space-y-1">
               <p class="font-medium">Changelog is switched off</p>
               <p class="text-sm text-muted-foreground max-w-md mx-auto">
-                {{ disabledMessage || 'The changelog needs to be enabled for your team and for this product.' }}
-              </p>
-              <p class="text-sm text-muted-foreground max-w-md mx-auto">
-                Both switches have to be on: the team switch under Settings, Tools, and the product switch under the
-                product's Features tab.
+                {{
+                  isAdmin
+                    ? 'Switch it on under Project settings, Tools.'
+                    : 'Project admins can switch the changelog on.'
+                }}
               </p>
             </div>
-            <div class="flex flex-wrap items-center justify-center gap-2">
+            <div v-if="isAdmin" class="flex flex-wrap items-center justify-center gap-2">
               <Button as-child variant="outline">
-                <NuxtLink to="/settings#tools">Settings: Tools</NuxtLink>
-              </Button>
-              <Button as-child variant="outline">
-                <NuxtLink :to="`/products/${product.slug}#features`">{{ product.name }}: Features</NuxtLink>
+                <NuxtLink to="/project/settings#tools">Project settings: Tools</NuxtLink>
               </Button>
             </div>
           </CardContent>
@@ -92,6 +79,9 @@
                   <p class="font-medium truncate">{{ entry.title }}</p>
                   <p v-if="entry.summary" class="text-sm text-muted-foreground line-clamp-2">{{ entry.summary }}</p>
                   <div class="flex flex-wrap items-center gap-1.5 pt-1">
+                    <Badge v-if="showProductBadges" variant="outline" data-testid="changelog-entry-products">
+                      {{ entryProductLabel(entry) }}
+                    </Badge>
                     <Badge v-for="label in entry.labels" :key="label" variant="secondary" class="capitalize">
                       {{ label }}
                     </Badge>
@@ -139,7 +129,9 @@ export default {
   data() {
     return {
       pickerReady: false,
-      product: null,
+      project: null,
+      products: [],
+      productId: '',
       entries: [],
       nextCursor: null,
       isLoading: false,
@@ -152,13 +144,31 @@ export default {
 
   computed: {
     newEntryLink() {
-      return `/dashboard/changelog/new?product=${encodeURIComponent(this.product.slug)}`
+      return this.productId
+        ? `/dashboard/changelog/new?productId=${encodeURIComponent(this.productId)}`
+        : '/dashboard/changelog/new'
+    },
+    isAdmin() {
+      return this.project?.role === 'admin'
+    },
+    // Product tags only matter when there is more than one product
+    showProductBadges() {
+      return this.products.length > 1
     },
   },
 
   methods: {
     entryLink(entry) {
-      return `/dashboard/changelog/${entry.id}?product=${encodeURIComponent(this.product.slug)}`
+      return `/dashboard/changelog/${entry.id}`
+    },
+
+    entryProductLabel(entry) {
+      const ids = entry.productIds || []
+      if (ids.length === 0) return 'All products'
+      return ids
+        .map((id) => this.products.find((p) => p.id === id)?.name)
+        .filter(Boolean)
+        .join(', ')
     },
 
     formatDate(value) {
@@ -166,54 +176,66 @@ export default {
       return new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
     },
 
-    async onProductChange(product) {
+    async onProductChange(context, productId) {
       this.pickerReady = true
-      this.product = product
+      this.project = context?.project || null
+      this.products = context?.products || []
+      this.productId = productId || ''
       this.entries = []
       this.nextCursor = null
       this.disabledMessage = null
       this.error = null
-      if (product) await this.load()
+      if (!this.project) return
+      if (context.modules?.changelogEnabled !== true) {
+        this.disabledMessage = ''
+        return
+      }
+      await this.load()
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
+      const productId = this.productId
+      const isCurrent = () => this.project?.id === projectId && this.productId === productId
       this.isLoading = true
       this.error = null
       this.disabledMessage = null
       try {
-        const response = await $fetch(`/api/changelog/projects/${productId}/entries`)
-        if (this.product?.id !== productId) return
+        const response = await $fetch(`/api/changelog/projects/${projectId}/entries`, {
+          query: productId ? { productId } : {},
+        })
+        if (!isCurrent()) return
         this.entries = response?.data?.entries || []
         this.nextCursor = response?.data?.nextCursor || null
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (!isCurrent()) return
         const message = apiErrorMessage(err, '')
-        // 403 means either "module switched off" (explained below) or "not a
-        // member of this team": only the first one gets the enable-it card.
+        // 403 means either "module switched off" (explained below) or "no access
+        // to this project": only the first one gets the enable-it card.
         if (apiErrorStatus(err) === 403 && isModuleOffMessage(message)) {
           this.disabledMessage = message
         } else if (apiErrorStatus(err) === 403) {
-          this.error = message || 'You do not have access to this product'
+          this.error = message || 'You do not have access to this project'
         } else {
           this.error = apiErrorMessage(err, 'Failed to load the changelog')
         }
       } finally {
-        if (this.product?.id === productId) this.isLoading = false
+        if (isCurrent()) this.isLoading = false
       }
     },
 
     async loadMore() {
-      if (!this.product || !this.nextCursor) return
-      const productId = this.product.id
+      if (!this.project || !this.nextCursor) return
+      const projectId = this.project.id
+      const productId = this.productId
       this.isLoadingMore = true
       this.loadMoreError = null
       try {
-        const response = await $fetch(`/api/changelog/projects/${productId}/entries`, {
-          query: { cursor: this.nextCursor },
+        const response = await $fetch(`/api/changelog/projects/${projectId}/entries`, {
+          query: { cursor: this.nextCursor, ...(productId ? { productId } : {}) },
         })
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId || this.productId !== productId) return
         this.entries = [...this.entries, ...(response?.data?.entries || [])]
         this.nextCursor = response?.data?.nextCursor || null
       } catch (err) {

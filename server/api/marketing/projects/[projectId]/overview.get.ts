@@ -17,7 +17,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Overview }
- *       403: { description: Not a team member, or Marketing is off for the team or product }
+ *       403: { description: No access to this project, or Marketing is off for the project }
  *       404: { description: Product not found }
  */
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm'
@@ -41,10 +41,10 @@ import {
 } from '~/server/database/schema/marketing'
 import { changelogEntry } from '~/server/database/schema/changelog'
 import { LAUNCH_DIRECTORIES } from '~/server/services/marketing/launch-kit/directories'
-import { resolveProductModules } from '~/lib/modules'
+import { resolveProjectModules } from '~/lib/modules'
 import { findGscConnection, isGscConfigured } from '~/server/services/marketing/search/connection'
 import { computeTotals, shiftDate, splitPeriods } from '~/server/services/marketing/search/summary'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireMarketingAccess } from '~/server/utils/marketing-access'
 import { createSuccessResponse } from '~/server/utils/response'
 import { findMarketingSite, requireRouteParam, serializeSite } from '~/server/utils/marketing-site'
@@ -52,14 +52,14 @@ import { getIntegrationStatus } from '~/server/utils/marketing-integrations'
 import { getUsage } from '~/server/utils/marketing-usage'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
-  const { project, teamId } = await requireMarketingAccess(projectId, session.user.id)
+  const { project, organizationId } = await requireMarketingAccess(projectId, session.user.id)
 
   const [site, integrations, allUsage] = await Promise.all([
     findMarketingSite(projectId),
-    getIntegrationStatus(teamId),
-    getUsage(teamId),
+    getIntegrationStatus(organizationId),
+    getUsage(organizationId),
   ])
   // In-flight budget reservations are internal bookkeeping, not usage or cost
   const usage = Object.fromEntries(
@@ -73,7 +73,7 @@ export default defineEventHandler(async (event) => {
     loadSearch(site?.id ?? null),
     loadReviews(projectId),
     loadAnnouncements(projectId, changelogEnabled),
-    loadLanguage(site?.id ?? null, teamId),
+    loadLanguage(site?.id ?? null, organizationId),
     loadChangelog(projectId, changelogEnabled),
     loadCompetitors(site?.id ?? null),
     loadLaunchKit(projectId),
@@ -167,7 +167,7 @@ const SEARCH_DAYS = 28
 const REVIEW_DAYS = 30
 
 function changelogOn(project: { settings?: unknown }): boolean {
-  return resolveProductModules(project.settings as Record<string, unknown> | null).changelogEnabled === true
+  return resolveProjectModules(project.settings as Record<string, unknown> | null).changelogEnabled === true
 }
 
 /** Clicks and impressions for the last 28 synced days against the 28 before. At most 56 rows. */
@@ -250,11 +250,11 @@ async function loadAnnouncements(projectId: string, changelogEnabled: boolean) {
   return { changelogEnabled: true, withoutDrafts: row?.total ?? 0 }
 }
 
-async function loadLanguage(siteId: string | null, teamId: string) {
+async function loadLanguage(siteId: string | null, organizationId: string) {
   const consentRows = await db
     .select({ feedback: marketingDataConsent.allowFeedbackText, support: marketingDataConsent.allowSupportText })
     .from(marketingDataConsent)
-    .where(eq(marketingDataConsent.teamId, teamId))
+    .where(eq(marketingDataConsent.organizationId, organizationId))
     .limit(1)
   const insightRows = siteId
     ? await db

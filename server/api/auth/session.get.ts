@@ -32,7 +32,7 @@
  *               $ref: '#/components/schemas/Error'
  */
 
-import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
@@ -55,7 +55,7 @@ export default defineEventHandler(async (event) => {
       userId: session.session.userId,
       expiresAt: session.session.expiresAt,
       activeOrganizationId: session.session.activeOrganizationId,
-      activeTeamId: session.session.activeTeamId,
+      activeProjectId: session.session.activeProjectId ?? null,
     },
   })
 })

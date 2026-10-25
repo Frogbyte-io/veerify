@@ -6,7 +6,7 @@ import { buildSlaAssignment, selectSlaPolicy, type SlaPolicyCandidate } from './
 /** Resolve the current policy and compute deadlines for one conversation state. */
 export async function resolveSlaAssignment(
   input: {
-    teamId: string
+    projectId: string
     inboxId: string
     priority: string | null | undefined
     companyId: string | null | undefined
@@ -20,7 +20,7 @@ export async function resolveSlaAssignment(
     .select({ policy: slaPolicy, hours: businessHours })
     .from(slaPolicy)
     .leftJoin(businessHours, eq(slaPolicy.businessHoursId, businessHours.id))
-    .where(eq(slaPolicy.teamId, input.teamId))
+    .where(eq(slaPolicy.projectId, input.projectId))
     .orderBy(asc(slaPolicy.sortOrder), asc(slaPolicy.id))
 
   const selectedPolicy = selectSlaPolicy(

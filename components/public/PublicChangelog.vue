@@ -1,6 +1,6 @@
 <template>
   <PublicProjectShell
-    :team-slug="teamSlug"
+    :org-slug="orgSlug"
     :project-slug="projectSlug"
     active="changelog"
     :page-title="pageTitle"
@@ -18,11 +18,19 @@
       </a>
     </template>
 
+    <PublicProductFilter
+      v-if="changelogEnabled && !entrySlug"
+      :products="projectData.products"
+      :selected="productFilter"
+      :base-path="changelogPath"
+      :accent-color="projectData.project.settings?.accentColor || '#6366f1'"
+    />
+
     <!-- Changelog disabled -->
     <div v-if="!changelogEnabled" class="py-16 text-center" data-testid="public-changelog-unavailable">
       <Icon name="lucide:newspaper" class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
       <h2 class="text-2xl font-bold mb-2">Changelog not available</h2>
-      <p class="text-muted-foreground mb-6">The changelog is not enabled for this product.</p>
+      <p class="text-muted-foreground mb-6">The changelog is not enabled for this project.</p>
       <NuxtLink
         :to="feedbackBoardPath"
         class="inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -79,6 +87,14 @@
         <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <time :datetime="entry.publishedAt">{{ formatDate(entry.publishedAt) }}</time>
           <span
+            v-for="product in entryProducts(entry)"
+            :key="product.id"
+            class="px-2 py-0.5 rounded-full text-xs font-medium border"
+            data-testid="public-changelog-product-badge"
+          >
+            {{ product.name }}
+          </span>
+          <span
             v-for="label in entry.labels"
             :key="label"
             class="px-2 py-0.5 rounded-full text-xs font-medium capitalize"
@@ -126,7 +142,7 @@ import { projectPaths } from '~/lib/public-shell'
 export default {
   name: 'PublicChangelog',
   props: {
-    teamSlug: { type: String, required: true },
+    orgSlug: { type: String, required: true },
     projectSlug: { type: String, required: true },
     entrySlug: { type: String, default: null },
   },
@@ -146,7 +162,7 @@ export default {
   },
   computed: {
     apiBase() {
-      return `/api/public/t/${encodeURIComponent(this.teamSlug)}/${encodeURIComponent(this.projectSlug)}`
+      return `/api/public/o/${encodeURIComponent(this.orgSlug)}/${encodeURIComponent(this.projectSlug)}`
     },
     onCustomDomain() {
       return import.meta.client && this.projectData?.project?.customDomain === window.location.hostname
@@ -163,6 +179,10 @@ export default {
     rssUrl() {
       return `${this.apiBase}/changelog.rss`
     },
+    productFilter() {
+      const value = this.$route.query.product
+      return typeof value === 'string' ? value : ''
+    },
     changelogEnabled() {
       // Until the project has loaded the slot is not rendered at all
       return this.projectData?.project?.settings?.changelogEnabled === true
@@ -175,6 +195,9 @@ export default {
   watch: {
     async entrySlug() {
       if (this.projectData && this.changelogEnabled) await this.loadEntries()
+    },
+    async productFilter() {
+      if (this.projectData && this.changelogEnabled && !this.entrySlug) await this.loadEntries()
     },
   },
   methods: {
@@ -196,7 +219,9 @@ export default {
           if (seq !== this.entriesSeq) return
           this.entries = response?.data ? [response.data] : []
         } else {
-          const response = await $fetch(`${this.apiBase}/changelog`)
+          const response = await $fetch(`${this.apiBase}/changelog`, {
+            query: this.productFilter ? { product: this.productFilter } : {},
+          })
           if (seq !== this.entriesSeq) return
           this.entries = response?.data?.entries || []
           this.nextCursor = response?.data?.nextCursor || null
@@ -221,7 +246,9 @@ export default {
       this.loadingMore = true
       this.loadMoreError = null
       try {
-        const response = await $fetch(`${this.apiBase}/changelog`, { query: { cursor: this.nextCursor } })
+        const response = await $fetch(`${this.apiBase}/changelog`, {
+          query: { cursor: this.nextCursor, ...(this.productFilter ? { product: this.productFilter } : {}) },
+        })
         // The list was reloaded (or the page changed) meanwhile: drop this page
         if (seq !== this.entriesSeq) return
         this.entries = [...this.entries, ...(response?.data?.entries || [])]
@@ -231,6 +258,11 @@ export default {
       } finally {
         this.loadingMore = false
       }
+    },
+    // Product tags are only meaningful when there is more than one product
+    entryProducts(entry) {
+      if (!(this.projectData?.products?.length > 1)) return []
+      return Array.isArray(entry.products) ? entry.products : []
     },
     entryPath(entry) {
       return `${this.changelogPath}/${entry.slug}`

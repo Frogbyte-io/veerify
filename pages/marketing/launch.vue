@@ -9,7 +9,7 @@
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+          <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
           <Button v-if="showContent" data-testid="launch-add" @click="addOpen = true">
             <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
             Add custom directory
@@ -23,14 +23,12 @@
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">
-        Create a product first to use the launch kit.
-      </div>
+      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to use the launch kit.</div>
 
-      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
       <div v-else-if="isLoading" class="space-y-4">
         <Skeleton class="h-24 w-full" />
@@ -109,7 +107,7 @@
             v-for="item in visible"
             :key="item.id"
             :item="item"
-            :project-id="product.id"
+            :project-id="project.id"
             @changed="refresh"
             @forbidden="onForbidden"
           />
@@ -117,7 +115,7 @@
 
         <MarketingLaunchAddDialog
           v-model:open="addOpen"
-          :project-id="product.id"
+          :project-id="project.id"
           @added="refresh"
           @forbidden="onForbidden"
         />
@@ -139,7 +137,7 @@ export default {
 
   data() {
     return {
-      product: null,
+      project: null,
       pickerSettled: false,
       pickerError: false,
       isLoading: false,
@@ -157,7 +155,7 @@ export default {
 
   computed: {
     showContent() {
-      return this.pickerSettled && Boolean(this.product) && !this.marketingOff && !this.isLoading && !this.error
+      return this.pickerSettled && Boolean(this.project) && !this.marketingOff && !this.isLoading && !this.error
     },
     categoryOptions() {
       return [{ value: 'all', label: 'All' }, ...LAUNCH_CATEGORIES]
@@ -178,19 +176,19 @@ export default {
   },
 
   methods: {
-    url(productId = this.product.id) {
-      return `/api/marketing/projects/${productId}/launch-kit`
+    url(projectId = this.project.id) {
+      return `/api/marketing/projects/${projectId}/launch-kit`
     },
 
     onPickerError() {
-      this.product = null
+      this.project = null
       this.kit = null
       this.pickerError = true
       this.pickerSettled = true
     },
 
-    async onProductChange(product) {
-      this.product = product
+    async onProjectChange(project) {
+      this.project = project
       this.pickerSettled = true
       this.pickerError = false
       this.isLoading = false
@@ -199,7 +197,7 @@ export default {
       this.marketingOff = false
       this.kit = null
       this.addOpen = false
-      if (product) await this.load()
+      if (project) await this.load()
     },
 
     onForbidden(message) {
@@ -208,40 +206,40 @@ export default {
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.isLoading = true
       this.error = null
       this.refreshError = null
       this.marketingOff = false
       try {
-        const response = await $fetch(this.url(productId))
-        if (this.product?.id !== productId) return
+        const response = await $fetch(this.url(projectId))
+        if (this.project?.id !== projectId) return
         this.kit = response.data
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.onForbidden(apiErrorMessage(err, ''))
         } else {
           this.error = apiErrorMessage(err, 'Failed to load the launch kit')
         }
       } finally {
-        if (this.product?.id === productId) this.isLoading = false
+        if (this.project?.id === projectId) this.isLoading = false
       }
     },
 
     /** Reload after a change without swapping the cards for skeletons. */
     async refresh() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       const token = ++this.loadToken
       this.refreshError = null
       try {
-        const response = await $fetch(this.url(productId))
-        if (this.product?.id !== productId || token !== this.loadToken) return
+        const response = await $fetch(this.url(projectId))
+        if (this.project?.id !== projectId || token !== this.loadToken) return
         this.kit = response.data
       } catch (err) {
-        if (this.product?.id !== productId || token !== this.loadToken) return
+        if (this.project?.id !== projectId || token !== this.loadToken) return
         if (apiErrorStatus(err) === 403) this.onForbidden(apiErrorMessage(err, ''))
         else this.refreshError = apiErrorMessage(err, 'Could not refresh the launch kit')
       }

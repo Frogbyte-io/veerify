@@ -193,7 +193,7 @@ grouped by team, and skips platform, reserved and mailbox-provider domains. Per 
 - Used by several teams: reported for an operator to resolve. Never assigned automatically.
 
 The run is idempotent and calls the provider one domain at a time (`--delay-ms`, default 600) to stay under the
-120 requests per minute limit. `--apply` refuses to run when `NODE_ENV` or `VERCEL_ENV` is `production` or the
+120 requests per minute limit. `--apply` refuses to run when `NODE_ENV` is `production` or the
 database host is not local, unless you add `--i-know-this-is-production`. A team at its claim limits (10 domains,
 3 pending) shows as `BLOCKED`. The closing summary lists claims created, conflicts and teams needing DNS action.
 

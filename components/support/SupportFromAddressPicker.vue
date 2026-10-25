@@ -16,7 +16,7 @@
       @update:model-value="$emit('update:modelValue', $event)"
     />
 
-    <!-- team policy: local part @ owned domain -->
+    <!-- project policy: local part @ owned domain -->
     <div v-else class="mt-2 space-y-2">
       <div class="flex items-center gap-2">
         <Input
@@ -93,7 +93,7 @@
 
       <p v-if="!hasOptions" class="text-sm text-muted-foreground" data-testid="support-from-picker-empty">
         <template v-if="domainsEnabled">Add and verify a sending domain above to choose a From address.</template>
-        <template v-else>No sending addresses are available to your team yet. Ask your operator for help.</template>
+        <template v-else>No sending addresses are available to your project yet. Ask your operator for help.</template>
       </p>
     </div>
   </div>
@@ -112,7 +112,7 @@ export default {
       type: String,
       default: '',
     },
-    /** 'team' shows the picker; anything else is the legacy free-text input. */
+    /** 'project' shows the picker; anything else is the legacy free-text input. */
     policy: {
       type: String,
       default: 'legacy',
@@ -127,7 +127,7 @@ export default {
       type: Array,
       default: () => [],
     },
-    /** Team-owned Veerify platform addresses that may be used as From. */
+    /** Project-owned Veerify platform addresses that may be used as From. */
     platformAddresses: {
       type: Array,
       default: () => [],
@@ -168,7 +168,7 @@ export default {
 
   computed: {
     effectivePolicy() {
-      return this.policy === 'team' ? 'team' : 'legacy'
+      return this.policy === 'project' ? 'project' : 'legacy'
     },
 
     // Unverified claims (deleting rows no longer authorize anything and are not offered).

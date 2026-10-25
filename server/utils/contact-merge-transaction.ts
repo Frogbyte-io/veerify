@@ -3,24 +3,24 @@ import { createError } from 'h3'
 import type { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, contactLink } from '~/server/database/schema/support'
 import { backfillContactFields, canMerge, mergeAttributes } from '~/server/utils/contact-merge'
-import { lockContactTeams } from '~/server/utils/contact-lock'
+import { lockContactProjects } from '~/server/utils/contact-lock'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export async function mergeContactsInTransaction(tx: Transaction, survivorId: string, sourceContactId: string) {
-  // These are deliberately non-locking reads. They provide the owning team
+  // These are deliberately non-locking reads. They provide the owning project
   // ids used to establish the stable lock order before either contact row is
-  // locked. The contacts are re-read and validated below after the team lock.
+  // locked. The contacts are re-read and validated below after the project lock.
   const candidates = await tx
-    .select({ id: contact.id, teamId: contact.teamId })
+    .select({ id: contact.id, projectId: contact.projectId })
     .from(contact)
     .where(inArray(contact.id, [survivorId, sourceContactId]))
     .orderBy(asc(contact.id))
 
-  await lockContactTeams(
+  await lockContactProjects(
     tx,
-    candidates.map((candidate) => candidate.teamId)
+    candidates.map((candidate) => candidate.projectId)
   )
 
   const lockedContacts = await tx
@@ -86,7 +86,7 @@ export async function mergeContactsInTransaction(tx: Transaction, survivorId: st
   await tx
     .update(contact)
     .set({ mergedIntoContactId: lockedSurvivor.id, updatedAt: new Date() })
-    .where(and(eq(contact.id, lockedLoser.id), eq(contact.teamId, lockedSurvivor.teamId)))
+    .where(and(eq(contact.id, lockedLoser.id), eq(contact.projectId, lockedSurvivor.projectId)))
 
   const [merged] = await tx.select().from(contact).where(eq(contact.id, survivorId)).limit(1)
   return { contact: merged, loser: lockedLoser }

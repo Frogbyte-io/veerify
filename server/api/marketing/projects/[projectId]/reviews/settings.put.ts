@@ -5,7 +5,7 @@
  *     tags: [Marketing]
  *     summary: Save review and testimonial request settings
  *     description: >
- *       Team admins only. Replaces the whole settings object. At most 6 platforms,
+ *       Project admins only. Replaces the whole settings object. At most 6 platforms,
  *       https URLs only, labels up to 40 characters. Shipped status values must
  *       exist in the product's feedback statuses.
  *     operationId: updateMarketingReviewSettings
@@ -42,7 +42,7 @@
  *     responses:
  *       200: { description: Settings saved }
  *       400: { description: Validation failed }
- *       403: { description: Not a team admin, or Marketing is not enabled }
+ *       403: { description: Not a project admin, or Marketing is not enabled }
  *       404: { description: Product not found }
  */
 import { randomUUID } from 'node:crypto'
@@ -53,11 +53,11 @@ import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { requireRouterParam } from '~/server/utils/marketing-mentions'
 import { listProductStatuses, reviewSettingsSchema, validationError } from '~/server/utils/marketing-reviews'
 import { createSuccessResponse } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody } from '~/server/utils/validation'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouterParam(event, 'projectId', 'Project ID')
   await requireMarketingAdmin(projectId, session.user.id)
   const body = await validateBody(event, reviewSettingsSchema)

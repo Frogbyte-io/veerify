@@ -3,12 +3,13 @@ import { eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { supportSendingDomain } from '../../server/database/schema/support'
 import {
   createSendingDomainClaim,
-  getTeamSendingDomain,
-  listTeamSendingDomains,
+  getProjectSendingDomain,
+  listProjectSendingDomains,
   toSendingDomainView,
 } from '../../server/utils/sending-domains'
 
@@ -16,9 +17,9 @@ const now = new Date('2026-10-22T12:00:00.000Z')
 const run = randomUUID().slice(0, 8)
 const ids = {
   org: `sdc_org_${run}`,
-  teamA: `sdc_team_a_${run}`,
-  teamB: `sdc_team_b_${run}`,
-  teamC: `sdc_team_c_${run}`,
+  projectA: `sdc_project_a_${run}`,
+  projectB: `sdc_project_b_${run}`,
+  projectC: `sdc_project_c_${run}`,
   user: `sdc_user_${run}`,
 }
 const provider = { provider: 'mailgun', providerAccountKey: 'acct-1' }
@@ -27,8 +28,8 @@ const savedEnv = { ...process.env }
 /** A fresh registrable domain per test, so rows from other tests never interfere. */
 const fresh = () => `c${randomUUID().replace(/-/g, '').slice(0, 12)}.com`
 
-function claim(teamId: string, domain: string, extra: Partial<Parameters<typeof createSendingDomainClaim>[0]> = {}) {
-  return createSendingDomainClaim({ teamId, domain, userId: ids.user, ...provider, now, ...extra })
+function claim(projectId: string, domain: string, extra: Partial<Parameters<typeof createSendingDomainClaim>[0]> = {}) {
+  return createSendingDomainClaim({ projectId, domain, userId: ids.user, ...provider, now, ...extra })
 }
 
 async function expectRejection(promise: Promise<unknown>, statusCode: number, code: string) {
@@ -52,23 +53,25 @@ beforeAll(async () => {
     .values({ id: ids.user, name: 'SDC admin', email: `sdc-${run}@example.com`, createdAt: now, updatedAt: now })
 })
 
-// Fresh teams per test: the per-team limits would otherwise leak between tests.
-const createdTeams: string[] = []
+// Fresh projects per test: the per-project limits would otherwise leak between tests.
+const createdProjects: string[] = []
 beforeEach(async () => {
-  const n = createdTeams.length
-  ids.teamA = `sdc_team_a_${run}_${n}`
-  ids.teamB = `sdc_team_b_${run}_${n}`
-  ids.teamC = `sdc_team_c_${run}_${n}`
-  const teamIds = [ids.teamA, ids.teamB, ids.teamC]
-  createdTeams.push(...teamIds)
+  const n = createdProjects.length
+  ids.projectA = `sdc_project_a_${run}_${n}`
+  ids.projectB = `sdc_project_b_${run}_${n}`
+  ids.projectC = `sdc_project_c_${run}_${n}`
+  const projectIds = [ids.projectA, ids.projectB, ids.projectC]
+  createdProjects.push(...projectIds)
   await db
-    .insert(team)
-    .values(teamIds.map((id) => ({ id, name: id, slug: id, organizationId: ids.org, createdAt: now, updatedAt: now })))
+    .insert(project)
+    .values(
+      projectIds.map((id) => ({ id, name: id, slug: id, organizationId: ids.org, createdAt: now, updatedAt: now }))
+    )
 })
 
 afterAll(async () => {
   process.env = savedEnv
-  await db.delete(team).where(inArray(team.id, createdTeams))
+  await db.delete(project).where(inArray(project.id, createdProjects))
   await db.delete(organization).where(eq(organization.id, ids.org))
   await db.delete(user).where(eq(user.id, ids.user))
 })
@@ -76,7 +79,7 @@ afterAll(async () => {
 describe('createSendingDomainClaim', () => {
   it('inserts a provisioning claim with an ownership token and TXT record', async () => {
     const domain = fresh()
-    const row = await claim(ids.teamA, `  ${domain.toUpperCase()}. `)
+    const row = await claim(ids.projectA, `  ${domain.toUpperCase()}. `)
 
     expect(row.domain).toBe(domain)
     expect(row.registrableDomain).toBe(domain)
@@ -96,9 +99,9 @@ describe('createSendingDomainClaim', () => {
     ])
   })
 
-  it('lets exactly one of two teams claim the same domain concurrently', async () => {
+  it('lets exactly one of two projects claim the same domain concurrently', async () => {
     const domain = fresh()
-    const results = await Promise.allSettled([claim(ids.teamA, domain), claim(ids.teamB, domain)])
+    const results = await Promise.allSettled([claim(ids.projectA, domain), claim(ids.projectB, domain)])
 
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
     const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
@@ -108,10 +111,10 @@ describe('createSendingDomainClaim', () => {
     expect(rows).toHaveLength(1)
   })
 
-  it('serializes an ancestor and a descendant claimed concurrently by different teams', async () => {
+  it('serializes an ancestor and a descendant claimed concurrently by different projects', async () => {
     for (let attempt = 0; attempt < 5; attempt++) {
       const domain = fresh()
-      const results = await Promise.allSettled([claim(ids.teamA, domain), claim(ids.teamB, `mail.${domain}`)])
+      const results = await Promise.allSettled([claim(ids.projectA, domain), claim(ids.projectB, `mail.${domain}`)])
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
       const rows = await db
         .select()
@@ -121,48 +124,48 @@ describe('createSendingDomainClaim', () => {
     }
   })
 
-  it('refuses ancestors and descendants of another team claim, in any status, but not lookalikes', async () => {
+  it('refuses ancestors and descendants of another project claim, in any status, but not lookalikes', async () => {
     const domain = fresh()
-    await claim(ids.teamA, `mail.${domain}`)
+    await claim(ids.projectA, `mail.${domain}`)
 
-    await expectRejection(claim(ids.teamB, domain), 409, 'DOMAIN_CLAIMED')
-    await expectRejection(claim(ids.teamB, `x.mail.${domain}`), 409, 'DOMAIN_CLAIMED')
-    await expectRejection(claim(ids.teamB, `mail.${domain}`), 409, 'DOMAIN_CLAIMED')
-    await expect(claim(ids.teamB, `bad${domain}`)).resolves.toMatchObject({ teamId: ids.teamB })
+    await expectRejection(claim(ids.projectB, domain), 409, 'DOMAIN_CLAIMED')
+    await expectRejection(claim(ids.projectB, `x.mail.${domain}`), 409, 'DOMAIN_CLAIMED')
+    await expectRejection(claim(ids.projectB, `mail.${domain}`), 409, 'DOMAIN_CLAIMED')
+    await expect(claim(ids.projectB, `bad${domain}`)).resolves.toMatchObject({ projectId: ids.projectB })
   })
 
-  it('allows nesting within one team and rejects a duplicate', async () => {
+  it('allows nesting within one project and rejects a duplicate', async () => {
     const domain = fresh()
-    await claim(ids.teamA, domain)
-    await expect(claim(ids.teamA, `mail.${domain}`)).resolves.toMatchObject({ teamId: ids.teamA })
-    await expectRejection(claim(ids.teamA, domain), 409, 'DOMAIN_ALREADY_REGISTERED')
+    await claim(ids.projectA, domain)
+    await expect(claim(ids.projectA, `mail.${domain}`)).resolves.toMatchObject({ projectId: ids.projectA })
+    await expectRejection(claim(ids.projectA, domain), 409, 'DOMAIN_ALREADY_REGISTERED')
   })
 
   it('rejects invalid, reserved and mailbox-provider names with 422', async () => {
     process.env.APP_DOMAIN = 'app.reserved-sdc.com'
     process.env.SUPPORT_SENDING_DOMAINS_RESERVED = 'extra-sdc.org, other-sdc.org'
     try {
-      await expectRejection(claim(ids.teamC, 'not a domain'), 422, 'DOMAIN_REJECTED')
-      await expectRejection(claim(ids.teamC, '10.0.0.1'), 422, 'DOMAIN_REJECTED')
-      await expectRejection(claim(ids.teamC, 'gmail.com'), 422, 'DOMAIN_REJECTED')
-      await expectRejection(claim(ids.teamC, 'reserved-sdc.com'), 422, 'DOMAIN_REJECTED')
-      await expectRejection(claim(ids.teamC, 'x.app.reserved-sdc.com'), 422, 'DOMAIN_REJECTED')
-      await expectRejection(claim(ids.teamC, 'mail.extra-sdc.org'), 422, 'DOMAIN_REJECTED')
-      await expectRejection(claim(ids.teamC, 'acme.verify-ok.test'), 422, 'DOMAIN_REJECTED')
-      await expect(claim(ids.teamC, 'acme.verify-ok.test', { provider: 'fake' })).resolves.toMatchObject({
+      await expectRejection(claim(ids.projectC, 'not a domain'), 422, 'DOMAIN_REJECTED')
+      await expectRejection(claim(ids.projectC, '10.0.0.1'), 422, 'DOMAIN_REJECTED')
+      await expectRejection(claim(ids.projectC, 'gmail.com'), 422, 'DOMAIN_REJECTED')
+      await expectRejection(claim(ids.projectC, 'reserved-sdc.com'), 422, 'DOMAIN_REJECTED')
+      await expectRejection(claim(ids.projectC, 'x.app.reserved-sdc.com'), 422, 'DOMAIN_REJECTED')
+      await expectRejection(claim(ids.projectC, 'mail.extra-sdc.org'), 422, 'DOMAIN_REJECTED')
+      await expectRejection(claim(ids.projectC, 'acme.verify-ok.test'), 422, 'DOMAIN_REJECTED')
+      await expect(claim(ids.projectC, 'acme.verify-ok.test', { provider: 'fake' })).resolves.toMatchObject({
         registrableDomain: 'verify-ok.test',
       })
     } finally {
       delete process.env.APP_DOMAIN
       delete process.env.SUPPORT_SENDING_DOMAINS_RESERVED
-      await db.delete(supportSendingDomain).where(eq(supportSendingDomain.teamId, ids.teamC))
+      await db.delete(supportSendingDomain).where(eq(supportSendingDomain.projectId, ids.projectC))
     }
   })
 
   it('enforces the pending limit, which verified claims do not count against', async () => {
     const created = []
-    for (let i = 0; i < 3; i++) created.push(await claim(ids.teamC, fresh()))
-    await expectRejection(claim(ids.teamC, fresh()), 409, 'PENDING_LIMIT_REACHED')
+    for (let i = 0; i < 3; i++) created.push(await claim(ids.projectC, fresh()))
+    await expectRejection(claim(ids.projectC, fresh()), 409, 'PENDING_LIMIT_REACHED')
 
     await db
       .update(supportSendingDomain)
@@ -173,16 +176,16 @@ describe('createSendingDomainClaim', () => {
           created.map((row) => row.id)
         )
       )
-    await expect(claim(ids.teamC, fresh())).resolves.toMatchObject({ status: 'provisioning' })
+    await expect(claim(ids.projectC, fresh())).resolves.toMatchObject({ status: 'provisioning' })
   })
 
   it('enforces the total limit and does not count claims being deleted', async () => {
-    const rows = await listTeamSendingDomains(ids.teamC)
+    const rows = await listProjectSendingDomains(ids.projectC)
     for (let i = rows.length; i < 10; i++) {
       const domain = fresh()
       await db.insert(supportSendingDomain).values({
         id: randomUUID(),
-        teamId: ids.teamC,
+        projectId: ids.projectC,
         domain,
         registrableDomain: domain,
         status: 'verified',
@@ -190,28 +193,28 @@ describe('createSendingDomainClaim', () => {
         ownershipToken: 'tok',
       })
     }
-    await expectRejection(claim(ids.teamC, fresh()), 409, 'DOMAIN_LIMIT_REACHED')
+    await expectRejection(claim(ids.projectC, fresh()), 409, 'DOMAIN_LIMIT_REACHED')
 
-    const [one] = await listTeamSendingDomains(ids.teamC)
+    const [one] = await listProjectSendingDomains(ids.projectC)
     await db.update(supportSendingDomain).set({ status: 'deleting' }).where(eq(supportSendingDomain.id, one.id))
-    await expect(claim(ids.teamC, fresh())).resolves.toMatchObject({ teamId: ids.teamC })
+    await expect(claim(ids.projectC, fresh())).resolves.toMatchObject({ projectId: ids.projectC })
   })
 })
 
-describe('team-scoped reads', () => {
-  it('lists only the team claims and returns 404 across teams', async () => {
+describe('project-scoped reads', () => {
+  it('lists only the project claims and returns 404 across projects', async () => {
     const domain = fresh()
-    const row = await claim(ids.teamA, domain)
+    const row = await claim(ids.projectA, domain)
 
-    expect((await listTeamSendingDomains(ids.teamA)).some((r) => r.id === row.id)).toBe(true)
-    expect((await listTeamSendingDomains(ids.teamB)).some((r) => r.id === row.id)).toBe(false)
-    await expect(getTeamSendingDomain(ids.teamA, row.id)).resolves.toMatchObject({ domain })
-    await expect(getTeamSendingDomain(ids.teamB, row.id)).rejects.toMatchObject({ statusCode: 404 })
-    await expect(getTeamSendingDomain(ids.teamA, randomUUID())).rejects.toMatchObject({ statusCode: 404 })
+    expect((await listProjectSendingDomains(ids.projectA)).some((r) => r.id === row.id)).toBe(true)
+    expect((await listProjectSendingDomains(ids.projectB)).some((r) => r.id === row.id)).toBe(false)
+    await expect(getProjectSendingDomain(ids.projectA, row.id)).resolves.toMatchObject({ domain })
+    await expect(getProjectSendingDomain(ids.projectB, row.id)).rejects.toMatchObject({ statusCode: 404 })
+    await expect(getProjectSendingDomain(ids.projectA, randomUUID())).rejects.toMatchObject({ statusCode: 404 })
   })
 
   it('maps a row to a view and flags a provider mismatch', async () => {
-    const row = await claim(ids.teamA, fresh())
+    const row = await claim(ids.projectA, fresh())
 
     const view = toSendingDomainView(row, { name: 'mailgun', accountKey: 'acct-1' })
     expect(view).toMatchObject({

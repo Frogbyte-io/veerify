@@ -68,7 +68,7 @@ const REASONS = {
   suppressed: 'Unsubscribed',
   cooldown: 'Asked recently',
   duplicate: 'Already queued',
-  unknown_project: 'Unknown product',
+  unknown_project: 'Unknown project',
   daily_limit: 'Daily limit reached',
 }
 

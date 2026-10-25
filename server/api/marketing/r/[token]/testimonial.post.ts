@@ -8,7 +8,7 @@
  *       Public, token-gated and rate limited per IP and token. One testimonial per
  *       token, only for a sent request whose product still asks for testimonials,
  *       and only within 60 days of sending. The testimonial starts as pending; it is only shown on the public
- *       wall once a team member approves it AND the author ticked the public consent box.
+ *       wall once a project member approves it AND the author ticked the public consent box.
  *     operationId: submitPublicTestimonial
  *     parameters:
  *       - in: path
@@ -43,7 +43,6 @@ import { z } from 'zod'
 import { db } from '~/server/database/drizzle'
 import { project } from '~/server/database/schema/feedback'
 import { reviewRequest, reviewRequestSettings, testimonial } from '~/server/database/schema/marketing'
-import { teamModuleSettings } from '~/server/database/schema/teams'
 import { hashEmail, isRedactedEmail } from '~/server/utils/marketing-email-hash'
 import { notFound, testimonialSubmissionState } from '~/server/utils/marketing-reviews'
 import { rateLimits, requireRateLimit } from '~/server/utils/rate-limit'
@@ -88,13 +87,11 @@ export default defineEventHandler(async (event) => {
         sentAt: reviewRequest.sentAt,
         createdAt: reviewRequest.createdAt,
         projectSettings: project.settings,
-        teamMarketingEnabled: teamModuleSettings.marketingEnabled,
         requestsEnabled: reviewRequestSettings.enabled,
         askForTestimonial: reviewRequestSettings.askForTestimonial,
       })
       .from(reviewRequest)
       .innerJoin(project, eq(project.id, reviewRequest.projectId))
-      .leftJoin(teamModuleSettings, eq(teamModuleSettings.teamId, reviewRequest.teamId))
       .leftJoin(reviewRequestSettings, eq(reviewRequestSettings.projectId, reviewRequest.projectId))
       .where(eq(reviewRequest.token, token))
       .limit(1)

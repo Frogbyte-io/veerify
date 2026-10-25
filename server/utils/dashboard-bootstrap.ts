@@ -1,36 +1,27 @@
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { member, organization, team, teamMember } from '~/server/database/schema/auth'
-import { feedback, project } from '~/server/database/schema/feedback'
+import { member, organization } from '~/server/database/schema/auth'
+import { feedback, product, project } from '~/server/database/schema/feedback'
 import { notification } from '~/server/database/schema/notifications'
 import type { AuthSession } from '~/server/utils/auth-middleware'
-import { resolveActiveTeamForSession } from '~/server/utils/team-context'
+import { resolveActiveProjectForSession } from '~/server/utils/project-context'
+import { listAccessibleProjects } from '~/server/utils/project-access'
+import {
+  buildActiveProjectContext,
+  listProjectMembers,
+  toProjectSummary,
+  type ActiveProjectContext,
+  type ProjectSummary,
+} from '~/server/utils/project-summary'
 
 export const emptyWorkspaceStats = {
   totalFeedback: 0,
   openFeedback: 0,
   inProgressFeedback: 0,
   completedFeedback: 0,
-  projectCount: 0,
+  productCount: 0,
   memberCount: 0,
   recentFeedback: [],
-}
-
-export async function listTeamsForUser(userId: string) {
-  return db
-    .select({
-      id: team.id,
-      name: team.name,
-      slug: team.slug,
-      organizationId: team.organizationId,
-      createdAt: team.createdAt,
-      updatedAt: team.updatedAt,
-      role: teamMember.role,
-    })
-    .from(teamMember)
-    .innerJoin(team, eq(teamMember.teamId, team.id))
-    .where(eq(teamMember.userId, userId))
-    .orderBy(asc(team.createdAt), asc(team.id))
 }
 
 export async function listOrganizationsForUser(userId: string) {
@@ -48,15 +39,14 @@ export async function listOrganizationsForUser(userId: string) {
     .orderBy(asc(organization.name), asc(organization.id))
 }
 
-export async function getWorkspaceStatsForTeam(teamId: string) {
-  const [projectCountRows, memberCountRows, feedbackCounts, recentRows] = await Promise.all([
-    db.select({ count: count() }).from(project).where(eq(project.teamId, teamId)),
-    db.select({ count: count() }).from(teamMember).where(eq(teamMember.teamId, teamId)),
+export async function getWorkspaceStatsForProject(projectId: string) {
+  const [projectRows, members, feedbackCounts, recentRows] = await Promise.all([
+    db.select().from(project).where(eq(project.id, projectId)).limit(1),
+    db.select({ count: count() }).from(product).where(eq(product.projectId, projectId)),
     db
       .select({ status: feedback.status, count: count() })
       .from(feedback)
-      .innerJoin(project, eq(feedback.projectId, project.id))
-      .where(eq(project.teamId, teamId))
+      .where(eq(feedback.projectId, projectId))
       .groupBy(feedback.status),
     db
       .select({
@@ -67,11 +57,14 @@ export async function getWorkspaceStatsForTeam(teamId: string) {
         projectId: feedback.projectId,
         projectName: project.name,
         projectSlug: project.slug,
+        productId: feedback.productId,
+        productName: product.name,
         createdAt: feedback.createdAt,
       })
       .from(feedback)
       .innerJoin(project, eq(feedback.projectId, project.id))
-      .where(eq(project.teamId, teamId))
+      .innerJoin(product, eq(feedback.productId, product.id))
+      .where(eq(feedback.projectId, projectId))
       .orderBy(desc(feedback.createdAt))
       .limit(8),
   ])
@@ -83,13 +76,16 @@ export async function getWorkspaceStatsForTeam(teamId: string) {
     totalFeedback += row.count
   }
 
+  const proj = projectRows[0]
+  const memberCount = proj ? (await listProjectMembers(proj)).length : 0
+
   return {
     totalFeedback,
     openFeedback: statusMap.open ?? 0,
     inProgressFeedback: (statusMap.in_progress ?? 0) + (statusMap.planned ?? 0),
     completedFeedback: statusMap.completed ?? 0,
-    projectCount: projectCountRows[0]?.count ?? 0,
-    memberCount: memberCountRows[0]?.count ?? 0,
+    productCount: members[0]?.count ?? 0,
+    memberCount,
     recentFeedback: recentRows,
   }
 }
@@ -144,32 +140,48 @@ export async function getUnreadNotificationCount(userId: string) {
   return result?.count ?? 0
 }
 
-export async function getDashboardBootstrapData(session: AuthSession) {
-  const [teams, organizations] = await Promise.all([
-    listTeamsForUser(session.user.id),
-    listOrganizationsForUser(session.user.id),
-  ])
-  const hasWorkspace = teams.length > 0
-  const activeTeam = hasWorkspace ? await resolveActiveTeamForSession(session) : null
+export type DashboardProjectContext = {
+  organizations: Awaited<ReturnType<typeof listOrganizationsForUser>>
+  activeOrganization: typeof organization.$inferSelect | null
+  projects: ProjectSummary[]
+  activeProject: ActiveProjectContext | null
+}
 
-  const [activeOrganization, workspaceStats, personalSummary, unreadCount] = await Promise.all([
-    activeTeam
-      ? db.select().from(organization).where(eq(organization.id, activeTeam.organizationId)).limit(1)
-      : Promise.resolve([]),
-    activeTeam ? getWorkspaceStatsForTeam(activeTeam.id) : Promise.resolve(null),
-    activeTeam ? Promise.resolve(null) : getPersonalDashboardSummary(session.user.id),
-    getUnreadNotificationCount(session.user.id),
-  ])
+export async function getDashboardBootstrapData(session: AuthSession) {
+  const organizations = await listOrganizationsForUser(session.user.id)
+  const activeProject = organizations.length > 0 ? await resolveActiveProjectForSession(session) : null
+
+  // With no project yet, fall back to the session's organization (or the first one) so onboarding
+  // can show the workspace the first project will be created in.
+  const activeOrganizationId =
+    activeProject?.organizationId ??
+    organizations.find((org) => org.id === session.session.activeOrganizationId)?.id ??
+    organizations[0]?.id ??
+    null
+
+  const [activeOrganizationRows, accessibleProjects, activeContext, workspaceStats, personalSummary, unreadCount] =
+    await Promise.all([
+      activeOrganizationId
+        ? db.select().from(organization).where(eq(organization.id, activeOrganizationId)).limit(1)
+        : Promise.resolve([]),
+      activeOrganizationId ? listAccessibleProjects(activeOrganizationId, session.user.id) : Promise.resolve([]),
+      activeProject ? buildActiveProjectContext(activeProject, session.user.id) : Promise.resolve(null),
+      activeProject ? getWorkspaceStatsForProject(activeProject.id) : Promise.resolve(null),
+      activeProject ? Promise.resolve(null) : getPersonalDashboardSummary(session.user.id),
+      getUnreadNotificationCount(session.user.id),
+    ])
+
+  const projectContext: DashboardProjectContext = {
+    organizations,
+    activeOrganization: activeOrganizationRows[0] ?? null,
+    projects: accessibleProjects.map(toProjectSummary),
+    activeProject: activeContext,
+  }
 
   return {
     session,
-    teamContext: {
-      teams,
-      organizations,
-      activeTeam,
-      activeOrganization: activeOrganization[0] ?? null,
-    },
-    workspace: activeTeam
+    projectContext,
+    workspace: activeProject
       ? {
           stats: workspaceStats ?? emptyWorkspaceStats,
         }

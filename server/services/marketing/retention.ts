@@ -17,14 +17,14 @@ const logger = createLogger('marketing-retention')
  *
  * - `review_request` rows in a terminal state (`sent`, `failed`, `skipped`) are ANONYMISED after 180 days:
  *   `email` becomes `redacted:<id>`, `name` and `error` are cleared. The row keeps its id, token, project,
- *   team, trigger, source, status, timestamps and the keyed `email_hash`, so the unsubscribe and withdraw
+ *   project, trigger, source, status, timestamps and the keyed `email_hash`, so the unsubscribe and withdraw
  *   links keep working, the `shipped` dedupe slot stays taken, and the person can still be suppressed.
  *   Anonymised rows are deleted after 3 years, and only when no testimonial references them.
  * - `queued` rows older than 30 days are marked `skipped` (`expired`) and then follow the normal schedule.
  *   `sending` rows are left to the stale-claim sweeper.
  * - `testimonial.author_email` is cleared after 180 days; `author_email_hash` and the public fields stay.
  * - Missing hashes are filled lazily right before anonymising (no data migration needed).
- * - The per-team `marketing_email_suppression` rows stay: they are the durable opt-out record.
+ * - The per-workspace `marketing_email_suppression` rows stay: they are the durable opt-out record.
  * - `competitor_change` rows are deleted after 12 months.
  * - `marketing_usage` rows are deleted once their `YYYY-MM` period is more than 13 months old.
  * - `marketing_usage` `ratelimit:*` counters are deleted 2 days after their last update, `digest:*` ledger
@@ -155,7 +155,7 @@ const defaultDeps: RetentionDeps = {
     }
     for (let i = 0; i < BACKFILL_MAX_BATCHES; i++) {
       const rows = await db
-        .select({ teamId: marketingEmailSuppression.teamId, email: marketingEmailSuppression.email })
+        .select({ organizationId: marketingEmailSuppression.organizationId, email: marketingEmailSuppression.email })
         .from(marketingEmailSuppression)
         .where(and(isNull(marketingEmailSuppression.emailHash), notLike(marketingEmailSuppression.email, 'hash:%')))
         .limit(BACKFILL_BATCH)
@@ -168,12 +168,12 @@ const defaultDeps: RetentionDeps = {
           .set({ emailHash: hash })
           .where(
             and(
-              eq(marketingEmailSuppression.teamId, row.teamId),
+              eq(marketingEmailSuppression.organizationId, row.organizationId),
               eq(marketingEmailSuppression.email, row.email),
-              sql`not exists (select 1 from marketing_email_suppression s where s.team_id = ${row.teamId} and s.email_hash = ${hash})`
+              sql`not exists (select 1 from marketing_email_suppression s where s.organization_id = ${row.organizationId} and s.email_hash = ${hash})`
             )
           )
-          .returning({ teamId: marketingEmailSuppression.teamId })
+          .returning({ organizationId: marketingEmailSuppression.organizationId })
         changed += done.length
       }
       updated += changed

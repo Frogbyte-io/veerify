@@ -1,6 +1,6 @@
 <template>
   <NuxtLayout name="dashboard">
-    <div class="p-6 max-w-7xl mx-auto space-y-8">
+    <div class="p-6 w-full min-w-0 max-w-7xl mx-auto space-y-8">
       <!-- Header -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -8,60 +8,88 @@
           <p class="text-muted-foreground mt-1">Manage and respond to user feedback and feature requests</p>
         </div>
         <div class="flex items-center gap-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger as-child>
-              <Button
-                variant="outline"
-                data-testid="feedback-products-filter-trigger"
-                class="min-w-[200px] justify-between bg-background"
-              >
-                <span class="truncate">{{ selectedProductsLabel }}</span>
-                <Icon name="lucide:chevrons-up-down" class="w-4 h-4 ml-2 shrink-0 opacity-50" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-[200px]">
-              <DropdownMenuLabel>Products</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                data-testid="feedback-products-filter-all"
-                :model-value="allProductsSelected"
-                @select.prevent
-                @update:model-value="toggleAllProducts"
-              >
-                All Products
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                v-for="p in products"
-                :key="p.id"
-                :data-testid="`feedback-products-filter-item-${p.id}`"
-                :model-value="selectedProjectIds.includes(p.id)"
-                @select.prevent
-                @update:model-value="(checked) => toggleProjectSelection(p.id, checked)"
-              >
-                {{ p.name }}
-              </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
           <Button
+            v-if="isFeedbackView"
             variant="outline"
             data-testid="feedback-export-button"
-            :disabled="selectedProjectIds.length === 0 || isExporting"
+            :disabled="!project || isExporting"
             @click="exportCsv"
           >
             <Icon v-if="isExporting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
             <Icon v-else name="lucide:download" class="w-4 h-4 mr-2" />
             Export
           </Button>
-          <Button data-testid="feedback-add-button" :disabled="!canCreateFeedback" @click="openCreateDialog()">
+          <Button
+            v-if="isFeedbackView"
+            data-testid="feedback-add-button"
+            :disabled="!canCreateFeedback"
+            @click="openCreateDialog()"
+          >
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
             Add Feedback
           </Button>
         </div>
       </div>
 
+      <!-- Feedback / Settings tabs -->
+      <div class="flex items-center gap-1 border-b -mt-4" role="tablist" data-testid="feedback-tabs">
+        <NuxtLink
+          :to="{ path: '/feedback', query: feedbackTabQuery }"
+          role="tab"
+          :aria-selected="isFeedbackView"
+          data-testid="feedback-tab-feedback"
+          :class="tabClass(isFeedbackView)"
+        >
+          <Icon name="lucide:message-square" class="w-4 h-4 inline mr-1.5" />
+          Feedback
+        </NuxtLink>
+        <NuxtLink
+          :to="{ path: '/feedback', query: { view: 'settings' } }"
+          role="tab"
+          :aria-selected="!isFeedbackView"
+          data-testid="feedback-tab-settings"
+          :class="tabClass(!isFeedbackView)"
+        >
+          <Icon name="lucide:settings" class="w-4 h-4 inline mr-1.5" />
+          Settings
+        </NuxtLink>
+      </div>
+
+      <!-- Product chips: only when the project has more than one product -->
+      <div
+        v-if="isFeedbackView && !isLoading && !error && hasMultipleProducts"
+        class="flex flex-wrap items-center gap-2 -mt-4"
+        data-testid="feedback-product-chips"
+      >
+        <button
+          type="button"
+          :class="chipClass(!productFilterSlug)"
+          data-testid="feedback-product-chip-all"
+          @click="setProductFilter('')"
+        >
+          All products
+        </button>
+        <button
+          v-for="p in products"
+          :key="p.id"
+          type="button"
+          :class="chipClass(productFilterSlug === p.slug)"
+          :data-testid="`feedback-product-chip-${p.slug}`"
+          @click="setProductFilter(p.slug)"
+        >
+          {{ p.name }}
+        </button>
+      </div>
+
+      <!-- Settings view -->
+      <FeedbackSettingsPanel
+        v-if="!isFeedbackView && project"
+        :project-slug="project.slug"
+        :is-admin="project.role === 'admin'"
+      />
+
       <!-- Loading State -->
-      <div v-if="isLoading" data-testid="feedback-loading" class="space-y-8">
+      <div v-else-if="isLoading" data-testid="feedback-loading" class="space-y-8">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card v-for="n in 4" :key="n">
             <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -97,34 +125,15 @@
           </div>
           <h3 class="text-lg font-semibold mb-2">Failed to load feedback</h3>
           <p class="text-muted-foreground mb-6 max-w-md">{{ error }}</p>
-          <Button variant="outline" @click="loadProducts">
+          <Button variant="outline" @click="initProjectContext">
             <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
             Try Again
           </Button>
         </CardContent>
       </Card>
 
-      <!-- No Products State -->
-      <Card v-else-if="products.length === 0" class="border-dashed">
-        <CardContent class="flex flex-col items-center justify-center py-16 text-center">
-          <div class="rounded-full bg-muted p-4 mb-4">
-            <Icon name="lucide:package" class="w-8 h-8 text-muted-foreground" />
-          </div>
-          <h2 class="text-xl font-semibold mb-2">No products yet</h2>
-          <p class="text-muted-foreground mb-6 max-w-sm">
-            Create a product first to start collecting and managing feedback from your users.
-          </p>
-          <NuxtLink to="/products" prefetch-on="interaction">
-            <Button>
-              <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
-              Create Product
-            </Button>
-          </NuxtLink>
-        </CardContent>
-      </Card>
-
       <!-- Main Content -->
-      <div v-else class="space-y-6">
+      <div v-else-if="project" class="space-y-6">
         <!-- Stats Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
@@ -350,6 +359,19 @@
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <template v-if="hasMultipleProducts">
+                                  <DropdownMenuLabel>Move to product</DropdownMenuLabel>
+                                  <DropdownMenuItem
+                                    v-for="p in products.filter((prod) => prod.id !== item.productId)"
+                                    :key="p.id"
+                                    :data-testid="`feedback-move-${item.id}-${p.slug}`"
+                                    @click.stop="moveToProduct(item, p.id)"
+                                  >
+                                    <Icon name="lucide:arrow-right-left" class="w-4 h-4 mr-2" />
+                                    {{ p.name }}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </template>
                                 <DropdownMenuItem class="text-destructive" @click.stop="confirmDelete(item)">
                                   <Icon name="lucide:trash-2" class="w-4 h-4 mr-2" />
                                   Delete
@@ -360,6 +382,14 @@
                           <p v-if="item.body" class="text-xs text-muted-foreground mb-4 line-clamp-2">
                             {{ item.body }}
                           </p>
+                          <Badge
+                            v-if="item.sourceLabel"
+                            variant="secondary"
+                            class="mb-3 gap-1 text-[10px] px-1.5 py-0 font-normal"
+                          >
+                            <Icon name="lucide:app-window" class="w-3 h-3" />
+                            Added from {{ item.sourceLabel }}
+                          </Badge>
                           <div class="flex items-center justify-between mt-auto">
                             <div class="flex items-center gap-3 text-xs text-muted-foreground">
                               <div class="flex items-center gap-1 bg-muted px-1.5 py-0.5 rounded-md">
@@ -371,9 +401,19 @@
                                 <span>{{ item.commentCount }}</span>
                               </div>
                             </div>
-                            <Badge v-if="item.category" variant="outline" class="text-[10px] px-1.5 py-0 font-normal">
-                              {{ item.category.name }}
-                            </Badge>
+                            <div class="flex items-center gap-1">
+                              <Badge
+                                v-if="hasMultipleProducts"
+                                variant="secondary"
+                                class="text-[10px] px-1.5 py-0 font-normal"
+                                data-testid="feedback-item-product"
+                              >
+                                {{ productLabel(item) }}
+                              </Badge>
+                              <Badge v-if="item.category" variant="outline" class="text-[10px] px-1.5 py-0 font-normal">
+                                {{ item.category.name }}
+                              </Badge>
+                            </div>
                           </div>
                         </CardContent>
                       </Card>
@@ -413,7 +453,7 @@
                           <Icon v-else name="lucide:chevrons-up-down" class="w-3 h-3 opacity-30" />
                         </span>
                       </th>
-                      <th class="font-medium px-4 py-3">Product</th>
+                      <th v-if="hasMultipleProducts" class="font-medium px-4 py-3">Product</th>
                       <th class="font-medium px-4 py-3">Status</th>
                       <th
                         class="font-medium px-4 py-3 text-right cursor-pointer select-none hover:text-foreground"
@@ -465,9 +505,15 @@
                           {{ item.title }}
                         </NuxtLink>
                         <p v-if="item.body" class="text-xs text-muted-foreground mt-1 line-clamp-1">{{ item.body }}</p>
+                        <Badge v-if="item.sourceLabel" variant="secondary" class="mt-1.5 gap-1 font-normal">
+                          <Icon name="lucide:app-window" class="h-3 w-3" />
+                          Added from {{ item.sourceLabel }}
+                        </Badge>
                       </td>
-                      <td class="px-4 py-3 align-top">
-                        <span class="text-muted-foreground">{{ item.project?.name || 'Unknown' }}</span>
+                      <td v-if="hasMultipleProducts" class="px-4 py-3 align-top">
+                        <span class="text-muted-foreground" data-testid="feedback-item-product">{{
+                          productLabel(item)
+                        }}</span>
                       </td>
                       <td class="px-4 py-3 align-top">
                         <Badge :variant="statusBadgeVariant(item.status)" class="font-normal">{{
@@ -579,54 +625,19 @@
         <DialogContent class="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle>
-              {{
-                createDialogStep === 'select-project'
-                  ? 'Select Product'
-                  : createDialogStep === 'select-type'
-                    ? 'Select Feedback Type'
-                    : 'Add Feedback'
-              }}
+              {{ createDialogStep === 'select-type' ? 'Select Feedback Type' : 'Add Feedback' }}
             </DialogTitle>
             <DialogDescription>
               {{
-                createDialogStep === 'select-project'
-                  ? 'Choose which product to submit feedback for.'
-                  : createDialogStep === 'select-type'
-                    ? 'Choose the feedback type first, then add details.'
-                    : `Create a new feedback item for ${products.find((p) => p.id === createForm.projectId)?.name || 'this product'}.`
+                createDialogStep === 'select-type'
+                  ? 'Choose the feedback type first, then add details.'
+                  : `Create a new feedback item for ${project?.name || 'this project'}.`
               }}
             </DialogDescription>
           </DialogHeader>
 
-          <!-- Step 1: Project picker (multi-product only) -->
-          <div v-if="createDialogStep === 'select-project'" class="py-2">
-            <div class="max-h-[320px] overflow-y-auto space-y-2 pr-1">
-              <button
-                v-for="p in products.filter((prod) => selectedProjectIds.includes(prod.id))"
-                :key="p.id"
-                :data-testid="`feedback-create-project-${p.id}`"
-                type="button"
-                class="w-full text-left rounded-lg border bg-card p-4 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                @click="selectDialogProject(p)"
-              >
-                <div class="flex items-center gap-3">
-                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted">
-                    <Icon name="lucide:package" class="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p class="text-sm font-medium leading-none">{{ p.name }}</p>
-                    <p v-if="p.description" class="mt-1 text-xs text-muted-foreground line-clamp-1">
-                      {{ p.description }}
-                    </p>
-                  </div>
-                  <Icon name="lucide:chevron-right" class="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
-                </div>
-              </button>
-            </div>
-          </div>
-
           <!-- Step 2: Feedback type picker -->
-          <div v-else-if="createDialogStep === 'select-type'" class="py-2">
+          <div v-if="createDialogStep === 'select-type'" class="py-2">
             <div class="space-y-2">
               <button
                 v-for="type in feedbackTypeOptions"
@@ -663,6 +674,17 @@
               <Button variant="ghost" size="sm" class="h-7 px-2" @click="createDialogStep = 'select-type'">
                 Change
               </Button>
+            </div>
+            <div v-if="hasMultipleProducts" class="space-y-2">
+              <Label for="feedback-product">Product</Label>
+              <select
+                id="feedback-product"
+                v-model="createForm.productId"
+                data-testid="feedback-create-product"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option v-for="p in products" :key="p.id" :value="p.id">{{ p.name }}</option>
+              </select>
             </div>
             <div class="space-y-2">
               <Label for="feedback-title">Title</Label>
@@ -703,15 +725,7 @@
           </div>
 
           <DialogFooter>
-            <Button
-              v-if="
-                createDialogStep === 'fill-form' ||
-                (createDialogStep === 'select-type' && selectedProjectIds.length > 1)
-              "
-              variant="ghost"
-              class="mr-auto"
-              @click="createDialogBack"
-            >
+            <Button v-if="createDialogStep === 'fill-form'" variant="ghost" class="mr-auto" @click="createDialogBack">
               <Icon name="lucide:arrow-left" class="w-4 h-4 mr-2" />
               Back
             </Button>
@@ -758,8 +772,9 @@
 
 <script>
 import { VueDraggable } from 'vue-draggable-plus'
+import { cn } from '~/lib/utils'
 
-const ACTIVE_TEAM_CHANGED_EVENT = 'veerify:active-team-changed'
+const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 
 export default {
   name: 'FeedbackPage',
@@ -768,15 +783,14 @@ export default {
 
   data() {
     return {
+      // Active project (GET /api/projects/active)
+      project: null,
       products: [],
-      selectedProjectIds: [],
-      activeTeamId: '',
-      activeOrgSlug: '',
 
       feedbackItems: [],
       categories: [],
       dialogCategories: [],
-      githubIntegrationsByProjectId: {},
+      githubIntegration: null,
       creatingGithubIssueFeedbackIds: [],
       statusCounts: { open: 0, in_progress: 0, completed: 0 },
 
@@ -787,7 +801,7 @@ export default {
 
       showCreateDialog: false,
       isCreating: false,
-      createDialogStep: 'select-project',
+      createDialogStep: 'select-type',
       isLoadingDialogCategories: false,
       feedbackTypeOptions: [
         {
@@ -821,7 +835,7 @@ export default {
           description: 'Share feedback that does not fit a specific type.',
         },
       ],
-      createForm: { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' },
+      createForm: { title: '', body: '', categoryId: null, productId: '', feedbackType: '' },
 
       isExporting: false,
 
@@ -850,28 +864,29 @@ export default {
   },
 
   computed: {
-    selectedProjectId() {
-      return this.selectedProjectIds.length === 1 ? this.selectedProjectIds[0] : ''
+    isFeedbackView() {
+      return this.$route.query.view !== 'settings'
     },
-    selectedProject() {
-      return this.products.find((p) => p.id === this.selectedProjectId) || null
+    hasMultipleProducts() {
+      return this.products.length > 1
     },
-    allProductsSelected() {
-      return this.products.length > 0 && this.selectedProjectIds.length === this.products.length
+    // Current `?product=<slug>` filter; ignored with a single product
+    productFilterSlug() {
+      const slug = String(this.$route.query.product || '')
+      return this.hasMultipleProducts && this.products.some((p) => p.slug === slug) ? slug : ''
     },
-    selectedProductsLabel() {
-      if (this.products.length === 0) return 'No products'
-      if (this.allProductsSelected) return 'ALL products'
-      if (this.selectedProjectIds.length === 1) {
-        return this.selectedProject?.name || '1 product selected'
-      }
-      return `${this.selectedProjectIds.length} products selected`
+    productFilterId() {
+      return this.products.find((p) => p.slug === this.productFilterSlug)?.id || ''
+    },
+    // Keeps the product filter when switching back from Settings
+    feedbackTabQuery() {
+      return this.productFilterSlug ? { product: this.productFilterSlug } : {}
     },
     canCreateFeedback() {
-      return this.selectedProjectIds.length > 0
+      return Boolean(this.project) && this.products.length > 0
     },
     showGithubIssueColumn() {
-      return this.selectedProjectIds.some((projectId) => this.hasGithubIntegration(projectId))
+      return this.hasGithubIntegration()
     },
     selectedFeedbackType() {
       return this.feedbackTypeOptions.find((type) => type.value === this.createForm.feedbackType) || null
@@ -903,168 +918,85 @@ export default {
     },
   },
 
-  async mounted() {
-    await this.initTeamContext()
+  watch: {
+    // The sidebar links to /feedback?product=<slug>: react to query changes while mounted
+    productFilterId() {
+      if (this.project && this.isFeedbackView) this.onFilterScopeChange()
+    },
+    '$route.query.view'() {
+      if (this.project && this.isFeedbackView) this.onFilterScopeChange()
+    },
+  },
 
+  async mounted() {
     if (import.meta.client) {
-      window.addEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+      window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.initProjectContext)
     }
+    await this.initProjectContext()
   },
 
   beforeUnmount() {
     if (import.meta.client) {
-      window.removeEventListener(ACTIVE_TEAM_CHANGED_EVENT, this.handleActiveTeamChanged)
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, this.initProjectContext)
     }
+    if (this.searchTimer) clearTimeout(this.searchTimer)
   },
 
   methods: {
-    async handleActiveTeamChanged() {
-      await this.initTeamContext()
+    tabClass(active) {
+      return cn(
+        'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
+        active ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+      )
     },
 
-    async initTeamContext() {
+    chipClass(active) {
+      return cn(
+        'rounded-full border px-3 py-1 text-sm transition-colors',
+        active ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-accent'
+      )
+    },
+
+    productLabel(item) {
+      return item.product?.name || this.products.find((p) => p.id === item.productId)?.name || ''
+    },
+
+    setProductFilter(slug) {
+      const query = { ...this.$route.query }
+      if (slug) query.product = slug
+      else delete query.product
+      this.$router.replace({ query }).catch(() => {})
+    },
+
+    async initProjectContext() {
       this.isLoading = true
       this.error = null
 
       try {
-        const teamResponse = await $fetch('/api/teams/active')
-        const activeTeamData = teamResponse?.data
-
-        if (!activeTeamData?.id) {
-          this.error = 'No active team found'
-          this.isLoading = false
+        const response = await $fetch('/api/projects/active')
+        const context = response?.data
+        if (!context?.project?.id) {
+          this.error = 'No active project found'
           return
         }
-
-        this.activeTeamId = activeTeamData.id
-
-        // Extract organization slug from the response
-        if (activeTeamData.organization?.slug) {
-          this.activeOrgSlug = activeTeamData.organization.slug
-        }
-
-        await this.loadProducts()
+        this.project = context.project
+        this.products = context.products || []
+        await this.onFilterScopeChange()
       } catch (err) {
-        console.error('Error initializing team context:', err)
-        this.error = err?.data?.message || 'Failed to load team context'
-        this.isLoading = false
-      }
-    },
-
-    async loadProducts() {
-      if (!this.activeTeamId) return
-
-      this.isLoading = true
-      this.error = null
-
-      try {
-        const response = await $fetch(`/api/teams/${this.activeTeamId}/projects`)
-        this.products = response?.data || []
-
-        if (this.products.length > 0) {
-          this.selectedProjectIds = this.resolveInitialProjectSelection()
-          await this.onProjectChange()
-        } else {
-          this.selectedProjectIds = []
-          this.feedbackItems = []
-          this.categories = []
-          this.githubIntegrationsByProjectId = {}
-          this.updateStatusCounts()
-        }
-      } catch (err) {
-        console.error('Error loading products:', err)
-        this.error = 'Failed to load products. Please try again.'
+        console.error('Error loading the active project:', err)
+        this.error = err?.data?.error?.message || err?.data?.message || 'Failed to load the active project'
       } finally {
         this.isLoading = false
       }
     },
 
-    resolveInitialProjectSelection() {
-      const validIds = new Set(this.products.map((product) => product.id))
-      const rawProjectIds = this.$route.query.projectIds
-      const rawProjectId = this.$route.query.projectId
-
-      const requestedIdsFromList = []
-      if (typeof rawProjectIds === 'string') {
-        requestedIdsFromList.push(...rawProjectIds.split(','))
-      } else if (Array.isArray(rawProjectIds)) {
-        for (const value of rawProjectIds) {
-          requestedIdsFromList.push(...String(value).split(','))
-        }
-      }
-
-      const requestedIds = requestedIdsFromList
-        .map((id) => id.trim())
-        .filter(Boolean)
-        .filter((id) => validIds.has(id))
-
-      if (requestedIds.length > 0) {
-        return this.sortProjectIdsByProductOrder(requestedIds)
-      }
-
-      if (typeof rawProjectId === 'string' && validIds.has(rawProjectId)) {
-        return [rawProjectId]
-      }
-
-      return this.products.map((product) => product.id)
-    },
-
-    sortProjectIdsByProductOrder(projectIds) {
-      const uniqueIds = [...new Set(projectIds)]
-      const productOrder = new Map(this.products.map((product, index) => [product.id, index]))
-      return uniqueIds.sort((a, b) => (productOrder.get(a) ?? Infinity) - (productOrder.get(b) ?? Infinity))
-    },
-
-    syncProjectQuery() {
-      if (!import.meta.client) return
-
-      const query = { ...this.$route.query }
-      delete query.projectId
-      delete query.projectIds
-
-      if (this.selectedProjectIds.length === 1) {
-        query.projectId = this.selectedProjectIds[0]
-      } else if (this.selectedProjectIds.length > 1 && !this.allProductsSelected) {
-        query.projectIds = this.selectedProjectIds.join(',')
-      }
-
-      this.$router.replace({ query }).catch(() => {})
-    },
-
-    async toggleAllProducts(checked) {
-      if (checked === true) {
-        this.selectedProjectIds = this.products.map((product) => product.id)
-      } else if (this.products.length > 0) {
-        this.selectedProjectIds = [this.products[0].id]
-      }
-      await this.onProjectChange()
-    },
-
-    async toggleProjectSelection(projectId, checked) {
-      const selected = new Set(this.selectedProjectIds)
-
-      if (checked === true) {
-        selected.add(projectId)
-      } else if (selected.size > 1) {
-        selected.delete(projectId)
-      }
-
-      this.selectedProjectIds = this.sortProjectIdsByProductOrder([...selected])
-      await this.onProjectChange()
-    },
-
-    async onProjectChange() {
-      if (this.selectedProjectIds.length === 0 && this.products.length > 0) {
-        this.selectedProjectIds = [this.products[0].id]
-      }
-      this.selectedProjectIds = this.sortProjectIdsByProductOrder(this.selectedProjectIds)
-      this.syncProjectQuery()
+    async onFilterScopeChange() {
       this.pagination.page = 1
-      await Promise.all([this.loadFeedback(), this.loadCategories(), this.loadGithubIntegrations()])
+      await Promise.all([this.loadFeedback(), this.loadCategories(), this.loadGithubIntegration()])
     },
 
     async loadFeedback() {
-      if (this.selectedProjectIds.length === 0) {
+      if (!this.project) {
         this.feedbackItems = []
         this.pagination = { ...this.pagination, page: 1, total: 0, totalPages: 0 }
         this.buildKanbanData()
@@ -1077,10 +1009,11 @@ export default {
 
       try {
         const params = new URLSearchParams({
-          projectIds: this.selectedProjectIds.join(','),
+          projectIds: this.project.id,
           page: String(this.pagination.page),
           limit: String(this.pagination.limit),
         })
+        if (this.productFilterId) params.set('productId', this.productFilterId)
         if (this.searchQuery.trim()) params.set('search', this.searchQuery.trim())
         if (this.viewMode === 'table') {
           params.set('sortBy', this.sortBy)
@@ -1108,72 +1041,52 @@ export default {
     },
 
     async loadCategories() {
-      const proj = this.selectedProject
-      if (!proj?.slug) {
+      if (!this.project?.slug) {
         this.categories = []
-        this.createForm.categoryId = null
         return
       }
 
       try {
-        const response = await $fetch(`/api/projects/${proj.slug}/categories`)
+        const response = await $fetch(`/api/projects/${this.project.slug}/categories`)
         this.categories = response?.data || []
-        if (
-          this.createForm.categoryId &&
-          !this.categories.find((category) => category.id === this.createForm.categoryId)
-        ) {
-          this.createForm.categoryId = null
-        }
       } catch (err) {
         console.error('Error loading categories:', err)
       }
     },
 
-    async loadGithubIntegrations() {
-      if (this.selectedProjectIds.length === 0) {
-        this.githubIntegrationsByProjectId = {}
+    async loadGithubIntegration() {
+      if (!this.project?.slug) {
+        this.githubIntegration = null
         return
       }
 
-      const integrations = {}
-      await Promise.all(
-        this.selectedProjectIds.map(async (projectId) => {
-          const project = this.products.find((p) => p.id === projectId)
-          if (!project?.slug) {
-            integrations[projectId] = null
-            return
-          }
+      try {
+        const response = await $fetch(`/api/projects/${this.project.slug}/github`)
+        this.githubIntegration = response?.data || null
+      } catch {
+        // Members cannot read the integration; the GitHub column then stays hidden
+        this.githubIntegration = null
+      }
+    },
 
-          try {
-            const response = await $fetch(`/api/projects/${project.slug}/github`)
-            integrations[projectId] = response?.data || null
-          } catch (err) {
-            console.error(`Error loading GitHub integration for project ${project.slug}:`, err)
-            integrations[projectId] = null
-          }
-        })
-      )
-
-      this.githubIntegrationsByProjectId = integrations
+    async moveToProduct(item, productId) {
+      if (!productId || productId === item.productId) return
+      try {
+        await $fetch(`/api/feedback/${item.id}`, { method: 'PATCH', body: { productId } })
+        await this.loadFeedback()
+      } catch (err) {
+        console.error('Error moving feedback:', err)
+        alert(err?.data?.error?.message || 'Failed to move the feedback item')
+      }
     },
 
     openCreateDialog() {
-      if (this.selectedProjectIds.length === 0) return
-      this.createForm = { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' }
-      if (this.selectedProjectIds.length === 1) {
-        this.createForm.projectId = this.selectedProjectIds[0]
-        this.createDialogStep = 'select-type'
-      } else {
-        this.createDialogStep = 'select-project'
-      }
-      this.showCreateDialog = true
-    },
-
-    selectDialogProject(project) {
-      this.createForm.projectId = project.id
-      this.createForm.categoryId = null
-      this.createForm.feedbackType = ''
+      if (!this.canCreateFeedback) return
+      // Default product: the current filter, else the project's default (first) product
+      const productId = this.productFilterId || this.products[0]?.id || ''
+      this.createForm = { title: '', body: '', categoryId: null, productId, feedbackType: '' }
       this.createDialogStep = 'select-type'
+      this.showCreateDialog = true
     },
 
     async selectFeedbackType(type) {
@@ -1185,11 +1098,6 @@ export default {
     createDialogBack() {
       if (this.createDialogStep === 'fill-form') {
         this.createDialogStep = 'select-type'
-        return
-      }
-
-      if (this.createDialogStep === 'select-type' && this.selectedProjectIds.length > 1) {
-        this.createDialogStep = 'select-project'
       }
     },
 
@@ -1215,14 +1123,13 @@ export default {
     },
 
     async loadDialogCategories() {
-      const project = this.products.find((p) => p.id === this.createForm.projectId)
-      if (!project?.slug) {
+      if (!this.project?.slug) {
         this.dialogCategories = []
         return
       }
       this.isLoadingDialogCategories = true
       try {
-        const response = await $fetch(`/api/projects/${project.slug}/categories`)
+        const response = await $fetch(`/api/projects/${this.project.slug}/categories`)
         this.dialogCategories = response?.data || []
         this.syncCategoryWithFeedbackType()
       } catch (err) {
@@ -1235,19 +1142,18 @@ export default {
 
     closeCreateDialog() {
       this.showCreateDialog = false
-      this.createDialogStep = 'select-project'
+      this.createDialogStep = 'select-type'
       this.isLoadingDialogCategories = false
       this.dialogCategories = []
-      this.createForm = { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' }
+      this.createForm = { title: '', body: '', categoryId: null, productId: '', feedbackType: '' }
     },
 
-    hasGithubIntegration(projectId) {
-      const integration = this.githubIntegrationsByProjectId[projectId]
-      return Boolean(integration?.repoFullName && integration?.hasAccessToken)
+    hasGithubIntegration() {
+      return Boolean(this.githubIntegration?.repoFullName && this.githubIntegration?.hasAccessToken)
     },
 
     canCreateGithubIssue(item) {
-      return !item.githubIssue && this.hasGithubIntegration(item.projectId)
+      return !item.githubIssue && this.hasGithubIntegration()
     },
 
     isCreatingGithubIssue(feedbackId) {
@@ -1257,8 +1163,7 @@ export default {
     async createGithubIssue(item) {
       if (!this.canCreateGithubIssue(item) || this.isCreatingGithubIssue(item.id)) return
 
-      const integration = this.githubIntegrationsByProjectId[item.projectId]
-      const repo = integration?.repoFullName
+      const repo = this.githubIntegration?.repoFullName
       if (!repo) return
 
       this.creatingGithubIssueFeedbackIds = [...this.creatingGithubIssueFeedbackIds, item.id]
@@ -1355,7 +1260,7 @@ export default {
     },
 
     async createFeedback() {
-      if (!this.createForm.projectId || !this.createForm.title || !this.createForm.body) return
+      if (!this.project || !this.createForm.title || !this.createForm.body) return
       if (!this.createForm.feedbackType) return
 
       this.isCreating = true
@@ -1364,7 +1269,8 @@ export default {
         await $fetch('/api/feedback', {
           method: 'POST',
           body: {
-            projectId: this.createForm.projectId,
+            projectId: this.project.id,
+            ...(this.createForm.productId ? { productId: this.createForm.productId } : {}),
             title: this.createForm.title,
             body: this.createForm.body,
             categoryId: this.createForm.categoryId || null,
@@ -1373,7 +1279,7 @@ export default {
         })
 
         this.showCreateDialog = false
-        this.createForm = { title: '', body: '', categoryId: null, projectId: '', feedbackType: '' }
+        this.createForm = { title: '', body: '', categoryId: null, productId: '', feedbackType: '' }
         await this.loadFeedback()
       } catch (err) {
         console.error('Error creating feedback:', err)
@@ -1407,13 +1313,14 @@ export default {
     },
 
     async exportCsv() {
-      if (this.selectedProjectIds.length === 0) return
+      if (!this.project) return
 
       this.isExporting = true
       try {
         const params = new URLSearchParams({
-          projectIds: this.selectedProjectIds.join(','),
+          projectIds: this.project.id,
         })
+        if (this.productFilterId) params.set('productId', this.productFilterId)
         if (this.searchQuery.trim()) params.set('search', this.searchQuery.trim())
         if (this.statusFilter) params.set('status', this.statusFilter)
         params.set('sortBy', this.sortBy)

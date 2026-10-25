@@ -1,3 +1,4 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
@@ -16,9 +17,9 @@ test.describe.serial('support conversation read state', () => {
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie, '/support')
-    const teamResponse = await request.get('/api/teams/active', { headers })
-    expect(teamResponse.ok()).toBeTruthy()
-    const teamId = (await teamResponse.json()).data.id as string
+    const projectResponse = await request.get('/api/projects/active', { headers })
+    expect(projectResponse.ok()).toBeTruthy()
+    const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
     const sessionResponse = await request.get('/api/auth/session', { headers })
     expect(sessionResponse.ok()).toBeTruthy()
     const userId = (await sessionResponse.json()).data.user.id as string
@@ -33,7 +34,7 @@ test.describe.serial('support conversation read state', () => {
     try {
       await db.insert(supportInbox).values({
         id: inboxId,
-        teamId,
+        projectId,
         name: `Read state ${suffix}`,
         slug: `read-state-${suffix}`,
         createdAt: now,
@@ -48,7 +49,7 @@ test.describe.serial('support conversation read state', () => {
       })
       await db.insert(contact).values({
         id: contactId,
-        teamId,
+        projectId,
         name: 'Unread Customer',
         email: `unread-${suffix}@example.com`,
         createdAt: now,
@@ -57,7 +58,7 @@ test.describe.serial('support conversation read state', () => {
       await db.insert(conversation).values({
         id: conversationId,
         inboxId,
-        teamId,
+        projectId,
         contactId,
         displayId: 800000 + (Number.parseInt(suffix, 16) % 100000),
         subject: 'Unread styling check',
@@ -110,9 +111,9 @@ test.describe.serial('support conversation read state', () => {
   }) => {
     const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
     const headers = withAuthHeaders(sessionCookie, '/support')
-    const teamResponse = await request.get('/api/teams/active', { headers })
-    expect(teamResponse.ok()).toBeTruthy()
-    const teamId = (await teamResponse.json()).data.id as string
+    const projectResponse = await request.get('/api/projects/active', { headers })
+    expect(projectResponse.ok()).toBeTruthy()
+    const projectId = await enableProjectSupport((await projectResponse.json()).data.project.id as string)
     const sessionResponse = await request.get('/api/auth/session', { headers })
     expect(sessionResponse.ok()).toBeTruthy()
     const userId = (await sessionResponse.json()).data.user.id as string
@@ -135,7 +136,7 @@ test.describe.serial('support conversation read state', () => {
       })
       await db.insert(supportInbox).values({
         id: inboxId,
-        teamId,
+        projectId,
         name: `Handled read state ${suffix}`,
         slug: `handled-read-state-${suffix}`,
         createdAt: now,
@@ -150,7 +151,7 @@ test.describe.serial('support conversation read state', () => {
       })
       await db.insert(contact).values({
         id: contactId,
-        teamId,
+        projectId,
         name: 'Handled Customer',
         email: `handled-${suffix}@example.com`,
         createdAt: now,
@@ -159,7 +160,7 @@ test.describe.serial('support conversation read state', () => {
       await db.insert(conversation).values({
         id: conversationId,
         inboxId,
-        teamId,
+        projectId,
         contactId,
         assigneeUserId: ownerUserId,
         displayId: 900000 + (Number.parseInt(suffix, 16) % 100000),

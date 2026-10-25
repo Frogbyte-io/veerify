@@ -3,7 +3,8 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { contact, conversation, supportAttachmentUpload, supportInbox } from '../../server/database/schema/support'
 import { runAttachmentCleanup } from '../../server/utils/support-attachment-cleanup'
 import { reserveAttachmentFinalization } from '../../server/utils/support-attachment-finalization'
@@ -11,7 +12,7 @@ import type { StorageObjectMetadata, StorageProvider } from '../../server/utils/
 
 const ids = {
   org: `cleanup_org_${randomUUID()}`,
-  team: `cleanup_team_${randomUUID()}`,
+  project: `cleanup_project_${randomUUID()}`,
   inbox: `cleanup_inbox_${randomUUID()}`,
   user: `cleanup_user_${randomUUID()}`,
   contact: `cleanup_contact_${randomUUID()}`,
@@ -57,27 +58,30 @@ const storage = new FakeStorage()
 
 beforeAll(async () => {
   await db.insert(organization).values({ id: ids.org, name: 'Cleanup Org', slug: `cleanup-${randomUUID()}` })
-  await db
-    .insert(team)
-    .values({ id: ids.team, name: 'Cleanup Team', slug: `cleanup-team-${randomUUID()}`, organizationId: ids.org })
+  await db.insert(project).values({
+    id: ids.project,
+    name: 'Cleanup Project',
+    slug: `cleanup-project-${randomUUID()}`,
+    organizationId: ids.org,
+  })
   await db.insert(user).values({ id: ids.user, name: 'Cleanup Agent', email: `cleanup-${randomUUID()}@example.com` })
   await db.insert(supportInbox).values({
     id: ids.inbox,
-    teamId: ids.team,
+    projectId: ids.project,
     name: 'Cleanup Inbox',
     slug: `cleanup-inbox-${randomUUID()}`,
     emailAddress: `cleanup-${randomUUID()}@example.com`,
   })
   await db.insert(contact).values({
     id: ids.contact,
-    teamId: ids.team,
+    projectId: ids.project,
     name: 'Cleanup Customer',
     email: `cleanup-customer-${randomUUID()}@example.com`,
   })
   await db.insert(conversation).values({
     id: ids.conversation,
     inboxId: ids.inbox,
-    teamId: ids.team,
+    projectId: ids.project,
     contactId: ids.contact,
     displayId: 987654,
     subject: 'Cleanup',

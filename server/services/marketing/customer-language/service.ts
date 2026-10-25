@@ -1,6 +1,6 @@
 /**
  * Customer language runs. Privacy rule (design.md, security constraints): no
- * feedback or support text reaches an LLM provider unless the team has an
+ * feedback or support text reaches an LLM provider unless the workspace has an
  * explicit consent for that source, re-read at run time. Message text is never
  * logged.
  */
@@ -12,14 +12,14 @@ import { db } from '~/server/database/drizzle'
 import { customerLanguageInsight, marketingTerm } from '~/server/database/schema/marketing'
 import type { LlmProviderId } from '~/server/services/llm'
 import {
-  callTeamLlm,
+  callOrgLlm,
   failedBeforeProviderCall,
-  type TeamLlmMessages,
-  type TeamLlmRequest,
-  type TeamLlmResult,
+  type OrgLlmMessages,
+  type OrgLlmRequest,
+  type OrgLlmResult,
 } from '~/server/services/marketing/llm-call'
 import { pickSuggestionProvider } from '~/server/services/marketing/visibility/prompts'
-import { listTeamCredentials } from '~/server/utils/team-credentials'
+import { listOrgCredentials } from '~/server/utils/org-credentials'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import {
   collectFeedbackItems,
@@ -77,17 +77,17 @@ export async function countRecentRuns(siteId: string, now: Date = new Date()): P
 
 /** Why a run cannot start right now, or null. Cheap checks only; item count is checked at run time. */
 export async function languageBlockReason(input: {
-  teamId: string
+  organizationId: string
   siteId: string
 }): Promise<{ reason: LanguageBlockReason; message: string } | null> {
-  const consent = await readConsent(input.teamId)
+  const consent = await readConsent(input.organizationId)
   if (consentedSources(consent).length === 0) {
     return {
       reason: 'no_consent',
       message: 'Allow Veerify to send feedback or support text to your AI provider first',
     }
   }
-  const credentials = await listTeamCredentials(input.teamId)
+  const credentials = await listOrgCredentials(input.organizationId)
   if (!pickSuggestionProvider(credentials)) {
     return {
       reason: 'no_key',
@@ -101,13 +101,13 @@ export async function languageBlockReason(input: {
 }
 
 export interface LanguageRunDeps {
-  readConsent(teamId: string): Promise<DataConsent>
+  readConsent(organizationId: string): Promise<DataConsent>
   collectFeedback(projectId: string, since: Date, options?: CollectFeedbackOptions): Promise<DatedItem[]>
-  collectSupport(teamId: string, projectId: string, since: Date): Promise<DatedItem[]>
-  listCredentials(teamId: string): Promise<{ provider: string; status: string }[]>
+  collectSupport(projectId: string, since: Date): Promise<DatedItem[]>
+  listCredentials(organizationId: string): Promise<{ provider: string; status: string }[]>
   countRecentRuns(siteId: string): Promise<number>
   termLabels(siteId: string): Promise<string[]>
-  callLlm(teamId: string, request: TeamLlmRequest, messages: TeamLlmMessages): Promise<TeamLlmResult<unknown>>
+  callLlm(organizationId: string, request: OrgLlmRequest, messages: OrgLlmMessages): Promise<OrgLlmResult<unknown>>
   /**
    * Atomically checks the daily limit and reserves a run (a placeholder row with
    * itemCount 0). Returns the run id, or null when the limit is reached.
@@ -125,7 +125,7 @@ const defaultDeps: LanguageRunDeps = {
   readConsent,
   collectFeedback: collectFeedbackItems,
   collectSupport: collectSupportItems,
-  listCredentials: listTeamCredentials,
+  listCredentials: listOrgCredentials,
   countRecentRuns,
   async termLabels(siteId) {
     const rows = await db
@@ -134,7 +134,7 @@ const defaultDeps: LanguageRunDeps = {
       .where(eq(marketingTerm.siteId, siteId))
     return rows.map((r) => r.label)
   },
-  callLlm: callTeamLlm,
+  callLlm: callOrgLlm,
   async claimRun(siteId, userId, now) {
     return db.transaction(async (tx) => {
       // Serialises concurrent runs for this site: the check and the insert are atomic
@@ -199,7 +199,7 @@ const defaultDeps: LanguageRunDeps = {
 export interface LanguageRunInput {
   projectId: string
   siteId: string
-  teamId: string
+  organizationId: string
   userId: string
   /** Used only to tell the model not to echo the product name; no customer data */
   productName?: string
@@ -222,7 +222,7 @@ export async function runCustomerLanguage(
   deps: LanguageRunDeps = defaultDeps
 ): Promise<{ id: string; provider: LlmProviderId; itemCount: number; sources: LanguageSource[] } & LanguageResult> {
   // 1. Consent, re-read now. Nothing is collected from a source without it.
-  const consent = await deps.readConsent(input.teamId)
+  const consent = await deps.readConsent(input.organizationId)
   const sources = consentedSources(consent)
   if (sources.length === 0) {
     fail(
@@ -234,8 +234,8 @@ export async function runCustomerLanguage(
     )
   }
 
-  // 2. Cheap guards before reading any customer text (key and budget are enforced again by callTeamLlm)
-  const credentials = await deps.listCredentials(input.teamId)
+  // 2. Cheap guards before reading any customer text (key and budget are enforced again by callOrgLlm)
+  const credentials = await deps.listCredentials(input.organizationId)
   if (!pickSuggestionProvider(credentials)) fail(409, 'Conflict', ErrorCode.CONFLICT, NO_KEY_MESSAGE, 'no_key')
   if ((await deps.countRecentRuns(input.siteId)) >= MAX_RUNS_PER_DAY) limitReached()
 
@@ -249,7 +249,7 @@ export async function runCustomerLanguage(
       ...(await deps.collectFeedback(input.projectId, since, { includeSupportDerived: consent.allowSupportText }))
     )
   }
-  if (consent.allowSupportText) collected.push(...(await deps.collectSupport(input.teamId, input.projectId, since)))
+  if (consent.allowSupportText) collected.push(...(await deps.collectSupport(input.projectId, since)))
 
   const items = collected
     .filter((i) => sources.includes(i.source) && i.createdAt.getTime() >= since.getTime())
@@ -269,14 +269,14 @@ export async function runCustomerLanguage(
 
   const existingLabels = await deps.termLabels(input.siteId)
 
-  // 4. Reserve a run atomically (race-safe daily limit), then call the provider with the team's own key
+  // 4. Reserve a run atomically (race-safe daily limit), then call the provider with the workspace's own key
   const runId = await deps.claimRun(input.siteId, input.userId, now)
   if (!runId) limitReached()
 
-  let result: TeamLlmResult<unknown>
+  let result: OrgLlmResult<unknown>
   try {
     result = await deps.callLlm(
-      input.teamId,
+      input.organizationId,
       {
         system: buildLanguageSystemPrompt(input.productName ?? 'this product'),
         input: prepared.text,

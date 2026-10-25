@@ -215,7 +215,7 @@ export default {
   mixins: [inlineFormMixin],
 
   props: {
-    product: { type: Object, required: true },
+    project: { type: Object, required: true },
     siteAdded: { type: Boolean, default: false },
   },
 
@@ -251,7 +251,7 @@ export default {
         if (value) this.load()
       },
     },
-    'product.id'() {
+    'project.id'() {
       if (this.siteAdded) this.load()
     },
   },
@@ -263,21 +263,21 @@ export default {
 
     // `silent` refreshes in place (after create/edit/delete) without a skeleton flash
     async load(silent = false) {
-      const productId = this.product.id
+      const projectId = this.project.id
       if (!silent) this.isLoading = true
       this.error = null
       try {
-        const response = await $fetch(`/api/marketing/projects/${productId}/terms`)
-        if (productId !== this.product.id) return
+        const response = await $fetch(`/api/marketing/projects/${projectId}/terms`)
+        if (projectId !== this.project.id) return
         this.terms = response?.data?.terms || []
         this.limit = response?.data?.limit || 50
       } catch (err) {
-        if (productId !== this.product.id) return
+        if (projectId !== this.project.id) return
         const message = apiErrorMessage(err, 'Failed to load terms')
         if (silent) toast.error(message)
         else this.error = message
       } finally {
-        if (productId === this.product.id) this.isLoading = false
+        if (projectId === this.project.id) this.isLoading = false
       }
     },
 
@@ -324,7 +324,7 @@ export default {
         if (kind === 'competitor' && this.draft.competitorDomain.trim()) {
           body.competitorDomain = this.draft.competitorDomain
         }
-        await $fetch(`/api/marketing/projects/${this.product.id}/terms`, { method: 'POST', body })
+        await $fetch(`/api/marketing/projects/${this.project.id}/terms`, { method: 'POST', body })
         this.adding = null
         await this.load(true)
         this.$emit('changed')
@@ -341,7 +341,7 @@ export default {
       try {
         const body = { label: this.draft.label, aliases: this.parseAliases(this.draft.aliases) }
         if (term.kind === 'competitor') body.competitorDomain = this.draft.competitorDomain.trim() || null
-        await $fetch(`/api/marketing/projects/${this.product.id}/terms/${term.id}`, { method: 'PUT', body })
+        await $fetch(`/api/marketing/projects/${this.project.id}/terms/${term.id}`, { method: 'PUT', body })
         this.editingId = null
         await this.load(true)
         this.$emit('changed')
@@ -355,7 +355,7 @@ export default {
     async remove(term) {
       this.saving = true
       try {
-        await $fetch(`/api/marketing/projects/${this.product.id}/terms/${term.id}`, { method: 'DELETE' })
+        await $fetch(`/api/marketing/projects/${this.project.id}/terms/${term.id}`, { method: 'DELETE' })
         await this.load(true)
         this.$emit('changed')
       } catch (err) {

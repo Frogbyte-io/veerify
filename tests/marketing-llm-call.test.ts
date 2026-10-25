@@ -17,9 +17,9 @@ vi.mock('h3', () => ({
     Object.assign(new Error(input.statusMessage), input),
 }))
 
-vi.mock('~/server/utils/team-credentials', () => ({
-  listTeamCredentials: vi.fn(async () => state.credentials),
-  getTeamApiKey: vi.fn(async (_teamId: string, provider: string) => {
+vi.mock('~/server/utils/org-credentials', () => ({
+  listOrgCredentials: vi.fn(async () => state.credentials),
+  getOrgApiKey: vi.fn(async (_teamId: string, provider: string) => {
     state.calledWith.push(provider)
     return state.keys[provider] ?? null
   }),
@@ -83,7 +83,7 @@ vi.mock('~/server/services/llm', async () => {
   }
 })
 
-const { callTeamLlm } = await import('~/server/services/marketing/llm-call')
+const { callOrgLlm } = await import('~/server/services/marketing/llm-call')
 const { LlmProviderError } = await import('~/server/services/llm/types')
 
 const request = { system: 's', input: 'i', schema: {}, schemaName: 'n' }
@@ -111,14 +111,14 @@ beforeEach(() => {
   })
 })
 
-describe('callTeamLlm', () => {
+describe('callOrgLlm', () => {
   it('prefers Anthropic and records token and cost usage', async () => {
     state.credentials = [
       { provider: 'openai', status: 'valid' },
       { provider: 'anthropic', status: 'unchecked' },
     ]
     state.keys.openai = key()
-    const result = await callTeamLlm('t1', request, messages)
+    const result = await callOrgLlm('t1', request, messages)
     expect(result.provider).toBe('anthropic')
     expect(state.calledWith).toEqual(['anthropic'])
     const metrics = state.recorded.map(([, metric]) => metric)
@@ -134,14 +134,14 @@ describe('callTeamLlm', () => {
       { provider: 'openai', status: 'valid' },
     ]
     state.keys.openai = key()
-    const result = await callTeamLlm('t1', request, messages)
+    const result = await callOrgLlm('t1', request, messages)
     expect(result.provider).toBe('openai')
   })
 
   it('409s with the caller message when no key is usable', async () => {
     state.credentials = [{ provider: 'anthropic', status: 'invalid' }]
-    await expect(callTeamLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
-    await expect(callTeamLlm('t1', request, messages)).rejects.toMatchObject({
+    await expect(callOrgLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
+    await expect(callOrgLlm('t1', request, messages)).rejects.toMatchObject({
       data: { error: { message: 'no key here' } },
     })
     expect(state.extract).not.toHaveBeenCalled()
@@ -150,7 +150,7 @@ describe('callTeamLlm', () => {
   it('stops at the monthly budget without calling the provider', async () => {
     state.keys.anthropic = key('abcd', 100)
     state.usage = { 'llm:anthropic:cost_usd_micros': 1_000_000 }
-    await expect(callTeamLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
+    await expect(callOrgLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
     expect(state.extract).not.toHaveBeenCalled()
     expect(state.recorded).toEqual([])
   })
@@ -158,19 +158,19 @@ describe('callTeamLlm', () => {
   it('still calls when the reservation fits under the budget', async () => {
     state.keys.anthropic = key('abcd', 100)
     state.usage = { 'llm:anthropic:cost_usd_micros': 900_000 }
-    await expect(callTeamLlm('t1', request, messages)).resolves.toMatchObject({ data: { ok: true } })
+    await expect(callOrgLlm('t1', request, messages)).resolves.toMatchObject({ data: { ok: true } })
   })
 
   it('counts in-flight reservations against the budget', async () => {
     state.keys.anthropic = key('abcd', 100)
     state.usage = { 'llm:anthropic:reserved_usd_micros': 990_000 }
-    await expect(callTeamLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
+    await expect(callOrgLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
     expect(state.extract).not.toHaveBeenCalled()
   })
 
   it('reserves before the call and settles the actual cost (haiku 100*1 + 50*5)', async () => {
     state.keys.anthropic = key('abcd', 100)
-    await callTeamLlm('t1', request, messages)
+    await callOrgLlm('t1', request, messages)
     const [reserve, settle] = state.budgetCalls
     expect(reserve).toMatch(/^reserve:\d+$/)
     const held = Number(reserve.split(':')[1])
@@ -181,14 +181,14 @@ describe('callTeamLlm', () => {
   })
 
   it('holds nothing for a key without a cap but still books the cost', async () => {
-    await callTeamLlm('t1', request, messages)
+    await callOrgLlm('t1', request, messages)
     expect(state.budgetCalls).toEqual(['reserve:0', 'settle:0:350'])
   })
 
   it('releases the reservation when the provider fails', async () => {
     state.keys.anthropic = key('abcd', 100)
     state.extract.mockRejectedValue(new LlmProviderError('anthropic', 'server', 'x'))
-    await callTeamLlm('t1', request, messages).catch(() => undefined)
+    await callOrgLlm('t1', request, messages).catch(() => undefined)
     expect(state.budgetCalls[1]).toMatch(/^release:\d+$/)
     expect(state.usage['llm:anthropic:reserved_usd_micros']).toBe(0)
     expect(state.usage['llm:anthropic:cost_usd_micros'] ?? 0).toBe(0)
@@ -196,7 +196,7 @@ describe('callTeamLlm', () => {
 
   it('marks the key invalid with its hint on auth errors and maps to 409', async () => {
     state.extract.mockRejectedValue(new LlmProviderError('anthropic', 'auth', 'nope', 401))
-    await expect(callTeamLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
+    await expect(callOrgLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
     expect(state.markInvalid).toHaveBeenCalledWith('t1', 'anthropic', expect.any(String), 'abcd')
     expect(state.notify).toHaveBeenCalledWith('t1', 'anthropic')
   })
@@ -204,7 +204,7 @@ describe('callTeamLlm', () => {
   it('does not notify again when the key was already invalid', async () => {
     state.markInvalid.mockResolvedValue(false)
     state.extract.mockRejectedValue(new LlmProviderError('anthropic', 'auth', 'nope', 401))
-    await expect(callTeamLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
+    await expect(callOrgLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
     expect(state.notify).not.toHaveBeenCalled()
   })
 
@@ -215,7 +215,7 @@ describe('callTeamLlm', () => {
     ['timeout', 502],
   ] as const)('maps provider %s errors to %i', async (kind, status) => {
     state.extract.mockRejectedValue(new LlmProviderError('anthropic', kind, 'x'))
-    const err = await callTeamLlm('t1', request, messages).catch((e) => e)
+    const err = await callOrgLlm('t1', request, messages).catch((e) => e)
     expect(err.statusCode).toBe(status)
     expect(state.markInvalid).not.toHaveBeenCalled()
     if (status === 502) expect(err.data.error.message).toBe('upstream failed')
@@ -223,21 +223,21 @@ describe('callTeamLlm', () => {
 
   it('rethrows unknown errors', async () => {
     state.extract.mockRejectedValue(new TypeError('boom'))
-    await expect(callTeamLlm('t1', request, messages)).rejects.toThrow('boom')
+    await expect(callOrgLlm('t1', request, messages)).rejects.toThrow('boom')
   })
 
   it('records extra usage metrics only after a successful call', async () => {
-    await callTeamLlm('t1', { ...request, extraUsageMetrics: { 'language:runs': 1 } }, messages)
+    await callOrgLlm('t1', { ...request, extraUsageMetrics: { 'language:runs': 1 } }, messages)
     expect(state.recorded.map(([, metric, units]) => [metric, units])).toContainEqual(['language:runs', 1])
 
     state.recorded = []
     state.extract.mockRejectedValue(new LlmProviderError('anthropic', 'server', 'x'))
-    await callTeamLlm('t1', { ...request, extraUsageMetrics: { 'language:runs': 1 } }, messages).catch(() => undefined)
+    await callOrgLlm('t1', { ...request, extraUsageMetrics: { 'language:runs': 1 } }, messages).catch(() => undefined)
     expect(state.recorded).toEqual([])
   })
 
   it('tags 409 failures with a machine-readable reason', async () => {
-    const reasonOf = async () => (await callTeamLlm('t1', request, messages).catch((e) => e)).data.error.details?.reason
+    const reasonOf = async () => (await callOrgLlm('t1', request, messages).catch((e) => e)).data.error.details?.reason
 
     state.credentials = []
     expect(await reasonOf()).toBe('no_key')

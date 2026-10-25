@@ -51,7 +51,7 @@ export const openapiPaths = {
       "tags": [
         "Changelog"
       ],
-      "summary": "List changelog entries of a product",
+      "summary": "List changelog entries of a project",
       "operationId": "listChangelogEntries",
       "parameters": [
         {
@@ -75,6 +75,14 @@ export const openapiPaths = {
         },
         {
           "in": "query",
+          "name": "productId",
+          "description": "Only entries tagged with this product, or untagged (whole project)",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
           "name": "cursor",
           "schema": {
             "type": "string"
@@ -88,7 +96,7 @@ export const openapiPaths = {
           "with `nextCursor`": null
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Changelog is off": null
         }
       }
@@ -98,7 +106,7 @@ export const openapiPaths = {
         "Changelog"
       ],
       "summary": "Create a draft changelog entry",
-      "description": "The slug is generated from the title and is unique within the product.",
+      "description": "The slug is generated from the title and is unique within the project.",
       "operationId": "createChangelogEntry",
       "parameters": [
         {
@@ -150,6 +158,14 @@ export const openapiPaths = {
                   "items": {
                     "type": "string"
                   }
+                },
+                "productIds": {
+                  "type": "array",
+                  "maxItems": 50,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Empty = whole project"
                 }
               }
             }
@@ -162,10 +178,10 @@ export const openapiPaths = {
         },
         "400": {
           "description": "Validation failed",
-          "or feedback from another product": null
+          "or feedback or products from another project": null
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Changelog is off": null
         }
       }
@@ -234,7 +250,7 @@ export const openapiPaths = {
           "description": "Entry with linked `feedback` (id, title, status)"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Changelog is off": null
         },
         "404": {
@@ -497,8 +513,8 @@ export const openapiPaths = {
       "tags": [
         "Internal"
       ],
-      "summary": "Scheduled task trigger (Vercel Cron only)",
-      "description": "Invoked by Vercel Cron on the schedule declared in vercel.json. Requires a bearer CRON_SECRET; not intended for manual calls.\n",
+      "summary": "Scheduled task trigger (external trigger)",
+      "description": "Optional external trigger; the in-process scheduler normally runs this task. Requires a bearer CRON_SECRET; not intended for manual calls.\n",
       "operationId": "cronExamplePing",
       "responses": {
         "200": {
@@ -1416,7 +1432,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Published changelog entries with their announcement drafts",
-      "description": "Published entries of the product, newest first, each with its drafts per channel (entries without drafts included). Also reports whether the changelog is on and whether the team has a usable LLM key.\n",
+      "description": "Published entries of the product, newest first, each with its drafts per channel (entries without drafts included). Also reports whether the changelog is on and whether the workspace has a usable LLM key.\n",
       "operationId": "listMarketingAnnouncements",
       "parameters": [
         {
@@ -1443,7 +1459,7 @@ export const openapiPaths = {
           "description": "Invalid cursor"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Project not found"
@@ -1495,7 +1511,7 @@ export const openapiPaths = {
           "description": "Draft deleted (also when none existed)"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Entry or channel not found"
@@ -1567,7 +1583,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Entry or channel not found"
@@ -1581,7 +1597,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Generate announcement drafts for a published changelog entry",
-      "description": "Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Regenerating overwrites existing drafts, hand edits included. Nothing is ever posted.\n",
+      "description": "Uses the workspace's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Regenerating overwrites existing drafts, hand edits included. Nothing is ever posted.\n",
       "operationId": "generateMarketingAnnouncements",
       "parameters": [
         {
@@ -1632,7 +1648,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Entry not found for this product"
@@ -1658,7 +1674,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List recent site audits for a product",
-      "description": "Returns the 20 most recent audits plus whether a new audit can be started now (`canStart`, with the `reason` when not: `not_verified`, `active_audit` or `daily_limit`). Requires Marketing enabled for the team and the product.\n",
+      "description": "Returns the 20 most recent audits plus whether a new audit can be started now (`canStart`, with the `reason` when not: `not_verified`, `active_audit` or `daily_limit`). Requires Marketing enabled for the the project.\n",
       "operationId": "listMarketingAudits",
       "parameters": [
         {
@@ -1687,7 +1703,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Start a manual site audit",
-      "description": "Queues an audit of the product's verified site. Runs a full crawl when a Firecrawl key is available (team key or instance key), otherwise a basic audit of robots.txt, llms.txt, sitemap and the home page. Fails with 409 while another audit is running and 429 after the daily manual limit. Unverified sites are never fetched (403).\n",
+      "description": "Queues an audit of the product's verified site. Runs a full crawl when a Firecrawl key is available (workspace key or instance key), otherwise a basic audit of robots.txt, llms.txt, sitemap and the home page. Fails with 409 while another audit is running and 429 after the daily manual limit. Unverified sites are never fetched (403).\n",
       "operationId": "startMarketingAudit",
       "parameters": [
         {
@@ -1850,7 +1866,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Competitors with their watched pages and recent changes",
-      "description": "Any team member with Marketing access. Lists the competitor terms of the site with their watched pages, the 50 most recent detected changes (newest first) and the number of unseen changes.\n",
+      "description": "Any project member with Marketing access. Lists the competitor terms of the site with their watched pages, the 50 most recent detected changes (newest first) and the number of unseen changes.\n",
       "operationId": "getMarketingCompetitors",
       "parameters": [
         {
@@ -1868,7 +1884,7 @@ export const openapiPaths = {
           "watches and changes": null
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         }
       }
@@ -1880,7 +1896,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Mark competitor changes as seen",
-      "description": "Any team member with Marketing access. Marks every unseen change when `ids` is omitted.",
+      "description": "Any project member with Marketing access. Marks every unseen change when `ids` is omitted.",
       "operationId": "markMarketingCompetitorChangesSeen",
       "parameters": [
         {
@@ -1916,7 +1932,7 @@ export const openapiPaths = {
           "description": "Changes marked as seen"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         }
       }
@@ -1928,7 +1944,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Turn AI summaries of competitor changes on or off",
-      "description": "Marketing admin only. Summaries use the team's own LLM key and its monthly budget. Stored in the product settings (no extra table).\n",
+      "description": "Marketing admin only. Summaries use the workspace's own LLM key and its monthly budget. Stored in the product settings (no extra table).\n",
       "operationId": "updateMarketingCompetitorSettings",
       "parameters": [
         {
@@ -2206,7 +2222,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Delete a product's Marketing data",
-      "description": "Team admins only; works while Marketing is switched off. Requires the product slug as confirmation. Revokes a connected Google Search Console token (best effort), then deletes the marketing site with its audits, visibility, mentions, competitors, insights and Search Console data, plus the product's review requests, testimonials, launch kit and announcement drafts. Team-level API keys, consent and email suppressions are kept.\n",
+      "description": "Project admins only; works while Marketing is switched off. Requires the product slug as confirmation. Revokes a connected Google Search Console token (best effort), then deletes the marketing site with its audits, visibility, mentions, competitors, insights and Search Console data, plus the product's review requests, testimonials, launch kit and announcement drafts. Workspace-level API keys, consent and email suppressions are kept.\n",
       "operationId": "deleteMarketingData",
       "parameters": [
         {
@@ -2245,7 +2261,7 @@ export const openapiPaths = {
           "description": "Confirmation missing or does not match the product slug"
         },
         "403": {
-          "description": "Team admin required"
+          "description": "Project admin required"
         },
         "404": {
           "description": "Product not found"
@@ -2259,7 +2275,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Export a product's Marketing data",
-      "description": "Team admins only; works while Marketing is switched off. Returns a JSON download of the product's Marketing data. Never contains encrypted keys, refresh tokens, the site verification token or review request tokens. Audit pages are reduced to url, status and title.\n",
+      "description": "Project admins only; works while Marketing is switched off. Returns a JSON download of the product's Marketing data. Never contains encrypted keys, refresh tokens, the site verification token or review request tokens. Audit pages are reduced to url, status and title.\n",
       "operationId": "exportMarketingData",
       "parameters": [
         {
@@ -2283,7 +2299,7 @@ export const openapiPaths = {
           }
         },
         "403": {
-          "description": "Team admin required"
+          "description": "Project admin required"
         },
         "404": {
           "description": "Product not found"
@@ -2360,7 +2376,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "No marketing site is set up"
@@ -2390,7 +2406,7 @@ export const openapiPaths = {
           "description": "The 10 most recent runs without phrases"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "No marketing site is set up"
@@ -2422,7 +2438,7 @@ export const openapiPaths = {
           "canRun and a reason when not": null
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "No marketing site is set up"
@@ -2436,7 +2452,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Analyze customer language for a product",
-      "description": "Team admin only. Sends PII-stripped feedback and/or support text from the last 90 days (at most 300 items) to the team's own AI provider key, but only for sources the team has consented to. At most 5 runs per product per day.\n",
+      "description": "Project admin only. Sends PII-stripped feedback and/or support text from the last 90 days (at most 300 items) to the workspace's own AI provider key, but only for sources the workspace has consented to. At most 5 runs per product per day.\n",
       "operationId": "runCustomerLanguage",
       "parameters": [
         {
@@ -2453,7 +2469,7 @@ export const openapiPaths = {
           "description": "The stored insight"
         },
         "403": {
-          "description": "Team admin required",
+          "description": "Project admin required",
           "or Marketing is not enabled": null
         },
         "409": {
@@ -2495,7 +2511,7 @@ export const openapiPaths = {
           "custom directories and progress": null
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         },
         "404": {
@@ -2535,7 +2551,7 @@ export const openapiPaths = {
           "or catalog directory reset": null
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         },
         "404": {
@@ -2613,7 +2629,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         },
         "404": {
@@ -2674,7 +2690,7 @@ export const openapiPaths = {
           "description": "Validation failed or the 30 directory limit is reached"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         },
         "404": {
@@ -2763,7 +2779,7 @@ export const openapiPaths = {
           "description": "Invalid query or cursor"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -2825,7 +2841,7 @@ export const openapiPaths = {
           "description": "Mention updated"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -2840,7 +2856,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Escalate a mention to a support conversation",
-      "description": "Creates a conversation in the team's support inbox whose first message is an internal note (never sent to anyone) describing the mention, and marks the mention escalated. Idempotent: escalating again returns the existing conversation. Requires the Support module and access to a support inbox.\n",
+      "description": "Creates a conversation in the project's support inbox whose first message is an internal note (never sent to anyone) describing the mention, and marks the mention escalated. Idempotent: escalating again returns the existing conversation. Requires the Support module and access to a support inbox.\n",
       "operationId": "escalateMarketingMention",
       "parameters": [
         {
@@ -2865,7 +2881,7 @@ export const openapiPaths = {
           "description": "escalated: true. Conversation id, inbox id and display id are included only when the caller can open that inbox"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "Marketing is off": null,
           "or no access to a support inbox": null
         },
@@ -2873,7 +2889,7 @@ export const openapiPaths = {
           "description": "Mention not found for this product"
         },
         "409": {
-          "description": "Support is not enabled for this team"
+          "description": "Support is not enabled for this project"
         }
       }
     }
@@ -2936,7 +2952,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         }
       }
@@ -2965,7 +2981,7 @@ export const openapiPaths = {
           "description": "Source status list"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -2997,8 +3013,8 @@ export const openapiPaths = {
           "description": "Overview"
         },
         "403": {
-          "description": "Not a team member",
-          "or Marketing is off for the team or product": null
+          "description": "No access to this project",
+          "or Marketing is off for the project": null
         },
         "404": {
           "description": "Product not found"
@@ -3049,7 +3065,7 @@ export const openapiPaths = {
           "description": "Invalid query or cursor"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -3062,7 +3078,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Send review requests manually",
-      "description": "Team admins only. Queues a request for up to 20 email addresses. The same guards as automatic requests apply (enabled, suppression list, cooldown). Each address gets its own result (invalid addresses and skipped addresses are reported per address, not queued). Limited to 10 calls per hour per product and 100 manually queued requests per team per day (reason `daily_limit`).\n",
+      "description": "Project admins only. Queues a request for up to 20 email addresses. The same guards as automatic requests apply (enabled, suppression list, cooldown). Each address gets its own result (invalid addresses and skipped addresses are reported per address, not queued). Limited to 10 calls per hour per product and 100 manually queued requests per project per day (reason `daily_limit`).\n",
       "operationId": "createMarketingReviewRequests",
       "parameters": [
         {
@@ -3106,7 +3122,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a team admin",
+          "description": "Not a project admin",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -3124,7 +3140,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Get review and testimonial request settings",
-      "description": "Returns the product's settings (defaults when never saved: disabled) and the product's feedback statuses, for the \"shipped\" trigger picker, and `canManage` (true for team admins) so the UI can show a read-only view.\n",
+      "description": "Returns the product's settings (defaults when never saved: disabled) and the product's feedback statuses, for the \"shipped\" trigger picker, and `canManage` (true for project admins) so the UI can show a read-only view.\n",
       "operationId": "getMarketingReviewSettings",
       "parameters": [
         {
@@ -3141,7 +3157,7 @@ export const openapiPaths = {
           "description": "Settings and available statuses"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -3154,7 +3170,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Save review and testimonial request settings",
-      "description": "Team admins only. Replaces the whole settings object. At most 6 platforms, https URLs only, labels up to 40 characters. Shipped status values must exist in the product's feedback statuses.\n",
+      "description": "Project admins only. Replaces the whole settings object. At most 6 platforms, https URLs only, labels up to 40 characters. Shipped status values must exist in the product's feedback statuses.\n",
       "operationId": "updateMarketingReviewSettings",
       "parameters": [
         {
@@ -3247,7 +3263,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a team admin",
+          "description": "Not a project admin",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -3262,7 +3278,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Start the Google Search Console connection",
-      "description": "Team admins only. Returns the Google consent URL, carrying a signed state that binds the flow to this site and user. The site must be verified. Returns 503 when the server has no Google OAuth app or no secrets encryption key.\n",
+      "description": "Project admins only. Returns the Google consent URL, carrying a signed state that binds the flow to this site and user. The site must be verified. Returns 503 when the server has no Google OAuth app or no secrets encryption key.\n",
       "operationId": "getSearchConnectUrl",
       "parameters": [
         {
@@ -3279,7 +3295,7 @@ export const openapiPaths = {
           "description": "`{ url }` to send the browser to"
         },
         "403": {
-          "description": "Team admin required",
+          "description": "Project admin required",
           "or Marketing is off": null
         },
         "409": {
@@ -3297,7 +3313,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Disconnect Google Search Console",
-      "description": "Team admins only. Revokes the Google token (best effort) and deletes the connection and its stored metrics.\n",
+      "description": "Project admins only. Revokes the Google token (best effort) and deletes the connection and its stored metrics.\n",
       "operationId": "deleteSearchConnection",
       "parameters": [
         {
@@ -3314,7 +3330,7 @@ export const openapiPaths = {
           "description": "Disconnected"
         },
         "403": {
-          "description": "Team admin required",
+          "description": "Project admin required",
           "or Marketing is off": null
         },
         "404": {
@@ -3329,7 +3345,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List the Search Console properties the connected Google account can read",
-      "description": "Team admins only. Properties where the account is only an unverified user are left out.",
+      "description": "Project admins only. Properties where the account is only an unverified user are left out.",
       "operationId": "listSearchProperties",
       "parameters": [
         {
@@ -3346,7 +3362,7 @@ export const openapiPaths = {
           "description": "`{ properties: [{ siteUrl, permissionLevel, selectable }], selected }; selectable is true only for properties matching the site origin`"
         },
         "403": {
-          "description": "Team admin required",
+          "description": "Project admin required",
           "or Marketing is off": null
         },
         "404": {
@@ -3370,7 +3386,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Choose the Search Console property to read",
-      "description": "Team admins only. The property must be one the connected Google account can read and must match the site (its URL-prefix property, or the sc-domain property for its registrable domain). Changing the property clears stored metrics and queues a fresh sync.\n",
+      "description": "Project admins only. The property must be one the connected Google account can read and must match the site (its URL-prefix property, or the sc-domain property for its registrable domain). Changing the property clears stored metrics and queues a fresh sync.\n",
       "operationId": "putSearchProperty",
       "parameters": [
         {
@@ -3409,7 +3425,7 @@ export const openapiPaths = {
           "description": "Not one of the account's properties"
         },
         "403": {
-          "description": "Team admin required",
+          "description": "Project admin required",
           "or Marketing is off": null
         },
         "404": {
@@ -3460,7 +3476,7 @@ export const openapiPaths = {
           "description": "Summary; `connection` is null when Search Console is not connected"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         }
       }
     }
@@ -3471,7 +3487,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Get the marketing site and its verification instructions",
-      "description": "Requires Marketing to be enabled for the team and the product. Returns `site: null` until a site is added. `canManage` is true for team admins.\n",
+      "description": "Requires Marketing to be enabled for the project. Returns `site: null` until a site is added. `canManage` is true for project admins.\n",
       "operationId": "getMarketingSite",
       "parameters": [
         {
@@ -3489,7 +3505,7 @@ export const openapiPaths = {
           "verification instructions and whether the caller can manage it": null
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         },
         "404": {
@@ -3502,7 +3518,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Add or change the marketing site origin",
-      "description": "Team admins only. Changing the origin resets verification and issues a new token. A site covered by one of the product's verified custom domains is verified immediately (method `domain`). It also disconnects Search Console (token revoked, metrics deleted) and deletes SEO audits and competitor watches on the old host; terms, AI visibility prompts and mentions are brand-level and kept.\n",
+      "description": "Project admins only. Changing the origin resets verification and issues a new token. A site covered by one of the product's verified custom domains is verified immediately (method `domain`). It also disconnects Search Console (token revoked, metrics deleted) and deletes SEO audits and competitor watches on the old host; terms, AI visibility prompts and mentions are brand-level and kept.\n",
       "operationId": "putMarketingSite",
       "parameters": [
         {
@@ -3541,7 +3557,7 @@ export const openapiPaths = {
           "description": "Invalid site address"
         },
         "403": {
-          "description": "Team admin required",
+          "description": "Project admin required",
           "or Marketing is off": null
         }
       }
@@ -3553,7 +3569,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Check site ownership with a DNS record, meta tag or file",
-      "description": "Team admins only. Rate limited to 10 checks per hour per site.",
+      "description": "Project admins only. Rate limited to 10 checks per hour per site.",
       "operationId": "verifyMarketingSite",
       "parameters": [
         {
@@ -3593,7 +3609,7 @@ export const openapiPaths = {
           "description": "Updated site; `site.verified` tells whether the check passed"
         },
         "403": {
-          "description": "Team admin required",
+          "description": "Project admin required",
           "or Marketing is off": null
         },
         "404": {
@@ -3627,7 +3643,7 @@ export const openapiPaths = {
           "description": "Terms and whether the caller can manage them"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         },
         "404": {
@@ -3640,7 +3656,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Add a brand, competitor or keyword term",
-      "description": "Any team member with Marketing access. At most 50 terms per site and 10 aliases per term. `competitorDomain` is only allowed on competitors.\n",
+      "description": "Any project member with Marketing access. At most 50 terms per site and 10 aliases per term. `competitorDomain` is only allowed on competitors.\n",
       "operationId": "createMarketingTerm",
       "parameters": [
         {
@@ -3700,7 +3716,7 @@ export const openapiPaths = {
           "description": "Validation failed or the 50 term limit is reached"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         },
         "404": {
@@ -3739,7 +3755,7 @@ export const openapiPaths = {
           "description": "Term deleted"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is off": null
         },
         "404": {
@@ -3810,7 +3826,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "Marketing is off": null,
           "or the competitor domain of a term with watched pages is changed by a non-admin": null
         },
@@ -3826,7 +3842,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "List testimonials for moderation",
-      "description": "Newest first, with counts by status and the team slug (for the public wall link). Includes whether the author consented to public display.",
+      "description": "Newest first, with counts by status and the workspace slug (for the public wall link). Includes whether the author consented to public display.",
       "operationId": "listMarketingTestimonials",
       "parameters": [
         {
@@ -3858,7 +3874,7 @@ export const openapiPaths = {
           "description": "Invalid query"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -3897,7 +3913,7 @@ export const openapiPaths = {
           "description": "Testimonial deleted"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -3961,7 +3977,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to this project",
           "or Marketing is not enabled": null
         },
         "404": {
@@ -3993,7 +4009,7 @@ export const openapiPaths = {
           "description": "Draft content"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Project or marketing site not found"
@@ -4023,7 +4039,7 @@ export const openapiPaths = {
           "description": "Prompts with the active-prompt cap"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Project or marketing site not found"
@@ -4055,7 +4071,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "409": {
           "description": "Duplicate prompt or active (25) or total (100) prompt cap reached"
@@ -4093,7 +4109,7 @@ export const openapiPaths = {
           "description": "Prompt deleted"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Prompt not found for this product"
@@ -4132,7 +4148,7 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Prompt not found for this product"
@@ -4149,7 +4165,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Suggest AI visibility prompts (not saved)",
-      "description": "Uses the team's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Only the product name, description and feedback category names are sent to the provider.\n",
+      "description": "Uses the workspace's own LLM key (Anthropic first, then OpenAI, Gemini, Perplexity). Only the product name, description and feedback category names are sent to the provider.\n",
       "operationId": "suggestVisibilityPrompts",
       "parameters": [
         {
@@ -4166,7 +4182,7 @@ export const openapiPaths = {
           "description": "Up to 8 suggested prompts"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "409": {
           "description": "No usable LLM key or monthly budget reached or provider out of credit"
@@ -4202,7 +4218,7 @@ export const openapiPaths = {
           "description": "Recent runs"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Project or marketing site not found"
@@ -4231,7 +4247,7 @@ export const openapiPaths = {
           "description": "Run created"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "409": {
           "description": "Setup incomplete or a run is already in progress"
@@ -4272,7 +4288,7 @@ export const openapiPaths = {
           "description": "Run and progress"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Run not found for this product"
@@ -4325,7 +4341,7 @@ export const openapiPaths = {
           "description": "Answers with citations and analysis"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Run or prompt not found for this product"
@@ -4371,7 +4387,7 @@ export const openapiPaths = {
           "description": "The answer including its text"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Run or answer not found for this product"
@@ -4402,7 +4418,7 @@ export const openapiPaths = {
           "description": "Setup state"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Project not found"
@@ -4440,7 +4456,7 @@ export const openapiPaths = {
           "description": "Summary; `run` is null when no run has finished yet"
         },
         "403": {
-          "description": "Marketing is not enabled or no team access"
+          "description": "Marketing is not enabled or no project access"
         },
         "404": {
           "description": "Run not found for this product"
@@ -4524,7 +4540,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Submit a testimonial",
-      "description": "Public, token-gated and rate limited per IP and token. One testimonial per token, only for a sent request whose product still asks for testimonials, and only within 60 days of sending. The testimonial starts as pending; it is only shown on the public wall once a team member approves it AND the author ticked the public consent box.\n",
+      "description": "Public, token-gated and rate limited per IP and token. One testimonial per token, only for a sent request whose product still asks for testimonials, and only within 60 days of sending. The testimonial starts as pending; it is only shown on the public wall once a project member approves it AND the author ticked the public consent box.\n",
       "operationId": "submitPublicTestimonial",
       "parameters": [
         {
@@ -4634,7 +4650,7 @@ export const openapiPaths = {
         "Public"
       ],
       "summary": "Unsubscribe from review requests",
-      "description": "Writes a per-team marketing email suppression for the address (by keyed hash when the request was anonymised by retention). Also the RFC 8058 one-click target (`List-Unsubscribe-Post`). Responds with an HTML page.\n",
+      "description": "Writes a per-workspace marketing email suppression for the address (by keyed hash when the request was anonymised by retention). Also the RFC 8058 one-click target (`List-Unsubscribe-Post`). Responds with an HTML page.\n",
       "operationId": "submitPublicReviewUnsubscribe",
       "parameters": [
         {
@@ -4683,441 +4699,6 @@ export const openapiPaths = {
         },
         "429": {
           "description": "Rate limited"
-        }
-      }
-    }
-  },
-  "/api/marketing/teams/{teamId}/credentials": {
-    "get": {
-      "tags": [
-        "Marketing"
-      ],
-      "summary": "List the team's marketing API keys",
-      "description": "Any team member can list. Only key hints and validation status are returned, never the keys. `secretsConfigured` is false when the server has no SECRETS_ENCRYPTION_KEY and keys cannot be stored.\n",
-      "operationId": "listMarketingCredentials",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Credentials",
-          "canManage and secretsConfigured": null
-        },
-        "403": {
-          "description": "Not a member of this team"
-        }
-      }
-    }
-  },
-  "/api/marketing/teams/{teamId}/credentials/{provider}": {
-    "delete": {
-      "tags": [
-        "Marketing"
-      ],
-      "summary": "Remove a team API key",
-      "description": "Team admins only.",
-      "operationId": "deleteMarketingCredential",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        },
-        {
-          "in": "path",
-          "name": "provider",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "enum": [
-              "anthropic",
-              "openai",
-              "perplexity",
-              "gemini",
-              "firecrawl",
-              "pagespeed"
-            ]
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Key removed"
-        },
-        "403": {
-          "description": "Team admin required"
-        },
-        "404": {
-          "description": "No key stored for this provider"
-        }
-      }
-    },
-    "patch": {
-      "tags": [
-        "Marketing"
-      ],
-      "summary": "Set or clear the monthly budget of an LLM key",
-      "description": "Team admins only. Applies to LLM provider keys (anthropic, openai, perplexity, gemini). Null removes the cap.",
-      "operationId": "patchMarketingCredential",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        },
-        {
-          "in": "path",
-          "name": "provider",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "enum": [
-              "anthropic",
-              "openai",
-              "perplexity",
-              "gemini"
-            ]
-          }
-        }
-      ],
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "required": [
-                "monthlyBudgetCents"
-              ],
-              "properties": {
-                "monthlyBudgetCents": {
-                  "type": "integer",
-                  "nullable": true
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Budget updated"
-        },
-        "400": {
-          "description": "Not an LLM provider or invalid budget"
-        },
-        "403": {
-          "description": "Team admin required"
-        },
-        "404": {
-          "description": "No key stored for this provider"
-        }
-      }
-    },
-    "put": {
-      "tags": [
-        "Marketing"
-      ],
-      "summary": "Add or replace a team API key",
-      "description": "Team admins only. The key is checked against the provider before it is stored. A rejected key (authentication failure) returns 400 and is not saved. Network or provider outages save the key as `unchecked`. The key is encrypted at rest and never returned. Returns 503 when the server has no SECRETS_ENCRYPTION_KEY.\n",
-      "operationId": "putMarketingCredential",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        },
-        {
-          "in": "path",
-          "name": "provider",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "enum": [
-              "anthropic",
-              "openai",
-              "perplexity",
-              "gemini",
-              "firecrawl",
-              "pagespeed"
-            ]
-          }
-        }
-      ],
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "required": [
-                "apiKey"
-              ],
-              "properties": {
-                "apiKey": {
-                  "type": "string"
-                },
-                "monthlyBudgetCents": {
-                  "type": "integer",
-                  "nullable": true,
-                  "description": "LLM providers only"
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Credential saved (hint and status only)"
-        },
-        "400": {
-          "description": "Invalid input or the provider rejected the key"
-        },
-        "403": {
-          "description": "Team admin required"
-        },
-        "503": {
-          "description": "Key encryption is not configured on this server"
-        }
-      }
-    }
-  },
-  "/api/marketing/teams/{teamId}/data-consent": {
-    "get": {
-      "tags": [
-        "Marketing"
-      ],
-      "summary": "Whether feedback and support text may be sent to the team's AI provider",
-      "description": "Both sources are off until a team admin turns them on.",
-      "operationId": "getMarketingDataConsent",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Consent flags",
-          "who consented and when": null,
-          "and canManage": null
-        },
-        "403": {
-          "description": "Not a member of this team"
-        }
-      }
-    },
-    "put": {
-      "tags": [
-        "Marketing"
-      ],
-      "summary": "Set which text sources may be sent to the team's AI provider",
-      "description": "Team admin only. Records who changed it and when. Turning a source off takes effect immediately; every run re-reads consent.\n",
-      "operationId": "setMarketingDataConsent",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "required": [
-                "allowFeedbackText",
-                "allowSupportText"
-              ],
-              "properties": {
-                "allowFeedbackText": {
-                  "type": "boolean"
-                },
-                "allowSupportText": {
-                  "type": "boolean"
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Updated consent"
-        },
-        "400": {
-          "description": "Validation failed"
-        },
-        "403": {
-          "description": "Team admin required"
-        }
-      }
-    }
-  },
-  "/api/marketing/teams/{teamId}/erase-contact": {
-    "post": {
-      "tags": [
-        "Marketing"
-      ],
-      "summary": "Erase a person's Marketing data",
-      "description": "Team admin only. Deletes every review request and testimonial for the email address (case-insensitive) across the team's products, and keeps or creates a suppression so the address is never contacted again. Works whether or not Marketing is switched on.\n",
-      "operationId": "eraseMarketingContact",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "required": [
-                "email"
-              ],
-              "properties": {
-                "email": {
-                  "type": "string",
-                  "format": "email"
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Counts of deleted review requests and testimonials"
-        },
-        "400": {
-          "description": "Validation failed"
-        },
-        "403": {
-          "description": "Team admin required"
-        }
-      }
-    }
-  },
-  "/api/marketing/teams/{teamId}/integrations/{id}/test": {
-    "post": {
-      "tags": [
-        "Marketing"
-      ],
-      "summary": "Test one Marketing integration",
-      "description": "Team admins only. Runs the cheapest real check for the integration (key validation, one search, an encryption round trip, ...) and reports what was checked. Never returns keys. A rejected team key is marked invalid and a working one valid. Limited to 30 tests per hour per team (enough for \"Test all\" across every integration, plus retries).\n",
-      "operationId": "testMarketingIntegration",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        },
-        {
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "enum": [
-              "secrets",
-              "firecrawl",
-              "pagespeed",
-              "anthropic",
-              "openai",
-              "gemini",
-              "perplexity",
-              "hackernews",
-              "reddit",
-              "bluesky",
-              "google"
-            ]
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Test result (ok may be false)",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "success": {
-                    "type": "boolean"
-                  },
-                  "data": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string"
-                      },
-                      "ok": {
-                        "type": "boolean"
-                      },
-                      "durationMs": {
-                        "type": "integer"
-                      },
-                      "detail": {
-                        "type": "string"
-                      },
-                      "source": {
-                        "type": "string",
-                        "nullable": true,
-                        "enum": [
-                          "team",
-                          "instance"
-                        ]
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "400": {
-          "description": "Unknown integration"
-        },
-        "403": {
-          "description": "Team admin required"
-        },
-        "429": {
-          "description": "Too many tests"
         }
       }
     }
@@ -5341,6 +4922,132 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/projects/{slug}/api-keys": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List app keys for a project",
+      "description": "Returns key metadata with the product each key posts to, newest first. The key secret and hash are never returned.",
+      "operationId": "listProjectApiKeys",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "App key summaries"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Create an app key",
+      "description": "The full key is returned once in this response and cannot be retrieved later.",
+      "operationId": "createProjectApiKey",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "productId": {
+                  "type": "string",
+                  "description": "Product the key posts to; defaults to the project's first product"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Key created; includes the full key once"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or product not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/api-keys/{keyId}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Revoke an app key",
+      "description": "Revoked keys are rejected immediately and the row is kept for audit.",
+      "operationId": "revokeProjectApiKey",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "keyId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Key revoked"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or key not found, or key already revoked"
+        }
+      }
+    }
+  },
   "/api/public/csat/{token}": {
     "get": {
       "tags": [
@@ -5379,18 +5086,45 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/public/t/{teamSlug}/{projectSlug}/changelog": {
+  "/api/public/o/{orgSlug}": {
     "get": {
       "tags": [
         "Public"
       ],
-      "summary": "Published changelog entries of a public product",
-      "description": "404 when the product's Changelog toggle is off; 403 when the product is private.",
-      "operationId": "getPublicChangelog",
+      "summary": "Public projects of a workspace",
+      "operationId": "getPublicOrganization",
       "parameters": [
         {
           "in": "path",
-          "name": "teamSlug",
+          "name": "orgSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ organization, projects }`"
+        },
+        "404": {
+          "description": "Workspace not found"
+        }
+      }
+    }
+  },
+  "/api/public/o/{orgSlug}/{projectSlug}": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "A public project with its public products, tools and branding",
+      "description": "Stats and counts only cover non-hidden feedback of public products. Private products are not listed.\n",
+      "operationId": "getPublicProject",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "orgSlug",
           "required": true,
           "schema": {
             "type": "string"
@@ -5400,6 +5134,53 @@ export const openapiPaths = {
           "in": "path",
           "name": "projectSlug",
           "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ project, organization, products, modules, categories, stats, hasTestimonials }`"
+        },
+        "403": {
+          "description": "Project is not public"
+        },
+        "404": {
+          "description": "Workspace or project not found"
+        }
+      }
+    }
+  },
+  "/api/public/o/{orgSlug}/{projectSlug}/changelog": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Published changelog entries of a public project",
+      "description": "404 when the project's Changelog tool is off; 403 when the project is private. Entries tagged only with private products are excluded.",
+      "operationId": "getPublicChangelog",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "orgSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "description": "Product slug; entries tagged with it or untagged",
           "schema": {
             "type": "string"
           }
@@ -5422,7 +5203,7 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/public/t/{teamSlug}/{projectSlug}/changelog.rss": {
+  "/api/public/o/{orgSlug}/{projectSlug}/changelog.rss": {
     "get": {
       "tags": [
         "Public"
@@ -5432,7 +5213,7 @@ export const openapiPaths = {
       "parameters": [
         {
           "in": "path",
-          "name": "teamSlug",
+          "name": "orgSlug",
           "required": true,
           "schema": {
             "type": "string"
@@ -5442,6 +5223,14 @@ export const openapiPaths = {
           "in": "path",
           "name": "projectSlug",
           "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "description": "Product slug",
           "schema": {
             "type": "string"
           }
@@ -5464,17 +5253,17 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/public/t/{teamSlug}/{projectSlug}/changelog/{slug}": {
+  "/api/public/o/{orgSlug}/{projectSlug}/changelog/{slug}": {
     "get": {
       "tags": [
         "Public"
       ],
-      "summary": "One published changelog entry of a public product",
+      "summary": "One published changelog entry of a public project",
       "operationId": "getPublicChangelogEntry",
       "parameters": [
         {
           "in": "path",
-          "name": "teamSlug",
+          "name": "orgSlug",
           "required": true,
           "schema": {
             "type": "string"
@@ -5509,7 +5298,227 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/public/t/{teamSlug}/{projectSlug}/testimonials": {
+  "/api/public/o/{orgSlug}/{projectSlug}/products/{productSlug}/feedback": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Public feedback board of one product",
+      "description": "Only non-hidden items. Private products answer 404.",
+      "operationId": "listPublicProductFeedback",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "orgSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "productSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "categoryId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "tag",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "schema": {
+            "type": "integer"
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ items, pagination }`"
+        },
+        "403": {
+          "description": "Project is not public"
+        },
+        "404": {
+          "description": "Workspace",
+          "project or product not found": null
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Submit feedback to a public product board",
+      "operationId": "submitPublicProductFeedback",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "orgSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "productSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "title",
+                "body"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "body": {
+                  "type": "string",
+                  "maxLength": 5000
+                },
+                "categoryId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "authorName": {
+                  "type": "string"
+                },
+                "authorEmail": {
+                  "type": "string"
+                },
+                "attachmentIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Feedback created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Project is not public"
+        },
+        "404": {
+          "description": "Workspace",
+          "project or product not found": null
+        }
+      }
+    }
+  },
+  "/api/public/o/{orgSlug}/{projectSlug}/roadmap": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "Public roadmap of a project",
+      "description": "Non-hidden feedback grouped by status, across the project's public products (or one product with `product`). Items of private products are never included. 404 when the Roadmap tool is off.\n",
+      "operationId": "getPublicRoadmap",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "orgSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "product",
+          "description": "Product slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ project, organization, products, columns }`"
+        },
+        "403": {
+          "description": "Project is not public"
+        },
+        "404": {
+          "description": "Not found",
+          "product private": null,
+          "or Roadmap disabled": null
+        }
+      }
+    }
+  },
+  "/api/public/o/{orgSlug}/{projectSlug}/testimonials": {
     "get": {
       "tags": [
         "Public"
@@ -5520,7 +5529,7 @@ export const openapiPaths = {
       "parameters": [
         {
           "in": "path",
-          "name": "teamSlug",
+          "name": "orgSlug",
           "required": true,
           "schema": {
             "type": "string"
@@ -5540,11 +5549,50 @@ export const openapiPaths = {
           "description": "Testimonials"
         },
         "403": {
-          "description": "Product is not public"
+          "description": "Project is not public"
         },
         "404": {
-          "description": "Team or product not found",
+          "description": "Workspace or project not found",
           "or Marketing is off": null
+        }
+      }
+    }
+  },
+  "/api/public/o/{orgSlug}/{projectSlug}/viewer": {
+    "get": {
+      "tags": [
+        "Public"
+      ],
+      "summary": "The signed-in viewer's role on a public project",
+      "description": "Lets the public site show admin affordances without exposing member lists. Anonymous callers get `{ isMember: false, role: null }`.\n",
+      "operationId": "getPublicProjectViewer",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "orgSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "projectSlug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "`{ isMember, role }`"
+        },
+        "403": {
+          "description": "Project is not public"
+        },
+        "404": {
+          "description": "Workspace or project not found"
         }
       }
     }
@@ -5554,8 +5602,8 @@ export const openapiPaths = {
       "tags": [
         "Roadmap"
       ],
-      "summary": "Roadmap board of a product (team members)",
-      "description": "Feedback grouped by status, one column per status. Unlike the public roadmap this includes hidden items (flagged `isHidden`) and real titles of support-derived items.\n",
+      "summary": "Roadmap board of a project (project members)",
+      "description": "Feedback grouped by status, one column per status, across all products of the project (or one product with `productId`). Unlike the public roadmap this includes hidden items (flagged `isHidden`) and real titles of support-derived items. Items carry `productId`.\n",
       "operationId": "getRoadmapBoard",
       "parameters": [
         {
@@ -5565,19 +5613,28 @@ export const openapiPaths = {
           "schema": {
             "type": "string"
           }
+        },
+        {
+          "in": "query",
+          "name": "productId",
+          "description": "Only items of this product",
+          "schema": {
+            "type": "string"
+          }
         }
       ],
       "responses": {
         "200": {
           "description": "Columns with items",
-          "plus the public roadmap URL when the product is public": null
+          "the project's products": null,
+          "and the public roadmap URL when the project is public": null
         },
         "403": {
-          "description": "Not a team member",
+          "description": "No access to the project",
           "or Roadmap is off": null
         },
         "404": {
-          "description": "Product not found"
+          "description": "Project or product not found"
         }
       }
     }
@@ -5605,7 +5662,7 @@ export const openapiPaths = {
           "description": "Attachment bytes"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Attachment not found"
@@ -5670,7 +5727,7 @@ export const openapiPaths = {
           "description": "Unsupported type or file too large"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -5722,12 +5779,12 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "List team canned responses",
+      "summary": "List project canned responses",
       "operationId": "listSupportCannedResponses",
       "parameters": [
         {
           "in": "query",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -5739,7 +5796,7 @@ export const openapiPaths = {
           "description": "Canned response list"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     },
@@ -5747,7 +5804,7 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "Create a team canned response",
+      "summary": "Create a project canned response",
       "operationId": "createSupportCannedResponse",
       "responses": {
         "200": {
@@ -5757,10 +5814,10 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         },
         "409": {
-          "description": "This shortcode is already in use for the team"
+          "description": "This shortcode is already in use for the project"
         }
       }
     }
@@ -5770,7 +5827,7 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "Delete a team canned response",
+      "summary": "Delete a project canned response",
       "operationId": "deleteSupportCannedResponse",
       "parameters": [
         {
@@ -5787,7 +5844,7 @@ export const openapiPaths = {
           "description": "Canned response deleted"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         },
         "404": {
           "description": "Canned response not found"
@@ -5798,7 +5855,7 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "Update a team canned response",
+      "summary": "Update a project canned response",
       "operationId": "updateSupportCannedResponse",
       "parameters": [
         {
@@ -5818,13 +5875,13 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         },
         "404": {
           "description": "Canned response not found"
         },
         "409": {
-          "description": "This shortcode is already in use for the team"
+          "description": "This shortcode is already in use for the project"
         }
       }
     }
@@ -5835,7 +5892,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Report how inbound mail is configured for this deployment",
-      "description": "Read-only. The provider and its webhook credentials are deployment environment configuration, not per-team settings, so this reports whether they are set - never their values. `platformAddress` is the inbox's platform forwarding address (customers forward their support address to it), or null when none exists yet. `platformForwardingEnabled` is true when the deployment sets `SUPPORT_PLATFORM_MAIL_DOMAIN`, so the UI can offer to create one for an inbox that predates it.\n",
+      "description": "Read-only. The provider and its webhook credentials are deployment environment configuration, not per-project settings, so this reports whether they are set - never their values. `platformAddress` is the inbox's platform forwarding address (customers forward their support address to it), or null when none exists yet. `platformForwardingEnabled` is true when the deployment sets `SUPPORT_PLATFORM_MAIL_DOMAIN`, so the UI can offer to create one for an inbox that predates it.\n",
       "operationId": "getSupportChannelStatus",
       "responses": {
         "200": {
@@ -5852,12 +5909,12 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "List companies for a team",
+      "summary": "List companies for a project",
       "operationId": "listSupportCompanies",
       "parameters": [
         {
           "in": "query",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -5893,7 +5950,7 @@ export const openapiPaths = {
           "description": "Companies page"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     },
@@ -5908,10 +5965,10 @@ export const openapiPaths = {
           "description": "Company created"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         },
         "409": {
-          "description": "A company with this name or domain already exists in the team"
+          "description": "A company with this name or domain already exists in the project"
         }
       }
     }
@@ -5939,7 +5996,7 @@ export const openapiPaths = {
           "description": "Company deleted"
         },
         "403": {
-          "description": "Not a member of the company's team"
+          "description": "Not a member of the company's project"
         },
         "404": {
           "description": "Company not found"
@@ -5967,7 +6024,7 @@ export const openapiPaths = {
           "description": "Company detail"
         },
         "403": {
-          "description": "Not a member of the company's team"
+          "description": "Not a member of the company's project"
         },
         "404": {
           "description": "Company not found"
@@ -5995,13 +6052,13 @@ export const openapiPaths = {
           "description": "Company updated"
         },
         "403": {
-          "description": "Not a member of the company's team"
+          "description": "Not a member of the company's project"
         },
         "404": {
           "description": "Company not found"
         },
         "409": {
-          "description": "Another company in the team already uses this name or domain"
+          "description": "Another company in the project already uses this name or domain"
         }
       }
     }
@@ -6011,12 +6068,12 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "List contacts for a team",
+      "summary": "List contacts for a project",
       "operationId": "listSupportContacts",
       "parameters": [
         {
           "in": "query",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -6052,7 +6109,7 @@ export const openapiPaths = {
           "description": "Contacts page"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     },
@@ -6067,10 +6124,10 @@ export const openapiPaths = {
           "description": "Contact created"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         },
         "409": {
-          "description": "A contact with this email already exists in the team"
+          "description": "A contact with this email already exists in the project"
         }
       }
     }
@@ -6098,7 +6155,7 @@ export const openapiPaths = {
           "description": "Contact deleted"
         },
         "403": {
-          "description": "Not a member of the contact's team"
+          "description": "Not a member of the contact's project"
         },
         "404": {
           "description": "Contact not found"
@@ -6129,7 +6186,7 @@ export const openapiPaths = {
           "description": "Contact detail"
         },
         "403": {
-          "description": "Not a member of the contact's team"
+          "description": "Not a member of the contact's project"
         },
         "404": {
           "description": "Contact not found"
@@ -6157,13 +6214,13 @@ export const openapiPaths = {
           "description": "Contact updated"
         },
         "403": {
-          "description": "Not a member of the contact's team"
+          "description": "Not a member of the contact's project"
         },
         "404": {
           "description": "Contact not found"
         },
         "409": {
-          "description": "Another contact in the team already uses this email"
+          "description": "Another contact in the project already uses this email"
         }
       }
     }
@@ -6180,10 +6237,10 @@ export const openapiPaths = {
           "description": "Link created"
         },
         "400": {
-          "description": "Target is not in the contact's team"
+          "description": "Target is not in the contact's project"
         },
         "403": {
-          "description": "Not a member of the contact's team"
+          "description": "Not a member of the contact's project"
         },
         "404": {
           "description": "Contact not found"
@@ -6206,7 +6263,7 @@ export const openapiPaths = {
           "description": "Link removed"
         },
         "403": {
-          "description": "Not a member of the contact's team"
+          "description": "Not a member of the contact's project"
         },
         "404": {
           "description": "Contact or link not found"
@@ -6240,7 +6297,7 @@ export const openapiPaths = {
           "description": "Contacts cannot be merged"
         },
         "403": {
-          "description": "Not a member of the contact's team"
+          "description": "Not a member of the contact's project"
         },
         "404": {
           "description": "Contact not found"
@@ -6318,7 +6375,7 @@ export const openapiPaths = {
           "or opaque cursor": null
         },
         "403": {
-          "description": "Not a member of the contact's team"
+          "description": "Not a member of the contact's project"
         },
         "404": {
           "description": "Contact not found"
@@ -6433,7 +6490,7 @@ export const openapiPaths = {
           "description": "Conversation page"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -6452,10 +6509,10 @@ export const openapiPaths = {
           "description": "Conversation created"
         },
         "400": {
-          "description": "contactId or projectId does not belong to this team"
+          "description": "contactId or projectId does not belong to this project"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -6485,7 +6542,7 @@ export const openapiPaths = {
           "description": "Conversation detail"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6514,10 +6571,10 @@ export const openapiPaths = {
           "description": "Conversation updated"
         },
         "400": {
-          "description": "assigneeUserId or projectId does not belong to this team"
+          "description": "assigneeUserId does not belong to this project"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6548,7 +6605,7 @@ export const openapiPaths = {
           "description": "Claim outcome and current conversation"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6593,10 +6650,10 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Matching team feedback items"
+          "description": "Matching project feedback items"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6628,7 +6685,7 @@ export const openapiPaths = {
           "description": "Invalid product or category selection"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6659,10 +6716,10 @@ export const openapiPaths = {
           "description": "Feedback linked"
         },
         "400": {
-          "description": "Feedback is not part of this team"
+          "description": "Feedback is not part of this project"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation or feedback not found"
@@ -6707,7 +6764,7 @@ export const openapiPaths = {
           "oldest first": null
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6739,13 +6796,13 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
         },
         "409": {
-          "description": "The inbox has no sending address, the contact has no email address, or (team sender policy) the inbox's From address is on a domain the team has not verified (SENDER_NOT_VERIFIED)"
+          "description": "The inbox has no sending address, the contact has no email address, or (project sender policy) the inbox's From address is on a domain the project has not verified (SENDER_NOT_VERIFIED)"
         }
       }
     }
@@ -6756,7 +6813,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Retry a failed outgoing reply",
-      "description": "Only a message whose `deliveryStatus` is `failed` can be retried - an agent-initiated retry is a deliberate decision to try again from scratch (`resetOutboundDeliveryForRetry`), not one more of the outbox worker's own automatic attempts. Triggers a worker pass immediately rather than waiting for the next unrelated reply to piggyback on. The sender is checked first: when the From stored on the delivery is still not authorized for the team, the retry is refused with 409 `SENDER_NOT_VERIFIED` and nothing is reset. Deliveries that are not replies (`kind: csat` surveys) have no retry; the thread API marks them `retryable: false` and this endpoint answers 404. `previousSubmissionAttempted` is false when the previous failure was the sender block (`SENDER_DOMAIN_NOT_AUTHORIZED`): nothing was ever submitted to the provider, so there is no duplicate risk.\n",
+      "description": "Only a message whose `deliveryStatus` is `failed` can be retried - an agent-initiated retry is a deliberate decision to try again from scratch (`resetOutboundDeliveryForRetry`), not one more of the outbox worker's own automatic attempts. Triggers a worker pass immediately rather than waiting for the next unrelated reply to piggyback on. The sender is checked first: when the From stored on the delivery is still not authorized for the project, the retry is refused with 409 `SENDER_NOT_VERIFIED` and nothing is reset. Deliveries that are not replies (`kind: csat` surveys) have no retry; the thread API marks them `retryable: false` and this endpoint answers 404. `previousSubmissionAttempted` is false when the previous failure was the sender block (`SENDER_DOMAIN_NOT_AUTHORIZED`): nothing was ever submitted to the provider, so there is no duplicate risk.\n",
       "operationId": "retrySupportConversationMessage",
       "parameters": [
         {
@@ -6781,7 +6838,7 @@ export const openapiPaths = {
           "description": "Retry queued"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation",
@@ -6818,10 +6875,10 @@ export const openapiPaths = {
         },
         "400": {
           "description": "Neither or both of contactId/userId set",
-          "or the target does not belong to this team": null
+          "or the target does not belong to this project": null
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6862,7 +6919,7 @@ export const openapiPaths = {
           "description": "Participant removed"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation or participant not found"
@@ -6901,7 +6958,7 @@ export const openapiPaths = {
           "description": "Tag list"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6929,10 +6986,10 @@ export const openapiPaths = {
           "description": "Tag added"
         },
         "400": {
-          "description": "Tag is not part of this team"
+          "description": "Tag is not part of this project"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found"
@@ -6973,7 +7030,7 @@ export const openapiPaths = {
           "description": "Tag removed"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Conversation not found",
@@ -7031,7 +7088,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Inbound email webhook",
-      "description": "Provider-agnostic intake. Returns 200 for everything it has deliberately decided not to act on - duplicate deliveries, unknown recipients, teams with support disabled - because a 4xx makes a mail provider retry the same message indefinitely. Processing failures return 500 so the provider retries a recorded, reclaimable event.\n",
+      "description": "Provider-agnostic intake. Returns 200 for everything it has deliberately decided not to act on - duplicate deliveries, unknown recipients, projects with support disabled - because a 4xx makes a mail provider retry the same message indefinitely. Processing failures return 500 so the provider retries a recorded, reclaimable event.\n",
       "operationId": "receiveSupportInboundEmail",
       "security": [],
       "parameters": [
@@ -7073,12 +7130,12 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "List inboxes for a team",
+      "summary": "List inboxes for a project",
       "operationId": "listSupportInboxes",
       "parameters": [
         {
           "in": "query",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -7090,7 +7147,7 @@ export const openapiPaths = {
           "description": "Inbox list"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     },
@@ -7099,20 +7156,17 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Create an inbox",
-      "description": "The creator is added as a supportInboxMember with role \"admin\" in the same transaction - otherwise a team member who isn't a team admin could create an inbox they have no access to afterward. When `SUPPORT_PLATFORM_MAIL_DOMAIN` is set, a platform forwarding address is generated in the same transaction and returned as `platformAddress` (null when the feature is off).\n",
+      "description": "The creator is added as a supportInboxMember with role \"admin\" in the same transaction - otherwise a project member who isn't a project admin could create an inbox they have no access to afterward. When `SUPPORT_PLATFORM_MAIL_DOMAIN` is set, a platform forwarding address is generated in the same transaction and returned as `platformAddress` (null when the feature is off).\n",
       "operationId": "createSupportInbox",
       "responses": {
         "200": {
           "description": "Inbox created"
         },
-        "400": {
-          "description": "projectId does not belong to this team"
-        },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         },
         "409": {
-          "description": "An inbox with this slug already exists in the team"
+          "description": "An inbox with this slug already exists in the project"
         }
       }
     }
@@ -7140,7 +7194,7 @@ export const openapiPaths = {
           "description": "Inbox deleted"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -7171,7 +7225,7 @@ export const openapiPaths = {
           "description": "Inbox detail"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -7200,10 +7254,10 @@ export const openapiPaths = {
           "description": "Inbox updated"
         },
         "400": {
-          "description": "projectId or defaultAssigneeUserId does not belong to this team, or fromName contains @, <, >, a double quote or a control character"
+          "description": "defaultAssigneeUserId does not belong to this project, or fromName contains @, <, >, a double quote or a control character"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -7212,7 +7266,7 @@ export const openapiPaths = {
           "description": "Another inbox already uses this slug or email address"
         },
         "422": {
-          "description": "The email address is on another team's sending domain, or under the team sender policy not on one of this team's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)"
+          "description": "The email address is on another project's sending domain, or under the project sender policy not on one of this project's own sending domains or platform addresses (SENDER_DOMAIN_NOT_OWNED)"
         }
       }
     }
@@ -7239,7 +7293,7 @@ export const openapiPaths = {
           "description": "Address list"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -7251,7 +7305,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Add a receiving address to an inbox",
-      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction (not specified in design.md - a self-consistent reading of \"primary\" implying one). Under the team sender policy, an address on a domain (or subdomain of one) claimed by another team is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the deployment's provider routes inbound mail by the To/Cc header (Postmark), an address is only accepted on one of the team's own verified sending domains, because a header address on someone else's domain would capture that mail. Mailgun and Frogmail route by envelope recipient, so unclaimed domains stay allowed there. When the address is on one of the team's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort.\n",
+      "description": "Address matching in resolveInboxByAddress is case-insensitive, so the address is normalized to lowercase on write - two rows differing only by case would otherwise both silently match the same inbound mail. isPrimary is exclusive: setting it clears the flag on the inbox's other addresses in the same transaction (not specified in design.md - a self-consistent reading of \"primary\" implying one). Under the project sender policy, an address on a domain (or subdomain of one) claimed by another project is refused, and addresses on the platform mail domain cannot be added by hand - use the platform address endpoint. When the deployment's provider routes inbound mail by the To/Cc header (Postmark), an address is only accepted on one of the project's own verified sending domains, because a header address on someone else's domain would capture that mail. Mailgun and Frogmail route by envelope recipient, so unclaimed domains stay allowed there. When the address is on one of the project's verified sending domains that receives mail through the provider, a provider inbound route is created best-effort.\n",
       "operationId": "createSupportInboxAddress",
       "parameters": [
         {
@@ -7267,20 +7321,17 @@ export const openapiPaths = {
         "200": {
           "description": "Address created"
         },
-        "400": {
-          "description": "projectId does not belong to this team"
-        },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
         },
         "409": {
-          "description": "This address is already in use, or its domain is claimed by another team (ADDRESS_DOMAIN_CLAIMED)"
+          "description": "This address is already in use, or its domain is claimed by another project (ADDRESS_DOMAIN_CLAIMED)"
         },
         "422": {
-          "description": "The address is on the platform mail domain (ADDRESS_DOMAIN_RESERVED), or the provider routes inbound mail by header (Postmark) and the address domain is not on this team's verified sending domain (ADDRESS_DOMAIN_UNVERIFIED)"
+          "description": "The address is on the platform mail domain (ADDRESS_DOMAIN_RESERVED), or the provider routes inbound mail by header (Postmark) and the address domain is not on this project's verified sending domain (ADDRESS_DOMAIN_UNVERIFIED)"
         }
       }
     }
@@ -7316,7 +7367,7 @@ export const openapiPaths = {
           "description": "Address deleted"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox or address not found"
@@ -7333,7 +7384,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Get or create the inbox's platform forwarding address",
-      "description": "Idempotent. Returns the inbox's existing platform address, or creates one (`<team>-<inbox>-<random>@SUPPORT_PLATFORM_MAIL_DOMAIN`) for inboxes that predate the feature. Customers forward their own support address to it. Platform addresses cannot be deleted; send `regenerate: true` to replace the address with a fresh one (the old address stops receiving). Inbox admins only. Returns 404 when no platform mail domain is configured for this deployment.\n",
+      "description": "Idempotent. Returns the inbox's existing platform address, or creates one (`<project>-<inbox>-<random>@SUPPORT_PLATFORM_MAIL_DOMAIN`) for inboxes that predate the feature. Customers forward their own support address to it. Platform addresses cannot be deleted; send `regenerate: true` to replace the address with a fresh one (the old address stops receiving). Inbox admins only. Returns 404 when no platform mail domain is configured for this deployment.\n",
       "operationId": "createSupportInboxPlatformAddress",
       "parameters": [
         {
@@ -7399,7 +7450,7 @@ export const openapiPaths = {
           "description": "Member list"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -7411,7 +7462,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Add an agent to an inbox",
-      "description": "The target user must already be a member of the inbox's team - an inbox agent is a team member granted support access, not an independent identity.\n",
+      "description": "The target user must already be a member of the inbox's project - an inbox agent is a project member granted support access, not an independent identity.\n",
       "operationId": "addSupportInboxMember",
       "parameters": [
         {
@@ -7428,10 +7479,10 @@ export const openapiPaths = {
           "description": "Member added"
         },
         "400": {
-          "description": "userId is not a member of this team"
+          "description": "userId is not a member of this project"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -7472,7 +7523,7 @@ export const openapiPaths = {
           "description": "Member removed"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox or member not found"
@@ -7492,7 +7543,7 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Whether this inbox's From address is authorized to send with the configured provider",
-      "description": "`supportInbox.emailAddress` is free text - nothing stops a team from setting a From the provider will reject at send time. This surfaces that in settings instead. `authorization` is null when no address is set yet (there is nothing to check). `policy` is the deployment's sender policy. Under `team`, the verdict is scoped to this inbox's team: `authorized`, `pending` (domain claimed but not yet verified), `unauthorized` (with a `reason` and only this team's own verified domains in `teamDomains`) or `unknown`. Under `legacy`, it is the provider's verdict for the address. Provider-wide domain lists are never returned - the provider account is shared by every team. A From on another team's domain is always `unauthorized` / `not_owned` under every policy, verified or not, and the provider is not asked. `unknown` is not a failure and must not be rendered as \"not authorized\".\n",
+      "description": "`supportInbox.emailAddress` is free text - nothing stops a project from setting a From the provider will reject at send time. This surfaces that in settings instead. `authorization` is null when no address is set yet (there is nothing to check). `policy` is the deployment's sender policy. Under `project`, the verdict is scoped to this inbox's project: `authorized`, `pending` (domain claimed but not yet verified), `unauthorized` (with a `reason` and only this project's own verified domains in `projectDomains`) or `unknown`. Under `legacy`, it is the provider's verdict for the address. Provider-wide domain lists are never returned - the provider account is shared by every project. A From on another project's domain is always `unauthorized` / `not_owned` under every policy, verified or not, and the provider is not asked. `unknown` is not a failure and must not be rendered as \"not authorized\".\n",
       "operationId": "getSupportInboxSendingStatus",
       "parameters": [
         {
@@ -7509,7 +7560,7 @@ export const openapiPaths = {
           "description": "Sending authorization status"
         },
         "403": {
-          "description": "Not a member of this inbox or a team admin"
+          "description": "Not a member of this inbox or a project admin"
         },
         "404": {
           "description": "Inbox not found"
@@ -7517,83 +7568,7 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/support/tags": {
-    "get": {
-      "tags": [
-        "Support"
-      ],
-      "summary": "List tags for a team",
-      "operationId": "listSupportTags",
-      "parameters": [
-        {
-          "in": "query",
-          "name": "teamId",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Tag list"
-        },
-        "403": {
-          "description": "Not a member of the team"
-        }
-      }
-    },
-    "post": {
-      "tags": [
-        "Support"
-      ],
-      "summary": "Create a tag",
-      "operationId": "createSupportTag",
-      "responses": {
-        "200": {
-          "description": "Tag created"
-        },
-        "403": {
-          "description": "Not a member of the team"
-        },
-        "409": {
-          "description": "A tag with this name already exists in this team"
-        }
-      }
-    }
-  },
-  "/api/support/tags/{id}": {
-    "delete": {
-      "tags": [
-        "Support"
-      ],
-      "summary": "Delete a tag",
-      "description": "Hard delete. Conversations that used this tag have their SLA assignment recomputed and emit the usual conversation update and automation events.\n",
-      "operationId": "deleteSupportTag",
-      "parameters": [
-        {
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "type": "string"
-          }
-        }
-      ],
-      "responses": {
-        "200": {
-          "description": "Tag deleted"
-        },
-        "403": {
-          "description": "Not a member of the tag's team"
-        },
-        "404": {
-          "description": "Tag not found"
-        }
-      }
-    }
-  },
-  "/api/support/teams/{teamId}/automation-rules": {
+  "/api/support/projects/{projectId}/automation-rules": {
     "get": {
       "tags": [
         "Support"
@@ -7603,7 +7578,7 @@ export const openapiPaths = {
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -7615,7 +7590,7 @@ export const openapiPaths = {
           "description": "Automation rules"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     },
@@ -7633,12 +7608,12 @@ export const openapiPaths = {
           "description": "Invalid rule or inbox scope"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         }
       }
     }
   },
-  "/api/support/teams/{teamId}/automation-rules/{id}": {
+  "/api/support/projects/{projectId}/automation-rules/{id}": {
     "delete": {
       "tags": [
         "Support"
@@ -7650,7 +7625,7 @@ export const openapiPaths = {
           "description": "Automation rule deleted"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         },
         "404": {
           "description": "Rule not found"
@@ -7671,7 +7646,7 @@ export const openapiPaths = {
           "description": "Invalid rule or inbox scope"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         },
         "404": {
           "description": "Rule not found"
@@ -7679,7 +7654,7 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/support/teams/{teamId}/automation-rules/{id}/runs": {
+  "/api/support/projects/{projectId}/automation-rules/{id}/runs": {
     "get": {
       "tags": [
         "Support"
@@ -7691,7 +7666,7 @@ export const openapiPaths = {
           "description": "Automation rule run history"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         },
         "404": {
           "description": "Rule not found"
@@ -7699,7 +7674,7 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/support/teams/{teamId}/automation-rules/dry-run": {
+  "/api/support/projects/{projectId}/automation-rules/dry-run": {
     "post": {
       "tags": [
         "Support"
@@ -7711,15 +7686,15 @@ export const openapiPaths = {
           "description": "Dry-run action plan"
         },
         "400": {
-          "description": "Conversation is not part of the team"
+          "description": "Conversation is not part of the project"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     }
   },
-  "/api/support/teams/{teamId}/csat-summary": {
+  "/api/support/projects/{projectId}/csat-summary": {
     "get": {
       "tags": [
         "Support"
@@ -7729,7 +7704,7 @@ export const openapiPaths = {
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -7764,24 +7739,24 @@ export const openapiPaths = {
           "description": "CSAT score summary"
         },
         "403": {
-          "description": "Not a support agent on this team"
+          "description": "Not a support agent on this project"
         }
       }
     }
   },
-  "/api/support/teams/{teamId}/csat-surveys": {
+  "/api/support/projects/{projectId}/csat-surveys": {
     "get": {
       "tags": [
         "Support"
       ],
-      "summary": "List team CSAT surveys",
+      "summary": "List project CSAT surveys",
       "operationId": "listSupportCsatSurveys",
       "responses": {
         "200": {
           "description": "CSAT survey configurations"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     },
@@ -7789,7 +7764,7 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "Create a team CSAT survey",
+      "summary": "Create a project CSAT survey",
       "operationId": "createSupportCsatSurvey",
       "responses": {
         "200": {
@@ -7799,24 +7774,24 @@ export const openapiPaths = {
           "description": "Invalid survey or inbox scope"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         }
       }
     }
   },
-  "/api/support/teams/{teamId}/csat-surveys/{id}": {
+  "/api/support/projects/{projectId}/csat-surveys/{id}": {
     "delete": {
       "tags": [
         "Support"
       ],
-      "summary": "Delete a team CSAT survey",
+      "summary": "Delete a project CSAT survey",
       "operationId": "deleteSupportCsatSurvey",
       "responses": {
         "200": {
           "description": "CSAT survey deleted"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         },
         "404": {
           "description": "Survey not found"
@@ -7830,7 +7805,7 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "Update a team CSAT survey",
+      "summary": "Update a project CSAT survey",
       "operationId": "updateSupportCsatSurvey",
       "responses": {
         "200": {
@@ -7840,7 +7815,7 @@ export const openapiPaths = {
           "description": "Invalid survey or inbox scope"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         },
         "404": {
           "description": "Survey not found"
@@ -7848,18 +7823,18 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/support/teams/{teamId}/sending-domains": {
+  "/api/support/projects/{projectId}/sending-domains": {
     "get": {
       "tags": [
         "Support"
       ],
-      "summary": "List the team's customer sending domains",
-      "description": "Returns the team's domain claims with their DNS records, plus the provider capabilities, limits and whether the caller may manage domains. When the feature is disabled the response is `{ enabled: false }` with an empty list.\n",
+      "summary": "List the project's customer sending domains",
+      "description": "Returns the project's domain claims with their DNS records, plus the provider capabilities, limits and whether the caller may manage domains. When the feature is disabled the response is `{ enabled: false }` with an empty list.\n",
       "operationId": "listSupportSendingDomains",
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -7874,7 +7849,7 @@ export const openapiPaths = {
           "description": "Authentication required"
         },
         "403": {
-          "description": "No support access to this team"
+          "description": "No support access to this project"
         }
       }
     },
@@ -7883,12 +7858,12 @@ export const openapiPaths = {
         "Support"
       ],
       "summary": "Claim a sending domain and register it with the mail provider",
-      "description": "Team administrators only. Returns 201 once the domain is registered and waiting for DNS, or 202 when the provider was temporarily unavailable and registration will be retried in the background.\n",
+      "description": "Project administrators only. Returns 201 once the domain is registered and waiting for DNS, or 202 when the provider was temporarily unavailable and registration will be retried in the background.\n",
       "operationId": "createSupportSendingDomain",
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -7925,7 +7900,7 @@ export const openapiPaths = {
           "description": "Invalid request"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         },
         "404": {
           "description": "Feature disabled"
@@ -7947,18 +7922,18 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/support/teams/{teamId}/sending-domains/{id}": {
+  "/api/support/projects/{projectId}/sending-domains/{id}": {
     "delete": {
       "tags": [
         "Support"
       ],
       "summary": "Release a sending domain",
-      "description": "Team administrators only. Marks the claim as removing (it stops authorizing at once), removes the provider domain when Veerify created it, then deletes the claim. Adopted domains are never deleted at the provider. When inboxes still send from the domain the request is refused unless `force=true`.\n",
+      "description": "Project administrators only. Marks the claim as removing (it stops authorizing at once), removes the provider domain when Veerify created it, then deletes the claim. Adopted domains are never deleted at the provider. When inboxes still send from the domain the request is refused unless `force=true`.\n",
       "operationId": "deleteSupportSendingDomain",
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -7992,11 +7967,11 @@ export const openapiPaths = {
           "description": "Invalid query"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         },
         "404": {
           "description": "Feature disabled",
-          "or the domain does not belong to this team": null
+          "or the domain does not belong to this project": null
         },
         "409": {
           "description": "Inboxes still use this domain and force was not set (DOMAIN_IN_USE)",
@@ -8016,7 +7991,7 @@ export const openapiPaths = {
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -8039,27 +8014,27 @@ export const openapiPaths = {
           "description": "Authentication required"
         },
         "403": {
-          "description": "No support access to this team"
+          "description": "No support access to this project"
         },
         "404": {
           "description": "Feature disabled",
-          "or the domain does not belong to this team": null
+          "or the domain does not belong to this project": null
         }
       }
     }
   },
-  "/api/support/teams/{teamId}/sending-domains/{id}/verify": {
+  "/api/support/projects/{projectId}/sending-domains/{id}/verify": {
     "post": {
       "tags": [
         "Support"
       ],
       "summary": "Re-check a sending domain now",
-      "description": "Team administrators only. For failed, provisioning or provider-mismatched claims this registers the domain again; otherwise it asks the provider to re-verify and re-checks the Veerify ownership TXT record and DMARC. Returns the updated claim.\n",
+      "description": "Project administrators only. For failed, provisioning or provider-mismatched claims this registers the domain again; otherwise it asks the provider to re-verify and re-checks the Veerify ownership TXT record and DMARC. Returns the updated claim.\n",
       "operationId": "verifySupportSendingDomain",
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -8082,11 +8057,11 @@ export const openapiPaths = {
           "description": "Provider temporarily unavailable; registration will be retried"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
         },
         "404": {
           "description": "Feature disabled",
-          "or the domain does not belong to this team": null
+          "or the domain does not belong to this project": null
         },
         "409": {
           "description": "Domain is being removed",
@@ -8109,17 +8084,17 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/support/teams/{teamId}/settings": {
+  "/api/support/projects/{projectId}/settings": {
     "get": {
       "tags": [
         "Support"
       ],
-      "summary": "Get support team settings",
-      "operationId": "getSupportTeamSettings",
+      "summary": "Get support project settings",
+      "operationId": "getSupportProjectSettings",
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -8128,10 +8103,10 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Support team settings"
+          "description": "Support project settings"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     },
@@ -8139,12 +8114,12 @@ export const openapiPaths = {
       "tags": [
         "Support"
       ],
-      "summary": "Change support team settings",
-      "operationId": "updateSupportTeamSettings",
+      "summary": "Change support project settings",
+      "operationId": "updateSupportProjectSettings",
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -8153,15 +8128,15 @@ export const openapiPaths = {
       ],
       "responses": {
         "200": {
-          "description": "Support team settings updated"
+          "description": "Support project settings updated"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     }
   },
-  "/api/support/teams/{teamId}/sla": {
+  "/api/support/projects/{projectId}/sla": {
     "get": {
       "tags": [
         "Support"
@@ -8171,7 +8146,7 @@ export const openapiPaths = {
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -8183,7 +8158,7 @@ export const openapiPaths = {
           "description": "SLA settings"
         },
         "403": {
-          "description": "Not a member of the team"
+          "description": "Not a member of the project"
         }
       }
     },
@@ -8196,7 +8171,7 @@ export const openapiPaths = {
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "projectId",
           "required": true,
           "schema": {
             "type": "string"
@@ -8211,7 +8186,83 @@ export const openapiPaths = {
           "description": "Invalid SLA settings"
         },
         "403": {
-          "description": "Team administrator required"
+          "description": "Project administrator required"
+        }
+      }
+    }
+  },
+  "/api/support/tags": {
+    "get": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "List tags for a project",
+      "operationId": "listSupportTags",
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projectId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Tag list"
+        },
+        "403": {
+          "description": "Not a member of the project"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Create a tag",
+      "operationId": "createSupportTag",
+      "responses": {
+        "200": {
+          "description": "Tag created"
+        },
+        "403": {
+          "description": "Not a member of the project"
+        },
+        "409": {
+          "description": "A tag with this name already exists in this project"
+        }
+      }
+    }
+  },
+  "/api/support/tags/{id}": {
+    "delete": {
+      "tags": [
+        "Support"
+      ],
+      "summary": "Delete a tag",
+      "description": "Hard delete. Conversations that used this tag have their SLA assignment recomputed and emit the usual conversation update and automation events.\n",
+      "operationId": "deleteSupportTag",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Tag deleted"
+        },
+        "403": {
+          "description": "Not a member of the tag's project"
+        },
+        "404": {
+          "description": "Tag not found"
         }
       }
     }
@@ -8247,55 +8298,452 @@ export const openapiPaths = {
       }
     }
   },
-  "/api/teams/{teamId}/modules": {
+  "/api/v1/feedback": {
+    "post": {
+      "tags": [
+        "App API"
+      ],
+      "summary": "Submit feedback from an app",
+      "description": "Creates feedback on the product the app key belongs to. Authenticate with a project app key as a Bearer token.",
+      "operationId": "submitAppFeedback",
+      "security": [
+        {
+          "appKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "type",
+                "description"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "bug",
+                    "feature"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "appVersion": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "os": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "osVersion": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Feedback created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Missing, unknown, or revoked app key"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/workspace/api-keys": {
     "get": {
       "tags": [
-        "Teams"
+        "Marketing"
       ],
-      "summary": "Get which Veerify modules a team has enabled",
-      "operationId": "getTeamModuleSettings",
+      "summary": "List the workspace's marketing API keys",
+      "description": "Any workspace member can list. Only key hints and validation status are returned, never the keys. `secretsConfigured` is false when the server has no SECRETS_ENCRYPTION_KEY and keys cannot be stored.\n",
+      "operationId": "listMarketingCredentials",
+      "responses": {
+        "200": {
+          "description": "Credentials",
+          "canManage and secretsConfigured": null
+        },
+        "403": {
+          "description": "Not a member of this workspace"
+        }
+      }
+    }
+  },
+  "/api/workspace/api-keys/{provider}": {
+    "delete": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Remove a workspace API key",
+      "description": "Workspace owners and admins only.",
+      "operationId": "deleteMarketingCredential",
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "provider",
           "required": true,
           "schema": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "perplexity",
+              "gemini",
+              "firecrawl",
+              "pagespeed"
+            ]
           }
         }
       ],
       "responses": {
         "200": {
-          "description": "Module settings and whether the caller may change them"
+          "description": "Key removed"
         },
         "403": {
-          "description": "Not a member of this team"
+          "description": "Workspace owner or admin required"
+        },
+        "404": {
+          "description": "No key stored for this provider"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set or clear the monthly budget of an LLM key",
+      "description": "Workspace owners and admins only. Applies to LLM provider keys (anthropic, openai, perplexity, gemini). Null removes the cap.",
+      "operationId": "patchMarketingCredential",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "provider",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "perplexity",
+              "gemini"
+            ]
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "monthlyBudgetCents"
+              ],
+              "properties": {
+                "monthlyBudgetCents": {
+                  "type": "integer",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Budget updated"
+        },
+        "400": {
+          "description": "Not an LLM provider or invalid budget"
+        },
+        "403": {
+          "description": "Workspace owner or admin required"
+        },
+        "404": {
+          "description": "No key stored for this provider"
         }
       }
     },
     "put": {
       "tags": [
-        "Teams"
+        "Marketing"
       ],
-      "summary": "Enable or disable Veerify modules for a team",
-      "description": "Team-level module enablement is a master switch over the per-project feature toggles - both must be on for a product to show a module (delta D-31). Disabling a module hides it but destroys nothing.\n",
-      "operationId": "updateTeamModuleSettings",
+      "summary": "Add or replace a workspace API key",
+      "description": "Workspace owners and admins only. The key is checked against the provider before it is stored. A rejected key (authentication failure) returns 400 and is not saved. Network or provider outages save the key as `unchecked`. The key is encrypted at rest and never returned. Returns 503 when the server has no SECRETS_ENCRYPTION_KEY.\n",
+      "operationId": "putMarketingCredential",
       "parameters": [
         {
           "in": "path",
-          "name": "teamId",
+          "name": "provider",
           "required": true,
           "schema": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "anthropic",
+              "openai",
+              "perplexity",
+              "gemini",
+              "firecrawl",
+              "pagespeed"
+            ]
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "apiKey"
+              ],
+              "properties": {
+                "apiKey": {
+                  "type": "string"
+                },
+                "monthlyBudgetCents": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "LLM providers only"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Credential saved (hint and status only)"
+        },
+        "400": {
+          "description": "Invalid input or the provider rejected the key"
+        },
+        "403": {
+          "description": "Workspace owner or admin required"
+        },
+        "503": {
+          "description": "Key encryption is not configured on this server"
+        }
+      }
+    }
+  },
+  "/api/workspace/data-consent": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Whether feedback and support text may be sent to the workspace's AI provider",
+      "description": "Both sources are off until a workspace owner or admin turns them on.",
+      "operationId": "getMarketingDataConsent",
+      "responses": {
+        "200": {
+          "description": "Consent flags",
+          "who consented and when": null,
+          "and canManage": null
+        },
+        "403": {
+          "description": "Not a member of this workspace"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set which text sources may be sent to the workspace's AI provider",
+      "description": "Workspace owner or admin only. Records who changed it and when. Turning a source off takes effect immediately; every run re-reads consent.\n",
+      "operationId": "setMarketingDataConsent",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "allowFeedbackText",
+                "allowSupportText"
+              ],
+              "properties": {
+                "allowFeedbackText": {
+                  "type": "boolean"
+                },
+                "allowSupportText": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated consent"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Workspace owner or admin required"
+        }
+      }
+    }
+  },
+  "/api/workspace/erase-contact": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Erase a person's Marketing data",
+      "description": "Workspace owner or admin only. Deletes every review request and testimonial for the email address (case-insensitive) across the workspace's projects, and keeps or creates a suppression so the address is never contacted again. Works whether or not Marketing is switched on.\n",
+      "operationId": "eraseMarketingContact",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "email"
+              ],
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Counts of deleted review requests and testimonials"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Workspace owner or admin required"
+        }
+      }
+    }
+  },
+  "/api/workspace/integrations": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Status of the workspace's Marketing integrations",
+      "description": "Any workspace member can read. Shows, per integration, whether it works, what is missing and what to set. Never returns keys.\n",
+      "operationId": "listMarketingIntegrations",
+      "responses": {
+        "200": {
+          "description": "Integration statuses and canManage"
+        },
+        "403": {
+          "description": "Not a member of this workspace"
+        }
+      }
+    }
+  },
+  "/api/workspace/integrations/{id}/test": {
+    "post": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Test one Marketing integration",
+      "description": "Workspace owners and admins only. Runs the cheapest real check for the integration (key validation, one search, an encryption round trip, ...) and reports what was checked. Never returns keys. A rejected workspace key is marked invalid and a working one valid. Limited to 30 tests per hour per workspace (enough for \"Test all\" across every integration, plus retries).\n",
+      "operationId": "testMarketingIntegration",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "enum": [
+              "secrets",
+              "firecrawl",
+              "pagespeed",
+              "anthropic",
+              "openai",
+              "gemini",
+              "perplexity",
+              "hackernews",
+              "reddit",
+              "bluesky",
+              "google"
+            ]
           }
         }
       ],
       "responses": {
         "200": {
-          "description": "Module settings updated"
+          "description": "Test result (ok may be false)",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "success": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "ok": {
+                        "type": "boolean"
+                      },
+                      "durationMs": {
+                        "type": "integer"
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                          "team",
+                          "instance"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "400": {
+          "description": "Unknown integration"
         },
         "403": {
-          "description": "Team admin required"
+          "description": "Workspace owner or admin required"
+        },
+        "429": {
+          "description": "Too many tests"
         }
       }
     }

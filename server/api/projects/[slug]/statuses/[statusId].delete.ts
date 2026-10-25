@@ -10,7 +10,7 @@ const deleteStatusSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const { project } = await requireProjectStatusAccess(event)
+  const { project } = await requireProjectStatusAccess(event, { admin: true })
   const statusId = getRouterParam(event, 'statusId')
 
   if (!statusId) {

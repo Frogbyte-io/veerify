@@ -1,25 +1,27 @@
 <template>
   <div>
     <PublicRoadmap
-      v-if="teamSubdomain && projectSlug && subPage === 'roadmap'"
-      :team-slug="teamSubdomain"
+      v-if="publicOrgSlug && projectSlug && subPage === 'roadmap'"
+      :org-slug="publicOrgSlug"
       :project-slug="projectSlug"
     />
     <PublicChangelog
-      v-else-if="teamSubdomain && projectSlug && subPage === 'changelog'"
-      :team-slug="teamSubdomain"
+      v-else-if="publicOrgSlug && projectSlug && subPage === 'changelog'"
+      :org-slug="publicOrgSlug"
       :project-slug="projectSlug"
       :entry-slug="entrySlug"
     />
     <PublicTestimonials
-      v-else-if="teamSubdomain && projectSlug && subPage === 'testimonials'"
-      :team-slug="teamSubdomain"
+      v-else-if="publicOrgSlug && projectSlug && subPage === 'testimonials'"
+      :org-slug="publicOrgSlug"
       :project-slug="projectSlug"
     />
     <PublicFeedbackBoard
-      v-else-if="teamSubdomain && projectSlug"
-      :team-slug="teamSubdomain"
+      v-else-if="publicOrgSlug && projectSlug && !subPage"
+      :key="`${projectSlug}/${productSlug || ''}`"
+      :org-slug="publicOrgSlug"
       :project-slug="projectSlug"
+      :product-slug="productSlug"
     />
     <NuxtLayout v-else name="clean">
       <div class="min-h-screen flex items-center justify-center bg-background">
@@ -35,16 +37,17 @@
 </template>
 
 <script>
-// Sub-pages of a product's public site. On a custom domain they are addressed
-// without the product slug (`/changelog`), on a team subdomain with it
-// (`/<product>/changelog`).
+// Project-wide sub-pages of the public site. Product slugs can never be one of
+// these (reserved when a product is created).
+//   org subdomain:  /<project>[/<product> | /roadmap | /changelog[/<entry>] | /testimonials]
+//   custom domain:  /[<product> | /roadmap | /changelog[/<entry>] | /testimonials]
 const SUB_PAGES = ['roadmap', 'changelog', 'testimonials']
 
 export default {
   name: 'CatchAllPage',
   computed: {
-    teamSubdomain() {
-      return useState('teamSubdomain').value
+    publicOrgSlug() {
+      return useState('publicOrgSlug').value
     },
     publicProjectSlug() {
       return useState('publicProjectSlug').value
@@ -54,36 +57,26 @@ export default {
       return Array.isArray(params) ? params : params ? [params] : []
     },
     projectSlug() {
-      if (!this.publicProjectSlug) {
-        return this.slugParts[0] || null
-      }
-
-      const firstSegment = this.slugParts[0] || null
-      if (!firstSegment || SUB_PAGES.includes(firstSegment) || firstSegment === this.publicProjectSlug) {
-        return this.publicProjectSlug
-      }
-
-      return null
+      return this.publicProjectSlug || this.slugParts[0] || null
+    },
+    // Segments after the project (a custom domain has no project segment)
+    restParts() {
+      return this.publicProjectSlug ? this.slugParts : this.slugParts.slice(1)
     },
     subPage() {
-      if (!this.publicProjectSlug) {
-        return this.slugParts[1] || null
-      }
-
-      const firstSegment = this.slugParts[0] || null
-      if (SUB_PAGES.includes(firstSegment)) return firstSegment
-      if (firstSegment === this.publicProjectSlug) {
-        return this.slugParts[1] || null
-      }
-
+      const first = this.restParts[0] || null
+      if (SUB_PAGES.includes(first)) return first
+      // Any other first segment is a product board; more segments are a 404
+      if (first && this.restParts.length > 1) return 'not-found'
       return null
+    },
+    productSlug() {
+      const first = this.restParts[0] || null
+      return first && !SUB_PAGES.includes(first) ? first : null
     },
     // `changelog/<entrySlug>` permalink segment, when present
     entrySlug() {
-      if (this.subPage !== 'changelog') return null
-      const parts = this.slugParts
-      const index = this.publicProjectSlug && parts[0] !== this.publicProjectSlug ? 1 : 2
-      return parts[index] || null
+      return this.subPage === 'changelog' ? this.restParts[1] || null : null
     },
   },
 }

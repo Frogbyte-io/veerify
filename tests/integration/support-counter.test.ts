@@ -3,7 +3,8 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team } from '../../server/database/schema/auth'
+import { organization } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import { supportCounter } from '../../server/database/schema/support'
 import { allocateConversationDisplayId } from '../../server/utils/support-counter'
 
@@ -19,7 +20,7 @@ import { allocateConversationDisplayId } from '../../server/utils/support-counte
 
 describe('allocateConversationDisplayId (real Postgres)', () => {
   const orgId = `org_counter_test_${randomUUID()}`
-  const teamId = `team_counter_test_${randomUUID()}`
+  const projectId = `project_counter_test_${randomUUID()}`
 
   beforeAll(async () => {
     await db.insert(organization).values({
@@ -27,28 +28,28 @@ describe('allocateConversationDisplayId (real Postgres)', () => {
       name: 'Support Counter Integration Test Org',
       slug: `support-counter-test-org-${randomUUID()}`,
     })
-    await db.insert(team).values({
-      id: teamId,
-      name: 'Support Counter Integration Test Team',
-      slug: `support-counter-test-team-${randomUUID()}`,
+    await db.insert(project).values({
+      id: projectId,
+      name: 'Support Counter Integration Test Project',
+      slug: `support-counter-test-project-${randomUUID()}`,
       organizationId: orgId,
     })
   })
 
   afterAll(async () => {
-    // Cascades: organization -> team -> support_counter.
+    // Cascades: organization -> project -> support_counter.
     await db.delete(organization).where(eq(organization.id, orgId))
   })
 
   it('allocates 100 distinct sequential displayIds under real concurrency, no duplicates or gaps', async () => {
     const allocations = await Promise.all(
-      Array.from({ length: 100 }, () => db.transaction((tx) => allocateConversationDisplayId(tx, teamId)))
+      Array.from({ length: 100 }, () => db.transaction((tx) => allocateConversationDisplayId(tx, projectId)))
     )
 
     const sorted = [...allocations].sort((a, b) => a - b)
     expect(sorted).toEqual(Array.from({ length: 100 }, (_, i) => i + 1))
 
-    const [counter] = await db.select().from(supportCounter).where(eq(supportCounter.teamId, teamId)).limit(1)
+    const [counter] = await db.select().from(supportCounter).where(eq(supportCounter.projectId, projectId)).limit(1)
     expect(counter?.nextConversationDisplayId).toBe(101)
   })
 })

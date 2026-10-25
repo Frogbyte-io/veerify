@@ -11,13 +11,7 @@ const devAllowedHosts = (process.env.NUXT_DEV_ALLOWED_HOSTS || '')
   .filter(Boolean)
 const deploymentModeEnv = (process.env.APP_DEPLOYMENT_MODE || '').toLowerCase()
 const deploymentMode =
-  deploymentModeEnv === 'cloud' || deploymentModeEnv === 'self-hosted'
-    ? deploymentModeEnv
-    : process.env.VERCEL || process.env.VERCEL_ENV
-      ? 'cloud'
-      : 'self-hosted'
-
-const onVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV)
+  deploymentModeEnv === 'cloud' || deploymentModeEnv === 'self-hosted' ? deploymentModeEnv : 'self-hosted'
 
 export default defineNuxtConfig({
   app: {
@@ -33,17 +27,12 @@ export default defineNuxtConfig({
     // The self-hosted runtime image already carries the installed dependency
     // tree. Nitro tracing can recreate nested Yarn dependency symlinks with
     // invalid relative targets and recurse until ELOOP during packaging. Cloud
-    // builds retain Nitro's normal tracing behavior for platform deployment.
+    // builds retain Nitro's normal tracing behavior.
     ...(deploymentMode === 'self-hosted' ? { externals: { trace: false } } : {}),
-    // Only read by the Vercel preset (ignored by node-server builds). The marketing
-    // advance tasks work in ~45s slices, which needs more than Vercel's default
-    // function duration. 60s is within every plan's limit.
-    vercel: { functions: { maxDuration: 60 } },
     experimental: {
       websocket: true,
-      // Self-hosted scheduler backend — see server/services/scheduler/.
-      // No-op on Vercel: the Vercel Cron backend is used there instead, and
-      // startScheduleRunner() is skipped in Nitro's dev/test env anyway.
+      // In-process scheduler backend — see server/services/scheduler/.
+      // startScheduleRunner() is skipped in Nitro's dev/test env.
       tasks: true,
     },
     scheduledTasks: {
@@ -106,10 +95,6 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     domainProvider: process.env.DOMAIN_PROVIDER || 'static-cname',
-    vercelApiToken: process.env.VERCEL_API_TOKEN || '',
-    vercelProjectId: process.env.VERCEL_PROJECT_ID || '',
-    vercelTeamId: process.env.VERCEL_TEAM_ID || '',
-    vercelTeamSlug: process.env.VERCEL_TEAM_SLUG || '',
     // Runtime override for prebuilt images: NUXT_CLOUDFLARE_API_TOKEN / NUXT_CLOUDFLARE_ZONE_ID.
     cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN || '',
     cloudflareZoneId: process.env.CLOUDFLARE_ZONE_ID || '',
@@ -141,7 +126,6 @@ export default defineNuxtConfig({
       dashboardDomain,
       cnameTarget: process.env.CNAME_TARGET || 'cname.veerify.io',
       deploymentMode,
-      onVercel,
     },
   },
   colorMode: {

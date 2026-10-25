@@ -15,7 +15,7 @@ import { sqlTimestamp } from '~/server/utils/sql-timestamp'
 export interface WatchContext {
   id: string
   siteId: string
-  teamId: string
+  organizationId: string
   projectId: string
   projectName: string
   projectSettings: Record<string, unknown> | null
@@ -80,7 +80,7 @@ export interface CompetitorStore {
 const contextColumns = {
   id: competitorWatch.id,
   siteId: competitorWatch.siteId,
-  teamId: marketingSite.teamId,
+  organizationId: project.organizationId,
   projectId: marketingSite.projectId,
   projectName: project.name,
   projectSettings: project.settings,
@@ -112,7 +112,7 @@ const MAX_PAGES_PER_HOST = 5
 
 /**
  * The due-watches statement: every gate is applied before ranking, then at most MAX_PAGES_PER_HOST
- * distinct URLs per host are kept (`dense_rank` over the URL within the host, so every team watching
+ * distinct URLs per host are kept (`dense_rank` over the URL within the host, so every project watching
  * one URL stays together and shares its single fetch), oldest first, then LIMIT.
  */
 export function buildDueWatchesQuery(cutoff: Date, limit: number, scope: 'all' | 'never' | 'recheck') {
@@ -124,7 +124,7 @@ export function buildDueWatchesQuery(cutoff: Date, limit: number, scope: 'all' |
         : sql`(w.last_checked_at IS NULL OR w.last_checked_at < ${sqlTimestamp(cutoff)})`
   return sql`
     SELECT * FROM (
-      SELECT w.id, w.site_id, s.team_id, s.project_id, p.name AS project_name, p.settings AS project_settings,
+      SELECT w.id, w.site_id, p.organization_id, s.project_id, p.name AS project_name, p.settings AS project_settings,
              t.label AS term_label, t.competitor_domain, w.url, w.kind, w.status, w.last_checked_at,
              w.last_content_hash, w.consecutive_failures,
              dense_rank() OVER (
@@ -135,7 +135,6 @@ export function buildDueWatchesQuery(cutoff: Date, limit: number, scope: 'all' |
       JOIN marketing_site s ON s.id = w.site_id
       JOIN marketing_term t ON t.id = w.term_id
       JOIN project p ON p.id = s.project_id
-      JOIN team_module_settings tm ON tm.team_id = s.team_id AND tm.marketing_enabled = true
       WHERE w.status = 'active'
         AND s.verified_at IS NOT NULL
         AND p.settings ->> 'marketingEnabled' = 'true'
@@ -160,7 +159,7 @@ export const dbCompetitorStore: CompetitorStore = {
     const res = await db.execute<{
       id: string
       site_id: string
-      team_id: string
+      organization_id: string
       project_id: string
       project_name: string
       project_settings: Record<string, unknown> | null
@@ -176,7 +175,7 @@ export const dbCompetitorStore: CompetitorStore = {
     return res.rows.map((row) => ({
       id: row.id,
       siteId: row.site_id,
-      teamId: row.team_id,
+      organizationId: row.organization_id,
       projectId: row.project_id,
       projectName: row.project_name,
       projectSettings: row.project_settings ?? null,

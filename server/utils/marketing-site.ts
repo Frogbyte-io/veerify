@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { marketingSite } from '~/server/database/schema/marketing'
-import { requireTeamAdmin } from '~/server/utils/support-access'
+import { isProjectAdmin } from '~/server/utils/project-access'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
 export type MarketingSiteRow = typeof marketingSite.$inferSelect
@@ -49,14 +49,8 @@ export function serializeSiteWithVerification(site: MarketingSiteRow | null, can
 }
 
 /** Non-throwing admin check for `canManage` flags on read endpoints. */
-export async function isTeamAdminOf(teamId: string, userId: string): Promise<boolean> {
-  try {
-    await requireTeamAdmin(teamId, userId)
-    return true
-  } catch (error) {
-    if ((error as { statusCode?: number })?.statusCode === 403) return false
-    throw error
-  }
+export async function isMarketingAdminOf(projectId: string, userId: string): Promise<boolean> {
+  return isProjectAdmin(projectId, userId)
 }
 
 export function requireRouteParam(event: H3Event, name: string): string {

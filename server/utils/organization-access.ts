@@ -1,7 +1,8 @@
-import { and, count, eq, inArray, ne } from 'drizzle-orm'
+import { isReservedSlug } from './reserved-slugs'
+import { and, count, eq, ne } from 'drizzle-orm'
 import type { AuthSession } from './auth-middleware'
 import { db } from '~/server/database/drizzle'
-import { member, organization, team, teamMember, user } from '~/server/database/schema/auth'
+import { member, organization, user } from '~/server/database/schema/auth'
 import { project } from '~/server/database/schema/feedback'
 import { createErrorResponse, ErrorCode } from './response'
 
@@ -36,6 +37,15 @@ export async function findOrganizationBySlug(slug: string) {
 }
 
 export async function assertOrganizationSlugAvailable(slug: string, excludeOrganizationId?: string) {
+  // The organization slug is the public subdomain (<slug>.APP_DOMAIN), so it
+  // must never shadow an app or infrastructure hostname.
+  if (isReservedSlug(slug)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'This workspace URL is reserved. Choose another one.'),
+    })
+  }
   const [existing] = await db
     .select({ id: organization.id })
     .from(organization)
@@ -166,12 +176,8 @@ export async function getOrganizationDetails(
   }
 }
 
-export type OrganizationMemberWithTeams = OrganizationMemberSummary & {
-  teams: { id: string; name: string; role: string }[]
-}
-
-export async function getOrganizationMembersWithTeams(organizationId: string): Promise<OrganizationMemberWithTeams[]> {
-  const members = await db
+export async function getOrganizationMembers(organizationId: string): Promise<OrganizationMemberSummary[]> {
+  return db
     .select({
       id: member.id,
       userId: member.userId,
@@ -184,25 +190,4 @@ export async function getOrganizationMembersWithTeams(organizationId: string): P
     .from(member)
     .innerJoin(user, eq(member.userId, user.id))
     .where(eq(member.organizationId, organizationId))
-
-  if (members.length === 0) return []
-
-  const userIds = members.map((m) => m.userId)
-  const teamMemberships = await db
-    .select({
-      userId: teamMember.userId,
-      teamId: team.id,
-      teamName: team.name,
-      teamRole: teamMember.role,
-    })
-    .from(teamMember)
-    .innerJoin(team, eq(teamMember.teamId, team.id))
-    .where(and(eq(team.organizationId, organizationId), inArray(teamMember.userId, userIds)))
-
-  return members.map((m) => ({
-    ...m,
-    teams: teamMemberships
-      .filter((tm) => tm.userId === m.userId)
-      .map((tm) => ({ id: tm.teamId, name: tm.teamName, role: tm.teamRole })),
-  }))
 }

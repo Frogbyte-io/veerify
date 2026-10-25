@@ -3,7 +3,8 @@ import { eq, inArray } from 'drizzle-orm'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { db } from '../../server/database/drizzle'
-import { organization, team, user } from '../../server/database/schema/auth'
+import { organization, user } from '../../server/database/schema/auth'
+import { project } from '../../server/database/schema/feedback'
 import {
   contact,
   conversation,
@@ -23,7 +24,7 @@ import {
 import type { StorageObjectMetadata, StorageProvider } from '../../server/utils/storage/types'
 
 const orgId = `finalization_org_${randomUUID()}`
-const teamId = `finalization_team_${randomUUID()}`
+const projectId = `finalization_project_${randomUUID()}`
 const inboxId = `finalization_inbox_${randomUUID()}`
 const userId = `finalization_user_${randomUUID()}`
 const otherUserId = `finalization_other_user_${randomUUID()}`
@@ -103,10 +104,10 @@ beforeAll(async () => {
     createdAt: now,
     updatedAt: now,
   })
-  await db.insert(team).values({
-    id: teamId,
-    name: 'Finalization Team',
-    slug: `finalization-team-${randomUUID()}`,
+  await db.insert(project).values({
+    id: projectId,
+    name: 'Finalization Project',
+    slug: `finalization-project-${randomUUID()}`,
     organizationId: orgId,
     createdAt: now,
     updatedAt: now,
@@ -129,7 +130,7 @@ beforeAll(async () => {
   ])
   await db.insert(supportInbox).values({
     id: inboxId,
-    teamId,
+    projectId,
     name: 'Finalization Inbox',
     slug: `finalization-inbox-${randomUUID()}`,
     emailAddress: 'support@example.com',
@@ -139,13 +140,18 @@ beforeAll(async () => {
   await db
     .insert(supportInboxMember)
     .values({ id: `finalization_member_${randomUUID()}`, inboxId, userId, role: 'agent', createdAt: now })
-  await db
-    .insert(contact)
-    .values({ id: contactId, teamId, name: 'Customer', email: 'customer@example.com', createdAt: now, updatedAt: now })
+  await db.insert(contact).values({
+    id: contactId,
+    projectId,
+    name: 'Customer',
+    email: 'customer@example.com',
+    createdAt: now,
+    updatedAt: now,
+  })
   await db.insert(conversation).values({
     id: conversationId,
     inboxId,
-    teamId,
+    projectId,
     contactId,
     displayId: 9901,
     subject: 'Finalization',

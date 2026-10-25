@@ -2,14 +2,14 @@ import { asc, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { businessHours, slaPolicy, slaTarget } from '~/server/database/schema/support'
 
-export async function loadSlaSettings(teamId: string) {
+export async function loadSlaSettings(projectId: string) {
   const [hours, policyRows] = await Promise.all([
-    db.select().from(businessHours).where(eq(businessHours.teamId, teamId)).orderBy(asc(businessHours.name)),
+    db.select().from(businessHours).where(eq(businessHours.projectId, projectId)).orderBy(asc(businessHours.name)),
     db
       .select({ policy: slaPolicy, target: slaTarget })
       .from(slaPolicy)
       .leftJoin(slaTarget, eq(slaTarget.slaPolicyId, slaPolicy.id))
-      .where(eq(slaPolicy.teamId, teamId))
+      .where(eq(slaPolicy.projectId, projectId))
       .orderBy(asc(slaPolicy.sortOrder), asc(slaPolicy.name), asc(slaTarget.metric), asc(slaTarget.priority)),
   ])
 

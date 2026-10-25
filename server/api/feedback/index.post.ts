@@ -4,7 +4,7 @@ import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/
 import { optionalAuth } from '~/server/utils/auth-middleware'
 import { getOrCreateAnonSession } from '~/server/utils/anonymous-session'
 import { validateBody, optionalTrimmedEmail, optionalTrimmedString } from '~/server/utils/validation'
-import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
+import { requirePublicProject, requireProjectAccess, requireProductInProject } from '~/server/utils/project-access'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
 import {
@@ -29,6 +29,8 @@ const createFeedbackSchema = z.object({
   title: z.string().min(1, 'Title is required').max(200, 'Title too long'),
   body: z.string().min(1, 'Description is required').max(5000, 'Description too long'),
   projectId: z.string().min(1, 'Project ID is required'),
+  // Defaults to the project's first product when omitted
+  productId: z.string().min(1).optional(),
   categoryId: z.string().optional().nullable(),
   feedbackType: z.enum(['feature_request', 'bug_report', 'improvement', 'question', 'other']).optional(),
   authorName: optionalTrimmedString(100),
@@ -86,7 +88,7 @@ export default defineEventHandler(async (event) => {
 
   const body = await validateBody(event, createFeedbackSchema)
 
-  // For authenticated users submitting to private projects, verify team access
+  // For authenticated users submitting to private projects, verify project access
   if (session?.user) {
     await requireProjectAccess(body.projectId, session.user.id)
   } else {
@@ -101,6 +103,17 @@ export default defineEventHandler(async (event) => {
       statusCode: 404,
       statusMessage: 'Not Found',
       data: createErrorResponse(ErrorCode.NOT_FOUND, 'Project not found'),
+    })
+  }
+
+  // The product must belong to the project (default product when omitted).
+  // Anonymous submitters can only post to public products; a private one answers 404.
+  const targetProduct = await requireProductInProject(proj.id, body.productId)
+  if (!session?.user && !targetProduct.isPublic) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Not Found',
+      data: createErrorResponse(ErrorCode.NOT_FOUND, 'Product not found'),
     })
   }
 
@@ -212,6 +225,7 @@ export default defineEventHandler(async (event) => {
           .values({
             id: feedbackId,
             projectId: body.projectId,
+            productId: targetProduct.id,
             categoryId: body.categoryId || null,
             title: body.title,
             body: body.body,
@@ -245,7 +259,7 @@ export default defineEventHandler(async (event) => {
 
         if (session?.user) {
           await createAutomaticFeedbackLink(tx, {
-            teamId: proj.teamId,
+            projectId: proj.id,
             feedbackId: created.id,
             authorUserId: session.user.id,
             createdAt: now,
@@ -326,7 +340,7 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  // Create in-app notifications for team members about the new feedback
+  // Create in-app notifications for project members about the new feedback
   const authorName = createdFeedback.authorName || session?.user?.name || 'Someone'
   notifyProjectTeam(createdFeedback.projectId, session?.user?.id || null, {
     type: 'new_feedback',
@@ -339,5 +353,8 @@ export default defineEventHandler(async (event) => {
   })
 
   setResponseStatus(event, 201)
-  return createSuccessResponse(responseFeedback)
+  return createSuccessResponse({
+    ...responseFeedback,
+    product: { id: targetProduct.id, name: targetProduct.name, slug: targetProduct.slug },
+  })
 })

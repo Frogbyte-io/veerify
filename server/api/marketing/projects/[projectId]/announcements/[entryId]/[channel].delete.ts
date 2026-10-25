@@ -20,7 +20,7 @@
  *         schema: { type: string, enum: [x, linkedin, bluesky, newsletter] }
  *     responses:
  *       200: { description: Draft deleted (also when none existed) }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: Entry or channel not found }
  */
 import { requireAuth } from '~/server/utils/auth-middleware'

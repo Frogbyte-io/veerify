@@ -26,16 +26,6 @@ describe('term and prompt cap locking', () => {
   })
 })
 
-describe('product creation settings', () => {
-  it('allows every product module toggle, including marketingEnabled', async () => {
-    vi.stubGlobal('defineEventHandler', (fn: unknown) => fn)
-    const { productToggleShape } = await import('~/server/api/teams/[teamId]/projects.post')
-    const { PRODUCT_MODULES } = await import('~/lib/modules')
-    expect(Object.keys(productToggleShape).sort()).toEqual(PRODUCT_MODULES.map((m) => m.key).sort())
-    expect(productToggleShape).toHaveProperty('marketingEnabled')
-  })
-})
-
 describe('notification preferences', () => {
   it('keeps marketingDigest in the GET defaults and the PUT whitelist', () => {
     expect(read('server/api/notifications/preferences.get.ts')).toContain('marketingDigest: true')

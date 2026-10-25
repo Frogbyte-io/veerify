@@ -7,7 +7,7 @@
  *     operationId: deleteSupportContactLink
  *     responses:
  *       200: { description: Link removed }
- *       403: { description: Not a member of the contact's team }
+ *       403: { description: Not a member of the contact's project }
  *       404: { description: Contact or link not found }
  */
 import { createSuccessResponse } from '~/server/utils/response'

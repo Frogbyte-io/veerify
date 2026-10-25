@@ -26,7 +26,7 @@ describe('isConfigured - which credentials a provider is missing', () => {
 
     expect(status.configured).toBe(false)
     expect(status.missing).toEqual(['SUPPORT_POSTMARK_WEBHOOK_PASSWORD'])
-    // The card built in SUP-03-13 shows these to any team member, so it must
+    // The card built in SUP-03-13 shows these to any project member, so it must
     // report names and never values.
     expect(JSON.stringify(status)).not.toContain('hook')
   })
@@ -123,7 +123,7 @@ describe('checkSendingAuthorization - can this inbox send as this address', () =
     })
 
     // The verdict must never carry the provider-wide domain list: the account
-    // is shared by every team, so it would leak other customers' domains.
+    // is shared by every project, so it would leak other customers' domains.
     expect(await driver.checkSendingAuthorization('support@other.com')).toEqual({ status: 'unauthorized' })
   })
 

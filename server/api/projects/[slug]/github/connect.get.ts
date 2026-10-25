@@ -3,7 +3,7 @@ import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
 import { resolveGithubIntegrationCallbackUrl } from '~/server/utils/github-oauth'
 
 export default defineEventHandler(async (event) => {
-  const { project } = await requireProjectCategoryAccess(event)
+  const { project } = await requireProjectCategoryAccess(event, { admin: true })
 
   const clientId = process.env.GITHUB_CLIENT_ID
   if (!clientId) {

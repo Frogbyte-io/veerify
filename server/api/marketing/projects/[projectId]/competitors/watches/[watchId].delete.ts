@@ -27,10 +27,10 @@ import { requireMarketingAdmin } from '~/server/utils/marketing-access'
 import { requireRouteParam } from '~/server/utils/marketing-site'
 import { requireMarketingSite } from '~/server/utils/marketing-terms'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireAuthWithResolvedTeam } from '~/server/utils/team-context'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  const { session } = await requireAuthWithResolvedTeam(event)
+  const session = await requireAuth(event)
   const projectId = requireRouteParam(event, 'projectId')
   const watchId = requireRouteParam(event, 'watchId')
   await requireMarketingAdmin(projectId, session.user.id)

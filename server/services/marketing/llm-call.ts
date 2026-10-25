@@ -1,5 +1,5 @@
 /**
- * One-off structured LLM call with the team's own key (bring your own key).
+ * One-off structured LLM call with the workspace's own key (bring your own key).
  * Shared by the features that call the model outside the scheduled runner:
  * prompt suggestions, announcement drafts and customer language analysis.
  *
@@ -11,7 +11,7 @@ import { createError } from 'h3'
 import { getLlmProvider, LlmProviderError, LLM_MODELS, type LlmProviderId } from '~/server/services/llm'
 import { estimateCostUsdMicros } from '~/server/services/llm/models'
 import type { ApiCredentialProvider } from '~/server/database/schema/marketing'
-import { getTeamApiKey, listTeamCredentials, markCredentialInvalid } from '~/server/utils/team-credentials'
+import { getOrgApiKey, listOrgCredentials, markCredentialInvalid } from '~/server/utils/org-credentials'
 import { recordUsage } from '~/server/utils/marketing-usage'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { notifyCredentialInvalid } from './visibility/runner'
@@ -19,7 +19,7 @@ import { estimateTeamCallReservation, heldMicros, releaseBudget, reserveBudget, 
 import { pickSuggestionProvider } from './visibility/prompts'
 
 /** Why a call was refused or failed; sent as `error.details.reason` on 409s. */
-export type TeamLlmFailureReason = 'budget' | 'no_key' | 'quota' | 'auth'
+export type OrgLlmFailureReason = 'budget' | 'no_key' | 'quota' | 'auth'
 
 export function failWith(
   statusCode: number,
@@ -35,13 +35,13 @@ export function failWith(
   })
 }
 
-/** True when a failure from `callTeamLlm` happened before the provider was contacted. */
+/** True when a failure from `callOrgLlm` happened before the provider was contacted. */
 export function failedBeforeProviderCall(error: unknown): boolean {
   const reason = (error as { data?: { error?: { details?: { reason?: string } } } })?.data?.error?.details?.reason
   return reason === 'no_key' || reason === 'budget'
 }
 
-export interface TeamLlmRequest {
+export interface OrgLlmRequest {
   system: string
   input: string
   schema: Record<string, unknown>
@@ -50,14 +50,14 @@ export interface TeamLlmRequest {
   extraUsageMetrics?: Record<string, number>
 }
 
-export interface TeamLlmMessages {
-  /** 409 when the team has no usable key */
+export interface OrgLlmMessages {
+  /** 409 when the workspace has no usable key */
   noKey: string
   /** 502 for provider failures that are not auth, quota or rate limit */
   upstream: string
 }
 
-export interface TeamLlmResult<T> {
+export interface OrgLlmResult<T> {
   data: T
   provider: LlmProviderId
   /** Model the provider reports it used */
@@ -65,21 +65,21 @@ export interface TeamLlmResult<T> {
   usage: { inputTokens: number; outputTokens: number }
 }
 
-export async function callTeamLlm<T>(
-  teamId: string,
-  request: TeamLlmRequest,
-  messages: TeamLlmMessages
-): Promise<TeamLlmResult<T>> {
-  const credentials = await listTeamCredentials(teamId)
+export async function callOrgLlm<T>(
+  organizationId: string,
+  request: OrgLlmRequest,
+  messages: OrgLlmMessages
+): Promise<OrgLlmResult<T>> {
+  const credentials = await listOrgCredentials(organizationId)
   const providerId = pickSuggestionProvider(credentials)
   if (!providerId) failWith(409, 'Conflict', ErrorCode.CONFLICT, messages.noKey, 'no_key')
-  const key = await getTeamApiKey(teamId, providerId as ApiCredentialProvider)
+  const key = await getOrgApiKey(organizationId, providerId as ApiCredentialProvider)
   if (!key) failWith(409, 'Conflict', ErrorCode.CONFLICT, messages.noKey, 'no_key')
 
   // Same monthly budget guard as the runner: reserve an upper bound atomically so concurrent
   // calls cannot all pass the check. Settled with the actual cost, released if nothing was spent.
   const held = heldMicros(estimateTeamCallReservation(providerId, request), key.monthlyBudgetCents)
-  if (!(await reserveBudget(teamId, providerId, held, key.monthlyBudgetCents))) {
+  if (!(await reserveBudget(organizationId, providerId, held, key.monthlyBudgetCents))) {
     failWith(
       409,
       'Conflict',
@@ -101,26 +101,28 @@ export async function callTeamLlm<T>(
     })
 
     const costMicros = estimateCostUsdMicros(providerId, LLM_MODELS[providerId].extract, result.model, result.usage)
-    await settleBudget(teamId, providerId, held, costMicros)
+    await settleBudget(organizationId, providerId, held, costMicros)
     settled = true
     await Promise.all([
-      recordUsage(teamId, `llm:${providerId}:input_tokens`, result.usage.inputTokens),
-      recordUsage(teamId, `llm:${providerId}:output_tokens`, result.usage.outputTokens),
-      ...Object.entries(request.extraUsageMetrics ?? {}).map(([metric, units]) => recordUsage(teamId, metric, units)),
+      recordUsage(organizationId, `llm:${providerId}:input_tokens`, result.usage.inputTokens),
+      recordUsage(organizationId, `llm:${providerId}:output_tokens`, result.usage.outputTokens),
+      ...Object.entries(request.extraUsageMetrics ?? {}).map(([metric, units]) =>
+        recordUsage(organizationId, metric, units)
+      ),
     ])
 
     return { data: result.data, provider: providerId, model: result.model, usage: result.usage }
   } catch (err) {
-    if (!settled) await releaseBudget(teamId, providerId, held).catch(() => undefined)
+    if (!settled) await releaseBudget(organizationId, providerId, held).catch(() => undefined)
     if (err instanceof LlmProviderError) {
       if (err.kind === 'auth') {
         const transitioned = await markCredentialInvalid(
-          teamId,
+          organizationId,
           providerId,
           'The provider rejected the API key',
           key.keyHint
         )
-        if (transitioned) await notifyCredentialInvalid(teamId, providerId).catch(() => undefined)
+        if (transitioned) await notifyCredentialInvalid(organizationId, providerId).catch(() => undefined)
         failWith(
           409,
           'Conflict',

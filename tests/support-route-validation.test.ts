@@ -9,9 +9,9 @@ vi.mock('~/server/utils/auth-middleware', () => ({
   requireAuth: vi.fn(async () => ({ user: { id: 'user-1' } })),
 }))
 vi.mock('~/server/utils/support-access', () => ({
-  requireTeamMembership: vi.fn(async () => undefined),
-  requireConversationAccess: vi.fn(async () => ({ teamId: 'team-1', inboxId: 'inbox-1' })),
-  requireContactAccess: vi.fn(async () => ({ id: 'contact-1', teamId: 'team-1', email: 'contact@example.com' })),
+  requireProjectAccess: vi.fn(async () => undefined),
+  requireConversationAccess: vi.fn(async () => ({ projectId: 'project-1', inboxId: 'inbox-1' })),
+  requireContactAccess: vi.fn(async () => ({ id: 'contact-1', projectId: 'project-1', email: 'contact@example.com' })),
 }))
 vi.mock('~/server/utils/support-realtime', () => ({ publishConversationEvent: vi.fn(async () => undefined) }))
 vi.mock('~/server/utils/support-errors', () => ({ isUniqueViolation: vi.fn(() => false) }))
@@ -58,7 +58,7 @@ beforeEach(() => {
 
 describe('support list query validation', () => {
   it('returns the standardized 400 response for an invalid contacts limit', async () => {
-    vi.stubGlobal('getQuery', () => ({ teamId: 'team-1', limit: 'not-a-number' }))
+    vi.stubGlobal('getQuery', () => ({ projectId: 'project-1', limit: 'not-a-number' }))
 
     await expect(contactsHandler(asEvent({}))).rejects.toMatchObject({
       statusCode: 400,
@@ -74,7 +74,7 @@ describe('support list query validation', () => {
   })
 
   it('returns the standardized 400 response for an invalid companies limit', async () => {
-    vi.stubGlobal('getQuery', () => ({ teamId: 'team-1', limit: 'not-a-number' }))
+    vi.stubGlobal('getQuery', () => ({ projectId: 'project-1', limit: 'not-a-number' }))
 
     await expect(companiesHandler(asEvent({}))).rejects.toMatchObject({
       statusCode: 400,

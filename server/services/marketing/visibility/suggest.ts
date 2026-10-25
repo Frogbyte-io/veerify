@@ -1,5 +1,5 @@
 /**
- * Suggests starter prompts with the team's own LLM key. Only the product name,
+ * Suggests starter prompts with the workspace's own LLM key. Only the product name,
  * description and feedback category names are sent; never feedback or support
  * text (design.md, security constraints).
  */
@@ -8,11 +8,11 @@ import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { aiVisibilityPrompt } from '~/server/database/schema/marketing'
 import { feedbackCategory } from '~/server/database/schema/feedback'
-import { callTeamLlm } from '~/server/services/marketing/llm-call'
+import { callOrgLlm } from '~/server/services/marketing/llm-call'
 import { buildSuggestionInput, buildSuggestionSystemPrompt, normalizeSuggestions, SUGGESTION_SCHEMA } from './prompts'
 
 export async function suggestPrompts(input: {
-  teamId: string
+  organizationId: string
   siteId: string
   project: { id: string; name: string; description: string | null }
 }): Promise<{ suggestions: string[]; provider: string }> {
@@ -27,8 +27,8 @@ export async function suggestPrompts(input: {
       .where(eq(aiVisibilityPrompt.siteId, input.siteId)),
   ])
 
-  const result = await callTeamLlm<{ prompts?: unknown }>(
-    input.teamId,
+  const result = await callOrgLlm<{ prompts?: unknown }>(
+    input.organizationId,
     {
       system: buildSuggestionSystemPrompt(),
       input: buildSuggestionInput({

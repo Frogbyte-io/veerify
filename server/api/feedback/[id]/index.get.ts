@@ -1,12 +1,21 @@
 import { eq, and, count } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
-import { requirePublicProject, requireProjectAccess } from '~/server/utils/project-access'
+import { requireProjectAccess } from '~/server/utils/project-access'
 import { getAnonSession } from '~/server/utils/anonymous-session'
 import { db } from '~/server/database/drizzle'
-import { feedback, feedbackCategory, vote, project, feedbackSubscription } from '~/server/database/schema/feedback'
+import {
+  feedback,
+  feedbackCategory,
+  vote,
+  project,
+  product,
+  feedbackSubscription,
+} from '~/server/database/schema/feedback'
 import { user } from '~/server/database/schema/auth'
 import { conversation } from '~/server/database/schema/support'
+import { requirePublicFeedback } from '~/server/utils/feedback-access'
+import { redactClientMetadata, stripApiKeyId } from '~/server/utils/feedback-source'
 
 export default defineEventHandler(async (event) => {
   const session = await optionalAuth(event)
@@ -54,11 +63,11 @@ export default defineEventHandler(async (event) => {
       isTeamMember = true
     } catch {
       if (!isOwn) {
-        await requirePublicProject(item.feedback.projectId)
+        await requirePublicFeedback(item.feedback, { allowHidden: isOwn })
       }
     }
   } else {
-    await requirePublicProject(item.feedback.projectId)
+    await requirePublicFeedback(item.feedback, { allowHidden: isOwn })
   }
 
   let linkedConversationCount: number | null = null
@@ -95,6 +104,12 @@ export default defineEventHandler(async (event) => {
     .where(eq(project.id, item.feedback.projectId))
     .limit(1)
 
+  const [productSummary] = await db
+    .select({ id: product.id, name: product.name, slug: product.slug })
+    .from(product)
+    .where(eq(product.id, item.feedback.productId))
+    .limit(1)
+
   // Check if viewer has voted and which direction
   let voteType: 'upvote' | 'downvote' | null = null
   if (session?.user) {
@@ -129,7 +144,7 @@ export default defineEventHandler(async (event) => {
   const publicSafeFeedback =
     !isTeamMember && item.feedback.metadata?.source === 'support_conversation'
       ? {
-          ...item.feedback,
+          ...stripApiKeyId(item.feedback, isTeamMember),
           title: 'Support request',
           body: null,
           authorName: null,
@@ -138,7 +153,10 @@ export default defineEventHandler(async (event) => {
           authorSessionId: null,
           metadata: null,
         }
-      : item.feedback
+      : {
+          ...stripApiKeyId(item.feedback, isTeamMember),
+          metadata: redactClientMetadata(item.feedback.metadata, isTeamMember),
+        }
   const publicSafeAuthor = !isTeamMember && item.feedback.metadata?.source === 'support_conversation' ? null : author
 
   return createSuccessResponse({
@@ -146,6 +164,8 @@ export default defineEventHandler(async (event) => {
     category: item.category,
     author: publicSafeAuthor,
     project: proj,
+    productId: item.feedback.productId,
+    product: productSummary ?? null,
     tag: item.feedback.metadata?.feedbackType || null,
     hasVoted: voteType !== null,
     voteType,

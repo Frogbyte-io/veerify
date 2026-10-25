@@ -1,5 +1,5 @@
 import { instanceKeysAllowed, marketingConfig } from '~/server/utils/marketing-config'
-import { listTeamCredentials, type TeamCredentialSummary } from '~/server/utils/team-credentials'
+import { listOrgCredentials, type OrgCredentialSummary } from '~/server/utils/org-credentials'
 import { countOutdatedSecrets } from '~/server/services/marketing/secrets-rotation'
 import { isSecretsConfigured } from '~/server/utils/secrets'
 import { getGoogleOAuthConfig, getGoogleRedirectUri } from '~/server/services/google/search-console'
@@ -35,14 +35,14 @@ export interface IntegrationStatus {
 
 type CredentialFallback = { configured: boolean; missingHint: string }
 
-/** On the cloud instance keys are not used (see `instanceKeysAllowed`), so the only path is the team's own key. */
+/** On the cloud instance keys are not used (see `instanceKeysAllowed`), so the only path is the workspace's own key. */
 function instanceHint(selfHosted: string, byok: string): string {
   return instanceKeysAllowed() ? selfHosted : byok
 }
 
 function fromCredential(
   base: Pick<IntegrationStatus, 'id' | 'label' | 'capability'>,
-  credential: TeamCredentialSummary | undefined,
+  credential: OrgCredentialSummary | undefined,
   fallback: CredentialFallback
 ): IntegrationStatus {
   if (credential?.status === 'invalid') {
@@ -62,7 +62,7 @@ function fromCredential(
       ...base,
       state: 'ready',
       source: 'team',
-      detail: `Team key ending in ${credential.keyHint}${unchecked}`,
+      detail: `Workspace key ending in ${credential.keyHint}${unchecked}`,
     }
   }
   if (fallback.configured) {
@@ -76,9 +76,9 @@ export const SOCIAL_HINTS: Record<string, string> = {
   bluesky: 'Set BLUESKY_IDENTIFIER and BLUESKY_APP_PASSWORD (a Bluesky app password) on the server.',
 }
 
-/** Integration status for a team: what works, what is missing, and what to set. */
-export async function getIntegrationStatus(teamId: string): Promise<IntegrationStatus[]> {
-  const credentials = await listTeamCredentials(teamId)
+/** Integration status for a workspace: what works, what is missing, and what to set. */
+export async function getIntegrationStatus(organizationId: string): Promise<IntegrationStatus[]> {
+  const credentials = await listOrgCredentials(organizationId)
   const byProvider = new Map(credentials.map((c) => [c.provider, c]))
 
   const secretsReady = isSecretsConfigured()

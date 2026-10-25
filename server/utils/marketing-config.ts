@@ -1,7 +1,7 @@
 /**
  * Instance-level Marketing configuration. Every value is read from
  * `process.env` on access (never at import time) so tests and runtime config
- * changes see current values. Team-supplied keys live in `team_api_credential`,
+ * changes see current values. Workspace-supplied keys live in `organization_api_credential`,
  * not here.
  */
 
@@ -17,20 +17,17 @@ function readInt(name: string, fallback: number, min: number, max: number): numb
 }
 
 /**
- * Whether this deployment is the multi-tenant cloud. Mirrors the detection in
- * `server/services/scheduler/index.ts` and `nuxt.config.ts`: `APP_DEPLOYMENT_MODE` wins when set to a
- * recognized value, otherwise Vercel's own env vars imply cloud.
+ * Whether this deployment is the multi-tenant cloud. Only `APP_DEPLOYMENT_MODE=cloud`
+ * (same as `nuxt.config.ts`) enables it; anything else is self-hosted.
  */
 export function isCloudDeployment(): boolean {
   const configured = (readEnv('APP_DEPLOYMENT_MODE') ?? '').toLowerCase()
-  if (configured === 'cloud') return true
-  if (configured === 'self-hosted') return false
-  return Boolean(process.env.VERCEL || process.env.VERCEL_ENV)
+  return configured === 'cloud'
 }
 
 /**
- * Whether instance-wide Firecrawl / PageSpeed keys may serve every team. Always true self-hosted. On
- * the cloud an instance key would give every team free crawling at the operator's expense, so it is
+ * Whether instance-wide Firecrawl / PageSpeed keys may serve every workspace. Always true self-hosted. On
+ * the cloud an instance key would give every workspace free crawling at the operator's expense, so it is
  * ignored unless `MARKETING_ALLOW_INSTANCE_KEYS=true` (until billing entitlements exist).
  */
 export function instanceKeysAllowed(): boolean {
@@ -89,7 +86,7 @@ export const marketingConfig = {
   get mentionsConcurrency() {
     return readInt('MARKETING_MENTIONS_CONCURRENCY', 16, 1, 32)
   },
-  /** Whether team API keys can be encrypted at rest on this instance. */
+  /** Whether workspace API keys can be encrypted at rest on this instance. */
   get secretsConfigured() {
     return readEnv('SECRETS_ENCRYPTION_KEY') !== undefined
   },

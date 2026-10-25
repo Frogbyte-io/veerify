@@ -33,7 +33,7 @@
  *     responses:
  *       200: { description: Independently paginated linked feedback and probable feedback suggestions }
  *       400: { description: Invalid limit, section, or opaque cursor }
- *       403: { description: Not a member of the contact's team }
+ *       403: { description: Not a member of the contact's project }
  *       404: { description: Contact not found }
  */
 import { z } from 'zod'

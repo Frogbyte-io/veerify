@@ -8,7 +8,7 @@
 
 export interface MergeableContact {
   id: string
-  teamId: string
+  projectId: string
   mergedIntoContactId: string | null
   attributes: Record<string, unknown> | null
   name: string | null
@@ -22,9 +22,9 @@ export type MergeCheck = { ok: true } | { ok: false; reason: string }
 /**
  * May `loser` be merged into `survivor`?
  *
- * The cross-team check is the important one: merging contacts from different
- * teams would move one tenant's identities and links under another tenant's
- * contact. Both ids arrive from the request, so team equality cannot be assumed
+ * The cross-project check is the important one: merging contacts from different
+ * projects would move one tenant's identities and links under another tenant's
+ * contact. Both ids arrive from the request, so project equality cannot be assumed
  * from the caller having access to one of them.
  */
 export function canMerge(survivor: MergeableContact, loser: MergeableContact): MergeCheck {
@@ -32,8 +32,8 @@ export function canMerge(survivor: MergeableContact, loser: MergeableContact): M
     return { ok: false, reason: 'A contact cannot be merged into itself' }
   }
 
-  if (survivor.teamId !== loser.teamId) {
-    return { ok: false, reason: 'Contacts belong to different teams' }
+  if (survivor.projectId !== loser.projectId) {
+    return { ok: false, reason: 'Contacts belong to different projects' }
   }
 
   if (loser.mergedIntoContactId) {
@@ -87,7 +87,7 @@ export function backfillContactFields(survivor: MergeableContact, loser: Mergeab
     name: survivor.name ?? loser.name ?? null,
     phone: survivor.phone ?? loser.phone ?? null,
     companyId: survivor.companyId ?? loser.companyId ?? null,
-    // `email` is deliberately absent: it is uniquely indexed per team and backed
+    // `email` is deliberately absent: it is uniquely indexed per project and backed
     // by a contactIdentity row, so changing it here would either collide or
     // desync the identity. The loser's email survives as an identity instead.
   }

@@ -1,3 +1,4 @@
+import { enableProjectSupport } from './helpers/support-project'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
@@ -9,25 +10,25 @@ import { loginViaProgrammaticPage, signInAndGetSessionCookie, withAuthHeaders } 
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 
-async function activeTeamAndUser(request: Parameters<typeof signInAndGetSessionCookie>[0]) {
+async function activeProjectAndUser(request: Parameters<typeof signInAndGetSessionCookie>[0]) {
   const sessionCookie = await signInAndGetSessionCookie(request, { email: TEST_EMAIL, password: TEST_PASSWORD })
   const headers = withAuthHeaders(sessionCookie, '/support')
-  const [teamResponse, sessionResponse] = await Promise.all([
-    request.get('/api/teams/active', { headers }),
+  const [projectResponse, sessionResponse] = await Promise.all([
+    request.get('/api/projects/active', { headers }),
     request.get('/api/auth/session', { headers }),
   ])
-  expect(teamResponse.ok()).toBeTruthy()
+  expect(projectResponse.ok()).toBeTruthy()
   expect(sessionResponse.ok()).toBeTruthy()
   return {
-    teamId: (await teamResponse.json()).data.id as string,
+    projectId: await enableProjectSupport((await projectResponse.json()).data.project.id as string),
     userId: (await sessionResponse.json()).data.user.id as string,
   }
 }
 
 test.describe.serial('support local drafts', () => {
   test('reply and note drafts coexist and restore the last edited composer mode', async ({ page, request }) => {
-    const { teamId, userId } = await activeTeamAndUser(request)
-    await ensureVerifiedSendingDomain(teamId)
+    const { projectId, userId } = await activeProjectAndUser(request)
+    await ensureVerifiedSendingDomain(projectId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `draft-e2e-inbox-${suffix}`
     const membershipId = `draft-e2e-member-${suffix}`
@@ -38,7 +39,7 @@ test.describe.serial('support local drafts', () => {
     try {
       await db.insert(supportInbox).values({
         id: inboxId,
-        teamId,
+        projectId,
         name: `Drafts ${suffix}`,
         slug: `drafts-${suffix}`,
         emailAddress: `drafts-${suffix}@example.com`,
@@ -56,7 +57,7 @@ test.describe.serial('support local drafts', () => {
       await db.insert(contact).values(
         contactIds.map((id, index) => ({
           id,
-          teamId,
+          projectId,
           name: `Draft Customer ${index + 1}`,
           email: `draft-customer-${index + 1}-${suffix}@example.com`,
           createdAt: now,
@@ -67,7 +68,7 @@ test.describe.serial('support local drafts', () => {
         conversationIds.map((id, index) => ({
           id,
           inboxId,
-          teamId,
+          projectId,
           contactId: contactIds[index],
           displayId: 830000 + (Number.parseInt(suffix, 16) % 10000) * 10 + index,
           subject: index === 0 ? 'Draft restore primary' : 'Draft restore secondary',
@@ -121,8 +122,8 @@ test.describe.serial('support local drafts', () => {
   })
 
   test('successful send clears only the matching draft and updates the row indicator', async ({ page, request }) => {
-    const { teamId, userId } = await activeTeamAndUser(request)
-    await ensureVerifiedSendingDomain(teamId)
+    const { projectId, userId } = await activeProjectAndUser(request)
+    await ensureVerifiedSendingDomain(projectId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `draft-send-e2e-inbox-${suffix}`
     const membershipId = `draft-send-e2e-member-${suffix}`
@@ -133,7 +134,7 @@ test.describe.serial('support local drafts', () => {
     try {
       await db.insert(supportInbox).values({
         id: inboxId,
-        teamId,
+        projectId,
         name: `Draft send ${suffix}`,
         slug: `draft-send-${suffix}`,
         emailAddress: `draft-send-${suffix}@example.com`,
@@ -150,7 +151,7 @@ test.describe.serial('support local drafts', () => {
       })
       await db.insert(contact).values({
         id: contactId,
-        teamId,
+        projectId,
         name: 'Draft Send Customer',
         email: `draft-send-${suffix}@example.com`,
         createdAt: now,
@@ -159,7 +160,7 @@ test.describe.serial('support local drafts', () => {
       await db.insert(conversation).values({
         id: conversationId,
         inboxId,
-        teamId,
+        projectId,
         contactId,
         displayId: 840000 + (Number.parseInt(suffix, 16) % 10000),
         subject: 'Draft send clearing',
@@ -218,8 +219,8 @@ test.describe.serial('support local drafts', () => {
     page,
     request,
   }) => {
-    const { teamId, userId } = await activeTeamAndUser(request)
-    await ensureVerifiedSendingDomain(teamId)
+    const { projectId, userId } = await activeProjectAndUser(request)
+    await ensureVerifiedSendingDomain(projectId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `draft-stale-e2e-inbox-${suffix}`
     const membershipId = `draft-stale-e2e-member-${suffix}`
@@ -235,7 +236,7 @@ test.describe.serial('support local drafts', () => {
     try {
       await db.insert(supportInbox).values({
         id: inboxId,
-        teamId,
+        projectId,
         name: `Draft stale ${suffix}`,
         slug: `draft-stale-${suffix}`,
         emailAddress: `draft-stale-${suffix}@example.com`,
@@ -253,7 +254,7 @@ test.describe.serial('support local drafts', () => {
       await db.insert(contact).values(
         contactIds.map((id, index) => ({
           id,
-          teamId,
+          projectId,
           name: `Draft Stale Customer ${index + 1}`,
           email: `draft-stale-customer-${index + 1}-${suffix}@example.com`,
           createdAt: now,
@@ -264,7 +265,7 @@ test.describe.serial('support local drafts', () => {
         conversationIds.map((id, index) => ({
           id,
           inboxId,
-          teamId,
+          projectId,
           contactId: contactIds[index],
           displayId: 850000 + (Number.parseInt(suffix, 16) % 10000) * 10 + index,
           subject: index === 0 ? 'Delayed draft sender' : 'Delayed draft destination',
@@ -324,8 +325,8 @@ test.describe.serial('support local drafts', () => {
   })
 
   test('failed send keeps the draft and row indicator', async ({ page, request }) => {
-    const { teamId, userId } = await activeTeamAndUser(request)
-    await ensureVerifiedSendingDomain(teamId)
+    const { projectId, userId } = await activeProjectAndUser(request)
+    await ensureVerifiedSendingDomain(projectId)
     const suffix = randomUUID().slice(0, 8)
     const inboxId = `draft-fail-e2e-inbox-${suffix}`
     const membershipId = `draft-fail-e2e-member-${suffix}`
@@ -336,7 +337,7 @@ test.describe.serial('support local drafts', () => {
     try {
       await db.insert(supportInbox).values({
         id: inboxId,
-        teamId,
+        projectId,
         name: `Draft fail ${suffix}`,
         slug: `draft-fail-${suffix}`,
         emailAddress: `draft-fail-${suffix}@example.com`,
@@ -353,7 +354,7 @@ test.describe.serial('support local drafts', () => {
       })
       await db.insert(contact).values({
         id: contactId,
-        teamId,
+        projectId,
         name: 'Draft Failure Customer',
         email: `draft-fail-${suffix}@example.com`,
         createdAt: now,
@@ -362,7 +363,7 @@ test.describe.serial('support local drafts', () => {
       await db.insert(conversation).values({
         id: conversationId,
         inboxId,
-        teamId,
+        projectId,
         contactId,
         displayId: 860000 + (Number.parseInt(suffix, 16) % 10000),
         subject: 'Draft failed send',

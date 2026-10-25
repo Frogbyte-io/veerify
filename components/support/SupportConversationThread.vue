@@ -35,6 +35,16 @@
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-[12rem] flex-1 basis-48">
             <div class="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                data-testid="support-thread-back"
+                class="-ml-2 h-7 w-7 shrink-0 @2xl/panes:hidden"
+                aria-label="Back to conversations"
+                @click="$emit('back')"
+              >
+                <Icon name="lucide:arrow-left" class="h-4 w-4" />
+              </Button>
               <h2 class="text-sm font-semibold truncate">{{ conversation.subject || 'No subject' }}</h2>
               <span class="text-xs text-muted-foreground shrink-0">#{{ conversation.displayId }}</span>
               <span
@@ -56,50 +66,52 @@
               {{ contact?.name || contact?.email || 'Unknown contact' }}
             </button>
           </div>
-          <Button variant="outline" size="sm" @click="$emit('toggle-contact-panel')">
-            <Icon name="lucide:panel-right" class="w-3.5 h-3.5 mr-1.5" />
-            Contact info
-          </Button>
-          <Button
-            v-if="!conversation.linkedFeedbackId"
-            variant="outline"
-            size="sm"
-            data-testid="support-thread-convert-feedback"
-            @click="$emit('convert-to-feedback')"
-          >
-            <Icon name="lucide:message-square-plus" class="w-3.5 h-3.5 mr-1.5" />
-            Convert to feedback
-          </Button>
-          <a
-            v-else
-            :href="`/feedback/${conversation.linkedFeedbackId}`"
-            data-testid="support-thread-linked-feedback"
-            class="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium hover:bg-muted"
-          >
-            <Icon name="lucide:external-link" class="w-3.5 h-3.5 mr-1.5" />
-            <span class="max-w-48 truncate">{{ conversation.linkedFeedback?.title || 'View linked feedback' }}</span>
-            <span v-if="conversation.linkedFeedback" class="ml-1.5 text-muted-foreground">
-              {{ conversation.linkedFeedback.status }} · {{ conversation.linkedFeedback.voteCount }} votes
-            </span>
-          </a>
-          <Button
-            v-if="canMarkUnread"
-            variant="ghost"
-            size="sm"
-            data-testid="support-thread-mark-unread"
-            :disabled="isUpdating"
-            @click="$emit('mark-unread')"
-          >
-            <Icon name="lucide:mail" class="w-3.5 h-3.5 mr-1.5" />
-            Mark unread
-          </Button>
-          <p
-            v-else-if="isHandledByAnotherAgent"
-            data-testid="support-thread-mark-unread-unavailable"
-            class="max-w-56 text-right text-xs text-muted-foreground"
-          >
-            This conversation is handled by another agent. Only its assignee can mark it unread.
-          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" @click="$emit('toggle-contact-panel')">
+              <Icon name="lucide:panel-right" class="w-3.5 h-3.5 sm:mr-1.5" />
+              <span class="sr-only sm:not-sr-only">Contact info</span>
+            </Button>
+            <Button
+              v-if="!conversation.linkedFeedbackId"
+              variant="outline"
+              size="sm"
+              data-testid="support-thread-convert-feedback"
+              @click="$emit('convert-to-feedback')"
+            >
+              <Icon name="lucide:message-square-plus" class="w-3.5 h-3.5 sm:mr-1.5" />
+              <span class="sr-only sm:not-sr-only">Convert to feedback</span>
+            </Button>
+            <a
+              v-else
+              :href="`/feedback/${conversation.linkedFeedbackId}`"
+              data-testid="support-thread-linked-feedback"
+              class="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium hover:bg-muted"
+            >
+              <Icon name="lucide:external-link" class="w-3.5 h-3.5 mr-1.5" />
+              <span class="max-w-48 truncate">{{ conversation.linkedFeedback?.title || 'View linked feedback' }}</span>
+              <span v-if="conversation.linkedFeedback" class="ml-1.5 text-muted-foreground">
+                {{ conversation.linkedFeedback.status }} · {{ conversation.linkedFeedback.voteCount }} votes
+              </span>
+            </a>
+            <Button
+              v-if="canMarkUnread"
+              variant="ghost"
+              size="sm"
+              data-testid="support-thread-mark-unread"
+              :disabled="isUpdating"
+              @click="$emit('mark-unread')"
+            >
+              <Icon name="lucide:mail" class="w-3.5 h-3.5 sm:mr-1.5" />
+              <span class="sr-only sm:not-sr-only">Mark unread</span>
+            </Button>
+            <p
+              v-else-if="isHandledByAnotherAgent"
+              data-testid="support-thread-mark-unread-unavailable"
+              class="max-w-56 text-right text-xs text-muted-foreground"
+            >
+              This conversation is handled by another agent. Only its assignee can mark it unread.
+            </p>
+          </div>
         </div>
 
         <!-- Quick-edit: status / priority / assignee. Every change here goes
@@ -236,6 +248,7 @@ export default {
     'mark-unread',
     'convert-to-feedback',
     'toggle-contact-panel',
+    'back',
   ],
 
   data() {

@@ -1,7 +1,7 @@
 import { and, desc, eq, lt, notExists, or } from 'drizzle-orm'
 
 import { db } from '~/server/database/drizzle'
-import { feedback, project } from '~/server/database/schema/feedback'
+import { feedback, product } from '~/server/database/schema/feedback'
 import { contactLink, type contact } from '~/server/database/schema/support'
 import { decodeListCursor, encodeListCursor, type ListCursor } from './list-cursor'
 
@@ -34,7 +34,7 @@ export interface ContactTimelineQueryOptions {
   section?: 'linked' | 'probable'
 }
 
-type TimelineContact = Pick<typeof contact.$inferSelect, 'id' | 'teamId' | 'email' | 'userId'>
+type TimelineContact = Pick<typeof contact.$inferSelect, 'id' | 'projectId' | 'email' | 'userId'>
 
 /**
  * Keep confirmed links authoritative while presenting heuristic matches as a
@@ -123,7 +123,7 @@ export async function getContactTimeline(contact: TimelineContact, options: Cont
   if (contact.userId) matchConditions.push(eq(feedback.authorUserId, contact.userId))
 
   const probableConditions = [
-    eq(project.teamId, contact.teamId),
+    eq(feedback.projectId, contact.projectId),
     or(...matchConditions),
     notExists(
       db
@@ -137,9 +137,9 @@ export async function getContactTimeline(contact: TimelineContact, options: Cont
   const probableRows =
     includeProbable && matchConditions.length
       ? await db
-          .select({ feedback, project: { id: project.id, name: project.name, slug: project.slug } })
+          .select({ feedback, product: { id: product.id, name: product.name, slug: product.slug } })
           .from(feedback)
-          .innerJoin(project, eq(project.id, feedback.projectId))
+          .innerJoin(product, eq(product.id, feedback.productId))
           .where(and(...probableConditions))
           .orderBy(desc(feedback.createdAt), desc(feedback.id))
           .limit(limit + 1)
@@ -147,7 +147,7 @@ export async function getContactTimeline(contact: TimelineContact, options: Cont
 
   const linkedPage = pageMetadata(linkedRows, limit)
   const probablePage = pageMetadata(
-    probableRows.map((row) => ({ ...row.feedback, project: row.project })),
+    probableRows.map((row) => ({ ...row.feedback, product: row.product })),
     limit
   )
 

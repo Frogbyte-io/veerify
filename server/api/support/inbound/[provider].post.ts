@@ -7,7 +7,7 @@
  *     description: >
  *       Provider-agnostic intake. Returns 200 for everything it has
  *       deliberately decided not to act on - duplicate deliveries, unknown
- *       recipients, teams with support disabled - because a 4xx makes a mail
+ *       recipients, projects with support disabled - because a 4xx makes a mail
  *       provider retry the same message indefinitely. Processing failures
  *       return 500 so the provider retries a recorded, reclaimable event.
  *     operationId: receiveSupportInboundEmail
@@ -26,7 +26,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { createError, getHeaders, getRouterParam, readMultipartFormData, readRawBody, setResponseStatus } from 'h3'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { createLogger } from '~/server/utils/logger'
 import { createSuccessResponse } from '~/server/utils/response'
 import { emailDomain, getChannelDriver, type InboundMessage } from '~/server/services/support-channels'
@@ -51,7 +51,7 @@ import {
   rejectInboundEvent,
 } from '~/server/utils/inbound-events'
 import { checkRateLimit } from '~/server/utils/rate-limit'
-import { inboundRoutingRecipients, resolveInboundProjectId } from '~/server/utils/inbound-routing'
+import { inboundRoutingRecipients } from '~/server/utils/inbound-routing'
 import { getRateLimitStore } from '~/server/services/rate-limit'
 import { getStorageProvider } from '~/server/utils/storage'
 import {
@@ -77,8 +77,8 @@ import {
 import { resolveSlaAssignment } from '~/server/utils/sla-assignment'
 import { resumeSlaDeadlines } from '~/server/utils/sla-timers'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
-// Module toggles live in their own schema file, not the support one (delta D-31).
-import { teamModuleSettings } from '~/server/database/schema/teams'
+import { getProjectById } from '~/server/utils/project-access'
+import { isModuleEnabled } from '~/lib/modules'
 
 const logger = createLogger('support-inbound')
 
@@ -243,18 +243,8 @@ export default defineEventHandler(async (event) => {
       return accepted('no-matching-inbox')
     }
 
-    const { inbox, address } = matched
+    const { inbox } = matched
 
-    // Forwarded mail arrives on a platform address that names the inbox but
-    // not the product; the inbox's own custom addresses recover it from the
-    // To/Cc headers (see `resolveInboundProjectId`). Only loaded when needed.
-    const platformSiblingAddresses =
-      address.kind === 'platform'
-        ? await db
-            .select({ address: supportInboxAddress.address, projectId: supportInboxAddress.projectId })
-            .from(supportInboxAddress)
-            .where(and(eq(supportInboxAddress.inboxId, inbox.id), eq(supportInboxAddress.kind, 'custom')))
-        : []
     if (!(await attachInboundEventInbox(claimToken, inbox.id))) {
       throw new Error('Inbound claim lost before inbox attachment')
     }
@@ -266,18 +256,13 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 429, statusMessage: 'Too Many Requests' })
     }
 
-    // ---- SUP-03-10: honour the team's Support module toggle ---------------
-    const [modules] = await db
-      .select({ supportEnabled: teamModuleSettings.supportEnabled })
-      .from(teamModuleSettings)
-      .where(eq(teamModuleSettings.teamId, inbox.teamId))
-      .limit(1)
-
-    // Absent row means defaults, and `supportEnabled` defaults to false
-    // (delta D-31). Treating "no row" as enabled would let inbound mail create
-    // tickets for a team that never switched Support on.
-    if (!modules?.supportEnabled) {
-      if (!(await rejectInboundEvent(claimToken, 'Support is disabled for this team'))) {
+    // ---- SUP-03-10: honour the project's Support module toggle ---------------
+    // Absent project or an unset switch means Support is off (module defaults).
+    // Treating that as enabled would let inbound mail create tickets for a
+    // project that never switched Support on.
+    const owningProject = await getProjectById(inbox.projectId)
+    if (!owningProject || !isModuleEnabled(owningProject.settings, 'supportEnabled')) {
+      if (!(await rejectInboundEvent(claimToken, 'Support is disabled for this project'))) {
         throw new Error('Inbound claim lost before rejection')
       }
       return accepted('support-disabled')
@@ -354,10 +339,10 @@ export default defineEventHandler(async (event) => {
       }
 
       // ---- 6. Contact ----------------------------------------------------
-      const { contactId } = await resolveOrCreateContact(tx, inbox.teamId, message.from)
+      const { contactId } = await resolveOrCreateContact(tx, inbox.projectId, message.from)
 
       // ---- 7. Conversation -----------------------------------------------
-      const thread = await resolveThread(tx, { id: inbox.id, teamId: inbox.teamId }, message, contactId)
+      const thread = await resolveThread(tx, { id: inbox.id, projectId: inbox.projectId }, message, contactId)
 
       let conversationId = thread.conversationId
       let isNewConversation = false
@@ -374,7 +359,7 @@ export default defineEventHandler(async (event) => {
       if (!conversationId) {
         conversationId = randomUUID()
         isNewConversation = true
-        const displayId = await allocateConversationDisplayId(tx, inbox.teamId)
+        const displayId = await allocateConversationDisplayId(tx, inbox.projectId)
         const [contactRow] = await tx
           .select({ companyId: contact.companyId })
           .from(contact)
@@ -382,7 +367,7 @@ export default defineEventHandler(async (event) => {
           .limit(1)
         initialSla = await resolveSlaAssignment(
           {
-            teamId: inbox.teamId,
+            projectId: inbox.projectId,
             inboxId: inbox.id,
             priority: null,
             companyId: contactRow?.companyId,
@@ -395,17 +380,8 @@ export default defineEventHandler(async (event) => {
         await tx.insert(conversation).values({
           id: conversationId,
           inboxId: inbox.id,
-          teamId: inbox.teamId,
+          projectId: inbox.projectId,
           contactId,
-          // ---- SUP-03-12: product attribution from the matched address ----
-          // Null when the address is unmapped, per delta D-27.
-          projectId: resolveInboundProjectId({
-            addressProjectId: address.projectId,
-            inboxProjectId: inbox.projectId,
-            addressKind: address.kind,
-            inboxCustomAddresses: platformSiblingAddresses,
-            headerRecipients: [...message.to, ...message.cc],
-          }),
           displayId,
           subject: message.subject,
           status: 'open',
@@ -498,7 +474,7 @@ export default defineEventHandler(async (event) => {
             .where(eq(conversationTag.conversationId, conversationId))
           const nextSla = await resolveSlaAssignment(
             {
-              teamId: inbox.teamId,
+              projectId: inbox.projectId,
               inboxId: inbox.id,
               priority: existingThread.priority,
               companyId: contactRow?.companyId,
@@ -525,7 +501,7 @@ export default defineEventHandler(async (event) => {
             null
           )
           await recordConversationStatusEvent(tx, {
-            teamId: inbox.teamId,
+            projectId: inbox.projectId,
             inboxId: inbox.id,
             conversationId,
             fromStatus: existingThread.status,
@@ -578,7 +554,7 @@ export default defineEventHandler(async (event) => {
       // ---- SUP-03-11: CC participants -------------------------------------
       await resolveCcParticipants(tx, {
         conversationId,
-        teamId: inbox.teamId,
+        projectId: inbox.projectId,
         cc: message.cc,
         senderContactId: contactId,
         ownAddresses,
@@ -604,11 +580,11 @@ export default defineEventHandler(async (event) => {
           // No agent is present to show a 409 to - this is a webhook. Log and
           // still ticket the customer's message normally.
           logger.warn('Auto-reply is enabled but the inbox has no sending address', { inboxId: inbox.id })
-        } else if (!(await isSenderAllowedOrRecordBlock(inbox.teamId, inbox.emailAddress, 'auto_reply'))) {
-          // Team sender policy: this team may not send as the inbox address
+        } else if (!(await isSenderAllowedOrRecordBlock(inbox.projectId, inbox.emailAddress, 'auto_reply'))) {
+          // Project sender policy: this project may not send as the inbox address
           // (domain unverified, suspended or deleted). Skip the auto-reply;
           // the ticket is still created. Never true under the legacy policy.
-          logger.warn('Auto-reply skipped: sender address is not authorized for this team', {
+          logger.warn('Auto-reply skipped: sender address is not authorized for this project', {
             inboxId: inbox.id,
             conversationId,
           })
@@ -709,7 +685,7 @@ export default defineEventHandler(async (event) => {
 
     await publishConversationEvent({
       type: result.isNewConversation ? 'conversation.created' : 'message.created',
-      teamId: inbox.teamId,
+      projectId: inbox.projectId,
       inboxId: inbox.id,
       conversationId: result.conversationId,
       messageId: result.messageId,
@@ -725,7 +701,7 @@ export default defineEventHandler(async (event) => {
       // other new message.
       await publishConversationEvent({
         type: 'message.created',
-        teamId: inbox.teamId,
+        projectId: inbox.projectId,
         inboxId: inbox.id,
         conversationId: result.conversationId,
         messageId: result.autoReplyMessageId,

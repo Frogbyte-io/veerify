@@ -7,16 +7,17 @@
 
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
+import { project } from '~/server/database/schema/feedback'
 import { gscConnection, marketingSite, type ApiCredentialProvider } from '~/server/database/schema/marketing'
 import { instanceKeysAllowed, marketingConfig } from '~/server/utils/marketing-config'
 import { SOCIAL_HINTS, type IntegrationId } from '~/server/utils/marketing-integrations'
 import { decryptSecret, encryptSecret, isSecretsConfigured } from '~/server/utils/secrets'
 import {
-  getTeamApiKey,
+  getOrgApiKey,
   markCredentialInvalid,
   markCredentialValid,
-  type TeamApiKey,
-} from '~/server/utils/team-credentials'
+  type OrgApiKey,
+} from '~/server/utils/org-credentials'
 import { getLlmProvider, LlmProviderError, type LlmProviderId } from '~/server/services/llm'
 import { getCrawlProvider, resolveCrawlConfig } from '~/server/services/crawl'
 import { CrawlProviderError } from '~/server/services/crawl/types'
@@ -123,25 +124,25 @@ function errorKind(error: unknown): string | undefined {
 }
 
 async function syncCredentialStatus(
-  teamId: string,
+  organizationId: string,
   provider: ApiCredentialProvider,
-  key: TeamApiKey,
+  key: OrgApiKey,
   ok: boolean,
   kind: string | undefined
 ) {
   try {
-    if (ok) await markCredentialValid(teamId, provider, key.keyHint)
-    else if (kind === 'auth') await markCredentialInvalid(teamId, provider, failureMessage('auth'), key.keyHint)
+    if (ok) await markCredentialValid(organizationId, provider, key.keyHint)
+    else if (kind === 'auth') await markCredentialInvalid(organizationId, provider, failureMessage('auth'), key.keyHint)
   } catch (error) {
     logger.warn('Could not update credential status after test', {
-      teamId,
+      organizationId,
       provider,
       error: error instanceof Error ? error.name : 'unknown',
     })
   }
 }
 
-function testSecrets(teamId: string): Outcome {
+function testSecrets(organizationId: string): Outcome {
   if (!isSecretsConfigured()) {
     return {
       ok: false,
@@ -150,7 +151,7 @@ function testSecrets(teamId: string): Outcome {
         'SECRETS_ENCRYPTION_KEY is not set or invalid. Set 32 random bytes (for example from `openssl rand -base64 32`) on the server.',
     }
   }
-  const aad = `team:${teamId}:integration-test`
+  const aad = `org:${organizationId}:integration-test`
   const probe = `probe-${Date.now()}-${Math.random()}`
   try {
     const envelope = encryptSecret(probe, aad)
@@ -167,15 +168,15 @@ function testSecrets(teamId: string): Outcome {
     return {
       ok: true,
       source: 'instance',
-      detail: 'Encrypted and decrypted a test value bound to this team (no network used).',
+      detail: 'Encrypted and decrypted a test value bound to this workspace (no network used).',
     }
   } catch {
     return { ok: false, source: 'instance', detail: 'Encryption round trip failed. Check SECRETS_ENCRYPTION_KEY.' }
   }
 }
 
-async function testLlm(teamId: string, provider: LlmProviderId): Promise<Outcome> {
-  const key = await getTeamApiKey(teamId, provider)
+async function testLlm(organizationId: string, provider: LlmProviderId): Promise<Outcome> {
+  const key = await getOrgApiKey(organizationId, provider)
   if (!key) return { ok: false, source: null, detail: MISSING_KEY[provider] }
 
   let ok = false
@@ -187,14 +188,14 @@ async function testLlm(teamId: string, provider: LlmProviderId): Promise<Outcome
   } catch (error) {
     kind = errorKind(error) ?? 'network'
   }
-  await syncCredentialStatus(teamId, provider, key, ok, kind)
+  await syncCredentialStatus(organizationId, provider, key, ok, kind)
   return ok
     ? { ok: true, source: 'team', detail: `${LLM_LABELS[provider]} accepted the team key (no generation, no cost).` }
     : { ok: false, source: 'team', detail: failureMessage(kind) }
 }
 
-async function testFirecrawl(teamId: string): Promise<Outcome> {
-  const key = await getTeamApiKey(teamId, 'firecrawl')
+async function testFirecrawl(organizationId: string): Promise<Outcome> {
+  const key = await getOrgApiKey(organizationId, 'firecrawl')
   const config = resolveCrawlConfig(key?.apiKey ?? null)
   if (!config) return { ok: false, source: null, detail: MISSING_KEY.firecrawl }
   const source = key ? 'team' : 'instance'
@@ -208,14 +209,14 @@ async function testFirecrawl(teamId: string): Promise<Outcome> {
   } catch (error) {
     kind = errorKind(error) ?? 'network'
   }
-  if (key) await syncCredentialStatus(teamId, 'firecrawl', key, ok, kind)
+  if (key) await syncCredentialStatus(organizationId, 'firecrawl', key, ok, kind)
   return ok
     ? { ok: true, source, detail: `Firecrawl accepted the ${source} key.` }
     : { ok: false, source, detail: failureMessage(kind) }
 }
 
-async function testPageSpeed(teamId: string): Promise<Outcome> {
-  const key = await getTeamApiKey(teamId, 'pagespeed')
+async function testPageSpeed(organizationId: string): Promise<Outcome> {
+  const key = await getOrgApiKey(organizationId, 'pagespeed')
   const apiKey = key?.apiKey || marketingConfig.pagespeedApiKey
   if (!apiKey) return { ok: false, source: null, detail: MISSING_KEY.pagespeed }
   const source = key ? 'team' : 'instance'
@@ -228,7 +229,7 @@ async function testPageSpeed(teamId: string): Promise<Outcome> {
   } catch (error) {
     kind = errorKind(error) ?? 'network'
   }
-  if (key) await syncCredentialStatus(teamId, 'pagespeed', key, ok, kind)
+  if (key) await syncCredentialStatus(organizationId, 'pagespeed', key, ok, kind)
   return ok
     ? {
         ok: true,
@@ -257,7 +258,7 @@ async function testSocial(id: 'hackernews' | 'reddit' | 'bluesky'): Promise<Outc
   }
 }
 
-async function testGoogle(teamId: string): Promise<Outcome> {
+async function testGoogle(organizationId: string): Promise<Outcome> {
   const config = getGoogleOAuthConfig()
   if (!config) {
     const redirectUri = getGoogleRedirectUri()
@@ -273,7 +274,8 @@ async function testGoogle(teamId: string): Promise<Outcome> {
     .select({ siteId: gscConnection.siteId, encryptedRefreshToken: gscConnection.encryptedRefreshToken })
     .from(gscConnection)
     .innerJoin(marketingSite, eq(marketingSite.id, gscConnection.siteId))
-    .where(eq(marketingSite.teamId, teamId))
+    .innerJoin(project, eq(project.id, marketingSite.projectId))
+    .where(eq(project.organizationId, organizationId))
     .limit(5)
 
   if (connections.length === 0) {
@@ -314,25 +316,25 @@ async function testGoogle(teamId: string): Promise<Outcome> {
 }
 
 /** Runs the check for one integration. Never throws for provider failures. */
-export async function runIntegrationTest(teamId: string, id: IntegrationId): Promise<IntegrationTestResult> {
+export async function runIntegrationTest(organizationId: string, id: IntegrationId): Promise<IntegrationTestResult> {
   const started = Date.now()
   let outcome: Outcome
   try {
     switch (id) {
       case 'secrets':
-        outcome = testSecrets(teamId)
+        outcome = testSecrets(organizationId)
         break
       case 'firecrawl':
-        outcome = await testFirecrawl(teamId)
+        outcome = await testFirecrawl(organizationId)
         break
       case 'pagespeed':
-        outcome = await testPageSpeed(teamId)
+        outcome = await testPageSpeed(organizationId)
         break
       case 'anthropic':
       case 'openai':
       case 'gemini':
       case 'perplexity':
-        outcome = await testLlm(teamId, id)
+        outcome = await testLlm(organizationId, id)
         break
       case 'hackernews':
       case 'reddit':
@@ -340,11 +342,15 @@ export async function runIntegrationTest(teamId: string, id: IntegrationId): Pro
         outcome = await testSocial(id)
         break
       case 'google':
-        outcome = await testGoogle(teamId)
+        outcome = await testGoogle(organizationId)
         break
     }
   } catch (error) {
-    logger.warn('Integration test crashed', { teamId, id, error: error instanceof Error ? error.name : 'unknown' })
+    logger.warn('Integration test crashed', {
+      organizationId,
+      id,
+      error: error instanceof Error ? error.name : 'unknown',
+    })
     outcome = { ok: false, source: null, detail: 'The check failed unexpectedly.' }
   }
   return { id, ...outcome, durationMs: Date.now() - started }

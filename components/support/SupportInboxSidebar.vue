@@ -1,7 +1,16 @@
 <template>
   <div class="flex h-full flex-col">
-    <div class="px-3 py-3 border-b">
+    <div class="flex items-center justify-between gap-2 border-b px-3 py-2">
       <h2 class="text-sm font-semibold text-foreground">Inboxes</h2>
+      <NuxtLink
+        to="/support/settings"
+        data-testid="support-sidebar-settings-link"
+        class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+        aria-label="Support settings"
+        title="Support settings"
+      >
+        <Icon name="lucide:settings" class="h-4 w-4" />
+      </NuxtLink>
     </div>
 
     <!-- Inbox switcher -->

@@ -12,7 +12,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Company detail }
- *       403: { description: Not a member of the company's team }
+ *       403: { description: Not a member of the company's project }
  *       404: { description: Company not found }
  */
 import { createSuccessResponse } from '~/server/utils/response'

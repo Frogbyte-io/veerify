@@ -28,7 +28,7 @@ export const session = pgTable('session', {
     .notNull()
     .references(() => user.id, { onDelete: 'cascade' }),
   activeOrganizationId: text('active_organization_id'),
-  activeTeamId: text('active_team_id'),
+  activeProjectId: text('active_project_id'),
 })
 
 export const account = pgTable('account', {
@@ -89,49 +89,6 @@ export const member = pgTable('member', {
     .notNull(),
 })
 
-export const team = pgTable(
-  'team',
-  {
-    id: text('id').primaryKey(),
-    name: text('name').notNull(),
-    slug: text('slug').notNull().unique(),
-    organizationId: text('organization_id')
-      .notNull()
-      .references(() => organization.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at')
-      .$defaultFn(() => /* @__PURE__ */ new Date())
-      .notNull(),
-    updatedAt: timestamp('updated_at')
-      .$defaultFn(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => ({
-    orgIdx: index('team_org_idx').on(table.organizationId),
-    slugUnique: uniqueIndex('team_slug_unique').on(table.slug),
-  })
-)
-
-export const teamMember = pgTable(
-  'team_member',
-  {
-    id: text('id').primaryKey(),
-    teamId: text('team_id')
-      .notNull()
-      .references(() => team.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    role: text('role').default('member').notNull(), // admin, member
-    createdAt: timestamp('created_at')
-      .$defaultFn(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => ({
-    teamUserUnique: uniqueIndex('team_member_team_user_unique').on(table.teamId, table.userId),
-    userIdx: index('team_member_user_idx').on(table.userId),
-  })
-)
-
 export const invitation = pgTable('invitation', {
   id: text('id').primaryKey(),
   organizationId: text('organization_id')
@@ -139,7 +96,6 @@ export const invitation = pgTable('invitation', {
     .references(() => organization.id, { onDelete: 'cascade' }),
   email: text('email').notNull(),
   role: text('role').default('member').notNull(),
-  teamId: text('team_id').references(() => team.id, { onDelete: 'set null' }),
   status: text('status').default('pending').notNull(),
   expiresAt: timestamp('expires_at').notNull(),
   inviterId: text('inviter_id')

@@ -12,7 +12,7 @@
  *     responses:
  *       200: { description: Upload target }
  *       400: { description: Unsupported type or file too large }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found }
  */
 import { z } from 'zod'

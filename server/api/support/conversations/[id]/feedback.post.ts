@@ -18,13 +18,13 @@
  *     responses:
  *       200: { description: Feedback created and conversation linked }
  *       400: { description: Invalid product or category selection }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found }
  *       409: { description: Conversation already has linked feedback }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { createError } from 'h3'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'
@@ -34,7 +34,7 @@ import { publishConversationEvent } from '~/server/utils/support-realtime'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import { db } from '~/server/database/drizzle'
 import { contactLink, conversation, conversationMessage } from '~/server/database/schema/support'
-import { feedback, feedbackCategory, project } from '~/server/database/schema/feedback'
+import { feedback, feedbackCategory, product } from '~/server/database/schema/feedback'
 
 const bodySchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(200, 'Title too long'),
@@ -45,7 +45,7 @@ const bodySchema = z.object({
     .nullable()
     .optional()
     .transform((value) => value || null),
-  projectId: z.string().min(1).nullable().optional(),
+  productId: z.string().min(1).nullable().optional(),
   categoryId: z.string().min(1).nullable().optional(),
 })
 
@@ -84,26 +84,25 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const projectId = body.projectId ?? lockedConversation.projectId
-    if (!projectId) {
+    const projectId = lockedConversation.projectId
+    const [matchedProduct] = body.productId
+      ? await tx
+          .select({ id: product.id })
+          .from(product)
+          .where(and(eq(product.id, body.productId), eq(product.projectId, projectId)))
+          .limit(1)
+      : await tx
+          .select({ id: product.id })
+          .from(product)
+          .where(eq(product.projectId, projectId))
+          .orderBy(asc(product.sortOrder), asc(product.createdAt), asc(product.id))
+          .limit(1)
+
+    if (!matchedProduct) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'A product is required to create feedback'),
-      })
-    }
-
-    const [matchedProject] = await tx
-      .select({ id: project.id })
-      .from(project)
-      .where(and(eq(project.id, projectId), eq(project.teamId, lockedConversation.teamId)))
-      .limit(1)
-
-    if (!matchedProject) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Bad Request',
-        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Product is not part of this team'),
+        data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Product is not part of this project'),
       })
     }
 
@@ -119,7 +118,7 @@ export default defineEventHandler(async (event) => {
         throw createError({
           statusCode: 400,
           statusMessage: 'Bad Request',
-          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Category is not part of the selected product'),
+          data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Category is not part of this project'),
         })
       }
     }
@@ -130,6 +129,7 @@ export default defineEventHandler(async (event) => {
       .values({
         id: feedbackId,
         projectId,
+        productId: matchedProduct.id,
         categoryId,
         title: body.title,
         body: body.body,
@@ -185,7 +185,7 @@ export default defineEventHandler(async (event) => {
 
   await publishConversationEvent({
     type: 'conversation.updated',
-    teamId: accessibleConversation.teamId,
+    projectId: accessibleConversation.projectId,
     inboxId: accessibleConversation.inboxId,
     conversationId,
   })

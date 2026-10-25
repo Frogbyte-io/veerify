@@ -15,8 +15,8 @@
             Open the public wall
           </a>
         </template>
-        <template v-else-if="product && product.isPublic === false"
-          >This product is private, so there is no public wall.</template
+        <template v-else-if="project && project.isPublic === false"
+          >This project is private, so there is no public wall.</template
         >
       </CardDescription>
     </CardHeader>
@@ -81,7 +81,7 @@
           <p v-if="rowErrors[item.id]" class="mt-2 text-sm text-destructive" role="alert">{{ rowErrors[item.id] }}</p>
 
           <p v-if="!canManage" class="mt-3 text-xs text-muted-foreground" data-testid="testimonials-readonly">
-            Only team admins can approve, feature or delete testimonials.
+            Only project admins can approve, feature or delete testimonials.
           </p>
           <div v-else class="mt-3 flex flex-wrap gap-2">
             <Button
@@ -155,8 +155,8 @@ export default {
 
   props: {
     projectId: { type: String, required: true },
-    // The selected product (slug, isPublic, customDomain, settings), for the public wall link
-    product: { type: Object, default: null },
+    // The active project (slug, isPublic, customDomain, settings), for the public wall link
+    project: { type: Object, default: null },
     canManage: { type: Boolean, default: false },
   },
 
@@ -174,7 +174,6 @@ export default {
       error: null,
       items: [],
       counts: { pending: 0, approved: 0, rejected: 0 },
-      teamSlug: null,
       busy: {},
       rowErrors: {},
       confirmDeleteId: null,
@@ -182,14 +181,15 @@ export default {
   },
 
   computed: {
-    // Only for public products: a private product has no public wall.
+    // Only for public projects: a private project has no public wall.
     wallUrl() {
-      if (!import.meta.client || !this.product || this.product.isPublic !== true) return ''
-      if (!this.product.customDomain && !this.teamSlug) return ''
+      if (!import.meta.client || !this.project || this.project.isPublic !== true) return ''
+      const orgSlug = this.project.organization?.slug
+      if (!this.project.customDomain && !orgSlug) return ''
       const boardUrl = buildPublicBoardUrl({
-        project: this.product,
-        teamSlug: this.teamSlug,
-        projectSlug: this.product.slug,
+        orgSlug,
+        customDomain: this.project.customDomain || null,
+        projectSlug: this.project.slug,
         appDomain: useRuntimeConfig().public.appDomain || 'localhost',
         protocol: window.location.protocol,
         port: window.location.port,
@@ -224,7 +224,6 @@ export default {
         if (projectId !== this.projectId || status !== this.status) return
         this.items = response.data.items
         this.counts = response.data.counts
-        this.teamSlug = response.data.teamSlug ?? null
       } catch (err) {
         if (projectId !== this.projectId || status !== this.status) return
         if (apiErrorStatus(err) === 403) this.$emit('forbidden', apiErrorMessage(err, ''))

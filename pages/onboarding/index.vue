@@ -31,10 +31,16 @@
                 <Icon name="lucide:building-2" class="w-6 h-6 text-primary" />
               </div>
             </div>
-            <CardTitle class="text-2xl">Create your workspace</CardTitle>
-            <CardDescription>
-              A workspace is where your team collaborates on feedback and projects. You can think of it as your company
-              or organization.
+            <CardTitle class="text-2xl">{{
+              projectOnly ? 'Create your first project' : 'Create your workspace'
+            }}</CardTitle>
+            <CardDescription v-if="projectOnly">
+              Your workspace <strong>{{ createdOrgName }}</strong> has no project yet. A project is a brand or product
+              line with its own feedback, tools and public site.
+            </CardDescription>
+            <CardDescription v-else>
+              A workspace is where you and your colleagues work together. It holds your projects, for example one per
+              brand. Think of it as your company or organization.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -44,11 +50,15 @@
               class="space-y-4"
               @submit.prevent="createWorkspace"
             >
-              <div class="space-y-2">
+              <div v-if="isLoadingContext" class="space-y-2">
+                <Skeleton class="h-10 w-full" />
+                <Skeleton class="h-10 w-full" />
+              </div>
+              <div v-if="!projectOnly && !isLoadingContext" class="space-y-2">
                 <Label for="org-name">Workspace name</Label>
                 <Input id="org-name" v-model="orgName" placeholder="Acme Inc." :disabled="isCreatingOrg" />
               </div>
-              <div class="space-y-2">
+              <div v-if="!projectOnly && !isLoadingContext" class="space-y-2">
                 <Label for="org-slug">URL</Label>
                 <div class="flex items-center gap-2">
                   <Input
@@ -58,10 +68,25 @@
                     :disabled="isCreatingOrg"
                     class="flex-1"
                   />
-                  <span class="text-sm text-muted-foreground whitespace-nowrap">.veerify.io</span>
+                  <span class="text-sm text-muted-foreground whitespace-nowrap">.{{ appDomain }}</span>
                 </div>
                 <p class="text-xs text-muted-foreground">
                   This will be your public workspace URL. You can change it later.
+                </p>
+              </div>
+
+              <div v-if="!isLoadingContext" class="space-y-2">
+                <Label for="project-name">First project name</Label>
+                <Input
+                  id="project-name"
+                  v-model="projectName"
+                  data-testid="onboarding-project-name"
+                  placeholder="Acme"
+                  :disabled="isCreatingOrg"
+                  @input="projectNameEdited = true"
+                />
+                <p class="text-xs text-muted-foreground">
+                  The project is where feedback and your other tools live. You can add more projects later.
                 </p>
               </div>
 
@@ -72,9 +97,9 @@
                 {{ createOrgError }}
               </div>
 
-              <Button type="submit" class="w-full" :disabled="isCreatingOrg || !orgName.trim() || !orgSlug.trim()">
+              <Button type="submit" class="w-full" :disabled="isCreatingOrg || isLoadingContext || !canSubmitStepOne">
                 <Icon v-if="isCreatingOrg" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-                {{ isCreatingOrg ? 'Creating workspace...' : 'Create workspace' }}
+                {{ isCreatingOrg ? 'Creating...' : projectOnly ? 'Create project' : 'Create workspace' }}
               </Button>
             </form>
           </CardContent>
@@ -88,9 +113,9 @@
                 <Icon name="lucide:user-plus" class="w-6 h-6 text-primary" />
               </div>
             </div>
-            <CardTitle class="text-2xl">Invite your team</CardTitle>
+            <CardTitle class="text-2xl">Invite your colleagues</CardTitle>
             <CardDescription>
-              Veerify works best with your team. Add members now or invite them later from settings.
+              Veerify works best with your colleagues. Add members now or invite them later from settings.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -186,8 +211,8 @@
                   <div>
                     <p class="font-medium text-sm">Organize with projects</p>
                     <p class="text-xs text-muted-foreground">
-                      Create projects for different products or areas. Need more separation? Create additional teams
-                      later.
+                      Add a project per brand. Each one has its own tools, people and public site, and can hold several
+                      products.
                     </p>
                   </div>
                 </div>
@@ -196,9 +221,10 @@
                     <Icon name="lucide:users" class="w-4 h-4 text-green-600 dark:text-green-400" />
                   </div>
                   <div>
-                    <p class="font-medium text-sm">Collaborate with your team</p>
+                    <p class="font-medium text-sm">Collaborate with others</p>
                     <p class="text-xs text-muted-foreground">
-                      Everyone in your workspace has access. Invite more members anytime from settings.
+                      New projects are open to everyone in your workspace. Invite more people anytime from Workspace
+                      settings.
                     </p>
                   </div>
                 </div>
@@ -229,7 +255,7 @@ export default {
       currentStep: 0,
       steps: [
         { key: 'workspace', label: 'Create workspace' },
-        { key: 'invite', label: 'Invite team' },
+        { key: 'invite', label: 'Invite colleagues' },
         { key: 'done', label: 'All set' },
       ],
 
@@ -241,6 +267,11 @@ export default {
       createOrgError: '',
       createdOrgId: null,
       createdOrgName: '',
+      projectName: '',
+      projectNameEdited: false,
+      createdProjectId: null,
+      projectOnly: false,
+      isLoadingContext: true,
 
       // Step 2: Invite members
       inviteEmails: [''],
@@ -250,11 +281,16 @@ export default {
     }
   },
 
-  mounted() {
-    this.isHydrated = true
-  },
-
   computed: {
+    appDomain() {
+      return useRuntimeConfig().public.appDomain || 'veerify.io'
+    },
+
+    canSubmitStepOne() {
+      if (!this.projectName.trim()) return false
+      return this.projectOnly || Boolean(this.orgName.trim() && this.orgSlug.trim())
+    },
+
     hasValidEmails() {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       return this.inviteEmails.some((email) => emailRegex.test(email.trim()))
@@ -264,7 +300,13 @@ export default {
   watch: {
     orgName(newName) {
       this.orgSlug = this.slugify(newName)
+      if (!this.projectNameEdited) this.projectName = newName
     },
+  },
+
+  async mounted() {
+    this.isHydrated = true
+    await this.detectExistingWorkspace()
   },
 
   methods: {
@@ -277,40 +319,80 @@ export default {
         .replace(/^-|-$/g, '')
     },
 
+    // A workspace that exists but has no project (e.g. the switcher sent us here): only ask for the project.
+    async detectExistingWorkspace() {
+      try {
+        const activeOrg = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
+        if (activeOrg?.id) {
+          const projectsResponse = await $fetch('/api/projects').catch(() => null)
+          const projects = projectsResponse?.data
+          if (Array.isArray(projects) && projects.length === 0) {
+            this.projectOnly = true
+            this.createdOrgId = activeOrg.id
+            this.createdOrgName = activeOrg.name || ''
+            this.projectName = activeOrg.name || ''
+          }
+        }
+      } finally {
+        this.isLoadingContext = false
+      }
+    },
+
     async createWorkspace() {
-      if (!this.orgName.trim() || !this.orgSlug.trim()) return
+      if (!this.canSubmitStepOne) return
 
       this.isCreatingOrg = true
       this.createOrgError = ''
 
       try {
-        const result = await authClient.organization.create({
-          name: this.orgName.trim(),
-          slug: this.orgSlug.trim(),
-        })
+        // Retrying after a failed project step must not create the workspace twice.
+        if (!this.createdOrgId) {
+          const result = await authClient.organization.create({
+            name: this.orgName.trim(),
+            slug: this.orgSlug.trim(),
+          })
 
-        if (result.error) {
-          this.createOrgError = result.error.message || 'Failed to create workspace'
-          return
+          if (result.error) {
+            this.createOrgError = result.error.message || 'Failed to create workspace'
+            return
+          }
+
+          this.createdOrgId = result.data?.id || null
+          this.createdOrgName = this.orgName.trim()
+
+          // Set the new org as active
+          if (this.createdOrgId) {
+            await authClient.organization.setActive({
+              organizationId: this.createdOrgId,
+            })
+            clearDashboardBootstrapCache()
+          }
         }
 
-        this.createdOrgId = result.data?.id || null
-        this.createdOrgName = this.orgName.trim()
-
-        // Set the new org as active
-        if (this.createdOrgId) {
-          await authClient.organization.setActive({
-            organizationId: this.createdOrgId,
+        // First project, then make it the active one
+        if (!this.createdProjectId) {
+          const projectResponse = await $fetch('/api/projects', {
+            method: 'POST',
+            body: { name: this.projectName.trim() },
           })
-          clearDashboardBootstrapCache()
-
-          // Resolve team context so the session has activeTeamId
-          await $fetch('/api/teams/active').catch(() => null)
+          this.createdProjectId = projectResponse?.data?.project?.id || null
+        }
+        if (this.createdProjectId) {
+          await $fetch('/api/projects/active', { method: 'POST', body: { projectId: this.createdProjectId } })
+        }
+        clearDashboardBootstrapCache()
+        if (import.meta.client) {
+          window.dispatchEvent(
+            new CustomEvent('veerify:active-project-changed', { detail: { projectId: this.createdProjectId } })
+          )
         }
 
         this.currentStep = 1
       } catch (error) {
-        this.createOrgError = error?.message || 'An unexpected error occurred'
+        const detail = error?.statusMessage || error?.data?.statusMessage || error?.message
+        this.createOrgError = this.createdOrgId
+          ? `Your workspace was created, but the project could not be: ${detail || 'unexpected error'}. Try again.`
+          : detail || 'An unexpected error occurred'
         console.error('Error creating workspace:', error)
       } finally {
         this.isCreatingOrg = false

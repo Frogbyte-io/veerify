@@ -12,9 +12,9 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: Company updated }
- *       403: { description: Not a member of the company's team }
+ *       403: { description: Not a member of the company's project }
  *       404: { description: Company not found }
- *       409: { description: Another company in the team already uses this name or domain }
+ *       409: { description: Another company in the project already uses this name or domain }
  */
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
@@ -58,7 +58,10 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 409,
         statusMessage: 'Conflict',
-        data: createErrorResponse(ErrorCode.CONFLICT, 'Another company in this team already uses this name or domain'),
+        data: createErrorResponse(
+          ErrorCode.CONFLICT,
+          'Another company in this project already uses this name or domain'
+        ),
       })
     }
     throw error

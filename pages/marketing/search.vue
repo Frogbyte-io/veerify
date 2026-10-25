@@ -6,7 +6,7 @@
           <h1 class="text-3xl font-bold text-foreground">Search</h1>
           <p class="mt-1 text-sm text-muted-foreground">Clicks, impressions and queries from Google Search Console.</p>
         </div>
-        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
       </div>
 
       <div v-if="!pickerSettled" class="space-y-4">
@@ -15,14 +15,14 @@
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">
-        Create a product first to see its search performance.
+      <div v-else-if="!project" class="text-sm text-muted-foreground">
+        Create a project to see its search performance.
       </div>
 
-      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
       <div v-else-if="isLoading" class="space-y-4">
         <Skeleton class="h-24 w-full" />
@@ -66,7 +66,7 @@
 
         <MarketingSearchStatus
           v-if="data.connection && data.configured"
-          :project-id="product.id"
+          :project-id="project.id"
           :connection="data.connection"
           :can-manage="data.canManage"
           @disconnected="onDisconnected"
@@ -74,7 +74,7 @@
 
         <MarketingSearchProperty
           v-if="data.connection && data.configured && data.connection.status === 'needs_property'"
-          :project-id="product.id"
+          :project-id="project.id"
           :origin="data.site.origin"
           :email="data.connection.email"
           :can-manage="data.canManage"
@@ -113,7 +113,7 @@ const CALLBACK_ERRORS = {
   invalid_state: 'The connection request was not valid. Start again.',
   expired_state: 'The connection request expired. Start again.',
   user_mismatch: 'You must finish connecting with the same account that started it.',
-  forbidden: 'Only team admins can connect Search Console.',
+  forbidden: 'Only project admins can connect Search Console.',
   not_configured: 'Search Console is not configured on this server.',
   site_changed: 'The site changed or lost verification during the connection. Start again.',
   exchange_failed: 'Google did not accept the connection. Start again and approve all requested access.',
@@ -129,7 +129,7 @@ export default {
 
   data() {
     return {
-      product: null,
+      project: null,
       pickerSettled: false,
       pickerError: false,
       isLoading: false,
@@ -146,13 +146,13 @@ export default {
 
   methods: {
     onPickerError() {
-      this.product = null
+      this.project = null
       this.pickerError = true
       this.pickerSettled = true
     },
 
-    async onProductChange(product) {
-      this.product = product
+    async onProjectChange(project) {
+      this.project = project
       this.pickerSettled = true
       this.pickerError = false
       this.isLoading = false
@@ -162,7 +162,7 @@ export default {
       this.callbackError = null
       this.data = null
       this.consumeCallbackFlags()
-      if (product) await this.load()
+      if (project) await this.load()
     },
 
     /** `?connected=1` and `?error=<code>` come from the OAuth callback redirect; show once, then clean the URL. */
@@ -180,17 +180,17 @@ export default {
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.isLoading = true
       this.error = null
       this.marketingOff = false
       try {
-        const response = await $fetch(`/api/marketing/projects/${productId}/search/summary`)
-        if (this.product?.id !== productId) return
+        const response = await $fetch(`/api/marketing/projects/${projectId}/search/summary`)
+        if (this.project?.id !== projectId) return
         this.data = response.data
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.marketingOff = true
           this.disabledMessage = apiErrorMessage(err, '')
@@ -198,16 +198,16 @@ export default {
           this.error = apiErrorMessage(err, 'Failed to load search data')
         }
       } finally {
-        if (this.product?.id === productId) this.isLoading = false
+        if (this.project?.id === projectId) this.isLoading = false
       }
     },
 
     async connect() {
-      const productId = this.product.id
+      const projectId = this.project.id
       this.connecting = true
       this.connectError = null
       try {
-        const response = await $fetch(`/api/marketing/projects/${productId}/search/connect`)
+        const response = await $fetch(`/api/marketing/projects/${projectId}/search/connect`)
         if (import.meta.client) window.location.href = response.data.url
       } catch (err) {
         this.connectError = apiErrorMessage(err, 'Could not start the connection')

@@ -8,7 +8,7 @@
             Get told when a competitor changes their pricing, changelog or homepage.
           </p>
         </div>
-        <MarketingProductPicker @change="onProductChange" @error="onPickerError" />
+        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
       </div>
 
       <div v-if="!pickerSettled || isLoading" class="space-y-4">
@@ -17,12 +17,12 @@
       </div>
 
       <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        Products could not be loaded. Use Retry above to try again.
+        The project could not be loaded. Use Retry above to try again.
       </div>
 
-      <div v-else-if="!product" class="text-sm text-muted-foreground">Create a product first to watch competitors.</div>
+      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to watch competitors.</div>
 
-      <MarketingDisabled v-else-if="marketingOff" :product="product" :message="disabledMessage" />
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
       <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
         <span>{{ error }}</span>
@@ -92,13 +92,15 @@
           <p v-if="settingError" class="mt-2 text-destructive">{{ settingError }}</p>
         </div>
 
-        <p v-if="!canManage" class="text-sm text-muted-foreground">Only team admins can add or change watched pages.</p>
+        <p v-if="!canManage" class="text-sm text-muted-foreground">
+          Only project admins can add or change watched pages.
+        </p>
 
         <div class="grid gap-4 lg:grid-cols-2">
           <MarketingCompetitorWatch
             v-for="competitor in competitors"
             :key="competitor.id"
-            :project-id="product.id"
+            :project-id="project.id"
             :competitor="competitor"
             :can-manage="canManage"
             :site-watch-count="siteWatchCount"
@@ -133,7 +135,7 @@ export default {
 
   data() {
     return {
-      product: null,
+      project: null,
       pickerSettled: false,
       pickerError: false,
       isLoading: false,
@@ -162,18 +164,18 @@ export default {
   },
 
   methods: {
-    base(productId = this.product.id) {
-      return `/api/marketing/projects/${productId}/competitors`
+    base(projectId = this.project.id) {
+      return `/api/marketing/projects/${projectId}/competitors`
     },
 
     onPickerError() {
-      this.product = null
+      this.project = null
       this.pickerError = true
       this.pickerSettled = true
     },
 
-    async onProductChange(product) {
-      this.product = product
+    async onProjectChange(project) {
+      this.project = project
       this.pickerSettled = true
       this.pickerError = false
       this.isLoading = false
@@ -186,7 +188,7 @@ export default {
       this.site = null
       this.savingSetting = false
       this.settingError = null
-      if (product) await this.load()
+      if (project) await this.load()
     },
 
     apply(data) {
@@ -200,16 +202,16 @@ export default {
     },
 
     async load() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.isLoading = true
       this.error = null
       this.marketingOff = false
       try {
-        const response = await $fetch(this.base(productId))
-        if (this.product?.id === productId) this.apply(response.data)
+        const response = await $fetch(this.base(projectId))
+        if (this.project?.id === projectId) this.apply(response.data)
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         if (apiErrorStatus(err) === 403) {
           this.marketingOff = true
           this.disabledMessage = apiErrorMessage(err, '')
@@ -217,20 +219,20 @@ export default {
           this.error = apiErrorMessage(err, 'Failed to load competitors')
         }
       } finally {
-        if (this.product?.id === productId) this.isLoading = false
+        if (this.project?.id === projectId) this.isLoading = false
       }
     },
 
     /** Reload without replacing the page by skeletons. */
     async refresh() {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.refreshError = null
       try {
-        const response = await $fetch(this.base(productId))
-        if (this.product?.id === productId) this.apply(response.data)
+        const response = await $fetch(this.base(projectId))
+        if (this.project?.id === projectId) this.apply(response.data)
       } catch (err) {
-        if (this.product?.id === productId) {
+        if (this.project?.id === projectId) {
           this.refreshError = apiErrorMessage(err, 'Could not refresh the list. Reload the page to try again')
         }
       }
@@ -250,23 +252,23 @@ export default {
     },
 
     async setSummaries(value, input) {
-      if (!this.product) return
-      const productId = this.product.id
+      if (!this.project) return
+      const projectId = this.project.id
       this.savingSetting = true
       this.settingError = null
       try {
-        const response = await $fetch(`${this.base(productId)}/settings`, {
+        const response = await $fetch(`${this.base(projectId)}/settings`, {
           method: 'PATCH',
           body: { summarize: value },
         })
-        if (this.product?.id === productId) this.summariesEnabled = response.data.summariesEnabled
+        if (this.project?.id === projectId) this.summariesEnabled = response.data.summariesEnabled
       } catch (err) {
-        if (this.product?.id !== productId) return
+        if (this.project?.id !== projectId) return
         // Revert the native checkbox to the persisted state
         if (input) input.checked = this.summariesEnabled
         this.settingError = apiErrorMessage(err, 'Could not save the setting')
       } finally {
-        if (this.product?.id === productId) this.savingSetting = false
+        if (this.project?.id === projectId) this.savingSetting = false
       }
     },
   },

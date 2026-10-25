@@ -56,9 +56,9 @@ vi.mock('~/server/database/drizzle', () => ({
   },
 }))
 
-vi.mock('~/server/utils/team-credentials', () => ({
-  listTeamCredentials: vi.fn(async () => state.credentials),
-  getTeamApiKey: vi.fn(),
+vi.mock('~/server/utils/org-credentials', () => ({
+  listOrgCredentials: vi.fn(async () => state.credentials),
+  getOrgApiKey: vi.fn(),
   markCredentialInvalid: vi.fn(),
   markCredentialValid: vi.fn(),
 }))
@@ -99,10 +99,10 @@ describe('createRun', () => {
     ]
   })
 
-  const site = [{ id: 's1', teamId: 't1', verifiedAt: new Date() }]
+  const site = [{ id: 's1', organizationId: 't1', verifiedAt: new Date() }]
 
   it('rejects an unverified site', async () => {
-    state.selectQueue = [[{ id: 's1', teamId: 't1', verifiedAt: null }]]
+    state.selectQueue = [[{ id: 's1', organizationId: 't1', verifiedAt: null }]]
     await expect(createRun({ siteId: 's1', trigger: 'manual' })).rejects.toMatchObject({ code: 'site_unverified' })
   })
 
@@ -260,7 +260,7 @@ function makeHarness(
     }),
     markRunsRunning: vi.fn(async () => undefined),
     loadContext: vi.fn(async () => ({
-      teamId: 't1',
+      organizationId: 't1',
       promptText: 'best feedback tool?',
       brandLabel: 'Veerify',
       terms: [
@@ -383,13 +383,13 @@ describe('advanceVisibilityRuns', () => {
     await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
 
     expect(h.calls.reserveBudget).toHaveBeenCalledTimes(1)
-    const [teamId, provider, held, cap] = h.calls.reserveBudget.mock.calls[0] as unknown as [
+    const [organizationId, provider, held, cap] = h.calls.reserveBudget.mock.calls[0] as unknown as [
       string,
       string,
       number,
       number,
     ]
-    expect([teamId, provider, cap]).toEqual(['t1', 'anthropic', 500])
+    expect([organizationId, provider, cap]).toEqual(['t1', 'anthropic', 500])
     expect(held).toBeGreaterThan(7450)
     expect(h.calls.settleBudget).toHaveBeenCalledWith('t1', 'anthropic', held, 7450)
     expect(h.calls.releaseBudget).not.toHaveBeenCalled()
@@ -704,7 +704,7 @@ describe('advanceVisibilityRuns hardening', () => {
     for (const reason of ['Marketing is turned off for this product', 'Site is no longer verified']) {
       const h = makeHarness([mk('a1'), mk('a2')])
       ;(h.raw as { loadContext: unknown }).loadContext = vi.fn(async () => ({
-        teamId: 't1',
+        organizationId: 't1',
         promptText: 'q',
         brandLabel: 'Veerify',
         terms: [],
@@ -1009,7 +1009,8 @@ describe('scheduleWeeklyVisibilityRuns', () => {
   it('selects eligibility in SQL: gates, prerequisites, no recent run, NULLS FIRST order, limit', () => {
     const { sql: text, params } = render(buildDueSitesQuery(new Date('2026-10-05T10:00:00Z'), 150))
     expect(text).toMatch(/s\.verified_at IS NOT NULL/)
-    expect(text).toMatch(/t\.marketing_enabled = true/)
+    expect(text).toMatch(/c\.organization_id = p\.organization_id/)
+    expect(text).not.toMatch(/team_/)
     expect(text).toMatch(/p\.settings ->> 'marketingEnabled' = 'true'/)
     expect(text).toMatch(/lr\.last_at IS NULL OR lr\.last_at </)
     expect(text).toMatch(/EXISTS \(SELECT 1 FROM marketing_term mt WHERE mt\.site_id = s\.id AND mt\.kind = 'brand'\)/)

@@ -13,12 +13,11 @@ const NOW = new Date('2026-10-10T12:00:00Z')
 
 const site: CandidateSite = {
   siteId: 's1',
-  teamId: 't1',
+  organizationId: 'o1',
   projectId: 'p1',
   projectName: 'Acme',
   projectSlug: 'acme',
   projectSettings: { marketingEnabled: true },
-  teamMarketingEnabled: true,
 }
 
 function storeInserting(count: (rows: MentionInsert[]) => number): MentionsStore {
@@ -59,7 +58,7 @@ describe('mentions realtime publish from the poller', () => {
       { store: storeInserting((rows) => rows.length), sources: [sourceReturning([hit])], publishNew }
     )
     expect(publishNew).toHaveBeenCalledTimes(1)
-    expect(publishNew).toHaveBeenCalledWith({ teamId: 't1', projectId: 'p1', count: 1 })
+    expect(publishNew).toHaveBeenCalledWith({ projectId: 'p1', count: 1 })
   })
 
   it('does not publish when nothing was inserted (all conflicts or no hits)', async () => {
@@ -97,22 +96,21 @@ describe('publishMentionsNew envelope', () => {
     })
   })
 
-  it('publishes a thin envelope on team:<id> with no content', async () => {
-    await publishMentionsNew({ teamId: 't1', projectId: 'p1', count: 3 })
+  it('publishes a thin envelope on project:<id> with no content', async () => {
+    await publishMentionsNew({ projectId: 'p1', count: 3 })
     expect(published).toHaveLength(1)
-    expect(published[0].channel).toBe('team:t1')
+    expect(published[0].channel).toBe('project:p1')
     expect(published[0].envelope).toEqual({
       v: 1,
       type: 'marketing.mentions.new',
-      teamId: 't1',
       projectId: 'p1',
       count: 3,
     })
   })
 
   it('publishes nothing for a zero or invalid count', async () => {
-    await publishMentionsNew({ teamId: 't1', projectId: 'p1', count: 0 })
-    await publishMentionsNew({ teamId: 't1', projectId: 'p1', count: -2 })
+    await publishMentionsNew({ projectId: 'p1', count: 0 })
+    await publishMentionsNew({ projectId: 'p1', count: -2 })
     expect(published).toHaveLength(0)
   })
 
@@ -120,25 +118,23 @@ describe('publishMentionsNew envelope', () => {
     const envelope = sanitizeEnvelope({
       v: 1,
       type: 'marketing.mentions.new',
-      teamId: 't1',
       projectId: 'p1',
       count: 2,
       excerpt: 'secret',
       text: 'secret',
     })
-    expect(envelope).toEqual({ v: 1, type: 'marketing.mentions.new', teamId: 't1', projectId: 'p1', count: 2 })
+    expect(envelope).toEqual({ v: 1, type: 'marketing.mentions.new', projectId: 'p1', count: 2 })
     expect(JSON.stringify(envelope)).not.toContain('secret')
   })
 
-  it('refuses to match a team envelope to another team channel', () => {
+  it('refuses to match a project envelope to another project channel', () => {
     const envelope = sanitizeEnvelope({
       v: 1,
       type: 'marketing.mentions.new',
-      teamId: 't1',
       projectId: 'p1',
       count: 1,
     })!
-    expect(envelopeMatchesChannel(envelope, 'team:t2')).toBe(false)
-    expect(envelopeMatchesChannel(envelope, 'team:t1')).toBe(true)
+    expect(envelopeMatchesChannel(envelope, 'project:p2')).toBe(false)
+    expect(envelopeMatchesChannel(envelope, 'project:p1')).toBe(true)
   })
 })

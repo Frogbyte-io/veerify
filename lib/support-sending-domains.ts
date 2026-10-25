@@ -27,7 +27,7 @@ export interface SendingDomainDnsRecord {
   status: 'valid' | 'invalid' | 'unknown'
 }
 
-export type SenderPolicy = 'legacy' | 'team'
+export type SenderPolicy = 'legacy' | 'project'
 
 /** One claim as returned by the sending-domain API (design §7.2). */
 export interface SendingDomainView {
@@ -58,7 +58,7 @@ export interface SendingDomainCapabilities {
   authorizesSubdomains: boolean
 }
 
-/** `GET /api/support/teams/[teamId]/sending-domains` response data (design §7.1). */
+/** `GET /api/support/projects/[projectId]/sending-domains` response data (design §7.1). */
 export interface SendingDomainListResponse {
   enabled: boolean
   policy: SenderPolicy
@@ -72,24 +72,24 @@ export interface SendingDomainListResponse {
 }
 
 /** `GET /api/support/inboxes/[id]/sending-status` authorization verdict (design §7.3). */
-export type TeamSenderVerdict =
+export type ProjectSenderVerdict =
   | { status: 'authorized'; domain: { id: string; domain: string } | null; platform?: true }
   | { status: 'pending'; domain: { id: string; domain: string; status: SupportSendingDomainStatus } }
   | {
       status: 'unauthorized'
       reason: 'not_owned' | 'suspended' | 'provider_mismatch'
-      teamDomains: string[]
+      projectDomains: string[]
     }
   | { status: 'unknown'; reason: string }
 
 export interface SendingStatusResponse {
   address: string | null
   policy: SenderPolicy
-  authorization: TeamSenderVerdict
+  authorization: ProjectSenderVerdict
 }
 
-export const MAX_DOMAINS_PER_TEAM = 10
-export const MAX_PENDING_PER_TEAM = 3
+export const MAX_DOMAINS_PER_PROJECT = 10
+export const MAX_PENDING_PER_PROJECT = 3
 export const PENDING_TTL_DAYS = 7
 /** A suspended claim that nobody repairs is released after this long (design §5.3). */
 export const SUSPENDED_TTL_DAYS = 30
@@ -142,8 +142,11 @@ export function sendingDomainEnvIssues(env: Record<string, string | undefined>):
       message: 'SUPPORT_SENDING_DOMAIN_PROVIDER=fake is refused in production and will be ignored.',
     })
   }
-  if (policy && policy !== 'legacy' && policy !== 'team') {
-    issues.push({ level: 'warn', message: 'SUPPORT_SENDER_POLICY must be "legacy" or "team"; the value is ignored.' })
+  if (policy && policy !== 'legacy' && policy !== 'project' && policy !== 'team') {
+    issues.push({
+      level: 'warn',
+      message: 'SUPPORT_SENDER_POLICY must be "legacy" or "project"; the value is ignored.',
+    })
   }
   if (!enabled) return issues
 
@@ -151,7 +154,7 @@ export function sendingDomainEnvIssues(env: Record<string, string | undefined>):
     issues.push({
       level: 'error',
       message:
-        'SUPPORT_SENDER_POLICY=legacy is set together with SUPPORT_SENDING_DOMAINS_ENABLED=true. Self-serve domains are unsafe without team scope, so the "team" policy applies.',
+        'SUPPORT_SENDER_POLICY=legacy is set together with SUPPORT_SENDING_DOMAINS_ENABLED=true. Self-serve domains are unsafe without project scope, so the "project" policy applies.',
     })
   }
 
@@ -177,7 +180,7 @@ export function sendingDomainEnvIssues(env: Record<string, string | undefined>):
     issues.push({
       level: 'info',
       message:
-        'Postmark runs sending domains in list-only mode: teams can claim and prove a domain, but an operator adds it in Postmark.',
+        'Postmark runs sending domains in list-only mode: projects can claim and prove a domain, but an operator adds it in Postmark.',
     })
   } else {
     issues.push({
@@ -306,17 +309,17 @@ export function validateSendingDomain(
 }
 
 /**
- * The first claim of another team that equals, sits under, or sits over
+ * The first claim of another project that equals, sits under, or sits over
  * `domain` (matched on label boundaries, so `badacme.com` never conflicts with
- * `acme.com`). Nesting within the same team is allowed.
+ * `acme.com`). Nesting within the same project is allowed.
  */
 export function findHierarchyConflict(
   domain: string,
-  teamId: string,
-  claims: { domain: string; teamId: string }[]
+  projectId: string,
+  claims: { domain: string; projectId: string }[]
 ): { domain: string } | null {
   for (const claim of claims) {
-    if (claim.teamId === teamId) continue
+    if (claim.projectId === projectId) continue
     if (isSameOrSubdomain(domain, claim.domain) || isSameOrSubdomain(claim.domain, domain)) {
       return { domain: claim.domain }
     }

@@ -8,7 +8,7 @@
  *
  * This is wiring, not business logic — the actual behavior lives in the
  * shared registration at `server/services/scheduler/tasks/example-ping.ts`,
- * which the Vercel Cron endpoint (`server/api/cron/example-ping.get.ts`)
+ * which the cron HTTP endpoint (`server/api/cron/example-ping.get.ts`)
  * reuses so both backends run identical logic.
  */
 import { examplePingTask } from '~/server/services/scheduler/tasks/example-ping'

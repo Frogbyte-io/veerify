@@ -3,47 +3,41 @@
     <Skeleton v-if="isLoading" class="h-9 w-48" />
 
     <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-      <span>Failed to load products</span>
+      <span>{{ error }}</span>
       <Button variant="outline" size="sm" @click="load">Retry</Button>
     </div>
 
-    <DropdownMenu v-else-if="products.length > 0">
-      <DropdownMenuTrigger as-child>
-        <Button variant="outline" class="gap-2" data-testid="roadmap-product-picker-trigger">
-          <Icon name="lucide:package" class="w-4 h-4" />
-          <span class="max-w-48 truncate">{{ selected?.name || 'Select product' }}</span>
-          <Icon name="lucide:chevrons-up-down" class="w-4 h-4 text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" class="w-64">
-        <DropdownMenuItem
-          v-for="product in products"
-          :key="product.id"
-          :data-testid="`roadmap-product-picker-item-${product.slug}`"
-          @select="select(product)"
-        >
-          <span class="flex-1 truncate">{{ product.name }}</span>
-          <span v-if="!isRoadmapOn(product)" class="text-xs text-muted-foreground">Off</span>
-          <Icon v-if="product.id === selected?.id" name="lucide:check" class="w-4 h-4" />
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div v-else-if="products.length > 1" class="flex flex-wrap items-center gap-2" data-testid="roadmap-product-chips">
+      <button type="button" :class="chipClass(!selectedId)" data-testid="roadmap-product-chip-all" @click="select('')">
+        All products
+      </button>
+      <button
+        v-for="product in products"
+        :key="product.id"
+        type="button"
+        :class="chipClass(selectedId === product.id)"
+        :data-testid="`roadmap-product-chip-${product.slug}`"
+        @click="select(product.id)"
+      >
+        {{ product.name }}
+      </button>
+    </div>
   </div>
 </template>
 
 <script>
+import { cn } from '~/lib/utils'
 import { apiErrorMessage } from '~/lib/api-error'
-import { resolveProductModules } from '~/lib/modules'
-
-const STORAGE_KEY = 'veerify_roadmap_product'
 
 /**
- * Product picker for the roadmap pages. The selection lives in the
- * `?product=<slug>` query (shareable links) and is remembered in localStorage.
+ * Product filter for the roadmap. The roadmap is project-wide, so this loads
+ * the active project and only renders chips ("All products" + one per product)
+ * when the project has more than one product. The selection lives in the
+ * `?productId=<id>` query.
  *
- * Emits `change` with (product | null, teamSlug), including once after the
- * initial load, and `error` when products fail to load. Products with the
- * roadmap switched off are listed and marked "Off".
+ * Emits `change` with (activeProjectContext, productId) once after every
+ * (re)load of the active project and whenever a chip is picked. `productId`
+ * is '' for "All products".
  */
 export default {
   name: 'RoadmapProductPicker',
@@ -52,94 +46,67 @@ export default {
 
   data() {
     return {
-      products: [],
-      selected: null,
-      teamSlug: '',
+      context: null,
+      selectedId: '',
       isLoading: true,
       error: null,
     }
   },
 
+  computed: {
+    products() {
+      return this.context?.products || []
+    },
+  },
+
   async mounted() {
     if (import.meta.client) {
-      window.addEventListener('veerify:active-team-changed', this.load)
+      window.addEventListener('veerify:active-project-changed', this.load)
     }
     await this.load()
   },
 
   beforeUnmount() {
     if (import.meta.client) {
-      window.removeEventListener('veerify:active-team-changed', this.load)
+      window.removeEventListener('veerify:active-project-changed', this.load)
     }
   },
 
   methods: {
-    isRoadmapOn(product) {
-      return resolveProductModules(product.settings).roadmapEnabled === true
+    chipClass(active) {
+      return cn(
+        'rounded-full border px-3 py-1 text-sm transition-colors',
+        active ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground hover:bg-accent'
+      )
     },
 
     async load() {
       this.isLoading = true
       this.error = null
       try {
-        const activeTeam = await $fetch('/api/teams/active')
-        const teamId = activeTeam?.data?.id
-        this.teamSlug = activeTeam?.data?.slug || ''
-        if (!teamId) {
-          this.products = []
-          this.applySelection(null)
-          return
-        }
-        const response = await $fetch(`/api/teams/${teamId}/projects`)
-        this.products = response?.data || []
-
-        const wanted = this.$route.query.product || this.readStoredSlug()
-        const match =
-          this.products.find((product) => product.slug === wanted) ||
-          this.products.find((product) => this.isRoadmapOn(product)) ||
-          this.products[0] ||
-          null
-        this.applySelection(match)
+        const response = await $fetch('/api/projects/active')
+        this.context = response?.data || null
+        const wanted = this.$route.query.productId
+        const match = this.products.length > 1 ? this.products.find((product) => product.id === wanted) : null
+        this.selectedId = match ? match.id : ''
+        this.$emit('change', this.context, this.selectedId)
       } catch (err) {
-        this.error = apiErrorMessage(err, 'Failed to load products')
+        this.context = null
+        this.error = apiErrorMessage(err, 'Failed to load the active project')
         this.$emit('error', this.error)
       } finally {
         this.isLoading = false
       }
     },
 
-    select(product) {
-      if (product.id === this.selected?.id) return
-      this.applySelection(product)
-    },
-
-    applySelection(product) {
-      this.selected = product
-      if (product) {
-        this.storeSlug(product.slug)
-        if (this.$route.query.product !== product.slug) {
-          this.$router.replace({ query: { ...this.$route.query, product: product.slug } })
-        }
-      }
-      this.$emit('change', product, this.teamSlug)
-    },
-
-    readStoredSlug() {
-      if (!import.meta.client) return null
-      try {
-        return localStorage.getItem(STORAGE_KEY)
-      } catch {
-        return null
-      }
-    },
-
-    storeSlug(slug) {
-      if (!import.meta.client) return
-      try {
-        localStorage.setItem(STORAGE_KEY, slug)
-      } catch {
-        // Ignore storage failures.
-      }
+    select(productId) {
+      if (productId === this.selectedId) return
+      this.selectedId = productId
+      const query = { ...this.$route.query }
+      if (productId) query.productId = productId
+      else delete query.productId
+      this.$router.replace({ query })
+      this.$emit('change', this.context, productId)
     },
   },
 }

@@ -5,7 +5,7 @@ import {
   createDomainProvider,
   resolveDomainProviderName,
   shouldSendDomainVerifiedEmail,
-  buildTeamSubdomainHostname,
+  buildOrgSubdomainHostname,
   getCustomDomainValidationError,
   normalizeCustomDomainInput,
 } from '../server/services/domains/domain-service'
@@ -13,7 +13,6 @@ import { domainProviderEnvIssues } from '../server/services/domains/env'
 import { CloudflareSaasDomainProvider } from '../server/services/domains/providers/cloudflare-saas'
 import { StaticCnameDomainProvider } from '../server/services/domains/providers/static-cname'
 import { dedupeDnsRecords } from '../server/services/domains/provider'
-import { VercelDomainProvider, mapVercelDomainResult } from '../server/services/domains/providers/vercel'
 
 describe('domain service helpers', () => {
   it('normalizes custom domain input', () => {
@@ -39,9 +38,9 @@ describe('domain service helpers', () => {
     expect(getCustomDomainValidationError('demo.localhost', options)).toMatch(/platform domain/i)
   })
 
-  it('builds production team subdomain hostnames', () => {
-    expect(buildTeamSubdomainHostname(' DotMatrixLabs ', 'Veerify.io.')).toBe('dotmatrixlabs.veerify.io')
-    expect(buildTeamSubdomainHostname('dotmatrixlabs', 'localhost')).toBeNull()
+  it('builds production workspace subdomain hostnames', () => {
+    expect(buildOrgSubdomainHostname(' DotMatrixLabs ', 'Veerify.io.')).toBe('dotmatrixlabs.veerify.io')
+    expect(buildOrgSubdomainHostname('dotmatrixlabs', 'localhost')).toBeNull()
   })
 
   it('deduplicates dns records by type, name, and value', () => {
@@ -56,10 +55,10 @@ describe('domain service helpers', () => {
   it('keeps only one cname instruction per hostname', () => {
     expect(
       dedupeDnsRecords([
-        { type: 'CNAME', name: 'feedback.example.com', value: '23f9267bd57617a5.vercel-dns-017.com.' },
-        { type: 'CNAME', name: 'feedback.example.com.', value: 'cname.vercel-dns.com.' },
+        { type: 'CNAME', name: 'feedback.example.com', value: 'abc123.edge.example.net.' },
+        { type: 'CNAME', name: 'feedback.example.com.', value: 'cname.edge.example.net.' },
       ])
-    ).toEqual([{ type: 'CNAME', name: 'feedback.example.com', value: '23f9267bd57617a5.vercel-dns-017.com.' }])
+    ).toEqual([{ type: 'CNAME', name: 'feedback.example.com', value: 'abc123.edge.example.net.' }])
   })
 
   it('builds a clean settings patch for a provider result', () => {
@@ -71,10 +70,10 @@ describe('domain service helpers', () => {
       },
       {
         hostname: 'feedback.example.com',
-        provider: 'vercel',
+        provider: 'cloudflare-saas',
         verified: false,
         status: 'ownership_verification_required',
-        dnsRecords: [{ type: 'TXT', name: '_vercel.feedback.example.com', value: 'token' }],
+        dnsRecords: [{ type: 'TXT', name: '_acme-challenge.feedback.example.com', value: 'token' }],
         configuredBy: 'TXT',
         expected: null,
         resolvedTo: [],
@@ -83,76 +82,12 @@ describe('domain service helpers', () => {
     )
 
     expect(settings.accentColor).toBe('#ff0000')
-    expect(settings.domainProvider).toBe('vercel')
+    expect(settings.domainProvider).toBe('cloudflare-saas')
     expect(settings.domainStatus).toBe('ownership_verification_required')
-    expect(settings.domainDnsRecords).toEqual([{ type: 'TXT', name: '_vercel.feedback.example.com', value: 'token' }])
+    expect(settings.domainDnsRecords).toEqual([
+      { type: 'TXT', name: '_acme-challenge.feedback.example.com', value: 'token' },
+    ])
     expect(typeof settings.domainLastCheckedAt).toBe('string')
-  })
-
-  it('maps vercel verification responses into provider-neutral dns records', () => {
-    const result = mapVercelDomainResult('feedback.example.com', {
-      project: {
-        verified: false,
-        verification: [
-          {
-            type: 'TXT',
-            domain: '_vercel.feedback.example.com',
-            value: 'vc-domain-verify=abc123',
-          },
-        ],
-      },
-      config: {
-        configuredBy: 'CNAME',
-        recommendedCNAME: 'cname.vercel-dns.com',
-      },
-    })
-
-    expect(result.status).toBe('ownership_verification_required')
-    expect(result.verified).toBe(false)
-    expect(result.dnsRecords).toEqual([
-      {
-        type: 'TXT',
-        name: '_vercel.feedback.example.com',
-        value: 'vc-domain-verify=abc123',
-      },
-      {
-        type: 'CNAME',
-        name: 'feedback.example.com',
-        value: 'cname.vercel-dns.com',
-      },
-    ])
-  })
-
-  it('prefers the project-specific vercel cname when multiple cname targets are returned for one host', () => {
-    const result = mapVercelDomainResult('feedback.example.com', {
-      project: {
-        verified: false,
-        verification: [
-          {
-            type: 'CNAME',
-            domain: 'feedback.example.com',
-            value: 'cname.vercel-dns.com.',
-          },
-          {
-            type: 'CNAME',
-            domain: 'feedback.example.com',
-            value: '23f9267bd57617a5.vercel-dns-017.com.',
-          },
-        ],
-      },
-      config: {
-        configuredBy: 'CNAME',
-      },
-    })
-
-    expect(result.status).toBe('ownership_verification_required')
-    expect(result.dnsRecords).toEqual([
-      {
-        type: 'CNAME',
-        name: 'feedback.example.com',
-        value: '23f9267bd57617a5.vercel-dns-017.com.',
-      },
-    ])
   })
 })
 
@@ -160,7 +95,7 @@ describe('domain provider selection', () => {
   it('resolves provider names, defaulting to static-cname', () => {
     expect(resolveDomainProviderName('cloudflare-saas')).toBe('cloudflare-saas')
     expect(resolveDomainProviderName(' Cloudflare-SaaS ')).toBe('cloudflare-saas')
-    expect(resolveDomainProviderName('vercel')).toBe('vercel')
+    expect(resolveDomainProviderName('vercel')).toBe('static-cname')
     expect(resolveDomainProviderName('static-cname')).toBe('static-cname')
     expect(resolveDomainProviderName('')).toBe('static-cname')
     expect(resolveDomainProviderName(undefined)).toBe('static-cname')
@@ -169,7 +104,6 @@ describe('domain provider selection', () => {
 
   it('instantiates the matching provider', () => {
     expect(createDomainProvider('cloudflare-saas')).toBeInstanceOf(CloudflareSaasDomainProvider)
-    expect(createDomainProvider('vercel')).toBeInstanceOf(VercelDomainProvider)
     expect(createDomainProvider('static-cname')).toBeInstanceOf(StaticCnameDomainProvider)
   })
 })
@@ -177,7 +111,7 @@ describe('domain provider selection', () => {
 describe('domainProviderEnvIssues', () => {
   it('is silent for other providers', () => {
     expect(domainProviderEnvIssues({}, { domainProvider: 'static-cname' })).toEqual([])
-    expect(domainProviderEnvIssues({ DOMAIN_PROVIDER: 'vercel' })).toEqual([])
+    expect(domainProviderEnvIssues({ DOMAIN_PROVIDER: 'static-cname' })).toEqual([])
   })
 
   it('warns when cloudflare-saas is selected without credentials', () => {

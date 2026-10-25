@@ -11,7 +11,7 @@ import { conversationChannel, inboxChannel, publishRealtime } from '~/server/ser
  */
 export interface ConversationEventInput {
   type: string
-  teamId: string
+  projectId: string
   inboxId: string
   conversationId: string
   messageId?: string
@@ -20,7 +20,7 @@ export interface ConversationEventInput {
 export async function publishConversationEvent(input: ConversationEventInput): Promise<void> {
   const envelope = {
     type: input.type,
-    teamId: input.teamId,
+    projectId: input.projectId,
     inboxId: input.inboxId,
     conversationId: input.conversationId,
     ...(input.messageId ? { messageId: input.messageId } : {}),

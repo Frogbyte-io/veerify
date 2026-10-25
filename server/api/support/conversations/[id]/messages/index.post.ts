@@ -24,9 +24,9 @@
  *     responses:
  *       200: { description: Message created }
  *       400: { description: Validation failed }
- *       403: { description: Not a member of this inbox or a team admin }
+ *       403: { description: Not a member of this inbox or a project admin }
  *       404: { description: Conversation not found }
- *       409: { description: "The inbox has no sending address, the contact has no email address, or (team sender policy) the inbox's From address is on a domain the team has not verified (SENDER_NOT_VERIFIED)" }
+ *       409: { description: "The inbox has no sending address, the contact has no email address, or (project sender policy) the inbox's From address is on a domain the project has not verified (SENDER_NOT_VERIFIED)" }
  */
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -43,7 +43,7 @@ import { contact, conversationMessage, conversationParticipant, supportInbox } f
 import { emailDomain, parseReferences } from '~/server/services/support-channels/types'
 import { buildOutgoingReply } from '~/server/utils/outbound-reply'
 import { runOutboundDeliveryWorker } from '~/server/utils/outbound-delivery'
-import { isSenderAllowedForTeam } from '~/server/utils/sender-enforcement'
+import { isSenderAllowedForProject } from '~/server/utils/sender-enforcement'
 import { triggerAutomationEvent } from '~/server/utils/automation-engine'
 import {
   commitMessageWithAttachments,
@@ -121,10 +121,10 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // Team sender policy (design §4.5). Checked before anything is reserved or
+    // Project sender policy (design §4.5). Checked before anything is reserved or
     // written so a blocked reply leaves no half-finished state. Never blocks
     // under the legacy policy.
-    if (!(await isSenderAllowedForTeam(existing.teamId, inbox.emailAddress))) {
+    if (!(await isSenderAllowedForProject(existing.projectId, inbox.emailAddress))) {
       const senderDomain = emailDomain(inbox.emailAddress) ?? inbox.emailAddress
       throw createError({
         statusCode: 409,
@@ -199,7 +199,7 @@ export default defineEventHandler(async (event) => {
               fromName:
                 previousMessage.senderKind === 'contact'
                   ? (contactRow.name ?? contactRow.email ?? 'Customer')
-                  : (inbox.fromName ?? 'Support Team'),
+                  : (inbox.fromName ?? 'Support Project'),
               sentAt: previousMessage.createdAt,
               body: previousMessage.body ?? '',
               bodyHtml: previousMessage.bodyHtml,
@@ -242,7 +242,7 @@ export default defineEventHandler(async (event) => {
   // must not wait on SMTP (design.md).
   await publishConversationEvent({
     type: 'message.created',
-    teamId: existing.teamId,
+    projectId: existing.projectId,
     inboxId: existing.inboxId,
     conversationId,
     messageId: created.id,

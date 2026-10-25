@@ -12,7 +12,7 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: The 10 most recent runs without phrases }
- *       403: { description: Marketing is not enabled or no team access }
+ *       403: { description: Marketing is not enabled or no project access }
  *       404: { description: No marketing site is set up }
  */
 import { and, desc, eq, gt } from 'drizzle-orm'

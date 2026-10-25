@@ -3,13 +3,13 @@ import { and, eq } from 'drizzle-orm'
 import type { db } from '~/server/database/drizzle'
 import { contact, contactIdentity, conversationParticipant } from '~/server/database/schema/support'
 import type { InboundAddress } from '~/server/services/support-channels/types'
-import { lockContactTeam } from '~/server/utils/contact-lock'
+import { lockContactProject } from '~/server/utils/contact-lock'
 
 /**
  * Contact and CC-participant resolution for inbound mail (SUP-03-11).
  *
  * Identity, not the `contact.email` column, is the lookup key: `contactIdentity`
- * is unique on `(teamId, kind, value)` and is what Stage 01 built so a contact
+ * is unique on `(projectId, kind, value)` and is what Stage 01 built so a contact
  * can be known by several addresses. Matching on `contact.email` instead would
  * open a second ticket for someone who wrote from their alias.
  */
@@ -46,24 +46,26 @@ async function resolveSurvivor(tx: Tx, contactId: string): Promise<string> {
 
 /**
  * Find the contact behind an inbound address, creating one if this is the
- * first time the team has heard from them.
+ * first time the project has heard from them.
  *
  * Runs inside the caller's transaction so a partially-created contact cannot
  * outlive a failed message insert.
  */
 export async function resolveOrCreateContact(
   tx: Tx,
-  teamId: string,
+  projectId: string,
   address: InboundAddress
 ): Promise<{ contactId: string; created: boolean }> {
   const email = address.address.trim().toLowerCase()
 
-  await lockContactTeam(tx, teamId)
+  await lockContactProject(tx, projectId)
 
   const [identity] = await tx
     .select({ contactId: contactIdentity.contactId })
     .from(contactIdentity)
-    .where(and(eq(contactIdentity.teamId, teamId), eq(contactIdentity.kind, 'email'), eq(contactIdentity.value, email)))
+    .where(
+      and(eq(contactIdentity.projectId, projectId), eq(contactIdentity.kind, 'email'), eq(contactIdentity.value, email))
+    )
     .limit(1)
 
   if (identity) {
@@ -76,7 +78,7 @@ export async function resolveOrCreateContact(
 
   await tx.insert(contact).values({
     id: contactId,
-    teamId,
+    projectId,
     name,
     email,
     createdAt: now,
@@ -86,7 +88,7 @@ export async function resolveOrCreateContact(
   await tx.insert(contactIdentity).values({
     id: randomUUID(),
     contactId,
-    teamId,
+    projectId,
     kind: 'email',
     value: email,
     // Deliberately not verified: the From header is trivially forgeable, and
@@ -110,7 +112,7 @@ export async function resolveCcParticipants(
   tx: Tx,
   input: {
     conversationId: string
-    teamId: string
+    projectId: string
     cc: InboundAddress[]
     senderContactId: string
     ownAddresses: Set<string>
@@ -124,7 +126,7 @@ export async function resolveCcParticipants(
     if (!email || seen.has(email) || input.ownAddresses.has(email)) continue
     seen.add(email)
 
-    const { contactId } = await resolveOrCreateContact(tx, input.teamId, { ...address, address: email })
+    const { contactId } = await resolveOrCreateContact(tx, input.projectId, { ...address, address: email })
     if (contactId === input.senderContactId) continue
 
     // `conversationParticipant` is unique on (conversationId, contactId), so a

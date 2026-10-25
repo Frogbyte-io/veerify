@@ -15,16 +15,16 @@ describe('isUniqueViolation', () => {
     // and every unique-constraint conflict across the support platform
     // leaked as a raw 500 until a live request against a duplicate company
     // name caught it.
-    const pgError = { code: '23505', constraint: 'support_company_team_name_idx' }
+    const pgError = { code: '23505', constraint: 'support_company_project_name_idx' }
     const drizzleQueryError = { message: 'Failed query: insert into "support_company" ...', cause: pgError }
 
     expect(isUniqueViolation(drizzleQueryError)).toBe(true)
   })
 
   it('matches a specific constraint name through the wrapper', () => {
-    const wrapped = { cause: { code: '23505', constraint: 'contact_team_email_idx' } }
+    const wrapped = { cause: { code: '23505', constraint: 'contact_project_email_idx' } }
 
-    expect(isUniqueViolation(wrapped, 'contact_team_email_idx')).toBe(true)
+    expect(isUniqueViolation(wrapped, 'contact_project_email_idx')).toBe(true)
     expect(isUniqueViolation(wrapped, 'some_other_idx')).toBe(false)
   })
 

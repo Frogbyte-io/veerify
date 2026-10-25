@@ -1,11 +1,11 @@
 import { createError } from 'h3'
 import type { H3Event } from 'h3'
 import type { ApiCredentialProvider } from '~/server/database/schema/marketing'
-import { isApiCredentialProvider, LLM_CREDENTIAL_PROVIDERS } from '~/server/utils/team-credentials'
+import { isApiCredentialProvider, LLM_CREDENTIAL_PROVIDERS } from '~/server/utils/org-credentials'
 import { isSecretsConfigured } from '~/server/utils/secrets'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { requireRouteParam } from '~/server/utils/marketing-site'
-import { requireTeamAdmin, requireTeamMembership } from '~/server/utils/support-access'
+import { requireOrganizationAdmin, requireOrganizationMember } from '~/server/utils/project-access'
 
 export function isLlmCredentialProvider(provider: ApiCredentialProvider): boolean {
   return (LLM_CREDENTIAL_PROVIDERS as readonly string[]).includes(provider)
@@ -47,7 +47,7 @@ export function badRequest(message: string): never {
 
 function rewriteForbidden<T>(run: () => Promise<T>, message: string): Promise<T> {
   return run().catch((error: unknown) => {
-    // support-access messages mention support inboxes; surface a marketing one
+    // project-access messages are generic; surface a marketing one
     if ((error as { statusCode?: number })?.statusCode === 403) {
       throw createError({
         statusCode: 403,
@@ -59,10 +59,18 @@ function rewriteForbidden<T>(run: () => Promise<T>, message: string): Promise<T>
   })
 }
 
-export function requireCredentialAdmin(teamId: string, userId: string) {
-  return rewriteForbidden(() => requireTeamAdmin(teamId, userId), 'Only team admins can manage marketing API keys')
+/** Workspace owners and admins manage API keys, budgets, consent and erasure. */
+export function requireCredentialAdmin(organizationId: string, userId: string) {
+  return rewriteForbidden(
+    () => requireOrganizationAdmin(organizationId, userId),
+    'Only workspace owners and admins can manage marketing API keys'
+  )
 }
 
-export function requireCredentialMember(teamId: string, userId: string) {
-  return rewriteForbidden(() => requireTeamMembership(teamId, userId), 'You do not have access to this team')
+/** Any workspace member can read keys' hints and status. */
+export function requireCredentialMember(organizationId: string, userId: string) {
+  return rewriteForbidden(
+    () => requireOrganizationMember(organizationId, userId),
+    'You do not have access to this workspace'
+  )
 }

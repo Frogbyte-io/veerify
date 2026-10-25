@@ -180,7 +180,7 @@ export default {
     limitMessage() {
       return this.competitor.watches.length >= this.limits.perCompetitor
         ? `At most ${this.limits.perCompetitor} pages per competitor. Delete one to add another.`
-        : `At most ${this.limits.perSite} watched pages per product. Delete one to add another.`
+        : `At most ${this.limits.perSite} watched pages per project. Delete one to add another.`
     },
   },
 
