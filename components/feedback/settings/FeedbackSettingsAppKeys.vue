@@ -8,9 +8,7 @@
               <Icon name="lucide:key-round" class="h-5 w-5" />
               App keys
             </CardTitle>
-            <CardDescription>
-              Let your desktop app post feedback into one of this project's products.
-            </CardDescription>
+            <CardDescription> Let your desktop app post feedback into one of this project's products. </CardDescription>
           </div>
           <Button size="sm" @click="openCreateDialog">
             <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
@@ -319,7 +317,7 @@ export default {
       this.isRevoking = true
       try {
         await $fetch(`${this.keysUrl()}/${this.revokingKey.id}`, { method: 'DELETE' })
-        toast.success('app key revoked')
+        toast.success('App key revoked')
         this.showRevokeDialog = false
         await this.loadKeys()
       } catch (err) {

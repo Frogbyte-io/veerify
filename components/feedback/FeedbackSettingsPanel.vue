@@ -199,6 +199,8 @@ export default {
             ensureLoaded: () => this.ensureStatusesLoaded(),
             refresh: () => this.ensureStatusesLoaded({ force: true }),
           }
+        case 'app-keys':
+          return base
         case 'github':
           return {
             ...base,
@@ -252,6 +254,8 @@ export default {
           return this.ensureCategoriesLoaded()
         case 'statuses':
           return this.ensureStatusesLoaded()
+        case 'app-keys':
+          return null
         case 'github':
           return this.ensureGithubIntegrationLoaded()
         default:
