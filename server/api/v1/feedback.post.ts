@@ -4,7 +4,7 @@
  *   post:
  *     tags: [App API]
  *     summary: Submit feedback from an app
- *     description: Creates feedback in the project the app key belongs to. Authenticate with a project app key as a Bearer token.
+ *     description: Creates feedback on the product the app key belongs to. Authenticate with a project app key as a Bearer token.
  *     operationId: submitAppFeedback
  *     security:
  *       - appKeyAuth: []
@@ -33,7 +33,7 @@ import { db } from '~/server/database/drizzle'
 import { feedback, projectApiKey } from '~/server/database/schema/feedback'
 import { deriveTitle, requireAppKey, toFeedbackType } from '~/server/utils/app-keys'
 import { createLogger } from '~/server/utils/logger'
-import { notifyProjectTeam } from '~/server/utils/notifications'
+import { notifyProjectMembers } from '~/server/utils/notifications'
 import { rateLimits, requireRateLimit } from '~/server/utils/rate-limit'
 import { createSuccessResponse } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -76,6 +76,7 @@ export default defineEventHandler(async (event) => {
   await db.insert(feedback).values({
     id,
     projectId: key.projectId,
+    productId: key.productId,
     title,
     body: body.description,
     status: 'open',
@@ -105,7 +106,7 @@ export default defineEventHandler(async (event) => {
     })
   )
 
-  notifyProjectTeam(key.projectId, null, {
+  notifyProjectMembers(key.projectId, null, {
     type: 'new_feedback',
     title: `New feedback: "${title}"`,
     body: `Added from ${key.name}`,

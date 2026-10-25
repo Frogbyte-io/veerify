@@ -17,17 +17,17 @@
  *         schema: { type: string }
  *     responses:
  *       200: { description: "Key revoked" }
- *       403: { description: "Not a team member" }
+ *       403: { description: "Not a project admin" }
  *       404: { description: "Project or key not found, or key already revoked" }
  */
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { projectApiKey } from '~/server/database/schema/feedback'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { requireProjectCategoryAccess } from '~/server/utils/project-categories'
+import { requireProjectBySlug } from '~/server/utils/project-categories'
 
 export default defineEventHandler(async (event) => {
-  const { project } = await requireProjectCategoryAccess(event)
+  const { project } = await requireProjectBySlug(event, getRouterParam(event, 'slug') ?? '', { admin: true })
   const keyId = getRouterParam(event, 'keyId')
 
   if (!keyId) {

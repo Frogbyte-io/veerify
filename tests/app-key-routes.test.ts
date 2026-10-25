@@ -12,12 +12,22 @@ const state = vi.hoisted(() => ({
   status: undefined as number | undefined,
   access: null as null | { statusCode: number },
   params: {} as Record<string, string>,
+  products: {} as Record<string, string>,
 }))
 
-const requireProjectCategoryAccess = vi.hoisted(() =>
-  vi.fn(async () => {
+const requireProjectBySlug = vi.hoisted(() =>
+  vi.fn(async (_event: unknown, _slug: string, _options?: { admin?: boolean }) => {
     if (state.access) throw Object.assign(new Error('x'), state.access)
     return { session: { user: { id: 'user-1' } }, project: { id: 'proj-1' } }
+  })
+)
+const requireProductInProject = vi.hoisted(() =>
+  vi.fn(async (projectId: string, productId?: string | null) => {
+    // Products only resolve inside their own project; the default is prod-default.
+    if (productId && !state.products[productId]?.startsWith(projectId)) {
+      throw Object.assign(new Error('Not Found'), { statusCode: 404 })
+    }
+    return { id: productId ?? 'prod-default', name: productId ? 'Picked' : 'Default' }
   })
 )
 
@@ -31,7 +41,8 @@ vi.stubGlobal('setResponseStatus', (_e: unknown, code: number) => {
   state.status = code
 })
 
-vi.mock('~/server/utils/project-categories', () => ({ requireProjectCategoryAccess }))
+vi.mock('~/server/utils/project-categories', () => ({ requireProjectBySlug }))
+vi.mock('~/server/utils/project-access', () => ({ requireProductInProject }))
 vi.mock('~/server/utils/response', () => ({
   createSuccessResponse: (data: unknown) => ({ success: true, data }),
   createErrorResponse: (code: string, message: string, details?: unknown) => ({
@@ -45,6 +56,7 @@ vi.mock('~/server/database/drizzle', () => ({
     select: vi.fn((fields?: Record<string, unknown>) => {
       const chain = {
         from: () => chain,
+        innerJoin: () => chain,
         where: () => chain,
         orderBy: () =>
           Promise.resolve(
@@ -96,7 +108,9 @@ beforeEach(() => {
   state.body = {}
   state.status = undefined
   state.access = null
-  state.params = { keyId: 'key-1' }
+  state.params = { slug: 'proj', keyId: 'key-1' }
+  state.products = { 'prod-a': 'proj-1:a', 'prod-other': 'proj-2:x' }
+  requireProjectBySlug.mockClear()
 })
 
 describe('app key routes', () => {
@@ -106,6 +120,8 @@ describe('app key routes', () => {
         id: 'a',
         name: 'Dot X',
         keyPrefix: 'vfy_pub_abcd',
+        productId: 'prod-a',
+        productName: 'Desktop',
         keyHash: 'secret',
         createdAt: new Date(),
         lastUsedAt: null,
@@ -117,6 +133,8 @@ describe('app key routes', () => {
     for (const item of res.data) {
       expect(item).not.toHaveProperty('keyHash')
       expect(item).toHaveProperty('keyPrefix', 'vfy_pub_abcd')
+      expect(item).toHaveProperty('productId', 'prod-a')
+      expect(item).toHaveProperty('productName', 'Desktop')
     }
   })
 
@@ -128,11 +146,26 @@ describe('app key routes', () => {
     expect(stored.name).toBe('Dot X')
     expect(stored.createdByUserId).toBe('user-1')
     expect(stored.projectId).toBe('proj-1')
+    expect(stored.productId).toBe('prod-default')
     expect(stored.keyHash).toBe(hashAppKey(res.data.key))
     expect(Object.values(stored)).not.toContain(res.data.key)
     expect(stored).not.toHaveProperty('key')
     expect(res.data).not.toHaveProperty('keyHash')
     expect(res.data.key.startsWith('vfy_pub_')).toBe(true)
+  })
+
+  it('create stores the requested product when it belongs to the project', async () => {
+    state.body = { name: 'Dot X', productId: 'prod-a' }
+    const res = await createHandler({})
+    expect(state.inserted[0].productId).toBe('prod-a')
+    expect(res.data.productId).toBe('prod-a')
+    expect(requireProductInProject).toHaveBeenCalledWith('proj-1', 'prod-a')
+  })
+
+  it('create rejects a productId from another project', async () => {
+    state.body = { name: 'Dot X', productId: 'prod-other' }
+    await expect(createHandler({})).rejects.toMatchObject({ statusCode: 404 })
+    expect(state.inserted).toHaveLength(0)
   })
 
   it('create rejects empty and over-long names', async () => {
@@ -171,9 +204,9 @@ describe('app key routes', () => {
     ['list', () => listHandler({})],
     ['create', () => createHandler({})],
     ['delete', () => deleteHandler({})],
-  ])('%s propagates 403 from requireProjectCategoryAccess', async (_n, run) => {
+  ])('%s propagates 403 from requireProjectBySlug', async (_n, run) => {
     state.access = { statusCode: 403 }
     await expect(run()).rejects.toMatchObject({ statusCode: 403 })
-    expect(requireProjectCategoryAccess).toHaveBeenCalled()
+    expect(requireProjectBySlug).toHaveBeenCalledWith(expect.anything(), 'proj', { admin: true })
   })
 })

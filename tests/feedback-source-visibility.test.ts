@@ -3,7 +3,7 @@ import { redactClientMetadata } from '../server/utils/feedback-source'
 
 const state = vi.hoisted(() => ({
   results: [] as unknown[],
-  teamMember: false,
+  projectMember: false,
   anonymous: false,
   feedbackRow: {} as Record<string, unknown>,
 }))
@@ -22,10 +22,18 @@ vi.mock('~/server/utils/auth-middleware', () => ({
 vi.mock('~/server/utils/anonymous-session', () => ({ getAnonSession: vi.fn(async () => null) }))
 vi.mock('~/server/utils/project-access', () => ({
   requireProjectAccess: vi.fn(async () => {
-    if (!state.teamMember) throw new Error('forbidden')
+    if (!state.projectMember) throw new Error('forbidden')
   }),
   requirePublicProject: vi.fn(async () => undefined),
-  resolvePublicProjectByTeam: vi.fn(async () => ({ project: { id: 'p1' } })),
+  resolvePublicProject: vi.fn(async () => ({ project: { id: 'p1' } })),
+  requirePublicProduct: vi.fn(async () => ({ id: 'prod-1' })),
+}))
+vi.mock('~/server/utils/feedback-access', () => ({
+  requirePublicFeedback: vi.fn(async () => undefined),
+  resolveFeedbackListScope: vi.fn(async () => ({
+    condition: undefined,
+    memberProjectIds: new Set(state.projectMember ? ['p1'] : []),
+  })),
 }))
 vi.mock('~/server/utils/validation', () => ({
   validateQuery: vi.fn(() => ({
@@ -43,10 +51,10 @@ type Handler = (event: unknown) => Promise<{ data: any }>
 const client = { appVersion: '1.2.3', os: 'macOS', osVersion: '15' }
 
 describe('redactClientMetadata', () => {
-  it('strips client for non-team viewers and keeps other keys', () => {
+  it('strips client for viewers without project access and keeps other keys', () => {
     expect(redactClientMetadata({ feedbackType: 'bug_report', client }, false)).toEqual({ feedbackType: 'bug_report' })
   })
-  it('keeps client for team members', () => {
+  it('keeps client for project members', () => {
     expect(redactClientMetadata({ feedbackType: 'bug_report', client }, true)).toEqual({
       feedbackType: 'bug_report',
       client,
@@ -82,17 +90,17 @@ describe('feedback source visibility in endpoints', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  async function detail(teamMember: boolean) {
-    state.teamMember = teamMember
-    // feedback row, project row, vote lookup, subscription lookup (+ conversation count for team)
-    state.results = teamMember
-      ? [[{ feedback: state.feedbackRow, category: null }], [{ count: 0 }], [{ id: 'p1' }], [], []]
-      : [[{ feedback: state.feedbackRow, category: null }], [{ id: 'p1' }], [], []]
+  async function detail(projectMember: boolean) {
+    state.projectMember = projectMember
+    // feedback row, (conversation count for members), project, product, vote lookup, subscription lookup
+    state.results = projectMember
+      ? [[{ feedback: state.feedbackRow, category: null }], [{ count: 0 }], [{ id: 'p1' }], [{ id: 'prod-1' }], [], []]
+      : [[{ feedback: state.feedbackRow, category: null }], [{ id: 'p1' }], [{ id: 'prod-1' }], [], []]
     const handler = (await import('../server/api/feedback/[id]/index.get')).default as unknown as Handler
     return (await handler({})).data
   }
 
-  it('strips metadata.client for non-team viewers', async () => {
+  it('strips metadata.client for viewers without project access', async () => {
     const data = await detail(false)
     expect(data.metadata.client).toBeUndefined()
     expect(data.metadata.feedbackType).toBe('bug_report')
@@ -100,7 +108,7 @@ describe('feedback source visibility in endpoints', () => {
     expect(data).not.toHaveProperty('apiKeyId')
   })
 
-  it('keeps metadata.client for team members', async () => {
+  it('keeps metadata.client for project members', async () => {
     const data = await detail(true)
     expect(data.metadata.client).toEqual(client)
     expect(data.sourceLabel).toBe('Dot X')
@@ -122,7 +130,7 @@ describe('feedback source visibility in endpoints', () => {
       ],
       [],
     ]
-    const handler = (await import('../server/api/public/t/[teamSlug]/[projectSlug]/feedback.get'))
+    const handler = (await import('../server/api/public/o/[orgSlug]/[projectSlug]/products/[productSlug]/feedback.get'))
       .default as unknown as Handler
     const { items } = (await handler({})).data
     expect(items[0].sourceLabel).toBe('Dot X')
@@ -131,18 +139,17 @@ describe('feedback source visibility in endpoints', () => {
   })
 
   describe('dashboard list endpoint', () => {
-    async function list(opts: { anonymous?: boolean; memberTeamIds?: string[] }) {
+    async function list(opts: { anonymous?: boolean; member?: boolean }) {
       state.anonymous = Boolean(opts.anonymous)
+      state.projectMember = Boolean(opts.member)
       const row = {
         feedback: state.feedbackRow,
         category: null,
-        projectTeamId: 't1',
+        product: { id: 'prod-1' },
         project: { id: 'p1' },
         githubIssue: null,
       }
-      state.results = opts.anonymous
-        ? [[{ count: 1 }], [row], []]
-        : [[{ count: 1 }], [row], (opts.memberTeamIds ?? []).map((teamId) => ({ teamId })), []]
+      state.results = [[{ count: 1 }], [row], []]
       const handler = (await import('../server/api/feedback/index.get')).default as unknown as Handler
       return (await handler({})).data.items[0]
     }
@@ -152,18 +159,17 @@ describe('feedback source visibility in endpoints', () => {
       expect(item.metadata.client).toBeUndefined()
       expect(item.metadata.feedbackType).toBe('bug_report')
       expect(item.sourceLabel).toBe('Dot X')
-      expect(item.projectTeamId).toBeUndefined()
       expect(item).not.toHaveProperty('apiKeyId')
     })
 
-    it("keeps metadata.client for a member of the item's project team", async () => {
-      const item = await list({ memberTeamIds: ['t1'] })
+    it("keeps metadata.client for a member of the item's project", async () => {
+      const item = await list({ member: true })
       expect(item.metadata.client).toEqual(client)
       expect(item.apiKeyId).toBe('key-1')
     })
 
     it('redacts metadata.client for a logged-in non-member', async () => {
-      const item = await list({ memberTeamIds: ['other-team'] })
+      const item = await list({ member: false })
       expect(item.metadata.client).toBeUndefined()
       expect(item).not.toHaveProperty('apiKeyId')
     })

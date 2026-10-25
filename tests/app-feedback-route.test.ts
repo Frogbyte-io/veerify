@@ -8,10 +8,10 @@ const state = vi.hoisted(() => ({
   headers: {} as Record<string, string>,
 }))
 
-const KEY = { id: 'key-1', projectId: 'proj-1', name: 'Dot X' }
+const KEY = { id: 'key-1', projectId: 'proj-1', productId: 'prod-1', name: 'Dot X' }
 
 const requireRateLimit = vi.hoisted(() => vi.fn(async () => undefined))
-const notifyProjectTeam = vi.hoisted(() => vi.fn())
+const notifyProjectMembers = vi.hoisted(() => vi.fn())
 
 vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
 vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string; data?: unknown }) =>
@@ -30,7 +30,7 @@ vi.mock('~/server/utils/rate-limit', () => ({
   requireRateLimit,
   rateLimits: { strict: { maxRequests: 5, windowSeconds: 60 } },
 }))
-vi.mock('~/server/utils/notifications', () => ({ notifyProjectTeam }))
+vi.mock('~/server/utils/notifications', () => ({ notifyProjectMembers }))
 vi.mock('~/server/utils/logger', () => ({ createLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }) }))
 vi.mock('~/server/utils/response', () => ({
   createSuccessResponse: (data: unknown) => ({ success: true, data }),
@@ -88,7 +88,7 @@ describe('POST /api/v1/feedback', () => {
     state.status = undefined
     state.headers = {}
     requireRateLimit.mockClear()
-    notifyProjectTeam.mockClear()
+    notifyProjectMembers.mockClear()
   })
 
   it('rejects requests without an app key', async () => {
@@ -134,6 +134,7 @@ describe('POST /api/v1/feedback', () => {
     expect(state.inserted[0]).toMatchObject({
       id: result.data.id,
       projectId: 'proj-1',
+      productId: 'prod-1',
       title: 'Slider jumps',
       body: 'Slider jumps\nwhen I drag it',
       authorName: 'Dot X user',
@@ -147,7 +148,7 @@ describe('POST /api/v1/feedback', () => {
         client: { appVersion: '2.0.0-1', os: 'windows', osVersion: '10.0.26200' },
       },
     })
-    expect(notifyProjectTeam).toHaveBeenCalledWith(
+    expect(notifyProjectMembers).toHaveBeenCalledWith(
       'proj-1',
       null,
       expect.objectContaining({ type: 'new_feedback', body: 'Added from Dot X', feedbackId: result.data.id })
