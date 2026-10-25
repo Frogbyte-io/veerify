@@ -156,7 +156,12 @@ export default {
       if (!silent) this.isLoading = true
       this.error = null
       try {
-        const activeOrg = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
+        let activeOrg = await $fetch('/api/auth/organization/get-full-organization').catch(() => null)
+        if (!activeOrg?.id && !activeOrg?.name) {
+          // A fresh session has no active workspace yet: activate the user's first one, like the
+          // project switcher would, instead of claiming they have none.
+          activeOrg = await this.activateFirstOrganization()
+        }
         if (!activeOrg?.id && !activeOrg?.name) {
           this.organization = null
           useState('hasActiveOrganization', () => null).value = false
@@ -182,6 +187,16 @@ export default {
       } finally {
         this.isLoading = false
       }
+    },
+
+    async activateFirstOrganization() {
+      const listedOrgs = await $fetch('/api/auth/organization/list').catch(() => null)
+      const organizations = Array.isArray(listedOrgs) ? listedOrgs : listedOrgs?.data || []
+      const first = organizations[0]
+      if (!first?.id) return null
+      await $fetch('/api/organizations/active', { method: 'POST', body: { organizationId: first.id } })
+      if (import.meta.client) window.dispatchEvent(new CustomEvent('veerify:active-project-changed'))
+      return $fetch('/api/auth/organization/get-full-organization').catch(() => null)
     },
 
     onOrganizationUpdated(organization) {

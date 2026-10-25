@@ -8747,5 +8747,61 @@ export const openapiPaths = {
         }
       }
     }
+  },
+  "/api/workspace/spend": {
+    "get": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "This month's AI spend for the workspace",
+      "description": "Any workspace member can read. Spend is Veerify's own estimate from token and search usage at list prices (the provider invoice stays the source of truth). `inFlightUsdMicros` is reserved for calls still running. Caps are in cents; null means uncapped.\n",
+      "operationId": "getWorkspaceSpend",
+      "responses": {
+        "200": {
+          "description": "`{ period, totalUsdMicros, inFlightUsdMicros, workspaceCapCents, providers, canManage }`"
+        },
+        "403": {
+          "description": "Not a member of this workspace"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Marketing"
+      ],
+      "summary": "Set or clear the workspace's monthly AI spend cap",
+      "description": "Workspace owners and admins only. Caps total AI spend across every provider for the calendar month (UTC), on top of each key's own budget. Null removes the cap.\n",
+      "operationId": "putWorkspaceSpendCap",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "monthlyCapCents"
+              ],
+              "properties": {
+                "monthlyCapCents": {
+                  "type": "integer",
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "`{ workspaceCapCents }`"
+        },
+        "400": {
+          "description": "Invalid cap"
+        },
+        "403": {
+          "description": "Workspace owner or admin required"
+        }
+      }
+    }
   }
 } as const

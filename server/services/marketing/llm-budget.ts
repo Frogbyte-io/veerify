@@ -30,6 +30,7 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { marketingUsage } from '~/server/database/schema/marketing'
+import { organization } from '~/server/database/schema/auth'
 import { estimateCostUsdMicros, LLM_CALL_LIMITS, LLM_MODELS } from '~/server/services/llm/models'
 import type { LlmProviderId } from '~/server/services/llm/types'
 import { currentPeriod } from '~/server/utils/marketing-usage'
@@ -228,4 +229,153 @@ export async function resetStaleReservations(now: Date = new Date()): Promise<nu
     RETURNING organization_id
   `)
   return result.rows.length
+}
+
+// ---------------------------------------------------------------------------
+// Workspace spend cap
+// ---------------------------------------------------------------------------
+//
+// On top of each key's own cap, a workspace can cap its total monthly AI spend across every
+// provider (`organization.settings.aiMonthlySpendCapCents`). It uses the same reserve/settle scheme
+// with one extra counter, `llm:all:reserved_usd_micros`; settled spend is the sum of the providers'
+// `llm:<provider>:cost_usd_micros` counters, so the cap also counts spend from before it was set.
+// The workspace reservation is released only after the provider settle has booked the cost, so for
+// a moment a call can be counted twice: conservative, never over the cap because of ordering.
+
+export const WORKSPACE_BUDGET_SCOPE = 'all'
+export const WORKSPACE_SPEND_CAP_SETTING = 'aiMonthlySpendCapCents'
+
+/** The workspace's monthly AI spend cap in cents, or null when uncapped. */
+export async function getWorkspaceSpendCapCents(organizationId: string): Promise<number | null> {
+  const [row] = await db
+    .select({ settings: organization.settings })
+    .from(organization)
+    .where(eq(organization.id, organizationId))
+    .limit(1)
+  const value = (row?.settings as Record<string, unknown> | null | undefined)?.[WORKSPACE_SPEND_CAP_SETTING]
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null
+}
+
+/** Settled AI spend this month across all providers, in micro-USD. */
+const workspaceSpentSql = (organizationId: string, period: string) => sql`
+  COALESCE((
+    SELECT SUM(c.units) FROM marketing_usage c
+    WHERE c.organization_id = ${organizationId} AND c.period = ${period}
+      AND c.metric LIKE 'llm:%:cost_usd_micros' AND c.metric <> ${costMetric(WORKSPACE_BUDGET_SCOPE)}
+  ), 0)
+`
+
+/**
+ * Reserves `amountMicros` against the workspace cap (same locking scheme as `reserveBudget`).
+ * No cap (null) always succeeds without writing.
+ */
+export async function reserveWorkspaceBudget(
+  organizationId: string,
+  amountMicros: number,
+  capCents: number | null
+): Promise<boolean> {
+  if (capCents == null) return true
+  const amount = Math.max(0, Math.ceil(amountMicros))
+  const period = currentPeriod()
+  const reserved = reservedMetric(WORKSPACE_BUDGET_SCOPE)
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      INSERT INTO marketing_usage (organization_id, period, metric, units, updated_at)
+      VALUES (${organizationId}, ${period}, ${reserved}, 0, now())
+      ON CONFLICT (organization_id, period, metric) DO UPDATE SET units = marketing_usage.units
+    `)
+    const result = await tx.execute(sql`
+      UPDATE marketing_usage
+      SET units = units + ${amount}::bigint, updated_at = now()
+      WHERE organization_id = ${organizationId} AND period = ${period} AND metric = ${reserved}
+        AND units + ${amount}::bigint + ${workspaceSpentSql(organizationId, period)} <= ${capCents * 10_000}::bigint
+      RETURNING units
+    `)
+    return result.rows.length > 0
+  })
+}
+
+/** Gives back a workspace reservation (its spend is booked by the provider settle). */
+export async function releaseWorkspaceBudget(organizationId: string, reservedMicros: number): Promise<void> {
+  const held = Math.max(0, Math.ceil(reservedMicros))
+  if (held === 0) return
+  await db.execute(sql`
+    UPDATE marketing_usage
+    SET units = GREATEST(units - ${held}::bigint, 0), updated_at = now()
+    WHERE organization_id = ${organizationId} AND period = ${currentPeriod()}
+      AND metric = ${reservedMetric(WORKSPACE_BUDGET_SCOPE)}
+  `)
+}
+
+/** Settled AI spend this month across all providers, in micro-USD. */
+export async function getWorkspaceSpentMicros(organizationId: string): Promise<number> {
+  const result = await db.execute(sql`SELECT ${workspaceSpentSql(organizationId, currentPeriod())} AS spent`)
+  return Number((result.rows[0] as { spent?: unknown } | undefined)?.spent ?? 0)
+}
+
+/** Like `budgetRefusalReason`, for the workspace cap. */
+export async function workspaceBudgetRefusalReason(
+  organizationId: string,
+  amountMicros: number,
+  capCents: number
+): Promise<'cap' | 'in_flight'> {
+  const spent = await getWorkspaceSpentMicros(organizationId)
+  return spent + Math.max(0, Math.ceil(amountMicros)) > capCents * 10_000 ? 'cap' : 'in_flight'
+}
+
+/** What a call holds: one amount per capped scope (0 for an uncapped scope). */
+export interface CallBudgetHold {
+  providerMicros: number
+  workspaceMicros: number
+}
+
+export type CallBudgetReservation =
+  | { ok: true; hold: CallBudgetHold }
+  | { ok: false; scope: 'provider' | 'workspace'; reason: 'cap' | 'in_flight' }
+
+/**
+ * Reserves one call's upper-bound cost against the key's cap and the workspace cap. Either refusal
+ * gives back whatever was already held. `reason` says whether the cap itself is reached or only
+ * other in-flight calls are in the way.
+ */
+export async function reserveCallBudget(
+  organizationId: string,
+  provider: string,
+  amountMicros: number,
+  providerCapCents: number | null
+): Promise<CallBudgetReservation> {
+  const workspaceCapCents = await getWorkspaceSpendCapCents(organizationId)
+  const hold: CallBudgetHold = {
+    providerMicros: heldMicros(amountMicros, providerCapCents),
+    workspaceMicros: heldMicros(amountMicros, workspaceCapCents),
+  }
+
+  if (!(await reserveBudget(organizationId, provider, hold.providerMicros, providerCapCents))) {
+    const reason = await budgetRefusalReason(organizationId, provider, hold.providerMicros, providerCapCents!)
+    return { ok: false, scope: 'provider', reason }
+  }
+  if (!(await reserveWorkspaceBudget(organizationId, hold.workspaceMicros, workspaceCapCents))) {
+    await releaseBudget(organizationId, provider, hold.providerMicros).catch(() => undefined)
+    const reason = await workspaceBudgetRefusalReason(organizationId, hold.workspaceMicros, workspaceCapCents!)
+    return { ok: false, scope: 'workspace', reason }
+  }
+  return { ok: true, hold }
+}
+
+/** Books the call's actual cost and ends both reservations. */
+export async function settleCallBudget(
+  organizationId: string,
+  provider: string,
+  hold: CallBudgetHold,
+  actualMicros: number
+): Promise<void> {
+  await settleBudget(organizationId, provider, hold.providerMicros, actualMicros)
+  await releaseWorkspaceBudget(organizationId, hold.workspaceMicros)
+}
+
+/** Gives both reservations back when nothing was spent. */
+export async function releaseCallBudget(organizationId: string, provider: string, hold: CallBudgetHold): Promise<void> {
+  await releaseBudget(organizationId, provider, hold.providerMicros)
+  await releaseWorkspaceBudget(organizationId, hold.workspaceMicros)
 }
