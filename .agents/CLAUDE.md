@@ -234,6 +234,8 @@ Eight tables, all defined with `pgTable` from `drizzle-orm/pg-core`:
 | `invitation`   | id, organizationId, email, role, status, inviterId, expiresAt         | Pending invites                            |
 | `twoFactor`    | id, userId (FK→user), secret, backupCodes                             | TOTP 2FA                                   |
 
+App feedback keys (`project_api_key`: project + product scoped, SHA-256 hash only stored) live in `server/database/schema/feedback.ts`, not `auth.ts`.
+
 ### Migration Workflow
 
 1. Edit `server/database/schema/auth.ts`
@@ -443,13 +445,15 @@ A `project_member` row with role `admin` makes them a project admin.
 
 ### Endpoint Authorization Rules
 
-| Endpoint                       | Auth     | Access Rule                                                                                         |
-| ------------------------------ | -------- | --------------------------------------------------------------------------------------------------- |
-| `GET /api/feedback`            | Optional | Project access per requested project; anonymous callers see only public products of public projects |
-| `POST /api/feedback`           | Optional | Authenticated: project access. Anonymous: public project and public product                         |
-| `GET /api/feedback/[id]`       | Optional | Authenticated: project access. Anonymous: public project and public product                         |
-| `DELETE /api/feedback/[id]`    | Required | Author OR anyone with access to the project                                                         |
-| `POST /api/feedback/[id]/vote` | Optional | Project and product must be public (voting is public-facing)                                        |
+| Endpoint                        | Auth     | Access Rule                                                                                         |
+| ------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `GET /api/feedback`             | Optional | Project access per requested project; anonymous callers see only public products of public projects |
+| `POST /api/feedback`            | Optional | Authenticated: project access. Anonymous: public project and public product                         |
+| `GET /api/feedback/[id]`        | Optional | Authenticated: project access. Anonymous: public project and public product                         |
+| `DELETE /api/feedback/[id]`     | Required | Author OR anyone with access to the project                                                         |
+| `POST /api/feedback/[id]/vote`  | Optional | Project and product must be public (voting is public-facing)                                        |
+| `POST /api/v1/feedback`         | App key  | Creates feedback on the key's product (key is the authorization; bypasses public checks)            |
+| `/api/projects/[slug]/api-keys` | Required | Project admins manage app keys (Feedback settings → App keys)                                       |
 
 ### Roles
 

@@ -4911,7 +4911,7 @@ export const openapiPaths = {
         "Projects"
       ],
       "summary": "List app keys for a project",
-      "description": "Returns key metadata newest first. The key secret and hash are never returned.",
+      "description": "Returns key metadata with the product each key posts to, newest first. The key secret and hash are never returned.",
       "operationId": "listProjectApiKeys",
       "parameters": [
         {
@@ -4928,7 +4928,7 @@ export const openapiPaths = {
           "description": "App key summaries"
         },
         "403": {
-          "description": "Not a team member"
+          "description": "Not a project admin"
         },
         "404": {
           "description": "Project not found"
@@ -4966,6 +4966,10 @@ export const openapiPaths = {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 60
+                },
+                "productId": {
+                  "type": "string",
+                  "description": "Product the key posts to; defaults to the project's first product"
                 }
               }
             }
@@ -4980,10 +4984,10 @@ export const openapiPaths = {
           "description": "Validation failed"
         },
         "403": {
-          "description": "Not a team member"
+          "description": "Not a project admin"
         },
         "404": {
-          "description": "Project not found"
+          "description": "Project or product not found"
         }
       }
     }
@@ -5019,7 +5023,7 @@ export const openapiPaths = {
           "description": "Key revoked"
         },
         "403": {
-          "description": "Not a team member"
+          "description": "Not a project admin"
         },
         "404": {
           "description": "Project or key not found, or key already revoked"
@@ -8277,6 +8281,75 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/v1/feedback": {
+    "post": {
+      "tags": [
+        "App API"
+      ],
+      "summary": "Submit feedback from an app",
+      "description": "Creates feedback on the product the app key belongs to. Authenticate with a project app key as a Bearer token.",
+      "operationId": "submitAppFeedback",
+      "security": [
+        {
+          "appKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "type",
+                "description"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "bug",
+                    "feature"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "appVersion": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "os": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "osVersion": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Feedback created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Missing, unknown, or revoked app key"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
   "/api/workspace/api-keys": {
     "get": {
       "tags": [
@@ -8654,75 +8727,6 @@ export const openapiPaths = {
         },
         "429": {
           "description": "Too many tests"
-        }
-      }
-    }
-  },
-  "/api/v1/feedback": {
-    "post": {
-      "tags": [
-        "App API"
-      ],
-      "summary": "Submit feedback from an app",
-      "description": "Creates feedback in the project the app key belongs to. Authenticate with a project app key as a Bearer token.",
-      "operationId": "submitAppFeedback",
-      "security": [
-        {
-          "appKeyAuth": []
-        }
-      ],
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "required": [
-                "type",
-                "description"
-              ],
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "bug",
-                    "feature"
-                  ]
-                },
-                "description": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 2000
-                },
-                "appVersion": {
-                  "type": "string",
-                  "maxLength": 64
-                },
-                "os": {
-                  "type": "string",
-                  "maxLength": 64
-                },
-                "osVersion": {
-                  "type": "string",
-                  "maxLength": 64
-                }
-              }
-            }
-          }
-        }
-      },
-      "responses": {
-        "201": {
-          "description": "Feedback created"
-        },
-        "400": {
-          "description": "Validation failed"
-        },
-        "401": {
-          "description": "Missing, unknown, or revoked app key"
-        },
-        "429": {
-          "description": "Rate limit exceeded"
         }
       }
     }
