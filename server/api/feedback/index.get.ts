@@ -7,6 +7,7 @@ import { validateQuery } from '~/server/utils/validation'
 import { db } from '~/server/database/drizzle'
 import { feedback, feedbackCategory, githubIssueLink, product, project, vote } from '~/server/database/schema/feedback'
 import { resolveFeedbackListScope } from '~/server/utils/feedback-access'
+import { redactClientMetadata, stripApiKeyId } from '~/server/utils/feedback-source'
 
 const listFeedbackQuerySchema = z
   .object({
@@ -135,16 +136,17 @@ export default defineEventHandler(async (event) => {
     // Non-members never receive other people's contact details, edit tokens, or
     // support-ticket content (same masking as the public board).
     const isSupportDerived = item.feedback.metadata?.source === 'support_conversation'
+    // metadata.client (app version / OS) and apiKeyId are project-member-only.
     const base = isMember
       ? item.feedback
       : {
-          ...item.feedback,
+          ...stripApiKeyId(item.feedback, false),
           title: isSupportDerived ? 'Support request' : item.feedback.title,
           body: isSupportDerived ? '' : item.feedback.body,
           authorName: isSupportDerived ? null : item.feedback.authorName,
           authorEmail: isOwn ? item.feedback.authorEmail : null,
           metadata: isOwn
-            ? item.feedback.metadata
+            ? redactClientMetadata(item.feedback.metadata, false)
             : { feedbackType: item.feedback.metadata?.feedbackType ?? null, source: item.feedback.metadata?.source },
         }
     return {

@@ -105,6 +105,7 @@ export default defineEventHandler(async (event) => {
     body: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.body,
     status: item.feedback.status,
     tag: item.feedback.metadata?.feedbackType || null,
+    sourceLabel: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.sourceLabel,
     voteCount: item.feedback.voteCount,
     commentCount: item.feedback.commentCount,
     authorName: item.feedback.metadata?.source === 'support_conversation' ? null : item.feedback.authorName,

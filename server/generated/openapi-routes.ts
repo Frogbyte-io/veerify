@@ -4905,6 +4905,132 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/projects/{slug}/api-keys": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List app keys for a project",
+      "description": "Returns key metadata with the product each key posts to, newest first. The key secret and hash are never returned.",
+      "operationId": "listProjectApiKeys",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "App key summaries"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Create an app key",
+      "description": "The full key is returned once in this response and cannot be retrieved later.",
+      "operationId": "createProjectApiKey",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "productId": {
+                  "type": "string",
+                  "description": "Product the key posts to; defaults to the project's first product"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Key created; includes the full key once"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or product not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/api-keys/{keyId}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Revoke an app key",
+      "description": "Revoked keys are rejected immediately and the row is kept for audit.",
+      "operationId": "revokeProjectApiKey",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "keyId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Key revoked"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or key not found, or key already revoked"
+        }
+      }
+    }
+  },
   "/api/public/csat/{token}": {
     "get": {
       "tags": [
@@ -8151,6 +8277,75 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Hostname is not served by this instance"
+        }
+      }
+    }
+  },
+  "/api/v1/feedback": {
+    "post": {
+      "tags": [
+        "App API"
+      ],
+      "summary": "Submit feedback from an app",
+      "description": "Creates feedback on the product the app key belongs to. Authenticate with a project app key as a Bearer token.",
+      "operationId": "submitAppFeedback",
+      "security": [
+        {
+          "appKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "type",
+                "description"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "bug",
+                    "feature"
+                  ]
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2000
+                },
+                "appVersion": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "os": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "osVersion": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Feedback created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Missing, unknown, or revoked app key"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
         }
       }
     }

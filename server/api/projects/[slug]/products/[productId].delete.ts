@@ -1,6 +1,6 @@
 import { and, count, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { feedback, product } from '~/server/database/schema/feedback'
+import { feedback, product, projectApiKey } from '~/server/database/schema/feedback'
 import { changelogEntryProduct } from '~/server/database/schema/changelog'
 import { listProducts, requireProductInProject } from '~/server/utils/project-access'
 import { requireProjectBySlug } from '~/server/utils/project-categories'
@@ -72,6 +72,10 @@ export default defineEventHandler(async (event) => {
         .returning({ id: feedback.id })
       movedFeedback = moved.length
     }
+
+    // App keys cascade with the product; re-point them so apps keep posting (to the same product
+    // the feedback moved to) instead of getting 401.
+    await tx.update(projectApiKey).set({ productId: retagTarget.id }).where(eq(projectApiKey.productId, target.id))
 
     await tx.delete(product).where(eq(product.id, target.id))
   })
