@@ -147,8 +147,12 @@ customer keys.
   settings so the customer can pre-validate.
 - **Status:** a domain is `active` only when the Cloudflare hostname status and its certificate status
   are both `active`. The app serves a custom domain only while its stored status is `active`. The
-  status is refreshed when the owner presses verify in project settings; the stored Cloudflare id is
-  kept in `domain.provider_domain_id` (lookup falls back to the hostname).
+  status is refreshed when the owner presses verify in project settings, and by the
+  `domains:status-refresh` task every 10 minutes: domains that are not active yet are re-checked after
+  10 minutes, active ones after 6 hours, 25 per run. The task only reads from Cloudflare (it never
+  registers, re-validates or deletes), emails the organization owners and admins once when a domain goes live, and marks a
+  hostname Cloudflare no longer has as `error`. It does nothing unless `DOMAIN_PROVIDER=cloudflare-saas`.
+  The stored Cloudflare id is kept in `domain.provider_domain_id` (lookup falls back to the hostname).
 - **Removal:** detaching a domain deletes the custom hostname (already gone counts as success).
 - **Token:** `CLOUDFLARE_API_TOKEN` needs exactly **Zone > SSL and Certificates > Edit**, restricted
   to the `veerify.io` zone (Zone Resources: Include > Specific zone > veerify.io). Nothing else.
