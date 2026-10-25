@@ -475,6 +475,23 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/cron/domains-status-refresh": {
+    "get": {
+      "tags": [
+        "Internal"
+      ],
+      "summary": "Re-check custom board domains",
+      "operationId": "cronDomainsStatusRefresh",
+      "responses": {
+        "200": {
+          "description": "Domain status refresh pass executed"
+        },
+        "401": {
+          "description": "Missing or invalid cron secret"
+        }
+      }
+    }
+  },
   "/api/cron/example-ping": {
     "get": {
       "tags": [

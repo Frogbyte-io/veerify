@@ -61,7 +61,7 @@ export default defineNuxtConfig({
         'marketing:review-requests',
       ],
       // Marketing Hub (docs/plans/2026-10-09-marketing-hub)
-      '*/10 * * * *': ['marketing:competitors-check'],
+      '*/10 * * * *': ['marketing:competitors-check', 'domains:status-refresh'],
       '*/15 * * * *': ['example:ping'],
       '0 * * * *': ['marketing:visibility-schedule'],
       '5 * * * *': ['marketing:audit-schedule'],
