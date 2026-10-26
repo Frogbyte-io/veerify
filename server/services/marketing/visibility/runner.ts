@@ -66,11 +66,11 @@ import {
 import { recordUsage } from '~/server/utils/marketing-usage'
 import {
   estimateVisibilityReservation,
-  heldMicros,
-  releaseBudget,
-  reserveBudget,
-  budgetRefusalReason,
-  settleBudget,
+  releaseCallBudget,
+  reserveCallBudget,
+  settleCallBudget,
+  type CallBudgetHold,
+  type CallBudgetReservation,
 } from '~/server/services/marketing/llm-budget'
 import { sqlTimestamp } from '~/server/utils/sql-timestamp'
 import { marketingConfig } from '~/server/utils/marketing-config'
@@ -292,27 +292,21 @@ export interface RunnerDeps {
   markRunsRunning: (runIds: string[]) => Promise<void>
   loadContext: (answer: ClaimedAnswer) => Promise<AnswerContext | null>
   getKey: (organizationId: string, provider: LlmProviderId) => Promise<OrgApiKey | null>
-  /** Atomic budget reservation (see llm-budget.ts); false when the cap would be exceeded */
-  reserveBudget: (
+  /** Atomic reservation against the key's cap and the workspace cap (see llm-budget.ts) */
+  reserveCallBudget: (
     organizationId: string,
     provider: string,
     amountMicros: number,
-    capCents: number | null
-  ) => Promise<boolean>
-  budgetRefusalReason: (
+    providerCapCents: number | null
+  ) => Promise<CallBudgetReservation>
+  /** Replaces the reservations with the actual spend */
+  settleCallBudget: (
     organizationId: string,
     provider: string,
-    amountMicros: number,
-    capCents: number
-  ) => Promise<'cap' | 'in_flight'>
-  /** Replaces a reservation with the actual spend */
-  settleBudget: (
-    organizationId: string,
-    provider: string,
-    reservedMicros: number,
+    hold: CallBudgetHold,
     actualMicros: number
   ) => Promise<void>
-  releaseBudget: (organizationId: string, provider: string, reservedMicros: number) => Promise<void>
+  releaseCallBudget: (organizationId: string, provider: string, hold: CallBudgetHold) => Promise<void>
   recordUsage: (organizationId: string, metric: string, units: number) => Promise<void>
   markInvalid: (organizationId: string, provider: LlmProviderId, message: string, keyHint?: string) => Promise<boolean>
   markValid: (organizationId: string, provider: LlmProviderId, keyHint?: string) => Promise<void>
@@ -522,26 +516,32 @@ async function processAnswer(
 
   // Reserve an upper bound for the answer and the extraction together, so concurrent answers cannot
   // all pass the monthly cap check. Settled with the actual cost, released if nothing was spent.
-  const held = heldMicros(
+  const reservation = await deps.reserveCallBudget(
+    organizationId,
+    provider,
     estimateVisibilityReservation(provider, answerModel, extractModel, context.promptText, extractionSystem),
     key.monthlyBudgetCents
   )
-  if (!(await deps.reserveBudget(organizationId, provider, held, key.monthlyBudgetCents))) {
+  if (!reservation.ok) {
     // Only a real cap fails the provider's answers. If the refusal came from other answers'
     // reservations still in flight, leave this one pending for the next tick (bounded by the 24h
     // pending-answer timeout) instead of failing work that may fit once they settle.
-    const reason =
-      key.monthlyBudgetCents == null
-        ? 'cap'
-        : await deps.budgetRefusalReason(organizationId, provider, held, key.monthlyBudgetCents)
-    if (reason === 'in_flight') {
+    if (reservation.reason === 'in_flight') {
       stopped.add(provider)
       await releaseSafely(deps, answer.id)
       return 'released'
     }
-    await failProvider(answer, deps, stopped, 'Monthly budget reached for this provider')
+    await failProvider(
+      answer,
+      deps,
+      stopped,
+      reservation.scope === 'workspace'
+        ? 'Monthly AI spend cap reached for this workspace'
+        : 'Monthly budget reached for this provider'
+    )
     return 'failed'
   }
+  const hold = reservation.hold
   let settled = false
   try {
     let answered: LlmAnswer
@@ -585,7 +585,7 @@ async function processAnswer(
     }
 
     // The spend is real from here on, whatever happens to the row
-    await deps.settleBudget(organizationId, provider, held, costMicros)
+    await deps.settleCallBudget(organizationId, provider, hold, costMicros)
     settled = true
 
     const analysis = buildAnalysis(answered.text, answered.citations, context.terms, extraction)
@@ -611,7 +611,7 @@ async function processAnswer(
     return 'done'
   } finally {
     // Provider failed or the worker crashed before settling: give the reservation back
-    if (!settled) await deps.releaseBudget(organizationId, provider, held).catch(() => undefined)
+    if (!settled) await deps.releaseCallBudget(organizationId, provider, hold).catch(() => undefined)
   }
 }
 
@@ -852,10 +852,9 @@ export function createDefaultDeps(): RunnerDeps {
     },
 
     getKey: getOrgApiKey,
-    reserveBudget,
-    budgetRefusalReason,
-    settleBudget,
-    releaseBudget,
+    reserveCallBudget,
+    settleCallBudget,
+    releaseCallBudget,
     recordUsage,
     markInvalid: markCredentialInvalid,
     markValid: markCredentialValid,

@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   notify: vi.fn(),
   calledWith: [] as string[],
   budgetCalls: [] as string[],
+  workspaceCapCents: null as number | null,
 }))
 
 vi.mock('h3', () => ({
@@ -45,29 +46,73 @@ vi.mock('~/server/services/marketing/llm-budget', async () => {
   const actual = await vi.importActual<typeof import('~/server/services/marketing/llm-budget')>(
     '~/server/services/marketing/llm-budget'
   )
+  const reserveBudget = vi.fn(async (_t: string, provider: string, amount: number, cap: number | null) => {
+    state.budgetCalls.push(`reserve:${amount}`)
+    if (cap == null) return true
+    const reservedKey = `llm:${provider}:reserved_usd_micros`
+    const spent = state.usage[`llm:${provider}:cost_usd_micros`] ?? 0
+    const reserved = state.usage[reservedKey] ?? 0
+    if (!actual.fitsBudget(spent, reserved, amount, cap)) return false
+    state.usage[reservedKey] = reserved + amount
+    return true
+  })
+  const settleBudget = vi.fn(async (_t: string, provider: string, held: number, cost: number) => {
+    state.budgetCalls.push(`settle:${held}:${cost}`)
+    const reservedKey = `llm:${provider}:reserved_usd_micros`
+    state.usage[reservedKey] = Math.max(0, (state.usage[reservedKey] ?? 0) - held)
+    state.usage[`llm:${provider}:cost_usd_micros`] = (state.usage[`llm:${provider}:cost_usd_micros`] ?? 0) + cost
+  })
+  const releaseBudget = vi.fn(async (_t: string, provider: string, held: number) => {
+    state.budgetCalls.push(`release:${held}`)
+    const reservedKey = `llm:${provider}:reserved_usd_micros`
+    state.usage[reservedKey] = Math.max(0, (state.usage[reservedKey] ?? 0) - held)
+  })
+  // Workspace cap over the same in-memory store: settled spend across providers + reserved + amount <= cap
+  const workspaceSpent = () =>
+    Object.entries(state.usage)
+      .filter(([metric]) => /^llm:[^:]+:cost_usd_micros$/.test(metric))
+      .reduce((sum, [, units]) => sum + units, 0)
   return {
     ...actual,
-    reserveBudget: vi.fn(async (_t: string, provider: string, amount: number, cap: number | null) => {
-      state.budgetCalls.push(`reserve:${amount}`)
-      if (cap == null) return true
-      const reservedKey = `llm:${provider}:reserved_usd_micros`
-      const spent = state.usage[`llm:${provider}:cost_usd_micros`] ?? 0
-      const reserved = state.usage[reservedKey] ?? 0
-      if (!actual.fitsBudget(spent, reserved, amount, cap)) return false
-      state.usage[reservedKey] = reserved + amount
-      return true
+    reserveBudget,
+    settleBudget,
+    releaseBudget,
+    reserveCallBudget: vi.fn(async (t: string, provider: string, amount: number, cap: number | null) => {
+      const hold = {
+        providerMicros: actual.heldMicros(amount, cap),
+        workspaceMicros: actual.heldMicros(amount, state.workspaceCapCents),
+      }
+      if (!(await reserveBudget(t, provider, hold.providerMicros, cap))) {
+        return { ok: false as const, scope: 'provider' as const, reason: 'cap' as const }
+      }
+      if (state.workspaceCapCents != null) {
+        const reserved = state.usage['llm:all:reserved_usd_micros'] ?? 0
+        if (!actual.fitsBudget(workspaceSpent(), reserved, hold.workspaceMicros, state.workspaceCapCents)) {
+          await releaseBudget(t, provider, hold.providerMicros)
+          return { ok: false as const, scope: 'workspace' as const, reason: 'cap' as const }
+        }
+        state.usage['llm:all:reserved_usd_micros'] = reserved + hold.workspaceMicros
+      }
+      return { ok: true as const, hold }
     }),
-    settleBudget: vi.fn(async (_t: string, provider: string, held: number, cost: number) => {
-      state.budgetCalls.push(`settle:${held}:${cost}`)
-      const reservedKey = `llm:${provider}:reserved_usd_micros`
-      state.usage[reservedKey] = Math.max(0, (state.usage[reservedKey] ?? 0) - held)
-      state.usage[`llm:${provider}:cost_usd_micros`] = (state.usage[`llm:${provider}:cost_usd_micros`] ?? 0) + cost
-    }),
-    releaseBudget: vi.fn(async (_t: string, provider: string, held: number) => {
-      state.budgetCalls.push(`release:${held}`)
-      const reservedKey = `llm:${provider}:reserved_usd_micros`
-      state.usage[reservedKey] = Math.max(0, (state.usage[reservedKey] ?? 0) - held)
-    }),
+    settleCallBudget: vi.fn(
+      async (t: string, provider: string, hold: { providerMicros: number; workspaceMicros: number }, cost: number) => {
+        await settleBudget(t, provider, hold.providerMicros, cost)
+        state.usage['llm:all:reserved_usd_micros'] = Math.max(
+          0,
+          (state.usage['llm:all:reserved_usd_micros'] ?? 0) - hold.workspaceMicros
+        )
+      }
+    ),
+    releaseCallBudget: vi.fn(
+      async (t: string, provider: string, hold: { providerMicros: number; workspaceMicros: number }) => {
+        await releaseBudget(t, provider, hold.providerMicros)
+        state.usage['llm:all:reserved_usd_micros'] = Math.max(
+          0,
+          (state.usage['llm:all:reserved_usd_micros'] ?? 0) - hold.workspaceMicros
+        )
+      }
+    ),
   }
 })
 
@@ -102,6 +147,7 @@ beforeEach(() => {
   state.recorded = []
   state.calledWith = []
   state.budgetCalls = []
+  state.workspaceCapCents = null
   state.markInvalid.mockReset().mockResolvedValue(true)
   state.notify.mockReset().mockResolvedValue(undefined)
   state.extract.mockReset().mockResolvedValue({
@@ -153,6 +199,27 @@ describe('callOrgLlm', () => {
     await expect(callOrgLlm('t1', request, messages)).rejects.toMatchObject({ statusCode: 409 })
     expect(state.extract).not.toHaveBeenCalled()
     expect(state.recorded).toEqual([])
+  })
+
+  it('stops at the workspace spend cap, counting spend on every provider, without calling', async () => {
+    state.keys.anthropic = key('abcd', null)
+    state.workspaceCapCents = 100
+    // Spend on another provider counts towards the workspace cap
+    state.usage = { 'llm:openai:cost_usd_micros': 1_000_000 }
+    await expect(callOrgLlm('t1', request, messages)).rejects.toMatchObject({
+      statusCode: 409,
+      data: { error: { message: expect.stringMatching(/workspace AI spend cap/) } },
+    })
+    expect(state.extract).not.toHaveBeenCalled()
+    expect(state.usage['llm:anthropic:reserved_usd_micros'] ?? 0).toBe(0)
+  })
+
+  it('holds and then frees a workspace reservation when only the workspace is capped', async () => {
+    state.keys.anthropic = key('abcd', null)
+    state.workspaceCapCents = 100
+    await expect(callOrgLlm('t1', request, messages)).resolves.toMatchObject({ data: { ok: true } })
+    expect(state.usage['llm:all:reserved_usd_micros']).toBe(0)
+    expect(state.usage['llm:anthropic:cost_usd_micros']).toBeGreaterThan(0)
   })
 
   it('still calls when the reservation fits under the budget', async () => {

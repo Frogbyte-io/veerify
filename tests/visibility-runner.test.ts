@@ -191,6 +191,8 @@ function makeHarness(
     key?: Record<string, unknown> | null
     usage?: Record<string, number>
     llm?: Partial<Record<'anthropic' | 'openai', Record<string, unknown>>>
+    /** Makes the workspace spend cap refuse every reservation */
+    workspaceRefusal?: 'cap' | 'in_flight'
   } = {}
 ) {
   const pending = new Map(answers.map((a) => [a.id, a]))
@@ -217,8 +219,8 @@ function makeHarness(
       const usage = options.usage ?? {}
       return (usage[`llm:${provider}:cost_usd_micros`] ?? 0) + amount > cap * 10_000 ? 'cap' : 'in_flight'
     }),
-    settleBudget: vi.fn(async () => undefined),
-    releaseBudget: vi.fn(async () => undefined),
+    settleBudget: vi.fn(async (_t: string, _provider: string, _held: number, _cost: number) => undefined),
+    releaseBudget: vi.fn(async (_t: string, _provider: string, _held: number) => undefined),
     finalize: vi.fn(async () => undefined),
     answerWithSearch: vi.fn(),
     extractStructured: vi.fn(),
@@ -271,10 +273,24 @@ function makeHarness(
     getKey: vi.fn(async () =>
       options.key === undefined ? { apiKey: 'sk-secret', status: 'valid', monthlyBudgetCents: null } : options.key
     ),
-    reserveBudget: calls.reserveBudget,
-    budgetRefusalReason: calls.budgetRefusalReason,
-    settleBudget: calls.settleBudget,
-    releaseBudget: calls.releaseBudget,
+    // The combined helpers over the per-provider spies; the workspace cap is exercised separately
+    reserveCallBudget: vi.fn(async (organizationId: string, provider: string, amount: number, cap: number | null) => {
+      if (options.workspaceRefusal)
+        return { ok: false as const, scope: 'workspace' as const, reason: options.workspaceRefusal }
+      const held = cap == null ? 0 : Math.max(0, Math.ceil(amount))
+      if (!(await calls.reserveBudget(organizationId, provider, held, cap))) {
+        const reason = cap == null ? 'cap' : await calls.budgetRefusalReason(organizationId, provider, held, cap)
+        return { ok: false as const, scope: 'provider' as const, reason }
+      }
+      return { ok: true as const, hold: { providerMicros: held, workspaceMicros: 0 } }
+    }),
+    settleCallBudget: vi.fn(
+      (organizationId: string, provider: string, hold: { providerMicros: number }, actual: number) =>
+        calls.settleBudget(organizationId, provider, hold.providerMicros, actual)
+    ),
+    releaseCallBudget: vi.fn((organizationId: string, provider: string, hold: { providerMicros: number }) =>
+      calls.releaseBudget(organizationId, provider, hold.providerMicros)
+    ),
     recordUsage: calls.recordUsage,
     markInvalid: calls.markInvalid,
     markValid: calls.markValid,
@@ -447,6 +463,21 @@ describe('advanceVisibilityRuns', () => {
     await advanceVisibilityRuns({ budgetMs: 5000 }, h.deps)
     expect(h.calls.releaseBudget).toHaveBeenCalledTimes(1)
     expect(h.state.failed.get('a1')).toMatch(/unexpected/i)
+  })
+
+  it("fails a provider's answers with the workspace message when the workspace spend cap is reached", async () => {
+    const h = makeHarness([mk('a1'), mk('a2')], { workspaceRefusal: 'cap' })
+    await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 1 }, h.deps)
+    expect(h.calls.answerWithSearch).not.toHaveBeenCalled()
+    expect(h.state.failed.get('a1')).toMatch(/spend cap reached for this workspace/i)
+    expect(h.calls.reserveBudget).not.toHaveBeenCalled()
+  })
+
+  it('leaves answers pending when only in-flight reservations block the workspace cap', async () => {
+    const h = makeHarness([mk('a1')], { workspaceRefusal: 'in_flight' })
+    await advanceVisibilityRuns({ budgetMs: 5000, concurrency: 1 }, h.deps)
+    expect(h.calls.answerWithSearch).not.toHaveBeenCalled()
+    expect(h.state.failed.has('a1')).toBe(false)
   })
 
   it('leaves answers pending when only in-flight reservations block the budget', async () => {

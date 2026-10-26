@@ -15,7 +15,7 @@ import { getOrgApiKey, listOrgCredentials, markCredentialInvalid } from '~/serve
 import { recordUsage } from '~/server/utils/marketing-usage'
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { notifyCredentialInvalid } from './visibility/runner'
-import { estimateTeamCallReservation, heldMicros, releaseBudget, reserveBudget, settleBudget } from './llm-budget'
+import { estimateTeamCallReservation, releaseCallBudget, reserveCallBudget, settleCallBudget } from './llm-budget'
 import { pickSuggestionProvider } from './visibility/prompts'
 
 /** Why a call was refused or failed; sent as `error.details.reason` on 409s. */
@@ -76,18 +76,27 @@ export async function callOrgLlm<T>(
   const key = await getOrgApiKey(organizationId, providerId as ApiCredentialProvider)
   if (!key) failWith(409, 'Conflict', ErrorCode.CONFLICT, messages.noKey, 'no_key')
 
-  // Same monthly budget guard as the runner: reserve an upper bound atomically so concurrent
-  // calls cannot all pass the check. Settled with the actual cost, released if nothing was spent.
-  const held = heldMicros(estimateTeamCallReservation(providerId, request), key.monthlyBudgetCents)
-  if (!(await reserveBudget(organizationId, providerId, held, key.monthlyBudgetCents))) {
+  // Same monthly budget guard as the runner: reserve an upper bound atomically against the key's cap
+  // and the workspace cap, so concurrent calls cannot all pass the check. Settled with the actual
+  // cost, released if nothing was spent.
+  const reservation = await reserveCallBudget(
+    organizationId,
+    providerId,
+    estimateTeamCallReservation(providerId, request),
+    key.monthlyBudgetCents
+  )
+  if (!reservation.ok) {
     failWith(
       409,
       'Conflict',
       ErrorCode.CONFLICT,
-      'The monthly budget for this provider is reached. Raise it in Marketing settings',
+      reservation.scope === 'workspace'
+        ? 'The workspace AI spend cap for this month is reached. Raise it in Workspace settings'
+        : 'The monthly budget for this provider is reached. Raise it in Workspace settings',
       'budget'
     )
   }
+  const hold = reservation.hold
   let settled = false
 
   try {
@@ -101,7 +110,7 @@ export async function callOrgLlm<T>(
     })
 
     const costMicros = estimateCostUsdMicros(providerId, LLM_MODELS[providerId].extract, result.model, result.usage)
-    await settleBudget(organizationId, providerId, held, costMicros)
+    await settleCallBudget(organizationId, providerId, hold, costMicros)
     settled = true
     await Promise.all([
       recordUsage(organizationId, `llm:${providerId}:input_tokens`, result.usage.inputTokens),
@@ -113,7 +122,7 @@ export async function callOrgLlm<T>(
 
     return { data: result.data, provider: providerId, model: result.model, usage: result.usage }
   } catch (err) {
-    if (!settled) await releaseBudget(organizationId, providerId, held).catch(() => undefined)
+    if (!settled) await releaseCallBudget(organizationId, providerId, hold).catch(() => undefined)
     if (err instanceof LlmProviderError) {
       if (err.kind === 'auth') {
         const transitioned = await markCredentialInvalid(
