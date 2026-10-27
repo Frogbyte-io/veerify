@@ -12,6 +12,7 @@ import { requireAuth, isCredentialPrincipal, type AuthSession } from '~/server/u
 import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { createVeerifyMcpServer } from '~/server/mcp/server'
 import { createApiCaller } from '~/server/mcp/api-bridge'
+import { readMcpJsonBody } from '~/server/mcp/request-body'
 
 const WWW_AUTHENTICATE = 'Bearer realm="veerify"'
 const CONTEXT_HEADERS = ['x-veerify-organization', 'x-veerify-project'] as const
@@ -41,11 +42,11 @@ async function requireCredentialPrincipal(event: H3Event): Promise<AuthSession> 
   return principal
 }
 
-/** The connection's `x-veerify-*` context headers, lowercased; empty values are dropped. */
+/** The connection's `x-veerify-*` context headers, lowercased and trimmed; blank values are dropped. */
 function readContextHeaders(event: H3Event): Record<string, string> {
   const headers: Record<string, string> = {}
   for (const name of CONTEXT_HEADERS) {
-    const value = getRequestHeader(event, name)
+    const value = getRequestHeader(event, name)?.trim()
     if (value) headers[name] = value
   }
   return headers
@@ -62,6 +63,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const principal = await requireCredentialPrincipal(event)
+  // Bounded read (413 above MCP_MAX_BODY_BYTES) before any MCP server or transport exists.
+  const body = await readMcpJsonBody(event)
   const contextHeaders = readContextHeaders(event)
   const callApi = createApiCaller(getRequestHeader(event, 'authorization') ?? '', contextHeaders)
 
@@ -82,7 +85,6 @@ export default defineEventHandler(async (event) => {
   }
   res.on('close', closeAll)
 
-  const body = await readBody(event)
   try {
     await server.connect(transport)
     await transport.handleRequest(event.node.req, res, body)

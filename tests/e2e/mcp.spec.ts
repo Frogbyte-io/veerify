@@ -4,6 +4,9 @@ import { loginViaProgrammatic, withOriginHeaders } from './helpers/auth'
 const TEST_EMAIL = process.env.E2E_USER_EMAIL || 'test@preview.local'
 const TEST_PASSWORD = process.env.E2E_USER_PASSWORD || 'password123'
 const SEEDED_PROJECT_SLUG = 'demo'
+const MCP_MAX_BODY_BYTES = 4 * 1024 * 1024
+const CONTEXT_PINNED_MESSAGE =
+  'This connection fixes its workspace/project with X-Veerify-Organization / X-Veerify-Project headers, so set_context cannot change it.'
 
 const MCP_HEADERS = {
   'content-type': 'application/json',
@@ -33,9 +36,9 @@ async function createKey(request: APIRequestContext, name: string): Promise<{ id
   return { id: payload.data.id, key: payload.data.key }
 }
 
-function rpc(request: APIRequestContext, key: string | null, body: unknown) {
+function rpc(request: APIRequestContext, key: string | null, body: unknown, headers: Record<string, string> = {}) {
   return request.post('/mcp', {
-    headers: { ...MCP_HEADERS, ...(key ? { authorization: `Bearer ${key}` } : {}) },
+    headers: { ...MCP_HEADERS, ...(key ? { authorization: `Bearer ${key}` } : {}), ...headers },
     data: body,
   })
 }
@@ -48,9 +51,17 @@ test('MCP endpoint serves the universal tools to a personal API key', async ({ p
   // Cookie context creates the key; a separate context with no cookies calls /mcp.
   const cookieContext = await playwright.request.newContext()
   const bareContext = await playwright.request.newContext()
-  await loginViaProgrammatic(cookieContext, { email: TEST_EMAIL, password: TEST_PASSWORD })
-  const { id, key } = await createKey(cookieContext, 'MCP e2e')
+  try {
+    await loginViaProgrammatic(cookieContext, { email: TEST_EMAIL, password: TEST_PASSWORD })
+    const { id, key } = await createKey(cookieContext, 'MCP e2e')
+    await exerciseKey(cookieContext, bareContext, id, key)
+  } finally {
+    await cookieContext.dispose()
+    await bareContext.dispose()
+  }
+})
 
+async function exerciseKey(cookieContext: APIRequestContext, bareContext: APIRequestContext, id: string, key: string) {
   try {
     const init = await rpc(bareContext, key, INITIALIZE)
     expect(init.status()).toBe(200)
@@ -105,6 +116,62 @@ test('MCP endpoint serves the universal tools to a personal API key', async ({ p
     })
     expect(cookieOnly.status()).toBe(401)
     expect(cookieOnly.headers()['www-authenticate']).toBe('Bearer realm="veerify"')
+
+    // Cookie plus a valid key: the key wins and the request acts as the key
+    const cookieAndKey = await cookieContext.post('/mcp', {
+      headers: { ...MCP_HEADERS, ...withOriginHeaders('/settings'), authorization: `Bearer ${key}` },
+      data: { jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'whoami', arguments: {} } },
+    })
+    expect(cookieAndKey.status()).toBe(200)
+    const cookieAndKeyWhoami = JSON.parse(toolText((await cookieAndKey.json()).result))
+    expect(cookieAndKeyWhoami.credential).toBe('api_key')
+    expect(cookieAndKeyWhoami.user.email).toBe(TEST_EMAIL)
+
+    // X-Veerify-Project pins the connection: whoami reports it and set_context refuses
+    const pinned = { 'x-veerify-project': SEEDED_PROJECT_SLUG }
+    const pinnedWhoami = await rpc(
+      bareContext,
+      key,
+      { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'whoami', arguments: {} } },
+      pinned
+    )
+    expect(pinnedWhoami.status()).toBe(200)
+    expect(JSON.parse(toolText((await pinnedWhoami.json()).result)).contextPinned).toBe(true)
+    const setContext = await rpc(
+      bareContext,
+      key,
+      {
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: { name: 'set_context', arguments: { project: 'mobile-app' } },
+      },
+      pinned
+    )
+    expect(setContext.status()).toBe(200)
+    const setContextResult = (await setContext.json()).result
+    expect(setContextResult.isError).toBe(true)
+    expect(toolText(setContextResult)).toContain(CONTEXT_PINNED_MESSAGE)
+
+    // A whitespace-only context header does not pin the connection
+    const blankHeader = await rpc(
+      bareContext,
+      key,
+      { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'whoami', arguments: {} } },
+      { 'x-veerify-project': '   ' }
+    )
+    expect(blankHeader.status()).toBe(200)
+    expect(JSON.parse(toolText((await blankHeader.json()).result)).contextPinned).toBe(false)
+
+    // Bodies above the SDK's 4 MiB cap are refused before the transport sees them
+    const oversized = await rpc(bareContext, key, {
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/list',
+      params: { padding: 'x'.repeat(MCP_MAX_BODY_BYTES) },
+    })
+    expect(oversized.status()).toBe(413)
+    expect((await oversized.json()).data.error.code).toBe('VALIDATION_ERROR')
   } finally {
     const revoke = await cookieContext.delete(`/api/user/api-keys/${id}`, { headers: withOriginHeaders('/settings') })
     expect(revoke.ok()).toBe(true)
@@ -114,7 +181,4 @@ test('MCP endpoint serves the universal tools to a personal API key', async ({ p
   const revoked = await rpc(bareContext, key, INITIALIZE)
   expect(revoked.status()).toBe(401)
   expect(revoked.headers()['www-authenticate']).toBe('Bearer realm="veerify"')
-
-  await cookieContext.dispose()
-  await bareContext.dispose()
-})
+}
