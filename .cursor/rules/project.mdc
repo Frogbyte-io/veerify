@@ -39,6 +39,7 @@ Always follow these core patterns across the entire codebase
 
 ### Authentication & Security
 - Always validate auth on server routes
+- Personal API keys (`vfy_usr_...`) are accepted as `Authorization: Bearer` by `requireAuth`; use `requireInteractiveSession` to refuse keys. `/mcp` is key-only. See `docs/mcp.md`
 - Use `import.meta.client` for client-side checks
 - Handle errors gracefully with retry options
 

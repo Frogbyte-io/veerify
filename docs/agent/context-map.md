@@ -23,6 +23,8 @@ Use this as the fast path for task context before editing code.
 - `server/database/schema/`: Drizzle schema.
 - `server/utils/project-access.ts`: project/feedback authorization checks.
 - `lib/auth.ts`: Better Auth server config.
+- `server/utils/user-api-keys.ts`: personal API keys (create, resolve, per-key context).
+- `server/routes/mcp.ts` and `server/mcp/`: `/mcp` endpoint and tool registry (see `docs/mcp.md`).
 
 ## Testing + Quality
 

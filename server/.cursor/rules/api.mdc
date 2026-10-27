@@ -113,6 +113,12 @@ throw createError({
 - **API route**: `~/server/api/auth/[...all].ts`
 - **Session validation**: `auth.api.getSession({ headers: getAuthHeaders(event) })`
 
+### API keys and MCP
+- `requireAuth` (`server/utils/auth-middleware.ts`) resolves `Bearer vfy_usr_...` first; invalid/revoked/expired is 401, no cookie fallback
+- `requireInteractiveSession` returns 403 for keys; `isCredentialPrincipal` detects them
+- Key context lives on the `user_api_key` row; `X-Veerify-Organization` / `X-Veerify-Project` override per request (403 if inaccessible)
+- `/mcp` (`server/routes/mcp.ts`, `server/mcp/`) accepts only keys; `call_api` blocks `/api/auth/`, `/api/cron/`, `/api/public/auth/`, `/api/user/api-keys`, `/api/test`. See `docs/mcp.md`
+
 ### Authentication Middleware
 ```typescript
 // ~/middleware/auth.global.ts

@@ -201,6 +201,20 @@ import { authClient, signIn, signUp, signOut, useSession } from '~/lib/auth-clie
 - `useSession(useFetch)` — returns `{ data: session, isPending }` (reactive refs)
 - `signIn`, `signUp`, `signOut` — convenience re-exports
 
+### API keys and MCP
+
+Personal API keys (`vfy_usr_...`, Settings → API keys) let an agent act as a user. Setup and recipes: `docs/mcp.md`.
+
+- `requireAuth` (`server/utils/auth-middleware.ts`) resolves `Authorization: Bearer vfy_usr_...` first. An invalid,
+  revoked or expired key is 401 with no cookie fallback. Key logic lives in `server/utils/user-api-keys.ts`.
+- `requireInteractiveSession` returns 403 for keys; use it on anything a key must not do. `isCredentialPrincipal`
+  tells the two apart. Keys cannot change the account email.
+- Active workspace and project are stored per credential on the `user_api_key` row. `X-Veerify-Organization` and
+  `X-Veerify-Project` override them per request, are access-checked (403, never a silent fallback) and persist nothing.
+- `/mcp` (`server/routes/mcp.ts`, tools in `server/mcp/`) is POST-only, key principals only, 4 MiB body limit, 600
+  requests per 60 s per key. `call_api` refuses `/api/auth/`, `/api/cron/`, `/api/public/auth/`, `/api/user/api-keys`
+  and `/api/test`.
+
 ### Route Guard — `middleware/auth.global.ts`
 
 Runs on the **client only** (`process.server` check skips SSR/build). Categorises routes:
@@ -445,15 +459,17 @@ A `project_member` row with role `admin` makes them a project admin.
 
 ### Endpoint Authorization Rules
 
-| Endpoint                        | Auth     | Access Rule                                                                                         |
-| ------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `GET /api/feedback`             | Optional | Project access per requested project; anonymous callers see only public products of public projects |
-| `POST /api/feedback`            | Optional | Authenticated: project access. Anonymous: public project and public product                         |
-| `GET /api/feedback/[id]`        | Optional | Authenticated: project access. Anonymous: public project and public product                         |
-| `DELETE /api/feedback/[id]`     | Required | Author OR anyone with access to the project                                                         |
-| `POST /api/feedback/[id]/vote`  | Optional | Project and product must be public (voting is public-facing)                                        |
-| `POST /api/v1/feedback`         | App key  | Creates feedback on the key's product (key is the authorization; bypasses public checks)            |
-| `/api/projects/[slug]/api-keys` | Required | Project admins manage app keys (Feedback settings → App keys)                                       |
+| Endpoint                            | Auth     | Access Rule                                                                                            |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `GET /api/feedback`                 | Optional | Project access per requested project; anonymous callers see only public products of public projects    |
+| `POST /api/feedback`                | Optional | Authenticated: project access. Anonymous: public project and public product                            |
+| `GET /api/feedback/[id]`            | Optional | Authenticated: project access. Anonymous: public project and public product                            |
+| `DELETE /api/feedback/[id]`         | Required | Author OR anyone with access to the project                                                            |
+| `POST /api/feedback/[id]/vote`      | Optional | Project and product must be public (voting is public-facing)                                           |
+| `POST /api/v1/feedback`             | App key  | Creates feedback on the key's product (key is the authorization; bypasses public checks)               |
+| `/api/projects/[slug]/api-keys`     | Required | Project admins manage app keys (Feedback settings → App keys)                                          |
+| `/api/user/api-keys` (+ `/[keyId]`) | Required | Browser session only (`requireInteractiveSession`); 403 for personal keys. Max 25 active keys per user |
+| `POST /mcp`                         | User key | Personal key principals only (cookie-only gets 401); acts with the key owner's permissions             |
 
 ### Roles
 
