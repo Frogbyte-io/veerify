@@ -8,12 +8,17 @@ import { userApiKey } from '~/server/database/schema/credentials'
 import { project } from '~/server/database/schema/feedback'
 import type { AuthSession } from '~/server/utils/auth-middleware'
 import { getOrganizationRole, getProjectById, resolveProjectRole } from '~/server/utils/project-access'
+import { createLogger } from '~/server/utils/logger'
 import { requireRateLimit } from '~/server/utils/rate-limit'
 import { ErrorCode, createErrorResponse } from '~/server/utils/response'
 
 export const USER_KEY_PREFIX = 'vfy_usr_'
 
 const RATE_LIMIT = { maxRequests: 600, windowSeconds: 60, identifier: 'user-api-key' }
+/** `lastUsedAt` is only rewritten once it is older than this, to avoid a write per request. */
+const LAST_USED_WRITE_INTERVAL_MS = 60_000
+
+const log = createLogger('user-api-keys')
 
 export function hashUserApiKey(key: string): string {
   return createHash('sha256').update(key).digest('hex')
@@ -83,6 +88,7 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
   let activeProjectId: string | null = row.activeProjectId ?? null
 
   let contextOverride = false
+  let headerOrganizationId: string | null = null
   const orgHeader = readContextHeader(event, 'x-veerify-organization')
   if (orgHeader) {
     const [byId] = await db
@@ -101,6 +107,7 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
     const role = org ? await getOrganizationRole(org.id, owner.id) : null
     if (!org || !role) throw forbidden('Organization not found or not accessible')
     activeOrganizationId = org.id
+    headerOrganizationId = org.id
     contextOverride = true
     // A stored project from another workspace must not survive an org override.
     if (activeProjectId) {
@@ -122,15 +129,23 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
     }
     const role = proj ? await resolveProjectRole(proj, owner.id) : null
     if (!proj || !role) throw forbidden('Project not found or not accessible')
+    if (headerOrganizationId && proj.organizationId !== headerOrganizationId) {
+      throw forbidden('Project does not belong to the requested organization')
+    }
     activeProjectId = proj.id
     activeOrganizationId = proj.organizationId
     contextOverride = true
   }
 
-  // Fire-and-forget: a failed bookkeeping write must never fail the request.
-  void Promise.resolve(db.update(userApiKey).set({ lastUsedAt: new Date() }).where(eq(userApiKey.id, row.id))).catch(
-    () => undefined
-  )
+  // Fire-and-forget and throttled: a failed bookkeeping write must never fail the request.
+  const lastUsedAt = row.lastUsedAt ? row.lastUsedAt.getTime() : null
+  if (lastUsedAt === null || Date.now() - lastUsedAt >= LAST_USED_WRITE_INTERVAL_MS) {
+    void Promise.resolve()
+      .then(() => db.update(userApiKey).set({ lastUsedAt: new Date() }).where(eq(userApiKey.id, row.id)))
+      .catch((error: unknown) => {
+        log.warn('Failed to record API key use', { keyId: row.id, error })
+      })
+  }
 
   return {
     user: {

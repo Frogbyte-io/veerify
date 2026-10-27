@@ -15,7 +15,11 @@ const state = vi.hoisted(() => ({
   orgRole: 'member' as string | null,
   projectRole: 'member' as string | null,
   projectsById: {} as Record<string, Record<string, unknown>>,
+  updateError: null as null | Error,
 }))
+
+const logWarn = vi.hoisted(() => vi.fn())
+vi.mock('~/server/utils/logger', () => ({ createLogger: () => ({ warn: logWarn, error: vi.fn(), info: vi.fn() }) }))
 
 vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string; data?: unknown }) =>
   Object.assign(new Error(input.statusMessage), input)
@@ -57,7 +61,7 @@ vi.mock('~/server/database/drizzle', () => ({
     update: vi.fn(() => ({
       set: (v: Record<string, unknown>) => {
         state.updates.push(v)
-        return { where: () => Promise.resolve() }
+        return { where: () => (state.updateError ? Promise.reject(state.updateError) : Promise.resolve()) }
       },
     })),
   },
@@ -102,6 +106,8 @@ beforeEach(() => {
   state.orgRole = 'member'
   state.projectRole = 'member'
   state.projectsById = {}
+  state.updateError = null
+  logWarn.mockClear()
   getOrganizationRole.mockClear()
   resolveProjectRole.mockClear()
   requireRateLimit.mockClear()
@@ -161,7 +167,32 @@ describe('resolveUserApiKeyPrincipal', () => {
       identifier: 'user-api-key',
       subject: 'key-1',
     })
-    expect(state.updates[0]).toHaveProperty('lastUsedAt')
+    await vi.waitFor(() => expect(state.updates[0]).toHaveProperty('lastUsedAt'))
+  })
+
+  it('skips the lastUsedAt write when the key was used under 60 seconds ago', async () => {
+    setRow({ lastUsedAt: new Date(Date.now() - 30_000) })
+    await resolveUserApiKeyPrincipal(bearer())
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(state.updates).toHaveLength(0)
+  })
+
+  it('rewrites lastUsedAt once the stored value is older than 60 seconds', async () => {
+    setRow({ lastUsedAt: new Date(Date.now() - 61_000) })
+    await resolveUserApiKeyPrincipal(bearer())
+    await vi.waitFor(() => expect(state.updates[0]).toHaveProperty('lastUsedAt'))
+  })
+
+  it('logs a failed lastUsedAt write without failing the request', async () => {
+    setRow()
+    state.updateError = new Error('db down')
+    await expect(resolveUserApiKeyPrincipal(bearer())).resolves.not.toBeNull()
+    await vi.waitFor(() =>
+      expect(logWarn).toHaveBeenCalledWith('Failed to record API key use', {
+        keyId: 'key-1',
+        error: state.updateError,
+      })
+    )
   })
 
   it('rechecks the row on every call (revocation takes effect immediately)', async () => {
@@ -234,6 +265,24 @@ describe('resolveUserApiKeyPrincipal', () => {
     await expect(resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Project': 'p2' }))).rejects.toMatchObject({
       statusCode: 403,
     })
+  })
+
+  it('403s when the project header names a project outside the organization header', async () => {
+    setRow()
+    state.orgRows = [{ id: 'org-2' }]
+    state.projectsById.p9 = { id: 'p9', organizationId: 'org-9' }
+    await expect(
+      resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Organization': 'org-two', 'X-Veerify-Project': 'p9' }))
+    ).rejects.toMatchObject({ statusCode: 403, data: { error: { code: 'FORBIDDEN' } } })
+  })
+
+  it('accepts a project header inside the organization header', async () => {
+    setRow()
+    state.orgRows = [{ id: 'org-2' }]
+    state.projectsById.p8 = { id: 'p8', organizationId: 'org-2' }
+    const p = await resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Organization': 'org-two', 'X-Veerify-Project': 'p8' }))
+    expect(p?.session.activeOrganizationId).toBe('org-2')
+    expect(p?.session.activeProjectId).toBe('p8')
   })
 
   it('sets the active organization from the project header', async () => {
