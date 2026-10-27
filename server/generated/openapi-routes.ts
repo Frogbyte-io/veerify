@@ -6373,7 +6373,7 @@ export const openapiPaths = {
         "Organizations"
       ],
       "summary": "Set active organization",
-      "description": "Switches the active organization (workspace) and, in the same step, the active project inside it: `projectId` is honoured when the caller can open it, otherwise the first accessible project is used (null when there is none). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. Requests that override the context with `X-Veerify-Organization` or `X-Veerify-Project` headers never persist it.\n",
+      "description": "Switches the active organization (workspace) and, in the same step, the active project inside it: `projectId` is honoured when the caller can open it, otherwise the first accessible project is used (null when there is none). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.\n",
       "operationId": "setActiveOrganization",
       "security": [
         {
@@ -6430,7 +6430,7 @@ export const openapiPaths = {
         "Organizations"
       ],
       "summary": "Invite member to organization",
-      "description": "Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie, so a key request fails with 401). A person who is already a member of any workspace, or who already has a pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`.\n",
+      "description": "Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie), so a key request is refused with 403 before anything else runs. A person who is already a member of any workspace, or who already has a pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`.\n",
       "operationId": "inviteOrganizationMember",
       "security": [
         {
@@ -6481,10 +6481,10 @@ export const openapiPaths = {
           "description": "email and organizationId are required"
         },
         "401": {
-          "description": "No browser session (API keys are not supported)"
+          "description": "Not signed in"
         },
         "403": {
-          "description": "Caller may not invite to this organization"
+          "description": "Personal API keys cannot invite, or the caller may not invite to this organization"
         },
         "409": {
           "description": "INVITATION_ALREADY_EXISTS or EMAIL_ALREADY_IN_ORG (see data.code)"
@@ -6529,6 +6529,9 @@ export const openapiPaths = {
       "security": [
         {
           "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
         }
       ],
       "requestBody": {
@@ -6705,6 +6708,9 @@ export const openapiPaths = {
       "security": [
         {
           "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
         }
       ],
       "parameters": [
@@ -9112,7 +9118,7 @@ export const openapiPaths = {
         "Projects"
       ],
       "summary": "Set active project",
-      "description": "Switches the active project (and its organization). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. Requests that override the context with `X-Veerify-Organization` or `X-Veerify-Project` headers never persist it.\n",
+      "description": "Switches the active project (and its organization). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.\n",
       "operationId": "setActiveProject",
       "security": [
         {

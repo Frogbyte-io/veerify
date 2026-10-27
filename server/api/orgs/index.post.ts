@@ -11,6 +11,7 @@
  *     operationId: createOrganization
  *     security:
  *       - cookieAuth: []
+ *       - userApiKeyAuth: []
  *     requestBody:
  *       required: true
  *       content:

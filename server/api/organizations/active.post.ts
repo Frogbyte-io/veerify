@@ -6,7 +6,7 @@
  *     summary: Set active organization
  *     description: >
  *       Switches the active organization (workspace) and, in the same step, the active project inside it: `projectId` is honoured when the caller can open it, otherwise the first accessible project is used (null when there is none). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
- *       With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. Requests that override the context with `X-Veerify-Organization` or `X-Veerify-Project` headers never persist it.
+ *       With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.
  *     operationId: setActiveOrganization
  *     security:
  *       - cookieAuth: []

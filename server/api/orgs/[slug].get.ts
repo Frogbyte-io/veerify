@@ -11,6 +11,7 @@
  *     operationId: getOrganization
  *     security:
  *       - cookieAuth: []
+ *       - userApiKeyAuth: []
  *     parameters:
  *       - name: slug
  *         in: path
