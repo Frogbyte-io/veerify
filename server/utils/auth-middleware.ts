@@ -31,6 +31,8 @@ export interface AuthSession {
     activeOrganizationId?: string
     activeProjectId?: string | null
   }
+  /** Set when the principal was resolved from a personal API key rather than a browser session. */
+  credential?: { kind: 'user_api_key'; id: string }
 }
 
 /**
