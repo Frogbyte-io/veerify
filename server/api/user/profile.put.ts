@@ -57,7 +57,8 @@ export default defineEventHandler(async (event) => {
       .update(user)
       .set({
         name: name.trim(),
-        email: email.trim(),
+        // Credential principals never rewrite the stored email (not even its casing).
+        email: isCredentialPrincipal(session) ? session.user.email : email.trim(),
         updatedAt: new Date(),
       })
       .where(eq(user.id, session.user.id))

@@ -183,5 +183,26 @@ describe('PUT /api/user/profile', () => {
     const result = (await handler({})) as { success: boolean }
     expect(result.success).toBe(true)
     expect(state.updated[0].name).toBe('New Name')
+    expect(state.updated[0].email).toBe('a@example.com')
+  })
+})
+
+describe('GET /api/public/auth/handoff/start', () => {
+  it('rejects a key principal with 403', async () => {
+    vi.stubGlobal('getQuery', () => ({ target: 'https://example.com/x' }))
+    vi.doMock('~/server/utils/validation', () => ({ validateQuery: () => ({ target: 'https://example.com/x' }) }))
+    vi.doMock('~/server/utils/public-auth-redirect', () => ({
+      resolveAllowedPublicRedirectTarget: async () => new URL('https://example.com/x'),
+    }))
+    vi.doMock('~/server/utils/public-auth-handoff', () => ({
+      createPublicAuthHandoffToken: vi.fn(),
+      PUBLIC_AUTH_HANDOFF_QUERY_PARAM: 'h',
+    }))
+    vi.doMock('~/lib/auth-redirect', () => ({ normalizeHostname: (h: string) => h }))
+    vi.doMock('better-auth/cookies', () => ({ getCookies: () => ({ dontRememberToken: { name: 'x' } }) }))
+    vi.resetModules()
+    const handler = (await import('~/server/api/public/auth/handoff/start.get')).default as (e: unknown) => Promise<unknown>
+    state.principal = keyPrincipal
+    expect(await statusOf(handler({}))).toBe(403)
   })
 })
