@@ -6,7 +6,7 @@
 //
 // See `docs/plans/2026-10-09-marketing-hub/design.md` -> M5 implementation decisions.
 
-import { pgTable, primaryKey, text, timestamp, uniqueIndex, index } from 'drizzle-orm/pg-core'
+import { pgTable, primaryKey, text, timestamp, uniqueIndex, index, jsonb } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { user } from './auth'
 import { project, feedback, product } from './feedback'
@@ -45,11 +45,19 @@ export const changelogEntry = pgTable(
       .default(sql`'{}'::text[]`),
     publishedAt: timestamp('published_at'),
     authorUserId: text('author_user_id').references(() => user.id, { onDelete: 'set null' }),
+    externalSource: text('external_source'),
+    externalId: text('external_id'),
+    importSnapshot: jsonb('import_snapshot').$type<Record<string, any>>(),
     createdAt: createdAtColumn(),
     updatedAt: updatedAtColumn(),
   },
   (table) => ({
     uniqueSlug: uniqueIndex('changelog_entry_project_slug_idx').on(table.projectId, table.slug),
+    externalUnique: uniqueIndex('changelog_entry_project_external_idx').on(
+      table.projectId,
+      table.externalSource,
+      table.externalId
+    ),
     projectStatusPublishedIdx: index('changelog_entry_project_status_published_idx').on(
       table.projectId,
       table.status,
