@@ -164,6 +164,29 @@ describe('createVeerifyMcpServer', () => {
     })
   })
 
+  it('whoami reports no workspace on 409 rather than the possibly stale stored one', async () => {
+    routes['GET /api/projects/active'] = () => ({
+      status: 409,
+      body: { success: false, error: { code: 'CONFLICT', message: 'no project' } },
+    })
+    expect((await call('whoami')).json).toMatchObject({
+      activeOrganizationId: null,
+      activeProjectId: null,
+      project: null,
+    })
+  })
+
+  it('set_context reports the verified workspace when it has no project yet (409)', async () => {
+    routes['GET /api/projects/active'] = () => ({
+      status: 409,
+      body: { success: false, error: { code: 'CONFLICT', message: 'no project' } },
+    })
+    expect((await call('set_context', { workspace: 'globex' })).json).toMatchObject({
+      activeOrganizationId: 'org-2',
+      activeProjectId: null,
+    })
+  })
+
   it('list_workspaces and list_projects return the API data', async () => {
     expect((await call('list_workspaces')).json).toEqual(workspaces)
     expect((await call('list_projects')).json).toEqual(projectsByOrg['org-1'])

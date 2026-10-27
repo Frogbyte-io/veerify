@@ -71,7 +71,7 @@ async function resolveProject(ctx: McpToolContext, ref: string, workspace?: Work
  * MCP request's own `x-veerify-*` override headers (used right after set_context).
  */
 async function whoami(ctx: McpToolContext, opts: { stored?: boolean; fallbackOrganizationId?: string | null } = {}) {
-  const { user, session } = ctx.principal
+  const { user } = ctx.principal
   const result = await ctx.callApi({
     method: 'GET',
     path: '/api/projects/active',
@@ -83,11 +83,13 @@ async function whoami(ctx: McpToolContext, opts: { stored?: boolean; fallbackOrg
     credential: 'api_key' as const,
     contextPinned: ctx.contextPinned,
   }
-  // 409: the caller can open no project in the workspace yet.
+  // 409: the caller can open no project in the workspace yet. The principal's stored
+  // organization may since have been deleted, so only a workspace set_context just verified
+  // is reported; otherwise null.
   if (result.status === 409) {
     return {
       ...base,
-      activeOrganizationId: opts.fallbackOrganizationId ?? session.activeOrganizationId ?? null,
+      activeOrganizationId: opts.fallbackOrganizationId ?? null,
       activeProjectId: null,
       project: null,
     }
