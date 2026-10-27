@@ -411,7 +411,7 @@ describe('import commit engine (real Postgres)', () => {
     expect((await importedFeedback(projA.id))['f-keep']).toMatchObject({ voteCount: 145, importedVoteBaseline: 140 })
   })
 
-  it('never lets voteCount go below zero', async () => {
+  it('keeps voteCount a signed net sum (no clamp at zero)', async () => {
     const single = (voteCount: number): ImportBatch => ({
       statuses: [],
       categories: [],
@@ -425,7 +425,8 @@ describe('import commit engine (real Postgres)', () => {
     // Live downvotes pulled the counter under the baseline
     await db.update(feedback).set({ voteCount: 3 }).where(eq(feedback.id, row.id))
     await commitImportRun((await stage(projA.id, projA.productId, single(0))).id)
-    expect((await importedFeedback(projA.id))['f-clamp']).toMatchObject({ voteCount: 0, importedVoteBaseline: 0 })
+    // 3 + (0 − 10): the counter is a signed net sum, like the vote route keeps it
+    expect((await importedFeedback(projA.id))['f-clamp']).toMatchObject({ voteCount: -7, importedVoteBaseline: 0 })
   })
 
   it('derives changelog status on sync: publishedAt alone publishes; status published stamps publishedAt', async () => {

@@ -5,12 +5,13 @@ import { feedback } from '~/server/database/schema/feedback'
 import type { ImportFeedback } from '../format'
 import { SYNC_FIELDS, deepEqual, feedbackIncoming, planFieldSync, snapshotFor, unknownAuthorIssue } from '../planner'
 import { resolveFeedbackStatus } from '../taxonomy'
-import { loadPeople, sourceDate, type CommitPhase, type PersonRef } from './context'
+import { loadPeople, lockPersonClaims, sourceDate, type CommitPhase, type PersonRef } from './context'
 
 /**
  * Feedback: insert on (projectId, externalSource, externalId), else Veerify-wins sync of SYNC_FIELDS.feedback.
  * Votes and their counter are applied in the votes phase, so inserts start at voteCount 0 / baseline 0. Author
- * fields come from the imported person; authorUserId is never written.
+ * fields come from the imported person. authorUserId is only set on insert, to the user who already claimed that
+ * person (never from a matching email); rows inserted before a claim are re-pointed by the claim itself.
  */
 export const feedbackPhase: CommitPhase<Map<string, PersonRef>, ImportFeedback> = {
   name: 'feedback',
@@ -53,9 +54,10 @@ export const feedbackPhase: CommitPhase<Map<string, PersonRef>, ImportFeedback> 
     }
 
     const outcome = await db.transaction(async (tx) => {
+      const claimedBy = person ? ((await lockPersonClaims(tx, [person.id])).get(person.id) ?? null) : null
       const [inserted] = await tx
         .insert(feedback)
-        .values({ ...values, importSnapshot: snapshotFor('feedback', values) })
+        .values({ ...values, authorUserId: claimedBy, importSnapshot: snapshotFor('feedback', values) })
         .onConflictDoNothing({ target: [feedback.projectId, feedback.externalSource, feedback.externalId] })
         .returning({ id: feedback.id })
       if (inserted) return { result: 'create' as const, kept: false }

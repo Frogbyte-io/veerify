@@ -12997,7 +12997,7 @@ export const openapiPaths = {
         "User"
       ],
       "summary": "Update my profile",
-      "description": "Updates the caller's name and email. Both fields are required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). A personal API key may change the name but not the email: sending a different email returns 403 and requires signing in to Veerify directly. Send the current email unchanged to rename.\n",
+      "description": "Updates the caller's name and email. Both fields are required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). A personal API key may change the name but not the email: sending a different email returns 403 and requires signing in to Veerify directly. Send the current email unchanged to rename. Changing the email (compared case-insensitively) stores it in lower case, marks it unverified and sends a verification email to the new address.\n",
       "operationId": "updateUserProfile",
       "security": [
         {

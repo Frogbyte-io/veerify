@@ -118,10 +118,13 @@ export const auth = betterAuth({
       twoFactor: schema.twoFactor,
     },
   }),
-  // Claim imported posts, comments and votes once a user's email is verified. `create.after` covers sign-ups that
-  // arrive verified (social providers asserting a verified email, magic links); `update.after` covers the
-  // emailVerified flip from an email link or magic link, and verifying a changed address. Fire-and-forget: a failed
-  // claim is logged and never blocks sign-up or verification. See server/services/imports/claim.ts.
+  // Claim imported posts, comments and votes for the user's email whenever the stored user row says it is verified.
+  // `create.after` covers sign-ups that arrive verified (social providers asserting a verified email, magic links).
+  // `update.after` fires on EVERY Better-Auth user update (verification link, magic link, 2FA toggle, update-user),
+  // not only on verification, so it relies on `emailVerified` being true only for an email the user proved: any
+  // other path that changes the email must reset `emailVerified` to false (server/api/user/profile.put.ts does).
+  // Fire-and-forget: a failed claim is logged and never blocks sign-up or verification. The claim is idempotent.
+  // See server/services/imports/claim.ts.
   databaseHooks: {
     user: {
       create: {

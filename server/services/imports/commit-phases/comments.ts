@@ -16,6 +16,7 @@ import {
 import {
   loadFeedback,
   loadPeople,
+  lockPersonClaims,
   sourceDate,
   type CommitContext,
   type CommitPhase,
@@ -111,6 +112,8 @@ export const commentsPhase: CommitPhase<CommentState, ImportComment> = {
       )
 
     const outcome = await db.transaction(async (tx) => {
+      // Attributed only to the user who already claimed the person (see lockPersonClaims).
+      const claimedBy = person ? ((await lockPersonClaims(tx, [person.id])).get(person.id) ?? null) : null
       let parentCommentId: string | null = null
       if (rec.parentExternalId !== undefined) {
         const [parent] = await tx
@@ -137,7 +140,7 @@ export const commentsPhase: CommitPhase<CommentState, ImportComment> = {
       }
       const [inserted] = await tx
         .insert(feedbackComment)
-        .values({ ...values, importSnapshot: snapshotFor('comment', values) })
+        .values({ ...values, authorUserId: claimedBy, importSnapshot: snapshotFor('comment', values) })
         .onConflictDoNothing({
           target: [feedbackComment.feedbackId, feedbackComment.externalSource, feedbackComment.externalId],
         })

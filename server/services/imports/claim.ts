@@ -6,12 +6,14 @@
  * - Import links are kept: `importedPersonId` stays on every row, so a re-import finds the claimed rows and neither
  *   re-creates nor re-counts them.
  * - Double vote (the user already voted on that post): the imported vote row is left as it is (unclaimed) and only
- *   its value is taken out of `feedback.voteCount` (−1 for an upvote, +1 for a downvote, clamped at 0). Deleting it
- *   would let the next re-import insert and count it again.
+ *   its value is taken out of `feedback.voteCount` (−1 for an upvote, +1 for a downvote; the counter is a signed net
+ *   sum, never clamped). Deleting it would let the next re-import insert and count it again.
  * - Idempotent: only persons with `claimedByUserId IS NULL` are processed, and the marker is set in the same
  *   transaction. The person rows are locked `FOR UPDATE`, so concurrent claims cannot double-decrement.
  *
- * Imports never write `authorUserId` / `voterUserId`; this is the only place that does (global constraints).
+ * Imports never set `authorUserId` / `voterUserId` from a matching email (global constraints). Once a person is claimed
+ * here, the commit engine attributes that person's newly imported rows to `claimedByUserId` at insert time
+ * (`lockPersonClaims` in commit-phases/context.ts), skipping a vote the user already cast.
  */
 import { sql } from 'drizzle-orm'
 import { db } from '../../database/drizzle'
@@ -60,7 +62,7 @@ export async function claimImportedActivity(userId: string, email: string): Prom
             AND v.voter_user_id IS NULL
             AND EXISTS (SELECT 1 FROM vote u WHERE u.feedback_id = v.feedback_id AND u.voter_user_id = ${userId})
         )
-        UPDATE feedback f SET vote_count = GREATEST(f.vote_count - d.value, 0)
+        UPDATE feedback f SET vote_count = f.vote_count - d.value
         FROM doubled d
         WHERE f.id = d.feedback_id
         RETURNING f.id

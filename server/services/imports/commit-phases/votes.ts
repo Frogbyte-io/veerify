@@ -4,7 +4,15 @@ import { db } from '~/server/database/drizzle'
 import { feedback, vote } from '~/server/database/schema/feedback'
 import type { ImportFeedback } from '../format'
 import { netVotes, voteBaseline, voteDecisions } from '../planner'
-import { loadFeedback, loadPeople, sourceDate, type CommitPhase, type FeedbackRef, type PersonRef } from './context'
+import {
+  loadFeedback,
+  loadPeople,
+  lockPersonClaims,
+  sourceDate,
+  type CommitPhase,
+  type FeedbackRef,
+  type PersonRef,
+} from './context'
 
 type VoteState = { people: Map<string, PersonRef>; feedback: Map<string, FeedbackRef> }
 
@@ -12,9 +20,12 @@ type VoteState = { people: Map<string, PersonRef>; feedback: Map<string, Feedbac
  * Votes, per feedback record, in one transaction with the counter they move:
  * - listed votes become rows keyed (feedbackId, importedPersonId), ON CONFLICT DO NOTHING (claimed votes keep their
  *   importedPersonId, so they are found too);
+ * - a person already claimed by a user (Task 7) votes as that user: the row gets voterUserId = claimedByUserId as well,
+ *   and if that user already voted on the feedback, the (feedbackId, voterUserId) index makes it a no-op (counted
+ *   unchanged, like the planner's preview) so a vote is never counted twice;
  * - newBaseline = max(0, voteCount − netListed); without a voteCount the stored baseline is kept;
- * - voteCount = max(0, voteCount + (newBaseline − oldBaseline) + net(inserted rows)), as one SQL expression (never
- *   read-modify-write).
+ * - voteCount = voteCount + (newBaseline − oldBaseline) + net(inserted rows), as one SQL expression (never
+ *   read-modify-write). The counter is a signed net sum, like the vote route keeps it, so it is never clamped.
  * Under onExisting 'skip', votes are still added to existing feedback, but the baseline of feedback this run did not
  * create is left alone.
  */
@@ -46,19 +57,24 @@ export const votesPhase: CommitPhase<VoteState, ImportFeedback> = {
     const now = ctx.now()
 
     const inserted = await db.transaction(async (tx) => {
+      const personIds = valid.map((v) => state.people.get(v.personExternalId)!.id)
+      const claimedBy = await lockPersonClaims(tx, personIds)
+      // No conflict target: besides (feedbackId, importedPersonId), a claimed person's vote also hits the
+      // (feedbackId, voterUserId) index when that user already voted, and is then skipped.
       const rows = valid.length
         ? await tx
             .insert(vote)
             .values(
-              valid.map((v) => ({
+              valid.map((v, i) => ({
                 id: randomUUID(),
                 feedbackId: fb.id,
-                importedPersonId: state.people.get(v.personExternalId)!.id,
+                importedPersonId: personIds[i],
+                voterUserId: claimedBy.get(personIds[i]) ?? null,
                 type: v.type ?? 'upvote',
                 createdAt: sourceDate(v.createdAt, now),
               }))
             )
-            .onConflictDoNothing({ target: [vote.feedbackId, vote.importedPersonId] })
+            .onConflictDoNothing()
             .returning({ type: vote.type })
         : []
       const insertedNet = netVotes(rows)
@@ -66,7 +82,7 @@ export const votesPhase: CommitPhase<VoteState, ImportFeedback> = {
         await tx
           .update(feedback)
           .set({
-            voteCount: sql`GREATEST(${feedback.voteCount} + ${newBaseline} - ${feedback.importedVoteBaseline} + ${insertedNet}, 0)`,
+            voteCount: sql`${feedback.voteCount} + ${newBaseline} - ${feedback.importedVoteBaseline} + ${insertedNet}`,
             importedVoteBaseline: newBaseline,
           })
           .where(
@@ -77,7 +93,7 @@ export const votesPhase: CommitPhase<VoteState, ImportFeedback> = {
       } else if (insertedNet !== 0) {
         await tx
           .update(feedback)
-          .set({ voteCount: sql`GREATEST(${feedback.voteCount} + ${insertedNet}, 0)` })
+          .set({ voteCount: sql`${feedback.voteCount} + ${insertedNet}` })
           .where(eq(feedback.id, fb.id))
       }
       return rows.length

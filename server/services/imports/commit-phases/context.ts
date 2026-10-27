@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedback, importedPerson } from '~/server/database/schema/feedback'
 import type { ImportBatch, IssueInput } from '../format'
@@ -40,6 +40,24 @@ export interface CommitPhase<S = any, T = any> {
 }
 
 export type PersonRef = { id: string; name: string | null; email: string | null }
+
+/**
+ * The user each person was claimed by (Task 7), read inside the record's transaction with `FOR SHARE`. A claim holds
+ * the person rows `FOR UPDATE`, so the two serialize: either the claim commits first and this sees `claimedByUserId`,
+ * or this record commits first and the claim's later statements re-point what it inserted. Attribution only ever
+ * follows a verified claim, never a matching email.
+ */
+export async function lockPersonClaims(tx: Tx, personIds: readonly string[]): Promise<Map<string, string | null>> {
+  const ids = [...new Set(personIds)]
+  if (!ids.length) return new Map()
+  const rows = await tx
+    .select({ id: importedPerson.id, claimedByUserId: importedPerson.claimedByUserId })
+    .from(importedPerson)
+    .where(inArray(importedPerson.id, ids))
+    .orderBy(asc(importedPerson.id))
+    .for('share')
+  return new Map(rows.map((r) => [r.id, r.claimedByUserId]))
+}
 
 /** Imported people of the run's project and source, by externalId. */
 export async function loadPeople(ctx: CommitContext): Promise<Map<string, PersonRef>> {

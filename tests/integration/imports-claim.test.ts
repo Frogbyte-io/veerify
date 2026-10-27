@@ -20,19 +20,34 @@ import type { ImportBatch } from '../../server/services/imports/format'
  * exactly once, re-imports and repeated claims change nothing, and concurrent claims do not double-decrement.
  */
 
+type FakeEvent = { session: { user: { id: string; email: string } }; body: unknown }
+
+vi.stubGlobal('defineEventHandler', (handler: unknown) => handler)
+vi.stubGlobal('readBody', async (event: FakeEvent) => event.body)
 vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string; data?: unknown }) =>
   Object.assign(new Error(input.statusMessage), input)
 )
+vi.mock('~/server/utils/auth-middleware', () => ({
+  requireAuth: async (event: FakeEvent) => event.session,
+  isCredentialPrincipal: () => false,
+}))
 // lib/auth sends a verification mail on sign-up; keep the suite offline.
 vi.mock('~/lib/email', async (orig) => {
   const mod = (await orig()) as Record<string, unknown>
-  return Object.fromEntries(Object.entries(mod).map(([k, v]) => [k, typeof v === 'function' ? vi.fn() : v]))
+  return Object.fromEntries(
+    Object.entries(mod).map(([k, v]) => [k, typeof v === 'function' ? vi.fn(async () => {}) : v])
+  )
 })
 
 const { createImportRun, addImportBatch } = await import('../../server/services/imports/runs')
 const { commitImportRun } = await import('../../server/services/imports/committer')
 const { claimImportedActivity } = await import('../../server/services/imports/claim')
 const { auth } = await import('../../lib/auth')
+const { planImport } = await import('../../server/services/imports/planner')
+const { sendEmailVerificationEmail } = await import('~/lib/email')
+const profilePut = (await import('../../server/api/user/profile.put')).default as unknown as (
+  e: FakeEvent
+) => Promise<{ success: boolean }>
 
 const suffix = randomUUID().slice(0, 8)
 const orgId = `icl_org_${suffix}`
@@ -89,8 +104,20 @@ async function importInto(p: (typeof projects)[number], batch: ImportBatch) {
     sourceLabel: 'Canny',
   })
   await addImportBatch(run.id, batch)
+  const preview = await planImport(run.id)
   const done = await commitImportRun(run.id)
   expect(done.status).toBe('completed')
+  // Preview and commit agree, including votes skipped because the claiming user already voted.
+  expect(done.summary?.counts).toEqual(preview.counts)
+  return preview.counts
+}
+
+async function newProject(key: string) {
+  const p = { id: `icl_p${key}_${suffix}`, slug: `icl-${key}-${suffix}`, productId: `icl_pr${key}_${suffix}` }
+  await db.insert(project).values({ id: p.id, organizationId: orgId, slug: p.slug, name: p.slug })
+  await db.insert(product).values({ id: p.productId, projectId: p.id, name: 'Main', slug: 'main' })
+  projects.push(p)
+  return p
 }
 
 async function state(projectId: string) {
@@ -319,5 +346,135 @@ describe('claiming imported activity (real Postgres)', () => {
     const s = await state(p.id)
     expect(s.ada.claimedByUserId).toBeNull()
     expect(s.fb['f-1'].authorUserId).toBeNull()
+  })
+  it('keeps voteCount a signed net sum when merging a double vote (no clamp at zero)', async () => {
+    const email = `icl-negative-${suffix}@example.com`
+    const p = await newProject('neg')
+    await importInto(p, doc(email))
+    const userId = await insertUser(email, true)
+    const seeded = await state(p.id)
+    await castUserVote(userId, seeded.fb['f-1'].id, 'upvote')
+    // Live downvotes have pulled the net counter below zero.
+    await db.update(feedback).set({ voteCount: -4 }).where(eq(feedback.id, seeded.fb['f-1'].id))
+
+    await claimImportedActivity(userId, email)
+    // The merged imported upvote comes off the signed sum: −4 − 1.
+    expect((await state(p.id)).voteCounts['f-1']).toBe(-5)
+  })
+
+  it('attributes activity imported after the claim to the claiming user, skipping a vote they already cast', async () => {
+    const email = `icl-later-${suffix}@example.com`
+    const p = await newProject('later')
+    const people = [
+      { externalId: 'p-1', name: 'Ada Lovelace', email },
+      { externalId: 'p-2', name: 'Grace Hopper', email: `icl-grace-${suffix}@example.com` },
+    ]
+    const first: ImportBatch = {
+      statuses: [],
+      categories: [],
+      people,
+      feedback: [
+        {
+          externalId: 'f-1',
+          title: 'Dark mode',
+          authorExternalId: 'p-2',
+          votes: [{ personExternalId: 'p-2', type: 'upvote' }],
+        },
+      ],
+      comments: [],
+      changelog: [],
+    }
+    await importInto(p, first)
+    const userId = await insertUser(email, true)
+    expect(await claimImportedActivity(userId, email)).toEqual({ people: 1, feedback: 0, comments: 0, votes: 0 })
+    const f1 = (await state(p.id)).fb['f-1']
+    await castUserVote(userId, f1.id, 'upvote')
+    expect((await state(p.id)).voteCounts['f-1']).toBe(2)
+
+    const second: ImportBatch = {
+      ...first,
+      feedback: [
+        {
+          externalId: 'f-1',
+          title: 'Dark mode',
+          authorExternalId: 'p-2',
+          // p-1 is the claiming user, who already voted on f-1 in Veerify
+          votes: [
+            { personExternalId: 'p-2', type: 'upvote' },
+            { personExternalId: 'p-1', type: 'upvote' },
+          ],
+        },
+        {
+          externalId: 'f-new',
+          title: 'Offline mode',
+          authorExternalId: 'p-1',
+          votes: [{ personExternalId: 'p-1', type: 'upvote' }],
+        },
+      ],
+      comments: [{ externalId: 'c-new', feedbackExternalId: 'f-1', body: 'Please', authorExternalId: 'p-1' }],
+    }
+    const counts = await importInto(p, second)
+    expect(counts.votes).toMatchObject({ create: 1, unchanged: 2, skip: 0 })
+
+    const after = await state(p.id)
+    expect(after.fb['f-new']).toMatchObject({ authorUserId: userId, importedPersonId: after.ada.id, voteCount: 1 })
+    const newVote = after.votes.find((v) => v.feedbackId === after.fb['f-new'].id)!
+    expect(newVote).toMatchObject({ voterUserId: userId, importedPersonId: after.ada.id })
+    expect(after.comments.find((c) => c.externalId === 'c-new')).toMatchObject({
+      authorUserId: userId,
+      importedPersonId: after.ada.id,
+    })
+    // No imported row for the vote the user already cast, and the counter is untouched.
+    expect(after.votes.filter((v) => v.feedbackId === f1.id && v.importedPersonId === after.ada.id)).toHaveLength(0)
+    expect(after.voteCounts).toEqual({ 'f-1': 2, 'f-new': 1 })
+
+    const again = await importInto(p, second)
+    expect(again.votes).toMatchObject({ create: 0, unchanged: 3 })
+    const reimported = await state(p.id)
+    expect(reimported.votes).toHaveLength(after.votes.length)
+    expect(reimported.voteCounts).toEqual(after.voteCounts)
+  })
+
+  it('profile.put: an email change drops verification, so the new address claims nothing until verified', async () => {
+    const oldEmail = `icl-old-${suffix}@example.com`
+    const newEmail = `icl-victim-${suffix}@example.com`
+    const p = await newProject('takeover')
+    await importInto(p, doc(newEmail))
+    const ctx = await auth.$context
+    const created = await ctx.internalAdapter.createUser({ name: 'Mallory', email: oldEmail, emailVerified: true })
+    createdUserIds.push(created.id)
+    vi.mocked(sendEmailVerificationEmail).mockClear()
+
+    const event = (email: string): FakeEvent => ({
+      session: { user: { id: created.id, email: oldEmail } },
+      body: { name: 'Mallory', email },
+    })
+    expect((await profilePut(event(newEmail.toUpperCase()))).success).toBe(true)
+
+    const [row] = await db.select().from(user).where(eq(user.id, created.id))
+    expect(row).toMatchObject({ email: newEmail, emailVerified: false })
+    // A verification mail goes to the new address so the owner can re-verify.
+    await vi.waitFor(() =>
+      expect(sendEmailVerificationEmail).toHaveBeenCalledWith(expect.objectContaining({ to: newEmail }))
+    )
+
+    // Neither a direct claim nor an unrelated Better-Auth update (update.after) claims for the unverified address.
+    const zero = { people: 0, feedback: 0, comments: 0, votes: 0 }
+    expect(await claimImportedActivity(created.id, newEmail)).toEqual(zero)
+    await ctx.internalAdapter.updateUser(created.id, { name: 'Renamed' })
+    await new Promise((r) => setTimeout(r, 200))
+    const s = await state(p.id)
+    expect(s.ada.claimedByUserId).toBeNull()
+    expect(s.fb['f-1'].authorUserId).toBeNull()
+
+    // Verifying the new address claims; re-saving it in another case keeps it verified.
+    await ctx.internalAdapter.updateUser(created.id, { emailVerified: true })
+    await vi.waitFor(async () => expect((await state(p.id)).ada.claimedByUserId).toBe(created.id), {
+      timeout: 5_000,
+      interval: 50,
+    })
+    await profilePut({ ...event(newEmail.toUpperCase()), session: { user: { id: created.id, email: newEmail } } })
+    const [kept] = await db.select().from(user).where(eq(user.id, created.id))
+    expect(kept.emailVerified).toBe(true)
   })
 })

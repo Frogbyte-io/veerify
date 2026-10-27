@@ -437,14 +437,32 @@ export async function planImport(runId: string): Promise<ImportPlan> {
       .where(and(inArray(vote.feedbackId, ids), isNotNull(vote.importedPersonId)))
     for (const v of rows) if (v.importedPersonId) votePairs.add(`${v.feedbackId}\u0000${v.importedPersonId}`)
   }
+  // A claimed person votes as the claiming user; the commit skips the vote when that user already voted on the post.
+  const claimingUsers = [...new Set(personRows.map((p) => p.claimedByUserId).filter((u): u is string => !!u))]
+  const userVotePairs = new Set<string>()
+  if (claimingUsers.length) {
+    for (const ids of chunks(existingFeedbackIds)) {
+      const rows = await db
+        .select({ feedbackId: vote.feedbackId, voterUserId: vote.voterUserId })
+        .from(vote)
+        .where(and(inArray(vote.feedbackId, ids), inArray(vote.voterUserId, claimingUsers)))
+      for (const v of rows) userVotePairs.add(`${v.feedbackId}\u0000${v.voterUserId}`)
+    }
+  }
   for (const rec of batch.feedback) {
     const fbRow = feedbackByExternalId.get(rec.externalId)
+    const fbKey = fbRow?.id ?? `new:${rec.externalId}`
     const { valid, skipped } = voteDecisions(rec, knownPeople)
     counts.votes.skip += skipped.length
     issues.push(...skipped)
     for (const v of valid) {
       const person = personByExternalId.get(v.personExternalId)
-      const exists = !!fbRow && !!person && votePairs.has(`${fbRow.id}\u0000${person.id}`)
+      const claimedBy = person?.claimedByUserId ?? null
+      const exists =
+        (!!fbRow && !!person && votePairs.has(`${fbRow.id}\u0000${person.id}`)) ||
+        (!!claimedBy && userVotePairs.has(`${fbKey}\u0000${claimedBy}`))
+      // Within the run, a second person claimed by the same user on the same post also hits the user's vote.
+      if (!exists && claimedBy) userVotePairs.add(`${fbKey}\u0000${claimedBy}`)
       counts.votes[exists ? 'unchanged' : 'create']++
     }
   }

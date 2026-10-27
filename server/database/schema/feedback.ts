@@ -9,6 +9,7 @@ import {
   index,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { user, organization } from './auth'
 
 export type ProjectAccessMode = 'workspace' | 'restricted'
@@ -136,6 +137,8 @@ export const importedPerson = pgTable(
   (table) => ({
     externalUnique: uniqueIndex('imported_person_external_idx').on(table.projectId, table.source, table.externalId),
     emailIdx: index('imported_person_email_idx').on(table.email),
+    // Claiming matches lower(email) = lower($1) (server/services/imports/claim.ts)
+    emailLowerIdx: index('imported_person_email_lower_idx').on(sql`lower(${table.email})`),
   })
 )
 
