@@ -47,7 +47,7 @@ request, send these headers (on the MCP connection or on direct API calls):
 
 | Tool              | Purpose                                                              |
 | ----------------- | -------------------------------------------------------------------- |
-| `whoami`          | The user, key and current workspace and project                      |
+| `whoami`          | The user, credential type, workspace/project and `contextPinned`     |
 | `list_workspaces` | Workspaces you belong to, with your role                             |
 | `list_projects`   | Projects you can open                                                |
 | `set_context`     | Change the key's stored workspace and project                        |
@@ -58,7 +58,7 @@ request, send these headers (on the MCP connection or on direct API calls):
 
 `call_api` only reaches the dashboard API as the user. It refuses:
 
-- `/api/auth/` (sign-in, sessions, 2FA, Better-Auth organization operations): credentials must not manage credentials;
+- `/api/auth/` (sign-in, sessions, 2FA): credentials must not manage credentials;
 - `/api/cron/` and `/api/test`: internal and test-only routes;
 - `/api/public/auth/`: public-auth handoff;
 - `/api/user/api-keys`: an agent must not create or revoke keys;
@@ -67,8 +67,9 @@ request, send these headers (on the MCP connection or on direct API calls):
 
 ### Known gaps in Phase 1
 
-- Inviting members (`POST /api/organizations/invite`) and other Better-Auth organization operations (changing member
-  roles, removing members, cancelling invitations) need a browser session and do not work with keys yet.
+- Inviting members (`POST /api/organizations/invite`) needs a browser session; with a key the route returns 403.
+  Other Better-Auth organization operations (changing member roles, removing members, cancelling invitations) also
+  need a browser session and do not work with keys yet.
 - Connecting GitHub is a browser OAuth flow.
 - `PUT /api/projects/{slug}` replaces the whole `settings` object, so send every key, including the module flags
   (`feedbackEnabled`, `roadmapEnabled`, `changelogEnabled`, `supportEnabled`, `marketingEnabled`).

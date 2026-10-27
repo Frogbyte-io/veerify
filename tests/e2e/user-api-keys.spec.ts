@@ -13,8 +13,10 @@ test('user can create, use and revoke a personal API key', async ({ page, reques
   await expect(page.getByTestId('settings-page')).toHaveAttribute('data-hydrated', 'true')
   await expect(page.getByTestId('user-api-keys')).toBeVisible({ timeout: 20_000 })
 
+  // Unique per run so the row locator below cannot match a key left by an earlier run.
+  const keyName = `CLI ${Date.now()}`
   await page.getByTestId('user-api-keys-create').click()
-  await page.getByTestId('user-api-key-name').fill('CLI')
+  await page.getByTestId('user-api-key-name').fill(keyName)
   await page.getByTestId('user-api-key-submit').click()
 
   const secret = page.getByTestId('user-api-key-secret')
@@ -33,7 +35,7 @@ test('user can create, use and revoke a personal API key', async ({ page, reques
   await page.getByTestId('user-api-key-done').click()
   await expect(secret).toHaveCount(0)
 
-  const row = page.getByTestId('user-api-key-row').filter({ hasText: 'CLI' }).first()
+  const row = page.getByTestId('user-api-key-row').filter({ hasText: keyName })
   await expect(row).toBeVisible()
   await expect(row).toContainText(fullKey.slice(0, 12))
   await expect(row).not.toContainText(fullKey)
