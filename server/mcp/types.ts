@@ -29,6 +29,11 @@ export type ApiCaller = (req: ApiRequest) => Promise<ApiResult>
 export interface McpToolContext {
   principal: AuthSession
   callApi: ApiCaller
+  /**
+   * True when the MCP connection itself sends `x-veerify-*` headers. Those headers fix the
+   * workspace/project for every call on the connection, so `set_context` must refuse.
+   */
+  contextPinned: boolean
 }
 
 export interface VeerifyTool<S extends z.ZodRawShape = z.ZodRawShape> {
@@ -38,7 +43,7 @@ export interface VeerifyTool<S extends z.ZodRawShape = z.ZodRawShape> {
   inputSchema: S
   /** Cross-field rule checked during input validation (raw shapes cannot express it). */
   refine?: { check: (input: z.infer<z.ZodObject<S>>) => boolean; message: string }
-  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean }
   handler(ctx: McpToolContext, input: z.infer<z.ZodObject<S>>): Promise<unknown>
 }
 

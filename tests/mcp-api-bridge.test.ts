@@ -36,6 +36,15 @@ describe('normalizeApiPath + isBlockedApiPath (Review Focus 4)', () => {
     '',
     'relative/path',
     '/api/%zz',
+    '/api/\uD800',
+    '/api/%ED%A0%80',
+    '/api/auth;x=1',
+    '/api/auth;/x',
+    '/api/projects/..;/auth/x',
+    '/api/．．/auth/x',
+    '/api/%EF%BC%8E%EF%BC%8E/auth/x',
+    '/api/auth#fragment',
+    '/api/%23/../auth/x',
   ])('refuses %s', (path) => {
     expect(refused(path)).toBe(true)
   })

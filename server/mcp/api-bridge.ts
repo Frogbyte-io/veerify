@@ -21,7 +21,7 @@ const UNSAFE_CHARS = /[\\\u0000-\u001f\u007f]/
 /**
  * Canonicalises an API path: decodes percent-encoding once, resolves `.`/`..`, collapses
  * empty segments and re-encodes each segment. Returns null for absolute or relative URLs,
- * malformed or double encoding, traversal above the root, or anything outside `/api/`.
+ * malformed or double encoding, `;`, non-ASCII, traversal above the root, or anything outside `/api/`.
  * The query string (if any) is kept verbatim; a fragment is dropped.
  */
 export function normalizeApiPath(path: string): string | null {
@@ -39,8 +39,9 @@ export function normalizeApiPath(path: string): string | null {
   } catch {
     return null
   }
-  // A second layer of encoding (or an encoded `?`/`#`/backslash) is never legitimate here.
-  if (/[%?#]/.test(decoded) || UNSAFE_CHARS.test(decoded)) return null
+  // A second layer of encoding, an encoded `?`/`#`/backslash, `;` path parameters and
+  // non-ASCII (fullwidth dots, lone surrogates) are never legitimate in a route path.
+  if (/[%?#;]/.test(decoded) || UNSAFE_CHARS.test(decoded) || /[^\x20-\x7e]/.test(decoded)) return null
 
   const segments: string[] = []
   for (const segment of decoded.split('/')) {
@@ -55,7 +56,12 @@ export function normalizeApiPath(path: string): string | null {
 
   if (segments.length < 2 || segments[0]!.toLowerCase() !== 'api') return null
 
-  const normalized = '/' + segments.map((segment) => encodeURIComponent(segment)).join('/')
+  let normalized: string
+  try {
+    normalized = '/' + segments.map((segment) => encodeURIComponent(segment)).join('/')
+  } catch {
+    return null
+  }
   return query ? `${normalized}?${query}` : normalized
 }
 

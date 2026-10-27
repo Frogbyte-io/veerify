@@ -81,6 +81,7 @@ async function whoami(ctx: McpToolContext, opts: { stored?: boolean; fallbackOrg
   const base = {
     user: { id: user.id, name: user.name, email: user.email },
     credential: 'api_key' as const,
+    contextPinned: ctx.contextPinned,
   }
   // 409: the caller can open no project in the workspace yet.
   if (result.status === 409) {
@@ -99,6 +100,9 @@ async function whoami(ctx: McpToolContext, opts: { stored?: boolean; fallbackOrg
     ...data,
   }
 }
+
+export const CONTEXT_PINNED_MESSAGE =
+  'This connection fixes its workspace/project with X-Veerify-Organization / X-Veerify-Project headers, so set_context cannot change it. Remove those headers from the MCP configuration to switch with set_context, or pass a different workspace to list_projects.'
 
 const optionalRef = z.string().trim().min(1).optional()
 
@@ -141,7 +145,7 @@ export const universalTools: VeerifyTool[] = [
     name: 'set_context',
     title: 'Set workspace and project',
     description:
-      'Switches the active workspace and/or project for this API key (stored on the key, so later requests use it). Accepts ids or slugs. With only `workspace`, the first project you can open there becomes active. Returns the new whoami.',
+      'Switches the active workspace and/or project for this API key (stored on the key, so later requests use it). Accepts ids or slugs. Not available when the connection fixes its context with X-Veerify-* headers (see whoami `contextPinned`). With only `workspace`, the first project you can open there becomes active. Returns the new whoami.',
     inputSchema: {
       workspace: optionalRef.describe('Workspace id or slug'),
       project: optionalRef.describe('Project id or slug (within `workspace` when given, else the active workspace)'),
@@ -150,12 +154,17 @@ export const universalTools: VeerifyTool[] = [
       check: (input) => Boolean(input.workspace || input.project),
       message: 'Provide at least one of `workspace` or `project`',
     },
+    annotations: { destructiveHint: false, idempotentHint: true },
     handler: async (ctx, input) => {
+      // Connection headers win on every later call, so a stored switch would be invisible
+      // and the agent would act in a different workspace than it believes (Review Focus 3).
+      if (ctx.contextPinned) throw new McpToolError(CONTEXT_PINNED_MESSAGE)
+
       const workspace = input.workspace ? await resolveWorkspace(ctx, input.workspace) : undefined
       const project = input.project ? await resolveProject(ctx, input.project, workspace) : undefined
 
-      // Context headers on the MCP request would make the switch a non-persisted override,
-      // so the switch calls never inherit them.
+      // Unpinned connections send no context headers; inheritContext: false makes sure the
+      // switch persists on the key and the follow-up whoami reads the stored context.
       if (workspace) {
         assertOk(
           await ctx.callApi({

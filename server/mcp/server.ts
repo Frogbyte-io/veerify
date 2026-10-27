@@ -16,6 +16,7 @@ export const MCP_INSTRUCTIONS = [
   '1. Start with `whoami` to see who you are and which workspace and project are active.',
   '2. Use `list_workspaces` / `list_projects` and pick a workspace and project with `set_context` (ids or slugs). Most API routes work inside the active project.',
   '3. Find operations with `search_api` (keywords or tag; pass `operationId` for parameters and request body), then run them with `call_api` using the concrete path under /api/.',
+  'If the MCP connection sends X-Veerify-Organization / X-Veerify-Project headers, those headers fix the workspace/project for every call (`whoami` shows `contextPinned: true`) and `set_context` is unavailable; `list_projects` still accepts another workspace.',
   'Results are JSON. API failures come back as a tool error whose content is `{ status, body }`, where body is `{ success: false, error: { code, message } }`.',
 ].join('\n')
 
