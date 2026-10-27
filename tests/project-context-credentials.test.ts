@@ -1,4 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  contextTargetFor,
+  requireAuthWithOrganization,
+  resolveActiveProjectForSession,
+  setActiveOrganizationForSession,
+  setActiveProjectForSession,
+} from '~/server/utils/project-context'
 
 const state = vi.hoisted(() => ({
   updates: [] as { table: string; values: Record<string, unknown>; where: unknown }[],
@@ -51,14 +58,6 @@ vi.mock('~/server/utils/project-access', () => ({
   listAccessibleProjects: async (orgId: string) => state.accessible[orgId] ?? [],
   getOrganizationRole: async (orgId: string) => state.orgRoles[orgId] ?? null,
 }))
-
-import {
-  contextTargetFor,
-  requireAuthWithOrganization,
-  resolveActiveProjectForSession,
-  setActiveOrganizationForSession,
-  setActiveProjectForSession,
-} from '~/server/utils/project-context'
 
 const KEY_TARGET = { kind: 'user_api_key' as const, id: 'k1', userId: 'u1' }
 const keyWhere = {

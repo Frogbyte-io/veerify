@@ -1,5 +1,11 @@
 import { getTableName } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  generateUserApiKey,
+  hashUserApiKey,
+  readBearerUserApiKey,
+  resolveUserApiKeyPrincipal,
+} from '~/server/utils/user-api-keys'
 
 const state = vi.hoisted(() => ({
   keyRow: null as null | Record<string, unknown>,
@@ -56,13 +62,6 @@ vi.mock('~/server/database/drizzle', () => ({
     })),
   },
 }))
-
-import {
-  generateUserApiKey,
-  hashUserApiKey,
-  readBearerUserApiKey,
-  resolveUserApiKeyPrincipal,
-} from '~/server/utils/user-api-keys'
 
 function eventWith(headers: Record<string, string>) {
   // Node lowercases incoming header names.

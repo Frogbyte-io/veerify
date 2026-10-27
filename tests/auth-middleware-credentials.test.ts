@@ -1,4 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  isCredentialPrincipal,
+  optionalAuth,
+  requireAuth,
+  requireInteractiveSession,
+} from '~/server/utils/auth-middleware'
 
 const state = vi.hoisted(() => ({
   principal: null as unknown,
@@ -51,13 +57,6 @@ vi.mock('~/server/database/drizzle', () => ({
     },
   },
 }))
-
-import {
-  isCredentialPrincipal,
-  optionalAuth,
-  requireAuth,
-  requireInteractiveSession,
-} from '~/server/utils/auth-middleware'
 
 const keyPrincipal = {
   user: { id: 'u1', email: 'a@example.com', name: 'A' },
