@@ -7,7 +7,15 @@ import { CHANGELOG_LABELS } from '~/server/services/changelog/entries'
 import { toCategorySlug } from '~/server/utils/project-categories'
 import { SYSTEM_STATUSES } from '~/server/utils/project-statuses'
 import { ErrorCode } from '~/server/utils/response'
-import type { ImportBatch, ImportChangelog, ImportComment, ImportFeedback, ImportPerson, IssueInput } from './format'
+import type {
+  ImportBatch,
+  ImportChangelog,
+  ImportComment,
+  ImportFeedback,
+  ImportPerson,
+  ImportVote,
+  IssueInput,
+} from './format'
 import { importHttpError, listImportIssues } from './runs'
 import { resolveFeedbackStatus, resolveTaxonomy, type TaxonomyResolution } from './taxonomy'
 
@@ -178,6 +186,123 @@ export function personIncoming(rec: ImportPerson): Record<string, unknown> {
 export type ImportSection = 'statuses' | 'categories' | 'people' | 'feedback' | 'votes' | 'comments' | 'changelog'
 export type SectionCounts = { create: number; update: number; unchanged: number; skip: number }
 
+export const IMPORT_SECTIONS: readonly ImportSection[] = [
+  'statuses',
+  'categories',
+  'people',
+  'feedback',
+  'votes',
+  'comments',
+  'changelog',
+]
+
+export function emptyCounts(): Record<ImportSection, SectionCounts> {
+  return Object.fromEntries(IMPORT_SECTIONS.map((s) => [s, { create: 0, update: 0, unchanged: 0, skip: 0 }])) as Record<
+    ImportSection,
+    SectionCounts
+  >
+}
+
+// Shared decisions: the preview (planImport) and the commit engine (committer.ts) call the same helpers, so a commit
+// creates, skips and warns exactly where the preview said it would.
+
+/** Warning for a feedback/comment whose author is not a known person (still imported, without a person). */
+export function unknownAuthorIssue(
+  entityType: 'feedback' | 'comment',
+  rec: { externalId: string; authorExternalId?: string },
+  knownPeople: ReadonlySet<string>
+): IssueInput | null {
+  if (rec.authorExternalId === undefined || knownPeople.has(rec.authorExternalId)) return null
+  return {
+    severity: 'warning',
+    entityType,
+    externalId: rec.externalId,
+    message: `Unknown author "${rec.authorExternalId}"; imported without a person`,
+  }
+}
+
+/** Splits a feedback record's listed votes into importable ones and skips (unknown person, duplicate person). */
+export function voteDecisions(
+  rec: Pick<ImportFeedback, 'externalId' | 'votes'>,
+  knownPeople: ReadonlySet<string>
+): { valid: ImportVote[]; skipped: IssueInput[] } {
+  const valid: ImportVote[] = []
+  const skipped: IssueInput[] = []
+  const seen = new Set<string>()
+  for (const v of rec.votes ?? []) {
+    let message: string | null = null
+    if (!knownPeople.has(v.personExternalId)) message = `Vote by unknown person "${v.personExternalId}" skipped`
+    else if (seen.has(v.personExternalId)) message = `Duplicate vote by "${v.personExternalId}" skipped`
+    if (message) {
+      skipped.push({ severity: 'skipped', entityType: 'vote', externalId: rec.externalId, message })
+      continue
+    }
+    seen.add(v.personExternalId)
+    valid.push(v)
+  }
+  return { valid, skipped }
+}
+
+/** Net value of votes: upvotes minus downvotes (a missing type is an upvote). */
+export function netVotes(votes: readonly { type?: string | null }[]): number {
+  return votes.reduce((n, v) => n + (v.type === 'downvote' ? -1 : 1), 0)
+}
+
+/** Imported vote baseline: the part of the source's voteCount not represented by listed votes. */
+export function voteBaseline(voteCount: number | undefined, netListed: number): number {
+  return Math.max(0, (voteCount ?? netListed) - netListed)
+}
+
+export const commentKey = (feedbackExternalId: string, externalId: string) => `${feedbackExternalId}\u0000${externalId}`
+
+/**
+ * Skip reason per comment (`commentKey` → reason, null = importable): unknown feedback, unknown parent (not in the
+ * run on the same feedback and not already imported), or a parent that is itself skipped. Cycles count as unknown.
+ */
+export function commentSkipReasons(
+  comments: readonly ImportComment[],
+  knownFeedback: ReadonlySet<string>,
+  existingCommentKeys: ReadonlySet<string>
+): Map<string, string | null> {
+  const runComments = new Map(comments.map((c) => [commentKey(c.feedbackExternalId, c.externalId), c]))
+  const validity = new Map<string, string | null>()
+  const resolve = (rec: ImportComment, trail: Set<string>): string | null => {
+    const key = commentKey(rec.feedbackExternalId, rec.externalId)
+    const cached = validity.get(key)
+    if (cached !== undefined) return cached
+    let reason: string | null = null
+    if (!knownFeedback.has(rec.feedbackExternalId)) {
+      reason = `Comment on unknown feedback "${rec.feedbackExternalId}" skipped`
+    } else if (rec.parentExternalId !== undefined) {
+      const parentKey = commentKey(rec.feedbackExternalId, rec.parentExternalId)
+      const parent = runComments.get(parentKey)
+      if (parent && !trail.has(parentKey)) {
+        trail.add(key)
+        if (resolve(parent, trail) !== null && !existingCommentKeys.has(parentKey))
+          reason = `Comment with skipped parent "${rec.parentExternalId}" skipped`
+      } else if (!existingCommentKeys.has(parentKey)) {
+        reason = `Comment with unknown parent "${rec.parentExternalId}" skipped`
+      }
+    }
+    validity.set(key, reason)
+    return reason
+  }
+  for (const rec of comments) resolve(rec, new Set())
+  return validity
+}
+
+/** Warnings for changelog links to feedback that is neither in the run nor previously imported. */
+export function changelogLinkIssues(rec: ImportChangelog, knownFeedback: ReadonlySet<string>): IssueInput[] {
+  return (rec.feedbackExternalIds ?? [])
+    .filter((fid) => !knownFeedback.has(fid))
+    .map((fid) => ({
+      severity: 'warning' as const,
+      entityType: 'changelog',
+      externalId: rec.externalId,
+      message: `Linked feedback "${fid}" is unknown; link skipped`,
+    }))
+}
+
 export interface ImportPlan {
   counts: Record<ImportSection, SectionCounts>
   kept: { entity: 'feedback' | 'comment' | 'changelog' | 'person'; externalId: string; fields: string[] }[]
@@ -223,12 +348,7 @@ export async function planImport(runId: string): Promise<ImportPlan> {
   const taxonomy = await resolveTaxonomy(projectId, batch, { apply: false })
   const effective = await effectiveStatusValues(projectId, taxonomy)
 
-  const counts = Object.fromEntries(
-    (['statuses', 'categories', 'people', 'feedback', 'votes', 'comments', 'changelog'] as const).map((s) => [
-      s,
-      { create: 0, update: 0, unchanged: 0, skip: 0 },
-    ])
-  ) as Record<ImportSection, SectionCounts>
+  const counts = emptyCounts()
   const kept: ImportPlan['kept'] = []
   const issues: IssueInput[] = [
     ...staged.map((i) => ({
@@ -290,14 +410,8 @@ export async function planImport(runId: string): Promise<ImportPlan> {
   for (const rec of batch.feedback) {
     const { incoming, issues: recIssues } = feedbackIncoming(rec, { ...taxonomy, categoryIdByExternalId }, effective)
     issues.push(...recIssues)
-    if (rec.authorExternalId !== undefined && !knownPeople.has(rec.authorExternalId)) {
-      issues.push({
-        severity: 'warning',
-        entityType: 'feedback',
-        externalId: rec.externalId,
-        message: `Unknown author "${rec.authorExternalId}"; imported without a person`,
-      })
-    }
+    const authorIssue = unknownAuthorIssue('feedback', rec, knownPeople)
+    if (authorIssue) issues.push(authorIssue)
     const row = feedbackByExternalId.get(rec.externalId)
     if (!row) counts.feedback.create++
     else if (!sync) counts.feedback.unchanged++
@@ -320,29 +434,10 @@ export async function planImport(runId: string): Promise<ImportPlan> {
   }
   for (const rec of batch.feedback) {
     const fbRow = feedbackByExternalId.get(rec.externalId)
-    const seen = new Set<string>()
-    for (const v of rec.votes ?? []) {
-      if (!knownPeople.has(v.personExternalId)) {
-        counts.votes.skip++
-        issues.push({
-          severity: 'skipped',
-          entityType: 'vote',
-          externalId: rec.externalId,
-          message: `Vote by unknown person "${v.personExternalId}" skipped`,
-        })
-        continue
-      }
-      if (seen.has(v.personExternalId)) {
-        counts.votes.skip++
-        issues.push({
-          severity: 'skipped',
-          entityType: 'vote',
-          externalId: rec.externalId,
-          message: `Duplicate vote by "${v.personExternalId}" skipped`,
-        })
-        continue
-      }
-      seen.add(v.personExternalId)
+    const { valid, skipped } = voteDecisions(rec, knownPeople)
+    counts.votes.skip += skipped.length
+    issues.push(...skipped)
+    for (const v of valid) {
       const person = personByExternalId.get(v.personExternalId)
       const exists = !!fbRow && !!person && votePairs.has(`${fbRow.id}\u0000${person.id}`)
       counts.votes[exists ? 'unchanged' : 'create']++
@@ -359,50 +454,21 @@ export async function planImport(runId: string): Promise<ImportPlan> {
         .where(and(inArray(feedbackComment.feedbackId, ids), eq(feedbackComment.externalSource, source))))
     )
   }
-  const commentKey = (feedbackExternalId: string, externalId: string) => `${feedbackExternalId}\u0000${externalId}`
   const existingComments = new Map<string, typeof feedbackComment.$inferSelect>()
   for (const c of commentRows) {
     const fbExternalId = feedbackExternalIdById.get(c.feedbackId)
     if (fbExternalId && c.externalId) existingComments.set(commentKey(fbExternalId, c.externalId), c)
   }
-  const runComments = new Map(batch.comments.map((c) => [commentKey(c.feedbackExternalId, c.externalId), c]))
-  const validity = new Map<string, string | null>() // key → skip reason (null = valid)
-  const resolveComment = (rec: ImportComment, trail: Set<string>): string | null => {
-    const key = commentKey(rec.feedbackExternalId, rec.externalId)
-    const cached = validity.get(key)
-    if (cached !== undefined) return cached
-    let reason: string | null = null
-    if (!knownFeedback.has(rec.feedbackExternalId)) {
-      reason = `Comment on unknown feedback "${rec.feedbackExternalId}" skipped`
-    } else if (rec.parentExternalId !== undefined) {
-      const parentKey = commentKey(rec.feedbackExternalId, rec.parentExternalId)
-      const parent = runComments.get(parentKey)
-      if (parent && !trail.has(parentKey)) {
-        trail.add(key)
-        if (resolveComment(parent, trail) !== null && !existingComments.has(parentKey))
-          reason = `Comment with skipped parent "${rec.parentExternalId}" skipped`
-      } else if (!existingComments.has(parentKey)) {
-        reason = `Comment with unknown parent "${rec.parentExternalId}" skipped`
-      }
-    }
-    validity.set(key, reason)
-    return reason
-  }
+  const skipReasons = commentSkipReasons(batch.comments, knownFeedback, new Set(existingComments.keys()))
   for (const rec of batch.comments) {
-    const reason = resolveComment(rec, new Set())
+    const reason = skipReasons.get(commentKey(rec.feedbackExternalId, rec.externalId)) ?? null
     if (reason !== null) {
       counts.comments.skip++
       issues.push({ severity: 'skipped', entityType: 'comment', externalId: rec.externalId, message: reason })
       continue
     }
-    if (rec.authorExternalId !== undefined && !knownPeople.has(rec.authorExternalId)) {
-      issues.push({
-        severity: 'warning',
-        entityType: 'comment',
-        externalId: rec.externalId,
-        message: `Unknown author "${rec.authorExternalId}"; imported without a person`,
-      })
-    }
+    const authorIssue = unknownAuthorIssue('comment', rec, knownPeople)
+    if (authorIssue) issues.push(authorIssue)
     const row = existingComments.get(commentKey(rec.feedbackExternalId, rec.externalId))
     if (!row) counts.comments.create++
     else if (!sync) counts.comments.unchanged++
@@ -421,16 +487,7 @@ export async function planImport(runId: string): Promise<ImportPlan> {
   const changelogByExternalId = new Map(changelogRows.filter((c) => c.externalId).map((c) => [c.externalId!, c]))
   for (const rec of batch.changelog) {
     const { incoming, issues: recIssues } = changelogIncoming(rec)
-    issues.push(...recIssues)
-    for (const fid of rec.feedbackExternalIds ?? []) {
-      if (!knownFeedback.has(fid))
-        issues.push({
-          severity: 'warning',
-          entityType: 'changelog',
-          externalId: rec.externalId,
-          message: `Linked feedback "${fid}" is unknown; link skipped`,
-        })
-    }
+    issues.push(...recIssues, ...changelogLinkIssues(rec, knownFeedback))
     const row = changelogByExternalId.get(rec.externalId)
     if (!row) counts.changelog.create++
     else if (!sync) counts.changelog.unchanged++
