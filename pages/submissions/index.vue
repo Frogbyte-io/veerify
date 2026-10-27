@@ -1,16 +1,15 @@
 <template>
-  <div class="p-6">
-    <div class="mb-6">
-      <h1 class="text-3xl font-bold text-foreground">My Submissions</h1>
-      <p class="text-muted-foreground">All feedback you've submitted across projects</p>
-    </div>
+  <PageContainer>
+    <PageHeader title="My Submissions" description="All feedback you've submitted across projects" />
 
-    <!-- Loading -->
-    <div v-if="isLoading" class="space-y-3">
-      <Skeleton class="h-16 w-full" />
-      <Skeleton class="h-16 w-full" />
-      <Skeleton class="h-16 w-full" />
-      <Skeleton class="h-16 w-full" />
+    <!-- Loading: filter row, then the list -->
+    <div v-if="isLoading" class="space-y-4">
+      <div class="flex items-center gap-2">
+        <Skeleton v-for="n in 4" :key="n" class="h-8 w-20" />
+      </div>
+      <div class="space-y-3">
+        <Skeleton v-for="n in 4" :key="n" class="h-[88px] w-full rounded-lg" />
+      </div>
     </div>
 
     <!-- Error -->
@@ -44,7 +43,7 @@
     <!-- Submissions list -->
     <template v-else>
       <!-- Status filter -->
-      <div class="flex items-center gap-2 mb-4 flex-wrap">
+      <div class="flex items-center gap-2 flex-wrap">
         <Button
           v-for="filter in statusFilters"
           :key="filter.value"
@@ -106,7 +105,7 @@
         </div>
       </div>
     </template>
-  </div>
+  </PageContainer>
 </template>
 
 <script>

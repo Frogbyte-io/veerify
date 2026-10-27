@@ -1,26 +1,23 @@
 <template>
-  <div class="p-6">
-    <!-- Loading state -->
-    <div v-if="isLoading" class="space-y-6">
-      <Skeleton class="h-8 w-48" />
-      <Skeleton class="h-4 w-64" />
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Skeleton class="h-24" />
-        <Skeleton class="h-24" />
-        <Skeleton class="h-24" />
-        <Skeleton class="h-24" />
+  <PageContainer>
+    <PageHeader :title="headerTitle" :description="headerDescription" />
+
+    <!-- Loading state: shaped like the workspace dashboard (stat cards, then the content grid) -->
+    <template v-if="isLoading">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" data-testid="dashboard-loading">
+        <Skeleton v-for="n in 4" :key="n" class="h-[90px] rounded-xl" />
       </div>
-    </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Skeleton class="h-96 rounded-xl lg:col-span-2" />
+        <div class="space-y-6">
+          <Skeleton class="h-44 rounded-xl" />
+          <Skeleton class="h-40 rounded-xl" />
+        </div>
+      </div>
+    </template>
 
     <!-- Personal Dashboard (no workspace) -->
     <template v-else-if="!hasOrganization">
-      <div class="mb-6">
-        <h1 class="text-3xl font-bold text-foreground">Welcome, {{ userName }}</h1>
-        <p class="text-muted-foreground">
-          This is your personal dashboard. Track your feedback submissions and manage your account.
-        </p>
-      </div>
-
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left column: submissions summary -->
         <div class="lg:col-span-2 space-y-6">
@@ -162,20 +159,7 @@
 
     <!-- Workspace Dashboard (has organization) -->
     <template v-else>
-      <div class="mb-6">
-        <h1 class="text-3xl font-bold text-foreground">{{ activeProject?.project?.name || 'Dashboard' }}</h1>
-        <p class="text-muted-foreground">Overview of this project's feedback activity</p>
-      </div>
-
-      <!-- Stats loading -->
-      <div v-if="statsLoading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Skeleton class="h-24" />
-        <Skeleton class="h-24" />
-        <Skeleton class="h-24" />
-        <Skeleton class="h-24" />
-      </div>
-
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div class="bg-card p-6 rounded-lg border border-border">
           <div class="flex items-center">
             <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/10 mr-4">
@@ -226,7 +210,7 @@
       </div>
 
       <!-- Bottom section: recent feedback + project info -->
-      <div class="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Recent Feedback -->
         <div class="lg:col-span-2">
           <Card>
@@ -240,12 +224,7 @@
               </div>
             </CardHeader>
             <CardContent>
-              <div v-if="statsLoading" class="space-y-3">
-                <Skeleton class="h-12" />
-                <Skeleton class="h-12" />
-                <Skeleton class="h-12" />
-              </div>
-              <div v-else-if="stats.recentFeedback.length === 0" class="text-center py-8">
+              <div v-if="stats.recentFeedback.length === 0" class="text-center py-8">
                 <div class="flex justify-center mb-4">
                   <div class="flex items-center justify-center w-12 h-12 rounded-full bg-muted">
                     <Icon name="lucide:inbox" class="w-6 h-6 text-muted-foreground" />
@@ -290,33 +269,27 @@
               <CardTitle class="text-base">Project overview</CardTitle>
             </CardHeader>
             <CardContent class="space-y-4">
-              <div v-if="statsLoading">
-                <Skeleton class="h-8 mb-2" />
-                <Skeleton class="h-8" />
+              <div v-if="productCount > 1" class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Icon name="lucide:package" class="w-4 h-4" />
+                  Products
+                </div>
+                <span class="font-semibold">{{ productCount }}</span>
               </div>
-              <template v-else>
-                <div v-if="productCount > 1" class="flex items-center justify-between">
-                  <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Icon name="lucide:package" class="w-4 h-4" />
-                    Products
-                  </div>
-                  <span class="font-semibold">{{ productCount }}</span>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Icon name="lucide:folder" class="w-4 h-4" />
+                  Projects in workspace
                 </div>
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Icon name="lucide:folder" class="w-4 h-4" />
-                    Projects in workspace
-                  </div>
-                  <span class="font-semibold">{{ stats.projectCount }}</span>
+                <span class="font-semibold">{{ stats.projectCount }}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Icon name="lucide:users" class="w-4 h-4" />
+                  Workspace members
                 </div>
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Icon name="lucide:users" class="w-4 h-4" />
-                    Workspace members
-                  </div>
-                  <span class="font-semibold">{{ stats.memberCount }}</span>
-                </div>
-              </template>
+                <span class="font-semibold">{{ stats.memberCount }}</span>
+              </div>
             </CardContent>
           </Card>
 
@@ -338,11 +311,11 @@
         </div>
       </div>
     </template>
-  </div>
+  </PageContainer>
 </template>
 
 <script>
-import { fetchDashboardBootstrap } from '~/lib/dashboard-bootstrap-client'
+import { fetchDashboardBootstrap, getCachedDashboardBootstrap } from '~/lib/dashboard-bootstrap-client'
 
 export default {
   name: 'DashboardPage',
@@ -357,7 +330,6 @@ export default {
       submissionCount: 0,
       completedCount: 0,
       totalVotes: 0,
-      statsLoading: true,
       stats: {
         totalFeedback: 0,
         openFeedback: 0,
@@ -371,6 +343,17 @@ export default {
   },
 
   computed: {
+    headerTitle() {
+      if (this.isLoading) return 'Dashboard'
+      if (!this.hasOrganization) return `Welcome, ${this.userName}`
+      return this.activeProject?.project?.name || 'Dashboard'
+    },
+    headerDescription() {
+      if (!this.isLoading && !this.hasOrganization) {
+        return 'This is your personal dashboard. Track your feedback submissions and manage your account.'
+      }
+      return "Overview of this project's feedback activity"
+    },
     productCount() {
       return this.activeProject?.products?.length || 0
     },
@@ -378,6 +361,14 @@ export default {
 
   created() {
     useHead({ title: 'Dashboard' })
+    // Warm navigation: render the page from the bootstrap cache on the first paint
+    if (import.meta.client) {
+      const cached = getCachedDashboardBootstrap()
+      if (cached) {
+        this.applyBootstrap(cached)
+        this.isLoading = false
+      }
+    }
   },
 
   async mounted() {
@@ -387,35 +378,33 @@ export default {
   methods: {
     async initialize() {
       try {
-        this.isLoading = true
-
         this.scheduleAnonymousMerge()
 
         const bootstrap = await fetchDashboardBootstrap()
-        const session = bootstrap?.session
-        this.userName = session?.user?.name || 'there'
-
-        this.hasOrganization = Boolean(bootstrap?.projectContext?.activeOrganization)
-        if (this.hasOrganization) {
-          this.activeProject = bootstrap?.projectContext?.activeProject || null
-          if (bootstrap?.workspace?.stats) {
-            this.stats = bootstrap.workspace.stats
-            this.statsLoading = false
-          } else {
-            await this.loadWorkspaceStats()
-          }
-        } else {
-          const personal = bootstrap?.personal || {}
-          this.recentSubmissions = personal.recentSubmissions || []
-          this.submissionCount = personal.submissionCount || 0
-          this.completedCount = personal.completedCount || 0
-          this.totalVotes = personal.totalVotes || 0
-          this.statsLoading = false
-        }
+        this.applyBootstrap(bootstrap)
+        if (this.hasOrganization && !bootstrap?.workspace?.stats) await this.loadWorkspaceStats()
       } catch (error) {
         console.error('Dashboard initialization error:', error)
       } finally {
+        // One skeleton for the whole page: it goes away only once everything is in
         this.isLoading = false
+      }
+    },
+
+    applyBootstrap(bootstrap) {
+      const session = bootstrap?.session
+      this.userName = session?.user?.name || 'there'
+
+      this.hasOrganization = Boolean(bootstrap?.projectContext?.activeOrganization)
+      if (this.hasOrganization) {
+        this.activeProject = bootstrap?.projectContext?.activeProject || null
+        if (bootstrap?.workspace?.stats) this.stats = bootstrap.workspace.stats
+      } else {
+        const personal = bootstrap?.personal || {}
+        this.recentSubmissions = personal.recentSubmissions || []
+        this.submissionCount = personal.submissionCount || 0
+        this.completedCount = personal.completedCount || 0
+        this.totalVotes = personal.totalVotes || 0
       }
     },
 
@@ -443,15 +432,12 @@ export default {
 
     async loadWorkspaceStats() {
       try {
-        this.statsLoading = true
         const response = await $fetch('/api/dashboard/stats')
         if (response?.data) {
           this.stats = response.data
         }
       } catch (_error) {
         // Non-critical
-      } finally {
-        this.statsLoading = false
       }
     },
 

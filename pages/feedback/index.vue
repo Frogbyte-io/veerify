@@ -1,12 +1,11 @@
 <template>
-  <div class="p-6 w-full min-w-0 max-w-7xl mx-auto space-y-8">
-    <!-- Header -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div>
-        <h1 data-testid="feedback-page-title" class="text-3xl font-bold tracking-tight text-foreground">Feedback</h1>
-        <p class="text-muted-foreground mt-1">Manage and respond to user feedback and feature requests</p>
-      </div>
-      <div class="flex items-center gap-3">
+  <PageContainer>
+    <PageHeader
+      title="Feedback"
+      description="Manage and respond to user feedback and feature requests"
+      data-testid="feedback-page-title"
+    >
+      <template #actions>
         <Button
           v-if="isFeedbackView"
           variant="outline"
@@ -27,57 +26,58 @@
           <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
           Add Feedback
         </Button>
+      </template>
+    </PageHeader>
+
+    <!-- Feedback / Settings tabs. The product chips share this row (rendered from the active-project cache)
+         so they never push the board down. -->
+    <div class="flex flex-wrap items-center justify-between gap-x-4 border-b">
+      <div class="flex items-center gap-1" role="tablist" data-testid="feedback-tabs">
+        <NuxtLink
+          :to="{ path: '/feedback', query: feedbackTabQuery }"
+          role="tab"
+          :aria-selected="isFeedbackView"
+          data-testid="feedback-tab-feedback"
+          :class="tabClass(isFeedbackView)"
+        >
+          <Icon name="lucide:message-square" class="w-4 h-4 inline mr-1.5" />
+          Feedback
+        </NuxtLink>
+        <NuxtLink
+          :to="{ path: '/feedback', query: { view: 'settings' } }"
+          role="tab"
+          :aria-selected="!isFeedbackView"
+          data-testid="feedback-tab-settings"
+          :class="tabClass(!isFeedbackView)"
+        >
+          <Icon name="lucide:settings" class="w-4 h-4 inline mr-1.5" />
+          Settings
+        </NuxtLink>
       </div>
-    </div>
-
-    <!-- Feedback / Settings tabs -->
-    <div class="flex items-center gap-1 border-b -mt-4" role="tablist" data-testid="feedback-tabs">
-      <NuxtLink
-        :to="{ path: '/feedback', query: feedbackTabQuery }"
-        role="tab"
-        :aria-selected="isFeedbackView"
-        data-testid="feedback-tab-feedback"
-        :class="tabClass(isFeedbackView)"
+      <div
+        v-if="isFeedbackView && hasMultipleProducts"
+        class="flex flex-wrap items-center gap-2 pb-1.5"
+        data-testid="feedback-product-chips"
       >
-        <Icon name="lucide:message-square" class="w-4 h-4 inline mr-1.5" />
-        Feedback
-      </NuxtLink>
-      <NuxtLink
-        :to="{ path: '/feedback', query: { view: 'settings' } }"
-        role="tab"
-        :aria-selected="!isFeedbackView"
-        data-testid="feedback-tab-settings"
-        :class="tabClass(!isFeedbackView)"
-      >
-        <Icon name="lucide:settings" class="w-4 h-4 inline mr-1.5" />
-        Settings
-      </NuxtLink>
-    </div>
-
-    <!-- Product chips: only when the project has more than one product -->
-    <div
-      v-if="isFeedbackView && !isLoading && !error && hasMultipleProducts"
-      class="flex flex-wrap items-center gap-2 -mt-4"
-      data-testid="feedback-product-chips"
-    >
-      <button
-        type="button"
-        :class="chipClass(!productFilterSlug)"
-        data-testid="feedback-product-chip-all"
-        @click="setProductFilter('')"
-      >
-        All products
-      </button>
-      <button
-        v-for="p in products"
-        :key="p.id"
-        type="button"
-        :class="chipClass(productFilterSlug === p.slug)"
-        :data-testid="`feedback-product-chip-${p.slug}`"
-        @click="setProductFilter(p.slug)"
-      >
-        {{ p.name }}
-      </button>
+        <button
+          type="button"
+          :class="chipClass(!productFilterSlug)"
+          data-testid="feedback-product-chip-all"
+          @click="setProductFilter('')"
+        >
+          All products
+        </button>
+        <button
+          v-for="p in products"
+          :key="p.id"
+          type="button"
+          :class="chipClass(productFilterSlug === p.slug)"
+          :data-testid="`feedback-product-chip-${p.slug}`"
+          @click="setProductFilter(p.slug)"
+        >
+          {{ p.name }}
+        </button>
+      </div>
     </div>
 
     <!-- Settings view -->
@@ -88,7 +88,7 @@
     />
 
     <!-- Loading State -->
-    <div v-else-if="isLoading" data-testid="feedback-loading" class="space-y-8">
+    <div v-else-if="isLoading" data-testid="feedback-loading" class="space-y-6">
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card v-for="n in 4" :key="n">
           <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -100,20 +100,16 @@
           </CardContent>
         </Card>
       </div>
-      <Card>
-        <CardHeader>
-          <Skeleton class="h-6 w-40" />
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <div v-for="n in 3" :key="n" class="flex items-center space-x-4">
-            <Skeleton class="h-12 w-12 rounded-full" />
-            <div class="space-y-2">
-              <Skeleton class="h-4 w-[250px]" />
-              <Skeleton class="h-4 w-[200px]" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <Skeleton class="h-[58px] w-full rounded-lg" />
+      <div class="space-y-4">
+        <Card v-for="n in 3" :key="n">
+          <CardContent class="p-6">
+            <Skeleton class="h-5 w-1/3 mb-3" />
+            <Skeleton class="h-4 w-full mb-2" />
+            <Skeleton class="h-4 w-2/3" />
+          </CardContent>
+        </Card>
+      </div>
     </div>
 
     <!-- Error State -->
@@ -754,12 +750,13 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </div>
+  </PageContainer>
 </template>
 
 <script>
 import { VueDraggable } from 'vue-draggable-plus'
 import { cn } from '~/lib/utils'
+import { cachedActiveProject, loadActiveProject } from '~/lib/active-project'
 
 const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 
@@ -769,10 +766,12 @@ export default {
   components: { VueDraggable },
 
   data() {
+    // Warm navigation: start from the shared active-project cache so the chips and header render at once
+    const cached = import.meta.client ? cachedActiveProject() : undefined
     return {
       // Active project (GET /api/projects/active)
-      project: null,
-      products: [],
+      project: cached?.project || null,
+      products: cached?.products || [],
 
       feedbackItems: [],
       categories: [],
@@ -781,8 +780,9 @@ export default {
       creatingGithubIssueFeedbackIds: [],
       statusCounts: { open: 0, in_progress: 0, completed: 0 },
 
-      isLoading: true,
+      isLoading: !(import.meta.client && cachedActiveProject()?.project),
       isFeedbackLoading: false,
+      feedbackLoadedOnce: false,
       error: null,
       feedbackError: null,
 
@@ -910,8 +910,16 @@ export default {
     productFilterId() {
       if (this.project && this.isFeedbackView) this.onFilterScopeChange()
     },
+    // Returning from Settings keeps the loaded board instead of refetching it; categories and the
+    // GitHub integration may have changed in Settings, so those refresh quietly in the background.
     '$route.query.view'() {
-      if (this.project && this.isFeedbackView) this.onFilterScopeChange()
+      if (!this.project || !this.isFeedbackView) return
+      if (this.feedbackLoadedOnce) {
+        this.loadCategories()
+        this.loadGithubIntegration()
+      } else {
+        this.onFilterScopeChange()
+      }
     },
   },
 
@@ -956,12 +964,11 @@ export default {
     },
 
     async initProjectContext() {
-      this.isLoading = true
+      if (!this.project) this.isLoading = true
       this.error = null
 
       try {
-        const response = await $fetch('/api/projects/active')
-        const context = response?.data
+        const context = await loadActiveProject()
         if (!context?.project?.id) {
           this.error = 'No active project found'
           return
@@ -971,6 +978,7 @@ export default {
         await this.onFilterScopeChange()
       } catch (err) {
         console.error('Error loading the active project:', err)
+        this.project = null
         this.error = err?.data?.error?.message || err?.data?.message || 'Failed to load the active project'
       } finally {
         this.isLoading = false
@@ -1019,6 +1027,7 @@ export default {
         this.pagination = response?.data?.pagination || this.pagination
         this.buildKanbanData()
         this.updateStatusCounts()
+        this.feedbackLoadedOnce = true
       } catch (err) {
         console.error('Error loading feedback:', err)
         this.feedbackError = 'Failed to load feedback. Please try again.'
