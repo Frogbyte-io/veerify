@@ -1,3 +1,27 @@
+/**
+ * @openapi
+ * /api/projects/{slug}:
+ *   get:
+ *     tags: [Projects]
+ *     summary: Get project
+ *     description: >
+ *       Returns a project with the caller's role, feedback count, organization, products and categories. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: getProject
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Project row plus role, feedbackCount, organization, products and categories" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "No access to the project" }
+ *       404: { description: "Project not found in the active workspace" }
+ */
 import { count, eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { db } from '~/server/database/drizzle'

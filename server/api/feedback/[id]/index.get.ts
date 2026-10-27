@@ -1,3 +1,29 @@
+/**
+ * @openapi
+ * /api/feedback/{id}:
+ *   get:
+ *     tags: [Feedback]
+ *     summary: Get a feedback item
+ *     description: >
+ *       Returns one feedback item with category, author, project, product, viewer vote state and permission flags (canEdit, canDelete, canManage). Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Hidden items are visible only to project members and the author. Contact details and client metadata are redacted for non-members.
+ *     operationId: getFeedback
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *       - {}
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Feedback item" }
+ *       401: { description: "Invalid personal API key" }
+ *       403: { description: "Project is not public and caller has no access" }
+ *       404: { description: "Feedback not found or not public" }
+ */
 import { eq, and, count } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'

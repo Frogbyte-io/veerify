@@ -1,3 +1,38 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/vote:
+ *   post:
+ *     tags: [Feedback]
+ *     summary: Vote on feedback
+ *     description: >
+ *       Casts, switches or removes a vote: the same type again removes the vote, the opposite type switches direction. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       The project and product of the feedback must be public, even for signed-in callers. Anonymous votes are tracked by an anonymous session cookie. Rate limited.
+ *     operationId: voteOnFeedback
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *       - {}
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               type: { type: string, enum: [upvote, downvote], default: upvote, description: "An invalid or missing body falls back to upvote" }
+ *     responses:
+ *       200: { description: "data is { voted, voteType, voteCount }; voted is false when the vote was removed" }
+ *       401: { description: "Invalid personal API key" }
+ *       403: { description: "Project is not public" }
+ *       404: { description: "Feedback not found" }
+ *       429: { description: "Rate limit exceeded" }
+ */
 import { z } from 'zod'
 import { eq, and, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'

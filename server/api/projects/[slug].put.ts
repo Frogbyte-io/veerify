@@ -1,3 +1,73 @@
+/**
+ * @openapi
+ * /api/projects/{slug}:
+ *   put:
+ *     tags: [Projects]
+ *     summary: Update project
+ *     description: >
+ *       Updates project fields. Project admins only. Every field is optional. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       `settings` REPLACES the stored settings object, it is not merged: send the complete object (including the module flags) or omitted keys fall back to their defaults. `settings: null` clears all settings and deletes uploaded logo and banner assets. Unknown keys are accepted and stored as-is.
+ *       Tools are switched per project with the module flags in `settings`: feedbackEnabled (default true), roadmapEnabled, changelogEnabled, supportEnabled, marketingEnabled (default false). Set `customDomain` to a hostname to connect it, or null/empty to disconnect.
+ *     operationId: updateProject
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string, minLength: 1, maxLength: 100 }
+ *               slug: { type: string, minLength: 1, maxLength: 100, pattern: "^[a-z0-9-]+$" }
+ *               description: { type: string, maxLength: 1000, nullable: true }
+ *               isPublic: { type: boolean }
+ *               accessMode: { type: string, enum: [workspace, restricted] }
+ *               customDomain: { type: string, maxLength: 253, nullable: true }
+ *               settings:
+ *                 type: object
+ *                 nullable: true
+ *                 additionalProperties: true
+ *                 description: "Replaces the whole settings object; null clears it"
+ *                 properties:
+ *                   feedbackEnabled: { type: boolean, description: "Feedback tool (default true)" }
+ *                   roadmapEnabled: { type: boolean, description: "Roadmap tool (default false)" }
+ *                   changelogEnabled: { type: boolean, description: "Changelog tool (default false)" }
+ *                   supportEnabled: { type: boolean, description: "Support tool (default false)" }
+ *                   marketingEnabled: { type: boolean, description: "Marketing tool (default false)" }
+ *                   accentColor: { type: string, pattern: "^#[0-9a-fA-F]{6}$" }
+ *                   logoUrl: { type: string, maxLength: 2000, nullable: true }
+ *                   bannerUrl: { type: string, maxLength: 2000, nullable: true }
+ *                   logoAssetKey: { type: string, maxLength: 500, nullable: true }
+ *                   bannerAssetKey: { type: string, maxLength: 500, nullable: true }
+ *                   logoUploadId: { type: string, maxLength: 3000, description: "uploadId from POST /api/projects/{slug}/assets/presign (kind logo)" }
+ *                   bannerUploadId: { type: string, maxLength: 3000, description: "uploadId from POST /api/projects/{slug}/assets/presign (kind banner)" }
+ *                   showPoweredBy: { type: boolean }
+ *                   showGithubFooter: { type: boolean }
+ *                   themeMode: { type: string, enum: [system, light, dark] }
+ *                   customFooterEnabled: { type: boolean }
+ *                   customFooterBranding: { type: string, maxLength: 120, nullable: true }
+ *                   customFooterText: { type: string, maxLength: 500, nullable: true }
+ *                   customFooterPrimaryLabel: { type: string, maxLength: 80, nullable: true }
+ *                   customFooterPrimaryUrl: { type: string, format: uri, maxLength: 500, nullable: true }
+ *                   customFooterSecondaryLabel: { type: string, maxLength: 80, nullable: true }
+ *                   customFooterSecondaryUrl: { type: string, format: uri, maxLength: 500, nullable: true }
+ *                   voteStyle: { type: string, enum: [arrows, thumbs, rockets, hearts, stars, zap, plusminus] }
+ *     responses:
+ *       200: { description: "Updated project row" }
+ *       400: { description: "Validation failed, invalid upload or invalid domain" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not a project admin" }
+ *       404: { description: "Project not found in the active workspace" }
+ *       409: { description: "Slug or custom domain already in use" }
+ */
 import { eq, and } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

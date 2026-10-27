@@ -5,7 +5,12 @@ function normalizeHostname(value: string) {
 }
 
 function isPageRequest(pathname: string) {
-  return !pathname.startsWith('/api/') && !pathname.startsWith('/_nuxt/') && pathname !== '/favicon.ico'
+  return (
+    !pathname.startsWith('/api/') &&
+    !pathname.startsWith('/_nuxt/') &&
+    pathname !== '/favicon.ico' &&
+    pathname !== '/mcp'
+  )
 }
 
 export default defineEventHandler(async (event) => {

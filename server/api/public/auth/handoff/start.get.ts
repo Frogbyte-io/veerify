@@ -3,7 +3,7 @@ import { getCookie } from 'h3'
 import { z } from 'zod'
 import { normalizeHostname } from '~/lib/auth-redirect'
 import { auth } from '~/lib/auth'
-import { requireAuth } from '~/server/utils/auth-middleware'
+import { requireInteractiveSession } from '~/server/utils/auth-middleware'
 import { createPublicAuthHandoffToken, PUBLIC_AUTH_HANDOFF_QUERY_PARAM } from '~/server/utils/public-auth-handoff'
 import { resolveAllowedPublicRedirectTarget } from '~/server/utils/public-auth-redirect'
 import { validateQuery } from '~/server/utils/validation'
@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const session = await requireAuth(event)
+  const session = await requireInteractiveSession(event)
   const cookies = getCookies(auth.options)
   const dontRememberMe = Boolean(getCookie(event, cookies.dontRememberToken.name))
   const token = await createPublicAuthHandoffToken({

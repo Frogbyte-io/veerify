@@ -1,3 +1,38 @@
+/**
+ * @openapi
+ * /api/orgs/{slug}:
+ *   delete:
+ *     tags: [Organizations]
+ *     summary: Delete organization
+ *     description: >
+ *       Permanently deletes an organization and everything in it. Owners only. The body must repeat the slug as `confirmSlug`. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: deleteOrganization
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Organization (workspace) slug"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [confirmSlug]
+ *             properties:
+ *               confirmSlug: { type: string, minLength: 1, description: "Must equal the organization slug" }
+ *     responses:
+ *       200: { description: "{ deleted: true, organizationId, slug }" }
+ *       400: { description: "Validation failed or confirmSlug does not match" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not an owner" }
+ *       404: { description: "Organization not found" }
+ *       429: { description: "Rate limit exceeded" }
+ */
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

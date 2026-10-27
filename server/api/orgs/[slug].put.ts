@@ -1,3 +1,48 @@
+/**
+ * @openapi
+ * /api/orgs/{slug}:
+ *   put:
+ *     tags: [Organizations]
+ *     summary: Update organization
+ *     description: >
+ *       Updates the organization name, slug, logo or billing settings. Owners and admins only. At least one field is required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       To set a logo from an upload, call POST /api/orgs/{slug}/assets/presign, upload the file, then pass the returned `uploadId` as `logoUploadId` (this takes priority over `logo`). `logo: null` removes the logo.
+ *     operationId: updateOrganization
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Organization (workspace) slug"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             minProperties: 1
+ *             properties:
+ *               name: { type: string, minLength: 1, maxLength: 100 }
+ *               slug: { type: string, minLength: 1, maxLength: 100, pattern: "^[a-z0-9-]+$" }
+ *               logo: { type: string, format: uri, nullable: true }
+ *               logoUploadId: { type: string, maxLength: 3000, description: "uploadId from the presign endpoint (kind logo)" }
+ *               settings:
+ *                 type: object
+ *                 additionalProperties: false
+ *                 properties:
+ *                   billingCcEmails: { type: array, maxItems: 10, items: { type: string, format: email }, description: "Lower-cased and de-duplicated on save" }
+ *     responses:
+ *       200: { description: "Updated organization details" }
+ *       400: { description: "Validation failed or invalid upload" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not an owner or admin" }
+ *       404: { description: "Organization not found" }
+ *       409: { description: "Slug already in use" }
+ *       429: { description: "Rate limit exceeded" }
+ */
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

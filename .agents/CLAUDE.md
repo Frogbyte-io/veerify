@@ -175,8 +175,8 @@ Better-Auth (lib/auth.ts)
 ### Request Lifecycle (protected API route)
 
 1. Client sends request to `/api/user/profile` (PUT)
-2. Server handler calls `auth.api.getSession({ headers })` to validate session
-3. If no valid session → `createError({ statusCode: 401 })`
+2. Server handler calls `requireAuth(event)` (`server/utils/auth-middleware.ts`), which accepts a session cookie or a personal API key
+3. If neither is valid → 401
 4. Otherwise, read body, validate inputs, run Drizzle query, return result
 
 ---
@@ -200,6 +200,20 @@ import { authClient, signIn, signUp, signOut, useSession } from '~/lib/auth-clie
 - `authClient` — full client with `.organization` and `.twoFactor` namespaces
 - `useSession(useFetch)` — returns `{ data: session, isPending }` (reactive refs)
 - `signIn`, `signUp`, `signOut` — convenience re-exports
+
+### API keys and MCP
+
+Personal API keys (`vfy_usr_...`, Settings → API keys) let an agent act as a user. Setup and recipes: `docs/mcp.md`.
+
+- `requireAuth` (`server/utils/auth-middleware.ts`) resolves `Authorization: Bearer vfy_usr_...` first. An invalid,
+  revoked or expired key is 401 with no cookie fallback. Key logic lives in `server/utils/user-api-keys.ts`.
+- `requireInteractiveSession` returns 403 for keys; use it on anything a key must not do. `isCredentialPrincipal`
+  tells the two apart. Keys cannot change the account email.
+- Active workspace and project are stored per credential on the `user_api_key` row. `X-Veerify-Organization` and
+  `X-Veerify-Project` override them per request, are access-checked (403, never a silent fallback) and persist nothing.
+- `/mcp` (`server/routes/mcp.ts`, tools in `server/mcp/`) is POST-only, key principals only, 4 MiB body limit, 600
+  requests per 60 s per key. `call_api` refuses `/api/auth/`, `/api/cron/`, `/api/public/auth/`, `/api/user/api-keys`
+  and `/api/test`.
 
 ### Route Guard — `middleware/auth.global.ts`
 
@@ -369,20 +383,17 @@ Nuxt maps files under `server/api/` directly to routes. Method-specific files us
 ### Protected Route Template
 
 ```typescript
-import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { user } from '~/server/database/schema/auth'
 import { eq } from 'drizzle-orm'
-import { getAuthHeaders } from '~/server/utils/auth-headers'
+import { requireAuth } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  // 1. Validate session
-  const session = await auth.api.getSession({
-    headers: getAuthHeaders(event),
-  })
-  if (!session?.user) {
-    throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
-  }
+  // 1. Authenticate: session cookie or personal API key (Bearer vfy_usr_...), 401 otherwise.
+  //    Use requireAuthWithResolvedProject / requireAuthWithOrganization (server/utils/project-context.ts)
+  //    when the route works in the active project/workspace, and requireInteractiveSession for
+  //    actions API keys must not perform (403 for keys).
+  const session = await requireAuth(event)
 
   // 2. Read & validate input
   const body = await readBody(event)
@@ -445,15 +456,17 @@ A `project_member` row with role `admin` makes them a project admin.
 
 ### Endpoint Authorization Rules
 
-| Endpoint                        | Auth     | Access Rule                                                                                         |
-| ------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `GET /api/feedback`             | Optional | Project access per requested project; anonymous callers see only public products of public projects |
-| `POST /api/feedback`            | Optional | Authenticated: project access. Anonymous: public project and public product                         |
-| `GET /api/feedback/[id]`        | Optional | Authenticated: project access. Anonymous: public project and public product                         |
-| `DELETE /api/feedback/[id]`     | Required | Author OR anyone with access to the project                                                         |
-| `POST /api/feedback/[id]/vote`  | Optional | Project and product must be public (voting is public-facing)                                        |
-| `POST /api/v1/feedback`         | App key  | Creates feedback on the key's product (key is the authorization; bypasses public checks)            |
-| `/api/projects/[slug]/api-keys` | Required | Project admins manage app keys (Feedback settings → App keys)                                       |
+| Endpoint                            | Auth     | Access Rule                                                                                            |
+| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `GET /api/feedback`                 | Optional | Project access per requested project; anonymous callers see only public products of public projects    |
+| `POST /api/feedback`                | Optional | Authenticated: project access. Anonymous: public project and public product                            |
+| `GET /api/feedback/[id]`            | Optional | Authenticated: project access. Anonymous: public project and public product                            |
+| `DELETE /api/feedback/[id]`         | Required | Author OR anyone with access to the project                                                            |
+| `POST /api/feedback/[id]/vote`      | Optional | Project and product must be public (voting is public-facing)                                           |
+| `POST /api/v1/feedback`             | App key  | Creates feedback on the key's product (key is the authorization; bypasses public checks)               |
+| `/api/projects/[slug]/api-keys`     | Required | Project admins manage app keys (Feedback settings → App keys)                                          |
+| `/api/user/api-keys` (+ `/[keyId]`) | Required | Browser session only (`requireInteractiveSession`); 403 for personal keys. Max 25 active keys per user |
+| `POST /mcp`                         | User key | Personal key principals only (cookie-only gets 401); acts with the key owner's permissions             |
 
 ### Roles
 
@@ -516,7 +529,7 @@ Reusable skill prompts live in `.agents/skills/`. Use them when asked to scaffol
 
 1. **Use Options API exclusively.** Never introduce `<script setup>` or Composition API imports.
 2. **Do not edit `components/ui/`** — these are generated by shadcn-vue CLI. Run `npx shadcn-nuxt add <component>` to add new ones.
-3. **Always validate sessions** on any new server API route using `auth.api.getSession()`.
+3. **Always authenticate** new server API routes with `requireAuth` (or `requireAuthWithResolvedProject` / `requireAuthWithOrganization`) from `server/utils/`, not `auth.api.getSession()` (which rejects personal API keys). Use `requireInteractiveSession` for actions API keys must not perform.
 4. **Use `createError()`** for all server-side errors — never throw plain exceptions.
 5. **Use `import.meta.client` / `import.meta.server`** — never `process.client` or `process.server`.
 6. **No fallback/placeholder data.** Show Skeleton loaders while fetching; show real error states on failure.

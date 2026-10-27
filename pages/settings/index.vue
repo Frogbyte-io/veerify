@@ -45,12 +45,14 @@
 <script>
 import SettingsProfile from '~/components/settings/SettingsProfile.vue'
 import SettingsSecurity from '~/components/settings/SettingsSecurity.vue'
+import SettingsApiKeys from '~/components/settings/SettingsApiKeys.vue'
 import SettingsNotifications from '~/components/settings/SettingsNotifications.vue'
 import SettingsAppearance from '~/components/settings/SettingsAppearance.vue'
 
 const tabs = [
   { key: 'profile', label: 'Profile', icon: 'lucide:user' },
   { key: 'security', label: 'Security', icon: 'lucide:shield' },
+  { key: 'api-keys', label: 'API keys', icon: 'lucide:key-round' },
   { key: 'notifications', label: 'Notifications', icon: 'lucide:bell' },
   { key: 'appearance', label: 'Appearance', icon: 'lucide:palette' },
 ]
@@ -58,6 +60,7 @@ const tabs = [
 const componentMap = {
   profile: 'SettingsProfile',
   security: 'SettingsSecurity',
+  'api-keys': 'SettingsApiKeys',
   notifications: 'SettingsNotifications',
   appearance: 'SettingsAppearance',
 }
@@ -75,6 +78,7 @@ export default {
   components: {
     SettingsProfile,
     SettingsSecurity,
+    SettingsApiKeys,
     SettingsNotifications,
     SettingsAppearance,
   },

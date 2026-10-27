@@ -428,6 +428,13 @@
       "when": 1792911808088,
       "tag": "0060_safe_namora",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1793103378958,
+      "tag": "0061_handy_night_nurse",
+      "breakpoints": true
     }
   ]
 }

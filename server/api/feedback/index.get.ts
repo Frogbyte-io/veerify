@@ -1,3 +1,58 @@
+/**
+ * @openapi
+ * /api/feedback:
+ *   get:
+ *     tags: [Feedback]
+ *     summary: List feedback
+ *     description: >
+ *       Lists feedback for one or more projects, pinned items first. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Project members see everything in their projects; others see only non-hidden items of public products of public projects.
+ *     operationId: listFeedback
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *       - {}
+ *     parameters:
+ *       - in: query
+ *         name: projectId
+ *         description: "Project id. Either projectId or projectIds is required"
+ *         schema: { type: string, minLength: 1 }
+ *       - in: query
+ *         name: projectIds
+ *         description: "Comma-separated project ids. Either projectId or projectIds is required"
+ *         schema: { type: string }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [open, in_progress, planned, completed, closed, declined] }
+ *       - in: query
+ *         name: categoryId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: productId
+ *         schema: { type: string, minLength: 1 }
+ *       - in: query
+ *         name: search
+ *         description: "Case-insensitive match on title or body"
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+ *       - in: query
+ *         name: sortBy
+ *         schema: { type: string, enum: [createdAt, updatedAt, voteCount, title], default: voteCount }
+ *       - in: query
+ *         name: sortOrder
+ *         schema: { type: string, enum: [asc, desc], default: desc }
+ *     responses:
+ *       200: { description: "Paginated list: data.items and data.pagination (page, limit, total, totalPages)" }
+ *       400: { description: "Validation failed (for example neither projectId nor projectIds given)" }
+ *       401: { description: "Invalid personal API key" }
+ *       403: { description: "No access to a requested project" }
+ *       404: { description: "Project not found" }
+ */
 import { z } from 'zod'
 import { eq, and, desc, asc, count, or, ilike } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'

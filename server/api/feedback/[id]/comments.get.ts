@@ -1,3 +1,28 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/comments:
+ *   get:
+ *     tags: [Feedback]
+ *     summary: List comments on a feedback item
+ *     description: >
+ *       Returns comments oldest first, with author, edited flag and canEdit/canDelete. Internal comments are returned only to project members. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: listFeedbackComments
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *       - {}
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Array of comments" }
+ *       401: { description: "Invalid personal API key" }
+ *       403: { description: "Project is not public and caller has no access" }
+ *       404: { description: "Feedback not found" }
+ */
 import { eq, and, asc } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'

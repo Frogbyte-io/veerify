@@ -1,3 +1,29 @@
+/**
+ * @openapi
+ * /api/notifications/read:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Mark notifications read
+ *     description: >
+ *       Marks one notification read when `id` is given, otherwise marks all of the caller's unread notifications read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: markNotificationsRead
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               id: { type: string, description: "Notification id; omit to mark every unread notification read" }
+ *     responses:
+ *       200: { description: "With id: the updated notification. Without id: { markedRead: number }" }
+ *       400: { description: "Validation failed" }
+ *       401: { description: "Not authenticated" }
+ *       404: { description: "Notification not found or not owned by the caller" }
+ */
 import { z } from 'zod'
 import { eq, and } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'

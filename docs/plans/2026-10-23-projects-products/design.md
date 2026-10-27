@@ -63,7 +63,7 @@ Better-Auth: organization plugin **without** teams (`lib/auth.ts`, `lib/auth-cli
 
 - `requireAuthWithResolvedProject(event)` → `{ session, activeProject }` (activeProject has `role`); 409 when the user has no project. **Mechanical replacement for `requireAuthWithResolvedTeam`.**
 - `requireAuthWithOrganization(event)` → `{ session, organizationId, organizationRole }` for workspace-level endpoints.
-- `resolveActiveProjectForSession(session)`, `setActiveProjectForSession({ sessionToken, userId, projectId })`, `setActiveOrganizationForSession({ sessionToken, userId, organizationId, preferredProjectId? })`
+- `resolveActiveProjectForSession(session)`, `setActiveProjectForSession({ target, userId, projectId })`, `setActiveOrganizationForSession({ target, userId, organizationId, preferredProjectId? })`
 
 `lib/modules.ts` — single level: `MODULES`, `ModuleKey`, `ModuleSettings`, `MODULE_KEYS`, `DEFAULT_PROJECT_MODULES`,
 `resolveProjectModules(settings)`, `isModuleEnabled(settings, key)`, `isModuleKey`. (`resolveProductModules`,

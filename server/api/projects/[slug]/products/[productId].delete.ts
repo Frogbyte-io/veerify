@@ -1,3 +1,39 @@
+/**
+ * @openapi
+ * /api/projects/{slug}/products/{productId}:
+ *   delete:
+ *     tags: [Projects]
+ *     summary: Delete product
+ *     description: >
+ *       Deletes a product. A project must keep at least one product. When the product has feedback, pass `moveTo` (another product id) to move it first; changelog tags and app keys are re-pointed too. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: deleteProjectProduct
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *       - in: path
+ *         name: productId
+ *         required: true
+ *         description: "Product id"
+ *         schema: { type: string }
+ *       - in: query
+ *         name: moveTo
+ *         required: false
+ *         description: "Id of the product that receives the feedback; required when the product has feedback"
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "{ id, deleted: true, movedFeedback }" }
+ *       400: { description: "moveTo equals the product being deleted" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not a project admin" }
+ *       404: { description: "Project or product not found" }
+ *       409: { description: "Last product, or it has feedback and no moveTo" }
+ */
 import { and, count, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedback, product, projectApiKey } from '~/server/database/schema/feedback'

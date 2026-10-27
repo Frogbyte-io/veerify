@@ -1,3 +1,27 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/lock:
+ *   patch:
+ *     tags: [Feedback]
+ *     summary: Toggle comment lock
+ *     description: >
+ *       Flips `isLocked` on the item (no request body). Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: toggleFeedbackLock
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Updated feedback item" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "No access to the feedback project" }
+ *       404: { description: "Feedback not found" }
+ */
 import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'

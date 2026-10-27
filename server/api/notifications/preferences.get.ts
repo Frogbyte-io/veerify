@@ -1,3 +1,19 @@
+/**
+ * @openapi
+ * /api/notifications/preferences:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: Get notification preferences
+ *     description: >
+ *       Returns the caller's notification preference flags; unset flags default to true. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: getNotificationPreferences
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     responses:
+ *       200: { description: "Preference flags: emailNotifications, inAppNotifications, newFeedback, statusChanges, newComments, conversationAssigned, conversationMentions, marketingDigest" }
+ *       401: { description: "Not authenticated" }
+ */
 import { eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'
 import { requireAuth } from '~/server/utils/auth-middleware'

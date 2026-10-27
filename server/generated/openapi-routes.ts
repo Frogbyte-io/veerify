@@ -713,6 +713,306 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/dashboard/bootstrap": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Dashboard bootstrap",
+      "description": "Returns everything the dashboard needs in one call: the session, the project context (organizations, active organization, accessible projects, active project with products and module flags), workspace stats for the active project, a personal submissions summary and the unread notification count. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With no accessible project, `workspace` is null and `projectContext` describes the organization the first project will be created in.\n",
+      "operationId": "getDashboardBootstrap",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Bootstrap payload: session, projectContext, workspace (stats or null), personal, notifications.unreadCount"
+        },
+        "401": {
+          "description": "Not authenticated"
+        }
+      }
+    }
+  },
+  "/api/dashboard/stats": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Active project stats",
+      "description": "Feedback counts by status group, product count, member count and the most recent feedback for the active project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). The active project is the one stored on the session or API key (see POST /api/projects/active), or the one named by the `X-Veerify-Project` header.\n",
+      "operationId": "getDashboardStats",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Stats: totalFeedback, openFeedback, inProgressFeedback, completedFeedback, productCount, memberCount, recentFeedback"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "409": {
+          "description": "The caller can open no project; create one first"
+        }
+      }
+    }
+  },
+  "/api/feedback": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "List feedback",
+      "description": "Lists feedback for one or more projects, pinned items first. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Project members see everything in their projects; others see only non-hidden items of public products of public projects.\n",
+      "operationId": "listFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projectId",
+          "description": "Project id. Either projectId or projectIds is required",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "projectIds",
+          "description": "Comma-separated project ids. Either projectId or projectIds is required",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "planned",
+              "completed",
+              "closed",
+              "declined"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "categoryId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "productId",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "description": "Case-insensitive match on title or body",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        {
+          "in": "query",
+          "name": "sortBy",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "updatedAt",
+              "voteCount",
+              "title"
+            ],
+            "default": "voteCount"
+          }
+        },
+        {
+          "in": "query",
+          "name": "sortOrder",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Paginated list: data.items and data.pagination (page, limit, total, totalPages)"
+        },
+        "400": {
+          "description": "Validation failed (for example neither projectId nor projectIds given)"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "No access to a requested project"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Create feedback",
+      "description": "Creates a feedback item and auto-upvotes it for the submitter. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Signed-in callers need project access. Anonymous callers need a public project and public product, and must send authorName. Rate limited (strict for anonymous callers). The response metadata includes the edit token used by the submitter edit link.\n",
+      "operationId": "createFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "title",
+                "body",
+                "projectId"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                },
+                "projectId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "productId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Defaults to the project's first product"
+                },
+                "categoryId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Must belong to the project"
+                },
+                "feedbackType": {
+                  "type": "string",
+                  "enum": [
+                    "feature_request",
+                    "bug_report",
+                    "improvement",
+                    "question",
+                    "other"
+                  ]
+                },
+                "authorName": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Required for anonymous callers; ignored when signed in"
+                },
+                "authorEmail": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Optional; ignored when signed in. A confirmation email with an edit link is sent when present"
+                },
+                "attachmentIds": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Ids of finalized, unattached uploads from POST /api/feedback-attachments/presign"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Feedback created; includes the product summary"
+        },
+        "400": {
+          "description": "Validation failed, invalid category, or missing authorName for anonymous callers"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project or product not found (private products answer 404 to anonymous callers)"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
   "/api/feedback-attachments/{id}": {
     "delete": {
       "tags": [
@@ -950,6 +1250,183 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/feedback/{id}": {
+    "delete": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Delete a feedback item",
+      "description": "Permanently deletes the item. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Deleted; data is { id, deleted: true }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not the author and no project access"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Update a feedback item",
+      "description": "Updates title, body, category, type or product. The author or any project member may edit; only project members may move feedback to another product. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). title and body are always required.\n",
+      "operationId": "updateFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "title",
+                "body"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                },
+                "categoryId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Category of the same project; null or empty string clears it; omit to keep it"
+                },
+                "productId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Move to another product of the same project (project members only)"
+                },
+                "feedbackType": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    "feature_request",
+                    "bug_report",
+                    "improvement",
+                    "question",
+                    "other"
+                  ],
+                  "description": "Omit to keep the current type; null clears it"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated feedback with product, tag and permission flags"
+        },
+        "400": {
+          "description": "Validation failed or invalid category"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not the author and no project access, or not allowed to move products"
+        },
+        "404": {
+          "description": "Feedback or product not found"
+        }
+      }
+    },
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Get a feedback item",
+      "description": "Returns one feedback item with category, author, project, product, viewer vote state and permission flags (canEdit, canDelete, canManage). Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Hidden items are visible only to project members and the author. Contact details and client metadata are redacted for non-members.\n",
+      "operationId": "getFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Feedback item"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Project is not public and caller has no access"
+        },
+        "404": {
+          "description": "Feedback not found or not public"
+        }
+      }
+    }
+  },
   "/api/feedback/{id}/attachments": {
     "get": {
       "tags": [
@@ -974,6 +1451,927 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Feedback not found or not visible"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/comments": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "List comments on a feedback item",
+      "description": "Returns comments oldest first, with author, edited flag and canEdit/canDelete. Internal comments are returned only to project members. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listFeedbackComments",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of comments"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Project is not public and caller has no access"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Add a comment",
+      "description": "Adds a comment and notifies the team and subscribers (not for internal notes). Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Anonymous callers must send authorName. Only project members may post internal comments. Locked feedback rejects new comments. Rate limited.\n",
+      "operationId": "createFeedbackComment",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "body"
+              ],
+              "properties": {
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                },
+                "parentCommentId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Reply to a comment on the same feedback item"
+                },
+                "isInternal": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Internal note visible to project members only"
+                },
+                "authorName": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Required for anonymous callers; ignored when signed in"
+                },
+                "authorEmail": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Ignored when signed in"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Comment created"
+        },
+        "400": {
+          "description": "Validation failed, invalid parent comment, or missing authorName for anonymous callers"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Feedback is locked, not accessible, or internal comment by a non-member"
+        },
+        "404": {
+          "description": "Feedback not found"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/comments/{commentId}": {
+    "delete": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Delete a comment",
+      "description": "Deletes the comment and decrements the comment count. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteFeedbackComment",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "commentId",
+          "required": true,
+          "description": "Comment id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Deleted; data is { deleted: true }"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Not the author and not a project member"
+        },
+        "404": {
+          "description": "Comment or feedback not found"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Edit a comment",
+      "description": "Edits the comment body. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "updateFeedbackComment",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "commentId",
+          "required": true,
+          "description": "Comment id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "body"
+              ],
+              "properties": {
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated comment"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Not the author and not a project member"
+        },
+        "404": {
+          "description": "Comment or feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/edit": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Load feedback for the submitter edit link",
+      "description": "Token-based; no session needed. Returns the title and body when the edit token (from the confirmation email link) is valid and not expired.\n",
+      "operationId": "getFeedbackForEdit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "token",
+          "required": true,
+          "description": "Edit token from the confirmation email",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Feedback id, title, body and projectName"
+        },
+        "400": {
+          "description": "Missing edit token"
+        },
+        "403": {
+          "description": "Invalid or expired edit link"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Edit feedback with a submitter edit token",
+      "description": "Token-based; no session needed. Updates title and body when the edit token (from the confirmation email link, valid 7 days) matches.\n",
+      "operationId": "updateFeedbackWithEditToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "token",
+                "title",
+                "body"
+              ],
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Edit token from the confirmation email"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated id, title, body and updatedAt"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Invalid or expired edit link"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/lock": {
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Toggle comment lock",
+      "description": "Flips `isLocked` on the item (no request body). Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "toggleFeedbackLock",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Updated feedback item"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the feedback project"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/pin": {
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Toggle pinned state",
+      "description": "Flips `isPinned` on the item (no request body). Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "toggleFeedbackPin",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Updated feedback item"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the feedback project"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/status": {
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Change feedback status",
+      "description": "Sets the status and notifies subscribers and linked contacts. Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). The value must be one of the project statuses: its custom statuses when defined, otherwise the system statuses (open, in_progress, planned, completed, closed, declined). The 400 message lists the allowed values.\n",
+      "operationId": "updateFeedbackStatus",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "A status value defined for the feedback project"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated feedback item"
+        },
+        "400": {
+          "description": "Validation failed or status not allowed for this project"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the feedback project"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/subscribe": {
+    "delete": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Unsubscribe from feedback updates",
+      "description": "Removes the subscription for the caller email. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Signed-in callers use their account email; anonymous callers must send email in the body.\n",
+      "operationId": "unsubscribeFromFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Required for anonymous callers; ignored when signed in"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Unsubscribed; data is { subscribed: false }"
+        },
+        "400": {
+          "description": "Validation failed or email missing"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Subscribe to feedback updates",
+      "description": "Subscribes to status changes and comments. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Signed-in callers use their account email and may choose a channel; anonymous callers must send email and always get the email channel (a confirmation email is sent). Re-subscribing updates the channel and returns 200.\n",
+      "operationId": "subscribeToFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Required for anonymous callers; ignored when signed in"
+                },
+                "channel": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "app",
+                    "both"
+                  ],
+                  "default": "email",
+                  "description": "Signed-in callers only; anonymous callers always use email"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Already subscribed; data is { subscribed, email, channel }"
+        },
+        "201": {
+          "description": "Subscribed; data is { subscribed, email, channel }"
+        },
+        "400": {
+          "description": "Validation failed or email missing"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Feedback is not accessible"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/unsubscribe": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Unsubscribe via emailed link",
+      "description": "Token-based; no session needed. Deletes the subscription that owns the token and redirects (302) to `/?unsubscribed=1`. Unknown tokens also redirect. Intended for email links, not for programmatic use.\n",
+      "operationId": "unsubscribeFeedbackByToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "token",
+          "required": true,
+          "description": "Subscription token from the notification email",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "302": {
+          "description": "Redirect to /?unsubscribed=1"
+        },
+        "400": {
+          "description": "Missing token"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/visibility": {
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Toggle hidden state",
+      "description": "Flips `isHidden` on the item (no request body). Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "toggleFeedbackVisibility",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Updated feedback item"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the feedback project"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/vote": {
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Vote on feedback",
+      "description": "Casts, switches or removes a vote: the same type again removes the vote, the opposite type switches direction. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). The project and product of the feedback must be public, even for signed-in callers. Anonymous votes are tracked by an anonymous session cookie. Rate limited.\n",
+      "operationId": "voteOnFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "upvote",
+                    "downvote"
+                  ],
+                  "default": "upvote",
+                  "description": "An invalid or missing body falls back to upvote"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "data is { voted, voteType, voteCount }; voted is false when the vote was removed"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Project is not public"
+        },
+        "404": {
+          "description": "Feedback not found"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/feedback/export": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Export feedback as CSV",
+      "description": "Returns a CSV file (text/csv) with columns Title, Status, Category, Project, Product, Votes, Comments, Author, Author Email, Pinned, GitHub Issue, Created, Updated. Includes author emails, so project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "exportFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projectId",
+          "description": "Project id. Either projectId or projectIds is required",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "projectIds",
+          "description": "Comma-separated project ids. Either projectId or projectIds is required",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "planned",
+              "completed",
+              "closed",
+              "declined"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "categoryId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "productId",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "description": "Case-insensitive match on title or body",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "sortBy",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "updatedAt",
+              "voteCount",
+              "title"
+            ],
+            "default": "createdAt"
+          }
+        },
+        {
+          "in": "query",
+          "name": "sortOrder",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "CSV attachment (text/csv; charset=utf-8)"
+        },
+        "400": {
+          "description": "Validation failed (for example neither projectId nor projectIds given)"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not a member of a requested project"
         }
       }
     }
@@ -4703,6 +6101,423 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/notifications": {
+    "get": {
+      "tags": [
+        "Notifications"
+      ],
+      "summary": "List notifications",
+      "description": "Lists the caller's in-app notifications, newest first, with cursor pagination. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Pass the `nextCursor` of the previous page as `cursor` to continue; it is null on the last page.\n",
+      "operationId": "listNotifications",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "description": "Page size",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        },
+        {
+          "in": "query",
+          "name": "cursor",
+          "required": false,
+          "description": "Opaque cursor from a previous response",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "unreadOnly",
+          "required": false,
+          "description": "Only return unread notifications when \"true\"",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Page of notifications with unreadCount, nextCursor and hasMore"
+        },
+        "401": {
+          "description": "Not authenticated"
+        }
+      }
+    }
+  },
+  "/api/notifications/{id}": {
+    "delete": {
+      "tags": [
+        "Notifications"
+      ],
+      "summary": "Delete notification",
+      "description": "Deletes one of the caller's notifications. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteNotification",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Notification id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Deleted; data is { deleted: true }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "404": {
+          "description": "Notification not found or not owned by the caller"
+        }
+      }
+    }
+  },
+  "/api/notifications/preferences": {
+    "get": {
+      "tags": [
+        "Notifications"
+      ],
+      "summary": "Get notification preferences",
+      "description": "Returns the caller's notification preference flags; unset flags default to true. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "getNotificationPreferences",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Preference flags: emailNotifications, inAppNotifications, newFeedback, statusChanges, newComments, conversationAssigned, conversationMentions, marketingDigest"
+        },
+        "401": {
+          "description": "Not authenticated"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Notifications"
+      ],
+      "summary": "Update notification preferences",
+      "description": "Merges the given flags into the caller's stored preferences; omitted flags keep their value and unknown keys are dropped. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "updateNotificationPreferences",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "emailNotifications": {
+                  "type": "boolean"
+                },
+                "inAppNotifications": {
+                  "type": "boolean"
+                },
+                "newFeedback": {
+                  "type": "boolean"
+                },
+                "statusChanges": {
+                  "type": "boolean"
+                },
+                "newComments": {
+                  "type": "boolean"
+                },
+                "conversationAssigned": {
+                  "type": "boolean"
+                },
+                "conversationMentions": {
+                  "type": "boolean"
+                },
+                "marketingDigest": {
+                  "type": "boolean",
+                  "description": "Daily Marketing mentions digest email (team admins only receive it)"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "The full stored preferences object after the merge"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        }
+      }
+    }
+  },
+  "/api/notifications/read": {
+    "patch": {
+      "tags": [
+        "Notifications"
+      ],
+      "summary": "Mark notifications read",
+      "description": "Marks one notification read when `id` is given, otherwise marks all of the caller's unread notifications read. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "markNotificationsRead",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Notification id; omit to mark every unread notification read"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "With id: the updated notification. Without id: { markedRead: number }"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "404": {
+          "description": "Notification not found or not owned by the caller"
+        }
+      }
+    }
+  },
+  "/api/notifications/unread-count": {
+    "get": {
+      "tags": [
+        "Notifications"
+      ],
+      "summary": "Unread notification count",
+      "description": "Returns the number of unread notifications. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "getUnreadNotificationCount",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ unreadCount: number }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        }
+      }
+    }
+  },
+  "/api/organizations/active": {
+    "post": {
+      "tags": [
+        "Organizations"
+      ],
+      "summary": "Set active organization",
+      "description": "Switches the active organization (workspace) and, in the same step, the active project inside it: `projectId` is honoured when the caller can open it, otherwise the first accessible project is used (null when there is none). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.\n",
+      "operationId": "setActiveOrganization",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "organizationId"
+              ],
+              "properties": {
+                "organizationId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "projectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "nullable": true,
+                  "description": "Last-used project hint; ignored unless the caller can open it in that organization"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "{ organization: { id, name, slug, logo } | null, project: project summary | null }"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a member of the organization"
+        }
+      }
+    }
+  },
+  "/api/organizations/invite": {
+    "post": {
+      "tags": [
+        "Organizations"
+      ],
+      "summary": "Invite member to organization",
+      "description": "Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie), so a key request is refused with 403 before anything else runs. A person who is already a member of any workspace, or who already has a pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`.\n",
+      "operationId": "inviteOrganizationMember",
+      "security": [
+        {
+          "cookieAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "email",
+                "organizationId"
+              ],
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email"
+                },
+                "organizationId": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "member",
+                    "admin",
+                    "owner"
+                  ],
+                  "default": "member"
+                },
+                "resend": {
+                  "type": "boolean",
+                  "description": "Resend an existing pending invitation instead of failing with 409"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "The Better-Auth invitation record"
+        },
+        "400": {
+          "description": "email and organizationId are required"
+        },
+        "401": {
+          "description": "Not signed in"
+        },
+        "403": {
+          "description": "Personal API keys cannot invite, or the caller may not invite to this organization"
+        },
+        "409": {
+          "description": "INVITATION_ALREADY_EXISTS or EMAIL_ALREADY_IN_ORG (see data.code)"
+        }
+      }
+    }
+  },
+  "/api/organizations/list": {
+    "get": {
+      "tags": [
+        "Organizations"
+      ],
+      "summary": "List my organizations",
+      "description": "Lists the organizations (workspaces) the caller belongs to, with the caller's role in each, ordered by name. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listMyOrganizations",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of { id, name, slug, logo, role }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        }
+      }
+    }
+  },
   "/api/orgs": {
     "post": {
       "tags": [
@@ -4714,6 +6529,9 @@ export const openapiPaths = {
       "security": [
         {
           "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
         }
       ],
       "requestBody": {
@@ -4813,6 +6631,73 @@ export const openapiPaths = {
     }
   },
   "/api/orgs/{slug}": {
+    "delete": {
+      "tags": [
+        "Organizations"
+      ],
+      "summary": "Delete organization",
+      "description": "Permanently deletes an organization and everything in it. Owners only. The body must repeat the slug as `confirmSlug`. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteOrganization",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Organization (workspace) slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "confirmSlug"
+              ],
+              "properties": {
+                "confirmSlug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Must equal the organization slug"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "{ deleted: true, organizationId, slug }"
+        },
+        "400": {
+          "description": "Validation failed or confirmSlug does not match"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not an owner"
+        },
+        "404": {
+          "description": "Organization not found"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    },
     "get": {
       "tags": [
         "Organizations"
@@ -4823,6 +6708,9 @@ export const openapiPaths = {
       "security": [
         {
           "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
         }
       ],
       "parameters": [
@@ -4918,6 +6806,680 @@ export const openapiPaths = {
               }
             }
           }
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Organizations"
+      ],
+      "summary": "Update organization",
+      "description": "Updates the organization name, slug, logo or billing settings. Owners and admins only. At least one field is required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). To set a logo from an upload, call POST /api/orgs/{slug}/assets/presign, upload the file, then pass the returned `uploadId` as `logoUploadId` (this takes priority over `logo`). `logo: null` removes the logo.\n",
+      "operationId": "updateOrganization",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Organization (workspace) slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "minProperties": 1,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "slug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z0-9-]+$"
+                },
+                "logo": {
+                  "type": "string",
+                  "format": "uri",
+                  "nullable": true
+                },
+                "logoUploadId": {
+                  "type": "string",
+                  "maxLength": 3000,
+                  "description": "uploadId from the presign endpoint (kind logo)"
+                },
+                "settings": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "billingCcEmails": {
+                      "type": "array",
+                      "maxItems": 10,
+                      "items": {
+                        "type": "string",
+                        "format": "email"
+                      },
+                      "description": "Lower-cased and de-duplicated on save"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated organization details"
+        },
+        "400": {
+          "description": "Validation failed or invalid upload"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not an owner or admin"
+        },
+        "404": {
+          "description": "Organization not found"
+        },
+        "409": {
+          "description": "Slug already in use"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/orgs/{slug}/assets/presign": {
+    "post": {
+      "tags": [
+        "Organizations"
+      ],
+      "summary": "Presign organization logo upload",
+      "description": "Creates a short-lived upload target for an organization logo. Upload the file to `uploadUrl` with the returned method and headers, then pass `uploadId` as `logoUploadId` to PUT /api/orgs/{slug}. Owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "presignOrganizationAsset",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Organization (workspace) slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "kind",
+                "filename",
+                "contentType",
+                "sizeBytes"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "logo"
+                  ]
+                },
+                "filename": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "contentType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "description": "Image MIME type; validated with sizeBytes against the logo limits"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "{ uploadId, uploadUrl, method, headers, expiresAt }"
+        },
+        "400": {
+          "description": "Validation failed or unsupported image type or size"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not an owner or admin"
+        },
+        "404": {
+          "description": "Organization not found"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/orgs/{slug}/invitations": {
+    "get": {
+      "tags": [
+        "Organizations"
+      ],
+      "summary": "List pending invitations",
+      "description": "Lists unexpired pending invitations for the organization. Owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listOrganizationInvitations",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Organization (workspace) slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of { id, email, role, status, inviterName, expiresAt, createdAt }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not an owner or admin"
+        },
+        "404": {
+          "description": "Organization not found"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/orgs/{slug}/members": {
+    "get": {
+      "tags": [
+        "Organizations"
+      ],
+      "summary": "List organization members",
+      "description": "Lists the members of the organization. Any member may call it. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listOrganizationMembers",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Organization (workspace) slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of organization members with their roles"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a member"
+        },
+        "404": {
+          "description": "Organization not found"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/projects": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List projects",
+      "description": "Lists the projects the caller can open in the active organization, each with its product count. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listProjects",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of project summaries (id, name, slug, description, isPublic, accessMode, role, organizationId) plus productCount"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "409": {
+          "description": "No active organization"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Create project",
+      "description": "Creates a project in the active organization together with its default product (same name and slug) and default categories. Organization owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "createProject",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "slug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z0-9-]+$",
+                  "description": "Derived from name when omitted"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "nullable": true
+                },
+                "isPublic": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "{ project: project summary, product: product summary }"
+        },
+        "400": {
+          "description": "Validation failed or reserved slug"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not an organization owner or admin"
+        },
+        "409": {
+          "description": "Slug already in use or no active organization"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Delete project",
+      "description": "Permanently deletes the project and its data. Organization owners and admins only. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteProject",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ id, deleted: true }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not an organization owner or admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    },
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Get project",
+      "description": "Returns a project with the caller's role, feedback count, organization, products and categories. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "getProject",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Project row plus role, feedbackCount, organization, products and categories"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Update project",
+      "description": "Updates project fields. Project admins only. Every field is optional. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). `settings` REPLACES the stored settings object, it is not merged: send the complete object (including the module flags) or omitted keys fall back to their defaults. `settings: null` clears all settings and deletes uploaded logo and banner assets. Unknown keys are accepted and stored as-is. Tools are switched per project with the module flags in `settings`: feedbackEnabled (default true), roadmapEnabled, changelogEnabled, supportEnabled, marketingEnabled (default false). Set `customDomain` to a hostname to connect it, or null/empty to disconnect.\n",
+      "operationId": "updateProject",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "slug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z0-9-]+$"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "nullable": true
+                },
+                "isPublic": {
+                  "type": "boolean"
+                },
+                "accessMode": {
+                  "type": "string",
+                  "enum": [
+                    "workspace",
+                    "restricted"
+                  ]
+                },
+                "customDomain": {
+                  "type": "string",
+                  "maxLength": 253,
+                  "nullable": true
+                },
+                "settings": {
+                  "type": "object",
+                  "nullable": true,
+                  "additionalProperties": true,
+                  "description": "Replaces the whole settings object; null clears it",
+                  "properties": {
+                    "feedbackEnabled": {
+                      "type": "boolean",
+                      "description": "Feedback tool (default true)"
+                    },
+                    "roadmapEnabled": {
+                      "type": "boolean",
+                      "description": "Roadmap tool (default false)"
+                    },
+                    "changelogEnabled": {
+                      "type": "boolean",
+                      "description": "Changelog tool (default false)"
+                    },
+                    "supportEnabled": {
+                      "type": "boolean",
+                      "description": "Support tool (default false)"
+                    },
+                    "marketingEnabled": {
+                      "type": "boolean",
+                      "description": "Marketing tool (default false)"
+                    },
+                    "accentColor": {
+                      "type": "string",
+                      "pattern": "^#[0-9a-fA-F]{6}$"
+                    },
+                    "logoUrl": {
+                      "type": "string",
+                      "maxLength": 2000,
+                      "nullable": true
+                    },
+                    "bannerUrl": {
+                      "type": "string",
+                      "maxLength": 2000,
+                      "nullable": true
+                    },
+                    "logoAssetKey": {
+                      "type": "string",
+                      "maxLength": 500,
+                      "nullable": true
+                    },
+                    "bannerAssetKey": {
+                      "type": "string",
+                      "maxLength": 500,
+                      "nullable": true
+                    },
+                    "logoUploadId": {
+                      "type": "string",
+                      "maxLength": 3000,
+                      "description": "uploadId from POST /api/projects/{slug}/assets/presign (kind logo)"
+                    },
+                    "bannerUploadId": {
+                      "type": "string",
+                      "maxLength": 3000,
+                      "description": "uploadId from POST /api/projects/{slug}/assets/presign (kind banner)"
+                    },
+                    "showPoweredBy": {
+                      "type": "boolean"
+                    },
+                    "showGithubFooter": {
+                      "type": "boolean"
+                    },
+                    "themeMode": {
+                      "type": "string",
+                      "enum": [
+                        "system",
+                        "light",
+                        "dark"
+                      ]
+                    },
+                    "customFooterEnabled": {
+                      "type": "boolean"
+                    },
+                    "customFooterBranding": {
+                      "type": "string",
+                      "maxLength": 120,
+                      "nullable": true
+                    },
+                    "customFooterText": {
+                      "type": "string",
+                      "maxLength": 500,
+                      "nullable": true
+                    },
+                    "customFooterPrimaryLabel": {
+                      "type": "string",
+                      "maxLength": 80,
+                      "nullable": true
+                    },
+                    "customFooterPrimaryUrl": {
+                      "type": "string",
+                      "format": "uri",
+                      "maxLength": 500,
+                      "nullable": true
+                    },
+                    "customFooterSecondaryLabel": {
+                      "type": "string",
+                      "maxLength": 80,
+                      "nullable": true
+                    },
+                    "customFooterSecondaryUrl": {
+                      "type": "string",
+                      "format": "uri",
+                      "maxLength": 500,
+                      "nullable": true
+                    },
+                    "voteStyle": {
+                      "type": "string",
+                      "enum": [
+                        "arrows",
+                        "thumbs",
+                        "rockets",
+                        "hearts",
+                        "stars",
+                        "zap",
+                        "plusminus"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated project row"
+        },
+        "400": {
+          "description": "Validation failed, invalid upload or invalid domain"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        },
+        "409": {
+          "description": "Slug or custom domain already in use"
         }
       }
     }
@@ -5044,6 +7606,1562 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Project or key not found, or key already revoked"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/assets/presign": {
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Presign project asset upload",
+      "description": "Creates a short-lived upload target for a project logo or banner. Upload the file to `uploadUrl` with the returned method and headers, then pass `uploadId` as `settings.logoUploadId` or `settings.bannerUploadId` to PUT /api/projects/{slug}. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "presignProjectAsset",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "kind",
+                "filename",
+                "contentType",
+                "sizeBytes"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "logo",
+                    "banner"
+                  ]
+                },
+                "filename": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255
+                },
+                "contentType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "description": "Image MIME type; validated with sizeBytes against the limits for the kind"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "{ uploadId, uploadUrl, method, headers, expiresAt }"
+        },
+        "400": {
+          "description": "Validation failed or unsupported image type or size"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/categories": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List categories",
+      "description": "Lists the project's feedback categories ordered by sortOrder. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listProjectCategories",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of categories"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Create category",
+      "description": "Creates a feedback category; the slug is derived from the name. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "createProjectCategory",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "icon": {
+                  "type": "string",
+                  "maxLength": 32,
+                  "nullable": true
+                },
+                "color": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$",
+                  "nullable": true,
+                  "description": "Default #6b7280"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "nullable": true
+                },
+                "sortOrder": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Defaults to last"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Created category"
+        },
+        "400": {
+          "description": "Validation failed or invalid name"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/categories/{categoryId}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Delete category",
+      "description": "Deletes a non-default category. When feedback uses it, `replacementCategoryId` is required and that feedback is moved there first. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteProjectCategory",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "categoryId",
+          "required": true,
+          "description": "Category id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "replacementCategoryId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "nullable": true,
+                  "description": "Required when feedback uses the category"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "{ id, deleted: true }"
+        },
+        "400": {
+          "description": "Invalid replacement category"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not a project admin, or the category is a default category"
+        },
+        "404": {
+          "description": "Project or category not found"
+        },
+        "409": {
+          "description": "Category in use and no replacementCategoryId given"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Update category",
+      "description": "Updates a category; renaming regenerates its slug. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "updateProjectCategory",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "categoryId",
+          "required": true,
+          "description": "Category id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "icon": {
+                  "type": "string",
+                  "maxLength": 32,
+                  "nullable": true
+                },
+                "color": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$",
+                  "nullable": true
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "nullable": true
+                },
+                "sortOrder": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated category"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project or category not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/github": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Get GitHub integration",
+      "description": "Returns the project's GitHub integration settings, or null when none is connected. The access token is never returned, only `hasAccessToken`. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "getProjectGithubIntegration",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Integration summary or null"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Connect or update GitHub integration",
+      "description": "Connects the project to a GitHub repository (registering the webhook) or updates the existing connection. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). A first connection needs a GitHub token: either `accessToken` in the body, or the temporary OAuth cookie set by the browser connect flow. API key callers have no OAuth cookie, so they must send `accessToken`.\n",
+      "operationId": "updateProjectGithubIntegration",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "repoFullName"
+              ],
+              "properties": {
+                "repoFullName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 201,
+                  "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                  "description": "owner/repo"
+                },
+                "accessToken": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "description": "GitHub token with repo access; required for a first connection unless the OAuth cookie is present"
+                },
+                "syncEnabled": {
+                  "type": "boolean",
+                  "description": "Default true on first connection"
+                },
+                "autoCreateIssues": {
+                  "type": "boolean",
+                  "description": "Default false on first connection"
+                },
+                "autoSyncStatus": {
+                  "type": "boolean",
+                  "description": "Default true on first connection"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Integration summary including webhookRegistered"
+        },
+        "400": {
+          "description": "Validation failed, or no GitHub token available"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        },
+        "409": {
+          "description": "Repository already connected to another project"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/github/connect": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Start GitHub OAuth",
+      "description": "Returns the GitHub OAuth authorization URL for connecting a repository. The flow completes in a browser (state and token cookies), so it is only useful interactively; API key callers should send `accessToken` to PUT /api/projects/{slug}/github instead. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "startProjectGithubOAuth",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ authorizationUrl }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        },
+        "500": {
+          "description": "GitHub OAuth is not configured"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/github/repos": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List GitHub repositories",
+      "description": "Lists up to 100 repositories visible to the stored GitHub token (or the temporary OAuth cookie). Returns an empty array when no token is available. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listProjectGithubRepos",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of { id, fullName, name, htmlUrl, private }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        },
+        "502": {
+          "description": "GitHub request failed"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/members": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List project members",
+      "description": "Lists who can open the project, with the project's access mode. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listProjectMembers",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ accessMode: workspace | restricted, members: [...] }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Add project member",
+      "description": "Adds a workspace member to the project, or updates their role when already added. Workspace owners and admins already administer every project and are rejected. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "addProjectMember",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "userId"
+              ],
+              "properties": {
+                "userId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "member"
+                  ],
+                  "default": "member"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "The member entry"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        },
+        "409": {
+          "description": "Workspace owners and admins cannot be assigned"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/members/{userId}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Remove project member",
+      "description": "Removes a user's explicit project membership. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "removeProjectMember",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "userId",
+          "required": true,
+          "description": "User id of the workspace member",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ userId, removed: true }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found, user not a workspace member, or no explicit membership"
+        },
+        "409": {
+          "description": "Workspace owners and admins cannot be removed"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Change project member role",
+      "description": "Sets a member's project role. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "updateProjectMember",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "userId",
+          "required": true,
+          "description": "User id of the workspace member",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "role"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "member"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "The updated member entry"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found, or user is not a workspace member"
+        },
+        "409": {
+          "description": "Workspace owners and admins cannot be assigned"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/products": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List products",
+      "description": "Lists the project's products in display order. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listProjectProducts",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of product summaries"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Create product",
+      "description": "Creates a product (its own feedback board) in the project. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "createProjectProduct",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "slug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z0-9-]+$",
+                  "description": "Derived from name when omitted"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "nullable": true
+                },
+                "isPublic": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Created product summary"
+        },
+        "400": {
+          "description": "Validation failed or reserved slug"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        },
+        "409": {
+          "description": "Slug already in use in the project"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/products/{productId}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Delete product",
+      "description": "Deletes a product. A project must keep at least one product. When the product has feedback, pass `moveTo` (another product id) to move it first; changelog tags and app keys are re-pointed too. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteProjectProduct",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "productId",
+          "required": true,
+          "description": "Product id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "moveTo",
+          "required": false,
+          "description": "Id of the product that receives the feedback; required when the product has feedback",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ id, deleted: true, movedFeedback }"
+        },
+        "400": {
+          "description": "moveTo equals the product being deleted"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project or product not found"
+        },
+        "409": {
+          "description": "Last product, or it has feedback and no moveTo"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Update product",
+      "description": "Updates a product. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "updateProjectProduct",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "productId",
+          "required": true,
+          "description": "Product id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "slug": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100,
+                  "pattern": "^[a-z0-9-]+$"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "nullable": true
+                },
+                "isPublic": {
+                  "type": "boolean",
+                  "description": "Public board flag"
+                },
+                "sortOrder": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated product summary"
+        },
+        "400": {
+          "description": "Validation failed or reserved slug"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project or product not found"
+        },
+        "409": {
+          "description": "Slug already in use in the project"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/statuses": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "List statuses",
+      "description": "Lists the project's feedback statuses; when none are customised, the system statuses are returned with null ids. The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listProjectStatuses",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of statuses (id, name, value, color, description, sortOrder, isDefault)"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Create status",
+      "description": "Creates a custom feedback status; its `value` is derived from the name. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "createProjectStatus",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "color": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$",
+                  "nullable": true,
+                  "description": "Default #6b7280"
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "nullable": true
+                },
+                "sortOrder": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Defaults to last"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Created status"
+        },
+        "400": {
+          "description": "Validation failed or invalid name"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/statuses/{statusId}": {
+    "delete": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Delete status",
+      "description": "Deletes a non-default status. When feedback uses it, `replacementValue` (the `value` of another status of the project) is required and that feedback is moved there first. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteProjectStatus",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "statusId",
+          "required": true,
+          "description": "Status id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "replacementValue": {
+                  "type": "string",
+                  "minLength": 1,
+                  "nullable": true,
+                  "description": "Status value (not id) of the replacement; required when feedback uses the status"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "{ id, deleted: true }"
+        },
+        "400": {
+          "description": "Invalid replacement status"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not a project admin, or the status is a default status"
+        },
+        "404": {
+          "description": "Project or status not found"
+        },
+        "409": {
+          "description": "Status in use and no replacementValue given"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Update status",
+      "description": "Updates a status's name, color, description or order; its `value` never changes. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "updateProjectStatus",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "statusId",
+          "required": true,
+          "description": "Status id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "color": {
+                  "type": "string",
+                  "pattern": "^#[0-9a-fA-F]{6}$",
+                  "nullable": true
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "nullable": true
+                },
+                "sortOrder": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated status"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project or status not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/verify-domain": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Verify custom domain",
+      "description": "Checks DNS and provider status of the project's configured custom domain and stores the result. The `domain` query parameter must equal the project's current custom domain. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "verifyProjectDomain",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "description": "Project slug",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "domain",
+          "required": true,
+          "description": "The project's configured custom domain",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Provider verification result (verified flag, status, DNS records)"
+        },
+        "400": {
+          "description": "domain missing or does not match the configured custom domain"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Caller is not a project admin"
+        },
+        "404": {
+          "description": "Project not found in the active workspace"
+        }
+      }
+    }
+  },
+  "/api/projects/active": {
+    "get": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Get active project",
+      "description": "Returns the caller's active project with its organization, products and resolved module flags. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "getActiveProject",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Active project context: project (with settings), organization, products, modules"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "409": {
+          "description": "The caller can open no project; create one first"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Projects"
+      ],
+      "summary": "Set active project",
+      "description": "Switches the active project (and its organization). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. `X-Veerify-Organization` / `X-Veerify-Project` header context is never stored itself; the selection in the request body is what gets stored on the key.\n",
+      "operationId": "setActiveProject",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "projectId"
+              ],
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Active project context after the switch"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project not found"
         }
       }
     }
@@ -8267,6 +12385,32 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/system/status": {
+    "get": {
+      "tags": [
+        "System"
+      ],
+      "summary": "Service health status",
+      "description": "Runs live checks of the database, file storage and SMTP configuration and returns one entry per service. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "getSystemStatus",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ statuses: [{ key, label, level: ok | warn | error, message }], summary: { ok, warn, error }, checkedAt }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        }
+      }
+    }
+  },
   "/api/system/tls-ask": {
     "get": {
       "tags": [
@@ -8294,6 +12438,224 @@ export const openapiPaths = {
         },
         "403": {
           "description": "Hostname is not served by this instance"
+        }
+      }
+    }
+  },
+  "/api/user/api-keys": {
+    "get": {
+      "tags": [
+        "User"
+      ],
+      "summary": "List your personal API keys",
+      "description": "Returns metadata for your own keys, including revoked and expired ones, newest first. The key secret and hash are never returned. Not available to API key principals.",
+      "operationId": "listUserApiKeys",
+      "responses": {
+        "200": {
+          "description": "Personal API key summaries"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Requires signing in directly (API keys cannot manage API keys)"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "User"
+      ],
+      "summary": "Create a personal API key",
+      "description": "The full key (vfy_usr_...) is returned once in this response and cannot be retrieved later. Maximum 25 active keys per user. Not available to API key principals.",
+      "operationId": "createUserApiKey",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "expiresInDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 365,
+                  "nullable": true,
+                  "description": "Omit or null for a key that never expires"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Key created; includes the full key once"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Requires signing in directly (API keys cannot manage API keys)"
+        },
+        "409": {
+          "description": "Already 25 active keys"
+        }
+      }
+    }
+  },
+  "/api/user/api-keys/{keyId}": {
+    "delete": {
+      "tags": [
+        "User"
+      ],
+      "summary": "Revoke a personal API key",
+      "description": "Revoked keys are rejected immediately and the row is kept for audit. Not available to API key principals.",
+      "operationId": "revokeUserApiKey",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "keyId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Key revoked"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Requires signing in directly (API keys cannot manage API keys)"
+        },
+        "404": {
+          "description": "Key not found, not yours, or already revoked"
+        }
+      }
+    }
+  },
+  "/api/user/profile": {
+    "put": {
+      "tags": [
+        "User"
+      ],
+      "summary": "Update my profile",
+      "description": "Updates the caller's name and email. Both fields are required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). A personal API key may change the name but not the email: sending a different email returns 403 and requires signing in to Veerify directly. Send the current email unchanged to rename.\n",
+      "operationId": "updateUserProfile",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name",
+                "email"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Must equal the current email when using an API key"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "{ success: true, user }"
+        },
+        "400": {
+          "description": "Missing fields, invalid email, or email already taken"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Email change attempted with a personal API key"
+        },
+        "500": {
+          "description": "Internal server error"
+        }
+      }
+    }
+  },
+  "/api/user/submissions": {
+    "get": {
+      "tags": [
+        "User"
+      ],
+      "summary": "My submissions",
+      "description": "Lists feedback the caller authored across all projects, newest first, with page-based pagination. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listMySubmissions",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "page",
+          "required": false,
+          "description": "1-based page number",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "description": "Page size",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "{ success, data: submissions (with projectName and projectSlug), pagination: { page, limit, totalCount, totalPages } }"
+        },
+        "401": {
+          "description": "Not authenticated"
         }
       }
     }

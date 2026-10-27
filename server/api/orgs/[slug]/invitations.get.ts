@@ -1,3 +1,28 @@
+/**
+ * @openapi
+ * /api/orgs/{slug}/invitations:
+ *   get:
+ *     tags: [Organizations]
+ *     summary: List pending invitations
+ *     description: >
+ *       Lists unexpired pending invitations for the organization. Owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: listOrganizationInvitations
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Organization (workspace) slug"
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Array of { id, email, role, status, inviterName, expiresAt, createdAt }" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not an owner or admin" }
+ *       404: { description: "Organization not found" }
+ *       429: { description: "Rate limit exceeded" }
+ */
 import { and, eq, gt } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { invitation, user } from '~/server/database/schema/auth'

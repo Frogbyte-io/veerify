@@ -1,3 +1,44 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/comments:
+ *   post:
+ *     tags: [Feedback]
+ *     summary: Add a comment
+ *     description: >
+ *       Adds a comment and notifies the team and subscribers (not for internal notes). Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Anonymous callers must send authorName. Only project members may post internal comments. Locked feedback rejects new comments. Rate limited.
+ *     operationId: createFeedbackComment
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *       - {}
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [body]
+ *             properties:
+ *               body: { type: string, minLength: 1, maxLength: 5000 }
+ *               parentCommentId: { type: string, nullable: true, description: "Reply to a comment on the same feedback item" }
+ *               isInternal: { type: boolean, default: false, description: "Internal note visible to project members only" }
+ *               authorName: { type: string, maxLength: 100, description: "Required for anonymous callers; ignored when signed in" }
+ *               authorEmail: { type: string, format: email, description: "Ignored when signed in" }
+ *     responses:
+ *       201: { description: "Comment created" }
+ *       400: { description: "Validation failed, invalid parent comment, or missing authorName for anonymous callers" }
+ *       401: { description: "Invalid personal API key" }
+ *       403: { description: "Feedback is locked, not accessible, or internal comment by a non-member" }
+ *       404: { description: "Feedback not found" }
+ *       429: { description: "Rate limit exceeded" }
+ */
 import { z } from 'zod'
 import { eq, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'

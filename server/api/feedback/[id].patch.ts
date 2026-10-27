@@ -1,3 +1,42 @@
+/**
+ * @openapi
+ * /api/feedback/{id}:
+ *   patch:
+ *     tags: [Feedback]
+ *     summary: Update a feedback item
+ *     description: >
+ *       Updates title, body, category, type or product. The author or any project member may edit; only project members may move feedback to another product. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       title and body are always required.
+ *     operationId: updateFeedback
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, body]
+ *             properties:
+ *               title: { type: string, minLength: 1, maxLength: 200 }
+ *               body: { type: string, minLength: 1, maxLength: 5000 }
+ *               categoryId: { type: string, nullable: true, description: "Category of the same project; null or empty string clears it; omit to keep it" }
+ *               productId: { type: string, minLength: 1, description: "Move to another product of the same project (project members only)" }
+ *               feedbackType: { type: string, nullable: true, enum: [feature_request, bug_report, improvement, question, other], description: "Omit to keep the current type; null clears it" }
+ *     responses:
+ *       200: { description: "Updated feedback with product, tag and permission flags" }
+ *       400: { description: "Validation failed or invalid category" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Not the author and no project access, or not allowed to move products" }
+ *       404: { description: "Feedback or product not found" }
+ */
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { requireAuth } from '~/server/utils/auth-middleware'

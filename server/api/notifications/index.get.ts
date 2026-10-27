@@ -1,3 +1,36 @@
+/**
+ * @openapi
+ * /api/notifications:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: List notifications
+ *     description: >
+ *       Lists the caller's in-app notifications, newest first, with cursor pagination. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Pass the `nextCursor` of the previous page as `cursor` to continue; it is null on the last page.
+ *     operationId: listNotifications
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         description: "Page size"
+ *         schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+ *       - in: query
+ *         name: cursor
+ *         required: false
+ *         description: "Opaque cursor from a previous response"
+ *         schema: { type: string }
+ *       - in: query
+ *         name: unreadOnly
+ *         required: false
+ *         description: "Only return unread notifications when \"true\""
+ *         schema: { type: string, enum: ["true", "false"] }
+ *     responses:
+ *       200: { description: "Page of notifications with unreadCount, nextCursor and hasMore" }
+ *       401: { description: "Not authenticated" }
+ */
 import { z } from 'zod'
 import { eq, desc, and, lt, or, sql } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'

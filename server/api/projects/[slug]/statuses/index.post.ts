@@ -1,3 +1,40 @@
+/**
+ * @openapi
+ * /api/projects/{slug}/statuses:
+ *   post:
+ *     tags: [Projects]
+ *     summary: Create status
+ *     description: >
+ *       Creates a custom feedback status; its `value` is derived from the name. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: createProjectStatus
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, minLength: 1, maxLength: 80 }
+ *               color: { type: string, pattern: "^#[0-9a-fA-F]{6}$", nullable: true, description: "Default #6b7280" }
+ *               description: { type: string, maxLength: 200, nullable: true }
+ *               sortOrder: { type: integer, minimum: 0, description: "Defaults to last" }
+ *     responses:
+ *       201: { description: "Created status" }
+ *       400: { description: "Validation failed or invalid name" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not a project admin" }
+ *       404: { description: "Project not found in the active workspace" }
+ */
 import { desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

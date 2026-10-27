@@ -1,3 +1,35 @@
+/**
+ * @openapi
+ * /api/notifications/preferences:
+ *   put:
+ *     tags: [Notifications]
+ *     summary: Update notification preferences
+ *     description: >
+ *       Merges the given flags into the caller's stored preferences; omitted flags keep their value and unknown keys are dropped. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: updateNotificationPreferences
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               emailNotifications: { type: boolean }
+ *               inAppNotifications: { type: boolean }
+ *               newFeedback: { type: boolean }
+ *               statusChanges: { type: boolean }
+ *               newComments: { type: boolean }
+ *               conversationAssigned: { type: boolean }
+ *               conversationMentions: { type: boolean }
+ *               marketingDigest: { type: boolean, description: "Daily Marketing mentions digest email (team admins only receive it)" }
+ *     responses:
+ *       200: { description: "The full stored preferences object after the merge" }
+ *       400: { description: "Validation failed" }
+ *       401: { description: "Not authenticated" }
+ */
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { createSuccessResponse } from '~/server/utils/response'

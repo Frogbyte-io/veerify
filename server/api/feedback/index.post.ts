@@ -1,3 +1,43 @@
+/**
+ * @openapi
+ * /api/feedback:
+ *   post:
+ *     tags: [Feedback]
+ *     summary: Create feedback
+ *     description: >
+ *       Creates a feedback item and auto-upvotes it for the submitter. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Signed-in callers need project access. Anonymous callers need a public project and public product, and must send authorName. Rate limited (strict for anonymous callers).
+ *       The response metadata includes the edit token used by the submitter edit link.
+ *     operationId: createFeedback
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *       - {}
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, body, projectId]
+ *             properties:
+ *               title: { type: string, minLength: 1, maxLength: 200 }
+ *               body: { type: string, minLength: 1, maxLength: 5000 }
+ *               projectId: { type: string, minLength: 1 }
+ *               productId: { type: string, minLength: 1, description: "Defaults to the project's first product" }
+ *               categoryId: { type: string, nullable: true, description: "Must belong to the project" }
+ *               feedbackType: { type: string, enum: [feature_request, bug_report, improvement, question, other] }
+ *               authorName: { type: string, maxLength: 100, description: "Required for anonymous callers; ignored when signed in" }
+ *               authorEmail: { type: string, format: email, description: "Optional; ignored when signed in. A confirmation email with an edit link is sent when present" }
+ *               attachmentIds: { type: array, maxItems: 5, items: { type: string, minLength: 1 }, description: "Ids of finalized, unattached uploads from POST /api/feedback-attachments/presign" }
+ *     responses:
+ *       201: { description: "Feedback created; includes the product summary" }
+ *       400: { description: "Validation failed, invalid category, or missing authorName for anonymous callers" }
+ *       401: { description: "Invalid personal API key" }
+ *       403: { description: "No access to the project" }
+ *       404: { description: "Project or product not found (private products answer 404 to anonymous callers)" }
+ *       429: { description: "Rate limit exceeded" }
+ */
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'

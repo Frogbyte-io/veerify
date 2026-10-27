@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { extractOpenAPIDocument, scanOpenAPIRoutes } from '~/scripts/openapi-scanner'
+import { extractOpenAPIDocument, findUndocumentedRoutes, scanOpenAPIRoutes } from '~/scripts/openapi-scanner'
 import { openapiPaths } from '~/server/generated/openapi-routes'
 
 describe('OpenAPI route scanner', () => {
@@ -97,5 +97,36 @@ describe('OpenAPI route scanner', () => {
     )
     expect(openapiPaths).toEqual(paths)
     expect(endpointSource).not.toMatch(/readFile|readdir|glob\(|server\/api/)
+  })
+
+  it('lists undocumented non-exempt routes, sorted with forward slashes', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'openapi-check-'))
+    try {
+      const files: Record<string, string> = {
+        'documented.get.ts': `/**
+ * @openapi
+ * /api/documented:
+ *   get:
+ *     responses:
+ *       200: { description: ok }
+ */
+export default 1`,
+        'zeta/b.post.ts': 'export default 1',
+        'alpha.get.ts': 'export default 1',
+        'cron/x.get.ts': 'export default 1',
+        'auth/[...all].ts': 'export default 1',
+        'public/auth/y.get.ts': 'export default 1',
+        'uploads/z.get.ts': 'export default 1',
+        'openapi.json.get.ts': 'export default 1',
+        'test.ts': 'export default 1',
+      }
+      for (const [name, content] of Object.entries(files)) {
+        await mkdir(path.dirname(path.join(dir, name)), { recursive: true })
+        await writeFile(path.join(dir, name), content)
+      }
+      expect(await findUndocumentedRoutes(dir)).toEqual(['alpha.get.ts', 'zeta/b.post.ts'])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

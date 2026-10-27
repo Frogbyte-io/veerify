@@ -1,3 +1,43 @@
+/**
+ * @openapi
+ * /api/projects/{slug}/github:
+ *   put:
+ *     tags: [Projects]
+ *     summary: Connect or update GitHub integration
+ *     description: >
+ *       Connects the project to a GitHub repository (registering the webhook) or updates the existing connection. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       A first connection needs a GitHub token: either `accessToken` in the body, or the temporary OAuth cookie set by the browser connect flow. API key callers have no OAuth cookie, so they must send `accessToken`.
+ *     operationId: updateProjectGithubIntegration
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [repoFullName]
+ *             properties:
+ *               repoFullName: { type: string, minLength: 1, maxLength: 201, pattern: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", description: "owner/repo" }
+ *               accessToken: { type: string, minLength: 1, maxLength: 500, description: "GitHub token with repo access; required for a first connection unless the OAuth cookie is present" }
+ *               syncEnabled: { type: boolean, description: "Default true on first connection" }
+ *               autoCreateIssues: { type: boolean, description: "Default false on first connection" }
+ *               autoSyncStatus: { type: boolean, description: "Default true on first connection" }
+ *     responses:
+ *       200: { description: "Integration summary including webhookRegistered" }
+ *       400: { description: "Validation failed, or no GitHub token available" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not a project admin" }
+ *       404: { description: "Project not found in the active workspace" }
+ *       409: { description: "Repository already connected to another project" }
+ */
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

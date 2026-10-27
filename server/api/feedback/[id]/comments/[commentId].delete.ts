@@ -1,3 +1,33 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/comments/{commentId}:
+ *   delete:
+ *     tags: [Feedback]
+ *     summary: Delete a comment
+ *     description: >
+ *       Deletes the comment and decrements the comment count. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: deleteFeedbackComment
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *       - {}
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *       - in: path
+ *         name: commentId
+ *         required: true
+ *         description: Comment id
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Deleted; data is { deleted: true }" }
+ *       401: { description: "Invalid personal API key" }
+ *       403: { description: "Not the author and not a project member" }
+ *       404: { description: "Comment or feedback not found" }
+ */
 import { eq, sql } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { optionalAuth } from '~/server/utils/auth-middleware'
