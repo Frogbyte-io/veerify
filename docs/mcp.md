@@ -53,6 +53,7 @@ request, send these headers (on the MCP connection or on direct API calls):
 | `set_context`     | Change the key's stored workspace and project                        |
 | `search_api`      | Find API operations by keyword or tag, or fetch one by `operationId` |
 | `call_api`        | Call an operation: `method`, `path`, optional `query` and `body`     |
+| `import_*`        | Move feedback from another tool into a project (see section 6)       |
 
 ### What `call_api` refuses, and why
 
@@ -106,7 +107,72 @@ full request shape.
 5. Create those records in your DNS provider with your own DNS tool; Veerify cannot create them for you. Then repeat
    step 4 until the domain verifies.
 
-## 6. Coverage of the API
+## 6. Importing feedback from another tool
+
+Seven tools (project admin required) let an agent move feedback, comments, votes, people, statuses, categories and
+changelog entries from another system into a project. The agent does the fetching and converting; Veerify validates,
+previews and writes. The format (`veerify-import/1`) is served by `import_get_format` and the resource
+`veerify://imports/schema`.
+
+| Tool                 | Purpose                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| `import_get_format`  | JSON Schema and an example batch. Call this first                                          |
+| `import_create_run`  | Draft run: `source`, `sourceLabel`, optional `product`, `project`, `onExisting`            |
+| `import_add_records` | Stage one batch (sections only, no `format`/`target`); returns per-record issues           |
+| `import_preview`     | The plan: `counts` per section (`create`, `update`, `unchanged`, `skip`), `kept`, `issues` |
+| `import_commit`      | Write the run. Returns `{ run }` with `run.summary = { counts, kept }`                     |
+| `import_status`      | Run status, counts, summary and issues; poll after a large commit                          |
+| `import_cancel`      | Cancel an unfinished run and drop its staged records                                       |
+
+`project` defaults to the active project.
+
+### Rules
+
+- Always preview, show it to the user, and commit only after they agree. Preview works only on a draft run (409 after
+  commit).
+- Limits: 1,000 records per `import_add_records` call (and the request must fit the 4 MiB `/mcp` body cap), 50,000 per
+  run. Runs of 500 records or fewer commit inline. Larger runs return `committing`; poll `import_status` until
+  `completed`.
+- Re-importing is an ongoing sync where Veerify wins. A field is updated from the source only if nobody changed it in
+  Veerify since the last import; edited fields are kept and the preview lists them under `kept`. New comments, votes and
+  people are added. Nothing is ever deleted because it is missing from the source. `onExisting: "skip"` creates only
+  records not seen before.
+- Votes: listed votes become vote rows. `voteCount` is a signed net counter that becomes a baseline for votes you do
+  not list. If a re-run omits `voteCount`, the stored baseline is kept.
+- Changelog links to feedback are created only when the entry is first imported.
+- An import has no side effects: nobody is emailed or notified, no GitHub calls are made, and no subscriptions are
+  created.
+
+### Imported people
+
+- Imported people are never emailed and never become users. An import never sets an author or voter user, even if the
+  email matches an account.
+- When a user verifies a matching email, their imported posts, comments and votes become theirs. People imported after
+  that are attributed automatically. Changing your email in Settings marks it unverified and sends a verification link.
+- Erasing a contact (Workspace, erase contact) tombstones the imported person: name and email are removed, links and
+  counts stay, and a re-import never brings that data back. Staged batches are deleted when a run finishes.
+- Erasure does not cover `feedback.metadata` passed through from the source. Do not put personal data there.
+
+### "Migrate from Canny"
+
+1. `whoami` to confirm the project, then `import_get_format`.
+2. Fetch the Canny data with your own Canny access (boards, posts, comments, votes, users, changelog) and convert it to
+   the format: one `externalId` per Canny id, `votes` where Canny lists voters, `voteCount` where it only gives a
+   total.
+3. `import_create_run` with `source: "canny"` and a `sourceLabel`.
+4. `import_add_records` in batches of at most 1,000 records. Statuses, categories and people first is fine, but order
+   does not matter within a run.
+5. `import_preview`. Read `counts`, `taxonomy` and `issues` to the user, then ask to continue.
+6. `import_commit`. If the run is `committing`, poll `import_status`.
+
+### "Re-run weekly from GitHub issues"
+
+Use `source: "github-issues"` and the issue number as `externalId`, and repeat the same recipe each week. Records seen
+before are matched by `source` plus `externalId`, so only new issues, comments and votes are created and changed titles
+or bodies update. Anything the team edited in Veerify in the meantime is kept (see `kept` in the preview). Closed or
+deleted issues are not removed from Veerify.
+
+## 7. Coverage of the API
 
 Every non-exempt route must carry an `@openapi` block; `yarn openapi:check` (run in CI) enforces this, and
 `search_api` is built from it. Run `yarn openapi:generate` to rebuild the spec.

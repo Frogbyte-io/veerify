@@ -456,17 +456,25 @@ A `project_member` row with role `admin` makes them a project admin.
 
 ### Endpoint Authorization Rules
 
-| Endpoint                            | Auth     | Access Rule                                                                                            |
-| ----------------------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
-| `GET /api/feedback`                 | Optional | Project access per requested project; anonymous callers see only public products of public projects    |
-| `POST /api/feedback`                | Optional | Authenticated: project access. Anonymous: public project and public product                            |
-| `GET /api/feedback/[id]`            | Optional | Authenticated: project access. Anonymous: public project and public product                            |
-| `DELETE /api/feedback/[id]`         | Required | Author OR anyone with access to the project                                                            |
-| `POST /api/feedback/[id]/vote`      | Optional | Project and product must be public (voting is public-facing)                                           |
-| `POST /api/v1/feedback`             | App key  | Creates feedback on the key's product (key is the authorization; bypasses public checks)               |
-| `/api/projects/[slug]/api-keys`     | Required | Project admins manage app keys (Feedback settings → App keys)                                          |
-| `/api/user/api-keys` (+ `/[keyId]`) | Required | Browser session only (`requireInteractiveSession`); 403 for personal keys. Max 25 active keys per user |
-| `POST /mcp`                         | User key | Personal key principals only (cookie-only gets 401); acts with the key owner's permissions             |
+| Endpoint                                                                                    | Auth     | Access Rule                                                                                                     |
+| ------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `GET /api/feedback`                                                                         | Optional | Project access per requested project; anonymous callers see only public products of public projects             |
+| `POST /api/feedback`                                                                        | Optional | Authenticated: project access. Anonymous: public project and public product                                     |
+| `GET /api/feedback/[id]`                                                                    | Optional | Authenticated: project access. Anonymous: public project and public product                                     |
+| `DELETE /api/feedback/[id]`                                                                 | Required | Author OR anyone with access to the project                                                                     |
+| `POST /api/feedback/[id]/vote`                                                              | Optional | Project and product must be public (voting is public-facing)                                                    |
+| `POST /api/v1/feedback`                                                                     | App key  | Creates feedback on the key's product (key is the authorization; bypasses public checks)                        |
+| `/api/projects/[slug]/api-keys`                                                             | Required | Project admins manage app keys (Feedback settings → App keys)                                                   |
+| `/api/user/api-keys` (+ `/[keyId]`)                                                         | Required | Browser session only (`requireInteractiveSession`); 403 for personal keys. Max 25 active keys per user          |
+| `/api/projects/[slug]/imports` (+ `/[runId]`, `/records`, `/preview`, `/commit`, `/cancel`) | Required | Project admins only (`requireProjectBySlug` with `admin: true`); work with keys. MCP tools `import_*` wrap them |
+| `GET /api/imports/schema`                                                                   | Required | The `veerify-import/1` JSON Schema and example                                                                  |
+| `POST /mcp`                                                                                 | User key | Personal key principals only (cookie-only gets 401); acts with the key owner's permissions                      |
+
+### Imports
+
+Services live in `server/services/imports/` (format, planner, committer, claim). Commit suppresses every side effect
+(no emails, notifications, realtime, GitHub or subscriptions) and never writes `authorUserId` / `voterUserId`; only
+claiming a verified email does. Re-import is a sync where Veerify wins. Agent guide: `docs/mcp.md`.
 
 ### Roles
 
