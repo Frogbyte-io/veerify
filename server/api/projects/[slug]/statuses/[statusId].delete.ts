@@ -1,3 +1,42 @@
+/**
+ * @openapi
+ * /api/projects/{slug}/statuses/{statusId}:
+ *   delete:
+ *     tags: [Projects]
+ *     summary: Delete status
+ *     description: >
+ *       Deletes a non-default status. When feedback uses it, `replacementValue` (the `value` of another status of the project) is required and that feedback is moved there first. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: deleteProjectStatus
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *       - in: path
+ *         name: statusId
+ *         required: true
+ *         description: "Status id"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               replacementValue: { type: string, minLength: 1, nullable: true, description: "Status value (not id) of the replacement; required when feedback uses the status" }
+ *     responses:
+ *       200: { description: "{ id, deleted: true }" }
+ *       400: { description: "Invalid replacement status" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Not a project admin, or the status is a default status" }
+ *       404: { description: "Project or status not found" }
+ *       409: { description: "Status in use and no replacementValue given" }
+ */
 import { and, count, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

@@ -1,3 +1,34 @@
+/**
+ * @openapi
+ * /api/projects:
+ *   post:
+ *     tags: [Projects]
+ *     summary: Create project
+ *     description: >
+ *       Creates a project in the active organization together with its default product (same name and slug) and default categories. Organization owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: createProject
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, minLength: 1, maxLength: 100 }
+ *               slug: { type: string, minLength: 1, maxLength: 100, pattern: "^[a-z0-9-]+$", description: "Derived from name when omitted" }
+ *               description: { type: string, maxLength: 1000, nullable: true }
+ *               isPublic: { type: boolean, default: true }
+ *     responses:
+ *       201: { description: "{ project: project summary, product: product summary }" }
+ *       400: { description: "Validation failed or reserved slug" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not an organization owner or admin" }
+ *       409: { description: "Slug already in use or no active organization" }
+ */
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { db } from '~/server/database/drizzle'

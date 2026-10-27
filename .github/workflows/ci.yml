@@ -23,6 +23,8 @@ jobs:
 
       - run: yarn harness:docs
 
+      - run: yarn openapi:check
+
       - run: yarn lint
 
       - run: yarn format:check

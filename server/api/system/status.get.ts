@@ -1,3 +1,19 @@
+/**
+ * @openapi
+ * /api/system/status:
+ *   get:
+ *     tags: [System]
+ *     summary: Service health status
+ *     description: >
+ *       Runs live checks of the database, file storage and SMTP configuration and returns one entry per service. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: getSystemStatus
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     responses:
+ *       200: { description: "{ statuses: [{ key, label, level: ok | warn | error, message }], summary: { ok, warn, error }, checkedAt }" }
+ *       401: { description: "Not authenticated" }
+ */
 import { access, constants, mkdir } from 'node:fs/promises'
 import { sql } from 'drizzle-orm'
 import { requireAuth } from '~/server/utils/auth-middleware'

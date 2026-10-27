@@ -1,3 +1,32 @@
+/**
+ * @openapi
+ * /api/organizations/active:
+ *   post:
+ *     tags: [Organizations]
+ *     summary: Set active organization
+ *     description: >
+ *       Switches the active organization (workspace) and, in the same step, the active project inside it: `projectId` is honoured when the caller can open it, otherwise the first accessible project is used (null when there is none). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       With a session cookie the active context is stored on the session; with a personal API key it is stored on the key itself. Requests that override the context with `X-Veerify-Organization` or `X-Veerify-Project` headers never persist it.
+ *     operationId: setActiveOrganization
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [organizationId]
+ *             properties:
+ *               organizationId: { type: string, minLength: 1 }
+ *               projectId: { type: string, minLength: 1, nullable: true, description: "Last-used project hint; ignored unless the caller can open it in that organization" }
+ *     responses:
+ *       200: { description: "{ organization: { id, name, slug, logo } | null, project: project summary | null }" }
+ *       400: { description: "Validation failed" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not a member of the organization" }
+ */
 import { z } from 'zod'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { createSuccessResponse } from '~/server/utils/response'

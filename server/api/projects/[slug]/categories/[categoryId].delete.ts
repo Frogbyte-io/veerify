@@ -1,3 +1,42 @@
+/**
+ * @openapi
+ * /api/projects/{slug}/categories/{categoryId}:
+ *   delete:
+ *     tags: [Projects]
+ *     summary: Delete category
+ *     description: >
+ *       Deletes a non-default category. When feedback uses it, `replacementCategoryId` is required and that feedback is moved there first. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: deleteProjectCategory
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *       - in: path
+ *         name: categoryId
+ *         required: true
+ *         description: "Category id"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               replacementCategoryId: { type: string, minLength: 1, nullable: true, description: "Required when feedback uses the category" }
+ *     responses:
+ *       200: { description: "{ id, deleted: true }" }
+ *       400: { description: "Invalid replacement category" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Not a project admin, or the category is a default category" }
+ *       404: { description: "Project or category not found" }
+ *       409: { description: "Category in use and no replacementCategoryId given" }
+ */
 import { and, count, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

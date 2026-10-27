@@ -1,3 +1,33 @@
+/**
+ * @openapi
+ * /api/projects/{slug}/verify-domain:
+ *   get:
+ *     tags: [Projects]
+ *     summary: Verify custom domain
+ *     description: >
+ *       Checks DNS and provider status of the project's configured custom domain and stores the result. The `domain` query parameter must equal the project's current custom domain. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: verifyProjectDomain
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *       - in: query
+ *         name: domain
+ *         required: true
+ *         description: "The project's configured custom domain"
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Provider verification result (verified flag, status, DNS records)" }
+ *       400: { description: "domain missing or does not match the configured custom domain" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not a project admin" }
+ *       404: { description: "Project not found in the active workspace" }
+ */
 import { eq } from 'drizzle-orm'
 import { sendCustomDomainVerifiedEmail } from '~/lib/email'
 import { db } from '~/server/database/drizzle'

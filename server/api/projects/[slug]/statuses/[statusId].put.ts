@@ -1,3 +1,44 @@
+/**
+ * @openapi
+ * /api/projects/{slug}/statuses/{statusId}:
+ *   put:
+ *     tags: [Projects]
+ *     summary: Update status
+ *     description: >
+ *       Updates a status's name, color, description or order; its `value` never changes. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: updateProjectStatus
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *       - in: path
+ *         name: statusId
+ *         required: true
+ *         description: "Status id"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string, minLength: 1, maxLength: 80 }
+ *               color: { type: string, pattern: "^#[0-9a-fA-F]{6}$", nullable: true }
+ *               description: { type: string, maxLength: 200, nullable: true }
+ *               sortOrder: { type: integer, minimum: 0 }
+ *     responses:
+ *       200: { description: "Updated status" }
+ *       400: { description: "Validation failed" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not a project admin" }
+ *       404: { description: "Project or status not found" }
+ */
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { db } from '~/server/database/drizzle'

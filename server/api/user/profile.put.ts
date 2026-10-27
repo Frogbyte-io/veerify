@@ -1,3 +1,33 @@
+/**
+ * @openapi
+ * /api/user/profile:
+ *   put:
+ *     tags: [User]
+ *     summary: Update my profile
+ *     description: >
+ *       Updates the caller's name and email. Both fields are required. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       A personal API key may change the name but not the email: sending a different email returns 403 and requires signing in to Veerify directly. Send the current email unchanged to rename.
+ *     operationId: updateUserProfile
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, email]
+ *             properties:
+ *               name: { type: string, minLength: 1 }
+ *               email: { type: string, format: email, description: "Must equal the current email when using an API key" }
+ *     responses:
+ *       200: { description: "{ success: true, user }" }
+ *       400: { description: "Missing fields, invalid email, or email already taken" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Email change attempted with a personal API key" }
+ *       500: { description: "Internal server error" }
+ */
 import { db } from '~/server/database/drizzle'
 import { user } from '~/server/database/schema/auth'
 import { eq } from 'drizzle-orm'

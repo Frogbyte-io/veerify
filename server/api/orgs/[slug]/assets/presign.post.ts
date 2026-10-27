@@ -1,3 +1,41 @@
+/**
+ * @openapi
+ * /api/orgs/{slug}/assets/presign:
+ *   post:
+ *     tags: [Organizations]
+ *     summary: Presign organization logo upload
+ *     description: >
+ *       Creates a short-lived upload target for an organization logo. Upload the file to `uploadUrl` with the returned method and headers, then pass `uploadId` as `logoUploadId` to PUT /api/orgs/{slug}. Owners and admins only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: presignOrganizationAsset
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Organization (workspace) slug"
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [kind, filename, contentType, sizeBytes]
+ *             properties:
+ *               kind: { type: string, enum: [logo] }
+ *               filename: { type: string, minLength: 1, maxLength: 255 }
+ *               contentType: { type: string, minLength: 1, maxLength: 100, description: "Image MIME type; validated with sizeBytes against the logo limits" }
+ *               sizeBytes: { type: integer, minimum: 1 }
+ *     responses:
+ *       200: { description: "{ uploadId, uploadUrl, method, headers, expiresAt }" }
+ *       400: { description: "Validation failed or unsupported image type or size" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not an owner or admin" }
+ *       404: { description: "Organization not found" }
+ *       429: { description: "Rate limit exceeded" }
+ */
 import { z } from 'zod'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'

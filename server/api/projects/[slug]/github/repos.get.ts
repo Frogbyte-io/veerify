@@ -1,3 +1,28 @@
+/**
+ * @openapi
+ * /api/projects/{slug}/github/repos:
+ *   get:
+ *     tags: [Projects]
+ *     summary: List GitHub repositories
+ *     description: >
+ *       Lists up to 100 repositories visible to the stored GitHub token (or the temporary OAuth cookie). Returns an empty array when no token is available. Project admins only (organization owners and admins count as project admins). The project is looked up by slug in the active workspace (override with the `X-Veerify-Organization` header when using an API key). Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: listProjectGithubRepos
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: slug
+ *         required: true
+ *         description: "Project slug"
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Array of { id, fullName, name, htmlUrl, private }" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Caller is not a project admin" }
+ *       404: { description: "Project not found in the active workspace" }
+ *       502: { description: "GitHub request failed" }
+ */
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { githubIntegration } from '~/server/database/schema/feedback'
