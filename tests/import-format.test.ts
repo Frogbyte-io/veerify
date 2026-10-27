@@ -46,12 +46,34 @@ describe('import format', () => {
     expect(d.people).toEqual([])
   })
 
+  it('example is internally consistent', () => {
+    const d = importDocumentSchema.parse(importExample())
+    const people = new Set(d.people.map((p) => p.externalId))
+    const fb = new Set(d.feedback.map((f) => f.externalId))
+    const cm = new Set(d.comments.map((c) => c.externalId))
+    const st = new Set(d.statuses.map((s) => s.externalId))
+    for (const f of d.feedback) {
+      for (const v of f.votes ?? []) expect(people.has(v.personExternalId)).toBe(true)
+      if (f.authorExternalId) expect(people.has(f.authorExternalId)).toBe(true)
+      if (f.status) expect(st.has(f.status)).toBe(true)
+    }
+    for (const c of d.comments) {
+      expect(fb.has(c.feedbackExternalId)).toBe(true)
+      if (c.parentExternalId) expect(cm.has(c.parentExternalId)).toBe(true)
+      if (c.authorExternalId) expect(people.has(c.authorExternalId)).toBe(true)
+    }
+    for (const c of d.changelog) for (const id of c.feedbackExternalIds ?? []) expect(fb.has(id)).toBe(true)
+  })
+
   it('counts records', () => {
-    expect(countRecords(importDocumentSchema.parse(importExample()))).toBe(5)
+    expect(countRecords(importDocumentSchema.parse(importExample()))).toBe(6)
   })
 
   it('builds a JSON schema', () => {
     const s = importJsonSchema() as any
     expect(s.properties.feedback).toBeDefined()
+    expect(s.required).not.toContain('feedback')
+    expect(s.required).not.toContain('statuses')
+    for (const k of ['format', 'source', 'sourceLabel', 'target']) expect(s.required).toContain(k)
   })
 })

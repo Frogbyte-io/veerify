@@ -123,7 +123,7 @@ export function countRecords(batch: ImportBatch): number {
 }
 
 export function importJsonSchema(): object {
-  return z.toJSONSchema(importDocumentSchema)
+  return z.toJSONSchema(importDocumentSchema, { io: 'input' })
 }
 
 export function importExample(): ImportDocument {
@@ -134,7 +134,10 @@ export function importExample(): ImportDocument {
     target: { project: 'my-project', product: 'my-product' },
     statuses: [{ externalId: 'st-1', name: 'Under review', color: '#f59e0b' }],
     categories: [],
-    people: [{ externalId: 'p-1', name: 'Ada Lovelace', email: 'ada@example.com' }],
+    people: [
+      { externalId: 'p-1', name: 'Ada Lovelace', email: 'ada@example.com' },
+      { externalId: 'p-2', name: 'Grace Hopper', email: 'grace@example.com' },
+    ],
     feedback: [
       {
         externalId: 'f-1',
