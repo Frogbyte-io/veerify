@@ -1,79 +1,61 @@
 <template>
   <NuxtLayout name="clean">
-    <div class="min-h-screen flex items-center justify-center bg-background p-4">
-      <!-- Loading State -->
-      <div v-if="isLoading" class="w-full max-w-lg space-y-4">
-        <Skeleton class="h-8 w-48" />
+    <!-- Loading State -->
+    <AuthCard v-if="isLoading" wide title="Edit Your Feedback">
+      <div class="space-y-4">
         <Skeleton class="h-4 w-64" />
         <Skeleton class="h-10 w-full" />
         <Skeleton class="h-36 w-full" />
         <Skeleton class="h-10 w-28 ml-auto" />
       </div>
+    </AuthCard>
 
-      <!-- Token Error State -->
-      <div v-else-if="tokenError" class="w-full max-w-lg">
-        <div class="bg-card rounded-lg border border-border p-8 text-center">
-          <Icon name="lucide:link-2-off" class="w-12 h-12 mx-auto text-destructive mb-4" />
-          <h1 class="text-xl font-semibold mb-2">Invalid Edit Link</h1>
-          <p class="text-muted-foreground">{{ tokenError }}</p>
+    <!-- Token Error State -->
+    <AuthCard v-else-if="tokenError" wide title="Invalid Edit Link" :description="tokenError">
+      <Icon name="lucide:link-2-off" class="mx-auto h-12 w-12 text-destructive" />
+    </AuthCard>
+
+    <!-- Success State -->
+    <AuthCard v-else-if="saved" wide title="Feedback Updated" description="Your changes have been saved successfully.">
+      <Icon name="lucide:check-circle-2" class="mx-auto h-12 w-12 text-green-500" />
+    </AuthCard>
+
+    <!-- Edit Form -->
+    <AuthCard v-else-if="item" wide title="Edit Your Feedback" :description="'for ' + item.projectName">
+      <form class="space-y-5" @submit.prevent="saveEdit">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-foreground">Title</label>
+          <Input
+            v-model="form.title"
+            placeholder="Short summary of your feedback"
+            :disabled="isSaving"
+            maxlength="200"
+          />
+          <p v-if="formErrors.title" class="text-sm text-destructive">{{ formErrors.title }}</p>
         </div>
-      </div>
 
-      <!-- Success State -->
-      <div v-else-if="saved" class="w-full max-w-lg">
-        <div class="bg-card rounded-lg border border-border p-8 text-center">
-          <Icon name="lucide:check-circle-2" class="w-12 h-12 mx-auto text-green-500 mb-4" />
-          <h1 class="text-xl font-semibold mb-2">Feedback Updated</h1>
-          <p class="text-muted-foreground">Your changes have been saved successfully.</p>
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-foreground">Description</label>
+          <Textarea
+            v-model="form.body"
+            placeholder="Provide more details about your feedback..."
+            rows="6"
+            :disabled="isSaving"
+            maxlength="5000"
+          />
+          <p v-if="formErrors.body" class="text-sm text-destructive">{{ formErrors.body }}</p>
         </div>
-      </div>
 
-      <!-- Edit Form -->
-      <div v-else-if="item" class="w-full max-w-lg">
-        <div class="bg-card rounded-lg border border-border p-8">
-          <div class="mb-6">
-            <h1 class="text-2xl font-bold text-foreground">Edit Your Feedback</h1>
-            <p class="text-muted-foreground mt-1">
-              for <strong>{{ item.projectName }}</strong>
-            </p>
-          </div>
+        <p v-if="saveError" class="text-sm text-destructive">{{ saveError }}</p>
 
-          <form class="space-y-5" @submit.prevent="saveEdit">
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-foreground">Title</label>
-              <Input
-                v-model="form.title"
-                placeholder="Short summary of your feedback"
-                :disabled="isSaving"
-                maxlength="200"
-              />
-              <p v-if="formErrors.title" class="text-sm text-destructive">{{ formErrors.title }}</p>
-            </div>
-
-            <div class="space-y-2">
-              <label class="text-sm font-medium text-foreground">Description</label>
-              <Textarea
-                v-model="form.body"
-                placeholder="Provide more details about your feedback..."
-                rows="6"
-                :disabled="isSaving"
-                maxlength="5000"
-              />
-              <p v-if="formErrors.body" class="text-sm text-destructive">{{ formErrors.body }}</p>
-            </div>
-
-            <p v-if="saveError" class="text-sm text-destructive">{{ saveError }}</p>
-
-            <div class="flex justify-end pt-2">
-              <Button type="submit" :disabled="isSaving">
-                <Icon v-if="isSaving" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-                Save Changes
-              </Button>
-            </div>
-          </form>
+        <div class="flex justify-end pt-2">
+          <Button type="submit" :disabled="isSaving">
+            <Icon v-if="isSaving" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+            Save Changes
+          </Button>
         </div>
-      </div>
-    </div>
+      </form>
+    </AuthCard>
   </NuxtLayout>
 </template>
 

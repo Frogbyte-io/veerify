@@ -1,244 +1,190 @@
 <template>
   <NuxtLayout name="clean">
-    <div class="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
-      <div class="w-full max-w-lg">
-        <!-- Step Indicator -->
-        <div class="flex items-center justify-center mb-8">
-          <div v-for="(step, index) in steps" :key="step.key" class="flex items-center">
-            <div
-              class="flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors"
-              :class="{
-                'bg-primary text-primary-foreground': currentStep >= index,
-                'bg-muted text-muted-foreground': currentStep < index,
-              }"
-            >
-              <Icon v-if="currentStep > index" name="lucide:check" class="w-4 h-4" />
-              <span v-else>{{ index + 1 }}</span>
+    <AuthCard wide :title="stepTitle" :description="stepDescription">
+      <!-- Step Indicator -->
+      <div class="flex items-center justify-center mb-8">
+        <div v-for="(step, index) in steps" :key="step.key" class="flex items-center">
+          <div
+            class="flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors"
+            :class="{
+              'bg-primary text-primary-foreground': currentStep >= index,
+              'bg-muted text-muted-foreground': currentStep < index,
+            }"
+          >
+            <Icon v-if="currentStep > index" name="lucide:check" class="w-4 h-4" />
+            <span v-else>{{ index + 1 }}</span>
+          </div>
+          <div
+            v-if="index < steps.length - 1"
+            class="w-12 h-0.5 mx-2 transition-colors"
+            :class="currentStep > index ? 'bg-primary' : 'bg-muted'"
+          />
+        </div>
+      </div>
+
+      <!-- Step 1: Create Workspace -->
+      <div v-if="currentStep === 0">
+        <form
+          data-testid="onboarding-form"
+          :data-hydrated="isHydrated ? 'true' : 'false'"
+          class="space-y-4"
+          @submit.prevent="createWorkspace"
+        >
+          <div v-if="isLoadingContext" class="space-y-2">
+            <Skeleton class="h-10 w-full" />
+            <Skeleton class="h-10 w-full" />
+          </div>
+          <div v-if="!projectOnly && !isLoadingContext" class="space-y-2">
+            <Label for="org-name">Workspace name</Label>
+            <Input id="org-name" v-model="orgName" placeholder="Acme Inc." :disabled="isCreatingOrg" />
+          </div>
+          <div v-if="!projectOnly && !isLoadingContext" class="space-y-2">
+            <Label for="org-slug">URL</Label>
+            <div class="flex items-center gap-2">
+              <Input id="org-slug" v-model="orgSlug" placeholder="acme-inc" :disabled="isCreatingOrg" class="flex-1" />
+              <span class="text-sm text-muted-foreground whitespace-nowrap">.{{ appDomain }}</span>
             </div>
-            <div
-              v-if="index < steps.length - 1"
-              class="w-12 h-0.5 mx-2 transition-colors"
-              :class="currentStep > index ? 'bg-primary' : 'bg-muted'"
+            <p class="text-xs text-muted-foreground">
+              This will be your public workspace URL. You can change it later.
+            </p>
+          </div>
+
+          <div v-if="!isLoadingContext" class="space-y-2">
+            <Label for="project-name">First project name</Label>
+            <Input
+              id="project-name"
+              v-model="projectName"
+              data-testid="onboarding-project-name"
+              placeholder="Acme"
+              :disabled="isCreatingOrg"
+              @input="projectNameEdited = true"
             />
+            <p class="text-xs text-muted-foreground">
+              The project is where feedback and your other tools live. You can add more projects later.
+            </p>
+          </div>
+
+          <div
+            v-if="createOrgError"
+            class="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
+          >
+            {{ createOrgError }}
+          </div>
+
+          <Button type="submit" class="w-full" :disabled="isCreatingOrg || isLoadingContext || !canSubmitStepOne">
+            <Icon v-if="isCreatingOrg" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+            {{ isCreatingOrg ? 'Creating...' : projectOnly ? 'Create project' : 'Create workspace' }}
+          </Button>
+        </form>
+      </div>
+
+      <!-- Step 2: Invite Members -->
+      <div v-if="currentStep === 1">
+        <div class="space-y-4">
+          <div v-for="(invite, index) in inviteEmails" :key="index" class="flex items-center gap-2">
+            <Input
+              v-model="inviteEmails[index]"
+              type="email"
+              :placeholder="index === 0 ? 'teammate@company.com' : 'Another teammate'"
+              :disabled="isInviting"
+            />
+            <Button
+              v-if="inviteEmails.length > 1"
+              variant="ghost"
+              size="icon"
+              class="shrink-0"
+              :disabled="isInviting"
+              @click="removeInviteField(index)"
+            >
+              <Icon name="lucide:x" class="w-4 h-4" />
+            </Button>
+          </div>
+
+          <Button
+            v-if="inviteEmails.length < 5"
+            variant="outline"
+            size="sm"
+            class="w-full"
+            :disabled="isInviting"
+            @click="addInviteField"
+          >
+            <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
+            Add another
+          </Button>
+
+          <div
+            v-if="inviteError"
+            class="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
+          >
+            {{ inviteError }}
+          </div>
+
+          <div
+            v-if="inviteSuccess"
+            class="p-3 bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400 rounded-md text-sm"
+          >
+            {{ inviteSuccess }}
+          </div>
+
+          <div class="flex flex-col gap-2 pt-2">
+            <Button :disabled="isInviting || !hasValidEmails" @click="sendInvitations">
+              <Icon v-if="isInviting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
+              {{ isInviting ? 'Sending invitations...' : 'Send invitations' }}
+            </Button>
+            <Button variant="ghost" :disabled="isInviting" @click="skipInvitations"> Skip for now </Button>
           </div>
         </div>
-
-        <!-- Step 1: Create Workspace -->
-        <Card v-if="currentStep === 0">
-          <CardHeader class="text-center">
-            <div class="flex justify-center mb-4">
-              <div class="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                <Icon name="lucide:building-2" class="w-6 h-6 text-primary" />
-              </div>
-            </div>
-            <CardTitle class="text-2xl">{{
-              projectOnly ? 'Create your first project' : 'Create your workspace'
-            }}</CardTitle>
-            <CardDescription v-if="projectOnly">
-              Your workspace <strong>{{ createdOrgName }}</strong> has no project yet. A project is a brand or product
-              line with its own feedback, tools and public site.
-            </CardDescription>
-            <CardDescription v-else>
-              A workspace is where you and your colleagues work together. It holds your projects, for example one per
-              brand. Think of it as your company or organization.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form
-              data-testid="onboarding-form"
-              :data-hydrated="isHydrated ? 'true' : 'false'"
-              class="space-y-4"
-              @submit.prevent="createWorkspace"
-            >
-              <div v-if="isLoadingContext" class="space-y-2">
-                <Skeleton class="h-10 w-full" />
-                <Skeleton class="h-10 w-full" />
-              </div>
-              <div v-if="!projectOnly && !isLoadingContext" class="space-y-2">
-                <Label for="org-name">Workspace name</Label>
-                <Input id="org-name" v-model="orgName" placeholder="Acme Inc." :disabled="isCreatingOrg" />
-              </div>
-              <div v-if="!projectOnly && !isLoadingContext" class="space-y-2">
-                <Label for="org-slug">URL</Label>
-                <div class="flex items-center gap-2">
-                  <Input
-                    id="org-slug"
-                    v-model="orgSlug"
-                    placeholder="acme-inc"
-                    :disabled="isCreatingOrg"
-                    class="flex-1"
-                  />
-                  <span class="text-sm text-muted-foreground whitespace-nowrap">.{{ appDomain }}</span>
-                </div>
-                <p class="text-xs text-muted-foreground">
-                  This will be your public workspace URL. You can change it later.
-                </p>
-              </div>
-
-              <div v-if="!isLoadingContext" class="space-y-2">
-                <Label for="project-name">First project name</Label>
-                <Input
-                  id="project-name"
-                  v-model="projectName"
-                  data-testid="onboarding-project-name"
-                  placeholder="Acme"
-                  :disabled="isCreatingOrg"
-                  @input="projectNameEdited = true"
-                />
-                <p class="text-xs text-muted-foreground">
-                  The project is where feedback and your other tools live. You can add more projects later.
-                </p>
-              </div>
-
-              <div
-                v-if="createOrgError"
-                class="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
-              >
-                {{ createOrgError }}
-              </div>
-
-              <Button type="submit" class="w-full" :disabled="isCreatingOrg || isLoadingContext || !canSubmitStepOne">
-                <Icon v-if="isCreatingOrg" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-                {{ isCreatingOrg ? 'Creating...' : projectOnly ? 'Create project' : 'Create workspace' }}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <!-- Step 2: Invite Members -->
-        <Card v-if="currentStep === 1">
-          <CardHeader class="text-center">
-            <div class="flex justify-center mb-4">
-              <div class="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                <Icon name="lucide:user-plus" class="w-6 h-6 text-primary" />
-              </div>
-            </div>
-            <CardTitle class="text-2xl">Invite your colleagues</CardTitle>
-            <CardDescription>
-              Veerify works best with your colleagues. Add members now or invite them later from settings.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div class="space-y-4">
-              <div v-for="(invite, index) in inviteEmails" :key="index" class="flex items-center gap-2">
-                <Input
-                  v-model="inviteEmails[index]"
-                  type="email"
-                  :placeholder="index === 0 ? 'teammate@company.com' : 'Another teammate'"
-                  :disabled="isInviting"
-                />
-                <Button
-                  v-if="inviteEmails.length > 1"
-                  variant="ghost"
-                  size="icon"
-                  class="shrink-0"
-                  :disabled="isInviting"
-                  @click="removeInviteField(index)"
-                >
-                  <Icon name="lucide:x" class="w-4 h-4" />
-                </Button>
-              </div>
-
-              <Button
-                v-if="inviteEmails.length < 5"
-                variant="outline"
-                size="sm"
-                class="w-full"
-                :disabled="isInviting"
-                @click="addInviteField"
-              >
-                <Icon name="lucide:plus" class="w-4 h-4 mr-2" />
-                Add another
-              </Button>
-
-              <div
-                v-if="inviteError"
-                class="p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
-              >
-                {{ inviteError }}
-              </div>
-
-              <div
-                v-if="inviteSuccess"
-                class="p-3 bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400 rounded-md text-sm"
-              >
-                {{ inviteSuccess }}
-              </div>
-
-              <div class="flex flex-col gap-2 pt-2">
-                <Button :disabled="isInviting || !hasValidEmails" @click="sendInvitations">
-                  <Icon v-if="isInviting" name="lucide:loader-2" class="w-4 h-4 mr-2 animate-spin" />
-                  {{ isInviting ? 'Sending invitations...' : 'Send invitations' }}
-                </Button>
-                <Button variant="ghost" :disabled="isInviting" @click="skipInvitations"> Skip for now </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <!-- Step 3: How it Works -->
-        <Card v-if="currentStep === 2">
-          <CardHeader class="text-center">
-            <div class="flex justify-center mb-4">
-              <div class="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                <Icon name="lucide:sparkles" class="w-6 h-6 text-primary" />
-              </div>
-            </div>
-            <CardTitle class="text-2xl">You're all set!</CardTitle>
-            <CardDescription>
-              Your workspace <strong>{{ createdOrgName }}</strong> is ready to go.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div class="space-y-4">
-              <!-- Quick overview cards -->
-              <div class="grid gap-3">
-                <div class="flex items-start gap-3 rounded-lg border p-3">
-                  <div class="flex items-center justify-center w-8 h-8 rounded-md bg-blue-500/10 shrink-0">
-                    <Icon name="lucide:message-square" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <p class="font-medium text-sm">Collect feedback</p>
-                    <p class="text-xs text-muted-foreground">
-                      Gather feature requests, bug reports, and ideas from your users.
-                    </p>
-                  </div>
-                </div>
-                <div class="flex items-start gap-3 rounded-lg border p-3">
-                  <div class="flex items-center justify-center w-8 h-8 rounded-md bg-purple-500/10 shrink-0">
-                    <Icon name="lucide:package" class="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                  </div>
-                  <div>
-                    <p class="font-medium text-sm">Organize with projects</p>
-                    <p class="text-xs text-muted-foreground">
-                      Add a project per brand. Each one has its own tools, people and public site, and can hold several
-                      products.
-                    </p>
-                  </div>
-                </div>
-                <div class="flex items-start gap-3 rounded-lg border p-3">
-                  <div class="flex items-center justify-center w-8 h-8 rounded-md bg-green-500/10 shrink-0">
-                    <Icon name="lucide:users" class="w-4 h-4 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div>
-                    <p class="font-medium text-sm">Collaborate with others</p>
-                    <p class="text-xs text-muted-foreground">
-                      New projects are open to everyone in your workspace. Invite more people anytime from Workspace
-                      settings.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <Button class="w-full" @click="goToDashboard">
-                Go to dashboard
-                <Icon name="lucide:arrow-right" class="w-4 h-4 ml-2" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       </div>
-    </div>
+
+      <!-- Step 3: How it Works -->
+      <div v-if="currentStep === 2">
+        <div class="space-y-4">
+          <!-- Quick overview cards -->
+          <div class="grid gap-3">
+            <div class="flex items-start gap-3 rounded-lg border p-3">
+              <div class="flex items-center justify-center w-8 h-8 rounded-md bg-blue-500/10 shrink-0">
+                <Icon name="lucide:message-square" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p class="font-medium text-sm">Collect feedback</p>
+                <p class="text-xs text-muted-foreground">
+                  Gather feature requests, bug reports, and ideas from your users.
+                </p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 rounded-lg border p-3">
+              <div class="flex items-center justify-center w-8 h-8 rounded-md bg-purple-500/10 shrink-0">
+                <Icon name="lucide:package" class="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p class="font-medium text-sm">Organize with projects</p>
+                <p class="text-xs text-muted-foreground">
+                  Add a project per brand. Each one has its own tools, people and public site, and can hold several
+                  products.
+                </p>
+              </div>
+            </div>
+            <div class="flex items-start gap-3 rounded-lg border p-3">
+              <div class="flex items-center justify-center w-8 h-8 rounded-md bg-green-500/10 shrink-0">
+                <Icon name="lucide:users" class="w-4 h-4 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <p class="font-medium text-sm">Collaborate with others</p>
+                <p class="text-xs text-muted-foreground">
+                  New projects are open to everyone in your workspace. Invite more people anytime from Workspace
+                  settings.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <Button class="w-full" @click="goToDashboard">
+            Go to dashboard
+            <Icon name="lucide:arrow-right" class="w-4 h-4 ml-2" />
+          </Button>
+        </div>
+      </div>
+    </AuthCard>
   </NuxtLayout>
 </template>
 
@@ -282,6 +228,26 @@ export default {
   },
 
   computed: {
+    stepTitle() {
+      if (this.currentStep === 0) {
+        return this.projectOnly ? 'Create your first project' : 'Create your workspace'
+      }
+      if (this.currentStep === 1) return 'Invite your colleagues'
+      return "You're all set!"
+    },
+
+    stepDescription() {
+      if (this.currentStep === 0) {
+        return this.projectOnly
+          ? `Your workspace ${this.createdOrgName} has no project yet. A project is a brand or product line with its own feedback, tools and public site.`
+          : 'A workspace is where you and your colleagues work together. It holds your projects, for example one per brand. Think of it as your company or organization.'
+      }
+      if (this.currentStep === 1) {
+        return 'Veerify works best with your colleagues. Add members now or invite them later from settings.'
+      }
+      return `Your workspace ${this.createdOrgName} is ready to go.`
+    },
+
     appDomain() {
       return useRuntimeConfig().public.appDomain || 'veerify.io'
     },

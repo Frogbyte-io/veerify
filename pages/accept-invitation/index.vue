@@ -1,92 +1,77 @@
 <template>
   <NuxtLayout name="clean">
-    <div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div class="w-full max-w-md">
-        <Card>
-          <CardHeader class="text-center">
-            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Icon name="lucide:mail-check" class="h-6 w-6" />
-            </div>
-            <CardTitle class="mt-4 text-2xl font-display">Accept Invitation</CardTitle>
-            <CardDescription v-if="invitationSummary">
-              Join <strong>{{ invitationSummary.organizationName }}</strong> on Veerify.
-            </CardDescription>
-            <CardDescription v-else-if="invitationId"> Accept your workspace invitation to continue. </CardDescription>
-            <CardDescription v-else>Invitation link is missing the required ID.</CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-4">
-            <div v-if="isLoading" class="space-y-3">
-              <Skeleton class="mx-auto h-6 w-2/3" />
-              <Skeleton class="h-10 w-full" />
-              <Skeleton class="h-10 w-full" />
-            </div>
+    <AuthCard wide title="Accept Invitation" :description="invitationDescription">
+      <div class="space-y-4">
+        <div v-if="isLoading" class="space-y-3">
+          <Skeleton class="mx-auto h-6 w-2/3" />
+          <Skeleton class="h-10 w-full" />
+          <Skeleton class="h-10 w-full" />
+        </div>
 
-            <template v-else>
-              <template v-if="errorMessage">
-                <div class="flex gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-destructive">
-                  <Icon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" />
-                  <div class="space-y-1">
-                    <p class="text-sm font-medium leading-none">Invitation unavailable</p>
-                    <p class="text-sm opacity-90">{{ errorMessage }}</p>
-                  </div>
-                </div>
-
-                <template v-if="session?.user">
-                  <div class="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                    You're signed in as <span class="font-medium text-foreground">{{ session.user.email }}</span
-                    >. Try signing in with the email address this invitation was sent to.
-                  </div>
-                  <div class="grid gap-3">
-                    <Button class="w-full" :disabled="isSwitching" @click="switchAccount">
-                      <Icon v-if="isSwitching" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
-                      Sign in with a different account
-                    </Button>
-                    <Button as-child variant="outline" class="w-full">
-                      <NuxtLink :to="signupLink">Create a new account</NuxtLink>
-                    </Button>
-                  </div>
-                </template>
-              </template>
-
-              <div v-else-if="wasAccepted" class="space-y-4 text-center">
-                <p class="text-sm text-muted-foreground">
-                  The invitation was accepted. You can continue into your workspace now.
-                </p>
-                <Button class="w-full" @click="goToWorkspace">Open workspace</Button>
+        <template v-else>
+          <template v-if="errorMessage">
+            <div class="flex gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-destructive">
+              <Icon name="lucide:circle-alert" class="mt-0.5 h-4 w-4 shrink-0" />
+              <div class="space-y-1">
+                <p class="text-sm font-medium leading-none">Invitation unavailable</p>
+                <p class="text-sm opacity-90">{{ errorMessage }}</p>
               </div>
+            </div>
 
-              <template v-else-if="!session?.user">
-                <div class="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                  Sign in or create an account with the invited email address to accept this invitation.
-                </div>
-                <div class="grid gap-3">
-                  <Button as-child class="w-full">
-                    <NuxtLink :to="loginLink">Sign in to accept</NuxtLink>
-                  </Button>
-                  <Button as-child variant="outline" class="w-full">
-                    <NuxtLink :to="signupLink">Create account to accept</NuxtLink>
-                  </Button>
-                </div>
-              </template>
-
-              <template v-else>
-                <div class="space-y-2 rounded-lg border p-4">
-                  <p class="text-sm text-muted-foreground">Signed in as</p>
-                  <p class="font-medium">{{ session.user.email }}</p>
-                  <p v-if="invitationSummary?.role" class="text-sm text-muted-foreground">
-                    Role: <span class="capitalize text-foreground">{{ invitationSummary.role }}</span>
-                  </p>
-                </div>
-                <Button class="w-full" :disabled="isAccepting || !invitationId" @click="acceptInvitation">
-                  <Icon v-if="isAccepting" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
-                  Accept invitation
+            <template v-if="session?.user">
+              <div class="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+                You're signed in as <span class="font-medium text-foreground">{{ session.user.email }}</span
+                >. Try signing in with the email address this invitation was sent to.
+              </div>
+              <div class="grid gap-3">
+                <Button class="w-full" :disabled="isSwitching" @click="switchAccount">
+                  <Icon v-if="isSwitching" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+                  Sign in with a different account
                 </Button>
-              </template>
+                <Button as-child variant="outline" class="w-full">
+                  <NuxtLink :to="signupLink">Create a new account</NuxtLink>
+                </Button>
+              </div>
             </template>
-          </CardContent>
-        </Card>
+          </template>
+
+          <div v-else-if="wasAccepted" class="space-y-4 text-center">
+            <p class="text-sm text-muted-foreground">
+              The invitation was accepted. You can continue into your workspace now.
+            </p>
+            <Button class="w-full" @click="goToWorkspace">Open workspace</Button>
+          </div>
+
+          <template v-else-if="!session?.user">
+            <div class="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
+              Sign in or create an account with the invited email address to accept this invitation.
+            </div>
+            <div class="grid gap-3">
+              <Button as-child class="w-full">
+                <NuxtLink :to="loginLink">Sign in to accept</NuxtLink>
+              </Button>
+              <Button as-child variant="outline" class="w-full">
+                <NuxtLink :to="signupLink">Create account to accept</NuxtLink>
+              </Button>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="space-y-2 rounded-lg border p-4">
+              <p class="text-sm text-muted-foreground">Signed in as</p>
+              <p class="font-medium">{{ session.user.email }}</p>
+              <p v-if="invitationSummary?.role" class="text-sm text-muted-foreground">
+                Role: <span class="capitalize text-foreground">{{ invitationSummary.role }}</span>
+              </p>
+            </div>
+            <Button class="w-full" :disabled="isAccepting || !invitationId" @click="acceptInvitation">
+              <Icon v-if="isAccepting" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+              Accept invitation
+            </Button>
+          </template>
+        </template>
       </div>
-    </div>
+    </AuthCard>
   </NuxtLayout>
 </template>
 
@@ -110,6 +95,13 @@ export default {
     }
   },
   computed: {
+    invitationDescription() {
+      if (this.invitationSummary) {
+        return `Join ${this.invitationSummary.organizationName} on Veerify.`
+      }
+      if (this.invitationId) return 'Accept your workspace invitation to continue.'
+      return 'Invitation link is missing the required ID.'
+    },
     redirectPath() {
       return this.$route.fullPath || '/accept-invitation'
     },
