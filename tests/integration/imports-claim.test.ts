@@ -44,7 +44,8 @@ const { commitImportRun } = await import('../../server/services/imports/committe
 const { claimImportedActivity } = await import('../../server/services/imports/claim')
 const { auth } = await import('../../lib/auth')
 const { planImport } = await import('../../server/services/imports/planner')
-const { sendEmailVerificationEmail } = await import('~/lib/email')
+const { sendEmailVerificationEmail, sendMagicLinkEmail } = await import('~/lib/email')
+const { createEmailVerificationToken } = await import('better-auth/api')
 const profilePut = (await import('../../server/api/user/profile.put')).default as unknown as (
   e: FakeEvent
 ) => Promise<{ success: boolean }>
@@ -147,6 +148,13 @@ async function castUserVote(userId: string, feedbackId: string, type: 'upvote' |
     .where(eq(feedback.id, feedbackId))
 }
 
+/** The real verify-email endpoint, with a token as the verification mail would carry it. */
+async function verifyEmailViaLink(email: string) {
+  const ctx = await auth.$context
+  const token = await createEmailVerificationToken(ctx.secret, email)
+  await auth.api.verifyEmail({ query: { token } })
+}
+
 async function insertUser(email: string, emailVerified: boolean) {
   const id = `icl_u_${randomUUID().slice(0, 8)}`
   await db.insert(user).values({ id, name: 'User', email, emailVerified })
@@ -202,8 +210,14 @@ describe('claiming imported activity (real Postgres)', () => {
     expect(unverified.ada.claimedByUserId).toBeNull()
     expect(unverified.adaVotes.every((v) => v.voterUserId === null)).toBe(true)
 
-    // Verifying the email (user.update.after) claims in the background.
+    // A plain user update that sets the flag (no verification endpoint) does not claim.
     await ctx.internalAdapter.updateUser(created.id, { emailVerified: true })
+    await new Promise((r) => setTimeout(r, 200))
+    expect((await state(projA.id)).ada.claimedByUserId).toBeNull()
+    await ctx.internalAdapter.updateUser(created.id, { emailVerified: false })
+
+    // Verifying the email (the verify-email link, afterEmailVerification) claims in the background.
+    await verifyEmailViaLink(created.email)
     await vi.waitFor(
       async () => {
         const s = await state(projA.id)
@@ -468,7 +482,7 @@ describe('claiming imported activity (real Postgres)', () => {
     expect(s.fb['f-1'].authorUserId).toBeNull()
 
     // Verifying the new address claims; re-saving it in another case keeps it verified.
-    await ctx.internalAdapter.updateUser(created.id, { emailVerified: true })
+    await verifyEmailViaLink(newEmail)
     await vi.waitFor(async () => expect((await state(p.id)).ada.claimedByUserId).toBe(created.id), {
       timeout: 5_000,
       interval: 50,
@@ -476,5 +490,86 @@ describe('claiming imported activity (real Postgres)', () => {
     await profilePut({ ...event(newEmail.toUpperCase()), session: { user: { id: created.id, email: newEmail } } })
     const [kept] = await db.select().from(user).where(eq(user.id, created.id))
     expect(kept.emailVerified).toBe(true)
+  })
+  it('never claims on updates that are not a verification (update-user, 2FA toggle) for an already verified user', async () => {
+    const email = `icl-2fa-${suffix}@example.com`
+    const p = await newProject('twofa')
+    const ctx = await auth.$context
+    // Verified before anything was imported, so the create hook had nothing to claim.
+    const created = await ctx.internalAdapter.createUser({ name: 'Victim', email, emailVerified: true })
+    createdUserIds.push(created.id)
+    await importInto(p, doc(email))
+
+    const { headers } = await (ctx as any).test.login({ userId: created.id })
+    await auth.api.updateUser({ body: { name: 'Victim Renamed' }, headers })
+    await ctx.internalAdapter.updateUser(created.id, { twoFactorEnabled: true })
+    await ctx.internalAdapter.updateUser(created.id, { twoFactorEnabled: false })
+    await new Promise((r) => setTimeout(r, 300))
+
+    const s = await state(p.id)
+    expect(s.ada.claimedByUserId).toBeNull()
+    expect(s.fb['f-1'].authorUserId).toBeNull()
+    expect(s.adaVotes.every((v) => v.voterUserId === null)).toBe(true)
+  })
+
+  it('claims when magic-link sign-in verifies an existing unverified user', async () => {
+    const email = `icl-magic-${suffix}@example.com`
+    const p = await newProject('magic')
+    const ctx = await auth.$context
+    const created = await ctx.internalAdapter.createUser({ name: 'Magic', email, emailVerified: false })
+    createdUserIds.push(created.id)
+    await importInto(p, doc(email))
+
+    vi.mocked(sendMagicLinkEmail).mockClear()
+    // Through the HTTP handler, so the endpoint has a request (base URL) and its path reaches the database hooks.
+    const origin = 'http://localhost:3000'
+    const sent = await auth.handler(
+      new Request(`${origin}/api/auth/sign-in/magic-link`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin },
+        body: JSON.stringify({ email }),
+      })
+    )
+    expect(sent.status).toBe(200)
+    await vi.waitFor(() => expect(sendMagicLinkEmail).toHaveBeenCalled())
+    const { magicLinkUrl } = vi.mocked(sendMagicLinkEmail).mock.calls[0]![0] as { magicLinkUrl: string }
+    const verified = await auth.handler(new Request(magicLinkUrl, { headers: { origin } }))
+    expect(verified.status).toBeLessThan(400)
+
+    await vi.waitFor(async () => expect((await state(p.id)).ada.claimedByUserId).toBe(created.id), {
+      timeout: 5_000,
+      interval: 50,
+    })
+    const [row] = await db.select().from(user).where(eq(user.id, created.id))
+    expect(row.emailVerified).toBe(true)
+  })
+
+  it('retries a claim whose transaction hit a unique violation', async () => {
+    const email = `icl-retry-${suffix}@example.com`
+    const p = await newProject('retry')
+    await importInto(p, doc(email))
+    const userId = await insertUser(email, true)
+
+    const conflict = Object.assign(new Error('duplicate key value violates unique constraint'), {
+      cause: Object.assign(new Error('duplicate key'), { code: '23505' }),
+    })
+    const spy = vi.spyOn(db, 'transaction').mockRejectedValueOnce(conflict)
+    try {
+      expect(await claimImportedActivity(userId, email)).toEqual({ people: 1, feedback: 1, comments: 1, votes: 2 })
+      expect(spy).toHaveBeenCalledTimes(2)
+    } finally {
+      spy.mockRestore()
+    }
+    expect((await state(p.id)).ada.claimedByUserId).toBe(userId)
+  })
+
+  it('does not retry an error that is not a conflict', async () => {
+    const spy = vi.spyOn(db, 'transaction').mockRejectedValueOnce(Object.assign(new Error('boom'), { code: '42P01' }))
+    try {
+      await expect(claimImportedActivity('nobody', `icl-none-${suffix}@example.com`)).rejects.toThrow('boom')
+      expect(spy).toHaveBeenCalledTimes(1)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

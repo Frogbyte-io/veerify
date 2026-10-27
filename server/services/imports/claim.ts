@@ -1,5 +1,8 @@
 /**
- * Claiming imported activity. When a user has a verified email that matches unclaimed `imported_person` rows (in any
+ * Claiming imported activity. Runs only on a verification event (see lib/auth.ts): the verify-email link, a sign-up
+ * that arrives verified, or magic-link sign-in flipping the user to verified. Never on other user updates (2FA,
+ * update-user), so an email someone else imported is not attached to an account just because it is verified.
+ * When a user has a verified email that matches unclaimed `imported_person` rows (in any
  * project, case-insensitive), that person's imported posts, comments and votes are re-pointed to the user.
  *
  * - Only verified emails claim: the user row must exist, have `emailVerified = true` and carry this email.
@@ -25,7 +28,47 @@ export type ClaimResult = { people: number; feedback: number; comments: number; 
 
 const emptyResult = (): ClaimResult => ({ people: 0, feedback: 0, comments: 0, votes: 0 })
 
+/** Better-Auth endpoints that verify an email. Database hooks only claim while one of these is being handled. */
+const VERIFICATION_PATHS = ['/verify-email', '/magic-link/verify']
+
+export function isVerificationPath(path: string | null | undefined): boolean {
+  return !!path && VERIFICATION_PATHS.some((p) => path === p || path.startsWith(`${p}?`) || path.startsWith(`${p}/`))
+}
+
+export const CLAIM_MAX_ATTEMPTS = 3
+const CLAIM_RETRY_DELAY_MS = 50
+/** unique_violation (a vote cast concurrently) and deadlock_detected: the transaction is safe to run again. */
+const RETRYABLE_CODES = new Set(['23505', '40P01'])
+
+function pgErrorCode(error: unknown): string | undefined {
+  let current = error
+  for (let depth = 0; current && typeof current === 'object' && depth < 5; depth++) {
+    const code = (current as { code?: unknown }).code
+    if (typeof code === 'string') return code
+    current = (current as { cause?: unknown }).cause
+  }
+  return undefined
+}
+
+/**
+ * Claims with up to CLAIM_MAX_ATTEMPTS tries: a verification event fires once, so a transaction that lost a race with
+ * a concurrent vote (23505) or deadlocked (40P01) is retried after a short backoff instead of leaving the person
+ * unclaimed. Other errors are thrown at once.
+ */
 export async function claimImportedActivity(userId: string, email: string): Promise<ClaimResult> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await claimOnce(userId, email)
+    } catch (error) {
+      const code = pgErrorCode(error)
+      if (attempt >= CLAIM_MAX_ATTEMPTS || !code || !RETRYABLE_CODES.has(code)) throw error
+      logger.warn('Retrying imported activity claim', { userId, attempt, code })
+      await new Promise((resolve) => setTimeout(resolve, CLAIM_RETRY_DELAY_MS * attempt))
+    }
+  }
+}
+
+async function claimOnce(userId: string, email: string): Promise<ClaimResult> {
   const result = emptyResult()
   if (!userId || !email) return result
 
@@ -147,8 +190,9 @@ export async function eraseImportedPeople(
 }
 
 /**
- * Better-Auth hook entry: claims in the background when the user's email is verified. Never throws and never delays
- * sign-up or verification; failures are logged (the person stays unclaimed and the next trigger retries).
+ * Better-Auth hook entry, called only for verification events (lib/auth.ts): claims in the background when the user's
+ * email is verified. Never throws and never delays sign-up or verification; transient conflicts are retried
+ * (claimImportedActivity), other failures are logged and the person stays unclaimed.
  */
 export function claimImportedActivityInBackground(user: {
   id: string

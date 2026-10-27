@@ -5,7 +5,7 @@ import { magicLink, multiSession, organization, testUtils, twoFactor } from 'bet
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
 import { isReservedSlug } from '../server/utils/reserved-slugs'
-import { claimImportedActivityInBackground } from '../server/services/imports/claim'
+import { claimImportedActivityInBackground, isVerificationPath } from '../server/services/imports/claim'
 import {
   sendEmailVerificationEmail,
   sendMagicLinkEmail,
@@ -118,20 +118,22 @@ export const auth = betterAuth({
       twoFactor: schema.twoFactor,
     },
   }),
-  // Claim imported posts, comments and votes for the user's email whenever the stored user row says it is verified.
-  // `create.after` covers sign-ups that arrive verified (social providers asserting a verified email, magic links).
-  // `update.after` fires on EVERY Better-Auth user update (verification link, magic link, 2FA toggle, update-user),
-  // not only on verification, so it relies on `emailVerified` being true only for an email the user proved: any
-  // other path that changes the email must reset `emailVerified` to false (server/api/user/profile.put.ts does).
+  // Claim imported posts, comments and votes only on a verification event (server/services/imports/claim.ts):
+  // - `emailVerification.afterEmailVerification` (below): the verify-email link, including a confirmed email change;
+  // - `create.after`: a user created already verified (social sign-up asserting a verified email, magic-link sign-up);
+  // - `update.after`, only while handling `/magic-link/verify`: magic-link sign-in flips an existing unverified user to
+  //   verified without calling afterEmailVerification. Better-Auth passes the endpoint context (with `path`) to
+  //   database hooks; any other update (2FA toggle, update-user, internal adapter calls) never claims.
   // Fire-and-forget: a failed claim is logged and never blocks sign-up or verification. The claim is idempotent.
-  // See server/services/imports/claim.ts.
   databaseHooks: {
     user: {
       create: {
         after: async (user) => claimImportedActivityInBackground(user),
       },
       update: {
-        after: async (user) => claimImportedActivityInBackground(user),
+        after: async (user, context) => {
+          if (isVerificationPath(context?.path)) claimImportedActivityInBackground(user)
+        },
       },
     },
   },
@@ -166,6 +168,7 @@ export const auth = betterAuth({
       })
     },
     sendOnSignUp: true,
+    afterEmailVerification: async (user) => claimImportedActivityInBackground(user),
   },
   socialProviders: {
     github: {
