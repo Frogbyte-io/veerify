@@ -56,7 +56,7 @@ vi.mock('~/server/database/drizzle', () => {
   return { db }
 })
 
-import { SYNC_FIELDS, planFieldSync, planImport } from '~/server/services/imports/planner'
+import { SYNC_FIELDS, planFieldSync, planImport, snapshotFor } from '~/server/services/imports/planner'
 
 const previewHandler = (await import('~/server/api/projects/[slug]/imports/[runId]/preview.get')).default as (
   e: unknown
@@ -102,6 +102,21 @@ describe('planFieldSync', () => {
     expect(r.kept).toEqual([])
   })
 
+  it('applies a default-valued field from a full insert snapshot (isPinned false -> true)', () => {
+    const row = {
+      title: 'A',
+      body: null,
+      status: 'open',
+      categoryId: null,
+      isPinned: false,
+      isLocked: false,
+      isHidden: false,
+    }
+    const r = planFieldSync(row, snapshotFor('feedback', row), { isPinned: true, status: 'planned' }, fields)
+    expect(r.apply).toEqual({ isPinned: true, status: 'planned' })
+    expect(r.kept).toEqual([])
+  })
+
   it('applies everything when there is no snapshot', () => {
     const r = planFieldSync({ title: 'A', isPinned: true }, null, { title: 'B', isPinned: false }, fields)
     expect(r.apply).toEqual({ title: 'B', isPinned: false })
@@ -124,6 +139,44 @@ describe('planFieldSync', () => {
     )
     expect(r.apply).toEqual({ labels: ['new', 'fixed'], body: 'b' })
     expect(r.kept).toEqual([])
+  })
+})
+
+describe('snapshotFor', () => {
+  it('picks every synced feedback field from the stored row', () => {
+    const row = {
+      id: 'fb-1',
+      title: 'A',
+      body: null,
+      status: 'open',
+      categoryId: null,
+      isPinned: false,
+      isLocked: false,
+      isHidden: false,
+      voteCount: 3,
+    }
+    const snap = snapshotFor('feedback', row)
+    expect(Object.keys(snap).sort()).toEqual([...SYNC_FIELDS.feedback].sort())
+    expect(snap).toEqual({
+      title: 'A',
+      body: null,
+      status: 'open',
+      categoryId: null,
+      isPinned: false,
+      isLocked: false,
+      isHidden: false,
+    })
+  })
+
+  it('normalizes dates to ISO strings and missing fields to null', () => {
+    const snap = snapshotFor('changelog', {
+      title: 'T',
+      body: '',
+      labels: [],
+      publishedAt: new Date('2025-02-01T12:00:00Z'),
+    })
+    expect(snap).toEqual({ title: 'T', body: '', labels: [], status: null, publishedAt: '2025-02-01T12:00:00.000Z' })
+    expect(Object.keys(snapshotFor('comment', { body: 'b', isInternal: false }))).toEqual([...SYNC_FIELDS.comment])
   })
 })
 
@@ -303,6 +356,18 @@ describe('planImport', () => {
       ['skipped', 'comment', 'c-10'],
       ['skipped', 'comment', 'c-11'],
     ])
+  })
+
+  it('counts a duplicate vote by the same person in one feedback as skip', async () => {
+    seed([
+      {
+        feedback: [
+          { externalId: 'f-new', title: 'New', votes: [{ personExternalId: 'p-1' }, { personExternalId: 'p-1' }] },
+        ],
+      },
+    ])
+    const plan = await planImport('run-2')
+    expect(plan.counts.votes).toEqual({ ...zero, create: 1, skip: 1 })
   })
 
   it('skips votes by unknown people and warns on unknown feedback authors', async () => {

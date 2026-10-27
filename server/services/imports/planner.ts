@@ -61,6 +61,11 @@ export interface FieldSyncPlan {
  * (nobody edited it in Veerify); otherwise it is kept and the old snapshot value retained. A null snapshot (record
  * imported before snapshots existed) applies everything. Incoming values equal to the current value are neither
  * applied nor kept; the snapshot takes the incoming value.
+ *
+ * Snapshot contract: on insert, `importSnapshot` must hold the stored row's value for EVERY field in
+ * `SYNC_FIELDS[entity]` (use `snapshotFor(entity, insertedRow)`), not only the incoming keys. A field missing from the
+ * snapshot compares as null, so a defaulted column (status `open`, `isPinned: false`) would otherwise read as edited
+ * and be kept forever. On update, store `nextSnapshot` (it carries over every key of the previous snapshot).
  */
 export function planFieldSync(
   current: Record<string, unknown>,
@@ -85,6 +90,16 @@ export function planFieldSync(
     }
   }
   return { apply, kept, nextSnapshot }
+}
+
+/** The insert-time snapshot: every synced field of the stored row, dates as ISO strings, missing values as null. */
+export function snapshotFor(entity: keyof typeof SYNC_FIELDS, row: Record<string, unknown>): Record<string, unknown> {
+  const snapshot: Record<string, unknown> = {}
+  for (const f of SYNC_FIELDS[entity]) {
+    const value = row[f]
+    snapshot[f] = value instanceof Date ? value.toISOString() : (value ?? null)
+  }
+  return snapshot
 }
 
 /** Statuses a feedback record may take after taxonomy resolution (existing or system, plus to-be-created). */
@@ -188,7 +203,7 @@ export async function loadRunBatch(runId: string): Promise<ImportBatch> {
     .where(eq(importRunBatch.runId, runId))
     .orderBy(asc(importRunBatch.seq))
   const merged: ImportBatch = { statuses: [], categories: [], people: [], feedback: [], comments: [], changelog: [] }
-  for (const row of [...rows].sort((a, b) => a.seq - b.seq)) {
+  for (const row of rows) {
     for (const section of Object.keys(merged) as (keyof ImportBatch)[]) {
       ;(merged[section] as unknown[]).push(...((row.payload?.[section] as unknown[] | undefined) ?? []))
     }
@@ -317,11 +332,20 @@ export async function planImport(runId: string): Promise<ImportPlan> {
         })
         continue
       }
+      if (seen.has(v.personExternalId)) {
+        counts.votes.skip++
+        issues.push({
+          severity: 'skipped',
+          entityType: 'vote',
+          externalId: rec.externalId,
+          message: `Duplicate vote by "${v.personExternalId}" skipped`,
+        })
+        continue
+      }
+      seen.add(v.personExternalId)
       const person = personByExternalId.get(v.personExternalId)
       const exists = !!fbRow && !!person && votePairs.has(`${fbRow.id}\u0000${person.id}`)
-      if (exists || seen.has(v.personExternalId)) counts.votes.unchanged++
-      else counts.votes.create++
-      seen.add(v.personExternalId)
+      counts.votes[exists ? 'unchanged' : 'create']++
     }
   }
 
