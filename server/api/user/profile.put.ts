@@ -1,8 +1,7 @@
-import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
 import { user } from '~/server/database/schema/auth'
 import { eq } from 'drizzle-orm'
-import { getAuthHeaders } from '~/server/utils/auth-headers'
+import { isCredentialPrincipal, requireAuth } from '~/server/utils/auth-middleware'
 import { createLogger } from '~/server/utils/logger'
 
 const logger = createLogger('user')
@@ -10,16 +9,7 @@ const logger = createLogger('user')
 export default defineEventHandler(async (event) => {
   try {
     // Verify user is authenticated
-    const session = await auth.api.getSession({
-      headers: getAuthHeaders(event),
-    })
-
-    if (!session?.user) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: 'Unauthorized',
-      })
-    }
+    const session = await requireAuth(event)
 
     const body = await readBody(event)
     const { name, email } = body
@@ -38,6 +28,17 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 400,
         statusMessage: 'Invalid email format',
+      })
+    }
+
+    // A personal API key may not change the account email.
+    if (
+      isCredentialPrincipal(session) &&
+      String(email).trim().toLowerCase() !== String(session.user.email).trim().toLowerCase()
+    ) {
+      throw createError({
+        statusCode: 403,
+        statusMessage: 'Changing the account email requires signing in to Veerify directly',
       })
     }
 
