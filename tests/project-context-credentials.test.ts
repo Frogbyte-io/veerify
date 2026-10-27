@@ -173,18 +173,27 @@ describe('per-request header context (contextOverride)', () => {
     expect(state.updates).toEqual([])
   })
 
-  it('requireAuthWithOrganization does not persist a repaired org under override', async () => {
-    state.auth = keySession({}, true)
-    state.firstOrg = 'o1'
+  it('requireAuthWithOrganization uses the header org under override without writing', async () => {
+    state.auth = keySession({ org: 'o1' }, true)
     const result = await requireAuthWithOrganization({} as never)
     expect(result.organizationId).toBe('o1')
     expect(state.updates).toEqual([])
   })
 
-  it('explicit set still persists with headers present', async () => {
-    await setActiveProjectForSession({ target: KEY_TARGET, userId: 'u1', projectId: 'p1' })
-    expect(state.updates).toHaveLength(1)
-    expect(state.updates[0].table).toBe('user_api_key')
+  it('does not fall back to the first org when the header org has no accessible project', async () => {
+    state.firstOrg = 'o1'
+    state.accessible.oB = []
+    const result = await resolveActiveProjectForSession(keySession({ org: 'oB', project: null }, true) as never)
+    expect(result).toBeNull()
+    expect(state.updates).toEqual([])
+  })
+
+  it('requireAuthWithOrganization 409s instead of crossing workspaces under override', async () => {
+    state.auth = keySession({ org: 'oB' }, true)
+    state.firstOrg = 'o1'
+    state.orgRoles.oB = null
+    await expect(requireAuthWithOrganization({} as never)).rejects.toMatchObject({ statusCode: 409 })
+    expect(state.updates).toEqual([])
   })
 })
 

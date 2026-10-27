@@ -206,6 +206,20 @@ describe('resolveUserApiKeyPrincipal', () => {
     expect(p?.credential).toEqual({ kind: 'user_api_key', id: 'key-1', contextOverride: true })
   })
 
+  it('nulls a stored project that no longer exists when an org header is applied', async () => {
+    setRow({ activeOrganizationId: 'org-1', activeProjectId: 'gone' })
+    state.orgRows = [{ id: 'org-2' }]
+    const p = await resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Organization': 'org-two' }))
+    expect(p?.session.activeProjectId).toBeNull()
+  })
+
+  it('flags contextOverride for a project header alone', async () => {
+    setRow()
+    state.projectsById.p2 = { id: 'p2', organizationId: 'org-1' }
+    const p = await resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Project': 'p2' }))
+    expect(p?.credential).toEqual({ kind: 'user_api_key', id: 'key-1', contextOverride: true })
+  })
+
   it('keeps a stored project that belongs to the header org', async () => {
     setRow({ activeOrganizationId: 'org-1', activeProjectId: 'p1' })
     state.projectsById.p1 = { id: 'p1', organizationId: 'org-2' }

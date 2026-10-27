@@ -151,8 +151,11 @@ export async function resolveActiveProjectForSession(session: AuthSession): Prom
 
   const orgCandidates: string[] = []
   if (storedOrgId) orgCandidates.push(storedOrgId)
-  const firstOrg = await firstOrganizationIdForUser(userId)
-  if (firstOrg && !orgCandidates.includes(firstOrg)) orgCandidates.push(firstOrg)
+  // A header-named workspace never falls back to another one.
+  if (!session.credential?.contextOverride) {
+    const firstOrg = await firstOrganizationIdForUser(userId)
+    if (firstOrg && !orgCandidates.includes(firstOrg)) orgCandidates.push(firstOrg)
+  }
 
   for (const orgId of orgCandidates) {
     const projects = await listAccessibleProjects(orgId, userId)
@@ -199,7 +202,10 @@ export async function requireAuthWithOrganization(event: H3Event): Promise<{
   let organizationId = session.session.activeOrganizationId ?? null
   let organizationRole = organizationId ? await getOrganizationRole(organizationId, userId) : null
 
-  if (!organizationRole) {
+  if (!organizationRole && session.credential?.contextOverride) {
+    // The header named this workspace; never silently use another one.
+    organizationId = null
+  } else if (!organizationRole) {
     organizationId = await firstOrganizationIdForUser(userId)
     organizationRole = organizationId ? await getOrganizationRole(organizationId, userId) : null
     if (organizationId && organizationRole) {
