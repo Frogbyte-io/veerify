@@ -3,7 +3,7 @@ import { and, eq, ne, sql } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedback, vote } from '~/server/database/schema/feedback'
 import type { ImportFeedback } from '../format'
-import { netVotes, voteBaseline, voteDecisions } from '../planner'
+import { feedbackGoneVoteIssue, netVotes, voteBaseline, voteDecisions } from '../planner'
 import {
   loadFeedback,
   loadPeople,
@@ -43,15 +43,9 @@ export const votesPhase: CommitPhase<VoteState, ImportFeedback> = {
 
     const fb = state.feedback.get(rec.externalId)
     if (!fb) {
-      // The feedback phase inserts every record, so this only happens if it was deleted meanwhile.
+      // Feedback deleted in Veerify (tombstoned, skipped by the feedback phase) or deleted meanwhile.
       ctx.counts.votes.skip += valid.length
-      if (valid.length)
-        ctx.issue({
-          severity: 'skipped',
-          entityType: 'vote',
-          externalId: rec.externalId,
-          message: `Feedback "${rec.externalId}" no longer exists; its votes were skipped`,
-        })
+      if (valid.length) ctx.issue(feedbackGoneVoteIssue(rec.externalId))
       return
     }
     const ownsBaseline = ctx.sync || fb.importRunId === ctx.run.id

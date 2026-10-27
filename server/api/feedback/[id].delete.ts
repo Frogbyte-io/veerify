@@ -5,7 +5,7 @@
  *     tags: [Feedback]
  *     summary: Delete a feedback item
  *     description: >
- *       Permanently deletes the item. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Permanently deletes the item. Imported feedback stays deleted: a later import from the same source skips it. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
  *     operationId: deleteFeedback
  *     security:
  *       - cookieAuth: []
@@ -25,6 +25,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedback } from '~/server/database/schema/feedback'
+import { recordImportTombstone } from '~/server/services/imports/tombstones'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { hasProjectAccess } from '~/server/utils/project-access'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
@@ -64,7 +65,16 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  await db.delete(feedback).where(eq(feedback.id, id))
+  await db.transaction(async (tx) => {
+    // Imported feedback: remember the deletion so a re-import does not bring it back.
+    await recordImportTombstone(tx, {
+      projectId: item.projectId,
+      entity: 'feedback',
+      source: item.externalSource,
+      externalId: item.externalId,
+    })
+    await tx.delete(feedback).where(eq(feedback.id, id))
+  })
 
   return createSuccessResponse({ id, deleted: true })
 })

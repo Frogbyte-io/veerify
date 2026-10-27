@@ -13,6 +13,7 @@ import {
   snapshotFor,
   unknownAuthorIssue,
 } from '../planner'
+import { DELETED_IN_VEERIFY, commentTombstoneId, isTombstoned, loadTombstones } from '../tombstones'
 import {
   loadFeedback,
   loadPeople,
@@ -79,14 +80,20 @@ async function existingCommentKeys(ctx: CommitContext, fb: Map<string, FeedbackR
 
 /**
  * Comments, parents before replies. Insert on (feedbackId, externalSource, externalId) and bump
- * feedback.commentCount in the same transaction; existing comments get the Veerify-wins sync.
+ * feedback.commentCount in the same transaction; existing comments get the Veerify-wins sync. Comments the team
+ * deleted in Veerify (import tombstones) are skipped, and so are their replies (skipped parent).
  */
 export const commentsPhase: CommitPhase<CommentState, ImportComment> = {
   name: 'comments',
   items: (ctx) => orderParentsFirst(ctx.batch.comments),
   async load(ctx) {
     const fb = await loadFeedback(ctx)
-    const skipReasons = commentSkipReasons(ctx.batch.comments, new Set(fb.keys()), await existingCommentKeys(ctx, fb))
+    const skipReasons = commentSkipReasons(
+      ctx.batch.comments,
+      new Set(fb.keys()),
+      await existingCommentKeys(ctx, fb),
+      await loadTombstones(ctx.run.projectId, ctx.run.source, 'comment')
+    )
     return { people: await loadPeople(ctx), feedback: fb, skipReasons }
   },
   async apply(ctx, state, rec) {
@@ -112,6 +119,14 @@ export const commentsPhase: CommitPhase<CommentState, ImportComment> = {
       )
 
     const outcome = await db.transaction(async (tx) => {
+      // Deleted while this run was committing (the delete route writes the tombstone with the delete).
+      const deleted = await isTombstoned(tx, {
+        projectId: run.projectId,
+        entity: 'comment',
+        source: run.source,
+        externalId: commentTombstoneId(rec.feedbackExternalId, rec.externalId),
+      })
+      if (deleted) return { result: 'deleted' as const, kept: false }
       // Attributed only to the user who already claimed the person (see lockPersonClaims).
       const locked = person ? (await lockPeople(tx, [person.id])).get(person.id) : undefined
       const claimedBy = locked?.claimedByUserId ?? null
@@ -165,6 +180,7 @@ export const commentsPhase: CommitPhase<CommentState, ImportComment> = {
       return { result: applied ? ('update' as const) : ('unchanged' as const), kept: plan.kept.length > 0 }
     })
     if (outcome.result === 'missing-parent') return skip(`Parent comment "${rec.parentExternalId}" not found; skipped`)
+    if (outcome.result === 'deleted') return skip(DELETED_IN_VEERIFY)
     ctx.counts.comments[outcome.result]++
     if (outcome.kept) ctx.kept++
   },

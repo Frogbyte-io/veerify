@@ -16,6 +16,8 @@ import type {
   ImportVote,
   IssueInput,
 } from './format'
+import { commentKey } from './format'
+import { DELETED_IN_VEERIFY, loadTombstones } from './tombstones'
 import { importHttpError, listImportIssues } from './runs'
 import { organizationOfProject, suppressedEmails } from './suppression'
 import { resolveFeedbackStatus, resolveTaxonomy, type TaxonomyResolution } from './taxonomy'
@@ -246,6 +248,16 @@ export function voteDecisions(
   return { valid, skipped }
 }
 
+/** Skip issue for the listed votes of a feedback record that does not exist (deleted in Veerify). */
+export function feedbackGoneVoteIssue(feedbackExternalId: string): IssueInput {
+  return {
+    severity: 'skipped',
+    entityType: 'vote',
+    externalId: feedbackExternalId,
+    message: `Feedback "${feedbackExternalId}" no longer exists; its votes were skipped`,
+  }
+}
+
 /** Net value of votes: upvotes minus downvotes (a missing type is an upvote). */
 export function netVotes(votes: readonly { type?: string | null }[]): number {
   return votes.reduce((n, v) => n + (v.type === 'downvote' ? -1 : 1), 0)
@@ -259,16 +271,18 @@ export function voteBaseline(voteCount: number | undefined, netListed: number): 
   return voteCount === undefined ? null : Math.max(0, voteCount - netListed)
 }
 
-export const commentKey = (feedbackExternalId: string, externalId: string) => `${feedbackExternalId}\u0000${externalId}`
+export { commentKey }
 
 /**
- * Skip reason per comment (`commentKey` → reason, null = importable): unknown feedback, unknown parent (not in the
- * run on the same feedback and not already imported), or a parent that is itself skipped. Cycles count as unknown.
+ * Skip reason per comment (`commentKey` → reason, null = importable): deleted in Veerify (tombstoned), unknown
+ * feedback, unknown parent (not in the run on the same feedback and not already imported), or a parent that is itself
+ * skipped. Cycles count as unknown.
  */
 export function commentSkipReasons(
   comments: readonly ImportComment[],
   knownFeedback: ReadonlySet<string>,
-  existingCommentKeys: ReadonlySet<string>
+  existingCommentKeys: ReadonlySet<string>,
+  tombstoned: ReadonlySet<string> = new Set()
 ): Map<string, string | null> {
   const runComments = new Map(comments.map((c) => [commentKey(c.feedbackExternalId, c.externalId), c]))
   const validity = new Map<string, string | null>()
@@ -277,7 +291,9 @@ export function commentSkipReasons(
     const cached = validity.get(key)
     if (cached !== undefined) return cached
     let reason: string | null = null
-    if (!knownFeedback.has(rec.feedbackExternalId)) {
+    if (tombstoned.has(key)) {
+      reason = DELETED_IN_VEERIFY
+    } else if (!knownFeedback.has(rec.feedbackExternalId)) {
       reason = `Comment on unknown feedback "${rec.feedbackExternalId}" skipped`
     } else if (rec.parentExternalId !== undefined) {
       const parentKey = commentKey(rec.feedbackExternalId, rec.parentExternalId)
@@ -422,8 +438,24 @@ export async function planImport(runId: string): Promise<ImportPlan> {
     .where(and(eq(feedback.projectId, projectId), eq(feedback.externalSource, source)))
   const feedbackByExternalId = new Map(feedbackRows.filter((f) => f.externalId).map((f) => [f.externalId!, f]))
   const feedbackExternalIdById = new Map(feedbackRows.map((f) => [f.id, f.externalId]))
-  const knownFeedback = new Set([...feedbackByExternalId.keys(), ...batch.feedback.map((f) => f.externalId)])
+  // Feedback the team deleted in Veerify is skipped (the commit does the same), so it is not "known" either.
+  const deletedFeedback = await loadTombstones(projectId, source, 'feedback')
+  const isDeleted = (externalId: string) => deletedFeedback.has(externalId)
+  const knownFeedback = new Set([
+    ...feedbackByExternalId.keys(),
+    ...batch.feedback.map((f) => f.externalId).filter((id) => !isDeleted(id)),
+  ])
   for (const rec of batch.feedback) {
+    if (isDeleted(rec.externalId)) {
+      counts.feedback.skip++
+      issues.push({
+        severity: 'skipped',
+        entityType: 'feedback',
+        externalId: rec.externalId,
+        message: DELETED_IN_VEERIFY,
+      })
+      continue
+    }
     const { incoming, issues: recIssues } = feedbackIncoming(rec, { ...taxonomy, categoryIdByExternalId }, effective)
     issues.push(...recIssues)
     const authorIssue = unknownAuthorIssue('feedback', rec, knownPeople)
@@ -466,6 +498,11 @@ export async function planImport(runId: string): Promise<ImportPlan> {
     const { valid, skipped } = voteDecisions(rec, knownPeople)
     counts.votes.skip += skipped.length
     issues.push(...skipped)
+    if (isDeleted(rec.externalId)) {
+      counts.votes.skip += valid.length
+      if (valid.length) issues.push(feedbackGoneVoteIssue(rec.externalId))
+      continue
+    }
     for (const v of valid) {
       const person = personByExternalId.get(v.personExternalId)
       const claimedBy = person?.claimedByUserId ?? null
@@ -493,7 +530,12 @@ export async function planImport(runId: string): Promise<ImportPlan> {
     const fbExternalId = feedbackExternalIdById.get(c.feedbackId)
     if (fbExternalId && c.externalId) existingComments.set(commentKey(fbExternalId, c.externalId), c)
   }
-  const skipReasons = commentSkipReasons(batch.comments, knownFeedback, new Set(existingComments.keys()))
+  const skipReasons = commentSkipReasons(
+    batch.comments,
+    knownFeedback,
+    new Set(existingComments.keys()),
+    await loadTombstones(projectId, source, 'comment')
+  )
   for (const rec of batch.comments) {
     const reason = skipReasons.get(commentKey(rec.feedbackExternalId, rec.externalId)) ?? null
     if (reason !== null) {

@@ -126,6 +126,9 @@ export function emailPersonExternalId(email: string): string {
   return `email_${createHash('sha256').update(email.trim().toLowerCase()).digest('hex')}`
 }
 
+/** Comments are identified by their feedback's externalId and their own. */
+export const commentKey = (feedbackExternalId: string, externalId: string) => `${feedbackExternalId}\u0000${externalId}`
+
 export function countRecords(batch: ImportBatch): number {
   return (
     batch.statuses.length +

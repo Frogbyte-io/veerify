@@ -6,6 +6,7 @@ import { project, product } from './feedback'
 
 export type ImportRunStatus = 'draft' | 'committing' | 'completed' | 'failed' | 'canceled'
 export type ImportIssueSeverity = 'warning' | 'error' | 'skipped'
+export type ImportTombstoneEntity = 'feedback' | 'comment'
 
 // Import runs - one staged import into a product, committed inline or by the scheduled task
 export const importRun = pgTable(
@@ -24,7 +25,7 @@ export const importRun = pgTable(
     onExisting: text('on_existing').default('sync').notNull(), // sync | skip
     status: text('status').$type<ImportRunStatus>().default('draft').notNull(),
     recordCount: integer('record_count').default(0).notNull(),
-    progress: jsonb('progress').$type<{ phase: string; done: number; total: number }>(),
+    progress: jsonb('progress').$type<{ phase: string; done: number; total: number; transientFailures?: number }>(),
     summary: jsonb('summary').$type<Record<string, any>>(),
     error: text('error'),
     leaseUntil: timestamp('lease_until'),
@@ -80,5 +81,25 @@ export const importRunIssue = pgTable(
   },
   (table) => ({
     runIdx: index('import_run_issue_run_idx').on(table.runId),
+  })
+)
+
+// Imported feedback and comments the team deleted in Veerify. A re-import skips them instead of bringing them back.
+// Comment externalIds are scoped to their feedback: `externalId` is JSON `[feedbackExternalId, commentExternalId]`.
+export const importTombstone = pgTable(
+  'import_tombstone',
+  {
+    projectId: text('project_id')
+      .notNull()
+      .references(() => project.id, { onDelete: 'cascade' }),
+    entity: text('entity').$type<ImportTombstoneEntity>().notNull(),
+    source: text('source').notNull(),
+    externalId: text('external_id').notNull(),
+    createdAt: timestamp('created_at')
+      .$defaultFn(() => new Date())
+      .notNull(),
+  },
+  (table) => ({
+    unique: uniqueIndex('import_tombstone_idx').on(table.projectId, table.entity, table.source, table.externalId),
   })
 )
