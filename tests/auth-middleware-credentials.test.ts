@@ -33,7 +33,8 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string
 )
 vi.stubGlobal('readBody', async () => state.body)
 
-vi.mock('~/lib/auth', () => ({ auth: { api: { getSession } } }))
+const createInvitation = vi.hoisted(() => vi.fn(async () => ({ id: 'inv1' })))
+vi.mock('~/lib/auth', () => ({ auth: { api: { getSession, createInvitation } } }))
 vi.mock('~/server/utils/auth-headers', () => ({ getAuthHeaders: () => new Headers() }))
 vi.mock('~/server/utils/user-api-keys', () => ({ resolveUserApiKeyPrincipal }))
 vi.mock('~/server/utils/logger', () => ({ createLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }) }))
@@ -84,6 +85,7 @@ beforeEach(() => {
   state.updated = []
   getSession.mockClear()
   resolveUserApiKeyPrincipal.mockClear()
+  createInvitation.mockClear()
 })
 
 describe('requireAuth with personal keys', () => {
@@ -183,6 +185,18 @@ describe('PUT /api/user/profile', () => {
     expect(result.success).toBe(true)
     expect(state.updated[0].name).toBe('New Name')
     expect(state.updated[0].email).toBe('a@example.com')
+  })
+})
+
+describe('POST /api/organizations/invite', () => {
+  it('rejects a key principal with 403 before touching Better-Auth, even with a cookie present', async () => {
+    const handler = (await import('~/server/api/organizations/invite.post')).default as (e: unknown) => Promise<unknown>
+    state.principal = keyPrincipal
+    state.cookieSession = cookieSession
+    state.body = { email: 'new@example.com', organizationId: 'org-1' }
+    expect(await statusOf(handler({}))).toBe(403)
+    expect(createInvitation).not.toHaveBeenCalled()
+    expect(getSession).not.toHaveBeenCalled()
   })
 })
 

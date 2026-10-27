@@ -5,7 +5,7 @@
  *     tags: [Organizations]
  *     summary: Invite member to organization
  *     description: >
- *       Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie, so a key request fails with 401).
+ *       Invites an email address to an organization by delegating to Better-Auth. Requires a signed-in browser session; personal API keys are not supported yet (Better-Auth only accepts the session cookie), so a key request is refused with 403 before anything else runs.
  *       A person who is already a member of any workspace, or who already has a pending invitation (unless `resend` is true), is rejected with 409 and a machine-readable `data.code`.
  *     operationId: inviteOrganizationMember
  *     security:
@@ -25,8 +25,8 @@
  *     responses:
  *       200: { description: "The Better-Auth invitation record" }
  *       400: { description: "email and organizationId are required" }
- *       401: { description: "No browser session (API keys are not supported)" }
- *       403: { description: "Caller may not invite to this organization" }
+ *       401: { description: "Not signed in" }
+ *       403: { description: "Personal API keys cannot invite, or the caller may not invite to this organization" }
  *       409: { description: "INVITATION_ALREADY_EXISTS or EMAIL_ALREADY_IN_ORG (see data.code)" }
  */
 import { auth } from '~/lib/auth'
@@ -34,10 +34,11 @@ import { db } from '~/server/database/drizzle'
 import { invitation, member, user } from '~/server/database/schema/index'
 import { and, eq } from 'drizzle-orm'
 import { getAuthHeaders } from '~/server/utils/auth-headers'
-import { requireAuth } from '~/server/utils/auth-middleware'
+import { requireInteractiveSession } from '~/server/utils/auth-middleware'
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event)
+  // Better-Auth's createInvitation only accepts the session cookie, so keys are refused up front.
+  await requireInteractiveSession(event)
 
   const body = await readBody(event)
   const { email, role, organizationId, resend } = body
