@@ -12,10 +12,14 @@ import {
   project,
   vote,
 } from '../../server/database/schema/feedback'
+import { importRun, importRunBatch } from '../../server/database/schema/imports'
 import type { ImportBatch } from '../../server/services/imports/format'
 
 /** Contact erasure covers imported people (authors and voters), org-scoped, case-insensitive, counts intact. */
 
+vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string; data?: unknown }) =>
+  Object.assign(new Error(input.statusMessage), input)
+)
 vi.mock('~/lib/email', async (orig) => {
   const mod = (await orig()) as Record<string, unknown>
   return Object.fromEntries(
@@ -23,7 +27,8 @@ vi.mock('~/lib/email', async (orig) => {
   )
 })
 
-const { createImportRun, addImportBatch } = await import('../../server/services/imports/runs')
+const { createImportRun, addImportBatch, cancelImportRun } = await import('../../server/services/imports/runs')
+const { planImport } = await import('../../server/services/imports/planner')
 const { commitImportRun } = await import('../../server/services/imports/committer')
 const { claimImportedActivity } = await import('../../server/services/imports/claim')
 const { eraseContact } = await import('../../server/services/marketing/privacy')
@@ -83,7 +88,23 @@ async function importInto(p: (typeof projects)[number], batch: ImportBatch) {
   })
   await addImportBatch(run.id, batch)
   expect((await commitImportRun(run.id)).status).toBe('completed')
+  return run.id
 }
+
+async function draftRun(p: (typeof projects)[number], batch: ImportBatch) {
+  const run = await createImportRun({
+    projectId: p.id,
+    productId: p.productId,
+    userId: ownerId,
+    source: 'canny',
+    sourceLabel: 'Canny',
+  })
+  await addImportBatch(run.id, batch)
+  return run.id
+}
+
+const batchCount = async (runId: string) =>
+  (await db.select().from(importRunBatch).where(eq(importRunBatch.runId, runId))).length
 
 async function snapshot(projectId: string) {
   const fb = await db.select().from(feedback).where(eq(feedback.projectId, projectId))
@@ -120,7 +141,7 @@ describe('eraseContact covers imported people (real Postgres)', () => {
     await db.delete(user).where(inArray(user.id, createdUserIds))
   })
 
-  it('removes the person, nulls imported name/email, keeps votes and counts, and spares other orgs', async () => {
+  it('tombstones the person, nulls imported name/email, keeps links, votes and counts, and spares other orgs', async () => {
     await importInto(projA, doc(email.toUpperCase()))
     await importInto(projB, doc(email))
     await importInto(projX, doc(email))
@@ -134,9 +155,12 @@ describe('eraseContact covers imported people (real Postgres)', () => {
 
     for (const p of [projA, projB]) {
       const after = await snapshot(p.id)
-      expect(after.people.map((x) => x.externalId)).toEqual(['p-2'])
-      expect(after.fb['f-1']).toMatchObject({ authorName: null, authorEmail: null, importedPersonId: null })
-      expect(after.comments[0]).toMatchObject({ authorName: null, authorEmail: null, importedPersonId: null })
+      const ada = after.people.find((x) => x.externalId === 'p-1')!
+      expect(ada).toMatchObject({ name: null, email: null, avatarUrl: null })
+      expect(ada.erasedAt).toBeInstanceOf(Date)
+      expect(after.people.find((x) => x.externalId === 'p-2')!.erasedAt).toBeNull()
+      expect(after.fb['f-1']).toMatchObject({ authorName: null, authorEmail: null, importedPersonId: ada.id })
+      expect(after.comments[0]).toMatchObject({ authorName: null, authorEmail: null, importedPersonId: ada.id })
       // Grace's data is untouched
       expect(after.fb['f-2'].authorName).toBe('Grace Hopper')
       // Votes stay, counts unchanged
@@ -145,7 +169,7 @@ describe('eraseContact covers imported people (real Postgres)', () => {
       expect(after.fb['f-2'].voteCount).toBe(1)
     }
     const afterX = await snapshot(projX.id)
-    expect(afterX.people).toHaveLength(2)
+    expect(afterX.people.every((x) => x.erasedAt === null && x.email)).toBe(true)
     expect(afterX.fb['f-1'].authorName).toBe(beforeX.fb['f-1'].authorName)
     expect(afterX.fb['f-1'].authorEmail).toBe(beforeX.fb['f-1'].authorEmail)
     expect(afterX.comments[0].authorName).toBe('Ada Lovelace')
@@ -174,5 +198,82 @@ describe('eraseContact covers imported people (real Postgres)', () => {
     expect(after.comments[0]).toMatchObject({ authorUserId: userId, authorName: null, authorEmail: null })
     expect(after.votes.filter((v) => v.voterUserId === userId)).toHaveLength(2)
     expect(after.fb['f-1'].voteCount).toBe(2)
+  })
+
+  it('a re-import after erasure brings back no PII, no duplicate votes and no count change; the preview agrees', async () => {
+    const e = `ier-reimport-${suffix}@example.com`
+    const p = mk('r', orgId)
+    projects.push(p)
+    await db.insert(project).values({ id: p.id, organizationId: orgId, slug: p.slug, name: p.slug })
+    await db.insert(product).values({ id: p.productId, projectId: p.id, name: 'Main', slug: 'main' })
+    await importInto(p, doc(e))
+    expect((await eraseContact(orgId, e)).importedPeople).toBe(1)
+    const before = await snapshot(p.id)
+
+    const runId = await draftRun(p, doc(e))
+    const plan = await planImport(runId)
+    expect(plan.counts.people).toMatchObject({ create: 0, update: 0, unchanged: 2 })
+    expect(plan.counts.votes).toMatchObject({ create: 0 })
+    const done = await commitImportRun(runId)
+    expect(done.status).toBe('completed')
+    expect(done.summary?.counts).toEqual(plan.counts)
+
+    const after = await snapshot(p.id)
+    const ada = after.people.find((x) => x.externalId === 'p-1')!
+    expect(ada).toMatchObject({ name: null, email: null, avatarUrl: null })
+    expect(ada.erasedAt).not.toBeNull()
+    expect(after.people).toHaveLength(2)
+    expect(after.votes).toHaveLength(before.votes.length)
+    expect(after.fb['f-1'].voteCount).toBe(before.fb['f-1'].voteCount)
+    expect(after.fb['f-2'].voteCount).toBe(before.fb['f-2'].voteCount)
+    expect(after.fb['f-1']).toMatchObject({ authorName: null, authorEmail: null })
+    expect(after.comments[0]).toMatchObject({ authorName: null, authorEmail: null })
+
+    // A claim by the address's owner finds nothing: the tombstone has no email.
+    const userId = `ier_u2_${randomUUID().slice(0, 8)}`
+    await db.insert(user).values({ id: userId, name: 'Ada', email: e, emailVerified: true })
+    createdUserIds.push(userId)
+    expect((await claimImportedActivity(userId, e)).people).toBe(0)
+  })
+
+  it('erasure removes the person from a draft run payload, and finished runs keep no staged batches', async () => {
+    const e = `ier-draft-${suffix}@example.com`
+    const p = mk('d', orgId)
+    projects.push(p)
+    await db.insert(project).values({ id: p.id, organizationId: orgId, slug: p.slug, name: p.slug })
+    await db.insert(product).values({ id: p.productId, projectId: p.id, name: 'Main', slug: 'main' })
+    const draft = await draftRun(p, doc(e.toUpperCase()))
+    await eraseContact(orgId, e)
+    const [batch] = await db.select().from(importRunBatch).where(eq(importRunBatch.runId, draft))
+    expect((batch.payload.people as Array<{ externalId: string }>).map((x) => x.externalId)).toEqual(['p-2'])
+    expect(JSON.stringify(batch.payload.people)).not.toContain('Ada')
+
+    // Cancel deletes the batches and keeps the run row
+    await cancelImportRun(draft)
+    expect(await batchCount(draft)).toBe(0)
+    const [canceled] = await db.select().from(importRun).where(eq(importRun.id, draft))
+    expect(canceled.status).toBe('canceled')
+
+    // Completion deletes them; a finished run can no longer be previewed
+    const completed = await importInto(p, doc(`ier-other-${suffix}@example.com`))
+    expect(await batchCount(completed)).toBe(0)
+    await expect(planImport(completed)).rejects.toMatchObject({ statusCode: 409 })
+  })
+
+  it('a failed commit also drops the staged batches', async () => {
+    const p = mk('f', orgId)
+    projects.push(p)
+    await db.insert(project).values({ id: p.id, organizationId: orgId, slug: p.slug, name: p.slug })
+    await db.insert(product).values({ id: p.productId, projectId: p.id, name: 'Main', slug: 'main' })
+    const runId = await draftRun(p, doc(`ier-fail-${suffix}@example.com`))
+    // A staged feedback record without a title violates NOT NULL, so the commit fails.
+    const [staged] = await db.select().from(importRunBatch).where(eq(importRunBatch.runId, runId))
+    const payload = staged.payload as { feedback: Array<{ title: unknown }> }
+    payload.feedback[0].title = null
+    await db.update(importRunBatch).set({ payload }).where(eq(importRunBatch.id, staged.id))
+    await commitImportRun(runId).catch(() => null)
+    const [row] = await db.select().from(importRun).where(eq(importRun.id, runId))
+    expect(row.status).toBe('failed')
+    expect(await batchCount(runId)).toBe(0)
   })
 })

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { importedPerson } from '~/server/database/schema/feedback'
 import type { ImportPerson } from '../format'
@@ -49,13 +49,13 @@ export const peoplePhase: CommitPhase<void, ImportPerson> = {
         )
         .for('update')
         .limit(1)
-      if (!row) return 'unchanged'
+      if (!row || row.erasedAt) return 'unchanged'
       const plan = planFieldSync(row, row, personIncoming(rec), PERSON_SYNC_FIELDS)
       if (!Object.keys(plan.apply).length) return 'unchanged'
       await tx
         .update(importedPerson)
         .set({ ...plan.apply, updatedAt: now })
-        .where(eq(importedPerson.id, row.id))
+        .where(and(eq(importedPerson.id, row.id), isNull(importedPerson.erasedAt)))
       return 'update'
     })
     ctx.counts.people[outcome]++

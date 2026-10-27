@@ -92,20 +92,23 @@ export async function claimImportedActivity(userId: string, email: string): Prom
 }
 
 /**
- * Contact erasure: removes imported people with this email (case-insensitive) from the organization's projects. Their
- * imported name and email are nulled on the feedback and comments they authored (`authorUserId` is left alone, also
- * for claimed people), then the person rows are deleted. The `importedPersonId` FKs are ON DELETE SET NULL, so vote
- * rows and every counter stay as they are. Returns the number of person rows deleted. Runs in the caller's transaction.
+ * Contact erasure: tombstones imported people with this email (case-insensitive) in the organization's projects. Name,
+ * email and avatar are cleared and `erased_at` is set; the row, its `importedPersonId` links and every vote stay, so a
+ * re-import finds the person and their votes (no PII comes back, nothing is counted twice) and counters are unchanged.
+ * The imported name and email are also nulled on the feedback and comments they authored (`authorUserId` is left alone,
+ * also for claimed people). The person is also removed from the staged payloads of runs that are still draft or
+ * committing. An erased person has no email, so claiming (which matches `lower(email)`) never finds it again.
+ * Returns the number of people tombstoned. Runs in the caller's transaction.
  */
 export async function eraseImportedPeople(
   organizationId: string,
   email: string,
   tx: Pick<typeof db, 'execute'>
 ): Promise<number> {
+  const orgProjects = sql`SELECT id FROM project WHERE organization_id = ${organizationId}`
   const people = sql`
     SELECT ip.id FROM imported_person ip
-    WHERE lower(ip.email) = lower(${email})
-      AND ip.project_id IN (SELECT id FROM project WHERE organization_id = ${organizationId})
+    WHERE lower(ip.email) = lower(${email}) AND ip.erased_at IS NULL AND ip.project_id IN (${orgProjects})
   `
   await tx.execute(sql`
     UPDATE feedback SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${people})
@@ -113,8 +116,24 @@ export async function eraseImportedPeople(
   await tx.execute(sql`
     UPDATE feedback_comment SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${people})
   `)
-  const removed = await tx.execute(sql`DELETE FROM imported_person WHERE id IN (${people})`)
-  return removed.rowCount ?? 0
+  await tx.execute(sql`
+    UPDATE import_run_batch b
+    SET payload = jsonb_set(
+      b.payload,
+      '{people}',
+      (SELECT coalesce(jsonb_agg(p), '[]'::jsonb) FROM jsonb_array_elements(b.payload->'people') p
+        WHERE lower(p->>'email') IS DISTINCT FROM lower(${email}))
+    )
+    WHERE jsonb_typeof(b.payload->'people') = 'array'
+      AND b.run_id IN (
+        SELECT r.id FROM import_run r WHERE r.status IN ('draft', 'committing') AND r.project_id IN (${orgProjects})
+      )
+  `)
+  const erased = await tx.execute(sql`
+    UPDATE imported_person SET name = NULL, email = NULL, avatar_url = NULL, erased_at = now(), updated_at = now()
+    WHERE id IN (${people})
+  `)
+  return erased.rowCount ?? 0
 }
 
 /**

@@ -15,7 +15,7 @@
  */
 import { and, asc, eq, isNull, lt, or } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
-import { importRun, importRunIssue } from '~/server/database/schema/imports'
+import { importRun, importRunBatch, importRunIssue } from '~/server/database/schema/imports'
 import { createLogger } from '~/server/utils/logger'
 import { ErrorCode } from '~/server/utils/response'
 import type { IssueInput } from './format'
@@ -103,6 +103,10 @@ async function fencedRunUpdate(
       .returning({ id: importRun.id, leaseUntil: importRun.leaseUntil })
     if (!row) return false
     if (issues.length) await tx.insert(importRunIssue).values(issues)
+    // A finished run does not keep its staged records (they hold personal data); the summary and issues stay.
+    if (set.status === 'completed' || set.status === 'failed') {
+      await tx.delete(importRunBatch).where(eq(importRunBatch.runId, runId))
+    }
     if (row.leaseUntil) lease.token = row.leaseUntil
     return true
   })

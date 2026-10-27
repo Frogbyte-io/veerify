@@ -345,6 +345,10 @@ export async function loadRunBatch(runId: string): Promise<ImportBatch> {
 export async function planImport(runId: string): Promise<ImportPlan> {
   const [run] = await db.select().from(importRun).where(eq(importRun.id, runId)).limit(1)
   if (!run) importHttpError(404, 'Not Found', ErrorCode.NOT_FOUND, 'Import run not found')
+  // The staged records are deleted once a run finishes (they hold personal data), so only drafts can be previewed.
+  if (run.status !== 'draft') {
+    importHttpError(409, 'Conflict', ErrorCode.CONFLICT, 'Preview is only available before commit')
+  }
   const { projectId, source } = run
   const sync = run.onExisting !== 'skip'
 
@@ -400,7 +404,7 @@ export async function planImport(runId: string): Promise<ImportPlan> {
   for (const rec of batch.people) {
     const row = personByExternalId.get(rec.externalId)
     if (!row) counts.people.create++
-    else if (!sync) counts.people.unchanged++
+    else if (!sync || row.erasedAt) counts.people.unchanged++
     else tally('people', planFieldSync(row, row, personIncoming(rec), PERSON_SYNC_FIELDS))
   }
 

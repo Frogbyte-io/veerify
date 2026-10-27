@@ -126,6 +126,8 @@ export const importedPerson = pgTable(
     name: text('name'),
     email: text('email'),
     avatarUrl: text('avatar_url'),
+    /** Set when contact erasure removed the person's name, email and avatar; the row stays as a tombstone. */
+    erasedAt: timestamp('erased_at'),
     claimedByUserId: text('claimed_by_user_id').references(() => user.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at')
       .$defaultFn(() => new Date())

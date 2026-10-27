@@ -202,11 +202,16 @@ export async function cancelImportRun(runId: string): Promise<ImportRunRow> {
     conflict(`Import run is ${run.status}; it cannot be canceled`)
   }
   // Compare-and-swap on the status just read, so a concurrent completion is not overwritten.
-  const [updated] = await db
-    .update(importRun)
-    .set({ status: 'canceled', updatedAt: new Date() })
-    .where(and(eq(importRun.id, runId), eq(importRun.status, run.status)))
-    .returning()
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(importRun)
+      .set({ status: 'canceled', updatedAt: new Date() })
+      .where(and(eq(importRun.id, runId), eq(importRun.status, run.status)))
+      .returning()
+    // The staged records hold personal data; a finished run does not keep them.
+    if (row) await tx.delete(importRunBatch).where(eq(importRunBatch.runId, runId))
+    return row
+  })
   if (!updated) {
     conflict('Import run changed state; it cannot be canceled')
   }

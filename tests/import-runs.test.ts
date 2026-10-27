@@ -85,6 +85,14 @@ vi.mock('~/server/database/drizzle', () => {
         }
       },
     })),
+    delete: vi.fn((table: any) => ({
+      where: (c: SQL) => {
+        const rows = rowsOf(table)
+        const keep = rows.filter((r) => !matches(r, c))
+        rows.splice(0, rows.length, ...keep)
+        return Promise.resolve(undefined)
+      },
+    })),
     update: vi.fn((table: any) => ({
       set: (v: any) => ({
         where: (c: SQL) => {
@@ -289,8 +297,11 @@ describe('import run routes', () => {
     seedRun({ status: 'completed' })
     await expect(cancelHandler({})).rejects.toMatchObject({ statusCode: 409 })
     state.tables.import_run![0]!.status = 'draft'
+    ;(state.tables.import_run_batch ??= []).push({ id: 'b1', runId: 'run-1', seq: 1, payload: {} })
     const res = await cancelHandler({})
     expect(res.data.status).toBe('canceled')
+    // Staged records hold personal data: canceling drops them
+    expect(state.tables.import_run_batch).toEqual([])
   })
 
   it('get returns run and issues; another project is 404', async () => {

@@ -220,7 +220,15 @@ const doc = () => ({
 
 function seed(payloads: Record<string, any>[], run: Record<string, any> = {}) {
   state.tables.import_run = [
-    { id: 'run-2', projectId: 'proj-1', productId: 'prod-1', source: 'canny', onExisting: 'sync', ...run },
+    {
+      id: 'run-2',
+      projectId: 'proj-1',
+      productId: 'prod-1',
+      source: 'canny',
+      onExisting: 'sync',
+      status: 'draft',
+      ...run,
+    },
   ]
   state.tables.import_run_batch = payloads.map((payload, i) => ({
     id: `b-${i}`,

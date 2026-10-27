@@ -13416,7 +13416,7 @@ export const openapiPaths = {
         "Marketing"
       ],
       "summary": "Erase a person's Marketing data",
-      "description": "Workspace owner or admin only. Deletes every review request and testimonial for the email address (case-insensitive) across the workspace's projects, and keeps or creates a suppression so the address is never contacted again. Imported people with the address (authors and voters from an import) are removed too, and their imported name and email are cleared from their posts and comments. Works whether or not Marketing is switched on.\n",
+      "description": "Workspace owner or admin only. Deletes every review request and testimonial for the email address (case-insensitive) across the workspace's projects, and keeps or creates a suppression so the address is never contacted again. Imported people with the address (authors and voters from an import) are erased too: their name and email are erased, and cleared from their posts and comments. Works whether or not Marketing is switched on.\n",
       "operationId": "eraseMarketingContact",
       "requestBody": {
         "required": true,
