@@ -74,15 +74,19 @@ describe('createApiCaller', () => {
     vi.stubGlobal('$fetch', Object.assign(vi.fn(), { raw }))
   })
 
-  it('forwards only authorization and x-veerify-* headers', async () => {
+  it('forwards only authorization, x-veerify-* and the caller ip as x-forwarded-for', async () => {
     raw.mockResolvedValue({ status: 200, _data: { success: true, data: [] } })
-    const callApi = createApiCaller('Bearer vfy_usr_abc', {
-      'x-veerify-organization': 'acme',
-      'X-Veerify-Project': 'web',
-      cookie: 'better-auth.session_token=steal',
-      'x-forwarded-for': '1.2.3.4',
-      authorization: 'Bearer other',
-    })
+    const callApi = createApiCaller(
+      'Bearer vfy_usr_abc',
+      {
+        'x-veerify-organization': 'acme',
+        'X-Veerify-Project': 'web',
+        cookie: 'better-auth.session_token=steal',
+        'x-forwarded-for': '1.2.3.4',
+        authorization: 'Bearer other',
+      },
+      { clientIp: '203.0.113.7' }
+    )
 
     const result = await callApi({ method: 'GET', path: '/api/projects', query: { a: 1 } })
 
@@ -95,7 +99,38 @@ describe('createApiCaller', () => {
       authorization: 'Bearer vfy_usr_abc',
       'x-veerify-organization': 'acme',
       'x-veerify-project': 'web',
+      'x-forwarded-for': '203.0.113.7',
     })
+  })
+
+  it('forwards the given client ip as x-forwarded-for and a per-call header cannot override it', async () => {
+    raw.mockResolvedValue({ status: 200, _data: null })
+    const callApi = createApiCaller('Bearer vfy_usr_abc', {}, { clientIp: '198.51.100.1' })
+
+    await callApi({ method: 'GET', path: '/api/projects', headers: { 'x-forwarded-for': '6.6.6.6' } })
+
+    expect(raw.mock.calls[0]![1].headers['x-forwarded-for']).toBe('198.51.100.1')
+  })
+
+  it('sends different x-forwarded-for values for callers with different ips', async () => {
+    raw.mockResolvedValue({ status: 200, _data: null })
+    const a = createApiCaller('Bearer vfy_usr_a', {}, { clientIp: '198.51.100.1' })
+    const b = createApiCaller('Bearer vfy_usr_b', {}, { clientIp: '198.51.100.2' })
+
+    await a({ method: 'GET', path: '/api/projects' })
+    await b({ method: 'GET', path: '/api/projects' })
+
+    expect(raw.mock.calls[0]![1].headers['x-forwarded-for']).toBe('198.51.100.1')
+    expect(raw.mock.calls[1]![1].headers['x-forwarded-for']).toBe('198.51.100.2')
+  })
+
+  it('omits x-forwarded-for when no client ip is known', async () => {
+    raw.mockResolvedValue({ status: 200, _data: null })
+    const callApi = createApiCaller('Bearer vfy_usr_abc', {})
+
+    await callApi({ method: 'GET', path: '/api/projects' })
+
+    expect(raw.mock.calls[0]![1].headers).toEqual({ authorization: 'Bearer vfy_usr_abc' })
   })
 
   it('returns { status, body } for a 404 without throwing', async () => {

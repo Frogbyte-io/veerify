@@ -13,6 +13,7 @@ import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 import { createVeerifyMcpServer } from '~/server/mcp/server'
 import { createApiCaller } from '~/server/mcp/api-bridge'
 import { readMcpJsonBody } from '~/server/mcp/request-body'
+import { getClientIp } from '~/server/utils/rate-limit'
 
 const WWW_AUTHENTICATE = 'Bearer realm="veerify"'
 const CONTEXT_HEADERS = ['x-veerify-organization', 'x-veerify-project'] as const
@@ -66,7 +67,9 @@ export default defineEventHandler(async (event) => {
   // Bounded read (413 above MCP_MAX_BODY_BYTES) before any MCP server or transport exists.
   const body = await readMcpJsonBody(event)
   const contextHeaders = readContextHeaders(event)
-  const callApi = createApiCaller(getRequestHeader(event, 'authorization') ?? '', contextHeaders)
+  const callApi = createApiCaller(getRequestHeader(event, 'authorization') ?? '', contextHeaders, {
+    clientIp: getClientIp(event),
+  })
 
   const server = createVeerifyMcpServer({
     principal,

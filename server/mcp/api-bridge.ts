@@ -80,13 +80,27 @@ function contextHeadersOnly(headers: Record<string, string> | undefined): Record
   return result
 }
 
+export interface ApiCallerOptions {
+  /**
+   * The original caller's IP (see `getClientIp`). Sent as `x-forwarded-for` so IP-based rate
+   * limits on in-process calls bucket per client instead of sharing one `'unknown'` bucket.
+   */
+  clientIp?: string
+}
+
 /**
- * Creates the `callApi` used by tools. Only `authorization` and `x-veerify-*` headers are
- * forwarded (never cookies). A per-call `headers` map is merged over the inherited context
- * headers; `inheritContext: false` drops the inherited ones for that call.
+ * Creates the `callApi` used by tools. Only `authorization`, `x-veerify-*` and the
+ * `x-forwarded-for` derived from `options.clientIp` are forwarded (never cookies). A per-call
+ * `headers` map is merged over the inherited context headers; `inheritContext: false` drops
+ * the inherited ones for that call.
  */
-export function createApiCaller(authorization: string, contextHeaders: Record<string, string>): ApiCaller {
+export function createApiCaller(
+  authorization: string,
+  contextHeaders: Record<string, string>,
+  options: ApiCallerOptions = {}
+): ApiCaller {
   const inherited = contextHeadersOnly(contextHeaders)
+  const forwardedFor: Record<string, string> = options.clientIp ? { 'x-forwarded-for': options.clientIp } : {}
 
   return async ({ method, path, query, body, headers, inheritContext = true }) => {
     const normalized = normalizeApiPath(path)
@@ -101,7 +115,7 @@ export function createApiCaller(authorization: string, contextHeaders: Record<st
       method,
       query,
       body: body as Record<string, unknown> | undefined,
-      headers: { ...(inheritContext ? inherited : {}), ...contextHeadersOnly(headers), authorization },
+      headers: { ...(inheritContext ? inherited : {}), ...contextHeadersOnly(headers), ...forwardedFor, authorization },
       ignoreResponseError: true,
     })
     return { status: response.status, body: response._data ?? null }

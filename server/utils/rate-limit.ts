@@ -74,21 +74,31 @@ export async function requireRateLimit(event: H3Event, config: RateLimitConfig):
 }
 
 /**
- * Gets a unique client identifier for rate limiting.
- * Prefers the first IP from X-Forwarded-For, falls back to the socket remote address.
+ * The original client IP: the first X-Forwarded-For entry, else the socket remote address.
+ * Also used by `/mcp` to forward the caller's IP on in-process API calls.
  *
  * @param event - H3 event
- * @returns Client identifier string
+ * @returns The client IP, or undefined when none is known
  */
-function getClientId(event: H3Event): string {
+export function getClientIp(event: H3Event): string | undefined {
   const forwarded = event.node.req.headers['x-forwarded-for']
   const ip = forwarded
     ? Array.isArray(forwarded)
       ? forwarded[0]
       : forwarded.split(',')[0].trim()
-    : event.node.req.socket.remoteAddress
+    : event.node.req.socket?.remoteAddress
 
-  return ip || 'unknown'
+  return ip || undefined
+}
+
+/**
+ * Gets a unique client identifier for rate limiting.
+ *
+ * @param event - H3 event
+ * @returns Client identifier string
+ */
+function getClientId(event: H3Event): string {
+  return getClientIp(event) ?? 'unknown'
 }
 
 /**
