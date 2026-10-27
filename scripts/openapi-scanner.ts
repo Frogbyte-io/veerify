@@ -154,10 +154,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   } else {
     generateOpenAPIRoutes()
       .then((paths) => {
-        const operationCount = Object.values(paths).reduce(
-          (count, pathItem) => count + Object.keys(pathItem).length,
-          0
-        )
+        const operationCount = Object.values(paths).reduce((count, pathItem) => count + Object.keys(pathItem).length, 0)
         console.log(`Generated OpenAPI routes: ${Object.keys(paths).length} paths, ${operationCount} operations`)
       })
       .catch((error) => {

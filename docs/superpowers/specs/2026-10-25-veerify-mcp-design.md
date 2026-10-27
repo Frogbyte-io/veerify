@@ -32,9 +32,9 @@ apply it safely and repeatably.
 - **Organization-owned API keys** (keys that outlive their creator). Personal keys only; org keys later.
 - **WebMCP** (`navigator.modelContext`, tools exposed by an open browser tab). It only serves agents running inside
   the browser; Claude Code can't use it. The tool layer is built so a WebMCP or in-app-assistant adapter can be
-  added later as a thin wrapper (see *Tool registry*).
+  added later as a thin wrapper (see _Tool registry_).
 - **Veerify doing the scraping.** No server-side "import from URL" for arbitrary sites in v1; the agent fetches.
-- A dashboard import wizard UI (the old one is being retired; see *Existing migration code*). Possible later.
+- A dashboard import wizard UI (the old one is being retired; see _Existing migration code_). Possible later.
 - A general audit log of agent actions.
 
 ## Anti-goals (would be a failure even if it "works")
@@ -50,17 +50,17 @@ apply it safely and repeatably.
 
 ## Decisions made with the user
 
-| Topic | Decision |
-|---|---|
-| Primary agent | Claude Code (local CLI) |
-| Auth | Both OAuth login and API key |
-| API key ownership | Belongs to a person, carries their permissions, dies with their account. Org keys later. |
-| Agent powers | "Do anything" the user could — including deletes |
-| WebMCP | Not now; only relevant for in-browser agents |
-| Import sources | Anything; the agent converts to Veerify's format |
-| Authors & voters | Keep them; import may set votes (individual voters and/or a bare count) |
+| Topic              | Decision                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| Primary agent      | Claude Code (local CLI)                                                                          |
+| Auth               | Both OAuth login and API key                                                                     |
+| API key ownership  | Belongs to a person, carries their permissions, dies with their account. Org keys later.         |
+| Agent powers       | "Do anything" the user could — including deletes                                                 |
+| WebMCP             | Not now; only relevant for in-browser agents                                                     |
+| Import sources     | Anything; the agent converts to Veerify's format                                                 |
+| Authors & voters   | Keep them; import may set votes (individual voters and/or a bare count)                          |
 | Old migration code | Check whether to merge or remove → see below (verdict: port the useful parts, delete the branch) |
-| Re-import | Ongoing sync; Veerify wins — fields edited in Veerify are never overwritten by the source |
+| Re-import          | Ongoing sync; Veerify wins — fields edited in Veerify are never overwritten by the source        |
 
 ## Existing migration code
 
@@ -104,7 +104,7 @@ Claude Code ──HTTP (Streamable HTTP, JSON-RPC)──▶ /mcp  (Nitro route, 
 
 ### Credentials
 
-**Personal API keys** — *my call:* a new table mirroring the existing app-key pattern (`server/utils/app-keys.ts`)
+**Personal API keys** — _my call:_ a new table mirroring the existing app-key pattern (`server/utils/app-keys.ts`)
 rather than adopting a Better-Auth API-key plugin (not present in the installed better-auth 1.5.0, and the app-key
 pattern is already reviewed and in production):
 
@@ -116,14 +116,14 @@ pattern is already reviewed and in production):
 
 **OAuth login** — Better-Auth's MCP/OAuth support (`mcp` / `oidcProvider` plugins ship in 1.5.0; a newer
 `oauth-provider` package may be the recommended path by build time — builder checks current Better-Auth docs and
-picks; see *Left to the builder*). Requirements regardless of plugin:
+picks; see _Left to the builder_). Requirements regardless of plugin:
 
 - OAuth 2.1 + PKCE, dynamic client registration (Claude Code registers itself), protected-resource and
   authorization-server metadata under `/.well-known/…` as the MCP authorization spec requires.
 - Consent screen in Veerify's `clean` layout: "Claude Code wants to act as you in Veerify".
 - Users can see and revoke connected apps (same settings area as API keys).
 
-**Credential self-protection** — *my call, the one exception to "do anything":* a credential cannot manage
+**Credential self-protection** — _my call, the one exception to "do anything":_ a credential cannot manage
 credentials or the account's security: no creating/revoking API keys or OAuth grants, no password / email / 2FA
 changes, no account deletion. Everything else the user can do, the agent can do. Rationale: a leaked key must not
 be able to mint more keys or lock the owner out.
@@ -147,7 +147,7 @@ to the cookie, and return the same shape for all three. For non-cookie principal
   session row.
 
 Credential context storage: `activeOrganizationId` / `activeProjectId` columns on `user_api_key`, and an equivalent
-small table keyed by OAuth grant for login. *My call.*
+small table keyed by OAuth grant for login. _My call._
 
 Better-Auth's own endpoints under `/api/auth/*` (org member role/removal, invitation cancel/accept) only work with
 a cookie session. Where the dashboard uses those through the Better-Auth client, add thin Veerify server routes
@@ -168,13 +168,13 @@ Two layers of tools:
 
 **1. Universal access (guarantees "anything the user can do")**
 
-| Tool | Purpose |
-|---|---|
-| `whoami` | User, credential type, current org/project context, roles |
-| `list_workspaces`, `list_projects` | Discover where the user can act |
-| `set_context` | Store active workspace/project on the credential |
-| `search_api` | Search Veerify's OpenAPI spec by keyword/tag; returns operations with params and body schemas |
-| `call_api` | Make any `/api/**` request (method, path, query, body) as the user. Refuses `/api/auth/*`, `/api/cron/*`, and the self-protection list |
+| Tool                               | Purpose                                                                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `whoami`                           | User, credential type, current org/project context, roles                                                                              |
+| `list_workspaces`, `list_projects` | Discover where the user can act                                                                                                        |
+| `set_context`                      | Store active workspace/project on the credential                                                                                       |
+| `search_api`                       | Search Veerify's OpenAPI spec by keyword/tag; returns operations with params and body schemas                                          |
+| `call_api`                         | Make any `/api/**` request (method, path, query, body) as the user. Refuses `/api/auth/*`, `/api/cron/*`, and the self-protection list |
 
 This depends on the OpenAPI spec covering every route. Today 84 of 295 route files have no `@openapi` block —
 including all core feedback/comment routes, every `projects/*` route (CRUD, products, statuses, categories,
@@ -235,8 +235,8 @@ unique within its `source`. Top level:
   section.
 - **Votes**: if `votes` is given, real vote rows are created and the count follows them. If only `voteCount` is
   given, it becomes an **imported baseline**. If both, the baseline is `max(0, voteCount − votes.length)`.
-  *My call:* the baseline is stored in its own column (`feedback.importedVoteBaseline`), and `feedback.voteCount`
-  stays the displayed counter that live votes increment. A re-import changes `voteCount` by the *difference*
+  _My call:_ the baseline is stored in its own column (`feedback.importedVoteBaseline`), and `feedback.voteCount`
+  stays the displayed counter that live votes increment. A re-import changes `voteCount` by the _difference_
   between the old and new baseline, so live votes are never lost or double-counted (140 imported + 5 live = 145;
   re-import with 150 → 155).
 - **Timestamps** from the source are kept (feedback/comment timestamps are insertable today).
@@ -251,7 +251,7 @@ A new feedback-side table (`imported_person`: projectId, source, externalId, nam
 - Posts/comments by imported people keep `authorName`/`authorEmail` as today, plus a reference to the imported person.
 - Votes: `vote` gains a nullable `importedPersonId` with a unique (feedbackId, importedPersonId) index, alongside
   the existing user/anonymous-session voter columns.
-- **Claiming** (*my call*): when a user **verifies** an email that matches imported people, their imported posts,
+- **Claiming** (_my call_): when a user **verifies** an email that matches imported people, their imported posts,
   comments and votes are re-pointed to the user (skipping a vote if the user already voted on that post).
   Triggered from Better-Auth's after-email-verification hook — **not** from `auth/merge-anonymous`, which runs at
   login/signup before verification and would let anyone claim an email they don't own. Social logins count only
@@ -274,7 +274,7 @@ same source over and over (e.g. weekly from GitHub issues or a Discord channel):
   source **only if its current Veerify value still equals the snapshot**, meaning nobody changed it in Veerify.
   A field the team edited (status moved to "In progress", title fixed) is never overwritten. The snapshot is then
   refreshed for the fields that were applied.
-- Vote baselines follow the rule under *Format → Votes*; individual votes are added, never removed.
+- Vote baselines follow the rule under _Format → Votes_; individual votes are added, never removed.
 - Re-import never deletes anything that has disappeared from the source.
 - `onExisting` on the run: `sync` (default, the rules above) or `skip` (only create records not seen before).
   `import_preview` reports, per field, what would update and what is kept because it was edited in Veerify.
@@ -283,15 +283,15 @@ same source over and over (e.g. weekly from GitHub issues or a Discord channel):
 
 Imports can be large, and MCP tool arguments shouldn't carry megabytes, so runs are chunked:
 
-| Tool | What it does |
-|---|---|
-| `import_get_format` | Returns the JSON Schema + a short example |
-| `import_create_run` | Target project/product, source, `onExisting` (see *Idempotency*) → `runId` |
-| `import_add_records` | Append a batch (any sections) to the run; validates each record, reports issues per record |
-| `import_preview` | Dry-run: counts to create/update/skip, status/category mapping, unknown references, warnings. Writes nothing |
-| `import_commit` | Applies the run |
-| `import_status` | Progress, issues, and per-record outcomes |
-| `import_cancel` | Cancels a not-yet-finished run |
+| Tool                 | What it does                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `import_get_format`  | Returns the JSON Schema + a short example                                                                    |
+| `import_create_run`  | Target project/product, source, `onExisting` (see _Idempotency_) → `runId`                                   |
+| `import_add_records` | Append a batch (any sections) to the run; validates each record, reports issues per record                   |
+| `import_preview`     | Dry-run: counts to create/update/skip, status/category mapping, unknown references, warnings. Writes nothing |
+| `import_commit`      | Applies the run                                                                                              |
+| `import_status`      | Progress, issues, and per-record outcomes                                                                    |
+| `import_cancel`      | Cancels a not-yet-finished run                                                                               |
 
 - Records staged in the run (DB, jsonb per batch) until commit; `import_run` / `import_run_issue` tables ported
   from the old branch and re-scoped to project + product.
@@ -315,7 +315,7 @@ Imports can be large, and MCP tool arguments shouldn't carry megabytes, so runs 
 - Imported email addresses are personal data: covered by the existing workspace data-erasure flow
   (`workspace/erase-contact.post` must also erase matching `imported_person` rows and their author fields).
 
-## Phasing (*my call* — import is the user's main interest, so it comes right after the foundation)
+## Phasing (_my call_ — import is the user's main interest, so it comes right after the foundation)
 
 1. **Foundation**: personal API keys + settings UI, principal resolution across all guards, `/mcp` endpoint, the
    universal tools (`whoami`, `list_*`, `set_context`, `search_api`, `call_api`), OpenAPI coverage completed +

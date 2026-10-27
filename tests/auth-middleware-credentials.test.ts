@@ -16,10 +16,12 @@ const state = vi.hoisted(() => ({
   updated: [] as Record<string, unknown>[],
 }))
 
-const getSession = vi.hoisted(() => vi.fn(async () => {
-  if (state.cookieError) throw new Error('cookie boom')
-  return state.cookieSession
-}))
+const getSession = vi.hoisted(() =>
+  vi.fn(async () => {
+    if (state.cookieError) throw new Error('cookie boom')
+    return state.cookieSession
+  })
+)
 const resolveUserApiKeyPrincipal = vi.hoisted(() =>
   vi.fn(async () => {
     if (state.principalError) throw Object.assign(new Error('x'), state.principalError)
@@ -214,7 +216,9 @@ describe('GET /api/public/auth/handoff/start', () => {
     vi.doMock('~/lib/auth-redirect', () => ({ normalizeHostname: (h: string) => h }))
     vi.doMock('better-auth/cookies', () => ({ getCookies: () => ({ dontRememberToken: { name: 'x' } }) }))
     vi.resetModules()
-    const handler = (await import('~/server/api/public/auth/handoff/start.get')).default as (e: unknown) => Promise<unknown>
+    const handler = (await import('~/server/api/public/auth/handoff/start.get')).default as (
+      e: unknown
+    ) => Promise<unknown>
     state.principal = keyPrincipal
     expect(await statusOf(handler({}))).toBe(403)
   })

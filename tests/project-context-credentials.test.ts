@@ -30,7 +30,9 @@ vi.mock('~/server/database/schema/auth', () => ({
   member: { organizationId: 'organizationId', userId: 'userId', createdAt: 'createdAt' },
   session: { __t: 'session', token: 'session.token' },
 }))
-vi.mock('~/server/database/schema/credentials', () => ({ userApiKey: { __t: 'user_api_key', id: 'key.id', userId: 'key.userId' } }))
+vi.mock('~/server/database/schema/credentials', () => ({
+  userApiKey: { __t: 'user_api_key', id: 'key.id', userId: 'key.userId' },
+}))
 vi.mock('~/server/database/drizzle', () => ({
   db: {
     select: () => {

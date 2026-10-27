@@ -280,7 +280,9 @@ describe('resolveUserApiKeyPrincipal', () => {
     setRow()
     state.orgRows = [{ id: 'org-2' }]
     state.projectsById.p8 = { id: 'p8', organizationId: 'org-2' }
-    const p = await resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Organization': 'org-two', 'X-Veerify-Project': 'p8' }))
+    const p = await resolveUserApiKeyPrincipal(
+      bearer({ 'X-Veerify-Organization': 'org-two', 'X-Veerify-Project': 'p8' })
+    )
     expect(p?.session.activeOrganizationId).toBe('org-2')
     expect(p?.session.activeProjectId).toBe('p8')
   })

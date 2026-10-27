@@ -52,29 +52,31 @@ OAuth login and curated tools plus Better-Auth-only org operations, get their ow
 
 ## File Structure
 
-| Path | Responsibility |
-|---|---|
-| `server/database/schema/credentials.ts` (new) | `userApiKey` table |
-| `server/utils/user-api-keys.ts` (new) | Key generation, hashing, bearer parsing, principal resolution |
-| `server/utils/auth-middleware.ts` | `requireAuth` / `optionalAuth` accept key principals; `requireInteractiveSession` |
-| `server/utils/project-context.ts` | Context reads and writes go to the session row **or** the key row |
-| `server/api/user/api-keys/*` (new) | List, create and revoke personal keys (cookie session only) |
-| `components/settings/SettingsApiKeys.vue` (new) | Settings tab |
-| `scripts/openapi-scanner.ts` | `findUndocumentedRoutes()` plus a `--check` flag |
-| `server/mcp/*` (new) | Tool registry, API bridge, tools, MCP server factory |
-| `server/routes/mcp.ts` (new) | HTTP endpoint |
-| `docs/mcp.md` (new) | Setup and recipes |
+| Path                                            | Responsibility                                                                    |
+| ----------------------------------------------- | --------------------------------------------------------------------------------- |
+| `server/database/schema/credentials.ts` (new)   | `userApiKey` table                                                                |
+| `server/utils/user-api-keys.ts` (new)           | Key generation, hashing, bearer parsing, principal resolution                     |
+| `server/utils/auth-middleware.ts`               | `requireAuth` / `optionalAuth` accept key principals; `requireInteractiveSession` |
+| `server/utils/project-context.ts`               | Context reads and writes go to the session row **or** the key row                 |
+| `server/api/user/api-keys/*` (new)              | List, create and revoke personal keys (cookie session only)                       |
+| `components/settings/SettingsApiKeys.vue` (new) | Settings tab                                                                      |
+| `scripts/openapi-scanner.ts`                    | `findUndocumentedRoutes()` plus a `--check` flag                                  |
+| `server/mcp/*` (new)                            | Tool registry, API bridge, tools, MCP server factory                              |
+| `server/routes/mcp.ts` (new)                    | HTTP endpoint                                                                     |
+| `docs/mcp.md` (new)                             | Setup and recipes                                                                 |
 
 ---
 
 ### Task 1: `user_api_key` table
 
 **Files:**
+
 - Create: `server/database/schema/credentials.ts`
 - Modify: `server/database/schema/index.ts` (add `export * from './credentials'`)
 - Generated: `server/database/migrations/0061_*.sql` + meta
 
 **Interfaces:**
+
 - Produces: `userApiKey` Drizzle table, type `UserApiKeyRow = typeof userApiKey.$inferSelect`.
 
 Columns: `id` text PK; `userId` text not null → `user.id` on delete cascade; `name` text not null; `keyPrefix` text
@@ -85,7 +87,7 @@ style of `projectApiKey` saying only the hash is stored.
 
 - [ ] **Step 1:** Write the table.
 - [ ] **Step 2:** Run `yarn db:generate`. Expected: one new migration that creates `user_api_key` with both indexes and
-  the FK, and nothing else. Review the SQL.
+      the FK, and nothing else. Review the SQL.
 - [ ] **Step 3:** Run `yarn db:migrate` against the dev database. Expected: it applies cleanly.
 - [ ] **Step 4:** Commit: `feat(db): add user_api_key table for personal API keys`.
 
@@ -94,11 +96,13 @@ style of `projectApiKey` saying only the hash is stored.
 ### Task 2: Personal key utilities and principal resolution
 
 **Files:**
+
 - Create: `server/utils/user-api-keys.ts`
 - Modify: `server/utils/auth-middleware.ts` (type only: add `credential` to `AuthSession`)
 - Test: `tests/user-api-keys.test.ts`
 
 **Interfaces:**
+
 - Consumes: `userApiKey` (Task 1); `getOrganizationRole`, `getProjectById`, `resolveProjectRole` from
   `server/utils/project-access.ts`; `requireRateLimit` from `server/utils/rate-limit.ts`.
 - Produces:
@@ -119,7 +123,7 @@ style of `projectApiKey` saying only the hash is stored.
     the stored columns for this request only and aren't persisted.
 
 - [ ] **Step 1: Write failing tests** in `tests/user-api-keys.test.ts`. Mock db and access helpers the way
-  `tests/app-keys.test.ts` / `tests/app-key-routes.test.ts` do.
+      `tests/app-keys.test.ts` / `tests/app-key-routes.test.ts` do.
   - `generateUserApiKey` → `key` matches `/^vfy_usr_[A-Za-z0-9_-]{43}$/`, `keyPrefix === key.slice(0, 12)`,
     `keyHash === hashUserApiKey(key)`, and the hash is 64 hex chars.
   - `readBearerUserApiKey` returns null for `Bearer vfy_pub_x`, for no header and for `Basic x`. It returns the token for
@@ -134,7 +138,7 @@ style of `projectApiKey` saying only the hash is stored.
     - A project header sets `session.activeOrganizationId` to the project's `organizationId`.
 - [ ] **Step 2:** Run `yarn vitest run tests/user-api-keys.test.ts`. Expected: FAIL (module not found).
 - [ ] **Step 3:** Implement `server/utils/user-api-keys.ts` and the `credential` field on `AuthSession`. Load the user
-  row with an inner join on `user` by `userId`.
+      row with an inner join on `user` by `userId`.
 - [ ] **Step 4:** Run the test. Expected: PASS.
 - [ ] **Step 5:** Commit: `feat(auth): personal API key principal resolution`.
 
@@ -143,12 +147,14 @@ style of `projectApiKey` saying only the hash is stored.
 ### Task 3: `requireAuth` accepts personal keys; interactive-only guard
 
 **Files:**
+
 - Modify: `server/utils/auth-middleware.ts`
 - Modify: `server/api/user/profile.put.ts`, `server/api/user/submissions.get.ts` (switch to `requireAuth`)
 - Modify: `server/api/public/auth/handoff/start.get.ts` (use `requireInteractiveSession`)
 - Test: `tests/auth-middleware-credentials.test.ts`
 
 **Interfaces:**
+
 - Consumes: `resolveUserApiKeyPrincipal`, `readBearerUserApiKey` (Task 2).
 - Produces:
   - `requireAuth(event)`: tries the key principal first. If one resolves, it is returned and the cookie is never
@@ -168,8 +174,8 @@ style of `projectApiKey` saying only the hash is stored.
     → 200.
 - [ ] **Step 2:** Run `yarn vitest run tests/auth-middleware-credentials.test.ts`. Expected: FAIL.
 - [ ] **Step 3:** Implement. In `profile.put.ts` keep the current behaviour but take the session from `requireAuth` and
-  reject email changes for credential principals. In `submissions.get.ts` replace the inline `getSession` with
-  `requireAuth`.
+      reject email changes for credential principals. In `submissions.get.ts` replace the inline `getSession` with
+      `requireAuth`.
 - [ ] **Step 4:** Run the new test plus `yarn test`. Expected: all pass.
 - [ ] **Step 5:** Commit: `feat(auth): accept personal API keys in requireAuth`.
 
@@ -178,11 +184,13 @@ style of `projectApiKey` saying only the hash is stored.
 ### Task 4: Active context is stored per credential
 
 **Files:**
+
 - Modify: `server/utils/project-context.ts`
 - Modify: `server/api/projects/active.post.ts`, `server/api/organizations/active.post.ts`, `server/api/orgs/index.post.ts`
 - Test: `tests/project-context-credentials.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AuthSession.credential` (Task 2), `userApiKey` (Task 1).
 - Produces:
   - `type ContextTarget = { kind: 'session'; token: string } | { kind: 'user_api_key'; id: string }`
@@ -213,6 +221,7 @@ style of `projectApiKey` saying only the hash is stored.
 ### Task 5: Personal key REST endpoints
 
 **Files:**
+
 - Create: `server/api/user/api-keys/index.get.ts`, `server/api/user/api-keys/index.post.ts`,
   `server/api/user/api-keys/[keyId].delete.ts`, each with an `@openapi` block (tag `User`)
 - Modify: `server/api/openapi.json.get.ts`. Add security scheme `userApiKeyAuth`
@@ -221,6 +230,7 @@ style of `projectApiKey` saying only the hash is stored.
 - Test: `tests/user-api-key-routes.test.ts` (same mocking style as `tests/app-key-routes.test.ts`)
 
 **Interfaces:**
+
 - Consumes: `requireInteractiveSession` (Task 3), `generateUserApiKey` (Task 2).
 - Produces:
   - `GET /api/user/api-keys` → `{ success, data: Array<{ id, name, keyPrefix, createdAt, lastUsedAt, expiresAt, revokedAt }> }`,
@@ -245,15 +255,18 @@ style of `projectApiKey` saying only the hash is stored.
 ### Task 6: Settings → API keys tab
 
 **Files:**
+
 - Create: `components/settings/SettingsApiKeys.vue`
 - Modify: `pages/settings/index.vue`. Add tab `{ key: 'api-keys', label: 'API keys', icon: 'lucide:key-round' }`
   after Security, plus the component map entry and the import.
 - Test: `tests/e2e/user-api-keys.spec.ts`
 
 **Interfaces:**
+
 - Consumes: the Task 5 endpoints.
 
 Behaviour (Options API):
+
 - Loading → Skeleton rows. Error → message plus Retry. Empty → "No API keys yet".
 - The list shows name, `keyPrefix…`, created, last used ("Never"), expiry, and a Revoke button with a confirm dialog.
 - The Create dialog has a name field and an expiry select (Never / 30 / 90 / 365 days). On success it shows the full key
@@ -262,12 +275,12 @@ Behaviour (Options API):
 - A short help line explains that a key acts as you, with your permissions.
 
 - [ ] **Step 1: Write the failing e2e test.** Sign in as the seeded user, open `/settings#api-keys`, create a key named
-  `CLI`, and assert:
+      `CLI`, and assert:
   - the dialog shows text starting with `vfy_usr_` and the `claude mcp add` line;
   - after closing it, the list shows `CLI` with `vfy_usr_` and a 4-char prefix and no full key;
   - Revoke → confirm → the row shows Revoked.
-  Then use the copied key in a `request.get('/api/projects', { headers: { Authorization: 'Bearer …' } })` call. It
-  returns 200 before revoking and 401 after.
+    Then use the copied key in a `request.get('/api/projects', { headers: { Authorization: 'Bearer …' } })` call. It
+    returns 200 before revoking and 401 after.
 - [ ] **Step 2:** Run `yarn test:e2e:worktree tests/e2e/user-api-keys.spec.ts`. Expected: FAIL.
 - [ ] **Step 3:** Implement the component and the tab.
 - [ ] **Step 4:** Run the spec. Expected: PASS. `yarn lint` and `yarn typecheck` are clean.
@@ -278,11 +291,13 @@ Behaviour (Options API):
 ### Task 7: OpenAPI coverage checker
 
 **Files:**
+
 - Modify: `scripts/openapi-scanner.ts`
 - Modify: `tests/openapi-scanner.test.ts`
 - Modify: `package.json`. Add script `"openapi:check": "tsx scripts/openapi-scanner.ts --check"`.
 
 **Interfaces:**
+
 - Produces:
   - `OPENAPI_EXEMPT_PREFIXES = ['auth/', 'cron/', 'public/auth/', 'uploads/']` and
     `OPENAPI_EXEMPT_FILES = ['openapi.json.get.ts', 'test.ts']`, as paths relative to `server/api`, with forward slashes.
@@ -291,12 +306,12 @@ Behaviour (Options API):
   - With `--check`, the CLI prints each undocumented file and sets `process.exitCode = 1` if there are any.
 
 - [ ] **Step 1: Write failing tests** against a temp dir fixture (the existing test file already uses `mkdtemp`). It has
-  documented and undocumented files plus exempt `cron/x.get.ts` and `auth/[...all].ts`. The result lists only the
-  undocumented non-exempt files, with forward slashes, sorted.
+      documented and undocumented files plus exempt `cron/x.get.ts` and `auth/[...all].ts`. The result lists only the
+      undocumented non-exempt files, with forward slashes, sorted.
 - [ ] **Step 2:** Run `yarn vitest run tests/openapi-scanner.test.ts`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the test. Expected: PASS. Run `yarn openapi:check`. Expected: exit code 1 listing **68** files.
-  This is the backlog Tasks 8 and 9 clear.
+      This is the backlog Tasks 8 and 9 clear.
 - [ ] **Step 5:** Commit: `feat(openapi): coverage checker for undocumented routes`.
 
 ---
@@ -306,6 +321,7 @@ Behaviour (Options API):
 **Files:** every file `yarn openapi:check` lists under `server/api/feedback/`.
 
 Each block follows the style of `server/api/projects/[slug]/api-keys/index.post.ts`:
+
 - tag `Feedback`, `summary`, a unique camelCase `operationId`, path and query parameters;
 - a `requestBody` schema that matches the route's zod schema field for field (names, types, enums, min/max,
   required);
@@ -316,7 +332,7 @@ Routes with optional auth say so in `description`. Routes without zod (`vote.pos
 
 - [ ] **Step 1:** Add the blocks.
 - [ ] **Step 2:** Run `yarn openapi:generate && yarn vitest run tests/openapi-scanner.test.ts`. Expected: the generator
-  succeeds with no "Conflicting OpenAPI operation" error, and the tests pass.
+      succeeds with no "Conflicting OpenAPI operation" error, and the tests pass.
 - [ ] **Step 3:** Run `yarn openapi:check`. Expected: no `feedback/` files listed (48 left).
 - [ ] **Step 4:** Commit: `docs(openapi): document feedback and comment routes`.
 
@@ -325,6 +341,7 @@ Routes with optional auth say so in `description`. Routes without zod (`vote.pos
 ### Task 9: Document remaining routes and enforce in CI
 
 **Files:**
+
 - every remaining file `yarn openapi:check` lists (`projects/**`, `orgs/**`, `organizations/**`, `notifications/**`,
   `user/**`, `dashboard/**`, `system/**`), using tags `Projects`, `Organizations`, `Notifications`, `User`, `System`;
 - `.github/workflows/ci.yml`: add `- run: yarn openapi:check` to the job that runs `yarn harness:docs`.
@@ -344,6 +361,7 @@ context is stored on the key.
 ### Task 10: MCP core (registry, API bridge, universal tools)
 
 **Files:**
+
 - Modify: `package.json`. Add `@modelcontextprotocol/sdk` (latest 1.x). Confirm it works with zod 4 (the SDK accepts
   zod v4 schemas from 1.23 on). If the installed version needs v3, import from `zod/v3`.
 - Create: `server/mcp/types.ts`, `server/mcp/api-bridge.ts`, `server/mcp/api-search.ts`,
@@ -351,14 +369,33 @@ context is stored on the key.
 - Test: `tests/mcp-api-bridge.test.ts`, `tests/mcp-api-search.test.ts`, `tests/mcp-server.test.ts`
 
 **Interfaces:**
+
 - Consumes: `openapiPaths` from `server/generated/openapi-routes.ts`; the Task 5 and 9 routes.
 - Produces:
   - `types.ts`:
     ```ts
-    export interface ApiResult { status: number; body: unknown }
-    export type ApiCaller = (req: { method: HttpMethod; path: string; query?: Record<string, unknown>; body?: unknown }) => Promise<ApiResult>
-    export interface McpToolContext { principal: AuthSession; callApi: ApiCaller }
-    export interface VeerifyTool<S extends z.ZodRawShape> { name: string; title: string; description: string; inputSchema: S; annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }; handler(ctx: McpToolContext, input: z.infer<z.ZodObject<S>>): Promise<unknown> }
+    export interface ApiResult {
+      status: number
+      body: unknown
+    }
+    export type ApiCaller = (req: {
+      method: HttpMethod
+      path: string
+      query?: Record<string, unknown>
+      body?: unknown
+    }) => Promise<ApiResult>
+    export interface McpToolContext {
+      principal: AuthSession
+      callApi: ApiCaller
+    }
+    export interface VeerifyTool<S extends z.ZodRawShape> {
+      name: string
+      title: string
+      description: string
+      inputSchema: S
+      annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }
+      handler(ctx: McpToolContext, input: z.infer<z.ZodObject<S>>): Promise<unknown>
+    }
     ```
     `HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'`.
   - `api-bridge.ts`:
@@ -380,16 +417,17 @@ context is stored on the key.
       broken by path. Operations under blocked paths are excluded.
   - `tools/universal.ts` exports `universalTools: VeerifyTool[]`:
 
-    | name | input | behaviour |
-    |---|---|---|
-    | `whoami` | none | `{ user: {id,name,email}, credential: 'api_key', activeOrganizationId, activeProjectId }` + GET `/api/projects/active` data |
-    | `list_workspaces` | none | GET `/api/organizations/list` |
-    | `list_projects` | `workspace?: string` | GET `/api/projects` (with `X-Veerify-Organization` when given) |
-    | `set_context` | `workspace?: string; project?: string` (at least one) | POST `/api/organizations/active` and/or `/api/projects/active`; returns the new `whoami` |
-    | `search_api` | `query?: string; tag?: string; operationId?: string; limit?: number` | `getApiOperation` when `operationId`, else `searchApi` |
-    | `call_api` | `method: HttpMethod; path: string; query?: object; body?: unknown` | `normalizeApiPath` → reject null/blocked with a tool error naming the rule → `callApi` → `{ status, body }`; tool error when status ≥ 400 |
+    | name              | input                                                                | behaviour                                                                                                                                 |
+    | ----------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+    | `whoami`          | none                                                                 | `{ user: {id,name,email}, credential: 'api_key', activeOrganizationId, activeProjectId }` + GET `/api/projects/active` data               |
+    | `list_workspaces` | none                                                                 | GET `/api/organizations/list`                                                                                                             |
+    | `list_projects`   | `workspace?: string`                                                 | GET `/api/projects` (with `X-Veerify-Organization` when given)                                                                            |
+    | `set_context`     | `workspace?: string; project?: string` (at least one)                | POST `/api/organizations/active` and/or `/api/projects/active`; returns the new `whoami`                                                  |
+    | `search_api`      | `query?: string; tag?: string; operationId?: string; limit?: number` | `getApiOperation` when `operationId`, else `searchApi`                                                                                    |
+    | `call_api`        | `method: HttpMethod; path: string; query?: object; body?: unknown`   | `normalizeApiPath` → reject null/blocked with a tool error naming the rule → `callApi` → `{ status, body }`; tool error when status ≥ 400 |
 
     `call_api` is annotated `destructiveHint: true`. The listing tools and `search_api` are `readOnlyHint: true`.
+
   - `server.ts`: `createVeerifyMcpServer(ctx: McpToolContext): McpServer` registers every tool in `universalTools` and
     sets the server `instructions` string. That string explains:
     - start with `whoami`;
@@ -397,7 +435,7 @@ context is stored on the key.
     - find operations with `search_api`, then run them with `call_api`;
     - everything acts as the key's owner;
     - errors come back as `{ status, body }`.
-    Tool results are returned as a single JSON text content block. `isError` is set for tool errors.
+      Tool results are returned as a single JSON text content block. `isError` is set for tool errors.
 
 - [ ] **Step 1: Write failing tests.**
   - `tests/mcp-api-bridge.test.ts` **(Review Focus 4)**. `normalizeApiPath` + `isBlockedApiPath`:
@@ -429,10 +467,12 @@ context is stored on the key.
 ### Task 11: `/mcp` HTTP endpoint
 
 **Files:**
+
 - Create: `server/routes/mcp.ts`
 - Test: `tests/e2e/mcp.spec.ts` (HTTP-level, using Playwright `request`, which needs the running app and seed)
 
 **Interfaces:**
+
 - Consumes: `requireAuth`, `isCredentialPrincipal` (Task 3); `createVeerifyMcpServer`, `createApiCaller` (Task 10).
 - Behaviour:
   - Handles `POST /mcp`. `GET` and `DELETE` return 405, because the transport is stateless with no SSE stream.
@@ -445,7 +485,7 @@ context is stored on the key.
     Both are closed when the response ends. The event is marked handled so Nitro doesn't write a second response.
 
 - [ ] **Step 1: Write the failing e2e test.** Create a key through `POST /api/user/api-keys` using the signed-in cookie
-  context. Then make raw JSON-RPC calls to `/mcp` with `Accept: application/json, text/event-stream`:
+      context. Then make raw JSON-RPC calls to `/mcp` with `Accept: application/json, text/event-stream`:
   - `initialize` → 200 with `serverInfo.name === 'veerify'`;
   - `tools/list` → the six tools;
   - `tools/call whoami` → contains the seeded user's email;
@@ -454,8 +494,8 @@ context is stored on the key.
 - [ ] **Step 2:** Run `yarn test:e2e:worktree tests/e2e/mcp.spec.ts`. Expected: FAIL (404).
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the spec. Expected: PASS. Then check by hand:
-  `claude mcp add --transport http veerify-dev http://127.0.0.1:<port>/mcp --header "Authorization: Bearer <key>"`, then in
-  Claude Code ask "who am I in Veerify?". Expected: it answers with your email.
+      `claude mcp add --transport http veerify-dev http://127.0.0.1:<port>/mcp --header "Authorization: Bearer <key>"`, then in
+      Claude Code ask "who am I in Veerify?". Expected: it answers with your email.
 - [ ] **Step 5:** Commit: `feat(mcp): stateless /mcp endpoint for personal API keys`.
 
 ---
@@ -463,6 +503,7 @@ context is stored on the key.
 ### Task 12: Documentation
 
 **Files:**
+
 - Create: `docs/mcp.md`. Covers:
   - creating a key;
   - the `claude mcp add` command;
@@ -489,4 +530,4 @@ context is stored on the key.
 - [ ] `yarn lint && yarn typecheck && yarn test && yarn openapi:check` all pass.
 - [ ] `yarn test:e2e:worktree tests/e2e/user-api-keys.spec.ts tests/e2e/mcp.spec.ts` passes.
 - [ ] Manual: from Claude Code with a fresh key, create a category, rename it, and delete it via `search_api` + `call_api`. Then
-  revoke the key in Settings. The next tool call fails with 401.
+      revoke the key in Settings. The next tool call fails with 401.

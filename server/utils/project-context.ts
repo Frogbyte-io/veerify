@@ -47,7 +47,10 @@ export async function writeContext(
 ) {
   const values = { activeOrganizationId: organizationId, activeProjectId: projectId }
   if (target.kind === 'user_api_key') {
-    await tx.update(userApiKey).set(values).where(and(eq(userApiKey.id, target.id), eq(userApiKey.userId, target.userId)))
+    await tx
+      .update(userApiKey)
+      .set(values)
+      .where(and(eq(userApiKey.id, target.id), eq(userApiKey.userId, target.userId)))
   } else {
     await tx.update(sessionTable).set(values).where(eq(sessionTable.token, target.token))
   }
