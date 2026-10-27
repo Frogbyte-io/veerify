@@ -31,6 +31,8 @@ export default defineEventHandler(() => {
       { name: 'Feedback', description: 'Feedback and feature request management' },
       { name: 'GitHub', description: 'GitHub integration endpoints' },
       { name: 'App API', description: 'Public API for apps submitting feedback with a project app key' },
+      { name: 'User', description: 'Your account and personal API keys' },
+      { name: 'MCP', description: 'Model Context Protocol endpoint for agents' },
       {
         name: 'Support',
         description: 'Support platform: contacts, companies, inboxes, conversations, tags, and project settings',
@@ -48,6 +50,11 @@ export default defineEventHandler(() => {
           type: 'http',
           scheme: 'bearer',
           description: 'Project app key (vfy_pub_...) created in project settings',
+        },
+        userApiKeyAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          description: 'Personal API key (vfy_usr_...) created in Settings → API keys',
         },
       },
       schemas: {

@@ -8298,6 +8298,113 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/user/api-keys": {
+    "get": {
+      "tags": [
+        "User"
+      ],
+      "summary": "List your personal API keys",
+      "description": "Returns metadata for your own keys, including revoked and expired ones, newest first. The key secret and hash are never returned. Not available to API key principals.",
+      "operationId": "listUserApiKeys",
+      "responses": {
+        "200": {
+          "description": "Personal API key summaries"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Requires signing in directly (API keys cannot manage API keys)"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "User"
+      ],
+      "summary": "Create a personal API key",
+      "description": "The full key (vfy_usr_...) is returned once in this response and cannot be retrieved later. Maximum 25 active keys per user. Not available to API key principals.",
+      "operationId": "createUserApiKey",
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "expiresInDays": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 365,
+                  "nullable": true,
+                  "description": "Omit or null for a key that never expires"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Key created; includes the full key once"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Requires signing in directly (API keys cannot manage API keys)"
+        },
+        "409": {
+          "description": "Already 25 active keys"
+        }
+      }
+    }
+  },
+  "/api/user/api-keys/{keyId}": {
+    "delete": {
+      "tags": [
+        "User"
+      ],
+      "summary": "Revoke a personal API key",
+      "description": "Revoked keys are rejected immediately and the row is kept for audit. Not available to API key principals.",
+      "operationId": "revokeUserApiKey",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "keyId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Key revoked"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Requires signing in directly (API keys cannot manage API keys)"
+        },
+        "404": {
+          "description": "Key not found, not yours, or already revoked"
+        }
+      }
+    }
+  },
   "/api/v1/feedback": {
     "post": {
       "tags": [
