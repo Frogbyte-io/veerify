@@ -1256,7 +1256,7 @@ export const openapiPaths = {
         "Feedback"
       ],
       "summary": "Delete a feedback item",
-      "description": "Permanently deletes the item. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Permanently deletes the item. Imported feedback stays deleted: a later import from the same source skips it. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "deleteFeedback",
       "security": [
         {
@@ -1593,7 +1593,7 @@ export const openapiPaths = {
         "Feedback"
       ],
       "summary": "Delete a comment",
-      "description": "Deletes the comment and decrements the comment count. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "description": "Deletes the comment and decrements the comment count. An imported comment stays deleted: a later import from the same source skips it and its replies. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
       "operationId": "deleteFeedbackComment",
       "security": [
         {
@@ -8558,7 +8558,7 @@ export const openapiPaths = {
         "Imports"
       ],
       "summary": "Add a batch of records to an import run",
-      "description": "At most 1,000 records per batch and 50,000 per run. Send sections only (statuses, categories, people, feedback, comments, changelog); format and target belong to run creation. Duplicate externalIds within a section of the run are dropped and reported as skipped issues.",
+      "description": "At most 1,000 records per batch, 50,000 per run and a 4 MiB request body. Send sections only (statuses, categories, people, feedback, comments, changelog); format, target, source and sourceLabel are rejected (they belong to run creation). Duplicate externalIds within a section of the run are dropped and reported as skipped issues.",
       "operationId": "addImportRecords",
       "security": [
         {
@@ -8649,6 +8649,9 @@ export const openapiPaths = {
         },
         "409": {
           "description": "Run is not a draft"
+        },
+        "413": {
+          "description": "Request body exceeds 4 MiB"
         }
       }
     }
