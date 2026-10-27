@@ -281,3 +281,20 @@ describe('transient database errors', () => {
     }
   })
 })
+
+describe('source metadata', () => {
+  it('is nested under metadata.import.extra and cannot set top-level keys like editToken or source', async () => {
+    seedRun('draft')
+    const payload = state.tables.import_run_batch[0].payload
+    payload.feedback[0].metadata = { editToken: 'planted', source: 'support_conversation', board: 'ideas' }
+    expect((await commitImportRun('run-1')).status).toBe('completed')
+    const { metadata } = state.tables.feedback[0]
+    expect(metadata.editToken).toBeUndefined()
+    expect(metadata.source).toBeUndefined()
+    expect(metadata.import).toEqual({
+      runId: 'run-1',
+      url: 'https://example.canny.io/posts/dark-mode',
+      extra: { editToken: 'planted', source: 'support_conversation', board: 'ideas' },
+    })
+  })
+})

@@ -60,7 +60,10 @@ export const feedbackPhase: CommitPhase<FeedbackState, ImportFeedback> = {
       authorEmail: person?.email ?? null,
       importedPersonId: person?.id ?? null,
       sourceLabel: run.sourceLabel,
-      metadata: { ...(rec.metadata ?? {}), import: { runId: run.id, url: rec.url ?? null } },
+      // Source metadata is nested, never spread: it must not set top-level keys the app reads (editToken, source).
+      metadata: {
+        import: { runId: run.id, url: rec.url ?? null, ...(rec.metadata ? { extra: rec.metadata } : {}) },
+      },
       externalSource: run.source,
       externalId: rec.externalId,
       voteCount: 0,
