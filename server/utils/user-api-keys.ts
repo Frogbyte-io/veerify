@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { getHeader } from 'h3'
 import type { H3Event } from 'h3'
-import { and, eq, or } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { organization, user } from '~/server/database/schema/auth'
 import { userApiKey } from '~/server/database/schema/credentials'
@@ -13,7 +13,7 @@ import { ErrorCode, createErrorResponse } from '~/server/utils/response'
 
 export const USER_KEY_PREFIX = 'vfy_usr_'
 
-const RATE_LIMIT = { maxRequests: 300, windowSeconds: 60, identifier: 'user-api-key' }
+const RATE_LIMIT = { maxRequests: 600, windowSeconds: 60, identifier: 'user-api-key' }
 
 export function hashUserApiKey(key: string): string {
   return createHash('sha256').update(key).digest('hex')
@@ -77,16 +77,26 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
   if (row.revokedAt) throw invalidKey()
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) throw invalidKey()
 
+  await requireRateLimit(event, { ...RATE_LIMIT, subject: row.id })
+
   let activeOrganizationId: string | undefined = row.activeOrganizationId ?? undefined
   let activeProjectId: string | null = row.activeProjectId ?? null
 
   const orgHeader = readContextHeader(event, 'x-veerify-organization')
   if (orgHeader) {
-    const [org] = await db
+    const [byId] = await db
       .select({ id: organization.id })
       .from(organization)
-      .where(or(eq(organization.id, orgHeader), eq(organization.slug, orgHeader)))
+      .where(eq(organization.id, orgHeader))
       .limit(1)
+    let org = byId
+    if (!org) {
+      ;[org] = await db
+        .select({ id: organization.id })
+        .from(organization)
+        .where(eq(organization.slug, orgHeader))
+        .limit(1)
+    }
     const role = org ? await getOrganizationRole(org.id, owner.id) : null
     if (!org || !role) throw forbidden('Organization not found or not accessible')
     activeOrganizationId = org.id
@@ -108,8 +118,6 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
     activeProjectId = proj.id
     activeOrganizationId = proj.organizationId
   }
-
-  await requireRateLimit(event, { ...RATE_LIMIT, subject: row.id })
 
   // Fire-and-forget: a failed bookkeeping write must never fail the request.
   void Promise.resolve(db.update(userApiKey).set({ lastUsedAt: new Date() }).where(eq(userApiKey.id, row.id))).catch(

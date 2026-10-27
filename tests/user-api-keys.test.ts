@@ -156,6 +156,12 @@ describe('resolveUserApiKeyPrincipal', () => {
     expect(p?.session.token).toBe('')
     expect(p?.user.id).toBe('user-1')
     expect(requireRateLimit).toHaveBeenCalledTimes(1)
+    expect(requireRateLimit).toHaveBeenCalledWith(expect.anything(), {
+      maxRequests: 600,
+      windowSeconds: 60,
+      identifier: 'user-api-key',
+      subject: 'key-1',
+    })
     expect(state.updates[0]).toHaveProperty('lastUsedAt')
   })
 
