@@ -1,46 +1,40 @@
 <template>
-  <div class="w-full min-w-0 p-0 sm:p-2 lg:p-6 max-w-4xl mx-auto space-y-6">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Support settings</h1>
-        <p class="text-muted-foreground mt-1">Configure your project's shared inbox</p>
-      </div>
-      <Button variant="outline" size="sm" as-child>
-        <NuxtLink to="/support">
-          <Icon name="lucide:inbox" class="w-4 h-4 mr-2" />
-          Back to inbox
-        </NuxtLink>
-      </Button>
-    </div>
+  <PageContainer>
+    <PageHeader title="Support settings" description="Configure your project's shared inbox">
+      <template #actions>
+        <Button variant="outline" size="sm" as-child>
+          <NuxtLink to="/support">
+            <Icon name="lucide:inbox" class="w-4 h-4 mr-2" />
+            Back to inbox
+          </NuxtLink>
+        </Button>
+      </template>
+    </PageHeader>
 
+    <!-- Section nav sits in its final spot from first paint; pills fill in once the data is known -->
     <nav
-      v-if="!isLoading && !error && sectionLinks.length > 1"
+      v-if="isLoading || (!error && sectionLinks.length > 1)"
       aria-label="Support settings sections"
       data-testid="support-settings-section-nav"
-      class="sticky top-0 z-10 -mx-1 flex gap-1.5 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+      class="sticky top-0 z-10 -mx-1 flex min-h-12 gap-1.5 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80"
     >
-      <a
-        v-for="link in sectionLinks"
-        :key="link.id"
-        :href="`#${link.id}`"
-        class="shrink-0 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
-      >
-        {{ link.label }}
-      </a>
+      <template v-if="isLoading">
+        <Skeleton v-for="n in 6" :key="n" class="h-7 w-20 shrink-0 rounded-full" />
+      </template>
+      <template v-else>
+        <a
+          v-for="link in sectionLinks"
+          :key="link.id"
+          :href="`#${link.id}`"
+          class="shrink-0 rounded-full border px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          {{ link.label }}
+        </a>
+      </template>
     </nav>
-
-    <div
-      v-if="inboxAccessError"
-      data-testid="support-inbox-access-error"
-      class="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-      role="alert"
-    >
-      {{ inboxAccessError }}
-    </div>
 
     <!-- Loading -->
     <div v-if="isLoading" class="space-y-6">
-      <Skeleton class="h-10 w-full" />
       <Skeleton class="h-48 w-full" />
       <Skeleton class="h-48 w-full" />
       <Skeleton class="h-48 w-full" />
@@ -1356,11 +1350,22 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </div>
+
+    <!-- Late notice: pinned to the bottom of the viewport so it never pushes content down -->
+    <div
+      v-if="inboxAccessError"
+      data-testid="support-inbox-access-error"
+      class="sticky bottom-4 z-20 rounded-lg border border-destructive/30 bg-background p-3 text-sm text-destructive shadow-md"
+      role="alert"
+    >
+      {{ inboxAccessError }}
+    </div>
+  </PageContainer>
 </template>
 
 <script>
 import { toast } from 'vue-sonner'
+import { loadActiveProject } from '~/lib/active-project'
 
 const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 
@@ -1678,11 +1683,7 @@ export default {
       this.resetSendingDomainsState()
 
       try {
-        const [projectResponse, sessionResponse] = await Promise.all([
-          $fetch('/api/projects/active'),
-          $fetch('/api/auth/session'),
-        ])
-        const activeContext = projectResponse?.data
+        const [activeContext, sessionResponse] = await Promise.all([loadActiveProject(), $fetch('/api/auth/session')])
         const activeProjectData = activeContext?.project
         if (token !== this.requestToken) return
         this.currentUserId = sessionResponse?.data?.user?.id || ''

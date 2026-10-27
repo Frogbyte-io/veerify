@@ -2,15 +2,41 @@
   <div class="contents">
     <div
       ref="pageRoot"
-      class="h-[calc(100dvh-6rem)] min-h-[480px]"
+      class="h-[calc(100dvh-7rem)] min-h-[480px]"
       data-testid="support-inbox-page"
       :data-active-project-listener-ready="activeProjectListenerReady ? 'true' : 'false'"
     >
       <!-- Loading project context -->
-      <div v-if="isLoadingProject" class="h-full flex items-center justify-center">
-        <div class="space-y-3 w-full max-w-md">
-          <Skeleton class="h-8 w-40 mx-auto" />
-          <Skeleton class="h-40 w-full" />
+      <div
+        v-if="isLoadingProject"
+        class="@container/panes flex h-full overflow-hidden rounded-lg border bg-card"
+        data-testid="support-inbox-skeleton"
+      >
+        <div class="hidden w-[220px] shrink-0 space-y-3 border-r bg-muted/20 p-3 @4xl/panes:block">
+          <Skeleton class="h-9 w-full" />
+          <Skeleton v-for="n in 4" :key="n" class="h-7 w-full" />
+        </div>
+        <div
+          class="w-full min-w-0 shrink-0 space-y-3 p-3 @2xl/panes:w-[300px] @2xl/panes:border-r @6xl/panes:w-[340px]"
+        >
+          <Skeleton class="h-9 w-full" />
+          <div v-for="n in 6" :key="n" class="space-y-2">
+            <Skeleton class="h-4 w-2/3" />
+            <Skeleton class="h-3 w-full" />
+          </div>
+        </div>
+        <div class="hidden min-w-0 flex-1 flex-col @2xl/panes:flex">
+          <div class="border-b p-4">
+            <Skeleton class="h-5 w-1/2" />
+          </div>
+          <div class="flex-1 space-y-4 p-4">
+            <Skeleton class="h-16 w-2/3" />
+            <Skeleton class="ml-auto h-16 w-1/2" />
+            <Skeleton class="h-16 w-3/5" />
+          </div>
+          <div class="border-t p-3">
+            <Skeleton class="h-20 w-full" />
+          </div>
         </div>
       </div>
 
@@ -310,6 +336,7 @@
 </template>
 
 <script>
+import { loadActiveProject } from '~/lib/active-project'
 import {
   getNextSupportConversationId,
   getSupportShortcutAction,
@@ -575,11 +602,10 @@ export default {
       this.projectError = null
 
       try {
-        const [projectResponse, sessionResponse] = await Promise.all([
-          $fetch('/api/projects/active'),
-          $fetch('/api/auth/session'),
-        ])
-        const activeContext = projectResponse?.data
+        // Shared cache: a warm navigation resolves at once; session loads alongside.
+        const sessionPromise = $fetch('/api/auth/session')
+        sessionPromise.catch(() => {})
+        const activeContext = await loadActiveProject()
         const activeProjectData = activeContext?.project
 
         if (!activeProjectData?.id) {
@@ -599,6 +625,8 @@ export default {
           this.isLoadingProject = false
           return
         }
+        const sessionResponse = await sessionPromise
+        if (generation !== this.contextGeneration) return
         this.currentUserId = sessionResponse?.data?.user?.id || ''
         this.currentUserName = sessionResponse?.data?.user?.name || sessionResponse?.data?.user?.email || ''
         this.isLoadingProject = false

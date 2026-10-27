@@ -1,18 +1,16 @@
 <template>
-  <div class="p-6 max-w-5xl mx-auto space-y-6">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight text-foreground">Contacts</h1>
-        <p class="text-muted-foreground mt-1">Customers who have contacted support</p>
-      </div>
-      <div class="relative w-full sm:w-72">
-        <Icon
-          name="lucide:search"
-          class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
-        />
-        <Input v-model="search" placeholder="Search by name or email" class="pl-9" @input="onSearchInput" />
-      </div>
-    </div>
+  <PageContainer>
+    <PageHeader title="Contacts" description="Customers who have contacted support">
+      <template #actions>
+        <div class="relative w-full sm:w-72">
+          <Icon
+            name="lucide:search"
+            class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
+          />
+          <Input v-model="search" placeholder="Search by name or email" class="pl-9" @input="onSearchInput" />
+        </div>
+      </template>
+    </PageHeader>
 
     <!-- Loading -->
     <div v-if="isLoading" class="space-y-3">
@@ -101,10 +99,12 @@
         </Button>
       </div>
     </template>
-  </div>
+  </PageContainer>
 </template>
 
 <script>
+import { loadActiveProject } from '~/lib/active-project'
+
 const ACTIVE_PROJECT_CHANGED_EVENT = 'veerify:active-project-changed'
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -151,8 +151,8 @@ export default {
       this.error = null
 
       try {
-        const projectResponse = await $fetch('/api/projects/active')
-        const activeProjectData = projectResponse?.data?.project
+        const activeContext = await loadActiveProject()
+        const activeProjectData = activeContext?.project
 
         if (!activeProjectData?.id) {
           this.error = 'No active project found'
@@ -162,7 +162,7 @@ export default {
 
         this.activeProjectId = activeProjectData.id
         this.projectRole = activeProjectData.role || null
-        this.supportDisabled = projectResponse.data.modules?.supportEnabled === false
+        this.supportDisabled = activeContext.modules?.supportEnabled === false
         if (this.supportDisabled) {
           this.isLoading = false
           return
