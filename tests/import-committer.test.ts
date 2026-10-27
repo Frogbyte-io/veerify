@@ -2,6 +2,15 @@ import type { SQL } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { advanceImportRun, advanceImportRuns, commitImportRun } from '~/server/services/imports/committer'
+import { importExample } from '~/server/services/imports/format'
+import * as notifications from '~/server/utils/notifications'
+import * as email from '~/lib/email'
+import * as realtime from '~/server/services/realtime'
+import * as hooks from '~/server/services/changelog/hooks'
+import * as entries from '~/server/services/changelog/entries'
+import * as autoLink from '~/server/utils/support-auto-link'
+
 // In-memory fake DB. Queries ignore `where` (fixtures hold one project and one run), inserts never conflict, and SQL
 // expressions in `set` are not evaluated. Enough to drive a whole commit through every phase; the real semantics
 // (conflicts, counters, scoping) are covered by tests/integration/imports-commit.test.ts.
@@ -108,15 +117,6 @@ vi.mock('~/server/services/changelog/entries', async (orig) => ({
   updateEntry: vi.fn(),
 }))
 vi.mock('~/server/utils/support-auto-link', (orig) => spyAll(orig as () => Promise<Record<string, unknown>>))
-
-import { advanceImportRun, advanceImportRuns, commitImportRun } from '~/server/services/imports/committer'
-import { importExample } from '~/server/services/imports/format'
-import * as notifications from '~/server/utils/notifications'
-import * as email from '~/lib/email'
-import * as realtime from '~/server/services/realtime'
-import * as hooks from '~/server/services/changelog/hooks'
-import * as entries from '~/server/services/changelog/entries'
-import * as autoLink from '~/server/utils/support-auto-link'
 
 function seedRun(status: string, extra: Record<string, unknown> = {}) {
   const { format: _f, source: _s, sourceLabel: _l, target: _t, ...batch } = importExample()

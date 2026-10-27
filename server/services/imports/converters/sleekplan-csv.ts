@@ -1,5 +1,6 @@
 import { csvRowsToObjects, normalizeCsvHeader, parseCsv } from './csv-parse'
-import { ImportBuilder, pickFirstNumber, stableId, toOptionalBoolean, voteCountOf } from './builder'
+import type { ImportBuilder } from './builder'
+import { pickFirstNumber, stableId, toOptionalBoolean, voteCountOf } from './builder'
 
 export type SleekplanCsvKind = 'feedback' | 'comments' | 'votes' | 'users' | 'unknown'
 export type CsvFile = { name: string; text: string }

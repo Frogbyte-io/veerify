@@ -1,6 +1,8 @@
 import { getTableName } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { resolveFeedbackStatus, resolveTaxonomy } from '~/server/services/imports/taxonomy'
+
 const state = vi.hoisted(() => ({ tables: {} as Record<string, Record<string, any>[]> }))
 
 vi.mock('~/server/database/drizzle', () => ({ db: {} }))
@@ -31,8 +33,6 @@ function fakeTx() {
     }),
   } as any
 }
-
-import { resolveFeedbackStatus, resolveTaxonomy } from '~/server/services/imports/taxonomy'
 
 const underReview = { statuses: [{ externalId: 's1', name: 'Under review' }], categories: [] }
 

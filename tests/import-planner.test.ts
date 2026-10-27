@@ -1,6 +1,8 @@
 import { getTableName } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { SYNC_FIELDS, planFieldSync, planImport, snapshotFor } from '~/server/services/imports/planner'
+
 // Fixture DB: every query returns the rows of its table (fixtures hold one project and one run), so the planner
 // must not depend on the where clause for correctness of these scenarios.
 const state = vi.hoisted(() => ({
@@ -55,8 +57,6 @@ vi.mock('~/server/database/drizzle', () => {
   }
   return { db }
 })
-
-import { SYNC_FIELDS, planFieldSync, planImport, snapshotFor } from '~/server/services/imports/planner'
 
 const previewHandler = (await import('~/server/api/projects/[slug]/imports/[runId]/preview.get')).default as (
   e: unknown
