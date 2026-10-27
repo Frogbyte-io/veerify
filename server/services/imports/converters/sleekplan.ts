@@ -40,15 +40,18 @@ function asRecord(value: unknown): JsonRecord {
 
 function convertItem(b: ImportBuilder, record: JsonRecord, kind: 'feedback' | 'roadmap', index: number) {
   const title = pickFirstString(record, ['title', 'name', 'subject'])
-  if (!title) return
   const context = `${kind} item ${index + 1}`
+  if (!title) {
+    b.warn(`${context}: skipped because title is missing`)
+    return
+  }
   const user = asRecord(record.user)
   const categoryName =
     pickFirstString(record, ['category', 'category_name']) ||
     pickFirstString(asRecord(record.category), ['name', 'title'])
   const rawStatus = pickFirstString(record, ['status', 'status_name', 'workflow_status'])
   b.feedback.push({
-    externalId: pickFirstString(record, ['id', 'item_id', 'uuid']) || stableId(kind, title),
+    externalId: pickFirstString(record, ['id', 'item_id', 'uuid']) || stableId(kind, `${index}:${title}`),
     title: b.title(title, context),
     body: b.body(pickFirstString(record, ['description', 'body', 'text', 'detail']), context),
     status: b.status(rawStatus || (kind === 'roadmap' ? 'Planned' : 'Open')),
@@ -94,12 +97,16 @@ export function convertSleekplanApiToImport(payloads: SleekplanPayloads, opts: C
       pickFirstString(record, ['feedback_external_id', 'item_id', 'post_id']) ||
       pickFirstString(asRecord(record.item), ['id'])
     const body = pickFirstString(record, ['body', 'text', 'comment'])
-    if (!feedbackExternalId || !body) return
     const context = `comment ${index + 1}`
+    if (!feedbackExternalId || !body) {
+      b.warn(`${context}: skipped because feedback id or body is missing`)
+      return
+    }
     const user = asRecord(record.user)
     b.comments.push({
       externalId:
-        pickFirstString(record, ['id', 'uuid']) || stableId('comment', `${feedbackExternalId}:${body.slice(0, 24)}`),
+        pickFirstString(record, ['id', 'uuid']) ||
+        stableId('comment', `${index}:${feedbackExternalId}:${body.slice(0, 24)}`),
       feedbackExternalId,
       body: b.body(body, context)!,
       authorExternalId: b.person(
@@ -115,8 +122,11 @@ export function convertSleekplanApiToImport(payloads: SleekplanPayloads, opts: C
   unwrapArrayPayload(payloads.changelog).forEach((record, index) => {
     const title = pickFirstString(record, ['title', 'name'])
     const body = pickFirstString(record, ['body', 'text', 'description'])
-    if (!title || !body) return
     const context = `changelog ${index + 1}`
+    if (!title || !body) {
+      b.warn(`${context}: skipped because title or body is missing`)
+      return
+    }
     const category = pickFirstString(record, ['category', 'category_name'])
     const publishedAt = b.date(pickFirstString(record, ['published_at', 'published']), context)
     b.changelog.push({

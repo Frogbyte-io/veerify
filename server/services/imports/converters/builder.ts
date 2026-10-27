@@ -122,13 +122,25 @@ export class ImportBuilder {
     return value.slice(0, MAX_BODY)
   }
 
+  private capKey(key: string, kind: string): string {
+    if (key.length <= 200) return key
+    this.warn(`${kind} key truncated to 200 characters: "${key.slice(0, 40)}..."`)
+    return key.slice(0, 200)
+  }
+
+  private capName(name: string): string {
+    if (name.length <= 100) return name
+    this.warn(`name truncated to 100 characters: "${name.slice(0, 40)}..."`)
+    return name.slice(0, 100)
+  }
+
   /** Returns the key feedback should reference, creating the status when new. */
   status(name: string | null | undefined, color?: string): string | undefined {
     const trimmed = name?.trim()
     if (!trimmed) return undefined
-    const key = toStatusValue(trimmed) || trimmed.toLowerCase()
+    const key = this.capKey(toStatusValue(trimmed) || trimmed.toLowerCase(), 'status')
     const existing = this.statuses.get(key)
-    if (!existing) this.statuses.set(key, { externalId: key, name: trimmed.slice(0, 100), ...(color ? { color } : {}) })
+    if (!existing) this.statuses.set(key, { externalId: key, name: this.capName(trimmed), ...(color ? { color } : {}) })
     else if (color && !existing.color) existing.color = color
     return key
   }
@@ -136,10 +148,10 @@ export class ImportBuilder {
   category(name: string | null | undefined, color?: string): string | undefined {
     const trimmed = name?.trim()
     if (!trimmed) return undefined
-    const key = toCategorySlug(trimmed) || trimmed.toLowerCase()
+    const key = this.capKey(toCategorySlug(trimmed) || trimmed.toLowerCase(), 'category')
     const existing = this.categories.get(key)
     if (!existing)
-      this.categories.set(key, { externalId: key, name: trimmed.slice(0, 100), ...(color ? { color } : {}) })
+      this.categories.set(key, { externalId: key, name: this.capName(trimmed), ...(color ? { color } : {}) })
     else if (color && !existing.color) existing.color = color
     return key
   }
@@ -166,6 +178,17 @@ export class ImportBuilder {
   }
 
   build(): ConverterResult {
+    const feedbackIds = new Set(this.feedback.map((f) => f.externalId))
+    const kept = this.comments.filter((c) => feedbackIds.has(c.feedbackExternalId))
+    if (kept.length !== this.comments.length) {
+      for (const c of this.comments) {
+        if (!feedbackIds.has(c.feedbackExternalId)) {
+          this.warn(`comment ${c.externalId}: dropped because feedback "${c.feedbackExternalId}" is not in the import`)
+        }
+      }
+      this.comments.length = 0
+      this.comments.push(...kept)
+    }
     if (this.droppedSubscriptions > 0) {
       this.warn(
         `Dropped ${this.droppedSubscriptions} subscription(s): the import format has no subscriptions and imports never send email`

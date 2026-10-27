@@ -116,4 +116,52 @@ describe('import converters', () => {
     expect(warnings.some((w) => /comments/i.test(w))).toBe(true)
     expect(warnings.some((w) => /subscribers/i.test(w))).toBe(true)
   })
+
+  it('keeps id-less items and comments distinct and warns on dropped rows', () => {
+    const { document, warnings } = convertSleekplanApiToImport({
+      items: [{ title: 'Same' }, { title: 'Same' }, { description: 'no title' }],
+      comments: [
+        { item_id: 'x', body: 'ok' },
+        { item_id: 'x', body: 'ok' },
+        { item_id: 'x' },
+        { item_id: 'gone', body: 'orphan', id: 'o1' },
+      ],
+      changelog: [{ title: 'only title' }],
+      subscriptions: [],
+    })
+    // item_id 'x' matches no feedback, so give feedback ids via a second run below
+    expect(document.feedback).toHaveLength(2)
+    expect(new Set(document.feedback.map((f) => f.externalId)).size).toBe(2)
+    expect(warnings.some((w) => /title is missing/.test(w))).toBe(true)
+    expect(warnings.some((w) => /feedback id or body is missing/.test(w))).toBe(true)
+    expect(warnings.some((w) => /changelog 1: skipped/.test(w))).toBe(true)
+    expect(document.comments).toHaveLength(0)
+    expect(warnings.some((w) => /not in the import/.test(w))).toBe(true)
+
+    const second = convertSleekplanApiToImport({
+      items: [{ id: 'x', title: 'T' }],
+      comments: [
+        { item_id: 'x', body: 'ok' },
+        { item_id: 'x', body: 'ok' },
+      ],
+    })
+    expect(second.document.comments).toHaveLength(2)
+    expect(new Set(second.document.comments.map((c) => c.externalId)).size).toBe(2)
+    expect(schema.safeParse(second.document).success).toBe(true)
+  })
+
+  it('caps over-long status and category names', () => {
+    const { document, warnings } = convertCsvToImport(
+      [
+        {
+          name: 'a.csv',
+          text: `title,status,category
+A,${'s'.repeat(300)},${'c'.repeat(300)}`,
+        },
+      ],
+      {}
+    )
+    expect(schema.safeParse(document).success).toBe(true)
+    expect(warnings.some((w) => /truncated/.test(w))).toBe(true)
+  })
 })
