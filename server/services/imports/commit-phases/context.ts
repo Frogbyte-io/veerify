@@ -47,16 +47,50 @@ export type PersonRef = { id: string; name: string | null; email: string | null 
  * or this record commits first and the claim's later statements re-point what it inserted. Attribution only ever
  * follows a verified claim, never a matching email.
  */
-export async function lockPersonClaims(tx: Tx, personIds: readonly string[]): Promise<Map<string, string | null>> {
+export type LockedPerson = {
+  claimedByUserId: string | null
+  name: string | null
+  email: string | null
+  erasedAt: Date | null
+}
+
+/**
+ * The same `FOR SHARE` lock, returning the person's current state: claim, name, email and `erasedAt`. Inserts take the
+ * author name and email from here, never from the phase-start map, so an erasure that committed after the phase began
+ * is honoured (contact erasure updates the person row first, which serializes against this lock). An erased person
+ * has null name and email.
+ */
+export async function lockPeople(tx: Tx, personIds: readonly string[]): Promise<Map<string, LockedPerson>> {
   const ids = [...new Set(personIds)]
   if (!ids.length) return new Map()
   const rows = await tx
-    .select({ id: importedPerson.id, claimedByUserId: importedPerson.claimedByUserId })
+    .select({
+      id: importedPerson.id,
+      claimedByUserId: importedPerson.claimedByUserId,
+      name: importedPerson.name,
+      email: importedPerson.email,
+      erasedAt: importedPerson.erasedAt,
+    })
     .from(importedPerson)
     .where(inArray(importedPerson.id, ids))
     .orderBy(asc(importedPerson.id))
     .for('share')
-  return new Map(rows.map((r) => [r.id, r.claimedByUserId]))
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      {
+        claimedByUserId: r.claimedByUserId,
+        name: r.erasedAt ? null : r.name,
+        email: r.erasedAt ? null : r.email,
+        erasedAt: r.erasedAt,
+      },
+    ])
+  )
+}
+
+export async function lockPersonClaims(tx: Tx, personIds: readonly string[]): Promise<Map<string, string | null>> {
+  const locked = await lockPeople(tx, personIds)
+  return new Map([...locked].map(([id, p]) => [id, p.claimedByUserId]))
 }
 
 /** Imported people of the run's project and source, by externalId. */

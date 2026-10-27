@@ -276,4 +276,39 @@ describe('eraseContact covers imported people (real Postgres)', () => {
     expect(row.status).toBe('failed')
     expect(await batchCount(runId)).toBe(0)
   })
+
+  it('new feedback and comments by an erased person imported later carry no author name or email', async () => {
+    const e = `ier-new-${suffix}@example.com`
+    const p = mk('n', orgId)
+    projects.push(p)
+    await db.insert(project).values({ id: p.id, organizationId: orgId, slug: p.slug, name: p.slug })
+    await db.insert(product).values({ id: p.productId, projectId: p.id, name: 'Main', slug: 'main' })
+    await importInto(p, doc(e))
+    await eraseContact(orgId, e)
+
+    const again = doc(e)
+    again.feedback.push({ externalId: 'f-new', title: 'Brand new', authorExternalId: 'p-1', votes: [] })
+    again.comments.push({ externalId: 'c-new', feedbackExternalId: 'f-2', body: 'Later', authorExternalId: 'p-1' })
+    await importInto(p, again)
+
+    const after = await snapshot(p.id)
+    const ada = after.people.find((x) => x.externalId === 'p-1')!
+    expect(ada).toMatchObject({ name: null, email: null })
+    expect(after.fb['f-new']).toMatchObject({ authorName: null, authorEmail: null, importedPersonId: ada.id })
+    const c = after.comments.find((x) => x.externalId === 'c-new')!
+    expect(c).toMatchObject({ authorName: null, authorEmail: null, importedPersonId: ada.id })
+  })
+
+  it('erasure scrubs the payload of a committing run too', async () => {
+    const e = `ier-committing-${suffix}@example.com`
+    const p = mk('m', orgId)
+    projects.push(p)
+    await db.insert(project).values({ id: p.id, organizationId: orgId, slug: p.slug, name: p.slug })
+    await db.insert(product).values({ id: p.productId, projectId: p.id, name: 'Main', slug: 'main' })
+    const runId = await draftRun(p, doc(e))
+    await db.update(importRun).set({ status: 'committing' }).where(eq(importRun.id, runId))
+    await eraseContact(orgId, e)
+    const [batch] = await db.select().from(importRunBatch).where(eq(importRunBatch.runId, runId))
+    expect((batch.payload.people as Array<{ externalId: string }>).map((x) => x.externalId)).toEqual(['p-2'])
+  })
 })

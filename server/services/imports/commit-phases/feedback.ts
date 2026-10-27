@@ -5,7 +5,7 @@ import { feedback } from '~/server/database/schema/feedback'
 import type { ImportFeedback } from '../format'
 import { SYNC_FIELDS, deepEqual, feedbackIncoming, planFieldSync, snapshotFor, unknownAuthorIssue } from '../planner'
 import { resolveFeedbackStatus } from '../taxonomy'
-import { loadPeople, lockPersonClaims, sourceDate, type CommitPhase, type PersonRef } from './context'
+import { loadPeople, lockPeople, sourceDate, type CommitPhase, type PersonRef } from './context'
 
 /**
  * Feedback: insert on (projectId, externalSource, externalId), else Veerify-wins sync of SYNC_FIELDS.feedback.
@@ -54,10 +54,17 @@ export const feedbackPhase: CommitPhase<Map<string, PersonRef>, ImportFeedback> 
     }
 
     const outcome = await db.transaction(async (tx) => {
-      const claimedBy = person ? ((await lockPersonClaims(tx, [person.id])).get(person.id) ?? null) : null
+      const locked = person ? (await lockPeople(tx, [person.id])).get(person.id) : undefined
+      const claimedBy = locked?.claimedByUserId ?? null
       const [inserted] = await tx
         .insert(feedback)
-        .values({ ...values, authorUserId: claimedBy, importSnapshot: snapshotFor('feedback', values) })
+        .values({
+          ...values,
+          authorName: locked?.name ?? null,
+          authorEmail: locked?.email ?? null,
+          authorUserId: claimedBy,
+          importSnapshot: snapshotFor('feedback', values),
+        })
         .onConflictDoNothing({ target: [feedback.projectId, feedback.externalSource, feedback.externalId] })
         .returning({ id: feedback.id })
       if (inserted) return { result: 'create' as const, kept: false }

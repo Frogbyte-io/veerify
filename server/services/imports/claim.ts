@@ -99,6 +99,10 @@ export async function claimImportedActivity(userId: string, email: string): Prom
  * also for claimed people). The person is also removed from the staged payloads of runs that are still draft or
  * committing. An erased person has no email, so claiming (which matches `lower(email)`) never finds it again.
  * Returns the number of people tombstoned. Runs in the caller's transaction.
+ *
+ * Accepted race: a commit that is still working from a stale in-memory batch and inserts a brand-new person for this
+ * just-erased email (the person row did not exist when erasure ran) is not caught for that advance; the next erasure
+ * request removes it. Records of existing people are safe (see `lockPeople`).
  */
 export async function eraseImportedPeople(
   organizationId: string,
@@ -106,16 +110,26 @@ export async function eraseImportedPeople(
   tx: Pick<typeof db, 'execute'>
 ): Promise<number> {
   const orgProjects = sql`SELECT id FROM project WHERE organization_id = ${organizationId}`
-  const people = sql`
-    SELECT ip.id FROM imported_person ip
-    WHERE lower(ip.email) = lower(${email}) AND ip.erased_at IS NULL AND ip.project_id IN (${orgProjects})
-  `
-  await tx.execute(sql`
-    UPDATE feedback SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${people})
+  // Tombstone first: the row update takes the person's lock, which serializes against the commit engine's per-record
+  // `FOR SHARE` (lockPeople). A record inserted afterwards reads the erased state; one inserted before is nulled below.
+  const erased = await tx.execute<{ id: string }>(sql`
+    UPDATE imported_person SET name = NULL, email = NULL, avatar_url = NULL, erased_at = now(), updated_at = now()
+    WHERE lower(email) = lower(${email}) AND erased_at IS NULL AND project_id IN (${orgProjects})
+    RETURNING id
   `)
-  await tx.execute(sql`
-    UPDATE feedback_comment SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${people})
-  `)
+  const ids = erased.rows.map((r) => r.id)
+  if (ids.length) {
+    const idList = sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `
+    )
+    await tx.execute(
+      sql`UPDATE feedback SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${idList})`
+    )
+    await tx.execute(
+      sql`UPDATE feedback_comment SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${idList})`
+    )
+  }
   await tx.execute(sql`
     UPDATE import_run_batch b
     SET payload = jsonb_set(
@@ -129,11 +143,7 @@ export async function eraseImportedPeople(
         SELECT r.id FROM import_run r WHERE r.status IN ('draft', 'committing') AND r.project_id IN (${orgProjects})
       )
   `)
-  const erased = await tx.execute(sql`
-    UPDATE imported_person SET name = NULL, email = NULL, avatar_url = NULL, erased_at = now(), updated_at = now()
-    WHERE id IN (${people})
-  `)
-  return erased.rowCount ?? 0
+  return ids.length
 }
 
 /**

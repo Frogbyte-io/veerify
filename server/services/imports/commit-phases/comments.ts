@@ -16,7 +16,7 @@ import {
 import {
   loadFeedback,
   loadPeople,
-  lockPersonClaims,
+  lockPeople,
   sourceDate,
   type CommitContext,
   type CommitPhase,
@@ -113,7 +113,8 @@ export const commentsPhase: CommitPhase<CommentState, ImportComment> = {
 
     const outcome = await db.transaction(async (tx) => {
       // Attributed only to the user who already claimed the person (see lockPersonClaims).
-      const claimedBy = person ? ((await lockPersonClaims(tx, [person.id])).get(person.id) ?? null) : null
+      const locked = person ? (await lockPeople(tx, [person.id])).get(person.id) : undefined
+      const claimedBy = locked?.claimedByUserId ?? null
       let parentCommentId: string | null = null
       if (rec.parentExternalId !== undefined) {
         const [parent] = await tx
@@ -130,8 +131,8 @@ export const commentsPhase: CommitPhase<CommentState, ImportComment> = {
         parentCommentId,
         body: rec.body,
         isInternal: rec.isInternal ?? false,
-        authorName: person?.name ?? null,
-        authorEmail: person?.email ?? null,
+        authorName: locked?.name ?? null,
+        authorEmail: locked?.email ?? null,
         importedPersonId: person?.id ?? null,
         externalSource: run.source,
         externalId: rec.externalId,
