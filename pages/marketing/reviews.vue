@@ -1,50 +1,53 @@
 <template>
-  <div class="mx-auto max-w-4xl space-y-6 p-6" data-testid="marketing-reviews-page">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-3xl font-bold text-foreground">Reviews</h1>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Ask happy customers for a review or a testimonial, and show the best ones on your public page.
-        </p>
+  <PageContainer data-testid="marketing-reviews-page">
+    <PageHeader
+      title="Reviews"
+      description="Ask happy customers for a review or a testimonial, and show the best ones on your public page."
+    />
+
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled" class="space-y-6">
+        <Skeleton class="h-40 w-full" />
+        <Skeleton class="h-64 w-full" />
+        <Skeleton class="h-64 w-full" />
       </div>
-      <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-    </div>
 
-    <div v-if="!pickerSettled" class="space-y-4">
-      <Skeleton class="h-40 w-full" />
-      <Skeleton class="h-64 w-full" />
-    </div>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to ask for reviews.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
-    <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-      The project could not be loaded. Use Retry above to try again.
-    </div>
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
-    <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to ask for reviews.</div>
-
-    <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
-
-    <template v-else>
-      <MarketingReviewsSettings
-        :key="`settings-${project.id}`"
-        :project-id="project.id"
-        @forbidden="onForbidden"
-        @permissions="onPermissions"
-      />
-      <MarketingReviewsRequests
-        :key="`requests-${project.id}`"
-        :project-id="project.id"
-        :can-manage="canManage"
-        @forbidden="onForbidden"
-      />
-      <MarketingReviewsTestimonials
-        :key="`testimonials-${project.id}`"
-        :project-id="project.id"
-        :project="project"
-        :can-manage="canManage"
-        @forbidden="onForbidden"
-      />
+      <template v-else>
+        <MarketingReviewsSettings
+          :key="`settings-${project.id}`"
+          :project-id="project.id"
+          @forbidden="onForbidden"
+          @permissions="onPermissions"
+        />
+        <MarketingReviewsRequests
+          :key="`requests-${project.id}`"
+          :project-id="project.id"
+          :can-manage="canManage"
+          @forbidden="onForbidden"
+        />
+        <MarketingReviewsTestimonials
+          :key="`testimonials-${project.id}`"
+          :project-id="project.id"
+          :project="project"
+          :can-manage="canManage"
+          @forbidden="onForbidden"
+        />
+      </template>
     </template>
-  </div>
+  </PageContainer>
 </template>
 
 <script>
