@@ -2786,6 +2786,32 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/imports/schema": {
+    "get": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Get the veerify-import/1 JSON Schema",
+      "description": "Returns the import format identifier, its JSON Schema and a small valid example document.",
+      "operationId": "getImportSchema",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Format identifier, JSON Schema and example"
+        },
+        "401": {
+          "description": "Not authenticated"
+        }
+      }
+    }
+  },
   "/api/marketing/google/callback": {
     "get": {
       "tags": [

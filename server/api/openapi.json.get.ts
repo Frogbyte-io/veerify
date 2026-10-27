@@ -33,6 +33,7 @@ export default defineEventHandler(() => {
       { name: 'App API', description: 'Public API for apps submitting feedback with a project app key' },
       { name: 'User', description: 'Your account and personal API keys' },
       { name: 'MCP', description: 'Model Context Protocol endpoint for agents' },
+      { name: 'Imports', description: 'Import feedback, roadmap and changelog from other sources' },
       {
         name: 'Support',
         description: 'Support platform: contacts, companies, inboxes, conversations, tags, and project settings',
