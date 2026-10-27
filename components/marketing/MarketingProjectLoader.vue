@@ -1,10 +1,11 @@
 <template>
-  <div data-testid="marketing-project-loader">
-    <div v-if="error" class="flex items-center gap-2 text-sm text-destructive">
-      <span>Failed to load the project</span>
-      <Button variant="outline" size="sm" @click="load">Retry</Button>
-    </div>
-  </div>
+  <MarketingLoadError
+    v-if="error"
+    data-testid="marketing-project-loader"
+    title="Failed to load the project"
+    :message="error"
+    @retry="load()"
+  />
 </template>
 
 <script>
@@ -17,7 +18,8 @@ import { cachedActiveProject, loadActiveProject } from '~/lib/active-project'
  * (id, slug, name, role, settings, isPublic, organization, products, modules),
  * or null when the user has no project yet, once after the initial load and
  * again whenever the active project is switched. Emits `error` when loading
- * fails; renders a Retry button in that case and nothing otherwise.
+ * fails; renders the page's single error card with a retry in that case and
+ * nothing otherwise. Pages hide their content on `error` and add no error of their own.
  */
 export default {
   name: 'MarketingProjectLoader',

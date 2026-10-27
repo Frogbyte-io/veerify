@@ -1,105 +1,99 @@
 <template>
-  <div class="space-y-6 p-6" data-testid="marketing-search-page">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-3xl font-bold text-foreground">Search</h1>
-        <p class="mt-1 text-sm text-muted-foreground">Clicks, impressions and queries from Google Search Console.</p>
+  <PageContainer data-testid="marketing-search-page">
+    <PageHeader title="Search" description="Clicks, impressions and queries from Google Search Console." />
+
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || isLoading" class="space-y-6">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Skeleton class="h-24" />
+          <Skeleton class="h-24" />
+          <Skeleton class="h-24" />
+          <Skeleton class="h-24" />
+        </div>
+        <Skeleton class="h-64 w-full" />
+        <Skeleton class="h-64 w-full" />
       </div>
-      <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-    </div>
 
-    <div v-if="!pickerSettled" class="space-y-4">
-      <Skeleton class="h-24 w-full" />
-      <Skeleton class="h-64 w-full" />
-    </div>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to see its search performance.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
-    <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-      The project could not be loaded. Use Retry above to try again.
-    </div>
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
-    <div v-else-if="!project" class="text-sm text-muted-foreground">
-      Create a project to see its search performance.
-    </div>
+      <MarketingLoadError v-else-if="error" title="Failed to load search data" :message="error" @retry="load()" />
 
-    <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
-
-    <div v-else-if="isLoading" class="space-y-4">
-      <Skeleton class="h-24 w-full" />
-      <Skeleton class="h-64 w-full" />
-    </div>
-
-    <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-      <span>{{ error }}</span>
-      <Button variant="outline" size="sm" @click="load">Retry</Button>
-    </div>
-
-    <div
-      v-else-if="!data || !data.site || !data.site.verified"
-      class="rounded-lg border border-border bg-card p-6"
-      data-testid="search-not-verified"
-    >
-      <h2 class="text-lg font-semibold">Verify your site first</h2>
-      <p class="mt-1 text-sm text-muted-foreground">
+      <MarketingNotice
+        v-else-if="!data || !data.site || !data.site.verified"
+        title="Verify your site first"
+        data-testid="search-not-verified"
+      >
         Search Console data is only shown for sites you have proven you own. Add your site and verify it in
         <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
         .
-      </p>
-    </div>
+      </MarketingNotice>
 
-    <template v-else>
-      <p v-if="callbackError" class="text-sm text-destructive" role="alert" data-testid="search-callback-error">
-        {{ callbackError }}
-      </p>
-
-      <MarketingSearchConnect
-        v-if="!data.configured || !data.connection || data.connection.status === 'error'"
-        :configured="data.configured"
-        :can-manage="data.canManage"
-        :origin="data.site.origin"
-        :redirect-uri="data.redirectUri"
-        :reconnect="Boolean(data.connection)"
-        :connecting="connecting"
-        :connect-error="connectError"
-        @connect="connect"
-      />
-
-      <MarketingSearchStatus
-        v-if="data.connection && data.configured"
-        :project-id="project.id"
-        :connection="data.connection"
-        :can-manage="data.canManage"
-        @disconnected="onDisconnected"
-      />
-
-      <MarketingSearchProperty
-        v-if="data.connection && data.configured && data.connection.status === 'needs_property'"
-        :project-id="project.id"
-        :origin="data.site.origin"
-        :email="data.connection.email"
-        :can-manage="data.canManage"
-        @saved="onPropertySaved"
-        @revoked="load"
-      />
-
-      <template v-else-if="data.connection && data.connection.status === 'connected'">
-        <MarketingSearchKpis v-if="data.totals" :totals="data.totals" :days="data.days" />
-        <p
-          v-else
-          class="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
-          data-testid="search-no-data"
-        >
-          Connected. The first sync is queued and runs within the hour. Google only reports finished days, so new sites
-          can take a few days to show data.
+      <template v-else>
+        <p v-if="callbackError" class="text-sm text-destructive" role="alert" data-testid="search-callback-error">
+          {{ callbackError }}
         </p>
-        <MarketingSearchChart v-if="data.totals" :daily="data.daily" />
-        <MarketingSearchQueries
-          v-if="data.totals || data.topQueries.length"
-          :queries="data.topQueries"
-          :period-end="data.queriesPeriodEnd"
+
+        <MarketingSearchConnect
+          v-if="!data.configured || !data.connection || data.connection.status === 'error'"
+          :configured="data.configured"
+          :can-manage="data.canManage"
+          :origin="data.site.origin"
+          :redirect-uri="data.redirectUri"
+          :reconnect="Boolean(data.connection)"
+          :connecting="connecting"
+          :connect-error="connectError"
+          @connect="connect"
         />
+
+        <MarketingSearchStatus
+          v-if="data.connection && data.configured"
+          :project-id="project.id"
+          :connection="data.connection"
+          :can-manage="data.canManage"
+          @disconnected="onDisconnected"
+        />
+
+        <MarketingSearchProperty
+          v-if="data.connection && data.configured && data.connection.status === 'needs_property'"
+          :project-id="project.id"
+          :origin="data.site.origin"
+          :email="data.connection.email"
+          :can-manage="data.canManage"
+          @saved="onPropertySaved"
+          @revoked="load"
+        />
+
+        <template v-else-if="data.connection && data.connection.status === 'connected'">
+          <MarketingSearchKpis v-if="data.totals" :totals="data.totals" :days="data.days" />
+          <p
+            v-else
+            class="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
+            data-testid="search-no-data"
+          >
+            Connected. The first sync is queued and runs within the hour. Google only reports finished days, so new
+            sites can take a few days to show data.
+          </p>
+          <MarketingSearchChart v-if="data.totals" :daily="data.daily" />
+          <MarketingSearchQueries
+            v-if="data.totals || data.topQueries.length"
+            :queries="data.topQueries"
+            :period-end="data.queriesPeriodEnd"
+          />
+        </template>
       </template>
     </template>
-  </div>
+  </PageContainer>
 </template>
 
 <script>

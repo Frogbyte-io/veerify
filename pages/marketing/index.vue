@@ -1,31 +1,11 @@
 <template>
-  <div class="p-6 max-w-5xl mx-auto space-y-6" data-testid="marketing-overview-page">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing</h1>
-        <p class="text-muted-foreground mt-1">Get your project found by search engines, AI assistants and people</p>
-      </div>
-      <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-    </div>
+  <PageContainer data-testid="marketing-overview-page">
+    <PageHeader title="Marketing" description="Get your project found by search engines, AI assistants and people" />
 
-    <p v-if="pickerError" class="text-sm text-muted-foreground" data-testid="marketing-picker-error">
-      The project could not be loaded. Use Retry above to try again.
-    </p>
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
 
-    <template v-else-if="pickerReady">
-      <Card v-if="!project">
-        <CardContent class="py-10 text-center">
-          <p class="font-medium mb-1">No project yet</p>
-          <p class="text-sm text-muted-foreground mb-4">Marketing works on a project. Create one to get started.</p>
-          <Button as-child variant="outline">
-            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
-          </Button>
-        </CardContent>
-      </Card>
-
-      <MarketingDisabled v-else-if="disabledMessage !== null" :project="project" :message="disabledMessage" />
-
-      <div v-else-if="isLoading" class="space-y-6">
+    <template v-if="!pickerError">
+      <div v-if="!pickerReady || isLoading" class="space-y-6">
         <Skeleton class="h-40 w-full" />
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Skeleton class="h-40" />
@@ -35,17 +15,23 @@
         <Skeleton class="h-24 w-full" />
       </div>
 
-      <Card v-else-if="error">
-        <CardContent class="text-center py-8">
-          <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
-          <p class="font-medium mb-2">Failed to load the marketing overview</p>
-          <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
-          <Button variant="outline" @click="load">
-            <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
-            Try again
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to get started.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
           </Button>
-        </CardContent>
-      </Card>
+        </template>
+      </MarketingNotice>
+
+      <MarketingDisabled v-else-if="disabledMessage !== null" :project="project" :message="disabledMessage" />
+
+      <MarketingLoadError
+        v-else-if="error"
+        title="Failed to load the marketing overview"
+        :message="error"
+        @retry="load()"
+      />
 
       <template v-else-if="overview">
         <Card v-if="!setupComplete" data-testid="marketing-setup">
@@ -375,7 +361,7 @@
         </Card>
       </template>
     </template>
-  </div>
+  </PageContainer>
 </template>
 
 <script>

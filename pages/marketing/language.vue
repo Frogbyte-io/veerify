@@ -1,17 +1,18 @@
 <template>
-  <div class="space-y-6 p-6" data-testid="marketing-language-page">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-3xl font-bold text-foreground">Customer language</h1>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Find the words your customers use, and turn them into terms and prompts to track.
-        </p>
-      </div>
-      <div class="flex items-center gap-2">
-        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+  <PageContainer data-testid="marketing-language-page">
+    <PageHeader title="Customer language">
+      <template #description>
+        Find the words your customers use, and turn them into terms and prompts to track.
+        <span v-if="runError" class="mt-1 block min-h-5 text-destructive" role="alert" data-testid="language-run-error">
+          {{ runError }}
+        </span>
+        <span v-else class="mt-1 block min-h-5" data-testid="language-run-reason">{{
+          showContent ? runDisabledReason : ''
+        }}</span>
+      </template>
+      <template #actions>
         <Button
-          v-if="showContent"
-          :disabled="!canRunNow"
+          :disabled="!showContent || !canRunNow"
           :title="runDisabledReason"
           data-testid="language-run"
           @click="run"
@@ -22,71 +23,62 @@
           />
           {{ running ? 'Analyzing...' : 'Run analysis' }}
         </Button>
+      </template>
+    </PageHeader>
+
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || isLoading" class="grid gap-6 lg:grid-cols-[22rem_1fr]">
+        <Skeleton class="h-72 w-full" />
+        <div class="space-y-6">
+          <Skeleton class="h-48 w-full" />
+          <Skeleton class="h-64 w-full" />
+        </div>
       </div>
-    </div>
 
-    <p v-if="showContent && runDisabledReason" class="text-sm text-muted-foreground" data-testid="language-run-reason">
-      {{ runDisabledReason }}
-    </p>
-    <p v-if="runError" class="text-sm text-destructive" data-testid="language-run-error">{{ runError }}</p>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to analyze language.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </template>
+      </MarketingNotice>
 
-    <div v-if="!pickerSettled" class="space-y-4">
-      <Skeleton class="h-40 w-full" />
-      <Skeleton class="h-64 w-full" />
-    </div>
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
 
-    <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-      The project could not be loaded. Use Retry above to try again.
-    </div>
+      <MarketingLoadError v-else-if="error" title="Failed to load customer language" :message="error" @retry="load()" />
 
-    <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to analyze language.</div>
-
-    <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
-
-    <div v-else-if="isLoading" class="space-y-4">
-      <Skeleton class="h-48 w-full" />
-      <Skeleton class="h-64 w-full" />
-    </div>
-
-    <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-      <span>{{ error }}</span>
-      <Button variant="outline" size="sm" @click="load">Retry</Button>
-    </div>
-
-    <div v-else-if="noSite" class="rounded-lg border border-border bg-card p-6" data-testid="language-no-site">
-      <h2 class="text-lg font-semibold">Add your site first</h2>
-      <p class="mt-1 text-sm text-muted-foreground">
+      <MarketingNotice v-else-if="noSite" title="Add your site first" data-testid="language-no-site">
         Customer language results are stored with your marketing site. Add it in
         <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
         .
-      </p>
-    </div>
+      </MarketingNotice>
 
-    <div v-else class="grid gap-6 lg:grid-cols-[22rem_1fr]">
-      <MarketingLanguageConsent :consent="consent" :can-manage="consent.canManage" @changed="refresh" />
+      <div v-else class="grid gap-6 lg:grid-cols-[22rem_1fr]">
+        <MarketingLanguageConsent :consent="consent" :can-manage="consent.canManage" @changed="refresh" />
 
-      <div>
-        <div v-if="running" class="space-y-4">
-          <Skeleton class="h-40 w-full" />
-          <Skeleton class="h-48 w-full" />
-        </div>
-        <MarketingLanguageResults
-          v-else-if="insight"
-          :insight="insight"
-          :applying="applying"
-          :apply-error="applyError"
-          :selection-reset-key="selectionResetKey"
-          @apply="apply"
-        />
-        <div v-else class="rounded-lg border border-border bg-card p-6" data-testid="language-empty">
-          <h2 class="text-lg font-semibold">No analysis yet</h2>
-          <p class="mt-1 text-sm text-muted-foreground">
+        <div>
+          <div v-if="running" class="space-y-4">
+            <Skeleton class="h-40 w-full" />
+            <Skeleton class="h-48 w-full" />
+          </div>
+          <MarketingLanguageResults
+            v-else-if="insight"
+            :insight="insight"
+            :applying="applying"
+            :apply-error="applyError"
+            :selection-reset-key="selectionResetKey"
+            @apply="apply"
+          />
+          <MarketingNotice v-else title="No analysis yet" data-testid="language-empty">
             Allow a source on the left, then run an analysis. It needs at least 10 items from the last 90 days.
-          </p>
+          </MarketingNotice>
         </div>
       </div>
-    </div>
-  </div>
+    </template>
+  </PageContainer>
 </template>
 
 <script>

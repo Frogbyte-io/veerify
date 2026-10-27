@@ -1,139 +1,145 @@
 <template>
-  <div class="space-y-6 p-6" data-testid="ai-visibility-page">
-    <div class="flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1 class="text-3xl font-bold text-foreground">AI visibility</h1>
-        <p class="mt-1 text-sm text-muted-foreground">
-          See how often AI assistants recommend your product, and which sources they rely on.
-        </p>
+  <PageContainer data-testid="ai-visibility-page">
+    <PageHeader
+      title="AI visibility"
+      description="See how often AI assistants recommend your product, and which sources they rely on."
+    >
+      <template #actions>
+        <Button
+          class="gap-2"
+          :disabled="!canRunNow"
+          :title="runDisabledReason"
+          data-testid="visibility-run-now"
+          @click="startRun"
+        >
+          <Icon name="lucide:play" class="h-4 w-4" />
+          Run now
+        </Button>
+      </template>
+    </PageHeader>
+
+    <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+
+    <template v-if="!pickerError">
+      <div v-if="!pickerSettled || initialLoading" class="space-y-6">
+        <Skeleton class="h-40 w-full" />
+        <Skeleton class="h-48 w-full" />
+        <Skeleton class="h-28 w-full" />
+        <Skeleton class="h-64 w-full" />
       </div>
-      <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-    </div>
 
-    <div v-if="!pickerSettled" class="space-y-4">
-      <Skeleton class="h-24 w-full" />
-      <Skeleton class="h-48 w-full" />
-    </div>
-
-    <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-      The project could not be loaded. Use Retry above to try again.
-    </div>
-
-    <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to get started.</div>
-
-    <!-- Marketing off (403) -->
-    <MarketingDisabled v-else-if="marketingOff" :project="project" :message="marketingOffMessage" />
-
-    <div v-else-if="setupLoading" class="space-y-4">
-      <Skeleton class="h-24 w-full" />
-      <Skeleton class="h-48 w-full" />
-    </div>
-
-    <div v-else-if="setupError" class="flex items-center gap-2 text-sm text-destructive">
-      <span>{{ setupError }}</span>
-      <Button variant="outline" size="sm" @click="loadSetup">Retry</Button>
-    </div>
-
-    <template v-else-if="project && setup">
-      <!-- Setup checklist -->
-      <Card v-if="setupIssues.length" data-testid="visibility-setup-needed">
-        <CardHeader>
-          <CardTitle role="heading" aria-level="2">Finish setup</CardTitle>
-          <CardDescription>A few things are needed before AI visibility can run.</CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-3">
-          <ul class="space-y-2 text-sm">
-            <li v-for="issue in setupIssues" :key="issue" class="flex items-center gap-2">
-              <Icon name="lucide:circle-alert" class="h-4 w-4 text-muted-foreground" />
-              {{ issue }}
-            </li>
-          </ul>
-          <Button as-child>
-            <NuxtLink :to="settingsLink">Go to Marketing settings</NuxtLink>
+      <MarketingNotice v-else-if="!project" title="No project yet">
+        Marketing works on a project. Create one to get started.
+        <template #actions>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
           </Button>
-        </CardContent>
-      </Card>
+        </template>
+      </MarketingNotice>
 
-      <VisibilityPrompts v-if="setup.hasSite" :project-id="project.id" @changed="loadSetup(true)" />
+      <!-- Marketing off (403) -->
+      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="marketingOffMessage" />
 
-      <!-- Run -->
-      <Card v-if="setup.hasSite" data-testid="visibility-run">
-        <CardHeader class="flex flex-row items-start justify-between gap-4 space-y-0">
-          <div>
+      <MarketingLoadError
+        v-else-if="setupError"
+        title="Failed to load AI visibility"
+        :message="setupError"
+        @retry="loadAll()"
+      />
+
+      <template v-else-if="project && setup">
+        <!-- Setup checklist -->
+        <Card v-if="setupIssues.length" data-testid="visibility-setup-needed">
+          <CardHeader>
+            <CardTitle role="heading" aria-level="2">Finish setup</CardTitle>
+            <CardDescription>A few things are needed before AI visibility can run.</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-3">
+            <ul class="space-y-2 text-sm">
+              <li v-for="issue in setupIssues" :key="issue" class="flex items-center gap-2">
+                <Icon name="lucide:circle-alert" class="h-4 w-4 text-muted-foreground" />
+                {{ issue }}
+              </li>
+            </ul>
+            <Button as-child>
+              <NuxtLink :to="settingsLink">Go to Marketing settings</NuxtLink>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <VisibilityPrompts v-if="setup.hasSite" :project-id="project.id" @changed="loadSetup(true)" />
+
+        <!-- Run -->
+        <Card v-if="setup.hasSite" data-testid="visibility-run">
+          <CardHeader>
             <CardTitle role="heading" aria-level="2">Run</CardTitle>
             <CardDescription>
               Runs happen weekly. Each prompt is sent to every connected provider several times, using your own API
-              keys.
+              keys. Use Run now above to start one.
             </CardDescription>
-          </div>
-          <Button
-            class="gap-2"
-            :disabled="!setup.canRun || runActive || starting"
-            data-testid="visibility-run-now"
-            @click="startRun"
-          >
-            <Icon name="lucide:play" class="h-4 w-4" />
-            Run now
-          </Button>
-        </CardHeader>
-        <CardContent class="space-y-2">
-          <p v-if="runError" class="text-sm text-destructive">{{ runError }}</p>
-          <div v-if="runsError" class="flex items-center gap-2 text-sm text-destructive">
-            <span>{{ runsError }}</span>
-            <Button variant="outline" size="sm" @click="loadRuns">Retry</Button>
-          </div>
-          <Skeleton v-else-if="runsLoading" class="h-6 w-full" />
-          <template v-else-if="latestRun">
-            <div class="flex items-center gap-2 text-sm">
-              <Badge :variant="statusVariant(latestRun.status)">{{ statusLabel(latestRun.status) }}</Badge>
-              <span class="text-muted-foreground">Started {{ formatDateTime(latestRun.createdAt) }}</span>
+          </CardHeader>
+          <CardContent class="space-y-2">
+            <p v-if="runError" class="text-sm text-destructive">{{ runError }}</p>
+            <div v-if="runsError" class="flex items-center gap-2 text-sm text-destructive">
+              <span>{{ runsError }}</span>
+              <Button variant="outline" size="sm" @click="loadRuns">Retry</Button>
             </div>
-            <p v-if="runActive" class="text-sm text-muted-foreground" data-testid="visibility-run-in-progress">
-              A run is in progress, started {{ formatAgo(latestRun.createdAt) }}. Run now is available again when it
-              finishes.
-            </p>
-            <div v-if="runActive" data-testid="visibility-progress">
-              <div class="h-2 overflow-hidden rounded-full bg-muted">
-                <div class="h-full rounded-full bg-primary transition-all" :style="{ width: `${progressPercent}%` }" />
+            <Skeleton v-else-if="runsLoading" class="h-6 w-full" />
+            <template v-else-if="latestRun">
+              <div class="flex items-center gap-2 text-sm">
+                <Badge :variant="statusVariant(latestRun.status)">{{ statusLabel(latestRun.status) }}</Badge>
+                <span class="text-muted-foreground">Started {{ formatDateTime(latestRun.createdAt) }}</span>
               </div>
-              <p class="mt-1 text-xs text-muted-foreground">
-                {{ finishedAnswers }} of {{ latestRun.progress.total }} answers collected
+              <p v-if="runActive" class="text-sm text-muted-foreground" data-testid="visibility-run-in-progress">
+                A run is in progress, started {{ formatAgo(latestRun.createdAt) }}. Run now is available again when it
+                finishes.
               </p>
-            </div>
-            <p v-else-if="latestRun.progress.failed > 0" class="text-xs text-muted-foreground">
-              {{ latestRun.progress.failed }} of {{ latestRun.progress.total }} answers failed (for example a rejected
-              key or a reached budget).
-            </p>
-          </template>
-          <p v-else class="text-sm text-muted-foreground">No runs yet.</p>
-        </CardContent>
-      </Card>
+              <div v-if="runActive" data-testid="visibility-progress">
+                <div class="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    class="h-full rounded-full bg-primary transition-all"
+                    :style="{ width: `${progressPercent}%` }"
+                  />
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  {{ finishedAnswers }} of {{ latestRun.progress.total }} answers collected
+                </p>
+              </div>
+              <p v-else-if="latestRun.progress.failed > 0" class="text-xs text-muted-foreground">
+                {{ latestRun.progress.failed }} of {{ latestRun.progress.total }} answers failed (for example a rejected
+                key or a reached budget).
+              </p>
+            </template>
+            <p v-else class="text-sm text-muted-foreground">No runs yet.</p>
+          </CardContent>
+        </Card>
 
-      <!-- Results -->
-      <section v-if="setup.hasSite" class="space-y-3">
-        <h2 class="text-xl font-semibold">Results</h2>
-        <div v-if="summaryLoading" class="space-y-3">
-          <Skeleton class="h-24 w-full" />
-          <Skeleton class="h-48 w-full" />
-        </div>
-        <div v-else-if="summaryError" class="flex items-center gap-2 text-sm text-destructive">
-          <span>{{ summaryError }}</span>
-          <Button variant="outline" size="sm" @click="loadSummary">Retry</Button>
-        </div>
-        <VisibilityResults v-else-if="summary" :data="summary" @select-prompt="openPrompt" />
-      </section>
+        <!-- Results -->
+        <section v-if="setup.hasSite" class="space-y-3">
+          <h2 class="text-xl font-semibold">Results</h2>
+          <div v-if="summaryLoading" class="space-y-3">
+            <Skeleton class="h-24 w-full" />
+            <Skeleton class="h-48 w-full" />
+          </div>
+          <div v-else-if="summaryError" class="flex items-center gap-2 text-sm text-destructive">
+            <span>{{ summaryError }}</span>
+            <Button variant="outline" size="sm" @click="loadSummary">Retry</Button>
+          </div>
+          <VisibilityResults v-else-if="summary" :data="summary" @select-prompt="openPrompt" />
+        </section>
 
-      <VisibilityLlmsTxt v-if="setup.hasSite" :project-id="project.id" />
+        <VisibilityLlmsTxt v-if="setup.hasSite" :project-id="project.id" />
 
-      <VisibilityAnswersDialog
-        v-model:open="dialogOpen"
-        :project-id="project.id"
-        :run-id="summary && summary.run ? summary.run.id : null"
-        :prompt-id="dialogPrompt ? dialogPrompt.id : null"
-        :prompt-text="dialogPrompt ? dialogPrompt.text : ''"
-      />
+        <VisibilityAnswersDialog
+          v-model:open="dialogOpen"
+          :project-id="project.id"
+          :run-id="summary && summary.run ? summary.run.id : null"
+          :prompt-id="dialogPrompt ? dialogPrompt.id : null"
+          :prompt-text="dialogPrompt ? dialogPrompt.text : ''"
+        />
+      </template>
     </template>
-  </div>
+  </PageContainer>
 </template>
 
 <script>
@@ -157,6 +163,7 @@ export default {
       marketingOff: false,
       marketingOffMessage: '',
       setup: null,
+      initialLoading: false,
       setupLoading: false,
       setupError: null,
       runs: [],
@@ -189,6 +196,13 @@ export default {
       if (!s.hasUsableKey) issues.push('Add a valid Anthropic, OpenAI, Gemini or Perplexity API key')
       if (s.hasSite && s.activePromptCount === 0) issues.push('Add at least one active prompt below')
       return issues
+    },
+    canRunNow() {
+      return Boolean(this.setup?.canRun) && !this.initialLoading && !this.runActive && !this.starting
+    },
+    runDisabledReason() {
+      if (this.initialLoading || !this.setup || this.setup.canRun) return ''
+      return 'Finish the setup first.'
     },
     latestRun() {
       return this.runs[0] || null
@@ -244,11 +258,27 @@ export default {
       this.runError = null
       this.marketingOff = false
       this.dialogOpen = false
+      this.initialLoading = false
       if (!project) return
-      await this.loadSetup()
-      if (this.isCurrent(project.id) && this.setup?.hasSite) {
-        await Promise.all([this.loadRuns(), this.loadSummary()])
+      await this.loadAll()
+    },
+
+    /** Everything the page shows, fetched in parallel behind one skeleton. */
+    async loadAll() {
+      if (!this.project) return
+      const projectId = this.project.id
+      this.initialLoading = true
+      this.setupError = null
+      this.runsError = null
+      this.summaryError = null
+      await Promise.all([this.loadSetup(), this.loadRuns(), this.loadSummary()])
+      if (!this.isCurrent(projectId)) return
+      // Without a site there is nothing to run or summarise, so failures there are not worth showing.
+      if (!this.setup?.hasSite) {
+        this.runsError = null
+        this.summaryError = null
       }
+      this.initialLoading = false
     },
 
     async loadSetup(quiet = false) {
