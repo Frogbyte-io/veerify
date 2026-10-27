@@ -196,6 +196,24 @@ describe('resolveUserApiKeyPrincipal', () => {
     expect(state.updates.every((u) => !('activeOrganizationId' in u))).toBe(true)
   })
 
+  it('nulls a stored project from another org when an org header is applied, and flags the override', async () => {
+    setRow({ activeOrganizationId: 'org-1', activeProjectId: 'p1' })
+    state.projectsById.p1 = { id: 'p1', organizationId: 'org-1' }
+    state.orgRows = [{ id: 'org-2' }]
+    const p = await resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Organization': 'org-two' }))
+    expect(p?.session.activeOrganizationId).toBe('org-2')
+    expect(p?.session.activeProjectId).toBeNull()
+    expect(p?.credential).toEqual({ kind: 'user_api_key', id: 'key-1', contextOverride: true })
+  })
+
+  it('keeps a stored project that belongs to the header org', async () => {
+    setRow({ activeOrganizationId: 'org-1', activeProjectId: 'p1' })
+    state.projectsById.p1 = { id: 'p1', organizationId: 'org-2' }
+    state.orgRows = [{ id: 'org-2' }]
+    const p = await resolveUserApiKeyPrincipal(bearer({ 'X-Veerify-Organization': 'org-two' }))
+    expect(p?.session.activeProjectId).toBe('p1')
+  })
+
   it('403s when the project header names a project the user cannot open', async () => {
     setRow()
     state.projectsById.p2 = { id: 'p2', organizationId: 'org-9' }

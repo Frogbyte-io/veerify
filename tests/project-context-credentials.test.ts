@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
-  updates: [] as { table: string; values: Record<string, unknown> }[],
+  updates: [] as { table: string; values: Record<string, unknown>; where: unknown }[],
+  roleDenied: false,
   firstOrg: null as string | null,
   projects: {} as Record<string, { id: string; organizationId: string }>,
   accessible: {} as Record<string, { id: string; organizationId: string }[]>,
@@ -13,11 +14,16 @@ vi.stubGlobal('createError', (input: { statusCode: number; statusMessage: string
   Object.assign(new Error(input.statusMessage), input)
 )
 
+vi.mock('drizzle-orm', () => ({
+  eq: (col: string, val: unknown) => ({ op: 'eq', col, val }),
+  and: (...conds: unknown[]) => ({ op: 'and', conds }),
+  asc: (c: unknown) => c,
+}))
 vi.mock('~/server/database/schema/auth', () => ({
   member: { organizationId: 'organizationId', userId: 'userId', createdAt: 'createdAt' },
-  session: { __t: 'session', token: 'token' },
+  session: { __t: 'session', token: 'session.token' },
 }))
-vi.mock('~/server/database/schema/credentials', () => ({ userApiKey: { __t: 'user_api_key', id: 'id' } }))
+vi.mock('~/server/database/schema/credentials', () => ({ userApiKey: { __t: 'user_api_key', id: 'key.id', userId: 'key.userId' } }))
 vi.mock('~/server/database/drizzle', () => ({
   db: {
     select: () => {
@@ -31,8 +37,8 @@ vi.mock('~/server/database/drizzle', () => ({
     },
     update: (table: { __t: string }) => ({
       set: (values: Record<string, unknown>) => ({
-        where: async () => {
-          state.updates.push({ table: table.__t, values })
+        where: async (cond: unknown) => {
+          state.updates.push({ table: table.__t, values, where: cond })
         },
       }),
     }),
@@ -41,7 +47,7 @@ vi.mock('~/server/database/drizzle', () => ({
 vi.mock('~/server/utils/auth-middleware', () => ({ requireAuth: async () => state.auth }))
 vi.mock('~/server/utils/project-access', () => ({
   getProjectById: async (id: string) => state.projects[id] ?? null,
-  resolveProjectRole: async (p: { id: string }) => (state.projects[p.id] ? 'member' : null),
+  resolveProjectRole: async (p: { id: string }) => (state.projects[p.id] && !state.roleDenied ? 'member' : null),
   listAccessibleProjects: async (orgId: string) => state.accessible[orgId] ?? [],
   getOrganizationRole: async (orgId: string) => state.orgRoles[orgId] ?? null,
 }))
@@ -54,7 +60,17 @@ import {
   setActiveProjectForSession,
 } from '~/server/utils/project-context'
 
-const keySession = (active: { org?: string | null; project?: string | null } = {}) => ({
+const KEY_TARGET = { kind: 'user_api_key' as const, id: 'k1', userId: 'u1' }
+const keyWhere = {
+  op: 'and',
+  conds: [
+    { op: 'eq', col: 'key.id', val: 'k1' },
+    { op: 'eq', col: 'key.userId', val: 'u1' },
+  ],
+}
+const tokenWhere = { op: 'eq', col: 'session.token', val: 'tok' }
+
+const keySession = (active: { org?: string | null; project?: string | null } = {}, override = false) => ({
   user: { id: 'u1' },
   session: {
     id: 'apikey:k1',
@@ -62,7 +78,7 @@ const keySession = (active: { org?: string | null; project?: string | null } = {
     activeOrganizationId: active.org ?? null,
     activeProjectId: active.project ?? null,
   },
-  credential: { kind: 'user_api_key', id: 'k1' },
+  credential: override ? { kind: 'user_api_key', id: 'k1', contextOverride: true } : { kind: 'user_api_key', id: 'k1' },
 })
 const cookieSession = () => ({
   user: { id: 'u1' },
@@ -71,6 +87,7 @@ const cookieSession = () => ({
 
 beforeEach(() => {
   state.updates = []
+  state.roleDenied = false
   state.firstOrg = null
   state.projects = { p1: { id: 'p1', organizationId: 'o1' } }
   state.accessible = { o1: [{ id: 'p1', organizationId: 'o1' }] }
@@ -79,22 +96,22 @@ beforeEach(() => {
 
 describe('contextTargetFor', () => {
   it('targets the key for credential principals and the token for sessions', () => {
-    expect(contextTargetFor(keySession() as never)).toEqual({ kind: 'user_api_key', id: 'k1' })
+    expect(contextTargetFor(keySession() as never)).toEqual({ kind: 'user_api_key', id: 'k1', userId: 'u1' })
     expect(contextTargetFor(cookieSession() as never)).toEqual({ kind: 'session', token: 'tok' })
   })
 })
 
 describe('key principals', () => {
   it('setActiveProjectForSession writes the key row, never session', async () => {
-    await setActiveProjectForSession({ target: { kind: 'user_api_key', id: 'k1' }, userId: 'u1', projectId: 'p1' })
+    await setActiveProjectForSession({ target: KEY_TARGET, userId: 'u1', projectId: 'p1' })
     expect(state.updates).toEqual([
-      { table: 'user_api_key', values: { activeOrganizationId: 'o1', activeProjectId: 'p1' } },
+      { table: 'user_api_key', values: { activeOrganizationId: 'o1', activeProjectId: 'p1' }, where: keyWhere },
     ])
   })
 
   it('setActiveOrganizationForSession writes the key row', async () => {
     await setActiveOrganizationForSession({
-      target: { kind: 'user_api_key', id: 'k1' },
+      target: KEY_TARGET,
       userId: 'u1',
       organizationId: 'o1',
     })
@@ -106,7 +123,7 @@ describe('key principals', () => {
     const result = await resolveActiveProjectForSession(keySession({ org: 'o1', project: 'deleted' }) as never)
     expect(result?.id).toBe('p1')
     expect(state.updates).toEqual([
-      { table: 'user_api_key', values: { activeOrganizationId: 'o1', activeProjectId: 'p1' } },
+      { table: 'user_api_key', values: { activeOrganizationId: 'o1', activeProjectId: 'p1' }, where: keyWhere },
     ])
   })
 
@@ -116,7 +133,58 @@ describe('key principals', () => {
     const result = await requireAuthWithOrganization({} as never)
     expect(result.organizationId).toBe('o1')
     expect(state.updates.map((u) => u.table)).toEqual(['user_api_key'])
-    expect(state.updates[0].values).toMatchObject({ activeOrganizationId: 'o1' })
+    expect(state.updates[0].values).toEqual({ activeOrganizationId: 'o1', activeProjectId: null })
+    expect(state.updates[0].where).toEqual(keyWhere)
+  })
+})
+
+describe('revoked access', () => {
+  it('falls back and repairs the key row when the project exists but access is gone', async () => {
+    state.firstOrg = 'o1'
+    state.roleDenied = true
+    state.projects.p2 = { id: 'p2', organizationId: 'o1' }
+    // p1 stays listed as accessible via the org listing (the listing is the access source of truth)
+    const result = await resolveActiveProjectForSession(keySession({ org: 'o1', project: 'p2' }) as never)
+    expect(result?.id).toBe('p1')
+    expect(state.updates).toEqual([
+      {
+        table: 'user_api_key',
+        values: { activeOrganizationId: 'o1', activeProjectId: 'p1' },
+        where: keyWhere,
+      },
+    ])
+  })
+})
+
+describe('per-request header context (contextOverride)', () => {
+  it('org header with a nulled project resolves to the header org without writing', async () => {
+    state.projects.b1 = { id: 'b1', organizationId: 'oB' }
+    state.accessible.oB = [{ id: 'b1', organizationId: 'oB' }]
+    state.firstOrg = 'o1'
+    const result = await resolveActiveProjectForSession(keySession({ org: 'oB', project: null }, true) as never)
+    expect(result?.id).toBe('b1')
+    expect(state.updates).toEqual([])
+  })
+
+  it('stale stored project with headers present falls back in memory only', async () => {
+    state.firstOrg = 'o1'
+    const result = await resolveActiveProjectForSession(keySession({ org: 'o1', project: 'deleted' }, true) as never)
+    expect(result?.id).toBe('p1')
+    expect(state.updates).toEqual([])
+  })
+
+  it('requireAuthWithOrganization does not persist a repaired org under override', async () => {
+    state.auth = keySession({}, true)
+    state.firstOrg = 'o1'
+    const result = await requireAuthWithOrganization({} as never)
+    expect(result.organizationId).toBe('o1')
+    expect(state.updates).toEqual([])
+  })
+
+  it('explicit set still persists with headers present', async () => {
+    await setActiveProjectForSession({ target: KEY_TARGET, userId: 'u1', projectId: 'p1' })
+    expect(state.updates).toHaveLength(1)
+    expect(state.updates[0].table).toBe('user_api_key')
   })
 })
 
@@ -126,5 +194,6 @@ describe('cookie sessions (regression)', () => {
     state.firstOrg = 'o1'
     await resolveActiveProjectForSession(cookieSession() as never)
     expect(state.updates.map((u) => u.table)).toEqual(['session', 'session'])
+    expect(state.updates.map((u) => u.where)).toEqual([tokenWhere, tokenWhere])
   })
 })

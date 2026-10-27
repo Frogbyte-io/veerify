@@ -82,6 +82,7 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
   let activeOrganizationId: string | undefined = row.activeOrganizationId ?? undefined
   let activeProjectId: string | null = row.activeProjectId ?? null
 
+  let contextOverride = false
   const orgHeader = readContextHeader(event, 'x-veerify-organization')
   if (orgHeader) {
     const [byId] = await db
@@ -100,6 +101,12 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
     const role = org ? await getOrganizationRole(org.id, owner.id) : null
     if (!org || !role) throw forbidden('Organization not found or not accessible')
     activeOrganizationId = org.id
+    contextOverride = true
+    // A stored project from another workspace must not survive an org override.
+    if (activeProjectId) {
+      const stored = await getProjectById(activeProjectId)
+      if (!stored || stored.organizationId !== org.id) activeProjectId = null
+    }
   }
 
   const projectHeader = readContextHeader(event, 'x-veerify-project')
@@ -117,6 +124,7 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
     if (!proj || !role) throw forbidden('Project not found or not accessible')
     activeProjectId = proj.id
     activeOrganizationId = proj.organizationId
+    contextOverride = true
   }
 
   // Fire-and-forget: a failed bookkeeping write must never fail the request.
@@ -142,6 +150,8 @@ export async function resolveUserApiKeyPrincipal(event: H3Event): Promise<AuthSe
       activeOrganizationId,
       activeProjectId,
     },
-    credential: { kind: 'user_api_key', id: row.id },
+    credential: contextOverride
+      ? { kind: 'user_api_key', id: row.id, contextOverride: true }
+      : { kind: 'user_api_key', id: row.id },
   }
 }

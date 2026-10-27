@@ -33,7 +33,8 @@ export interface AuthSession {
     activeProjectId?: string | null
   }
   /** Set when the principal was resolved from a personal API key rather than a browser session. */
-  credential?: { kind: 'user_api_key'; id: string }
+  /** contextOverride: org/project came from request headers, so they must not be persisted. */
+  credential?: { kind: 'user_api_key'; id: string; contextOverride?: boolean }
 }
 
 /**

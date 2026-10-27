@@ -1,13 +1,13 @@
 /**
- * Active project for a session (replaces the old active-team context).
+ * Active project for a principal (replaces the old active-team context).
  *
- * The session row stores `activeOrganizationId` and `activeProjectId`. Every
+ * The session row (or the user_api_key row for key principals) stores `activeOrganizationId` and `activeProjectId`. Every
  * dashboard request that works "in the current project" resolves it through
  * `requireAuthWithResolvedProject`, which validates the stored project against
- * the access model in `project-access.ts` and repairs the session when the
+ * the access model in `project-access.ts` and repairs the stored context when the
  * project was deleted or access was revoked.
  */
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { member, session as sessionTable } from '~/server/database/schema/auth'
@@ -30,12 +30,12 @@ export interface ResolvedProject extends ProjectRow {
 }
 
 /** Where active context lives: the session row (cookie) or the API key row (credential principal). */
-export type ContextTarget = { kind: 'session'; token: string } | { kind: 'user_api_key'; id: string }
+export type ContextTarget = { kind: 'session'; token: string } | { kind: 'user_api_key'; id: string; userId: string }
 
 type ContextTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export function contextTargetFor(session: AuthSession): ContextTarget {
-  if (session.credential) return { kind: session.credential.kind, id: session.credential.id }
+  if (session.credential) return { kind: session.credential.kind, id: session.credential.id, userId: session.user.id }
   return { kind: 'session', token: session.session.token }
 }
 
@@ -47,13 +47,13 @@ export async function writeContext(
 ) {
   const values = { activeOrganizationId: organizationId, activeProjectId: projectId }
   if (target.kind === 'user_api_key') {
-    await tx.update(userApiKey).set(values).where(eq(userApiKey.id, target.id))
+    await tx.update(userApiKey).set(values).where(and(eq(userApiKey.id, target.id), eq(userApiKey.userId, target.userId)))
   } else {
     await tx.update(sessionTable).set(values).where(eq(sessionTable.token, target.token))
   }
 }
 
-/** Switch the session to a project the user can open (and to that project's organization). */
+/** Switch the stored context to a project the user can open (and to that project's organization). */
 export async function setActiveProjectForSession(params: {
   target: ContextTarget
   userId: string
@@ -80,8 +80,8 @@ export async function setActiveProjectForSession(params: {
 }
 
 /**
- * Switch the session to another organization and, in the same update, to a
- * project inside it, so the session never holds a project from the previous
+ * Switch the stored context to another organization and, in the same update, to a
+ * project inside it, so it never holds a project from the previous
  * organization. `preferredProjectId` (last used) is honoured when accessible.
  * The project is null when the user can open no project in that organization yet.
  */
@@ -119,13 +119,22 @@ async function firstOrganizationIdForUser(userId: string): Promise<string | null
 }
 
 /**
- * The session's active project, validated and repaired. Falls back to the
+ * Implicit repair write. Skipped when the context came from per-request headers
+ * (credential.contextOverride): the request uses the resolved values in memory
+ * but headers never become the stored context.
+ */
+async function repairContext(session: AuthSession, organizationId: string | null, projectId: string | null) {
+  if (session.credential?.contextOverride) return
+  await writeContext(contextTargetFor(session), organizationId, projectId)
+}
+
+/**
+ * The principal's active project, validated and repaired. Falls back to the
  * first accessible project in the active organization, then in the user's
  * first organization. Returns null when the user can open no project at all.
  */
 export async function resolveActiveProjectForSession(session: AuthSession): Promise<ResolvedProject | null> {
   const userId = session.user.id
-  const target = contextTargetFor(session)
   const storedProjectId = session.session.activeProjectId ?? null
   const storedOrgId = session.session.activeOrganizationId ?? null
 
@@ -134,7 +143,7 @@ export async function resolveActiveProjectForSession(session: AuthSession): Prom
     if (proj) {
       const role = await resolveProjectRole(proj, userId)
       if (role) {
-        if (storedOrgId !== proj.organizationId) await writeContext(target, proj.organizationId, proj.id)
+        if (storedOrgId !== proj.organizationId) await repairContext(session, proj.organizationId, proj.id)
         return { ...proj, role }
       }
     }
@@ -148,12 +157,12 @@ export async function resolveActiveProjectForSession(session: AuthSession): Prom
   for (const orgId of orgCandidates) {
     const projects = await listAccessibleProjects(orgId, userId)
     if (projects[0]) {
-      await writeContext(target, orgId, projects[0].id)
+      await repairContext(session, orgId, projects[0].id)
       return projects[0]
     }
   }
 
-  if (storedProjectId) await writeContext(target, storedOrgId, null)
+  if (storedProjectId) await repairContext(session, storedOrgId, null)
   return null
 }
 
@@ -194,7 +203,7 @@ export async function requireAuthWithOrganization(event: H3Event): Promise<{
     organizationId = await firstOrganizationIdForUser(userId)
     organizationRole = organizationId ? await getOrganizationRole(organizationId, userId) : null
     if (organizationId && organizationRole) {
-      await writeContext(contextTargetFor(session), organizationId, null)
+      await repairContext(session, organizationId, null)
     }
   }
 
