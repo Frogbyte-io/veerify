@@ -564,4 +564,46 @@ describe('import commit engine (real Postgres)', () => {
     expect(finished.summary?.counts.people.create).toBe(501)
     expect((await countsFor(projA.id, source)).people).toBe(501)
   }, 60_000)
+
+  it('commits a feedback with 2,500 listed votes (inserted in chunks below the bind-parameter limit)', async () => {
+    const source = `many-votes-${suffix}`
+    // People already imported by an earlier run, inserted in bulk to keep the test fast.
+    const people = Array.from({ length: 2500 }, (_, i) => ({
+      id: `ic_mv_${suffix}_${i}`,
+      projectId: projA.id,
+      source,
+      externalId: `mv-${i}`,
+    }))
+    await db.insert(importedPerson).values(people)
+    const votes = people.map((p, i) => ({
+      personExternalId: p.externalId,
+      type: (i % 5 === 0 ? 'downvote' : 'upvote') as 'upvote' | 'downvote',
+    }))
+    const run = await stage(
+      projA.id,
+      projA.productId,
+      {
+        statuses: [],
+        categories: [],
+        people: [],
+        feedback: [{ externalId: 'popular', title: 'Popular', votes }],
+        comments: [],
+        changelog: [],
+      },
+      source
+    )
+    const preview = await planImport(run.id)
+    const done = await commitImportRun(run.id)
+    expect(done.status).toBe('completed')
+    expect(done.summary?.counts.votes).toEqual({ create: 2500, update: 0, unchanged: 0, skip: 0 })
+    expect(done.summary?.counts).toEqual(preview.counts)
+    const fb = (await importedFeedback(projA.id, source)).popular
+    // 2,000 upvotes − 500 downvotes
+    expect(fb.voteCount).toBe(1500)
+    const [{ n }] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(vote)
+      .where(eq(vote.feedbackId, fb.id))
+    expect(n).toBe(2500)
+  }, 60_000)
 })

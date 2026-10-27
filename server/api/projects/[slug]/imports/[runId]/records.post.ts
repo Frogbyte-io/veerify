@@ -4,7 +4,7 @@
  *   post:
  *     tags: [Imports]
  *     summary: Add a batch of records to an import run
- *     description: "At most 1,000 records per batch and 50,000 per run. Send sections only (statuses, categories, people, feedback, comments, changelog); format and target belong to run creation. Duplicate externalIds within a section of the run are dropped and reported as skipped issues."
+ *     description: "At most 1,000 records per batch, 50,000 per run and a 4 MiB request body. Send sections only (statuses, categories, people, feedback, comments, changelog); format, target, source and sourceLabel are rejected (they belong to run creation). Duplicate externalIds within a section of the run are dropped and reported as skipped issues."
  *     operationId: addImportRecords
  *     security: [{ cookieAuth: [] }, { userApiKeyAuth: [] }]
  *     parameters:
@@ -32,22 +32,26 @@
  *     responses:
  *       201: { description: "Batch staged; returns seq, recordCount, runRecordCount and issues" }
  *       400: { description: "Validation failed or a record limit was exceeded" }
+ *       413: { description: "Request body exceeds 4 MiB" }
  *       403: { description: "Not a project admin" }
  *       404: { description: "Project or run not found" }
  *       409: { description: "Run is not a draft" }
  */
-import { createSuccessResponse, ErrorCode } from '~/server/utils/response'
-import { validateBody } from '~/server/utils/validation'
+import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
+import { readJsonBodyWithLimit } from '~/server/utils/json-body-limit'
 import { requireProjectBySlug } from '~/server/utils/project-categories'
-import { importBatchSchema } from '~/server/services/imports/format'
+import { IMPORT_MAX_BODY_BYTES, importBatchSchema } from '~/server/services/imports/format'
 import { addImportBatch, getImportRunForProject, importHttpError } from '~/server/services/imports/runs'
+
+/** Document-level keys: they belong to run creation, never to a records batch. */
+const DOCUMENT_KEYS = ['format', 'target', 'source', 'sourceLabel']
 
 export default defineEventHandler(async (event) => {
   const { project } = await requireProjectBySlug(event, getRouterParam(event, 'slug') ?? '', { admin: true })
   const run = await getImportRunForProject(project.id, getRouterParam(event, 'runId') ?? '')
 
-  const raw = await readBody(event)
-  if (raw && typeof raw === 'object' && ('format' in raw || 'target' in raw)) {
+  const raw = await readJsonBodyWithLimit(event, IMPORT_MAX_BODY_BYTES)
+  if (raw && typeof raw === 'object' && DOCUMENT_KEYS.some((key) => key in raw)) {
     importHttpError(
       400,
       'Bad Request',
@@ -56,7 +60,15 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  const batch = await validateBody(event, importBatchSchema)
+  const parsed = importBatchSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Validation failed',
+      data: createErrorResponse(ErrorCode.VALIDATION_ERROR, 'Request validation failed', parsed.error.issues),
+    })
+  }
+  const batch = parsed.data
   const result = await addImportBatch(run.id, batch)
 
   setResponseStatus(event, 201)

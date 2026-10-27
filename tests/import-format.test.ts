@@ -31,6 +31,11 @@ describe('import format', () => {
     expect(bad((d) => (d.feedback[0].title = 'x'.repeat(201)))).toBe(false)
     expect(bad((d) => (d.feedback[0].votes[0].type = 'meh'))).toBe(false)
     expect(bad((d) => (d.feedback[0].voteCount = -1))).toBe(false)
+    expect(bad((d) => (d.feedback[0].voteCount = 2_147_483_648))).toBe(false)
+    expect(bad((d) => (d.feedback[0].voteCount = 2_147_483_647))).toBe(true)
+    const vote = { personExternalId: 'p-1' }
+    expect(bad((d) => (d.feedback[0].votes = Array.from({ length: 10_001 }, () => vote)))).toBe(false)
+    expect(bad((d) => (d.feedback[0].votes = Array.from({ length: 10_000 }, () => vote)))).toBe(true)
   })
 
   it('defaults vote type and sections', () => {

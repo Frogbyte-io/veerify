@@ -35,6 +35,8 @@ vi.stubGlobal('setResponseStatus', (_e: unknown, code: number) => {
   state.status = code
 })
 
+const readJsonBodyWithLimit = vi.hoisted(() => vi.fn(async (_event: unknown, _maxBytes: number) => state.body))
+vi.mock('~/server/utils/json-body-limit', () => ({ readJsonBodyWithLimit }))
 vi.mock('~/server/utils/project-categories', () => ({ requireProjectBySlug }))
 vi.mock('~/server/utils/project-access', () => productLookup)
 vi.mock('~/server/utils/response', () => ({
@@ -208,6 +210,19 @@ describe('import run routes', () => {
         },
       },
     })
+  })
+
+  it('records rejects source/sourceLabel keys and reads the body with the 4 MiB cap', async () => {
+    seedRun()
+    state.body = { source: 'canny', feedback: [] }
+    await expect(recordsHandler({})).rejects.toMatchObject({ statusCode: 400 })
+    expect(readJsonBodyWithLimit).toHaveBeenLastCalledWith({}, 4 * 1024 * 1024)
+  })
+
+  it('records passes a 413 from the body reader through', async () => {
+    seedRun()
+    readJsonBodyWithLimit.mockRejectedValueOnce(Object.assign(new Error('Payload Too Large'), { statusCode: 413 }))
+    await expect(recordsHandler({})).rejects.toMatchObject({ statusCode: 413 })
   })
 
   it('rejects a 1,001-record batch', async () => {

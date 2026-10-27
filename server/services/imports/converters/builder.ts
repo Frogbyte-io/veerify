@@ -3,6 +3,7 @@ import { toCategorySlug } from '~/server/utils/project-categories'
 import { toStatusValue } from '~/server/utils/project-statuses'
 import {
   IMPORT_FORMAT,
+  MAX_VOTE_COUNT,
   importPersonSchema,
   type ImportCategory,
   type ImportChangelog,
@@ -71,7 +72,7 @@ export function stableId(prefix: string, seed: string): string {
 }
 
 export function voteCountOf(value: number | null | undefined): number | undefined {
-  return value == null ? undefined : Math.max(0, Math.round(value))
+  return value == null ? undefined : Math.min(MAX_VOTE_COUNT, Math.max(0, Math.round(value)))
 }
 
 /** Shared accumulator: dedupes taxonomy and people, normalizes values and collects warnings. */

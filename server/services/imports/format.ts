@@ -3,6 +3,12 @@ import { z } from 'zod'
 export const IMPORT_FORMAT = 'veerify-import/1'
 export const MAX_BATCH_RECORDS = 1000
 export const MAX_RUN_RECORDS = 50_000
+/** Request body cap for one records batch (same as the /mcp cap). */
+export const IMPORT_MAX_BODY_BYTES = 4 * 1024 * 1024
+/** Listed votes per feedback record; larger totals go in `voteCount`. */
+export const MAX_VOTES_PER_FEEDBACK = 10_000
+/** feedback.vote_count is a Postgres integer. */
+export const MAX_VOTE_COUNT = 2_147_483_647
 
 const externalId = z.string().min(1).max(200)
 const optionalExternalId = externalId.optional()
@@ -46,8 +52,8 @@ export const importFeedbackSchema = z.object({
   authorExternalId: optionalExternalId,
   createdAt: isoDate.optional(),
   updatedAt: isoDate.optional(),
-  votes: z.array(importVoteSchema).optional(),
-  voteCount: z.number().int().min(0).optional(),
+  votes: z.array(importVoteSchema).max(MAX_VOTES_PER_FEEDBACK).optional(),
+  voteCount: z.number().int().min(0).max(MAX_VOTE_COUNT).optional(),
   isPinned: z.boolean().optional(),
   isLocked: z.boolean().optional(),
   isHidden: z.boolean().optional(),

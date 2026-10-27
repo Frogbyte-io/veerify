@@ -14,6 +14,9 @@ import {
   type PersonRef,
 } from './context'
 
+/** Vote rows per INSERT statement (6 parameters each). */
+export const VOTE_INSERT_CHUNK = 1000
+
 type VoteState = { people: Map<string, PersonRef>; feedback: Map<string, FeedbackRef> }
 
 /**
@@ -61,22 +64,30 @@ export const votesPhase: CommitPhase<VoteState, ImportFeedback> = {
       const claimedBy = await lockPersonClaims(tx, personIds)
       // No conflict target: besides (feedbackId, importedPersonId), a claimed person's vote also hits the
       // (feedbackId, voterUserId) index when that user already voted, and is then skipped.
-      const rows = valid.length
-        ? await tx
+      // Chunked so a post with many listed votes stays far below Postgres's 65,535 bind parameters per statement.
+      const rows: { type: string }[] = []
+      for (let start = 0; start < valid.length; start += VOTE_INSERT_CHUNK) {
+        const chunk = valid.slice(start, start + VOTE_INSERT_CHUNK)
+        rows.push(
+          ...(await tx
             .insert(vote)
             .values(
-              valid.map((v, i) => ({
-                id: randomUUID(),
-                feedbackId: fb.id,
-                importedPersonId: personIds[i],
-                voterUserId: claimedBy.get(personIds[i]) ?? null,
-                type: v.type ?? 'upvote',
-                createdAt: sourceDate(v.createdAt, now),
-              }))
+              chunk.map((v, j) => {
+                const personId = personIds[start + j]
+                return {
+                  id: randomUUID(),
+                  feedbackId: fb.id,
+                  importedPersonId: personId,
+                  voterUserId: claimedBy.get(personId) ?? null,
+                  type: v.type ?? 'upvote',
+                  createdAt: sourceDate(v.createdAt, now),
+                }
+              })
             )
             .onConflictDoNothing()
-            .returning({ type: vote.type })
-        : []
+            .returning({ type: vote.type }))
+        )
+      }
       const insertedNet = netVotes(rows)
       if (ownsBaseline && newBaseline !== null) {
         await tx
