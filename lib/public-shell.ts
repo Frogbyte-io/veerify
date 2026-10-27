@@ -26,7 +26,12 @@ export function projectPaths(projectSlug: string, onCustomDomain: boolean): Proj
   }
 }
 
-const TAB_LABELS: Record<string, string> = { changelog: 'Changelog', testimonials: 'Testimonials' }
+const TAB_LABELS: Record<string, string> = {
+  feedback: 'Feedback',
+  roadmap: 'Roadmap',
+  changelog: 'Changelog',
+  testimonials: 'Testimonials',
+}
 
 /** `<entry> · Changelog · <project>`, omitting what is not known yet. */
 export function shellTitle(active: string, projectName?: string | null, pageTitle?: string | null): string {

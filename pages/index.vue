@@ -1,6 +1,6 @@
 <template>
   <div>
-    <PublicFeedbackBoard
+    <PublicProjectSite
       v-if="publicOrgSlug && publicProjectSlug"
       :org-slug="publicOrgSlug"
       :project-slug="publicProjectSlug"

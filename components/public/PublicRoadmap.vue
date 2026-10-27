@@ -1,349 +1,156 @@
 <template>
-  <div class="min-h-screen bg-background relative flex flex-col">
-    <!-- Top-right controls: always visible -->
-    <div class="absolute top-4 right-4 z-10 flex items-center gap-2">
-      <button
-        v-if="showThemeToggle"
-        class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
-        @click="toggleTheme"
-      >
-        <Icon :name="currentThemeIcon" class="w-4 h-4" />
-        {{ currentThemeLabel }}
-      </button>
-      <!-- Logged-in state -->
-      <template v-if="currentUser">
-        <a
-          :href="mainAppUrl + '/dashboard'"
-          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent transition-colors bg-background/80 backdrop-blur-sm"
-        >
-          <Icon name="lucide:layout-dashboard" class="w-4 h-4" />
-          Dashboard
-        </a>
-        <div
-          class="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm text-muted-foreground bg-background/80 backdrop-blur-sm"
-        >
-          <Avatar class="h-5 w-5">
-            <AvatarImage v-if="currentUser.image" :src="currentUser.image" />
-            <AvatarFallback class="text-[9px]">{{ currentUserInitials }}</AvatarFallback>
-          </Avatar>
-          {{ currentUser.name }}
-        </div>
-      </template>
-      <!-- Logged-out state -->
-      <template v-else>
-        <a
-          :href="mainAppUrl + '/login?redirect=' + authRedirectTarget"
-          data-testid="public-auth-cta"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-md"
-        >
-          <Icon name="lucide:log-in" class="w-4 h-4" />
-          Sign in / Join
-        </a>
-      </template>
-    </div>
-
-    <!-- Loading State -->
-    <div v-if="isLoading" class="max-w-6xl mx-auto px-4 py-12 w-full">
-      <div class="space-y-4">
-        <Skeleton class="h-10 w-64" />
-        <Skeleton class="h-5 w-96" />
-        <div class="flex gap-4 mt-8">
-          <div v-for="n in 3" :key="n" class="flex-1 space-y-3">
-            <Skeleton class="h-8 w-full" />
-            <Skeleton v-for="m in 3" :key="m" class="h-24 w-full" />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Error State -->
-    <div v-else-if="error" class="max-w-6xl mx-auto px-4 py-12 text-center">
-      <Icon name="lucide:alert-circle" class="w-16 h-16 mx-auto text-destructive mb-4" />
-      <h1 class="text-2xl font-bold mb-2">Project Not Found</h1>
-      <p class="text-muted-foreground mb-4">{{ error }}</p>
-      <button class="text-sm text-primary hover:underline" @click="load">Try again</button>
-    </div>
-
-    <!-- Roadmap disabled -->
-    <div v-else-if="projectData && !roadmapEnabled" class="max-w-4xl mx-auto px-4 py-24 text-center">
-      <Icon name="lucide:map" class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-      <h1 class="text-2xl font-bold mb-2">Roadmap not available</h1>
-      <p class="text-muted-foreground mb-6">The roadmap feature is not enabled for this project.</p>
+  <div data-testid="public-roadmap">
+    <PublicStateMessage
+      v-if="!roadmapEnabled"
+      icon="lucide:map"
+      title="Roadmap not available"
+      message="The roadmap feature is not enabled for this project."
+      data-testid="public-roadmap-unavailable"
+    >
       <NuxtLink
-        :to="feedbackBoardPath"
+        :to="paths.feedback"
         class="inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
       >
         <Icon name="lucide:message-square" class="w-4 h-4" />
         View Feedback Board
       </NuxtLink>
-    </div>
+    </PublicStateMessage>
 
-    <!-- Main Content -->
-    <div v-else-if="projectData && roadmapEnabled" class="flex-1 flex flex-col">
-      <!-- Banner -->
-      <div class="w-full h-24 md:h-36 overflow-hidden relative">
-        <div class="absolute inset-x-0" style="top: -30px; bottom: -30px" :style="bannerInnerStyle">
-          <img
-            v-if="projectData.project.settings?.bannerUrl && !bannerError"
-            :src="projectData.project.settings.bannerUrl"
-            alt=""
-            class="w-full h-full object-cover"
-            @error="bannerError = true"
-          />
-          <div v-if="!projectData.project.settings?.bannerUrl || bannerError" class="absolute inset-0 flex items-end">
-            <div class="max-w-6xl w-full mx-auto px-4 pb-4">
-              <p class="text-white/60 text-sm font-medium tracking-wide uppercase">Roadmap</p>
-            </div>
-          </div>
+    <template v-else>
+      <PublicProductFilter
+        :products="products"
+        :selected="productFilter"
+        :base-path="roadmapPath"
+        :accent-color="accentColor"
+      />
+
+      <!-- Roadmap summary -->
+      <p class="text-muted-foreground text-sm mb-6">A timeline view of all feedback items grouped by status.</p>
+
+      <!-- Loading columns skeleton -->
+      <div v-if="columnsLoading" class="flex gap-4 overflow-x-auto pb-4">
+        <div v-for="n in 3" :key="n" class="flex-shrink-0 w-72 space-y-2">
+          <Skeleton class="h-8 w-full" />
+          <Skeleton v-for="m in 3" :key="m" class="h-24 w-full" />
         </div>
       </div>
 
-      <div class="max-w-6xl mx-auto px-4 pt-8 pb-32 w-full">
-        <!-- Header -->
-        <div class="mb-6">
-          <div class="flex items-center gap-3 mb-2">
-            <template v-if="projectData.project.settings?.logoUrl && !logoError">
-              <img
-                :src="projectData.project.settings.logoUrl"
-                alt="Project logo"
-                class="h-10 w-10 rounded object-cover border bg-muted"
-                @error="logoError = true"
+      <PublicStateMessage
+        v-else-if="columnsError"
+        icon="lucide:alert-circle"
+        kind="error"
+        :title="columnsError"
+        retryable
+        @retry="loadRoadmap"
+      />
+
+      <!-- Empty state -->
+      <PublicStateMessage
+        v-else-if="visibleColumns.length === 0"
+        icon="lucide:map"
+        title="No roadmap items yet"
+        message="Submit feedback to see it appear here."
+      >
+        <NuxtLink :to="feedbackBoardPath" prefetch-on="interaction" class="text-sm text-primary hover:underline">
+          <Icon name="lucide:arrow-left" class="w-4 h-4 inline mr-1" />
+          Back to feedback board
+        </NuxtLink>
+      </PublicStateMessage>
+
+      <!-- Kanban columns -->
+      <div v-else class="flex gap-4 overflow-x-auto pb-4">
+        <div v-for="column in visibleColumns" :key="column.value" class="flex-shrink-0 w-72 flex flex-col">
+          <!-- Column header -->
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span
+                class="inline-block w-2.5 h-2.5 rounded-full"
+                :style="{ backgroundColor: column.color || '#6b7280' }"
               />
-            </template>
+              <h3 class="font-semibold text-sm">{{ column.name }}</h3>
+            </div>
+            <span class="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
+              {{ column.items.length }}
+            </span>
+          </div>
+
+          <!-- Column cards -->
+          <div class="space-y-2 flex-1">
             <div
-              v-else
-              class="h-10 w-10 rounded flex items-center justify-center text-white font-bold text-lg select-none shrink-0"
-              :style="logoFallbackStyle"
+              v-for="item in column.items"
+              :key="item.id"
+              class="rounded-lg border bg-card p-3 hover:shadow-sm transition-shadow cursor-pointer"
+              @click="openFeedbackItem(item)"
             >
-              {{ projectInitial }}
-            </div>
-            <div class="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>{{ projectData.organization?.name }}</span>
-            </div>
-          </div>
-          <h1 class="text-3xl font-bold mb-1">{{ projectData.project.name }}</h1>
-          <p v-if="projectData.project.description" class="text-muted-foreground text-lg">
-            {{ projectData.project.description }}
-          </p>
-        </div>
-
-        <!-- Navigation tabs -->
-        <div class="flex items-center gap-1 mb-8 border-b">
-          <NuxtLink
-            :to="feedbackBoardPath"
-            prefetch-on="interaction"
-            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
-            @pointerenter="warmFeedbackBoardData"
-            @focus="warmFeedbackBoardData"
-          >
-            <Icon name="lucide:message-square" class="w-4 h-4 inline mr-1.5" />
-            Feedback
-          </NuxtLink>
-          <span
-            class="px-4 py-2 text-sm font-medium border-b-2 -mb-px"
-            :style="{ borderColor: accentColor, color: accentColor }"
-          >
-            <Icon name="lucide:map" class="w-4 h-4 inline mr-1.5" />
-            Roadmap
-          </span>
-          <NuxtLink
-            v-if="changelogEnabled"
-            :to="changelogPath"
-            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
-          >
-            <Icon name="lucide:newspaper" class="w-4 h-4 inline mr-1.5" />
-            Changelog
-          </NuxtLink>
-          <NuxtLink
-            v-if="hasTestimonials"
-            :to="testimonialsPath"
-            class="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent -mb-px"
-          >
-            <Icon name="lucide:message-square-quote" class="w-4 h-4 inline mr-1.5" />
-            Testimonials
-          </NuxtLink>
-        </div>
-
-        <PublicProductFilter
-          :products="products"
-          :selected="productFilter"
-          :base-path="roadmapPath"
-          :accent-color="accentColor"
-        />
-
-        <!-- Roadmap summary -->
-        <p class="text-muted-foreground text-sm mb-6">A timeline view of all feedback items grouped by status.</p>
-
-        <!-- Loading columns skeleton -->
-        <div v-if="columnsLoading" class="flex gap-4 overflow-x-auto pb-4">
-          <div v-for="n in 3" :key="n" class="flex-shrink-0 w-72 space-y-2">
-            <Skeleton class="h-8 w-full" />
-            <Skeleton v-for="m in 3" :key="m" class="h-24 w-full" />
-          </div>
-        </div>
-
-        <div v-else-if="columnsError" class="text-center py-20">
-          <Icon name="lucide:alert-circle" class="w-10 h-10 mx-auto text-destructive mb-3" />
-          <p class="font-medium mb-1">{{ columnsError }}</p>
-          <button class="text-sm text-primary hover:underline mt-2" @click="loadRoadmap">Try again</button>
-        </div>
-
-        <!-- Empty state -->
-        <div v-else-if="visibleColumns.length === 0" class="text-center py-20 text-muted-foreground">
-          <Icon name="lucide:map" class="w-12 h-12 mx-auto mb-3 opacity-40" />
-          <p class="font-medium">No roadmap items yet</p>
-          <p class="text-sm mt-1">Submit feedback to see it appear here.</p>
-          <NuxtLink
-            :to="feedbackBoardPath"
-            prefetch-on="interaction"
-            class="inline-block mt-4 text-sm text-primary hover:underline"
-            @pointerenter="warmFeedbackBoardData"
-            @focus="warmFeedbackBoardData"
-          >
-            <Icon name="lucide:arrow-left" class="w-4 h-4 inline mr-1" />
-            Back to feedback board
-          </NuxtLink>
-        </div>
-
-        <!-- Kanban columns -->
-        <div v-else class="flex gap-4 overflow-x-auto pb-4">
-          <div v-for="column in visibleColumns" :key="column.value" class="flex-shrink-0 w-72 flex flex-col">
-            <!-- Column header -->
-            <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-2">
-                <span
-                  class="inline-block w-2.5 h-2.5 rounded-full"
-                  :style="{ backgroundColor: column.color || '#6b7280' }"
-                />
-                <h3 class="font-semibold text-sm">{{ column.name }}</h3>
+              <!-- Pin indicator -->
+              <div v-if="item.isPinned" class="flex items-center gap-1 text-xs text-amber-600 mb-1.5">
+                <Icon name="lucide:pin" class="w-3 h-3" />
+                <span>Pinned</span>
               </div>
-              <span class="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
-                {{ column.items.length }}
-              </span>
-            </div>
 
-            <!-- Column cards -->
-            <div class="space-y-2 flex-1">
-              <div
-                v-for="item in column.items"
-                :key="item.id"
-                class="rounded-lg border bg-card p-3 hover:shadow-sm transition-shadow cursor-pointer"
-                @click="openFeedbackItem(item)"
-              >
-                <!-- Pin indicator -->
-                <div v-if="item.isPinned" class="flex items-center gap-1 text-xs text-amber-600 mb-1.5">
-                  <Icon name="lucide:pin" class="w-3 h-3" />
-                  <span>Pinned</span>
-                </div>
-
-                <!-- Category + tag -->
-                <div v-if="item.category || item.tag" class="flex flex-wrap gap-1 mb-2">
-                  <span
-                    v-if="item.category"
-                    class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium"
-                    :style="{
-                      backgroundColor: item.category.color ? item.category.color + '22' : '#6b728022',
-                      color: item.category.color || '#6b7280',
-                    }"
-                  >
-                    <Icon v-if="item.category.icon" :name="'lucide:' + item.category.icon" class="w-3 h-3" />
-                    {{ item.category.name }}
-                  </span>
-                  <span
-                    v-if="item.tag"
-                    class="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground"
-                  >
-                    {{ feedbackTypeLabel(item.tag) }}
-                  </span>
-                </div>
-
-                <!-- Product -->
+              <!-- Category + tag -->
+              <div v-if="item.category || item.tag" class="flex flex-wrap gap-1 mb-2">
                 <span
-                  v-if="productName(item)"
-                  class="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full border mb-2"
-                  data-testid="public-roadmap-product-badge"
+                  v-if="item.category"
+                  class="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full font-medium"
+                  :style="{
+                    backgroundColor: item.category.color ? item.category.color + '22' : '#6b728022',
+                    color: item.category.color || '#6b7280',
+                  }"
                 >
-                  {{ productName(item) }}
+                  <Icon v-if="item.category.icon" :name="'lucide:' + item.category.icon" class="w-3 h-3" />
+                  {{ item.category.name }}
                 </span>
-
-                <!-- Title -->
-                <p class="text-sm font-medium line-clamp-2 mb-2">{{ item.title }}</p>
-
-                <!-- Meta: votes + comments + date -->
-                <div class="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span class="flex items-center gap-1">
-                    <Icon name="lucide:chevrons-up" class="w-3 h-3" />
-                    {{ item.voteCount }}
-                  </span>
-                  <span class="flex items-center gap-1">
-                    <Icon name="lucide:message-circle" class="w-3 h-3" />
-                    {{ item.commentCount }}
-                  </span>
-                  <span class="ml-auto">{{ formatDate(item.createdAt) }}</span>
-                </div>
+                <span
+                  v-if="item.tag"
+                  class="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground"
+                >
+                  {{ feedbackTypeLabel(item.tag) }}
+                </span>
               </div>
 
-              <!-- Empty column placeholder -->
-              <div
-                v-if="column.items.length === 0"
-                class="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground"
+              <!-- Product -->
+              <span
+                v-if="productName(item)"
+                class="inline-flex items-center text-xs px-1.5 py-0.5 rounded-full border mb-2"
+                data-testid="public-roadmap-product-badge"
               >
-                No items
+                {{ productName(item) }}
+              </span>
+
+              <!-- Title -->
+              <p class="text-sm font-medium line-clamp-2 mb-2">{{ item.title }}</p>
+
+              <!-- Meta: votes + comments + date -->
+              <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                <span class="flex items-center gap-1">
+                  <Icon name="lucide:chevrons-up" class="w-3 h-3" />
+                  {{ item.voteCount }}
+                </span>
+                <span class="flex items-center gap-1">
+                  <Icon name="lucide:message-circle" class="w-3 h-3" />
+                  {{ item.commentCount }}
+                </span>
+                <span class="ml-auto">{{ formatDate(item.createdAt) }}</span>
               </div>
+            </div>
+
+            <!-- Empty column placeholder -->
+            <div
+              v-if="column.items.length === 0"
+              class="rounded-lg border border-dashed p-6 text-center text-xs text-muted-foreground"
+            >
+              No items
             </div>
           </div>
         </div>
       </div>
-
-      <!-- Footer -->
-      <div class="mt-auto py-3 text-center text-xs text-muted-foreground space-y-1">
-        <div v-if="showCustomFooter" class="space-y-1">
-          <p v-if="customFooterBranding" class="text-xs font-medium text-foreground">
-            {{ customFooterBranding }}
-          </p>
-          <p v-if="customFooterText" class="text-xs text-muted-foreground">{{ customFooterText }}</p>
-          <div v-if="customFooterLinks.length > 0" class="flex items-center justify-center gap-3">
-            <a
-              v-for="(link, index) in customFooterLinks"
-              :key="`${link.label}-${index}`"
-              :href="link.url"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="hover:underline"
-            >
-              {{ link.label }}
-            </a>
-          </div>
-        </div>
-        <template v-else>
-          <div v-if="projectData?.project?.settings?.showPoweredBy !== false">
-            Powered by
-            <a href="https://veerify.io" target="_blank" rel="noopener noreferrer" class="hover:underline">Veerify</a>
-          </div>
-          <div v-if="projectData?.project?.settings?.showGithubFooter !== false">
-            Open source &amp; contributions welcome &mdash;
-            <a
-              href="https://github.com/Frogbyte-io/veerify"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="hover:underline inline-flex items-center gap-1"
-            >
-              <Icon name="lucide:github" class="h-3 w-3" />GitHub
-            </a>
-          </div>
-        </template>
-      </div>
-    </div>
+    </template>
 
     <!-- Feedback detail dialog (reused from board) -->
     <Dialog :open="showDetailsDialog" @update:open="showDetailsDialog = $event">
       <DialogContent class="max-w-2xl max-h-[85vh] overflow-y-auto">
-        <div v-if="detailsLoading" class="space-y-4 p-2">
-          <Skeleton class="h-6 w-3/4" />
-          <Skeleton class="h-4 w-full" />
-          <Skeleton class="h-4 w-2/3" />
-        </div>
-        <div v-else-if="selectedFeedback" class="space-y-4">
+        <div v-if="selectedFeedback" class="space-y-4">
           <DialogHeader>
             <DialogTitle class="text-xl font-bold pr-8">{{ selectedFeedback.title }}</DialogTitle>
           </DialogHeader>
@@ -362,8 +169,6 @@
             :to="feedbackBoardPath"
             prefetch-on="interaction"
             class="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
-            @pointerenter="warmFeedbackBoardData"
-            @focus="warmFeedbackBoardData"
           >
             <Icon name="lucide:external-link" class="w-4 h-4" />
             View on feedback board
@@ -375,33 +180,24 @@
 </template>
 
 <script>
-import { completePublicAuthHandoffFromUrl, fetchPublicAuthSession } from '~/lib/public-auth-handoff'
+import { publicCache, publicTabRequest } from '~/lib/public-cache'
 
-const FEEDBACK_BOARD_PREFETCH_CACHE_TTL_MS = 60_000
-
+/** Roadmap tab body. The shell (PublicProjectShell) owns header, tabs and theme. */
 export default {
   name: 'PublicRoadmap',
   props: {
     orgSlug: { type: String, required: true },
     projectSlug: { type: String, required: true },
+    projectData: { type: Object, required: true },
+    paths: { type: Object, required: true },
   },
   data() {
     return {
-      projectData: null,
       columns: [],
-      isLoading: true,
       columnsLoading: true,
       columnsError: null,
       roadmapSeq: 0,
-      error: null,
-      previousColorMode: null,
-      activeTheme: 'system',
-      logoError: false,
-      bannerError: false,
-      currentUser: null,
-      feedbackBoardPrefetch: null,
       showDetailsDialog: false,
-      detailsLoading: false,
       selectedFeedback: null,
       feedbackTypeOptions: [
         { value: 'feature_request', label: 'Feature Request' },
@@ -414,177 +210,55 @@ export default {
   },
   computed: {
     accentColor() {
-      return this.projectData?.project?.settings?.accentColor || '#6366f1'
-    },
-    projectInitial() {
-      const name = this.projectData?.project?.name || ''
-      return name.charAt(0).toUpperCase() || '?'
-    },
-    bannerInnerStyle() {
-      const color = this.accentColor
-      return {
-        background: `linear-gradient(135deg, ${color} 0%, ${color}cc 50%, ${color}80 100%)`,
-      }
-    },
-    logoFallbackStyle() {
-      return { backgroundColor: this.accentColor }
-    },
-    mainAppUrl() {
-      if (!import.meta.client) return ''
-      const config = useRuntimeConfig()
-      const dashboardDomain = config.public.dashboardDomain || config.public.appDomain || 'localhost'
-      const protocol = window.location.protocol
-      const port = dashboardDomain === 'localhost' ? ':' + window.location.port : ''
-      return `${protocol}//${dashboardDomain}${port}`
-    },
-    apiBase() {
-      return `/api/public/o/${encodeURIComponent(this.orgSlug)}/${encodeURIComponent(this.projectSlug)}`
+      return this.projectData.project?.settings?.accentColor || '#6366f1'
     },
     products() {
-      return this.projectData?.products || []
+      return this.projectData.products || []
     },
     productFilter() {
       const value = this.$route.query.product
       return typeof value === 'string' ? value : ''
     },
-    onCustomDomain() {
-      return import.meta.client && this.projectData?.project?.customDomain === window.location.hostname
-    },
-    pathPrefix() {
-      return this.onCustomDomain ? '' : `/${this.projectSlug}`
-    },
     roadmapPath() {
-      return `${this.pathPrefix}/roadmap`
+      return this.paths.roadmap
     },
     feedbackBoardPath() {
-      const base = this.pathPrefix || '/'
-      return this.productFilter ? `${this.pathPrefix}/${encodeURIComponent(this.productFilter)}` : base
+      return this.productFilter ? this.paths.product(this.productFilter) : this.paths.feedback
     },
     roadmapEnabled() {
-      return this.projectData?.project?.settings?.roadmapEnabled === true
-    },
-    changelogPath() {
-      return `${this.pathPrefix}/changelog`
-    },
-    changelogEnabled() {
-      return this.projectData?.project?.settings?.changelogEnabled === true
-    },
-    hasTestimonials() {
-      return this.projectData?.hasTestimonials === true
-    },
-    testimonialsPath() {
-      return `${this.pathPrefix}/testimonials`
-    },
-    authRedirectTarget() {
-      if (!import.meta.client) return encodeURIComponent(`/${this.projectSlug}/roadmap`)
-      return encodeURIComponent(window.location.href)
-    },
-    currentThemeIcon() {
-      if (this.activeTheme === 'dark') return 'lucide:moon'
-      if (this.activeTheme === 'light') return 'lucide:sun'
-      return 'lucide:monitor'
-    },
-    currentThemeLabel() {
-      if (this.activeTheme === 'dark') return 'Dark'
-      if (this.activeTheme === 'light') return 'Light'
-      return 'System'
-    },
-    showThemeToggle() {
-      const forced = this.projectData?.project?.settings?.themeMode
-      return !forced || forced === 'system'
-    },
-    currentUserInitials() {
-      const name = this.currentUser?.name || this.currentUser?.email || '?'
-      return name
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    },
-    customFooterBranding() {
-      return this.projectData?.project?.settings?.customFooterBranding?.trim() || ''
-    },
-    customFooterText() {
-      return this.projectData?.project?.settings?.customFooterText?.trim() || ''
-    },
-    customFooterLinks() {
-      const settings = this.projectData?.project?.settings || {}
-      const links = [
-        { label: settings.customFooterPrimaryLabel?.trim(), url: settings.customFooterPrimaryUrl?.trim() },
-        { label: settings.customFooterSecondaryLabel?.trim(), url: settings.customFooterSecondaryUrl?.trim() },
-      ]
-      return links.filter((link) => link.label && link.url)
-    },
-    showCustomFooter() {
-      return (
-        this.projectData?.project?.settings?.customFooterEnabled === true &&
-        (this.customFooterBranding || this.customFooterText || this.customFooterLinks.length > 0)
-      )
+      return this.projectData.project?.settings?.roadmapEnabled === true
     },
     visibleColumns() {
       return this.columns.filter((col) => col.items.length > 0)
     },
   },
-  beforeUnmount() {
-    if (import.meta.client && this.previousColorMode) {
-      this.$colorMode.preference = this.previousColorMode
-    }
-  },
-  created() {
-    useHead(() => ({
-      title: ['Roadmap', this.projectData?.project?.name].filter(Boolean).join(' · '),
-    }))
-  },
-
   watch: {
     productFilter() {
-      if (this.projectData) this.loadRoadmap()
+      if (this.roadmapEnabled) this.loadRoadmap()
     },
   },
-
   async mounted() {
-    if (import.meta.client) {
-      this.previousColorMode = this.$colorMode.preference
-    }
-    await this.load()
+    if (this.roadmapEnabled) await this.loadRoadmap()
   },
   methods: {
-    async load() {
-      this.isLoading = true
-      this.error = null
-      try {
-        const projectResponse = await $fetch(this.apiBase)
-        const project = projectResponse?.data
-        this.projectData = {
-          project: project.project,
-          organization: project.organization,
-          products: project.products || [],
-          hasTestimonials: project.hasTestimonials === true,
-        }
-        this.applyTheme(project.project?.settings?.themeMode || 'system')
-        await this.loadRoadmap()
-        this.warmFeedbackBoardData()
-        await this.checkCurrentUser()
-      } catch (err) {
-        console.error('Error loading roadmap:', err)
-        this.error = 'This roadmap could not be found.'
-      } finally {
-        this.isLoading = false
-      }
-    },
     async loadRoadmap() {
       const seq = ++this.roadmapSeq
-      this.columnsLoading = true
+      const request = publicTabRequest('roadmap', this.orgSlug, this.projectSlug, { product: this.productFilter })
+      const hit = publicCache.peek(request.key)
       this.columnsError = null
+      if (hit) {
+        this.columns = hit.data?.data?.columns || []
+        this.columnsLoading = false
+        if (!hit.stale) return
+      } else {
+        this.columnsLoading = true
+      }
       try {
-        const response = await $fetch(`${this.apiBase}/roadmap`, {
-          query: this.productFilter ? { product: this.productFilter } : {},
-        })
+        const response = await publicCache.load(request.key, request.fetcher, { force: Boolean(hit) })
         if (seq !== this.roadmapSeq) return
         this.columns = response?.data?.columns || []
       } catch (err) {
-        if (seq !== this.roadmapSeq) return
+        if (seq !== this.roadmapSeq || hit) return
         console.error('Error loading roadmap items:', err)
         this.columns = []
         this.columnsError = 'Failed to load the roadmap.'
@@ -596,63 +270,6 @@ export default {
       if (this.products.length < 2) return ''
       if (item.product?.name) return item.product.name
       return this.products.find((p) => p.id === item.productId)?.name || ''
-    },
-    warmFeedbackBoardData() {
-      const now = Date.now()
-      const cachedAt = this.feedbackBoardPrefetch?.cachedAt || 0
-      if (this.feedbackBoardPrefetch?.promise && now - cachedAt < FEEDBACK_BOARD_PREFETCH_CACHE_TTL_MS) {
-        return this.feedbackBoardPrefetch.promise
-      }
-
-      const params = new URLSearchParams({
-        page: '1',
-        limit: '20',
-        sortBy: 'voteCount',
-        sortOrder: 'desc',
-      })
-
-      // Only a single-product project opens straight onto its board
-      if (this.products.length !== 1) return Promise.resolve(null)
-      const cacheKey = `pubBoardData_${this.orgSlug}_${this.projectSlug}_`
-      const promise = Promise.all([
-        $fetch(this.apiBase),
-        $fetch(`${this.apiBase}/products/${encodeURIComponent(this.products[0].slug)}/feedback?${params.toString()}`),
-      ])
-        .then(([projectResponse, feedbackResponse]) => {
-          if (import.meta.client) {
-            useState(cacheKey).value = { projectResponse, feedbackResponse, cachedAt: Date.now() }
-          }
-          return [projectResponse, feedbackResponse]
-        })
-        .catch(() => null)
-
-      this.feedbackBoardPrefetch = { promise, cachedAt: now }
-      return promise
-    },
-    applyTheme(mode) {
-      this.activeTheme = mode
-      if (import.meta.client) {
-        this.$colorMode.preference = mode
-      }
-    },
-    toggleTheme() {
-      const cycle = { system: 'light', light: 'dark', dark: 'system' }
-      this.applyTheme(cycle[this.activeTheme] || 'system')
-    },
-    async checkCurrentUser() {
-      if (!import.meta.client) return
-
-      const handoffCompleted = await completePublicAuthHandoffFromUrl().catch(() => false)
-
-      try {
-        const sessionResult = await fetchPublicAuthSession()
-        this.currentUser = sessionResult?.user || null
-        if (handoffCompleted && this.currentUser) {
-          await $fetch('/api/auth/merge-anonymous', { method: 'POST' }).catch(() => {})
-        }
-      } catch {
-        this.currentUser = null
-      }
     },
     feedbackTypeLabel(value) {
       const option = this.feedbackTypeOptions.find((item) => item.value === value)
