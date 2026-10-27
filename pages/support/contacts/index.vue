@@ -25,7 +25,7 @@
         <template v-if="projectRole === 'admin'">
           <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
           <Button as-child variant="outline">
-            <NuxtLink to="/project/settings#tools">Project settings: Tools</NuxtLink>
+            <NuxtLink to="/project/settings?tab=tools">Project settings: Tools</NuxtLink>
           </Button>
         </template>
         <p v-else class="text-sm text-muted-foreground flex items-center justify-center gap-1.5">

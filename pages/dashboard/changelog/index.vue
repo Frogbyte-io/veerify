@@ -31,7 +31,7 @@
         </div>
         <div v-if="isAdmin" class="flex flex-wrap items-center justify-center gap-2">
           <Button as-child variant="outline">
-            <NuxtLink to="/project/settings#tools">Project settings: Tools</NuxtLink>
+            <NuxtLink to="/project/settings?tab=tools">Project settings: Tools</NuxtLink>
           </Button>
         </div>
       </CardContent>

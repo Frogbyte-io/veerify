@@ -27,6 +27,11 @@ function assignDashboardLayout(pages: ExtendablePage[]) {
     if (DASHBOARD_PAGE.test(file) && !NOT_DASHBOARD_PAGE.test(file)) {
       page.meta = { ...page.meta, layout: 'dashboard' }
     }
+    // NuxtPage keys a page by its interpolated path, which would remount the public site (and
+    // its persistent shell) on every tab change. One static key keeps it mounted across tabs.
+    if (file === '[...slug].vue') {
+      page.meta = { ...page.meta, key: 'public-site' }
+    }
     if (page.children) assignDashboardLayout(page.children)
   }
 }

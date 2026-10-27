@@ -19,7 +19,7 @@
       </div>
       <div v-if="isAdmin" class="flex flex-wrap items-center justify-center gap-2">
         <Button as-child variant="outline">
-          <NuxtLink to="/project/settings#tools">
+          <NuxtLink to="/project/settings?tab=tools">
             <Icon name="lucide:layout-grid" class="w-4 h-4 mr-2" />
             Project settings: Tools
           </NuxtLink>

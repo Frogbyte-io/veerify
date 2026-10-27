@@ -63,7 +63,7 @@
           <template v-if="activeProject?.role === 'admin'">
             <p class="text-sm text-muted-foreground">Switch it on under Project settings, Tools.</p>
             <Button as-child variant="outline">
-              <NuxtLink to="/project/settings#tools">
+              <NuxtLink to="/project/settings?tab=tools">
                 <Icon name="lucide:layout-grid" class="w-4 h-4 mr-2" />
                 Project settings: Tools
               </NuxtLink>
