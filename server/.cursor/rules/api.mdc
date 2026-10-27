@@ -40,20 +40,13 @@ export const users = pgTable('users', {
 ::code-group
 
 ```typescript [Protected API Route]
-import { auth } from "~/lib/auth"
-import { getAuthHeaders } from "~/server/utils/auth-headers"
+import { requireAuth } from "~/server/utils/auth-middleware"
 
 export default defineEventHandler(async (event) => {
-  const session = await auth.api.getSession({
-    headers: getAuthHeaders(event)
-  })
-  
-  if (!session?.user) {
-    throw createError({
-      statusCode: 401,
-      statusMessage: 'Unauthorized'
-    })
-  }
+  // Session cookie or personal API key; 401 otherwise. Use requireAuthWithResolvedProject /
+  // requireAuthWithOrganization for the active project/workspace, requireInteractiveSession
+  // (403 for keys) for actions API keys must not perform.
+  const session = await requireAuth(event)
   
   // Your API logic here
   return {
@@ -111,7 +104,7 @@ throw createError({
 ### Server Configuration
 - **Server config**: `~/lib/auth.ts`
 - **API route**: `~/server/api/auth/[...all].ts`
-- **Session validation**: `auth.api.getSession({ headers: getAuthHeaders(event) })`
+- **Session validation**: `requireAuth(event)` / `optionalAuth(event)` from `server/utils/auth-middleware.ts` (not `auth.api.getSession()`, which rejects API keys)
 
 ### API keys and MCP
 - `requireAuth` (`server/utils/auth-middleware.ts`) resolves `Bearer vfy_usr_...` first; invalid/revoked/expired is 401, no cookie fallback

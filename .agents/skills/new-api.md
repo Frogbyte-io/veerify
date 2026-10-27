@@ -32,20 +32,17 @@ Dynamic segments use bracket notation: `[id]`, `[teamId]`, `[slug]`, etc.
 Use this template. Adapt imports to only what is actually needed.
 
 ```typescript
-import { auth } from '~/lib/auth'
 import { db } from '~/server/database/drizzle'
-import { getAuthHeaders } from '~/server/utils/auth-headers'
+import { requireAuth } from '~/server/utils/auth-middleware'
 // import { tableName } from '~/server/database/schema/auth'
 // import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
-  // 1. Validate session
-  const session = await auth.api.getSession({
-    headers: getAuthHeaders(event),
-  })
-  if (!session?.user) {
-    throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
-  }
+  // 1. Authenticate: session cookie or personal API key, 401 otherwise.
+  //    requireAuthWithResolvedProject / requireAuthWithOrganization (server/utils/project-context.ts)
+  //    when working in the active project/workspace; requireInteractiveSession (403 for keys)
+  //    for actions API keys must not perform.
+  const session = await requireAuth(event)
 
   // 2. Read route params / query / body
   // const { id } = getRouterParams(event)
@@ -69,9 +66,9 @@ Replace the hard session guard with a soft check:
 
 ```typescript
 // Session is optional — anonymous requests are allowed
-const session = await auth.api.getSession({
-  headers: getAuthHeaders(event),
-})
+import { optionalAuth } from '~/server/utils/auth-middleware'
+
+const session = await optionalAuth(event)
 const userId = session?.user?.id ?? null
 ```
 
