@@ -5,6 +5,7 @@ import { magicLink, multiSession, organization, testUtils, twoFactor } from 'bet
 import { db } from '../server/database/drizzle'
 import * as schema from '../server/database/schema/index'
 import { isReservedSlug } from '../server/utils/reserved-slugs'
+import { claimImportedActivityInBackground } from '../server/services/imports/claim'
 import {
   sendEmailVerificationEmail,
   sendMagicLinkEmail,
@@ -117,6 +118,20 @@ export const auth = betterAuth({
       twoFactor: schema.twoFactor,
     },
   }),
+  // Claim imported posts, comments and votes once a user's email is verified. `create.after` covers sign-ups that
+  // arrive verified (social providers asserting a verified email, magic links); `update.after` covers the
+  // emailVerified flip from an email link or magic link, and verifying a changed address. Fire-and-forget: a failed
+  // claim is logged and never blocks sign-up or verification. See server/services/imports/claim.ts.
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => claimImportedActivityInBackground(user),
+      },
+      update: {
+        after: async (user) => claimImportedActivityInBackground(user),
+      },
+    },
+  },
   session: {
     // The project the user is working in; resolved and repaired server-side by
     // server/utils/project-context.ts. Never set from client input.
