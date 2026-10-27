@@ -1,20 +1,31 @@
 <template>
   <div class="contents">
-    <div class="p-6 max-w-4xl mx-auto space-y-6">
-      <NuxtLink
-        to="/support/contacts"
-        class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <Icon name="lucide:arrow-left" class="w-4 h-4" />
-        Contacts
-      </NuxtLink>
+    <PageContainer>
+      <PageHeader title="Contact" back-to="/support/contacts" back-label="Contacts" />
 
-      <!-- Loading -->
-      <div v-if="isLoading" class="space-y-3">
-        <Skeleton class="h-24 w-full" />
-        <Skeleton class="h-40 w-full" />
-        <Skeleton class="h-40 w-full" />
-      </div>
+      <!-- Loading: shaped like the header card and the timeline card -->
+      <template v-if="isLoading">
+        <Card>
+          <CardContent class="p-6">
+            <div class="flex items-center gap-4">
+              <Skeleton class="h-14 w-14 shrink-0 rounded-full" />
+              <div class="space-y-2">
+                <Skeleton class="h-6 w-48" />
+                <Skeleton class="h-4 w-56" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent class="space-y-6 p-6">
+            <div class="space-y-2">
+              <Skeleton class="h-5 w-24" />
+              <Skeleton class="h-12 w-full" />
+            </div>
+            <Skeleton class="h-28 w-full" />
+          </CardContent>
+        </Card>
+      </template>
 
       <!-- Error -->
       <Card v-else-if="error">
@@ -40,9 +51,9 @@
                 </Avatar>
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
-                    <h1 class="text-2xl font-bold truncate">
+                    <h2 class="text-2xl font-bold truncate">
                       {{ contact.name || contact.email || 'Unnamed contact' }}
-                    </h1>
+                    </h2>
                     <Badge v-if="contact.blockedAt" variant="outline">Blocked</Badge>
                   </div>
                   <p v-if="contact.name && contact.email" class="text-muted-foreground">{{ contact.email }}</p>
@@ -195,7 +206,7 @@
           </CardContent>
         </Card>
       </template>
-    </div>
+    </PageContainer>
 
     <!-- Merge dialog -->
     <Dialog :open="showMergeDialog" @update:open="showMergeDialog = $event">
