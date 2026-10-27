@@ -1,23 +1,5 @@
 <template>
-  <PublicProjectShell
-    :org-slug="orgSlug"
-    :project-slug="projectSlug"
-    active="changelog"
-    :page-title="pageTitle"
-    @loaded="onProjectLoaded"
-  >
-    <template #tabs-end>
-      <a
-        v-if="changelogEnabled"
-        :href="rssUrl"
-        class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        data-testid="changelog-rss-link"
-      >
-        <Icon name="lucide:rss" class="w-4 h-4" />
-        RSS
-      </a>
-    </template>
-
+  <div data-testid="public-changelog">
     <PublicProductFilter
       v-if="changelogEnabled && !entrySlug"
       :products="projectData.products"
@@ -27,10 +9,13 @@
     />
 
     <!-- Changelog disabled -->
-    <div v-if="!changelogEnabled" class="py-16 text-center" data-testid="public-changelog-unavailable">
-      <Icon name="lucide:newspaper" class="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-      <h2 class="text-2xl font-bold mb-2">Changelog not available</h2>
-      <p class="text-muted-foreground mb-6">The changelog is not enabled for this project.</p>
+    <PublicStateMessage
+      v-if="!changelogEnabled"
+      icon="lucide:newspaper"
+      title="Changelog not available"
+      message="The changelog is not enabled for this project."
+      data-testid="public-changelog-unavailable"
+    >
       <NuxtLink
         :to="feedbackBoardPath"
         class="inline-flex items-center gap-1.5 rounded-md px-4 py-2 text-sm bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -38,34 +23,43 @@
         <Icon name="lucide:message-square" class="w-4 h-4" />
         View Feedback Board
       </NuxtLink>
-    </div>
+    </PublicStateMessage>
 
-    <div v-else-if="entriesLoading" class="space-y-6">
-      <Skeleton v-for="n in 3" :key="n" class="h-40 w-full" />
+    <div v-else-if="entriesLoading" class="space-y-10">
+      <div v-for="n in 3" :key="n" class="space-y-3">
+        <Skeleton class="h-4 w-40" />
+        <Skeleton class="h-7 w-2/3" />
+        <Skeleton class="h-20 w-full" />
+      </div>
     </div>
 
     <!-- 404: the entry (or the whole changelog) is not available; nothing to retry -->
-    <div v-else-if="entriesNotFound" class="text-center py-16" data-testid="public-changelog-not-found">
-      <Icon name="lucide:newspaper" class="w-10 h-10 mx-auto text-muted-foreground mb-3" />
-      <p class="font-medium mb-1">
-        {{ entrySlug ? 'This update is not available.' : 'The changelog is not available.' }}
-      </p>
-      <NuxtLink v-if="entrySlug" :to="changelogPath" class="block text-sm text-primary hover:underline mt-2">
+    <PublicStateMessage
+      v-else-if="entriesNotFound"
+      icon="lucide:newspaper"
+      :title="entrySlug ? 'This update is not available.' : 'The changelog is not available.'"
+      data-testid="public-changelog-not-found"
+    >
+      <NuxtLink v-if="entrySlug" :to="changelogPath" class="text-sm text-primary hover:underline">
         Back to the changelog
       </NuxtLink>
-    </div>
+    </PublicStateMessage>
 
-    <div v-else-if="entriesError" class="text-center py-16">
-      <Icon name="lucide:alert-circle" class="w-10 h-10 mx-auto text-destructive mb-3" />
-      <p class="font-medium mb-1">{{ entriesError }}</p>
-      <button class="text-sm text-primary hover:underline mt-2" @click="loadEntries">Try again</button>
-    </div>
+    <PublicStateMessage
+      v-else-if="entriesError"
+      icon="lucide:alert-circle"
+      kind="error"
+      :title="entriesError"
+      retryable
+      @retry="loadEntries"
+    />
 
-    <div v-else-if="entries.length === 0" class="text-center py-20 text-muted-foreground">
-      <Icon name="lucide:newspaper" class="w-12 h-12 mx-auto mb-3 opacity-40" />
-      <p class="font-medium">No updates yet</p>
-      <p class="text-sm mt-1">Check back soon for release notes.</p>
-    </div>
+    <PublicStateMessage
+      v-else-if="entries.length === 0"
+      icon="lucide:newspaper"
+      title="No updates yet"
+      message="Check back soon for release notes."
+    />
 
     <div v-else class="space-y-10">
       <NuxtLink
@@ -133,22 +127,29 @@
         <p v-if="loadMoreError" class="text-sm text-destructive mt-2">{{ loadMoreError }}</p>
       </div>
     </div>
-  </PublicProjectShell>
+  </div>
 </template>
 
 <script>
-import { projectPaths } from '~/lib/public-shell'
+import { publicApiBase, publicCache, publicCacheKey, publicCacheScope, publicTabRequest } from '~/lib/public-cache'
 
+/**
+ * Changelog tab body (list and entry permalink). The shell (PublicProjectShell)
+ * owns header, tabs, theme and the RSS link; the page title of an entry is
+ * reported through the `title` event.
+ */
 export default {
   name: 'PublicChangelog',
   props: {
     orgSlug: { type: String, required: true },
     projectSlug: { type: String, required: true },
     entrySlug: { type: String, default: null },
+    projectData: { type: Object, required: true },
+    paths: { type: Object, required: true },
   },
+  emits: ['title'],
   data() {
     return {
-      projectData: null,
       entries: [],
       nextCursor: null,
       entriesLoading: true,
@@ -162,13 +163,7 @@ export default {
   },
   computed: {
     apiBase() {
-      return `/api/public/o/${encodeURIComponent(this.orgSlug)}/${encodeURIComponent(this.projectSlug)}`
-    },
-    onCustomDomain() {
-      return import.meta.client && this.projectData?.project?.customDomain === window.location.hostname
-    },
-    paths() {
-      return projectPaths(this.projectSlug, this.onCustomDomain)
+      return publicApiBase(this.orgSlug, this.projectSlug)
     },
     feedbackBoardPath() {
       return this.paths.feedback
@@ -176,16 +171,12 @@ export default {
     changelogPath() {
       return this.paths.changelog
     },
-    rssUrl() {
-      return `${this.apiBase}/changelog.rss`
-    },
     productFilter() {
       const value = this.$route.query.product
       return typeof value === 'string' ? value : ''
     },
     changelogEnabled() {
-      // Until the project has loaded the slot is not rendered at all
-      return this.projectData?.project?.settings?.changelogEnabled === true
+      return this.projectData.project?.settings?.changelogEnabled === true
     },
     // The entry's title on a permalink page, otherwise just the list title
     pageTitle() {
@@ -194,40 +185,66 @@ export default {
   },
   watch: {
     async entrySlug() {
-      if (this.projectData && this.changelogEnabled) await this.loadEntries()
+      if (this.changelogEnabled) await this.loadEntries()
     },
     async productFilter() {
-      if (this.projectData && this.changelogEnabled && !this.entrySlug) await this.loadEntries()
+      if (this.changelogEnabled && !this.entrySlug) await this.loadEntries()
+    },
+    pageTitle: {
+      immediate: true,
+      handler(title) {
+        this.$emit('title', title)
+      },
     },
   },
+  async mounted() {
+    if (this.changelogEnabled) await this.loadEntries()
+  },
+  beforeUnmount() {
+    this.$emit('title', '')
+  },
   methods: {
-    async onProjectLoaded(projectData) {
-      this.projectData = projectData
-      if (this.changelogEnabled) await this.loadEntries()
+    // Cache key + fetcher of what is on screen: an entry permalink or the first page of the list
+    entriesRequest() {
+      const slug = this.entrySlug
+      if (!slug) return publicTabRequest('changelog', this.orgSlug, this.projectSlug, { product: this.productFilter })
+      return {
+        key: publicCacheKey(publicCacheScope(this.orgSlug, this.projectSlug), 'changelog', 'entry:' + slug),
+        fetcher: () => $fetch(this.apiBase + '/changelog/' + encodeURIComponent(slug)),
+      }
+    },
+    applyEntries(response) {
+      if (this.entrySlug) {
+        this.entries = response?.data ? [response.data] : []
+        this.nextCursor = null
+      } else {
+        this.entries = response?.data?.entries || []
+        this.nextCursor = response?.data?.nextCursor || null
+      }
     },
     async loadEntries() {
       const seq = ++this.entriesSeq
       const slug = this.entrySlug
-      this.entriesLoading = true
+      const request = this.entriesRequest()
+      const hit = publicCache.peek(request.key)
       this.entriesError = null
       this.entriesNotFound = false
-      this.nextCursor = null
       this.loadMoreError = null
+      if (hit) {
+        this.applyEntries(hit.data)
+        this.entriesLoading = false
+        if (!hit.stale) return
+      } else {
+        this.entries = []
+        this.nextCursor = null
+        this.entriesLoading = true
+      }
       try {
-        if (slug) {
-          const response = await $fetch(`${this.apiBase}/changelog/${encodeURIComponent(slug)}`)
-          if (seq !== this.entriesSeq) return
-          this.entries = response?.data ? [response.data] : []
-        } else {
-          const response = await $fetch(`${this.apiBase}/changelog`, {
-            query: this.productFilter ? { product: this.productFilter } : {},
-          })
-          if (seq !== this.entriesSeq) return
-          this.entries = response?.data?.entries || []
-          this.nextCursor = response?.data?.nextCursor || null
-        }
-      } catch (err) {
+        const response = await publicCache.load(request.key, request.fetcher, { force: Boolean(hit) })
         if (seq !== this.entriesSeq) return
+        this.applyEntries(response)
+      } catch (err) {
+        if (seq !== this.entriesSeq || hit) return
         this.entries = []
         const status = err?.statusCode || err?.status || err?.response?.status
         if (status === 404) {
