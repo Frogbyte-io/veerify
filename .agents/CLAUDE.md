@@ -472,9 +472,19 @@ A `project_member` row with role `admin` makes them a project admin.
 
 ### Imports
 
-Services live in `server/services/imports/` (format, planner, committer, claim). Commit suppresses every side effect
-(no emails, notifications, realtime, GitHub or subscriptions) and never writes `authorUserId` / `voterUserId`; only
-claiming a verified email does. Re-import is a sync where Veerify wins. Agent guide: `docs/mcp.md`.
+Services live in `server/services/imports/` (format, planner, committer, claim, tombstones, suppression). Commit
+suppresses every side effect (no emails, notifications, realtime, GitHub or subscriptions). Re-import is a sync where
+Veerify wins. Agent guide: `docs/mcp.md`.
+
+- An import never matches users by email. Activity is attributed to a user only after that user verifies a matching
+  email: claiming runs from Better-Auth's `afterEmailVerification`, `user.create.after` (user created verified) and
+  `user.update.after` only while `/verify-email` or `/magic-link/verify` is handled (`lib/auth.ts`). Never claim from
+  any other user update.
+- Later imports for a person who has already been claimed are attributed to that user (`authorUserId` /
+  `voterUserId` = `claimedByUserId` at insert). Newly imported people are not auto-claimed.
+- Deleting imported feedback or comments writes an `import_tombstone` row; re-imports skip tombstoned records. Unvoting
+  a claimed imported vote clears `voterUserId` and keeps the row.
+- Transient database errors leave a run `committing` (resumed by `imports:advance`); deterministic errors fail it.
 
 ### Roles
 

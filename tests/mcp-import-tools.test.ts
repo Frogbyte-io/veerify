@@ -71,6 +71,11 @@ describe('import tools', () => {
     }
     expect(byName.import_add_records!.description).toContain('1,000')
     expect(byName.import_add_records!.description).toContain('4 MiB')
+    // records is the sections only, never the full document
+    expect(byName.import_add_records!.description).toContain('not the full document')
+    for (const key of ['`format`', '`target`', '`source`'])
+      expect(byName.import_add_records!.description).toContain(key)
+    expect(byName.import_add_records!.description).toContain('rejected')
     expect(client.getInstructions()).toContain('import_get_format')
   })
 

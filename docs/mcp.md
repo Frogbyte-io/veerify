@@ -118,7 +118,7 @@ previews and writes. The format (`veerify-import/1`) is served by `import_get_fo
 | -------------------- | ------------------------------------------------------------------------------------------ |
 | `import_get_format`  | JSON Schema and an example batch. Call this first                                          |
 | `import_create_run`  | Draft run: `source`, `sourceLabel`, optional `product`, `project`, `onExisting`            |
-| `import_add_records` | Stage one batch (sections only, no `format`/`target`); returns per-record issues           |
+| `import_add_records` | Stage one batch: sections only, not the full document; returns per-record issues           |
 | `import_preview`     | The plan: `counts` per section (`create`, `update`, `unchanged`, `skip`), `kept`, `issues` |
 | `import_commit`      | Write the run. Returns `{ run }` with `run.summary = { counts, kept }`                     |
 | `import_status`      | Run status, counts, summary and issues; poll after a large commit                          |
@@ -130,13 +130,22 @@ previews and writes. The format (`veerify-import/1`) is served by `import_get_fo
 
 - Always preview, show it to the user, and commit only after they agree. Preview works only on a draft run (409 after
   commit).
-- Limits: 1,000 records per `import_add_records` call (and the request must fit the 4 MiB `/mcp` body cap), 50,000 per
-  run. Runs of 500 records or fewer commit inline. Larger runs return `committing`; poll `import_status` until
-  `completed`.
+- `records` in `import_add_records` holds only the sections (`statuses`, `categories`, `people`, `feedback`,
+  `comments`, `changelog`). It is not the full document: `format`, `target`, `source` and `sourceLabel` are rejected
+  (they belong to `import_create_run`).
+- Limits: 1,000 records per `import_add_records` call and a 4 MiB request body (the records route and `/mcp` both
+  refuse more with 413), 50,000 records per run, 10,000 listed `votes` per feedback (put larger totals in `voteCount`,
+  at most 2,147,483,647). Runs of 500 records or fewer commit inline. Larger runs return `committing`; poll
+  `import_status` until `completed`. A commit that hits a temporary database error stays `committing` and resumes on
+  the next background tick; it fails after 10 such errors in a row.
 - Re-importing is an ongoing sync where Veerify wins. A field is updated from the source only if nobody changed it in
   Veerify since the last import; edited fields are kept and the preview lists them under `kept`. New comments, votes and
   people are added. Nothing is ever deleted because it is missing from the source. `onExisting: "skip"` creates only
   records not seen before.
+- What the team deletes in Veerify stays deleted. Imported feedback or comments deleted in Veerify are skipped on every
+  later import from the same source (`skip` with the issue "Deleted in Veerify"; replies under a deleted comment and
+  votes on deleted feedback are skipped too). When a user removes an imported vote that was attributed to them, the
+  vote row is kept but detached from the user, so a re-import does not add the vote back.
 - Votes: listed votes become vote rows. `voteCount` is a signed net counter that becomes a baseline for votes you do
   not list. If a re-run omits `voteCount`, the stored baseline is kept.
 - Changelog links to feedback are created only when the entry is first imported.
@@ -145,13 +154,27 @@ previews and writes. The format (`veerify-import/1`) is served by `import_get_fo
 
 ### Imported people
 
-- Imported people are never emailed and never become users. An import never sets an author or voter user, even if the
-  email matches an account.
-- When a user verifies a matching email, their imported posts, comments and votes become theirs. People imported after
-  that are attributed automatically. Changing your email in Settings marks it unverified and sends a verification link.
+- Imported people are never emailed and never become users.
+- An import never matches users by email. Importing a person whose email belongs to an account does not attribute
+  anything to that account.
+- Activity is attributed to a user only after that user verifies a matching email: following the verification link
+  (also after an email change), signing up with an already verified email (social sign-in, magic link), or a magic-link
+  sign-in that verifies the address. At that moment the person's imported posts, comments and votes become theirs (the
+  person is "claimed"). Other account updates, such as a name change or turning on two-factor authentication, never
+  claim anything.
+- Later imports for a person who has already been claimed are attributed to that user.
+- Newly imported people are not auto-claimed, even when a verified account with the same email already exists. They
+  are claimed the next time that user verifies the email.
+- Changing your email in Settings marks it unverified and sends a verification link to the new address.
+- Converters key people known only by email as `email_<sha256 of the lowercased address>`, never the raw address. Do
+  the same when you build `externalId`s yourself.
 - Erasing a contact (Workspace, erase contact) tombstones the imported person: name and email are removed, links and
-  counts stay, and a re-import never brings that data back. Staged batches are deleted when a run finishes.
-- Erasure does not cover `feedback.metadata` passed through from the source. Do not put personal data there.
+  counts stay, and a re-import never brings that data back. An `externalId` equal to the address is replaced by its
+  hashed form, import issues that mention the address are deleted, and staged batches of unfinished runs lose the
+  person and every reference to the address. A person later imported with an erased (suppressed) address is created
+  without personal data. Staged batches are deleted when a run finishes.
+- Source `metadata` on feedback is stored under `metadata.import.extra`. Erasure does not cover it. Do not put personal
+  data there.
 
 ### "Migrate from Canny"
 
