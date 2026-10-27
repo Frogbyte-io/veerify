@@ -21,6 +21,7 @@
 import { sql } from 'drizzle-orm'
 import { db } from '../../database/drizzle'
 import { createLogger } from '../../utils/logger'
+import { emailPersonExternalId } from './format'
 
 const logger = createLogger('imports:claim')
 
@@ -135,29 +136,39 @@ async function claimOnce(userId: string, email: string): Promise<ClaimResult> {
 }
 
 /**
- * Contact erasure: tombstones imported people with this email (case-insensitive) in the organization's projects. Name,
- * email and avatar are cleared and `erased_at` is set; the row, its `importedPersonId` links and every vote stay, so a
- * re-import finds the person and their votes (no PII comes back, nothing is counted twice) and counters are unchanged.
- * The imported name and email are also nulled on the feedback and comments they authored (`authorUserId` is left alone,
- * also for claimed people). The person is also removed from the staged payloads of runs that are still draft or
- * committing. An erased person has no email, so claiming (which matches `lower(email)`) never finds it again.
+ * Contact erasure: tombstones imported people with this email (case-insensitive) in the organization's projects, and
+ * people whose externalId is the address itself. Name, email and avatar are cleared and `erased_at` is set; the row,
+ * its `importedPersonId` links and every vote stay, so a re-import finds the person and their votes (no PII comes
+ * back, nothing is counted twice) and counters are unchanged. The imported name and email are also nulled on the
+ * feedback and comments they authored (`authorUserId` is left alone, also for claimed people).
+ *
+ * The address is also removed where it survives as an identifier:
+ * - a tombstone whose externalId is the address gets `emailPersonExternalId(address)` (what converters emit, so a
+ *   re-import from a converter still finds it); if that id is already taken in the project and source, the other row
+ *   is kept and this one gets `erased_<person id>`;
+ * - issue rows of the organization's import runs that mention the address (externalId or message) are deleted;
+ * - staged payloads of draft/committing runs drop the person and every reference by the address
+ *   (`authorExternalId` is removed, a vote by it is dropped).
+ * An erased person has no email, so claiming (which matches `lower(email)`) never finds it again.
  * Returns the number of people tombstoned. Runs in the caller's transaction.
  *
  * Accepted race: a commit that is still working from a stale in-memory batch and inserts a brand-new person for this
- * just-erased email (the person row did not exist when erasure ran) is not caught for that advance; the next erasure
- * request removes it. Records of existing people are safe (see `lockPeople`).
+ * just-erased email is not caught by this call. The commit checks the organization's suppression list (written by
+ * contact erasure in the same transaction) before creating a person, so it is created tombstoned instead.
  */
 export async function eraseImportedPeople(
   organizationId: string,
   email: string,
   tx: Pick<typeof db, 'execute'>
 ): Promise<number> {
+  const address = email.trim().toLowerCase()
   const orgProjects = sql`SELECT id FROM project WHERE organization_id = ${organizationId}`
   // Tombstone first: the row update takes the person's lock, which serializes against the commit engine's per-record
   // `FOR SHARE` (lockPeople). A record inserted afterwards reads the erased state; one inserted before is nulled below.
   const erased = await tx.execute<{ id: string }>(sql`
     UPDATE imported_person SET name = NULL, email = NULL, avatar_url = NULL, erased_at = now(), updated_at = now()
-    WHERE lower(email) = lower(${email}) AND erased_at IS NULL AND project_id IN (${orgProjects})
+    WHERE (lower(email) = ${address} OR lower(external_id) = ${address})
+      AND erased_at IS NULL AND project_id IN (${orgProjects})
     RETURNING id
   `)
   const ids = erased.rows.map((r) => r.id)
@@ -173,20 +184,93 @@ export async function eraseImportedPeople(
       sql`UPDATE feedback_comment SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${idList})`
     )
   }
-  await tx.execute(sql`
-    UPDATE import_run_batch b
-    SET payload = jsonb_set(
-      b.payload,
-      '{people}',
-      (SELECT coalesce(jsonb_agg(p), '[]'::jsonb) FROM jsonb_array_elements(b.payload->'people') p
-        WHERE lower(p->>'email') IS DISTINCT FROM lower(${email}))
-    )
-    WHERE jsonb_typeof(b.payload->'people') = 'array'
-      AND b.run_id IN (
-        SELECT r.id FROM import_run r WHERE r.status IN ('draft', 'committing') AND r.project_id IN (${orgProjects})
-      )
+
+  // ExternalIds that are the address itself, also on people erased before this rewrite existed.
+  const hashedId = emailPersonExternalId(address)
+  const rawIds = await tx.execute<{ id: string; project_id: string; source: string }>(sql`
+    SELECT id, project_id, source FROM imported_person
+    WHERE lower(external_id) = ${address} AND erased_at IS NOT NULL AND project_id IN (${orgProjects})
+    ORDER BY id
+    FOR UPDATE
   `)
+  for (const row of rawIds.rows) {
+    await tx.execute(sql`
+      UPDATE imported_person SET external_id = CASE
+        WHEN EXISTS (
+          SELECT 1 FROM imported_person q
+          WHERE q.project_id = ${row.project_id} AND q.source = ${row.source} AND q.external_id = ${hashedId}
+        ) THEN ${'erased_' + row.id}
+        ELSE ${hashedId}
+      END
+      WHERE id = ${row.id}
+    `)
+  }
+
+  await tx.execute(sql`
+    DELETE FROM import_run_issue
+    WHERE run_id IN (SELECT r.id FROM import_run r WHERE r.project_id IN (${orgProjects}))
+      AND (strpos(lower(coalesce(external_id, '')), ${address}) > 0 OR strpos(lower(message), ${address}) > 0)
+  `)
+
+  const staged = await tx.execute<{ id: string; payload: Record<string, unknown> }>(sql`
+    SELECT b.id, b.payload FROM import_run_batch b
+    JOIN import_run r ON r.id = b.run_id
+    WHERE r.status IN ('draft', 'committing') AND r.project_id IN (${orgProjects})
+      AND strpos(lower(b.payload::text), ${address}) > 0
+    ORDER BY b.id
+    FOR UPDATE OF b
+  `)
+  for (const row of staged.rows) {
+    const scrubbed = scrubStagedPayload(row.payload, address)
+    if (scrubbed) {
+      await tx.execute(
+        sql`UPDATE import_run_batch SET payload = ${JSON.stringify(scrubbed)}::jsonb WHERE id = ${row.id}`
+      )
+    }
+  }
   return ids.length
+}
+
+type StagedRecord = Record<string, unknown>
+
+/**
+ * Removes a person (by email or by an externalId equal to the address) and every reference by the address from a
+ * staged batch payload. `address` must be normalized (trimmed, lower case). Returns null when nothing changed.
+ */
+export function scrubStagedPayload(payload: Record<string, unknown>, address: string): Record<string, unknown> | null {
+  const isAddress = (value: unknown) => typeof value === 'string' && value.trim().toLowerCase() === address
+  const list = (section: string) => (Array.isArray(payload[section]) ? (payload[section] as StagedRecord[]) : null)
+  let changed = false
+  const next: Record<string, unknown> = { ...payload }
+
+  const people = list('people')
+  if (people) {
+    const kept = people.filter((p) => !isAddress(p?.email) && !isAddress(p?.externalId))
+    if (kept.length !== people.length) {
+      next.people = kept
+      changed = true
+    }
+  }
+  const dropAuthor = (rec: StagedRecord): StagedRecord => {
+    if (!isAddress(rec?.authorExternalId)) return rec
+    changed = true
+    const { authorExternalId: _dropped, ...rest } = rec
+    return rest
+  }
+  const feedbackRecords = list('feedback')
+  if (feedbackRecords) {
+    next.feedback = feedbackRecords.map((rec) => {
+      const out = dropAuthor(rec)
+      if (!Array.isArray(out?.votes)) return out
+      const votes = (out.votes as StagedRecord[]).filter((v) => !isAddress(v?.personExternalId))
+      if (votes.length === (out.votes as unknown[]).length) return out
+      changed = true
+      return { ...out, votes }
+    })
+  }
+  const comments = list('comments')
+  if (comments) next.comments = comments.map(dropAuthor)
+  return changed ? next : null
 }
 
 /**

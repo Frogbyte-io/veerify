@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { importDocumentSchema } from '../server/services/imports/format'
+import { emailPersonExternalId, importDocumentSchema } from '../server/services/imports/format'
 import { convertCsvToImport } from '../server/services/imports/converters/csv'
 import { convertSleekplanApiToImport } from '../server/services/imports/converters/sleekplan'
 
@@ -48,8 +48,12 @@ describe('import converters', () => {
     const { document, warnings } = convertCsvToImport([{ name: 'a.csv', text }], { source: 'x', sourceLabel: 'X' })
     expect(schema.parse(document)).toBeTruthy()
     expect(document.source).toBe('x')
-    expect(document.people[0]).toMatchObject({ externalId: 'ada@example.com', email: 'ada@example.com', name: 'Ada' })
-    expect(document.feedback[0]).toMatchObject({ authorExternalId: 'ada@example.com', voteCount: 3 })
+    // Keyed by a hash of the address, never the address itself.
+    const adaId = emailPersonExternalId('ada@example.com')
+    expect(adaId).toMatch(/^email_[0-9a-f]{64}$/)
+    expect(document.people[0]).toMatchObject({ externalId: adaId, email: 'ada@example.com', name: 'Ada' })
+    expect(document.feedback[0]).toMatchObject({ authorExternalId: adaId, voteCount: 3 })
+    expect(JSON.stringify(document.feedback)).not.toContain('@')
     expect(document.feedback[0].createdAt).toBe('2025-01-02T00:00:00.000Z')
     expect(document.people[1].email).toBeUndefined()
     expect(document.people[1].name).toBe('Bob')
@@ -83,7 +87,10 @@ describe('import converters', () => {
     )
     expect(schema.parse(document)).toBeTruthy()
     expect(document.feedback[0]).toMatchObject({ externalId: 'f1', status: 'under_review', voteCount: 2 })
-    expect(document.comments[0]).toMatchObject({ isInternal: true, authorExternalId: 'ann@x.io' })
+    expect(document.comments[0]).toMatchObject({
+      isInternal: true,
+      authorExternalId: emailPersonExternalId('ann@x.io'),
+    })
     expect(warnings.some((w) => /1 subscription/.test(w))).toBe(true)
     expect(warnings.some((w) => /other\.csv/.test(w))).toBe(true)
   })

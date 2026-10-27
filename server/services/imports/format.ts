@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { z } from 'zod'
 
 export const IMPORT_FORMAT = 'veerify-import/1'
@@ -115,6 +116,14 @@ export type IssueInput = {
   entityType: string
   externalId?: string
   message: string
+}
+
+/**
+ * The externalId converters give a person known only by email: `email_<sha256(trimmed, lower-cased email)>`, never the
+ * raw address (an externalId is kept on a tombstone after contact erasure, which rewrites raw-email ids to this form).
+ */
+export function emailPersonExternalId(email: string): string {
+  return `email_${createHash('sha256').update(email.trim().toLowerCase()).digest('hex')}`
 }
 
 export function countRecords(batch: ImportBatch): number {

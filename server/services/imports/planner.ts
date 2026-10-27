@@ -17,6 +17,7 @@ import type {
   IssueInput,
 } from './format'
 import { importHttpError, listImportIssues } from './runs'
+import { organizationOfProject, suppressedEmails } from './suppression'
 import { resolveFeedbackStatus, resolveTaxonomy, type TaxonomyResolution } from './taxonomy'
 
 /** Veerify field names synced from the source. The commit engine uses the same lists. */
@@ -401,10 +402,16 @@ export async function planImport(runId: string): Promise<ImportPlan> {
     .where(and(eq(importedPerson.projectId, projectId), eq(importedPerson.source, source)))
   const personByExternalId = new Map(personRows.map((p) => [p.externalId, p]))
   const knownPeople = new Set([...personByExternalId.keys(), ...batch.people.map((p) => p.externalId)])
+  // Same check as the commit: a suppressed (erased) address is created tombstoned and never synced onto a person.
+  const suppressed = await suppressedEmails(
+    await organizationOfProject(projectId),
+    batch.people.map((p) => p.email)
+  )
   for (const rec of batch.people) {
     const row = personByExternalId.get(rec.externalId)
     if (!row) counts.people.create++
-    else if (!sync || row.erasedAt) counts.people.unchanged++
+    else if (!sync || row.erasedAt || (rec.email && suppressed.has(rec.email.trim().toLowerCase())))
+      counts.people.unchanged++
     else tally('people', planFieldSync(row, row, personIncoming(rec), PERSON_SYNC_FIELDS))
   }
 

@@ -4,6 +4,7 @@ import { toStatusValue } from '~/server/utils/project-statuses'
 import {
   IMPORT_FORMAT,
   MAX_VOTE_COUNT,
+  emailPersonExternalId,
   importPersonSchema,
   type ImportCategory,
   type ImportChangelog,
@@ -166,7 +167,7 @@ export class ImportBuilder {
     }
     const cleanName = name?.trim().slice(0, 200) || undefined
     if (!cleanEmail && !cleanName) return undefined
-    const id = (cleanEmail ?? stableId('name', cleanName!)).slice(0, 200)
+    const id = cleanEmail ? emailPersonExternalId(cleanEmail) : stableId('name', cleanName!)
     const existing = this.people.get(id)
     if (!existing) {
       this.people.set(id, {

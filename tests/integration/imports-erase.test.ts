@@ -12,8 +12,8 @@ import {
   project,
   vote,
 } from '../../server/database/schema/feedback'
-import { importRun, importRunBatch } from '../../server/database/schema/imports'
-import type { ImportBatch } from '../../server/services/imports/format'
+import { importRun, importRunBatch, importRunIssue } from '../../server/database/schema/imports'
+import { emailPersonExternalId, type ImportBatch } from '../../server/services/imports/format'
 
 /** Contact erasure covers imported people (authors and voters), org-scoped, case-insensitive, counts intact. */
 
@@ -310,5 +310,153 @@ describe('eraseContact covers imported people (real Postgres)', () => {
     await eraseContact(orgId, e)
     const [batch] = await db.select().from(importRunBatch).where(eq(importRunBatch.runId, runId))
     expect((batch.payload.people as Array<{ externalId: string }>).map((x) => x.externalId)).toEqual(['p-2'])
+  })
+
+  async function newProject(key: string, org = orgId) {
+    const p = mk(key, org)
+    projects.push(p)
+    await db.insert(project).values({ id: p.id, organizationId: org, slug: p.slug, name: p.slug })
+    await db.insert(product).values({ id: p.productId, projectId: p.id, name: 'Main', slug: 'main' })
+    return p
+  }
+
+  /** A document keyed by the raw address, as converters used to emit it. */
+  function rawIdDoc(address: string): ImportBatch {
+    return {
+      statuses: [],
+      categories: [],
+      people: [{ externalId: address, name: 'Raw Ada', email: address }],
+      feedback: [
+        {
+          externalId: 'f-1',
+          title: 'Raw',
+          authorExternalId: address,
+          votes: [{ personExternalId: address, type: 'upvote' }],
+        },
+      ],
+      comments: [{ externalId: 'c-1', feedbackExternalId: 'f-1', body: 'Hi', authorExternalId: address }],
+      changelog: [],
+    }
+  }
+
+  it('rewrites a raw-email externalId on the tombstone to the hashed id, or erased_<id> on a collision', async () => {
+    const e = `ier-rawid-${suffix}@example.com`
+    const p = await newProject('raw')
+    await importInto(p, rawIdDoc(e.toUpperCase()))
+    // Collision: the same person also arrives with an email address that differs only in case, under another source.
+    const q = await newProject('rawc')
+    await importInto(q, rawIdDoc(e))
+    await db.insert(importedPerson).values({
+      id: `ier_hashed_${suffix}`,
+      projectId: q.id,
+      source: 'canny',
+      externalId: emailPersonExternalId(e),
+    })
+
+    expect((await eraseContact(orgId, e)).importedPeople).toBe(2)
+    const [rewritten] = (await snapshot(p.id)).people
+    expect(rewritten).toMatchObject({ externalId: emailPersonExternalId(e), email: null, name: null })
+    const collided = (await snapshot(q.id)).people.find((x) => x.id !== `ier_hashed_${suffix}`)!
+    expect(collided.externalId).toBe(`erased_${collided.id}`)
+    expect(collided.erasedAt).not.toBeNull()
+    for (const row of [...(await snapshot(p.id)).people, ...(await snapshot(q.id)).people]) {
+      expect(row.externalId.toLowerCase()).not.toContain(e)
+    }
+
+    // A converter re-import (hashed ids) finds the tombstone: nothing new, no PII back.
+    const hashed = emailPersonExternalId(e)
+    const runId = await draftRun(p, {
+      ...rawIdDoc(e),
+      people: [{ externalId: hashed, name: 'Raw Ada', email: e }],
+      feedback: [{ externalId: 'f-1', title: 'Raw', authorExternalId: hashed, votes: [] }],
+      comments: [],
+    })
+    const plan = await planImport(runId)
+    expect(plan.counts.people).toMatchObject({ create: 0, unchanged: 1 })
+    expect((await commitImportRun(runId)).summary?.counts).toEqual(plan.counts)
+    expect((await snapshot(p.id)).people).toHaveLength(1)
+  })
+
+  it('deletes import issues of the organization that mention the address', async () => {
+    const e = `ier-issue-${suffix}@example.com`
+    const p = await newProject('iss')
+    const x = await newProject('issx', otherOrgId)
+    const runId = await draftRun(p, doc(`ier-iss-other-${suffix}@example.com`))
+    const otherRunId = await draftRun(x, doc(`ier-iss-other-${suffix}@example.com`))
+    const issue = (id: string, run: string, externalId: string | null, message: string) => ({
+      id: `${id}_${suffix}`,
+      runId: run,
+      severity: 'warning' as const,
+      entityType: 'vote',
+      externalId,
+      message,
+    })
+    await db
+      .insert(importRunIssue)
+      .values([
+        issue('ier_i1', runId, e, 'Unknown person'),
+        issue('ier_i2', runId, 'f-1', `Vote by unknown person "${e.toUpperCase()}" skipped`),
+        issue('ier_i3', runId, 'f-1', 'Unrelated'),
+        issue('ier_i4', otherRunId, e, 'Other workspace'),
+      ])
+
+    await eraseContact(orgId, e)
+    const left = await db
+      .select({ id: importRunIssue.id })
+      .from(importRunIssue)
+      .where(
+        inArray(
+          importRunIssue.id,
+          ['ier_i1', 'ier_i2', 'ier_i3', 'ier_i4'].map((i) => `${i}_${suffix}`)
+        )
+      )
+    expect(left.map((r) => r.id).sort()).toEqual([`ier_i3_${suffix}`, `ier_i4_${suffix}`])
+  })
+
+  it('scrubs author and voter references by the address from staged payloads', async () => {
+    const e = `ier-refs-${suffix}@example.com`
+    const p = await newProject('refs')
+    const batch = rawIdDoc(e)
+    batch.people.push({ externalId: 'p-2', name: 'Grace', email: `ier-refs-grace-${suffix}@example.com` })
+    batch.feedback[0].votes!.push({ personExternalId: 'p-2', type: 'upvote' })
+    const runId = await draftRun(p, batch)
+
+    await eraseContact(orgId, e.toUpperCase())
+    const [staged] = await db.select().from(importRunBatch).where(eq(importRunBatch.runId, runId))
+    expect(JSON.stringify(staged.payload).toLowerCase()).not.toContain(e)
+    const payload = staged.payload as ImportBatch
+    expect(payload.people.map((x) => x.externalId)).toEqual(['p-2'])
+    expect(payload.feedback[0].authorExternalId).toBeUndefined()
+    expect(payload.feedback[0].votes).toEqual([{ personExternalId: 'p-2', type: 'upvote' }])
+    expect(payload.comments[0].authorExternalId).toBeUndefined()
+  })
+
+  it('creates a new person with a suppressed (erased) address already tombstoned; the preview agrees', async () => {
+    const e = `ier-suppressed-${suffix}@example.com`
+    // Erased before this project ever imported the address: only the suppression remembers it.
+    await eraseContact(orgId, e)
+    const p = await newProject('sup')
+    const runId = await draftRun(p, doc(e.toUpperCase()))
+    const plan = await planImport(runId)
+    expect(plan.counts.people).toMatchObject({ create: 2 })
+    const done = await commitImportRun(runId)
+    expect(done.summary?.counts).toEqual(plan.counts)
+
+    const after = await snapshot(p.id)
+    const ada = after.people.find((x) => x.externalId === 'p-1')!
+    expect(ada).toMatchObject({ name: null, email: null, avatarUrl: null })
+    expect(ada.erasedAt).toBeInstanceOf(Date)
+    expect(after.people.find((x) => x.externalId === 'p-2')!.erasedAt).toBeNull()
+    expect(after.fb['f-1']).toMatchObject({ authorName: null, authorEmail: null, importedPersonId: ada.id })
+    expect(after.comments[0]).toMatchObject({ authorName: null, authorEmail: null })
+    expect(after.fb['f-1'].voteCount).toBe(2)
+
+    // Another workspace has no suppression for the address: imported normally there.
+    const x = await newProject('supx', otherOrgId)
+    await importInto(x, doc(e))
+    expect((await snapshot(x.id)).people.find((y) => y.externalId === 'p-1')).toMatchObject({
+      email: e,
+      erasedAt: null,
+    })
   })
 })
