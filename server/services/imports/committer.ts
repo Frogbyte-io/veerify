@@ -3,8 +3,11 @@
  * changelog; see `commit-phases/`). There is no worker: small runs are advanced inline by the commit request, larger
  * ones by the `imports:advance` scheduled task, one bounded call at a time.
  *
- * - Serialized by a lease on the run row (`lease_until`), claimed with a conditional UPDATE. Unique indexes on the
- *   external ids are the backstop.
+ * - Serialized by a lease on the run row (`lease_until`), claimed with a conditional UPDATE. Every later write to the
+ *   run row (checkpoint, lease extension/release, completion, failure, issue rows) is fenced on the claimed
+ *   `lease_until` token, so a worker whose lease expired stops instead of overwriting the new holder. Unique indexes on
+ *   the external ids are the backstop for record writes.
+ * - Each call applies at least one record before checking its budget, so tiny budgets still make progress.
  * - Every record is applied in its own transaction and is idempotent, so a crashed call is safe to repeat.
  *   `progress = { phase, done, total }` is checkpointed (with the running counts) every CHECKPOINT_EVERY records, at
  *   each phase boundary and before the lease is released; the next call resumes from that checkpoint.
@@ -69,6 +72,43 @@ export async function commitImportRun(runId: string): Promise<ImportRunRow> {
  * held by another caller (or the run is not committing), and after releasing the lease on budget exhaustion.
  */
 export async function advanceImportRun(runId: string, options: { budgetMs: number }): Promise<{ done: boolean }> {
+  const { done } = await advance(runId, options.budgetMs)
+  return { done }
+}
+
+/**
+ * The lease token: the `leaseUntil` value this worker last wrote. Every later write to the run row is fenced on it
+ * (`lease_until = token`), so a stalled worker whose lease expired and was re-claimed cannot overwrite progress,
+ * extend or release the new holder's lease, or complete/fail the run.
+ */
+type Lease = { token: Date }
+
+function nextLeaseUntil(lease: Lease): Date {
+  // Strictly increasing, so an extension never reproduces an older token
+  return new Date(Math.max(Date.now() + LEASE_MS, lease.token.getTime() + 1))
+}
+
+/** Writes the run row only while this worker still holds the lease; inserts `issues` in the same transaction. */
+async function fencedRunUpdate(
+  runId: string,
+  lease: Lease,
+  set: Partial<typeof importRun.$inferInsert>,
+  issues: (typeof importRunIssue.$inferInsert)[] = []
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(importRun)
+      .set(set)
+      .where(and(eq(importRun.id, runId), eq(importRun.status, 'committing'), eq(importRun.leaseUntil, lease.token)))
+      .returning({ id: importRun.id, leaseUntil: importRun.leaseUntil })
+    if (!row) return false
+    if (issues.length) await tx.insert(importRunIssue).values(issues)
+    if (row.leaseUntil) lease.token = row.leaseUntil
+    return true
+  })
+}
+
+async function advance(runId: string, budgetMs: number): Promise<{ claimed: boolean; done: boolean }> {
   const started = Date.now()
   const [run] = await db
     .update(importRun)
@@ -81,18 +121,22 @@ export async function advanceImportRun(runId: string, options: { budgetMs: numbe
       )
     )
     .returning()
-  if (!run) return { done: false }
+  if (!run) return { claimed: false, done: false }
+  const lease: Lease = { token: run.leaseUntil! }
 
   try {
-    return await applyPhases(run, started + options.budgetMs)
+    return { claimed: true, done: await applyPhases(run, lease, started + budgetMs) }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error('Import commit failed', { runId, error: message })
-    await db
-      .update(importRun)
-      .set({ status: 'failed', error: message.slice(0, 2000), leaseUntil: null, updatedAt: new Date() })
-      .where(and(eq(importRun.id, runId), eq(importRun.status, 'committing')))
-    return { done: true }
+    // Only the lease holder may fail the run; a stale worker just stops.
+    const failed = await fencedRunUpdate(runId, lease, {
+      status: 'failed',
+      error: message.slice(0, 2000),
+      leaseUntil: null,
+      updatedAt: new Date(),
+    })
+    return { claimed: true, done: failed }
   }
 }
 
@@ -112,8 +156,7 @@ export async function advanceImportRuns(options: { budgetMs?: number } = {}): Pr
     const remaining = deadline - Date.now()
     if (remaining < 1_000) break
     try {
-      await advanceImportRun(id, { budgetMs: remaining })
-      processed++
+      if ((await advance(id, remaining)).claimed) processed++
     } catch (error) {
       logger.error('Import advance failed', { runId: id, error: error instanceof Error ? error.message : error })
     }
@@ -121,7 +164,8 @@ export async function advanceImportRuns(options: { budgetMs?: number } = {}): Pr
   return { processed }
 }
 
-async function applyPhases(run: ImportRunRow, deadline: number): Promise<{ done: boolean }> {
+/** Returns true when the run completed. Stops (false) on budget exhaustion or when the lease is lost. */
+async function applyPhases(run: ImportRunRow, lease: Lease, deadline: number): Promise<boolean> {
   // Resume from the last checkpoint; anything unrecognised restarts from the first phase (records are idempotent).
   const progress = run.progress as Progress | null
   const resumeAt = progress ? COMMIT_PHASES.indexOf(progress.phase as CommitPhaseName) : -1
@@ -146,57 +190,58 @@ async function applyPhases(run: ImportRunRow, deadline: number): Promise<{ done:
   }
 
   let lastCheckpoint = Date.now()
+  let applied = 0
+  // False: the run was canceled, or our lease expired and another worker holds it. Stop either way.
   const checkpoint = async (next: Progress, release = false) => {
-    await issues.flush()
     lastCheckpoint = Date.now()
-    const [row] = await db
-      .update(importRun)
-      .set({
+    return fencedRunUpdate(
+      run.id,
+      lease,
+      {
         progress: next,
         summary: { counts: ctx.counts, kept: ctx.kept } satisfies ImportSummary,
-        leaseUntil: release ? null : new Date(lastCheckpoint + LEASE_MS),
+        leaseUntil: release ? null : nextLeaseUntil(lease),
         updatedAt: new Date(),
-      })
-      .where(and(eq(importRun.id, run.id), eq(importRun.status, 'committing')))
-      .returning({ id: importRun.id })
-    // No row: the run was canceled meanwhile. Stop without touching it further.
-    return !!row
+      },
+      issues.take()
+    )
   }
 
   for (; phaseIndex < PHASES.length; phaseIndex++, done = 0) {
     const phase = PHASES[phaseIndex]
     const items = phase.items(ctx)
     const total = items.length
-    if (!(await checkpoint({ phase: phase.name, done, total }))) return { done: false }
+    if (!(await checkpoint({ phase: phase.name, done, total }))) return false
     const state = done < total ? await phase.load(ctx) : undefined
     for (; done < total; done++) {
-      if (Date.now() >= deadline) {
+      // Every call applies at least one record, so even a tiny budget makes progress.
+      if (applied > 0 && Date.now() >= deadline) {
         await checkpoint({ phase: phase.name, done, total }, true)
-        return { done: false }
+        return false
       }
       await phase.apply(ctx, state, items[done])
+      applied++
       const sinceCheckpoint = Date.now() - lastCheckpoint
       if ((done + 1) % CHECKPOINT_EVERY === 0 || sinceCheckpoint > CHECKPOINT_INTERVAL_MS) {
-        if (!(await checkpoint({ phase: phase.name, done: done + 1, total }))) return { done: false }
+        if (!(await checkpoint({ phase: phase.name, done: done + 1, total }))) return false
       }
     }
   }
 
-  await issues.flush()
   const now = new Date()
-  const [completed] = await db
-    .update(importRun)
-    .set({
+  return fencedRunUpdate(
+    run.id,
+    lease,
+    {
       status: 'completed',
       completedAt: now,
       progress: { phase: 'done', done: run.recordCount, total: run.recordCount },
       summary: { counts: ctx.counts, kept: ctx.kept } satisfies ImportSummary,
       leaseUntil: null,
       updatedAt: now,
-    })
-    .where(and(eq(importRun.id, run.id), eq(importRun.status, 'committing')))
-    .returning({ id: importRun.id })
-  return { done: !!completed }
+    },
+    issues.take()
+  )
 }
 
 /**
@@ -240,22 +285,20 @@ class IssueLog {
     this.pending.push(issue)
   }
 
-  async flush() {
-    if (!this.pending.length) return
+  /** Pending issues as rows, written by the next fenced run update (dropped with it if the lease is lost). */
+  take(): (typeof importRunIssue.$inferInsert)[] {
     const rows = this.pending
     this.pending = []
     const now = new Date()
-    await db.insert(importRunIssue).values(
-      rows.map((issue) => ({
-        id: crypto.randomUUID(),
-        runId: this.runId,
-        severity: issue.severity,
-        entityType: issue.entityType,
-        externalId: issue.externalId ?? null,
-        message: issue.message,
-        createdAt: now,
-      }))
-    )
+    return rows.map((issue) => ({
+      id: crypto.randomUUID(),
+      runId: this.runId,
+      severity: issue.severity,
+      entityType: issue.entityType,
+      externalId: issue.externalId ?? null,
+      message: issue.message,
+      createdAt: now,
+    }))
   }
 }
 

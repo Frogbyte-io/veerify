@@ -157,6 +157,13 @@ async function syncEntry(
     if (applied) {
       Object.assign(set, plan.apply, { updatedAt: ctx.now() })
       if (typeof plan.apply.publishedAt === 'string') set.publishedAt = new Date(plan.apply.publishedAt)
+      // Applied transition to published without a source date: stamp it now, as on insert, and record it in the
+      // snapshot so a later source date is not mistaken for a Veerify edit.
+      const stamp = !('publishedAt' in plan.apply) && !plan.kept.includes('publishedAt') && !row.publishedAt
+      if (plan.apply.status === 'published' && stamp) {
+        set.publishedAt = ctx.now()
+        plan.nextSnapshot.publishedAt = set.publishedAt.toISOString()
+      }
     }
     if (!deepEqual(plan.nextSnapshot, row.importSnapshot)) set.importSnapshot = plan.nextSnapshot
     if (Object.keys(set).length) await tx.update(changelogEntry).set(set).where(eq(changelogEntry.id, row.id))

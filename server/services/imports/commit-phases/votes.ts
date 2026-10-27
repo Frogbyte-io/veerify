@@ -12,8 +12,9 @@ type VoteState = { people: Map<string, PersonRef>; feedback: Map<string, Feedbac
  * Votes, per feedback record, in one transaction with the counter they move:
  * - listed votes become rows keyed (feedbackId, importedPersonId), ON CONFLICT DO NOTHING (claimed votes keep their
  *   importedPersonId, so they are found too);
- * - newBaseline = max(0, (voteCount ?? netListed) − netListed);
- * - voteCount += (newBaseline − oldBaseline) + net(inserted rows), as one SQL expression (never read-modify-write).
+ * - newBaseline = max(0, voteCount − netListed); without a voteCount the stored baseline is kept;
+ * - voteCount = max(0, voteCount + (newBaseline − oldBaseline) + net(inserted rows)), as one SQL expression (never
+ *   read-modify-write).
  * Under onExisting 'skip', votes are still added to existing feedback, but the baseline of feedback this run did not
  * create is left alone.
  */
@@ -40,6 +41,7 @@ export const votesPhase: CommitPhase<VoteState, ImportFeedback> = {
       return
     }
     const ownsBaseline = ctx.sync || fb.importRunId === ctx.run.id
+    // null: the source sent no voteCount, keep the stored baseline
     const newBaseline = voteBaseline(rec.voteCount, netVotes(valid))
     const now = ctx.now()
 
@@ -60,11 +62,11 @@ export const votesPhase: CommitPhase<VoteState, ImportFeedback> = {
             .returning({ type: vote.type })
         : []
       const insertedNet = netVotes(rows)
-      if (ownsBaseline) {
+      if (ownsBaseline && newBaseline !== null) {
         await tx
           .update(feedback)
           .set({
-            voteCount: sql`${feedback.voteCount} + ${newBaseline} - ${feedback.importedVoteBaseline} + ${insertedNet}`,
+            voteCount: sql`GREATEST(${feedback.voteCount} + ${newBaseline} - ${feedback.importedVoteBaseline} + ${insertedNet}, 0)`,
             importedVoteBaseline: newBaseline,
           })
           .where(
@@ -75,7 +77,7 @@ export const votesPhase: CommitPhase<VoteState, ImportFeedback> = {
       } else if (insertedNet !== 0) {
         await tx
           .update(feedback)
-          .set({ voteCount: sql`${feedback.voteCount} + ${insertedNet}` })
+          .set({ voteCount: sql`GREATEST(${feedback.voteCount} + ${insertedNet}, 0)` })
           .where(eq(feedback.id, fb.id))
       }
       return rows.length

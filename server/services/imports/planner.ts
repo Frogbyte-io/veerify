@@ -172,7 +172,9 @@ export function changelogIncoming(rec: ImportChangelog): { incoming: Record<stri
         message: `Label "${l}" is not a changelog label (${CHANGELOG_LABELS.join(', ')}); dropped`,
       })
   }
+  // Same derivation as on insert: a publishedAt without a status means published.
   if (rec.status !== undefined) incoming.status = rec.status
+  else if (rec.publishedAt !== undefined) incoming.status = 'published'
   if (rec.publishedAt !== undefined) incoming.publishedAt = rec.publishedAt
   return { incoming, issues }
 }
@@ -248,9 +250,12 @@ export function netVotes(votes: readonly { type?: string | null }[]): number {
   return votes.reduce((n, v) => n + (v.type === 'downvote' ? -1 : 1), 0)
 }
 
-/** Imported vote baseline: the part of the source's voteCount not represented by listed votes. */
-export function voteBaseline(voteCount: number | undefined, netListed: number): number {
-  return Math.max(0, (voteCount ?? netListed) - netListed)
+/**
+ * Imported vote baseline: the part of the source's voteCount not represented by listed votes. Null when the source
+ * gave no voteCount: the stored baseline is kept (a re-import never removes what the source stopped sending).
+ */
+export function voteBaseline(voteCount: number | undefined, netListed: number): number | null {
+  return voteCount === undefined ? null : Math.max(0, voteCount - netListed)
 }
 
 export const commentKey = (feedbackExternalId: string, externalId: string) => `${feedbackExternalId}\u0000${externalId}`

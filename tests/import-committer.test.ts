@@ -109,7 +109,7 @@ vi.mock('~/server/services/changelog/entries', async (orig) => ({
 }))
 vi.mock('~/server/utils/support-auto-link', (orig) => spyAll(orig as () => Promise<Record<string, unknown>>))
 
-import { advanceImportRun, commitImportRun } from '~/server/services/imports/committer'
+import { advanceImportRun, advanceImportRuns, commitImportRun } from '~/server/services/imports/committer'
 import { importExample } from '~/server/services/imports/format'
 import * as notifications from '~/server/utils/notifications'
 import * as email from '~/lib/email'
@@ -173,6 +173,14 @@ describe('advanceImportRun lease (Review Focus 5)', () => {
       '("import_run"."id" = $1 and "import_run"."status" = $2 and ("import_run"."lease_until" is null or "import_run"."lease_until" < $3))'
     )
     expect(params.slice(0, 2)).toEqual(['run-1', 'committing'])
+  })
+})
+
+describe('advanceImportRuns', () => {
+  it('counts only runs it actually claimed', async () => {
+    seedRun('committing')
+    state.claimRows = [] // another worker won the lease between the select and the claim
+    expect(await advanceImportRuns({ budgetMs: 5_000 })).toEqual({ processed: 0 })
   })
 })
 

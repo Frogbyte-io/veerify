@@ -390,6 +390,142 @@ describe('import commit engine (real Postgres)', () => {
     expect(await advanceImportRun(run.id, { budgetMs: 20_000 })).toEqual({ done: false })
   })
 
+  it('keeps the baseline when a re-run omits voteCount (140 + 5 live, re-run without voteCount -> 145)', async () => {
+    const single = (voteCount?: number): ImportBatch => ({
+      statuses: [],
+      categories: [],
+      people: [],
+      feedback: [{ externalId: 'f-keep', title: 'Keep baseline', ...(voteCount !== undefined ? { voteCount } : {}) }],
+      comments: [],
+      changelog: [],
+    })
+    await commitImportRun((await stage(projA.id, projA.productId, single(140))).id)
+    const row = (await importedFeedback(projA.id))['f-keep']
+    await db.insert(vote).values(Array.from({ length: 5 }, () => ({ id: randomUUID(), feedbackId: row.id })))
+    await db
+      .update(feedback)
+      .set({ voteCount: sql`${feedback.voteCount} + 5` })
+      .where(eq(feedback.id, row.id))
+
+    await commitImportRun((await stage(projA.id, projA.productId, single())).id)
+    expect((await importedFeedback(projA.id))['f-keep']).toMatchObject({ voteCount: 145, importedVoteBaseline: 140 })
+  })
+
+  it('never lets voteCount go below zero', async () => {
+    const single = (voteCount: number): ImportBatch => ({
+      statuses: [],
+      categories: [],
+      people: [],
+      feedback: [{ externalId: 'f-clamp', title: 'Clamp', voteCount }],
+      comments: [],
+      changelog: [],
+    })
+    await commitImportRun((await stage(projA.id, projA.productId, single(10))).id)
+    const row = (await importedFeedback(projA.id))['f-clamp']
+    // Live downvotes pulled the counter under the baseline
+    await db.update(feedback).set({ voteCount: 3 }).where(eq(feedback.id, row.id))
+    await commitImportRun((await stage(projA.id, projA.productId, single(0))).id)
+    expect((await importedFeedback(projA.id))['f-clamp']).toMatchObject({ voteCount: 0, importedVoteBaseline: 0 })
+  })
+
+  it('derives changelog status on sync: publishedAt alone publishes; status published stamps publishedAt', async () => {
+    const entries = (cl: ImportBatch['changelog']): ImportBatch => ({
+      statuses: [],
+      categories: [],
+      people: [],
+      feedback: [],
+      comments: [],
+      changelog: cl,
+    })
+    await commitImportRun(
+      (
+        await stage(
+          projA.id,
+          projA.productId,
+          entries([
+            { externalId: 'cl-date', title: 'Dated', body: 'b' },
+            { externalId: 'cl-status', title: 'Status', body: 'b' },
+          ])
+        )
+      ).id
+    )
+    const before = Date.now()
+    await commitImportRun(
+      (
+        await stage(
+          projA.id,
+          projA.productId,
+          entries([
+            { externalId: 'cl-date', title: 'Dated', body: 'b', publishedAt: '2025-03-01T00:00:00Z' },
+            { externalId: 'cl-status', title: 'Status', body: 'b', status: 'published' },
+          ])
+        )
+      ).id
+    )
+    const rows = await db
+      .select()
+      .from(changelogEntry)
+      .where(and(eq(changelogEntry.projectId, projA.id), inArray(changelogEntry.externalId, ['cl-date', 'cl-status'])))
+    const byId = Object.fromEntries(rows.map((r) => [r.externalId!, r]))
+    expect(byId['cl-date'].status).toBe('published')
+    expect(byId['cl-date'].publishedAt?.toISOString()).toBe('2025-03-01T00:00:00.000Z')
+    expect(byId['cl-status'].status).toBe('published')
+    expect(byId['cl-status'].publishedAt!.getTime()).toBeGreaterThanOrEqual(before - 1000)
+  })
+
+  it('a worker whose lease was re-claimed stops at its next run write and changes nothing (lease fencing)', async () => {
+    const source = `fenced-${suffix}`
+    const run = await stage(projA.id, projA.productId, doc(), source)
+    await db.update(importRun).set({ status: 'committing', committedAt: new Date() }).where(eq(importRun.id, run.id))
+
+    // Worker A claims; while it loads the batch, its lease is taken over by worker B (as after an expiry).
+    const workerBToken = new Date(Date.now() + 10 * 60_000)
+    const real = vi.mocked(loadRunBatch).getMockImplementation()!
+    vi.mocked(loadRunBatch).mockImplementationOnce(async (id: string) => {
+      await db.update(importRun).set({ leaseUntil: workerBToken }).where(eq(importRun.id, id))
+      return real(id)
+    })
+
+    expect(await advanceImportRun(run.id, { budgetMs: 20_000 })).toEqual({ done: false })
+    const [after] = await db.select().from(importRun).where(eq(importRun.id, run.id))
+    expect(after.status).toBe('committing')
+    expect(after.leaseUntil?.getTime()).toBe(workerBToken.getTime())
+    expect(after.progress).toBeNull()
+    expect(after.summary).toBeNull()
+    expect((await countsFor(projA.id, source)).people).toBe(0)
+    expect(await db.select().from(importRunIssue).where(eq(importRunIssue.runId, run.id))).toHaveLength(0)
+  })
+
+  it('resumes across many budget-exhausted calls with the same result as one call', async () => {
+    const singleSource = `single-${suffix}`
+    const loopSource = `loop-${suffix}`
+    const single = await stage(projA.id, projA.productId, doc(), singleSource)
+    const singleDone = await commitImportRun(single.id)
+    expect(singleDone.status).toBe('completed')
+
+    const looped = await stage(projA.id, projA.productId, doc(), loopSource)
+    await db.update(importRun).set({ status: 'committing', committedAt: new Date() }).where(eq(importRun.id, looped.id))
+    let calls = 0
+    for (; calls < 200; ) {
+      calls++
+      if ((await advanceImportRun(looped.id, { budgetMs: 1 })).done) break
+    }
+    expect(calls).toBeGreaterThan(6) // several calls per phase, not one pass
+    const [loopDone] = await db.select().from(importRun).where(eq(importRun.id, looped.id))
+    expect(loopDone.status).toBe('completed')
+    expect(loopDone.summary).toEqual(singleDone.summary)
+    expect(await countsFor(projA.id, loopSource)).toEqual(await countsFor(projA.id, singleSource))
+
+    const issueKeys = async (runId: string) =>
+      (await db.select().from(importRunIssue).where(eq(importRunIssue.runId, runId)))
+        .map((i) => [i.severity, i.entityType, i.externalId, i.message].join('|'))
+        .sort()
+    const loopIssues = await issueKeys(looped.id)
+    expect(new Set(loopIssues).size).toBe(loopIssues.length)
+    expect(loopIssues).toEqual(await issueKeys(single.id))
+    expect(loopIssues.length).toBeGreaterThan(0)
+  })
+
   it('rejects committing a run that is not a draft', async () => {
     const run = await stage(projA.id, projA.productId, doc())
     await commitImportRun(run.id)
