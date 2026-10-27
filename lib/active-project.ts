@@ -74,9 +74,15 @@ export function loadActiveProject(options: { force?: boolean } = {}): Promise<Ac
   if (inflight && inflight.generation === generation) return inflight.promise
 
   const requestGeneration = generation
-  const promise = (async () => {
+  const entry: { generation: number; promise: Promise<ActiveProjectContext | null> } = {
+    generation: requestGeneration,
+    promise: Promise.resolve(null),
+  }
+  entry.promise = (async () => {
     try {
-      const response = await $fetch<{ data?: ActiveProjectContext }>('/api/projects/active')
+      // Typed loosely: the generated route types for this endpoint are too deep for TS
+      const fetchActive = $fetch as unknown as (url: string) => Promise<{ data?: ActiveProjectContext }>
+      const response = await fetchActive('/api/projects/active')
       const context = response?.data?.project ? response.data : null
       if (requestGeneration === generation) {
         activeProjectStore.context = context
@@ -96,11 +102,11 @@ export function loadActiveProject(options: { force?: boolean } = {}): Promise<Ac
       if (requestGeneration === generation) activeProjectStore.error = err
       throw err
     } finally {
-      if (inflight?.promise === promise) inflight = null
+      if (inflight === entry) inflight = null
     }
   })()
-  inflight = { generation: requestGeneration, promise }
-  return promise
+  inflight = entry
+  return entry.promise
 }
 
 /** The cached context without a request (`undefined` if never loaded). */
