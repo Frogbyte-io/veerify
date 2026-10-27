@@ -10,6 +10,8 @@ const state = vi.hoisted(() => ({
   access: null as null | { statusCode: number },
   params: {} as Record<string, string>,
   products: [] as { id: string; slug: string; projectId: string }[],
+  runUpdateMiss: false,
+  batchInsertError: null as null | Record<string, unknown>,
 }))
 
 const requireProjectBySlug = vi.hoisted(() =>
@@ -41,7 +43,7 @@ vi.mock('~/server/utils/response', () => ({
     success: false,
     error: { code, message, details },
   }),
-  ErrorCode: { VALIDATION_ERROR: 'VALIDATION_ERROR', NOT_FOUND: 'NOT_FOUND' },
+  ErrorCode: { VALIDATION_ERROR: 'VALIDATION_ERROR', NOT_FOUND: 'NOT_FOUND', CONFLICT: 'CONFLICT' },
 }))
 
 const dialect = new PgDialect()
@@ -75,6 +77,7 @@ vi.mock('~/server/database/drizzle', () => {
     insert: vi.fn((table: any) => ({
       values: (v: any) => {
         const list = Array.isArray(v) ? v : [v]
+        if (state.batchInsertError && getTableName(table) === 'import_run_batch') throw state.batchInsertError
         rowsOf(table).push(...list)
         return {
           returning: () => Promise.resolve(list),
@@ -85,7 +88,10 @@ vi.mock('~/server/database/drizzle', () => {
     update: vi.fn((table: any) => ({
       set: (v: any) => ({
         where: (c: SQL) => {
-          const hit = rowsOf(table).filter((r) => matches(r, c))
+          const hit =
+            state.runUpdateMiss && getTableName(table) === 'import_run' && 'recordCount' in v
+              ? []
+              : rowsOf(table).filter((r) => matches(r, c))
           hit.forEach((r) => Object.assign(r, v))
           return {
             returning: () => Promise.resolve(hit),
@@ -95,7 +101,17 @@ vi.mock('~/server/database/drizzle', () => {
       }),
     })),
   }
-  db.transaction = async (cb: (tx: any) => unknown) => cb(db)
+  db.transaction = async (cb: (tx: any) => unknown) => {
+    const snapshot = Object.fromEntries(
+      Object.entries(state.tables).map(([k, rows]) => [k, rows.map((r) => ({ ...r }))])
+    )
+    try {
+      return await cb(db)
+    } catch (error) {
+      state.tables = snapshot
+      throw error
+    }
+  }
   return { db }
 })
 
@@ -126,6 +142,8 @@ beforeEach(() => {
   state.tables = {}
   state.body = {}
   state.status = undefined
+  state.runUpdateMiss = false
+  state.batchInsertError = null
   state.access = null
   state.params = { slug: 'proj', runId: 'run-1' }
   state.products = [{ id: 'prod-x', slug: 'x-slug', projectId: 'proj-1' }]
@@ -175,7 +193,12 @@ describe('import run routes', () => {
     state.body = { format: 'veerify-import/1', feedback: [] }
     await expect(recordsHandler({})).rejects.toMatchObject({
       statusCode: 400,
-      statusMessage: 'Send format and target to create the run; records batches carry only sections',
+      data: {
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Send format and target to create the run; records batches carry only sections',
+        },
+      },
     })
   })
 
@@ -194,7 +217,34 @@ describe('import run routes', () => {
   it('rejects adding to a completed run with 409', async () => {
     seedRun({ status: 'completed' })
     state.body = { feedback: [fb('a')] }
-    await expect(recordsHandler({})).rejects.toMatchObject({ statusCode: 409 })
+    await expect(recordsHandler({})).rejects.toMatchObject({
+      statusCode: 409,
+      statusMessage: 'Conflict',
+      data: { error: { code: 'CONFLICT' } },
+    })
+  })
+
+  it('409s and commits nothing when the conditional run update matches no row', async () => {
+    seedRun()
+    state.runUpdateMiss = true
+    state.body = { feedback: [fb('a'), fb('a')] }
+    await expect(recordsHandler({})).rejects.toMatchObject({
+      statusCode: 409,
+      data: { error: { code: 'CONFLICT', message: 'Run changed concurrently; retry the batch' } },
+    })
+    expect(state.tables.import_run_batch ?? []).toHaveLength(0)
+    expect(state.tables.import_run_issue ?? []).toHaveLength(0)
+  })
+
+  it('turns a (runId, seq) unique violation into a 409', async () => {
+    seedRun()
+    state.batchInsertError = { code: '23505' }
+    state.body = { feedback: [fb('a')] }
+    await expect(recordsHandler({})).rejects.toMatchObject({
+      statusCode: 409,
+      data: { error: { code: 'CONFLICT', message: 'Run changed concurrently; retry the batch' } },
+    })
+    expect(state.tables.import_run![0]!.recordCount).toBe(0)
   })
 
   it('stages a batch and increments seq and recordCount', async () => {

@@ -4,6 +4,7 @@ import { importRun, importRunBatch, importRunIssue } from '~/server/database/sch
 import { listProducts, requireProductInProject } from '~/server/utils/project-access'
 import { MAX_BATCH_RECORDS, MAX_RUN_RECORDS, countRecords } from './format'
 import type { ImportBatch, IssueInput } from './format'
+import { createErrorResponse, ErrorCode } from '~/server/utils/response'
 
 export type ImportRunRow = typeof importRun.$inferSelect
 
@@ -16,8 +17,25 @@ const SECTIONS = [
   ['changelog', 'changelog'],
 ] as const
 
+export function importHttpError(statusCode: number, statusMessage: string, code: string, message: string): never {
+  throw createError({ statusCode, statusMessage, data: createErrorResponse(code, message) })
+}
+
 function notFound(message: string): never {
-  throw createError({ statusCode: 404, statusMessage: message })
+  return importHttpError(404, 'Not Found', ErrorCode.NOT_FOUND, message)
+}
+
+function conflict(message: string): never {
+  return importHttpError(409, 'Conflict', ErrorCode.CONFLICT, message)
+}
+
+function badRequest(message: string): never {
+  return importHttpError(400, 'Bad Request', ErrorCode.VALIDATION_ERROR, message)
+}
+
+function isUniqueViolation(error: unknown) {
+  const e = error as { code?: string; cause?: { code?: string } }
+  return e?.code === '23505' || e?.cause?.code === '23505'
 }
 
 /** Resolves a product by slug or id inside the project; the default product when absent. */
@@ -81,7 +99,7 @@ export async function listImportIssues(runId: string, limit = 200) {
     .select()
     .from(importRunIssue)
     .where(eq(importRunIssue.runId, runId))
-    .orderBy(asc(importRunIssue.createdAt))
+    .orderBy(asc(importRunIssue.createdAt), asc(importRunIssue.id))
     .limit(limit)
 }
 
@@ -92,18 +110,15 @@ export async function addImportBatch(
   const [run] = await db.select().from(importRun).where(eq(importRun.id, runId)).limit(1)
   if (!run) notFound('Import run not found')
   if (run.status !== 'draft') {
-    throw createError({ statusCode: 409, statusMessage: `Import run is ${run.status}; only draft runs accept records` })
+    conflict(`Import run is ${run.status}; only draft runs accept records`)
   }
 
   const incoming = countRecords(batch)
   if (incoming > MAX_BATCH_RECORDS) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: `A batch holds at most ${MAX_BATCH_RECORDS} records (got ${incoming})`,
-    })
+    badRequest(`A batch holds at most ${MAX_BATCH_RECORDS} records (got ${incoming})`)
   }
   if (run.recordCount + incoming > MAX_RUN_RECORDS) {
-    throw createError({ statusCode: 400, statusMessage: `A run holds at most ${MAX_RUN_RECORDS} records` })
+    badRequest(`A run holds at most ${MAX_RUN_RECORDS} records`)
   }
 
   const earlier = await db
@@ -139,30 +154,43 @@ export async function addImportBatch(
   const runRecordCount = run.recordCount + kept
   const now = new Date()
 
-  await db.transaction(async (tx) => {
-    await tx.insert(importRunBatch).values({
-      id: crypto.randomUUID(),
-      runId,
-      seq,
-      payload: staged,
-      recordCount: kept,
-      createdAt: now,
+  const retry = 'Run changed concurrently; retry the batch'
+  try {
+    await db.transaction(async (tx) => {
+      // Conditional on the state we validated against: a concurrent batch or a status change matches no row.
+      const [updated] = await tx
+        .update(importRun)
+        .set({ recordCount: runRecordCount, updatedAt: now })
+        .where(and(eq(importRun.id, runId), eq(importRun.status, 'draft'), eq(importRun.recordCount, run.recordCount)))
+        .returning({ id: importRun.id })
+      if (!updated) conflict(retry)
+
+      await tx.insert(importRunBatch).values({
+        id: crypto.randomUUID(),
+        runId,
+        seq,
+        payload: staged,
+        recordCount: kept,
+        createdAt: now,
+      })
+      if (issues.length) {
+        await tx.insert(importRunIssue).values(
+          issues.map((issue) => ({
+            id: crypto.randomUUID(),
+            runId,
+            severity: issue.severity,
+            entityType: issue.entityType,
+            externalId: issue.externalId ?? null,
+            message: issue.message,
+            createdAt: now,
+          }))
+        )
+      }
     })
-    if (issues.length) {
-      await tx.insert(importRunIssue).values(
-        issues.map((issue) => ({
-          id: crypto.randomUUID(),
-          runId,
-          severity: issue.severity,
-          entityType: issue.entityType,
-          externalId: issue.externalId ?? null,
-          message: issue.message,
-          createdAt: now,
-        }))
-      )
-    }
-    await tx.update(importRun).set({ recordCount: runRecordCount, updatedAt: now }).where(eq(importRun.id, runId))
-  })
+  } catch (error) {
+    if (isUniqueViolation(error)) conflict(retry)
+    throw error
+  }
 
   return { seq, recordCount: kept, runRecordCount, issues }
 }
@@ -171,7 +199,7 @@ export async function cancelImportRun(runId: string): Promise<ImportRunRow> {
   const [run] = await db.select().from(importRun).where(eq(importRun.id, runId)).limit(1)
   if (!run) notFound('Import run not found')
   if (run.status !== 'draft' && run.status !== 'committing') {
-    throw createError({ statusCode: 409, statusMessage: `Import run is ${run.status}; it cannot be canceled` })
+    conflict(`Import run is ${run.status}; it cannot be canceled`)
   }
   // Compare-and-swap on the status just read, so a concurrent completion is not overwritten.
   const [updated] = await db
@@ -180,7 +208,7 @@ export async function cancelImportRun(runId: string): Promise<ImportRunRow> {
     .where(and(eq(importRun.id, runId), eq(importRun.status, run.status)))
     .returning()
   if (!updated) {
-    throw createError({ statusCode: 409, statusMessage: 'Import run changed state; it cannot be canceled' })
+    conflict('Import run changed state; it cannot be canceled')
   }
   return updated
 }

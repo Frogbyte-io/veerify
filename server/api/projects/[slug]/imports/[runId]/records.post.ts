@@ -36,11 +36,11 @@
  *       404: { description: "Project or run not found" }
  *       409: { description: "Run is not a draft" }
  */
-import { createSuccessResponse } from '~/server/utils/response'
+import { createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
 import { requireProjectBySlug } from '~/server/utils/project-categories'
 import { importBatchSchema } from '~/server/services/imports/format'
-import { addImportBatch, getImportRunForProject } from '~/server/services/imports/runs'
+import { addImportBatch, getImportRunForProject, importHttpError } from '~/server/services/imports/runs'
 
 export default defineEventHandler(async (event) => {
   const { project } = await requireProjectBySlug(event, getRouterParam(event, 'slug') ?? '', { admin: true })
@@ -48,10 +48,12 @@ export default defineEventHandler(async (event) => {
 
   const raw = await readBody(event)
   if (raw && typeof raw === 'object' && ('format' in raw || 'target' in raw)) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Send format and target to create the run; records batches carry only sections',
-    })
+    importHttpError(
+      400,
+      'Bad Request',
+      ErrorCode.VALIDATION_ERROR,
+      'Send format and target to create the run; records batches carry only sections'
+    )
   }
 
   const batch = await validateBody(event, importBatchSchema)
