@@ -1,3 +1,38 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/status:
+ *   patch:
+ *     tags: [Feedback]
+ *     summary: Change feedback status
+ *     description: >
+ *       Sets the status and notifies subscribers and linked contacts. Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       The value must be one of the project statuses: its custom statuses when defined, otherwise the system statuses (open, in_progress, planned, completed, closed, declined). The 400 message lists the allowed values.
+ *     operationId: updateFeedbackStatus
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string, minLength: 1, maxLength: 80, description: "A status value defined for the feedback project" }
+ *     responses:
+ *       200: { description: "Updated feedback item" }
+ *       400: { description: "Validation failed or status not allowed for this project" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "No access to the feedback project" }
+ *       404: { description: "Feedback not found" }
+ */
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'

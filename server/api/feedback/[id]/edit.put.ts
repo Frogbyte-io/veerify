@@ -1,3 +1,35 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/edit:
+ *   put:
+ *     tags: [Feedback]
+ *     summary: Edit feedback with a submitter edit token
+ *     description: >
+ *       Token-based; no session needed. Updates title and body when the edit token (from the confirmation email link, valid 7 days) matches.
+ *     operationId: updateFeedbackWithEditToken
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, title, body]
+ *             properties:
+ *               token: { type: string, minLength: 1, description: "Edit token from the confirmation email" }
+ *               title: { type: string, minLength: 1, maxLength: 200 }
+ *               body: { type: string, minLength: 1, maxLength: 5000 }
+ *     responses:
+ *       200: { description: "Updated id, title, body and updatedAt" }
+ *       400: { description: "Validation failed" }
+ *       403: { description: "Invalid or expired edit link" }
+ *       404: { description: "Feedback not found" }
+ */
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'

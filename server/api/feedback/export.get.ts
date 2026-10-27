@@ -1,3 +1,49 @@
+/**
+ * @openapi
+ * /api/feedback/export:
+ *   get:
+ *     tags: [Feedback]
+ *     summary: Export feedback as CSV
+ *     description: >
+ *       Returns a CSV file (text/csv) with columns Title, Status, Category, Project, Product, Votes, Comments, Author, Author Email, Pinned, GitHub Issue, Created, Updated. Includes author emails, so project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: exportFeedback
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: projectId
+ *         description: "Project id. Either projectId or projectIds is required"
+ *         schema: { type: string, minLength: 1 }
+ *       - in: query
+ *         name: projectIds
+ *         description: "Comma-separated project ids. Either projectId or projectIds is required"
+ *         schema: { type: string }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [open, in_progress, planned, completed, closed, declined] }
+ *       - in: query
+ *         name: categoryId
+ *         schema: { type: string }
+ *       - in: query
+ *         name: productId
+ *         schema: { type: string, minLength: 1 }
+ *       - in: query
+ *         name: search
+ *         description: "Case-insensitive match on title or body"
+ *         schema: { type: string }
+ *       - in: query
+ *         name: sortBy
+ *         schema: { type: string, enum: [createdAt, updatedAt, voteCount, title], default: createdAt }
+ *       - in: query
+ *         name: sortOrder
+ *         schema: { type: string, enum: [asc, desc], default: desc }
+ *     responses:
+ *       200: { description: "CSV attachment (text/csv; charset=utf-8)" }
+ *       400: { description: "Validation failed (for example neither projectId nor projectIds given)" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Not a member of a requested project" }
+ */
 import { z } from 'zod'
 import { eq, and, desc, asc, or, ilike } from 'drizzle-orm'
 import { requireAuth } from '~/server/utils/auth-middleware'

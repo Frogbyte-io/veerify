@@ -1,3 +1,27 @@
+/**
+ * @openapi
+ * /api/feedback/{id}:
+ *   delete:
+ *     tags: [Feedback]
+ *     summary: Delete a feedback item
+ *     description: >
+ *       Permanently deletes the item. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *     operationId: deleteFeedback
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Deleted; data is { id, deleted: true }" }
+ *       401: { description: "Not authenticated" }
+ *       403: { description: "Not the author and no project access" }
+ *       404: { description: "Feedback not found" }
+ */
 import { eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedback } from '~/server/database/schema/feedback'

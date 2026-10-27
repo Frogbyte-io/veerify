@@ -1,3 +1,40 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/subscribe:
+ *   post:
+ *     tags: [Feedback]
+ *     summary: Subscribe to feedback updates
+ *     description: >
+ *       Subscribes to status changes and comments. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).
+ *       Signed-in callers use their account email and may choose a channel; anonymous callers must send email and always get the email channel (a confirmation email is sent). Re-subscribing updates the channel and returns 200.
+ *     operationId: subscribeToFeedback
+ *     security:
+ *       - cookieAuth: []
+ *       - userApiKeyAuth: []
+ *       - {}
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email: { type: string, format: email, description: "Required for anonymous callers; ignored when signed in" }
+ *               channel: { type: string, enum: [email, app, both], default: email, description: "Signed-in callers only; anonymous callers always use email" }
+ *     responses:
+ *       200: { description: "Already subscribed; data is { subscribed, email, channel }" }
+ *       201: { description: "Subscribed; data is { subscribed, email, channel }" }
+ *       400: { description: "Validation failed or email missing" }
+ *       401: { description: "Invalid personal API key" }
+ *       403: { description: "Feedback is not accessible" }
+ *       404: { description: "Feedback not found" }
+ */
 import { z } from 'zod'
 import { eq, and } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'

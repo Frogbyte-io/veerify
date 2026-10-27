@@ -713,6 +713,251 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/feedback": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "List feedback",
+      "description": "Lists feedback for one or more projects, pinned items first. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Project members see everything in their projects; others see only non-hidden items of public products of public projects.\n",
+      "operationId": "listFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projectId",
+          "description": "Project id. Either projectId or projectIds is required",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "projectIds",
+          "description": "Comma-separated project ids. Either projectId or projectIds is required",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "planned",
+              "completed",
+              "closed",
+              "declined"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "categoryId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "productId",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "description": "Case-insensitive match on title or body",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "page",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        {
+          "in": "query",
+          "name": "sortBy",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "updatedAt",
+              "voteCount",
+              "title"
+            ],
+            "default": "voteCount"
+          }
+        },
+        {
+          "in": "query",
+          "name": "sortOrder",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Paginated list: data.items and data.pagination (page, limit, total, totalPages)"
+        },
+        "400": {
+          "description": "Validation failed (for example neither projectId nor projectIds given)"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "No access to a requested project"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Create feedback",
+      "description": "Creates a feedback item and auto-upvotes it for the submitter. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Signed-in callers need project access. Anonymous callers need a public project and public product, and must send authorName. Rate limited (strict for anonymous callers). The response metadata includes the edit token used by the submitter edit link.\n",
+      "operationId": "createFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "title",
+                "body",
+                "projectId"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                },
+                "projectId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "productId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Defaults to the project's first product"
+                },
+                "categoryId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Must belong to the project"
+                },
+                "feedbackType": {
+                  "type": "string",
+                  "enum": [
+                    "feature_request",
+                    "bug_report",
+                    "improvement",
+                    "question",
+                    "other"
+                  ]
+                },
+                "authorName": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Required for anonymous callers; ignored when signed in"
+                },
+                "authorEmail": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Optional; ignored when signed in. A confirmation email with an edit link is sent when present"
+                },
+                "attachmentIds": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Ids of finalized, unattached uploads from POST /api/feedback-attachments/presign"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Feedback created; includes the product summary"
+        },
+        "400": {
+          "description": "Validation failed, invalid category, or missing authorName for anonymous callers"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "No access to the project"
+        },
+        "404": {
+          "description": "Project or product not found (private products answer 404 to anonymous callers)"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
   "/api/feedback-attachments/{id}": {
     "delete": {
       "tags": [
@@ -950,6 +1195,183 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/feedback/{id}": {
+    "delete": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Delete a feedback item",
+      "description": "Permanently deletes the item. Allowed for the author or anyone with access to the feedback project. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Deleted; data is { id, deleted: true }"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not the author and no project access"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Update a feedback item",
+      "description": "Updates title, body, category, type or product. The author or any project member may edit; only project members may move feedback to another product. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). title and body are always required.\n",
+      "operationId": "updateFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "title",
+                "body"
+              ],
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                },
+                "categoryId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Category of the same project; null or empty string clears it; omit to keep it"
+                },
+                "productId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Move to another product of the same project (project members only)"
+                },
+                "feedbackType": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    "feature_request",
+                    "bug_report",
+                    "improvement",
+                    "question",
+                    "other"
+                  ],
+                  "description": "Omit to keep the current type; null clears it"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated feedback with product, tag and permission flags"
+        },
+        "400": {
+          "description": "Validation failed or invalid category"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not the author and no project access, or not allowed to move products"
+        },
+        "404": {
+          "description": "Feedback or product not found"
+        }
+      }
+    },
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Get a feedback item",
+      "description": "Returns one feedback item with category, author, project, product, viewer vote state and permission flags (canEdit, canDelete, canManage). Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Hidden items are visible only to project members and the author. Contact details and client metadata are redacted for non-members.\n",
+      "operationId": "getFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Feedback item"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Project is not public and caller has no access"
+        },
+        "404": {
+          "description": "Feedback not found or not public"
+        }
+      }
+    }
+  },
   "/api/feedback/{id}/attachments": {
     "get": {
       "tags": [
@@ -974,6 +1396,927 @@ export const openapiPaths = {
         },
         "404": {
           "description": "Feedback not found or not visible"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/comments": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "List comments on a feedback item",
+      "description": "Returns comments oldest first, with author, edited flag and canEdit/canDelete. Internal comments are returned only to project members. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "listFeedbackComments",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Array of comments"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Project is not public and caller has no access"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Add a comment",
+      "description": "Adds a comment and notifies the team and subscribers (not for internal notes). Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Anonymous callers must send authorName. Only project members may post internal comments. Locked feedback rejects new comments. Rate limited.\n",
+      "operationId": "createFeedbackComment",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "body"
+              ],
+              "properties": {
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                },
+                "parentCommentId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Reply to a comment on the same feedback item"
+                },
+                "isInternal": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Internal note visible to project members only"
+                },
+                "authorName": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Required for anonymous callers; ignored when signed in"
+                },
+                "authorEmail": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Ignored when signed in"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Comment created"
+        },
+        "400": {
+          "description": "Validation failed, invalid parent comment, or missing authorName for anonymous callers"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Feedback is locked, not accessible, or internal comment by a non-member"
+        },
+        "404": {
+          "description": "Feedback not found"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/comments/{commentId}": {
+    "delete": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Delete a comment",
+      "description": "Deletes the comment and decrements the comment count. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "deleteFeedbackComment",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "commentId",
+          "required": true,
+          "description": "Comment id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Deleted; data is { deleted: true }"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Not the author and not a project member"
+        },
+        "404": {
+          "description": "Comment or feedback not found"
+        }
+      }
+    },
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Edit a comment",
+      "description": "Edits the comment body. Allowed for the comment author (signed in, or the same anonymous session) or any project member. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "updateFeedbackComment",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "commentId",
+          "required": true,
+          "description": "Comment id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "body"
+              ],
+              "properties": {
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated comment"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Not the author and not a project member"
+        },
+        "404": {
+          "description": "Comment or feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/edit": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Load feedback for the submitter edit link",
+      "description": "Token-based; no session needed. Returns the title and body when the edit token (from the confirmation email link) is valid and not expired.\n",
+      "operationId": "getFeedbackForEdit",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "token",
+          "required": true,
+          "description": "Edit token from the confirmation email",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Feedback id, title, body and projectName"
+        },
+        "400": {
+          "description": "Missing edit token"
+        },
+        "403": {
+          "description": "Invalid or expired edit link"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    },
+    "put": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Edit feedback with a submitter edit token",
+      "description": "Token-based; no session needed. Updates title and body when the edit token (from the confirmation email link, valid 7 days) matches.\n",
+      "operationId": "updateFeedbackWithEditToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "token",
+                "title",
+                "body"
+              ],
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Edit token from the confirmation email"
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "body": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 5000
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated id, title, body and updatedAt"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Invalid or expired edit link"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/lock": {
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Toggle comment lock",
+      "description": "Flips `isLocked` on the item (no request body). Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "toggleFeedbackLock",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Updated feedback item"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the feedback project"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/pin": {
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Toggle pinned state",
+      "description": "Flips `isPinned` on the item (no request body). Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "toggleFeedbackPin",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Updated feedback item"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the feedback project"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/status": {
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Change feedback status",
+      "description": "Sets the status and notifies subscribers and linked contacts. Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). The value must be one of the project statuses: its custom statuses when defined, otherwise the system statuses (open, in_progress, planned, completed, closed, declined). The 400 message lists the allowed values.\n",
+      "operationId": "updateFeedbackStatus",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "A status value defined for the feedback project"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Updated feedback item"
+        },
+        "400": {
+          "description": "Validation failed or status not allowed for this project"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the feedback project"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/subscribe": {
+    "delete": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Unsubscribe from feedback updates",
+      "description": "Removes the subscription for the caller email. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Signed-in callers use their account email; anonymous callers must send email in the body.\n",
+      "operationId": "unsubscribeFromFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Required for anonymous callers; ignored when signed in"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Unsubscribed; data is { subscribed: false }"
+        },
+        "400": {
+          "description": "Validation failed or email missing"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Subscribe to feedback updates",
+      "description": "Subscribes to status changes and comments. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). Signed-in callers use their account email and may choose a channel; anonymous callers must send email and always get the email channel (a confirmation email is sent). Re-subscribing updates the channel and returns 200.\n",
+      "operationId": "subscribeToFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "format": "email",
+                  "description": "Required for anonymous callers; ignored when signed in"
+                },
+                "channel": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "app",
+                    "both"
+                  ],
+                  "default": "email",
+                  "description": "Signed-in callers only; anonymous callers always use email"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "Already subscribed; data is { subscribed, email, channel }"
+        },
+        "201": {
+          "description": "Subscribed; data is { subscribed, email, channel }"
+        },
+        "400": {
+          "description": "Validation failed or email missing"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Feedback is not accessible"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/unsubscribe": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Unsubscribe via emailed link",
+      "description": "Token-based; no session needed. Deletes the subscription that owns the token and redirects (302) to `/?unsubscribed=1`. Unknown tokens also redirect. Intended for email links, not for programmatic use.\n",
+      "operationId": "unsubscribeFeedbackByToken",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "token",
+          "required": true,
+          "description": "Subscription token from the notification email",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "302": {
+          "description": "Redirect to /?unsubscribed=1"
+        },
+        "400": {
+          "description": "Missing token"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/visibility": {
+    "patch": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Toggle hidden state",
+      "description": "Flips `isHidden` on the item (no request body). Project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "toggleFeedbackVisibility",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Updated feedback item"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "No access to the feedback project"
+        },
+        "404": {
+          "description": "Feedback not found"
+        }
+      }
+    }
+  },
+  "/api/feedback/{id}/vote": {
+    "post": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Vote on feedback",
+      "description": "Casts, switches or removes a vote: the same type again removes the vote, the opposite type switches direction. Authentication is optional: anonymous callers are accepted subject to public project and product rules. Signed-in callers may use a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`). The project and product of the feedback must be public, even for signed-in callers. Anonymous votes are tracked by an anonymous session cookie. Rate limited.\n",
+      "operationId": "voteOnFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        },
+        {}
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "description": "Feedback id",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": false,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "upvote",
+                    "downvote"
+                  ],
+                  "default": "upvote",
+                  "description": "An invalid or missing body falls back to upvote"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "description": "data is { voted, voteType, voteCount }; voted is false when the vote was removed"
+        },
+        "401": {
+          "description": "Invalid personal API key"
+        },
+        "403": {
+          "description": "Project is not public"
+        },
+        "404": {
+          "description": "Feedback not found"
+        },
+        "429": {
+          "description": "Rate limit exceeded"
+        }
+      }
+    }
+  },
+  "/api/feedback/export": {
+    "get": {
+      "tags": [
+        "Feedback"
+      ],
+      "summary": "Export feedback as CSV",
+      "description": "Returns a CSV file (text/csv) with columns Title, Status, Category, Project, Product, Votes, Comments, Author, Author Email, Pinned, GitHub Issue, Created, Updated. Includes author emails, so project members only. Requires authentication: a session cookie or a personal API key (`Authorization: Bearer vfy_usr_...`).\n",
+      "operationId": "exportFeedback",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "query",
+          "name": "projectId",
+          "description": "Project id. Either projectId or projectIds is required",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "projectIds",
+          "description": "Comma-separated project ids. Either projectId or projectIds is required",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "status",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "planned",
+              "completed",
+              "closed",
+              "declined"
+            ]
+          }
+        },
+        {
+          "in": "query",
+          "name": "categoryId",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "productId",
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        {
+          "in": "query",
+          "name": "search",
+          "description": "Case-insensitive match on title or body",
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "sortBy",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "createdAt",
+              "updatedAt",
+              "voteCount",
+              "title"
+            ],
+            "default": "createdAt"
+          }
+        },
+        {
+          "in": "query",
+          "name": "sortOrder",
+          "schema": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "default": "desc"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "CSV attachment (text/csv; charset=utf-8)"
+        },
+        "400": {
+          "description": "Validation failed (for example neither projectId nor projectIds given)"
+        },
+        "401": {
+          "description": "Not authenticated"
+        },
+        "403": {
+          "description": "Not a member of a requested project"
         }
       }
     }

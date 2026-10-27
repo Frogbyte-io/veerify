@@ -1,3 +1,29 @@
+/**
+ * @openapi
+ * /api/feedback/{id}/edit:
+ *   get:
+ *     tags: [Feedback]
+ *     summary: Load feedback for the submitter edit link
+ *     description: >
+ *       Token-based; no session needed. Returns the title and body when the edit token (from the confirmation email link) is valid and not expired.
+ *     operationId: getFeedbackForEdit
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Feedback id
+ *         schema: { type: string }
+ *       - in: query
+ *         name: token
+ *         required: true
+ *         description: Edit token from the confirmation email
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: "Feedback id, title, body and projectName" }
+ *       400: { description: "Missing edit token" }
+ *       403: { description: "Invalid or expired edit link" }
+ *       404: { description: "Feedback not found" }
+ */
 import { eq } from 'drizzle-orm'
 import { createErrorResponse, createSuccessResponse, ErrorCode } from '~/server/utils/response'
 import { db } from '~/server/database/drizzle'
