@@ -5,6 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
+import { fetchImportFormat, IMPORT_SCHEMA_RESOURCE_URI, importTools } from './tools/imports'
 import { universalTools } from './tools/universal'
 import { McpToolError, type McpToolContext, type VeerifyTool } from './types'
 
@@ -17,6 +18,7 @@ export const MCP_INSTRUCTIONS = [
   '2. Use `list_workspaces` / `list_projects` and pick a workspace and project with `set_context` (ids or slugs). Most API routes work inside the active project.',
   '3. Find operations with `search_api` (keywords or tag; pass `operationId` for parameters and request body), then run them with `call_api` using the concrete path under /api/.',
   'If the MCP connection sends X-Veerify-Organization / X-Veerify-Project headers, those headers fix the workspace/project for every call (`whoami` shows `contextPinned: true`) and `set_context` is unavailable; `list_projects` still accepts another workspace.',
+  'To import, call import_get_format, convert the source to that format, create a run, add records in batches of up to 1000, call import_preview and show the user the result, then import_commit.',
   'Results are JSON. API failures come back as a tool error whose content is `{ status, body }`, where body is `{ success: false, error: { code, message } }`.',
 ].join('\n')
 
@@ -39,7 +41,7 @@ export function createVeerifyMcpServer(ctx: McpToolContext): McpServer {
     { instructions: MCP_INSTRUCTIONS, capabilities: { tools: {} } }
   )
 
-  for (const tool of universalTools) {
+  for (const tool of [...universalTools, ...importTools]) {
     server.registerTool(
       tool.name,
       {
@@ -59,6 +61,19 @@ export function createVeerifyMcpServer(ctx: McpToolContext): McpServer {
       }
     )
   }
+
+  server.registerResource(
+    'import-schema',
+    IMPORT_SCHEMA_RESOURCE_URI,
+    {
+      title: 'Veerify import format',
+      description: 'JSON Schema and example for veerify-import/1',
+      mimeType: 'application/json',
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(await fetchImportFormat(ctx)) }],
+    })
+  )
 
   return server
 }

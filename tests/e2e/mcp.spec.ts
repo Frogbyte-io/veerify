@@ -71,7 +71,23 @@ async function exerciseKey(cookieContext: APIRequestContext, bareContext: APIReq
     const list = await rpc(bareContext, key, { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
     expect(list.status()).toBe(200)
     const tools = (await list.json()).result.tools.map((tool: { name: string }) => tool.name).sort()
-    expect(tools).toEqual(['call_api', 'list_projects', 'list_workspaces', 'search_api', 'set_context', 'whoami'])
+    expect(tools).toEqual(
+      [
+        'call_api',
+        'import_add_records',
+        'import_cancel',
+        'import_commit',
+        'import_create_run',
+        'import_get_format',
+        'import_preview',
+        'import_status',
+        'list_projects',
+        'list_workspaces',
+        'search_api',
+        'set_context',
+        'whoami',
+      ].sort()
+    )
 
     const whoami = await rpc(bareContext, key, {
       jsonrpc: '2.0',

@@ -90,10 +90,24 @@ async function call(name: string, args: Record<string, unknown> = {}) {
 }
 
 describe('createVeerifyMcpServer', () => {
-  it('lists exactly the six universal tools with annotations', async () => {
+  it('lists the universal and import tools with annotations', async () => {
     const { tools } = await client.listTools()
     expect(tools.map((t) => t.name).sort()).toEqual(
-      ['call_api', 'list_projects', 'list_workspaces', 'search_api', 'set_context', 'whoami'].sort()
+      [
+        'call_api',
+        'list_projects',
+        'list_workspaces',
+        'search_api',
+        'set_context',
+        'whoami',
+        'import_get_format',
+        'import_create_run',
+        'import_add_records',
+        'import_preview',
+        'import_commit',
+        'import_status',
+        'import_cancel',
+      ].sort()
     )
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]))
     expect(byName.call_api!.annotations?.destructiveHint).toBe(true)

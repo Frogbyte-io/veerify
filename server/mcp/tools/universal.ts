@@ -9,12 +9,12 @@ import { McpToolError, type ApiRequest, type ApiResult, type McpToolContext, typ
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 
-function defineTool<S extends z.ZodRawShape>(tool: VeerifyTool<S>): VeerifyTool {
+export function defineTool<S extends z.ZodRawShape>(tool: VeerifyTool<S>): VeerifyTool {
   return tool as unknown as VeerifyTool
 }
 
 /** Throws a tool error carrying `{ status, body }` unless the call succeeded. */
-function assertOk(result: ApiResult): ApiResult {
+export function assertOk(result: ApiResult): ApiResult {
   if (result.status >= 400) {
     throw new McpToolError(`API request failed with status ${result.status}`, {
       status: result.status,
@@ -24,7 +24,7 @@ function assertOk(result: ApiResult): ApiResult {
   return result
 }
 
-async function getData<T>(ctx: McpToolContext, req: ApiRequest): Promise<T> {
+export async function getData<T>(ctx: McpToolContext, req: ApiRequest): Promise<T> {
   const { body } = assertOk(await ctx.callApi(req))
   return (body as { data: T }).data
 }
