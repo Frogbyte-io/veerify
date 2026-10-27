@@ -8237,6 +8237,322 @@ export const openapiPaths = {
       }
     }
   },
+  "/api/projects/{slug}/imports": {
+    "get": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "List import runs",
+      "description": "The project's 50 most recent import runs, newest first.",
+      "operationId": "listImportRuns",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "Runs"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project not found"
+        }
+      }
+    },
+    "post": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Create an import run",
+      "description": "Creates a draft run. Add records in batches, then preview and commit.",
+      "operationId": "createImportRun",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "source",
+                "sourceLabel"
+              ],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60,
+                  "pattern": "^[a-z0-9_-]+$"
+                },
+                "sourceLabel": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 60
+                },
+                "product": {
+                  "type": "string",
+                  "description": "Product slug or id; defaults to the project's first product"
+                },
+                "onExisting": {
+                  "type": "string",
+                  "enum": [
+                    "sync",
+                    "skip"
+                  ],
+                  "default": "sync"
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Run created"
+        },
+        "400": {
+          "description": "Validation failed"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or product not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/imports/{runId}": {
+    "get": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Get an import run",
+      "description": "Run status and summary plus its first 200 issues.",
+      "operationId": "getImportRun",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The run and its issues"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or run not found"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/imports/{runId}/cancel": {
+    "post": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Cancel an import run",
+      "description": "Only draft or committing runs can be canceled.",
+      "operationId": "cancelImportRun",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "description": "The canceled run"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or run not found"
+        },
+        "409": {
+          "description": "Run is already completed, failed or canceled"
+        }
+      }
+    }
+  },
+  "/api/projects/{slug}/imports/{runId}/records": {
+    "post": {
+      "tags": [
+        "Imports"
+      ],
+      "summary": "Add a batch of records to an import run",
+      "description": "At most 1,000 records per batch and 50,000 per run. Send sections only (statuses, categories, people, feedback, comments, changelog); format and target belong to run creation. Duplicate externalIds within a section of the run are dropped and reported as skipped issues.",
+      "operationId": "addImportRecords",
+      "security": [
+        {
+          "cookieAuth": []
+        },
+        {
+          "userApiKeyAuth": []
+        }
+      ],
+      "parameters": [
+        {
+          "in": "path",
+          "name": "slug",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "runId",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "statuses": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "categories": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "people": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "feedback": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "comments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "changelog": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "responses": {
+        "201": {
+          "description": "Batch staged; returns seq, recordCount, runRecordCount and issues"
+        },
+        "400": {
+          "description": "Validation failed or a record limit was exceeded"
+        },
+        "403": {
+          "description": "Not a project admin"
+        },
+        "404": {
+          "description": "Project or run not found"
+        },
+        "409": {
+          "description": "Run is not a draft"
+        }
+      }
+    }
+  },
   "/api/projects/{slug}/members": {
     "get": {
       "tags": [
