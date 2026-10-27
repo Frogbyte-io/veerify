@@ -92,6 +92,32 @@ export async function claimImportedActivity(userId: string, email: string): Prom
 }
 
 /**
+ * Contact erasure: removes imported people with this email (case-insensitive) from the organization's projects. Their
+ * imported name and email are nulled on the feedback and comments they authored (`authorUserId` is left alone, also
+ * for claimed people), then the person rows are deleted. The `importedPersonId` FKs are ON DELETE SET NULL, so vote
+ * rows and every counter stay as they are. Returns the number of person rows deleted. Runs in the caller's transaction.
+ */
+export async function eraseImportedPeople(
+  organizationId: string,
+  email: string,
+  tx: Pick<typeof db, 'execute'>
+): Promise<number> {
+  const people = sql`
+    SELECT ip.id FROM imported_person ip
+    WHERE lower(ip.email) = lower(${email})
+      AND ip.project_id IN (SELECT id FROM project WHERE organization_id = ${organizationId})
+  `
+  await tx.execute(sql`
+    UPDATE feedback SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${people})
+  `)
+  await tx.execute(sql`
+    UPDATE feedback_comment SET author_name = NULL, author_email = NULL WHERE imported_person_id IN (${people})
+  `)
+  const removed = await tx.execute(sql`DELETE FROM imported_person WHERE id IN (${people})`)
+  return removed.rowCount ?? 0
+}
+
+/**
  * Better-Auth hook entry: claims in the background when the user's email is verified. Never throws and never delays
  * sign-up or verification; failures are logged (the person stays unclaimed and the next trigger retries).
  */
