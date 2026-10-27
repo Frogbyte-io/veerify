@@ -173,7 +173,7 @@ test('settings page only shows personal tabs and redirects the old workspace has
   for (const removed of ['organization', 'team', 'tools', 'billing', 'status']) {
     await expect(page.locator(`[data-testid="settings-tab-${removed}"]`)).toHaveCount(0)
   }
-  await expect(page.locator('[data-testid^="settings-tab-"]')).toHaveCount(4)
+  await expect(page.locator('[data-testid^="settings-tab-"]')).toHaveCount(5)
 
   await expect(async () => {
     await page.locator(selectors.settingsTabProfile).click()
@@ -473,7 +473,7 @@ test('roadmap, changelog and support are hidden until switched on in project set
     // A project admin gets an entry for adding the missing tools.
     await expect(sidebar.getByRole('link', { name: 'Add tool' })).toBeVisible()
 
-    await page.goto('/project/settings#tools')
+    await page.goto('/project/settings?tab=tools')
     await expect(page.locator(projectSettingsTabSelector('tools'))).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId('project-settings-lock')).toHaveCount(0)
 
@@ -522,7 +522,7 @@ test('project members without admin rights see tools read-only and cannot add to
       await route.continue()
     })
 
-    await memberPage.goto('/project/settings#tools')
+    await memberPage.goto('/project/settings?tab=tools')
     await expect(memberPage.locator(projectSettingsTabSelector('tools'))).toBeVisible({ timeout: 20_000 })
     await expect(memberPage.getByTestId('project-settings-lock')).toContainText('Project admins can change this')
 
@@ -556,7 +556,7 @@ test('add tool shortcut is only offered to project admins', async ({ page }) => 
     await page.goto('/dashboard')
     const addTool = sidebarLocator(page).getByRole('link', { name: 'Add tool' })
     await expect(addTool).toBeVisible({ timeout: 20_000 })
-    await expect(addTool).toHaveAttribute('href', '/project/settings#tools')
+    await expect(addTool).toHaveAttribute('href', '/project/settings?tab=tools')
     await addTool.click()
     await expect(page).toHaveURL(/\/project\/settings\?tab=tools/)
     await expect(page.getByRole('switch', { name: 'Support', exact: true })).toBeVisible({ timeout: 20_000 })

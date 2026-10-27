@@ -43,6 +43,14 @@
 </template>
 
 <script>
+import WorkspaceGeneral from '~/components/workspace/WorkspaceGeneral.vue'
+import WorkspaceMembers from '~/components/workspace/WorkspaceMembers.vue'
+import WorkspaceProjects from '~/components/workspace/WorkspaceProjects.vue'
+import WorkspaceApiKeys from '~/components/workspace/WorkspaceApiKeys.vue'
+import WorkspaceIntegrations from '~/components/workspace/WorkspaceIntegrations.vue'
+import WorkspaceDataPrivacy from '~/components/workspace/WorkspaceDataPrivacy.vue'
+import WorkspaceBilling from '~/components/workspace/WorkspaceBilling.vue'
+import WorkspaceStatus from '~/components/workspace/WorkspaceStatus.vue'
 const baseTabs = [
   { id: 'general', label: 'General', icon: 'lucide:building-2' },
   { id: 'members', label: 'Members', icon: 'lucide:users' },
@@ -65,6 +73,18 @@ const TAB_COMPONENTS = {
 
 export default {
   name: 'WorkspacePage',
+
+  // Registered locally: <component :is> takes these names as strings
+  components: {
+    WorkspaceGeneral,
+    WorkspaceMembers,
+    WorkspaceProjects,
+    WorkspaceApiKeys,
+    WorkspaceIntegrations,
+    WorkspaceDataPrivacy,
+    WorkspaceBilling,
+    WorkspaceStatus,
+  },
 
   data() {
     return {

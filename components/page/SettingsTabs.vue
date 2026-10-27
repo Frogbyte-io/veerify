@@ -86,7 +86,8 @@ export default {
     },
     activeTab() {
       // While the tab list is still unknown (loading) trust the URL so the first paint is stable.
-      if (!this.tabs.length) return this.requestedTab || this.defaultTab
+      // Role-gated tabs join the list only after load, so trust the URL until then.
+      if (!this.tabs.length || this.loading) return this.requestedTab || this.defaultTab
       return this.tabs.some((tab) => tab.id === this.requestedTab) ? this.requestedTab : this.fallbackTab
     },
   },
@@ -95,6 +96,9 @@ export default {
       this.applyHash()
     },
     tabs() {
+      this.dropInvalidTab()
+    },
+    loading() {
       this.dropInvalidTab()
     },
     activeTab: {
@@ -130,7 +134,7 @@ export default {
     },
     // A `?tab=` that names no tab (after the tab list is known) is replaced by the default.
     dropInvalidTab() {
-      if (!this.tabs.length || !this.$route.query.tab || this.$route.hash) return
+      if (this.loading || !this.tabs.length || !this.$route.query.tab || this.$route.hash) return
       if (!this.tabs.some((tab) => tab.id === this.requestedTab)) {
         this.$router.replace({ query: { ...this.$route.query, tab: this.fallbackTab }, hash: '' })
       }

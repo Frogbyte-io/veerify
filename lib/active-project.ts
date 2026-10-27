@@ -48,6 +48,14 @@ export function invalidateActiveProject() {
   activeProjectStore.loadedAt = 0
 }
 
+/** Forget the cached project entirely (sign-out, sign-in, workspace change). */
+export function resetActiveProject() {
+  invalidateActiveProject()
+  inflight = null
+  activeProjectStore.context = undefined
+  activeProjectStore.error = null
+}
+
 if (import.meta.client) {
   window.addEventListener('veerify:active-project-changed', invalidateActiveProject)
   window.addEventListener('veerify:project-modules-changed', invalidateActiveProject)

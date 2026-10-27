@@ -151,6 +151,7 @@
 </template>
 
 <script>
+import { clearDashboardBootstrapCache } from '~/lib/dashboard-bootstrap-client'
 import { authClient } from '~/lib/auth-client'
 import { resolvePostAuthRedirectTarget, resolveSafeRedirectTarget } from '~/lib/auth-redirect'
 
@@ -229,6 +230,8 @@ export default {
           } else if (target.startsWith('http://') || target.startsWith('https://')) {
             window.location.href = target
           } else {
+            // A different user may have been signed in on this tab before
+            clearDashboardBootstrapCache()
             await navigateTo(target)
           }
         }
