@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { asc, eq } from 'drizzle-orm'
 import { db } from '~/server/database/drizzle'
 import { feedbackCategory, feedbackStatus } from '~/server/database/schema/feedback'
 import { toCategorySlug } from '~/server/utils/project-categories'
@@ -10,6 +10,7 @@ type Executor = typeof db | Transaction
 
 export interface TaxonomyResolution {
   statusValueByExternalId: Map<string, string>
+  defaultStatusValue: string
   categoryIdByExternalId: Map<string, string | null>
   toCreate: {
     statuses: { name: string; value: string; color?: string }[]
@@ -32,15 +33,20 @@ export async function resolveTaxonomy(
   const toCreate: TaxonomyResolution['toCreate'] = { statuses: [], categories: [] }
 
   // Statuses
-  const statusRows = await exec.select().from(feedbackStatus).where(eq(feedbackStatus.projectId, projectId))
+  const statusRows = await exec
+    .select()
+    .from(feedbackStatus)
+    .where(eq(feedbackStatus.projectId, projectId))
+    .orderBy(asc(feedbackStatus.sortOrder), asc(feedbackStatus.value))
   const hasRows = statusRows.length > 0
+  const defaultStatusValue = hasRows ? (statusRows.find((s) => s.isDefault) ?? statusRows[0]).value : 'open'
   const effective = new Set<string>(hasRows ? statusRows.map((s) => s.value) : SYSTEM_STATUSES.map((s) => s.value))
   const created = new Map<string, { name: string; value: string; color?: string }>()
 
   for (const status of batch.statuses) {
     let value: string | undefined
     if (status.mapTo !== undefined) {
-      if (effective.has(status.mapTo)) value = status.mapTo
+      if (effective.has(status.mapTo) || created.has(status.mapTo)) value = status.mapTo
       else
         issues.push({
           severity: 'warning',
@@ -61,7 +67,7 @@ export async function resolveTaxonomy(
         continue
       }
       if (!effective.has(byName) && !created.has(byName)) {
-        created.set(byName, { name: status.name, value: byName, color: status.color })
+        created.set(byName, { name: status.name, value: byName, color: status.color || DEFAULT_COLOR })
       }
       value = byName
     }
@@ -177,20 +183,24 @@ export async function resolveTaxonomy(
     for (const p of pending) categoryIdByExternalId.set(p.externalId, idBySlug.get(p.slug) ?? null)
   }
 
-  return { statusValueByExternalId, categoryIdByExternalId, toCreate, issues }
+  return { statusValueByExternalId, defaultStatusValue, categoryIdByExternalId, toCreate, issues }
 }
 
 export function resolveFeedbackStatus(
   raw: string | undefined,
-  res: Pick<TaxonomyResolution, 'statusValueByExternalId'>,
+  res: Pick<TaxonomyResolution, 'statusValueByExternalId' | 'defaultStatusValue'>,
   effective: Set<string>
 ): { value: string; issue?: IssueInput } {
-  if (raw === undefined || raw === '') return { value: 'open' }
+  if (raw === undefined || raw === '') return { value: res.defaultStatusValue }
   const mapped = res.statusValueByExternalId.get(raw)
   if (mapped) return { value: mapped }
   if (effective.has(raw)) return { value: raw }
   return {
-    value: 'open',
-    issue: { severity: 'warning', entityType: 'feedback', message: `Unknown status "${raw}"; imported as open` },
+    value: res.defaultStatusValue,
+    issue: {
+      severity: 'warning',
+      entityType: 'feedback',
+      message: `Unknown status "${raw}"; imported as ${res.defaultStatusValue}`,
+    },
   }
 }

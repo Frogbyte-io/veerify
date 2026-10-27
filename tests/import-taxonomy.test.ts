@@ -9,7 +9,14 @@ function fakeTx() {
   const rowsOf = (table: any) => (state.tables[getTableName(table)] ??= [])
   return {
     select: () => ({
-      from: (table: any) => ({ where: async () => rowsOf(table).map((r) => ({ ...r })) }),
+      from: (table: any) => ({
+        where: () => {
+          const rows = rowsOf(table).map((r) => ({ ...r }))
+          return Object.assign(Promise.resolve(rows), {
+            orderBy: async () => [...rows].sort((a, b) => a.sortOrder - b.sortOrder || (a.value < b.value ? -1 : 1)),
+          })
+        },
+      }),
     }),
     insert: (table: any) => ({
       values: (values: any) => ({
@@ -131,8 +138,76 @@ describe('resolveTaxonomy', () => {
   })
 })
 
+describe('resolveTaxonomy extras', () => {
+  beforeEach(() => {
+    state.tables = {}
+  })
+  const rows = [
+    { projectId: 'p1', value: 'backlog', sortOrder: 3, isDefault: true },
+    { projectId: 'p1', value: 'done', sortOrder: 7, isDefault: false },
+  ]
+
+  it('falls back to the project default status', async () => {
+    state.tables['feedback_status'] = rows.map((r) => ({ ...r }))
+    const r = await resolveTaxonomy('p1', { statuses: [], categories: [] }, { apply: false, tx: fakeTx() })
+    expect(r.defaultStatusValue).toBe('backlog')
+    const out = resolveFeedbackStatus('x', r, new Set(['backlog', 'done']))
+    expect(out.value).toBe('backlog')
+    expect(out.issue?.severity).toBe('warning')
+    expect(resolveFeedbackStatus(undefined, r, new Set(['backlog'])).value).toBe('backlog')
+  })
+
+  it('uses the lowest sortOrder when no default row, and open without rows', async () => {
+    state.tables['feedback_status'] = rows.map((r) => ({ ...r, isDefault: false }))
+    const r = await resolveTaxonomy('p1', { statuses: [], categories: [] }, { apply: false, tx: fakeTx() })
+    expect(r.defaultStatusValue).toBe('backlog')
+    state.tables = {}
+    const e = await resolveTaxonomy('p1', { statuses: [], categories: [] }, { apply: false, tx: fakeTx() })
+    expect(e.defaultStatusValue).toBe('open')
+  })
+
+  it('accepts a valid status mapTo', async () => {
+    state.tables['feedback_status'] = rows.map((r) => ({ ...r }))
+    const r = await resolveTaxonomy(
+      'p1',
+      { statuses: [{ externalId: 's', name: 'Whatever', mapTo: 'done' }], categories: [] },
+      { apply: true, tx: fakeTx() }
+    )
+    expect(r.statusValueByExternalId.get('s')).toBe('done')
+    expect(r.issues).toEqual([])
+    expect(r.toCreate.statuses).toEqual([])
+  })
+
+  it('appends a new status after existing rows with max + 1 and default colour', async () => {
+    state.tables['feedback_status'] = rows.map((r) => ({ ...r }))
+    const batch = { statuses: [{ externalId: 's', name: 'Under review' }], categories: [] }
+    const preview = await resolveTaxonomy('p1', batch, { apply: false, tx: fakeTx() })
+    expect(preview.toCreate.statuses).toEqual([{ name: 'Under review', value: 'under_review', color: '#6b7280' }])
+    await resolveTaxonomy('p1', batch, { apply: true, tx: fakeTx() })
+    const added = state.tables['feedback_status'].find((r) => r.value === 'under_review')
+    expect(added?.sortOrder).toBe(8)
+    expect(state.tables['feedback_status']).toHaveLength(3)
+  })
+
+  it('resolves mapTo to a value created earlier in the batch without a warning', async () => {
+    const r = await resolveTaxonomy(
+      'p1',
+      {
+        statuses: [
+          { externalId: 'a', name: 'Under review' },
+          { externalId: 'b', name: 'Other', mapTo: 'under_review' },
+        ],
+        categories: [],
+      },
+      { apply: false, tx: fakeTx() }
+    )
+    expect(r.issues).toEqual([])
+    expect(r.statusValueByExternalId.get('b')).toBe('under_review')
+  })
+})
+
 describe('resolveFeedbackStatus', () => {
-  const res: any = { statusValueByExternalId: new Map([['s1', 'under_review']]) }
+  const res: any = { statusValueByExternalId: new Map([['s1', 'under_review']]), defaultStatusValue: 'open' }
   const effective = new Set(['open', 'planned', 'under_review'])
 
   it('prefers the external id map, then a valid value, then open with a warning', () => {
