@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { requireAuth } from '~/server/utils/auth-middleware'
-import { setActiveProjectForSession } from '~/server/utils/project-context'
+import { contextTargetFor, setActiveProjectForSession } from '~/server/utils/project-context'
 import { buildActiveProjectContext } from '~/server/utils/project-summary'
 import { createSuccessResponse } from '~/server/utils/response'
 import { validateBody } from '~/server/utils/validation'
@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, setActiveProjectSchema)
 
   const activeProject = await setActiveProjectForSession({
-    sessionToken: session.session.token,
+    target: contextTargetFor(session),
     userId: session.user.id,
     projectId: body.projectId,
   })

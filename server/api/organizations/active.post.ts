@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { requireAuth } from '~/server/utils/auth-middleware'
 import { createSuccessResponse } from '~/server/utils/response'
-import { setActiveOrganizationForSession } from '~/server/utils/project-context'
+import { contextTargetFor, setActiveOrganizationForSession } from '~/server/utils/project-context'
 import { toProjectSummary } from '~/server/utils/project-summary'
 import { db } from '~/server/database/drizzle'
 import { organization } from '~/server/database/schema/auth'
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
   const body = await validateBody(event, setActiveOrganizationSchema)
 
   const activeProject = await setActiveOrganizationForSession({
-    sessionToken: session.session.token,
+    target: contextTargetFor(session),
     userId: session.user.id,
     organizationId: body.organizationId,
     preferredProjectId: body.projectId ?? null,

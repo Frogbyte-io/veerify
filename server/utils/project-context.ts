@@ -7,10 +7,11 @@
  * the access model in `project-access.ts` and repairs the session when the
  * project was deleted or access was revoked.
  */
-import { and, asc, eq } from 'drizzle-orm'
+import { asc, eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { db } from '~/server/database/drizzle'
 import { member, session as sessionTable } from '~/server/database/schema/auth'
+import { userApiKey } from '~/server/database/schema/credentials'
 import type { AuthSession } from './auth-middleware'
 import { requireAuth } from './auth-middleware'
 import {
@@ -28,16 +29,33 @@ export interface ResolvedProject extends ProjectRow {
   role: ProjectRole
 }
 
-async function writeSessionContext(sessionToken: string, organizationId: string | null, projectId: string | null) {
-  await db
-    .update(sessionTable)
-    .set({ activeOrganizationId: organizationId, activeProjectId: projectId })
-    .where(eq(sessionTable.token, sessionToken))
+/** Where active context lives: the session row (cookie) or the API key row (credential principal). */
+export type ContextTarget = { kind: 'session'; token: string } | { kind: 'user_api_key'; id: string }
+
+type ContextTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+export function contextTargetFor(session: AuthSession): ContextTarget {
+  if (session.credential) return { kind: session.credential.kind, id: session.credential.id }
+  return { kind: 'session', token: session.session.token }
+}
+
+export async function writeContext(
+  target: ContextTarget,
+  organizationId: string | null,
+  projectId: string | null,
+  tx: ContextTransaction | typeof db = db
+) {
+  const values = { activeOrganizationId: organizationId, activeProjectId: projectId }
+  if (target.kind === 'user_api_key') {
+    await tx.update(userApiKey).set(values).where(eq(userApiKey.id, target.id))
+  } else {
+    await tx.update(sessionTable).set(values).where(eq(sessionTable.token, target.token))
+  }
 }
 
 /** Switch the session to a project the user can open (and to that project's organization). */
 export async function setActiveProjectForSession(params: {
-  sessionToken: string
+  target: ContextTarget
   userId: string
   projectId: string
 }): Promise<ResolvedProject> {
@@ -57,7 +75,7 @@ export async function setActiveProjectForSession(params: {
       data: createErrorResponse(ErrorCode.FORBIDDEN, 'You do not have access to this project'),
     })
   }
-  await writeSessionContext(params.sessionToken, proj.organizationId, proj.id)
+  await writeContext(params.target, proj.organizationId, proj.id)
   return { ...proj, role }
 }
 
@@ -68,7 +86,7 @@ export async function setActiveProjectForSession(params: {
  * The project is null when the user can open no project in that organization yet.
  */
 export async function setActiveOrganizationForSession(params: {
-  sessionToken: string
+  target: ContextTarget
   userId: string
   organizationId: string
   preferredProjectId?: string | null
@@ -86,7 +104,7 @@ export async function setActiveOrganizationForSession(params: {
   const selected =
     (params.preferredProjectId && projects.find((p) => p.id === params.preferredProjectId)) || projects[0] || null
 
-  await writeSessionContext(params.sessionToken, params.organizationId, selected?.id ?? null)
+  await writeContext(params.target, params.organizationId, selected?.id ?? null)
   return selected
 }
 
@@ -107,7 +125,7 @@ async function firstOrganizationIdForUser(userId: string): Promise<string | null
  */
 export async function resolveActiveProjectForSession(session: AuthSession): Promise<ResolvedProject | null> {
   const userId = session.user.id
-  const token = session.session.token
+  const target = contextTargetFor(session)
   const storedProjectId = session.session.activeProjectId ?? null
   const storedOrgId = session.session.activeOrganizationId ?? null
 
@@ -116,7 +134,7 @@ export async function resolveActiveProjectForSession(session: AuthSession): Prom
     if (proj) {
       const role = await resolveProjectRole(proj, userId)
       if (role) {
-        if (storedOrgId !== proj.organizationId) await writeSessionContext(token, proj.organizationId, proj.id)
+        if (storedOrgId !== proj.organizationId) await writeContext(target, proj.organizationId, proj.id)
         return { ...proj, role }
       }
     }
@@ -130,12 +148,12 @@ export async function resolveActiveProjectForSession(session: AuthSession): Prom
   for (const orgId of orgCandidates) {
     const projects = await listAccessibleProjects(orgId, userId)
     if (projects[0]) {
-      await writeSessionContext(token, orgId, projects[0].id)
+      await writeContext(target, orgId, projects[0].id)
       return projects[0]
     }
   }
 
-  if (storedProjectId) await writeSessionContext(token, storedOrgId, null)
+  if (storedProjectId) await writeContext(target, storedOrgId, null)
   return null
 }
 
@@ -176,10 +194,7 @@ export async function requireAuthWithOrganization(event: H3Event): Promise<{
     organizationId = await firstOrganizationIdForUser(userId)
     organizationRole = organizationId ? await getOrganizationRole(organizationId, userId) : null
     if (organizationId && organizationRole) {
-      await db
-        .update(sessionTable)
-        .set({ activeOrganizationId: organizationId })
-        .where(and(eq(sessionTable.token, session.session.token)))
+      await writeContext(contextTargetFor(session), organizationId, null)
     }
   }
 

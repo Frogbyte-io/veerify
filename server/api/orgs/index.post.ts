@@ -82,7 +82,8 @@ import { requireAuth } from '~/server/utils/auth-middleware'
 import { validateBody, commonSchemas } from '~/server/utils/validation'
 import { requireRateLimit, rateLimits } from '~/server/utils/rate-limit'
 import { db } from '~/server/database/drizzle'
-import { member, organization, session as sessionTable } from '~/server/database/schema/auth'
+import { member, organization } from '~/server/database/schema/auth'
+import { contextTargetFor, writeContext } from '~/server/utils/project-context'
 import { assertOrganizationSlugAvailable } from '~/server/utils/organization-access'
 
 const createOrganizationSchema = z.object({
@@ -137,13 +138,7 @@ export default defineEventHandler(async (event) => {
       updatedAt: now,
     })
 
-    await tx
-      .update(sessionTable)
-      .set({
-        activeOrganizationId: organizationId,
-        activeProjectId: null,
-      })
-      .where(eq(sessionTable.token, session.session.token))
+    await writeContext(contextTargetFor(session), organizationId, null, tx)
 
     return org
   })
