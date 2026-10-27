@@ -7,19 +7,23 @@ import { z } from 'zod'
 import { McpToolError, type McpToolContext, type VeerifyTool } from '../types'
 import { defineTool, getData } from './universal'
 
-const projectField = z
-  .string()
-  .trim()
-  .min(1)
-  .optional()
-  .describe('Project slug; defaults to the active project (see whoami)')
-const runIdField = z.string().trim().min(1).describe('Import run id returned by import_create_run')
+/** One safe URL path segment: callApi decodes once and resolves `..`, so `/` and dot segments must never reach a path. */
+const SAFE_SEGMENT = /^[A-Za-z0-9._-]+$/
+const isSafeSegment = (value: string) => SAFE_SEGMENT.test(value) && value !== '.' && value !== '..'
+const safeSegment = () =>
+  z.string().trim().refine(isSafeSegment, {
+    message: 'Must contain only letters, digits, ".", "_" or "-" (no "/" and not "." or "..")',
+  })
+
+const projectField = safeSegment().optional().describe('Project slug; defaults to the active project (see whoami)')
+const runIdField = safeSegment().describe('Import run id returned by import_create_run')
 
 /** The slug of `project`, or of the active project when omitted. */
 async function resolveSlug(ctx: McpToolContext, project?: string): Promise<string> {
   if (project) return project
   const data = await getData<{ project?: { slug?: string } }>(ctx, { method: 'GET', path: '/api/projects/active' })
   const slug = data?.project?.slug
+  if (slug && !isSafeSegment(slug)) throw new McpToolError('The active project slug is not a valid path segment.')
   if (!slug) throw new McpToolError('No active project. Pass `project` (slug) or pick one with set_context.')
   return slug
 }

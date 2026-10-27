@@ -22,7 +22,7 @@ let client: Client
 
 beforeEach(async () => {
   routes = {
-    'GET /api/projects/active': () => ok({ project: { id: 'proj-1', slug: 'web app' }, organization: { id: 'org-1' } }),
+    'GET /api/projects/active': () => ok({ project: { id: 'proj-1', slug: 'web-app' }, organization: { id: 'org-1' } }),
   }
   callApi = vi.fn<ApiCaller>(async (req) => {
     const route = routes[`${req.method} ${req.path}`]
@@ -100,8 +100,8 @@ describe('import tools', () => {
     )
   })
 
-  it('resolves and encodes the slug from the active project when omitted', async () => {
-    routes['GET /api/projects/web%20app/imports/run-1'] = () => ok({ run: { id: 'run-1' }, issues: [] })
+  it('resolves the slug from the active project when omitted', async () => {
+    routes['GET /api/projects/web-app/imports/run-1'] = () => ok({ run: { id: 'run-1' }, issues: [] })
     const res = await call('import_status', { runId: 'run-1' })
     expect(res.isError).toBe(false)
     expect(res.json.run.id).toBe('run-1')
@@ -137,8 +137,34 @@ describe('import tools', () => {
   })
 
   it('import_cancel posts to cancel', async () => {
-    routes['POST /api/projects/acme/imports/run-1/cancel'] = () => ok({ id: 'run-1', status: 'cancelled' })
+    routes['POST /api/projects/acme/imports/run-1/cancel'] = () => ok({ id: 'run-1', status: 'canceled' })
     const res = await call('import_cancel', { project: 'acme', runId: 'run-1' })
-    expect(res.json.status).toBe('cancelled')
+    expect(res.json.status).toBe('canceled')
+  })
+  it.each([
+    ['runId', { project: 'acme', runId: '../x' }],
+    ['runId', { project: 'acme', runId: '..' }],
+    ['runId', { project: 'acme', runId: 'a/b' }],
+    ['project', { project: 'a/b', runId: 'run-1' }],
+    ['project', { project: '..', runId: 'run-1' }],
+  ])('rejects an unsafe %s without calling the API', async (_field, args) => {
+    const result = (await client.callTool({ name: 'import_status', arguments: args })) as ToolResult
+    expect(result.isError).toBe(true)
+    expect(callApi).not.toHaveBeenCalled()
+  })
+
+  it('refuses an unsafe slug returned by the active project', async () => {
+    routes['GET /api/projects/active'] = () => ok({ project: { id: 'p', slug: '../../user' } })
+    const res = await call('import_status', { runId: 'run-1' })
+    expect(res.isError).toBe(true)
+    expect(callApi).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a 409 when there is no active project', async () => {
+    const body = { success: false, error: { code: 'CONFLICT', message: 'no project' } }
+    routes['GET /api/projects/active'] = () => ({ status: 409, body })
+    const res = await call('import_status', { runId: 'run-1' })
+    expect(res.isError).toBe(true)
+    expect(res.json).toEqual({ status: 409, body })
   })
 })
