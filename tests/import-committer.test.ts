@@ -2,7 +2,13 @@ import type { SQL } from 'drizzle-orm'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { advanceImportRun, advanceImportRuns, commitImportRun } from '~/server/services/imports/committer'
+import {
+  MAX_TRANSIENT_FAILURES,
+  advanceImportRun,
+  advanceImportRuns,
+  commitImportRun,
+} from '~/server/services/imports/committer'
+import { votesPhase } from '~/server/services/imports/commit-phases/votes'
 import { importExample } from '~/server/services/imports/format'
 import * as notifications from '~/server/utils/notifications'
 import * as email from '~/lib/email'
@@ -206,6 +212,72 @@ describe('commitImportRun', () => {
       for (const [name, fn] of Object.entries(mod)) {
         if (vi.isMockFunction(fn)) expect(fn, name).not.toHaveBeenCalled()
       }
+    }
+  })
+})
+
+describe('transient database errors', () => {
+  // drizzle wraps the pg error, which carries the SQLSTATE, in `cause`
+  const pgError = (code: string, message: string) =>
+    Object.assign(new Error(`Failed query: ${message}`), { cause: Object.assign(new Error(message), { code }) })
+  const runRow = () => state.tables.import_run[0]
+
+  it('releases the lease and keeps the run committing; the next call resumes and completes', async () => {
+    seedRun('committing')
+    const apply = vi.spyOn(votesPhase, 'apply').mockRejectedValueOnce(pgError('40P01', 'deadlock detected'))
+    try {
+      expect(await advanceImportRun('run-1', { budgetMs: 20_000 })).toEqual({ done: false })
+      expect(runRow()).toMatchObject({ status: 'committing', leaseUntil: null, error: null })
+      // Records before the votes phase were applied by this call, so the streak is 1.
+      expect(runRow().progress).toMatchObject({ phase: 'votes', done: 0, transientFailures: 1 })
+
+      expect(await advanceImportRun('run-1', { budgetMs: 20_000 })).toEqual({ done: true })
+      expect(runRow().status).toBe('completed')
+      expect(runRow().progress.transientFailures).toBeUndefined()
+    } finally {
+      apply.mockRestore()
+    }
+  })
+
+  it('treats connection loss as transient', async () => {
+    seedRun('committing', { progress: { phase: 'votes', done: 0, total: 1 } })
+    const apply = vi
+      .spyOn(votesPhase, 'apply')
+      .mockRejectedValueOnce(Object.assign(new Error('Connection terminated unexpectedly'), { code: '08006' }))
+    try {
+      expect(await advanceImportRun('run-1', { budgetMs: 20_000 })).toEqual({ done: false })
+      expect(runRow()).toMatchObject({ status: 'committing', progress: { phase: 'votes', transientFailures: 1 } })
+    } finally {
+      apply.mockRestore()
+    }
+  })
+
+  it('counts consecutive failures of calls that applied nothing, and fails the run at the limit', async () => {
+    seedRun('committing', { progress: { phase: 'votes', done: 0, total: 1, transientFailures: 3 } })
+    const apply = vi.spyOn(votesPhase, 'apply').mockRejectedValue(pgError('40001', 'could not serialize access'))
+    try {
+      await advanceImportRun('run-1', { budgetMs: 20_000 })
+      expect(runRow()).toMatchObject({ status: 'committing', progress: { transientFailures: 4 } })
+
+      runRow().progress = { phase: 'votes', done: 0, total: 1, transientFailures: MAX_TRANSIENT_FAILURES - 1 }
+      expect(await advanceImportRun('run-1', { budgetMs: 20_000 })).toEqual({ done: true })
+      expect(runRow().status).toBe('failed')
+      expect(runRow().error).toContain(`${MAX_TRANSIENT_FAILURES} consecutive transient database errors`)
+    } finally {
+      apply.mockRestore()
+    }
+  })
+
+  it('fails the run at once on a deterministic error', async () => {
+    seedRun('committing', { progress: { phase: 'votes', done: 0, total: 1 } })
+    const apply = vi
+      .spyOn(votesPhase, 'apply')
+      .mockRejectedValueOnce(pgError('23502', 'null value in column "title" violates not-null constraint'))
+    try {
+      expect(await advanceImportRun('run-1', { budgetMs: 20_000 })).toEqual({ done: true })
+      expect(runRow()).toMatchObject({ status: 'failed', leaseUntil: null })
+    } finally {
+      apply.mockRestore()
     }
   })
 })

@@ -21,6 +21,7 @@
 import { sql } from 'drizzle-orm'
 import { db } from '../../database/drizzle'
 import { createLogger } from '../../utils/logger'
+import { pgErrorCode } from './db-errors'
 import { emailPersonExternalId } from './format'
 
 const logger = createLogger('imports:claim')
@@ -40,16 +41,6 @@ export const CLAIM_MAX_ATTEMPTS = 3
 const CLAIM_RETRY_DELAY_MS = 50
 /** unique_violation (a vote cast concurrently) and deadlock_detected: the transaction is safe to run again. */
 const RETRYABLE_CODES = new Set(['23505', '40P01'])
-
-function pgErrorCode(error: unknown): string | undefined {
-  let current = error
-  for (let depth = 0; current && typeof current === 'object' && depth < 5; depth++) {
-    const code = (current as { code?: unknown }).code
-    if (typeof code === 'string') return code
-    current = (current as { cause?: unknown }).cause
-  }
-  return undefined
-}
 
 /**
  * Claims with up to CLAIM_MAX_ATTEMPTS tries: a verification event fires once, so a transaction that lost a race with

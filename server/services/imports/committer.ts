@@ -11,6 +11,10 @@
  * - Every record is applied in its own transaction and is idempotent, so a crashed call is safe to repeat.
  *   `progress = { phase, done, total }` is checkpointed (with the running counts) every CHECKPOINT_EVERY records, at
  *   each phase boundary and before the lease is released; the next call resumes from that checkpoint.
+ * - Transient database errors (deadlock, serialization failure, connection loss, admin shutdown) do not fail the run:
+ *   the lease is released (fenced), the run stays `committing` and the next call resumes from the last checkpoint.
+ *   `progress.transientFailures` counts consecutive calls that failed this way without applying a record; at
+ *   MAX_TRANSIENT_FAILURES the run is failed. Any other error fails the run at once.
  * - No side effects: no notifications, emails, realtime, subscriptions, GitHub, or changelog publish hooks.
  */
 import { and, asc, eq, isNull, lt, or } from 'drizzle-orm'
@@ -21,6 +25,7 @@ import { ErrorCode } from '~/server/utils/response'
 import type { IssueInput } from './format'
 import { effectiveStatusValues, emptyCounts, loadRunBatch, type ImportSection, type SectionCounts } from './planner'
 import { importHttpError, type ImportRunRow } from './runs'
+import { isTransientDbError } from './db-errors'
 import { resolveTaxonomy } from './taxonomy'
 import { COMMIT_PHASES, type CommitContext, type CommitPhase, type CommitPhaseName } from './commit-phases/context'
 import { taxonomyPhase } from './commit-phases/taxonomy'
@@ -38,6 +43,8 @@ export const INLINE_BUDGET_MS = 20_000
 export const LEASE_MS = 3 * 60_000
 const CHECKPOINT_EVERY = 100
 const CHECKPOINT_INTERVAL_MS = 15_000
+/** Consecutive transient failures (calls that applied no record) after which the run is failed. */
+export const MAX_TRANSIENT_FAILURES = 10
 
 const PHASES: CommitPhase[] = [taxonomyPhase, peoplePhase, feedbackPhase, votesPhase, commentsPhase, changelogPhase]
 
@@ -47,7 +54,14 @@ export interface ImportSummary {
   kept: number
 }
 
-type Progress = { phase: string; done: number; total: number }
+type Progress = { phase: string; done: number; total: number; transientFailures?: number }
+
+/**
+ * What one advance call has done, for the transient-error path: the last progress written by a checkpoint (the
+ * summary was written with it), the consecutive transient failure count read at claim time, and how many records this
+ * call applied.
+ */
+type CallState = { progress: Progress | null; failures: number; applied: number }
 
 /** Starts the commit of a draft run. Runs up to INLINE_COMMIT_MAX_RECORDS records are applied before returning. */
 export async function commitImportRun(runId: string): Promise<ImportRunRow> {
@@ -127,11 +141,27 @@ async function advance(runId: string, budgetMs: number): Promise<{ claimed: bool
     .returning()
   if (!run) return { claimed: false, done: false }
   const lease: Lease = { token: run.leaseUntil! }
+  const progress = run.progress as Progress | null
+  const call: CallState = { progress, failures: progress?.transientFailures ?? 0, applied: 0 }
 
   try {
-    return { claimed: true, done: await applyPhases(run, lease, started + budgetMs) }
+    return { claimed: true, done: await applyPhases(run, lease, started + budgetMs, call) }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
+    let message = error instanceof Error ? error.message : String(error)
+    if (isTransientDbError(error)) {
+      // A call that applied records made progress, so the streak starts over.
+      const failures = (call.applied > 0 ? 0 : call.failures) + 1
+      if (failures < MAX_TRANSIENT_FAILURES) {
+        logger.warn('Import commit hit a transient database error; it resumes on the next call', {
+          runId,
+          failures,
+          error: message,
+        })
+        await releaseAfterTransientError(runId, lease, call, failures)
+        return { claimed: true, done: false }
+      }
+      message = `Failed after ${failures} consecutive transient database errors: ${message}`
+    }
     logger.error('Import commit failed', { runId, error: message })
     // Only the lease holder may fail the run; a stale worker just stops.
     const failed = await fencedRunUpdate(runId, lease, {
@@ -141,6 +171,23 @@ async function advance(runId: string, budgetMs: number): Promise<{ claimed: bool
       updatedAt: new Date(),
     })
     return { claimed: true, done: failed }
+  }
+}
+
+/**
+ * Keeps the run `committing` and frees the lease (fenced) so the next call resumes from the last checkpoint. If this
+ * write fails too (the database is still unreachable), the lease simply expires.
+ */
+async function releaseAfterTransientError(runId: string, lease: Lease, call: CallState, failures: number) {
+  const progress: Progress = { ...(call.progress ?? { phase: COMMIT_PHASES[0], done: 0, total: 0 }) }
+  progress.transientFailures = failures
+  try {
+    await fencedRunUpdate(runId, lease, { progress, leaseUntil: null, updatedAt: new Date() })
+  } catch (error) {
+    logger.warn('Could not release the import lease; it expires on its own', {
+      runId,
+      error: error instanceof Error ? error.message : error,
+    })
   }
 }
 
@@ -169,7 +216,7 @@ export async function advanceImportRuns(options: { budgetMs?: number } = {}): Pr
 }
 
 /** Returns true when the run completed. Stops (false) on budget exhaustion or when the lease is lost. */
-async function applyPhases(run: ImportRunRow, lease: Lease, deadline: number): Promise<boolean> {
+async function applyPhases(run: ImportRunRow, lease: Lease, deadline: number, call: CallState): Promise<boolean> {
   // Resume from the last checkpoint; anything unrecognised restarts from the first phase (records are idempotent).
   const progress = run.progress as Progress | null
   const resumeAt = progress ? COMMIT_PHASES.indexOf(progress.phase as CommitPhaseName) : -1
@@ -194,11 +241,12 @@ async function applyPhases(run: ImportRunRow, lease: Lease, deadline: number): P
   }
 
   let lastCheckpoint = Date.now()
-  let applied = 0
   // False: the run was canceled, or our lease expired and another worker holds it. Stop either way.
   const checkpoint = async (next: Progress, release = false) => {
     lastCheckpoint = Date.now()
-    return fencedRunUpdate(
+    // The transient failure streak survives checkpoints until this call applies a record.
+    if (call.applied === 0 && call.failures > 0) next = { ...next, transientFailures: call.failures }
+    const written = await fencedRunUpdate(
       run.id,
       lease,
       {
@@ -209,6 +257,8 @@ async function applyPhases(run: ImportRunRow, lease: Lease, deadline: number): P
       },
       issues.take()
     )
+    if (written) call.progress = next
+    return written
   }
 
   for (; phaseIndex < PHASES.length; phaseIndex++, done = 0) {
@@ -219,12 +269,12 @@ async function applyPhases(run: ImportRunRow, lease: Lease, deadline: number): P
     const state = done < total ? await phase.load(ctx) : undefined
     for (; done < total; done++) {
       // Every call applies at least one record, so even a tiny budget makes progress.
-      if (applied > 0 && Date.now() >= deadline) {
+      if (call.applied > 0 && Date.now() >= deadline) {
         await checkpoint({ phase: phase.name, done, total }, true)
         return false
       }
       await phase.apply(ctx, state, items[done])
-      applied++
+      call.applied++
       const sinceCheckpoint = Date.now() - lastCheckpoint
       if ((done + 1) % CHECKPOINT_EVERY === 0 || sinceCheckpoint > CHECKPOINT_INTERVAL_MS) {
         if (!(await checkpoint({ phase: phase.name, done: done + 1, total }))) return false
