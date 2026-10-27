@@ -380,6 +380,10 @@ export const feedback = pgTable(
       table.externalSource,
       table.externalId
     ),
+    // Claiming and erasure look rows up by imported person
+    importedPersonIdx: index('feedback_imported_person_idx')
+      .on(table.importedPersonId)
+      .where(sql`${table.importedPersonId} IS NOT NULL`),
   })
 )
 
@@ -415,6 +419,10 @@ export const vote = pgTable(
     userIdx: index('vote_user_idx').on(table.voterUserId),
     // Index for querying votes by session
     sessionIdx: index('vote_session_idx').on(table.voterSessionId),
+    // Claiming looks votes up by imported person
+    importedPersonIdx: index('vote_imported_person_idx')
+      .on(table.importedPersonId)
+      .where(sql`${table.importedPersonId} IS NOT NULL`),
   })
 )
 
@@ -540,6 +548,10 @@ export const feedbackComment = pgTable(
       table.externalSource,
       table.externalId
     ),
+    // Claiming and erasure look comments up by imported person
+    importedPersonIdx: index('comment_imported_person_idx')
+      .on(table.importedPersonId)
+      .where(sql`${table.importedPersonId} IS NOT NULL`),
   })
 )
 
