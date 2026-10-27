@@ -1,11 +1,7 @@
 <template>
-  <div class="p-6 space-y-6" data-testid="roadmap-page">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h1 class="text-3xl font-bold tracking-tight text-foreground">Roadmap</h1>
-        <p class="text-muted-foreground mt-1">Drag feedback between columns to change its status</p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
+  <PageContainer width="full" data-testid="roadmap-page">
+    <PageHeader title="Roadmap" description="Drag feedback between columns to change its status">
+      <template #actions>
         <RoadmapProductPicker @change="onProductChange" />
         <Button v-if="publicUrl" as-child variant="outline" data-testid="roadmap-public-link">
           <a :href="publicUrl" target="_blank" rel="noopener noreferrer">
@@ -13,155 +9,175 @@
             View public roadmap
           </a>
         </Button>
+        <Button v-else variant="outline" disabled data-testid="roadmap-public-link">
+          <Icon name="lucide:external-link" class="w-4 h-4 mr-2" />
+          View public roadmap
+        </Button>
+      </template>
+    </PageHeader>
+
+    <Card v-if="disabledMessage !== null" data-testid="roadmap-disabled">
+      <CardContent class="py-10 text-center space-y-4">
+        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <Icon name="lucide:map" class="w-6 h-6 text-muted-foreground" />
+        </div>
+        <div class="space-y-1">
+          <p class="font-medium">Roadmap is switched off</p>
+          <p class="text-sm text-muted-foreground max-w-md mx-auto">
+            {{ isAdmin ? 'Switch it on under Project settings, Tools.' : 'Project admins can switch the roadmap on.' }}
+          </p>
+        </div>
+        <div v-if="isAdmin" class="flex flex-wrap items-center justify-center gap-2">
+          <Button as-child variant="outline">
+            <NuxtLink to="/project/settings#tools">Project settings: Tools</NuxtLink>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card v-else-if="contextError" data-testid="roadmap-error">
+      <CardContent class="text-center py-8">
+        <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
+        <p class="font-medium mb-2">Failed to load the active project</p>
+        <p class="text-sm text-muted-foreground mb-4">{{ contextError }}</p>
+        <Button variant="outline" @click="bootstrap">
+          <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
+          Try again
+        </Button>
+      </CardContent>
+    </Card>
+
+    <!-- Same shape as the loaded page: filter row, then the columns -->
+    <div v-else-if="!contextReady || isLoading" class="space-y-6" data-testid="roadmap-loading">
+      <div class="flex items-center gap-4">
+        <Skeleton class="h-9 w-44" />
+        <Skeleton class="h-5 w-28" />
       </div>
-    </div>
-
-    <template v-if="pickerReady">
-      <Card v-if="disabledMessage !== null" data-testid="roadmap-disabled">
-        <CardContent class="py-10 text-center space-y-4">
-          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <Icon name="lucide:map" class="w-6 h-6 text-muted-foreground" />
-          </div>
-          <div class="space-y-1">
-            <p class="font-medium">Roadmap is switched off</p>
-            <p class="text-sm text-muted-foreground max-w-md mx-auto">
-              {{
-                isAdmin ? 'Switch it on under Project settings, Tools.' : 'Project admins can switch the roadmap on.'
-              }}
-            </p>
-          </div>
-          <div v-if="isAdmin" class="flex flex-wrap items-center justify-center gap-2">
-            <Button as-child variant="outline">
-              <NuxtLink to="/project/settings#tools">Project settings: Tools</NuxtLink>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div v-else-if="isLoading" class="flex gap-4 overflow-x-auto" data-testid="roadmap-loading">
+      <div class="flex gap-4 overflow-x-auto">
         <div v-for="n in 4" :key="n" class="w-[300px] shrink-0 space-y-3">
-          <Skeleton class="h-9 w-full" />
+          <Skeleton class="h-11 w-full rounded-xl" />
           <Skeleton v-for="m in 3" :key="m" class="h-24 w-full" />
         </div>
       </div>
+    </div>
 
-      <Card v-else-if="error" data-testid="roadmap-error">
-        <CardContent class="text-center py-8">
-          <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
-          <p class="font-medium mb-2">Failed to load the roadmap</p>
-          <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
-          <Button variant="outline" @click="load">
-            <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
-            Try again
-          </Button>
-        </CardContent>
-      </Card>
+    <Card v-else-if="error" data-testid="roadmap-error">
+      <CardContent class="text-center py-8">
+        <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
+        <p class="font-medium mb-2">Failed to load the roadmap</p>
+        <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
+        <Button variant="outline" @click="load">
+          <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
+          Try again
+        </Button>
+      </CardContent>
+    </Card>
 
-      <template v-else>
-        <div class="flex flex-wrap items-center gap-4" data-testid="roadmap-filters">
-          <div class="flex items-center gap-2">
-            <Icon name="lucide:tag" class="w-4 h-4 text-muted-foreground" />
-            <select
-              v-model="categoryFilter"
-              class="h-9 rounded-md border border-input bg-background px-3 text-sm"
-              data-testid="roadmap-category-filter"
-              aria-label="Filter by category"
-              @change="rebuildLists"
-            >
-              <option value="">All categories</option>
-              <option v-for="category in categories" :key="category.id" :value="category.id">
-                {{ category.name }}
-              </option>
-            </select>
-          </div>
-          <label class="flex items-center gap-2 text-sm cursor-pointer">
-            <Switch :model-value="showHidden" data-testid="roadmap-show-hidden" @update:model-value="setShowHidden" />
-            Show hidden
-          </label>
+    <template v-else>
+      <div class="flex flex-wrap items-center gap-4" data-testid="roadmap-filters">
+        <div class="flex items-center gap-2">
+          <Icon name="lucide:tag" class="w-4 h-4 text-muted-foreground" />
+          <select
+            v-model="categoryFilter"
+            class="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            data-testid="roadmap-category-filter"
+            aria-label="Filter by category"
+            @change="rebuildLists"
+          >
+            <option value="">All categories</option>
+            <option v-for="category in categories" :key="category.id" :value="category.id">
+              {{ category.name }}
+            </option>
+          </select>
         </div>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <Switch :model-value="showHidden" data-testid="roadmap-show-hidden" @update:model-value="setShowHidden" />
+          Show hidden
+        </label>
+      </div>
 
-        <div class="overflow-x-auto pb-4" data-testid="roadmap-board">
-          <div class="flex gap-4 min-w-max">
-            <div
-              v-for="column in columns"
-              :key="column.value"
-              :data-testid="`roadmap-column-${column.value}`"
-              class="w-[300px] shrink-0 flex flex-col bg-muted/30 rounded-xl border"
-            >
-              <div class="p-3 flex items-center justify-between border-b bg-card/50 rounded-t-xl">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="h-2.5 w-2.5 rounded-full shrink-0" :style="{ backgroundColor: column.color }" />
-                  <h3 class="text-sm font-semibold truncate">{{ column.name }}</h3>
-                </div>
-                <Badge variant="secondary" class="font-mono" :data-testid="`roadmap-count-${column.value}`">
-                  {{ lists[column.value]?.length ?? 0 }}
-                </Badge>
+      <div class="overflow-x-auto pb-4" data-testid="roadmap-board">
+        <div class="flex gap-4 min-w-max">
+          <div
+            v-for="column in columns"
+            :key="column.value"
+            :data-testid="`roadmap-column-${column.value}`"
+            class="w-[300px] shrink-0 flex flex-col bg-muted/30 rounded-xl border"
+          >
+            <div class="p-3 flex items-center justify-between border-b bg-card/50 rounded-t-xl">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="h-2.5 w-2.5 rounded-full shrink-0" :style="{ backgroundColor: column.color }" />
+                <h3 class="text-sm font-semibold truncate">{{ column.name }}</h3>
               </div>
-              <VueDraggable
-                v-model="lists[column.value]"
-                :group="{ name: 'roadmap', pull: true, put: true }"
-                :animation="150"
-                ghost-class="opacity-40"
-                class="p-3 space-y-3 min-h-[200px] flex-1"
-                :data-status="column.value"
-                @end="onDragEnd"
-              >
-                <NuxtLink
-                  v-for="item in lists[column.value]"
-                  :key="item.id"
-                  :to="`/feedback/${item.id}`"
-                  :data-id="item.id"
-                  :data-testid="`roadmap-card-${item.id}`"
-                  class="block"
-                  draggable="false"
-                >
-                  <Card :class="['hover:bg-accent/40 transition-colors', item.isHidden ? 'border-dashed' : '']">
-                    <CardContent class="p-3 space-y-2">
-                      <p class="text-sm font-medium line-clamp-3">{{ item.title }}</p>
-                      <div class="flex flex-wrap items-center gap-1.5">
-                        <Badge
-                          v-if="productName(item)"
-                          variant="outline"
-                          :data-testid="`roadmap-product-badge-${item.id}`"
-                        >
-                          {{ productName(item) }}
-                        </Badge>
-                        <Badge v-if="item.category" variant="secondary">{{ item.category.name }}</Badge>
-                        <Badge v-if="item.isPinned" variant="outline" class="gap-1">
-                          <Icon name="lucide:pin" class="w-3 h-3" />
-                          Pinned
-                        </Badge>
-                        <Badge v-if="item.isHidden" variant="outline" class="gap-1">
-                          <Icon name="lucide:eye-off" class="w-3 h-3" />
-                          Hidden
-                        </Badge>
-                      </div>
-                      <div class="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span class="inline-flex items-center gap-1">
-                          <Icon name="lucide:chevron-up" class="w-3.5 h-3.5" />
-                          {{ item.voteCount }}
-                        </span>
-                        <span class="inline-flex items-center gap-1">
-                          <Icon name="lucide:message-square" class="w-3.5 h-3.5" />
-                          {{ item.commentCount }}
-                        </span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </NuxtLink>
-              </VueDraggable>
+              <Badge variant="secondary" class="font-mono" :data-testid="`roadmap-count-${column.value}`">
+                {{ lists[column.value]?.length ?? 0 }}
+              </Badge>
             </div>
+            <VueDraggable
+              v-model="lists[column.value]"
+              :group="{ name: 'roadmap', pull: true, put: true }"
+              :animation="150"
+              ghost-class="opacity-40"
+              class="p-3 space-y-3 min-h-[200px] flex-1"
+              :data-status="column.value"
+              @end="onDragEnd"
+            >
+              <NuxtLink
+                v-for="item in lists[column.value]"
+                :key="item.id"
+                :to="`/feedback/${item.id}`"
+                :data-id="item.id"
+                :data-testid="`roadmap-card-${item.id}`"
+                class="block"
+                draggable="false"
+              >
+                <Card :class="['hover:bg-accent/40 transition-colors', item.isHidden ? 'border-dashed' : '']">
+                  <CardContent class="p-3 space-y-2">
+                    <p class="text-sm font-medium line-clamp-3">{{ item.title }}</p>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <Badge
+                        v-if="productName(item)"
+                        variant="outline"
+                        :data-testid="`roadmap-product-badge-${item.id}`"
+                      >
+                        {{ productName(item) }}
+                      </Badge>
+                      <Badge v-if="item.category" variant="secondary">{{ item.category.name }}</Badge>
+                      <Badge v-if="item.isPinned" variant="outline" class="gap-1">
+                        <Icon name="lucide:pin" class="w-3 h-3" />
+                        Pinned
+                      </Badge>
+                      <Badge v-if="item.isHidden" variant="outline" class="gap-1">
+                        <Icon name="lucide:eye-off" class="w-3 h-3" />
+                        Hidden
+                      </Badge>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span class="inline-flex items-center gap-1">
+                        <Icon name="lucide:chevron-up" class="w-3.5 h-3.5" />
+                        {{ item.voteCount }}
+                      </span>
+                      <span class="inline-flex items-center gap-1">
+                        <Icon name="lucide:message-square" class="w-3.5 h-3.5" />
+                        {{ item.commentCount }}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </NuxtLink>
+            </VueDraggable>
           </div>
         </div>
-      </template>
+      </div>
     </template>
-  </div>
+  </PageContainer>
 </template>
 
 <script>
 import { toast } from 'vue-sonner'
 import { VueDraggable } from 'vue-draggable-plus'
 import { apiErrorMessage, apiErrorStatus } from '~/lib/api-error'
+import { cachedActiveProject, loadActiveProject } from '~/lib/active-project'
 
 const HIDDEN_KEY = 'veerify_roadmap_show_hidden'
 
@@ -174,13 +190,19 @@ export default {
 
   created() {
     useHead({ title: 'Roadmap' })
+    // Warm navigation: render and start the data fetch at once from the cache
+    if (import.meta.client) {
+      const cached = cachedActiveProject()
+      if (cached !== undefined) this.onProductChange(cached, this.productFromRoute(cached))
+    }
   },
 
   components: { VueDraggable },
 
   data() {
     return {
-      pickerReady: false,
+      contextReady: false,
+      contextError: null,
       project: null,
       products: [],
       productId: '',
@@ -213,7 +235,7 @@ export default {
     },
   },
 
-  mounted() {
+  async mounted() {
     if (import.meta.client) {
       try {
         this.showHidden = localStorage.getItem(HIDDEN_KEY) === '1'
@@ -221,9 +243,31 @@ export default {
         // Ignore storage failures.
       }
     }
+    await this.bootstrap()
   },
 
   methods: {
+    productFromRoute(context) {
+      const products = context?.products || []
+      const wanted = this.$route.query.productId
+      return products.length > 1 && products.some((p) => p.id === wanted) ? wanted : ''
+    },
+
+    // Resolve the active project (cache first, in parallel with the picker) and load the board
+    async bootstrap() {
+      this.contextError = null
+      try {
+        const context = (await loadActiveProject()) || null
+        const unchanged =
+          this.contextReady &&
+          (context?.project?.id || null) === (this.project?.id || null) &&
+          (context?.modules?.roadmapEnabled === true) === (this.disabledMessage === null)
+        if (!unchanged) await this.onProductChange(context, this.productFromRoute(context))
+      } catch (err) {
+        this.contextError = apiErrorMessage(err, 'Failed to load the active project')
+      }
+    },
+
     setShowHidden(value) {
       this.showHidden = value === true
       if (import.meta.client) {
@@ -255,7 +299,8 @@ export default {
     },
 
     async onProductChange(context, productId) {
-      this.pickerReady = true
+      this.contextReady = true
+      this.contextError = null
       this.project = context?.project || null
       this.products = context?.products || []
       this.productId = productId || ''

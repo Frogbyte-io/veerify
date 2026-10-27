@@ -1,18 +1,12 @@
 <template>
-  <div class="p-6 max-w-3xl mx-auto space-y-6" data-testid="changelog-entry-page">
-    <div class="flex items-center gap-3">
-      <Button as-child variant="ghost" size="sm">
-        <NuxtLink to="/dashboard/changelog">
-          <Icon name="lucide:arrow-left" class="w-4 h-4 mr-2" />
-          Changelog
-        </NuxtLink>
-      </Button>
-      <h1 class="text-2xl font-bold tracking-tight text-foreground">
-        {{ entryId === 'new' ? 'New entry' : 'Edit entry' }}
-      </h1>
-    </div>
+  <PageContainer width="narrow" data-testid="changelog-entry-page">
+    <PageHeader
+      :title="entryId === 'new' ? 'New entry' : 'Edit entry'"
+      back-to="/dashboard/changelog"
+      back-label="Changelog"
+    />
 
-    <Skeleton v-if="isLoading" class="h-64 w-full" />
+    <ChangelogEditorSkeleton v-if="isLoading" />
 
     <Card v-else-if="error">
       <CardContent class="text-center py-8">
@@ -33,11 +27,12 @@
       :initial-product-id="initialProductId"
       :entry-id="entryId"
     />
-  </div>
+  </PageContainer>
 </template>
 
 <script>
 import { apiErrorMessage } from '~/lib/api-error'
+import { cachedActiveProject, loadActiveProject } from '~/lib/active-project'
 
 export default {
   name: 'ChangelogEntryPage',
@@ -47,7 +42,14 @@ export default {
   },
 
   data() {
-    return { isLoading: true, error: null, project: null, products: [], orgSlug: '' }
+    const cached = cachedActiveProject()
+    return {
+      isLoading: !cached?.project,
+      error: null,
+      project: cached?.project || null,
+      products: cached?.products || [],
+      orgSlug: cached?.organization?.slug || '',
+    }
   },
 
   computed: {
@@ -76,11 +78,10 @@ export default {
     },
 
     async loadProject() {
-      this.isLoading = true
+      if (!this.project) this.isLoading = true
       this.error = null
       try {
-        const response = await $fetch('/api/projects/active')
-        const context = response?.data
+        const context = await loadActiveProject()
         this.project = context?.project || null
         this.products = context?.products || []
         this.orgSlug = context?.organization?.slug || ''

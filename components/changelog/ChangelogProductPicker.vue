@@ -37,16 +37,17 @@
 <script>
 import { cn } from '~/lib/utils'
 import { apiErrorMessage } from '~/lib/api-error'
+import { cachedActiveProject, loadActiveProject } from '~/lib/active-project'
 
 /**
- * Product filter for the changelog. The changelog is project-wide, so this loads
- * the active project and only renders chips ("All products" + one per product)
- * when the project has more than one product. The selection lives in the
- * `?productId=<id>` query.
+ * Product filter for the changelog. The changelog is project-wide, so this reads the
+ * shared active-project cache (synchronously on a warm navigation) and only
+ * renders chips ("All products" + one per product) when the project has more
+ * than one product. The selection lives in the `?productId=<id>` query.
  *
- * Emits `change` with (activeProjectContext, productId) once after every
- * (re)load of the active project and whenever a chip is picked. `productId`
- * is '' for "All products".
+ * Emits `change` with (activeProjectContext, productId) when a chip is picked
+ * or the active project changes. The page loads its own data in parallel, so it
+ * does not wait for this component. `productId` is '' for "All products".
  */
 export default {
   name: 'ChangelogProductPicker',
@@ -54,10 +55,11 @@ export default {
   emits: ['change', 'error'],
 
   data() {
+    const cached = cachedActiveProject()
     return {
-      context: null,
+      context: cached || null,
       selectedId: '',
-      isLoading: true,
+      isLoading: cached === undefined,
       error: null,
     }
   },
@@ -68,16 +70,20 @@ export default {
     },
   },
 
+  created() {
+    this.syncSelection()
+  },
+
   async mounted() {
     if (import.meta.client) {
-      window.addEventListener('veerify:active-project-changed', this.load)
+      window.addEventListener('veerify:active-project-changed', this.onProjectChanged)
     }
     await this.load()
   },
 
   beforeUnmount() {
     if (import.meta.client) {
-      window.removeEventListener('veerify:active-project-changed', this.load)
+      window.removeEventListener('veerify:active-project-changed', this.onProjectChanged)
     }
   },
 
@@ -89,16 +95,23 @@ export default {
       )
     },
 
+    syncSelection() {
+      const wanted = this.$route.query.productId
+      const match = this.products.length > 1 ? this.products.find((product) => product.id === wanted) : null
+      this.selectedId = match ? match.id : ''
+    },
+
+    async onProjectChanged() {
+      await this.load()
+      this.$emit('change', this.context, this.selectedId)
+    },
+
     async load() {
-      this.isLoading = true
+      if (cachedActiveProject() === undefined) this.isLoading = true
       this.error = null
       try {
-        const response = await $fetch('/api/projects/active')
-        this.context = response?.data || null
-        const wanted = this.$route.query.productId
-        const match = this.products.length > 1 ? this.products.find((product) => product.id === wanted) : null
-        this.selectedId = match ? match.id : ''
-        this.$emit('change', this.context, this.selectedId)
+        this.context = (await loadActiveProject()) || null
+        this.syncSelection()
       } catch (err) {
         this.context = null
         this.error = apiErrorMessage(err, 'Failed to load the active project')

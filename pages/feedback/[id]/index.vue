@@ -1,40 +1,55 @@
 <template>
-  <div class="px-4 pb-10 pt-6 sm:px-6 lg:px-10">
-    <div v-if="isLoading" class="mx-auto max-w-[1400px] space-y-6">
-      <Skeleton class="h-4 w-32" />
-      <Skeleton class="h-10 w-[min(30rem,90vw)]" />
-      <div class="grid gap-8 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.9fr)]">
-        <div class="space-y-6">
-          <div class="rounded-2xl border bg-card p-6 sm:p-8">
-            <Skeleton class="mb-4 h-6 w-40" />
-            <Skeleton class="h-10 w-3/4" />
-            <Skeleton class="mt-4 h-4 w-full" />
-            <Skeleton class="mt-2 h-4 w-[88%]" />
-          </div>
-          <div class="rounded-2xl border bg-card p-6 sm:p-8">
-            <Skeleton class="mb-4 h-6 w-32" />
+  <PageContainer>
+    <PageHeader :title="item?.title || 'Feedback'" :back-to="backTo" :back-label="backLabel">
+      <template #actions>
+        <Button v-if="canEditFeedback" data-testid="feedback-detail-edit" variant="outline" @click="openEditDialog">
+          <Icon name="lucide:pencil" class="mr-2 h-4 w-4" />
+          Edit feedback
+        </Button>
+        <Button
+          v-if="canDeleteFeedback"
+          data-testid="feedback-detail-delete"
+          variant="destructive"
+          @click="showDeleteDialog = true"
+        >
+          <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
+          Delete feedback
+        </Button>
+      </template>
+    </PageHeader>
+
+    <!-- Same two-column shape as the loaded page -->
+    <div v-if="isLoading" class="grid gap-8 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.9fr)]">
+      <div class="space-y-6">
+        <div class="rounded-xl border bg-card p-6 sm:p-8">
+          <Skeleton class="mb-5 h-6 w-40" />
+          <Skeleton class="h-24 w-full" />
+          <Skeleton class="mt-4 h-4 w-[88%]" />
+        </div>
+        <div class="rounded-xl border bg-card p-6 sm:p-8">
+          <Skeleton class="mb-6 h-7 w-40" />
+          <div class="space-y-4">
+            <Skeleton class="h-24 w-full" />
             <Skeleton class="h-24 w-full" />
           </div>
         </div>
-        <div class="space-y-6">
-          <div class="rounded-2xl border bg-card p-6">
-            <Skeleton class="mb-4 h-6 w-28" />
-            <Skeleton class="h-11 w-full" />
-          </div>
-          <div class="rounded-2xl border bg-card p-6">
-            <Skeleton class="mb-4 h-6 w-24" />
-            <Skeleton class="h-16 w-full" />
-          </div>
+      </div>
+      <div class="space-y-6">
+        <div class="rounded-xl border bg-card p-6">
+          <Skeleton class="mb-4 h-6 w-28" />
+          <Skeleton class="h-11 w-full" />
+          <Skeleton class="mt-4 h-24 w-full" />
+        </div>
+        <div class="rounded-xl border bg-card p-6">
+          <Skeleton class="mb-4 h-6 w-24" />
+          <Skeleton class="h-16 w-full" />
         </div>
       </div>
     </div>
 
-    <div
-      v-else-if="error"
-      class="mx-auto flex max-w-3xl flex-col items-center rounded-2xl border bg-card px-6 py-14 text-center"
-    >
+    <div v-else-if="error" class="flex flex-col items-center rounded-xl border bg-card px-6 py-14 text-center">
       <Icon name="lucide:alert-circle" class="mb-4 h-10 w-10 text-destructive" />
-      <h1 class="text-2xl font-semibold">Failed to load feedback</h1>
+      <h2 class="text-2xl font-semibold">Failed to load feedback</h2>
       <p class="mt-3 text-sm text-muted-foreground">{{ error }}</p>
       <div class="mt-6 flex flex-wrap gap-3">
         <Button variant="outline" @click="$router.back()">Back</Button>
@@ -42,50 +57,10 @@
       </div>
     </div>
 
-    <div v-else-if="item" data-testid="feedback-detail-page" class="mx-auto max-w-[1400px] space-y-8">
-      <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-        <div class="space-y-4">
-          <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <NuxtLink to="/feedback" prefetch-on="interaction" class="hover:text-foreground">Feedback</NuxtLink>
-            <Icon name="lucide:chevron-right" class="h-4 w-4" />
-            <NuxtLink
-              v-if="showProductBreadcrumb"
-              :to="`/feedback?product=${item.product.slug}`"
-              prefetch-on="interaction"
-              class="hover:text-foreground"
-            >
-              {{ item.product.name }}
-            </NuxtLink>
-            <Icon v-if="showProductBreadcrumb" name="lucide:chevron-right" class="h-4 w-4" />
-            <span class="text-foreground">{{ item.title }}</span>
-          </div>
-          <Button variant="ghost" size="sm" class="-ml-2 w-fit" @click="$router.back()">
-            <Icon name="lucide:arrow-left" class="mr-2 h-4 w-4" />
-            Back
-          </Button>
-          <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">{{ item.title }}</h1>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-3">
-          <Button v-if="canEditFeedback" data-testid="feedback-detail-edit" variant="outline" @click="openEditDialog">
-            <Icon name="lucide:pencil" class="mr-2 h-4 w-4" />
-            Edit feedback
-          </Button>
-          <Button
-            v-if="canDeleteFeedback"
-            data-testid="feedback-detail-delete"
-            variant="destructive"
-            @click="showDeleteDialog = true"
-          >
-            <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
-            Delete feedback
-          </Button>
-        </div>
-      </div>
-
+    <div v-else-if="item" data-testid="feedback-detail-page" class="space-y-8">
       <div class="grid gap-8 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.9fr)]">
         <div data-testid="feedback-detail-main" class="space-y-6">
-          <section class="rounded-[28px] border bg-card p-6 shadow-sm sm:p-8">
+          <section class="rounded-xl border bg-card p-6 shadow-sm sm:p-8">
             <div class="mb-5 flex flex-wrap gap-2">
               <Badge class="border-transparent" :style="statusPillStyle(item.status)">
                 {{ formatStatus(item.status) }}
@@ -104,7 +79,7 @@
             <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
               <div class="flex shrink-0 items-center gap-3 lg:w-[88px] lg:flex-col">
                 <button
-                  class="flex h-12 w-12 items-center justify-center rounded-2xl border"
+                  class="flex h-12 w-12 items-center justify-center rounded-xl border"
                   :class="
                     item.voteType === 'upvote'
                       ? 'border-primary bg-primary/10 text-primary'
@@ -120,7 +95,7 @@
                   <div class="text-xs uppercase tracking-[0.2em] text-muted-foreground">Votes</div>
                 </div>
                 <button
-                  class="flex h-12 w-12 items-center justify-center rounded-2xl border"
+                  class="flex h-12 w-12 items-center justify-center rounded-xl border"
                   :class="
                     item.voteType === 'downvote'
                       ? 'border-destructive bg-destructive/10 text-destructive'
@@ -141,7 +116,7 @@
 
                 <FeedbackAttachmentList :key="item.id" :feedback-id="item.id" />
 
-                <div class="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                <div class="grid gap-3 rounded-xl border bg-muted/20 p-4 sm:grid-cols-2 xl:grid-cols-4">
                   <div class="rounded-xl bg-background/80 p-4">
                     <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Author</div>
                     <div class="mt-2 flex items-center gap-3">
@@ -207,7 +182,7 @@
             </div>
           </section>
 
-          <section class="rounded-[28px] border bg-card p-6 shadow-sm sm:p-8">
+          <section class="rounded-xl border bg-card p-6 shadow-sm sm:p-8">
             <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 class="text-xl font-semibold">Conversation</h2>
@@ -224,11 +199,11 @@
               <Skeleton class="h-24 w-full" />
               <Skeleton class="h-24 w-full" />
             </div>
-            <div v-else-if="commentsError" class="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
+            <div v-else-if="commentsError" class="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
               <p class="text-sm text-destructive">{{ commentsError }}</p>
               <Button class="mt-4" size="sm" variant="outline" @click="loadComments">Retry comments</Button>
             </div>
-            <div v-else-if="comments.length === 0" class="rounded-2xl border border-dashed p-10 text-center">
+            <div v-else-if="comments.length === 0" class="rounded-xl border border-dashed p-10 text-center">
               <p class="text-sm text-muted-foreground">No comments yet.</p>
             </div>
             <div v-else class="space-y-4">
@@ -236,7 +211,7 @@
                 v-for="comment in comments"
                 :key="comment.id"
                 :data-testid="`feedback-detail-comment-${comment.id}`"
-                class="rounded-2xl border p-5"
+                class="rounded-xl border p-5"
                 :class="
                   comment.isInternal
                     ? 'border-amber-200 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20'
@@ -309,7 +284,7 @@
               </article>
             </div>
 
-            <div class="mt-8 rounded-2xl border bg-muted/20 p-5 sm:p-6">
+            <div class="mt-8 rounded-xl border bg-muted/20 p-5 sm:p-6">
               <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 class="text-base font-semibold">Add a comment</h3>
@@ -363,7 +338,7 @@
         </div>
 
         <aside data-testid="feedback-detail-sidebar" class="space-y-6 xl:sticky xl:top-6 xl:self-start">
-          <section class="rounded-[28px] border bg-card p-6 shadow-sm">
+          <section class="rounded-xl border bg-card p-6 shadow-sm">
             <h2 class="text-lg font-semibold">Workflow</h2>
             <p class="mt-1 text-sm text-muted-foreground">Status, notifications, and public-board behavior.</p>
             <div class="mt-5 space-y-5">
@@ -385,7 +360,7 @@
                   {{ formatStatus(item.status) }}
                 </Badge>
               </div>
-              <div class="rounded-2xl border bg-muted/20 p-4">
+              <div class="rounded-xl border bg-muted/20 p-4">
                 <div class="flex items-center justify-between gap-4">
                   <span class="text-sm font-medium">Visibility</span>
                   <Badge variant="outline">{{ item.isHidden ? 'Hidden' : 'Visible' }}</Badge>
@@ -395,7 +370,7 @@
                   <Badge variant="outline">{{ item.isLocked ? 'Locked' : 'Open' }}</Badge>
                 </div>
               </div>
-              <div class="rounded-2xl border bg-muted/20 p-4">
+              <div class="rounded-xl border bg-muted/20 p-4">
                 <div class="text-sm font-medium">Subscribe to updates</div>
                 <p class="mt-1 text-sm text-muted-foreground">
                   Get notified when the status changes or when new comments arrive.
@@ -419,23 +394,23 @@
             </div>
           </section>
 
-          <section class="rounded-[28px] border bg-card p-6 shadow-sm">
+          <section class="rounded-xl border bg-card p-6 shadow-sm">
             <h2 class="text-lg font-semibold">Details</h2>
             <p class="mt-1 text-sm text-muted-foreground">Keep useful context visible while you work the item.</p>
             <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <div class="rounded-2xl border bg-muted/20 p-4">
+              <div class="rounded-xl border bg-muted/20 p-4">
                 <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Votes</div>
                 <div class="mt-2 text-2xl font-semibold">{{ item.voteCount }}</div>
               </div>
-              <div class="rounded-2xl border bg-muted/20 p-4">
+              <div class="rounded-xl border bg-muted/20 p-4">
                 <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Comments</div>
                 <div class="mt-2 text-2xl font-semibold">{{ item.commentCount }}</div>
               </div>
-              <div class="rounded-2xl border bg-muted/20 p-4">
+              <div class="rounded-xl border bg-muted/20 p-4">
                 <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Category</div>
                 <div class="mt-2 text-sm font-medium">{{ item.category?.name || 'Uncategorized' }}</div>
               </div>
-              <div class="rounded-2xl border bg-muted/20 p-4">
+              <div class="rounded-xl border bg-muted/20 p-4">
                 <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Type</div>
                 <div class="mt-2 text-sm font-medium">
                   {{ feedbackTypeLabel(item.tag) || item.tag || 'Unspecified' }}
@@ -447,7 +422,7 @@
           <section
             v-if="canManageFeedback"
             data-testid="feedback-detail-admin-card"
-            class="rounded-[28px] border bg-card p-6 shadow-sm"
+            class="rounded-xl border bg-card p-6 shadow-sm"
           >
             <h2 class="text-lg font-semibold">Admin Controls</h2>
             <p class="mt-1 text-sm text-muted-foreground">
@@ -456,7 +431,7 @@
             <div class="mt-5 space-y-3">
               <button
                 data-testid="feedback-detail-pin"
-                class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
+                class="flex w-full items-start justify-between rounded-xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
                 :disabled="adminAction === 'pin'"
                 @click="togglePin"
               >
@@ -478,7 +453,7 @@
               </button>
               <button
                 data-testid="feedback-detail-visibility"
-                class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
+                class="flex w-full items-start justify-between rounded-xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
                 :disabled="adminAction === 'visibility'"
                 @click="toggleVisibility"
               >
@@ -504,7 +479,7 @@
               </button>
               <button
                 data-testid="feedback-detail-lock"
-                class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
+                class="flex w-full items-start justify-between rounded-xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
                 :disabled="adminAction === 'lock'"
                 @click="toggleLock"
               >
@@ -605,7 +580,7 @@
         </DialogContent>
       </Dialog>
     </div>
-  </div>
+  </PageContainer>
 </template>
 
 <script>
@@ -664,6 +639,12 @@ export default {
   },
 
   computed: {
+    backTo() {
+      return this.showProductBreadcrumb ? `/feedback?product=${this.item.product.slug}` : '/feedback'
+    },
+    backLabel() {
+      return this.showProductBreadcrumb ? this.item.product.name : 'Feedback'
+    },
     feedbackId() {
       return this.$route.params.id
     },
@@ -707,7 +688,8 @@ export default {
 
   methods: {
     async loadFeedback() {
-      this.isLoading = true
+      // Re-loads after an action keep the page on screen; only the first load shows the skeleton
+      if (!this.item) this.isLoading = true
       this.error = null
       try {
         const response = await $fetch(`/api/feedback/${this.feedbackId}`)
