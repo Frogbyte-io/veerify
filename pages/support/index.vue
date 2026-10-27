@@ -1,5 +1,5 @@
 <template>
-  <NuxtLayout name="dashboard">
+  <div class="contents">
     <div
       ref="pageRoot"
       class="h-[calc(100dvh-6rem)] min-h-[480px]"
@@ -81,9 +81,9 @@
       </Card>
 
       <!-- Responsive pane layout. Sized by the container (not the viewport)
-           so it adapts when the app sidebar opens or collapses:
-           narrow = one pane (list or thread), @2xl = list + thread,
-           @4xl = inbox sidebar + list + thread. -->
+         so it adapts when the app sidebar opens or collapses:
+         narrow = one pane (list or thread), @2xl = list + thread,
+         @4xl = inbox sidebar + list + thread. -->
       <div v-else class="@container/panes relative h-full flex flex-col rounded-lg border overflow-hidden bg-card">
         <div v-if="isCompactPanes" class="flex h-11 shrink-0 items-center gap-2 border-b px-2">
           <Button
@@ -306,7 +306,7 @@
       @load-probable="(reset) => loadTimelineSection('probable', reset)"
       @select-conversation="selectConversation"
     />
-  </NuxtLayout>
+  </div>
 </template>
 
 <script>

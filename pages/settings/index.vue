@@ -1,45 +1,43 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div data-testid="settings-page" :data-hydrated="isHydrated ? 'true' : 'false'" class="p-6">
-      <div class="mb-6">
-        <h1 class="text-3xl font-bold">Settings</h1>
-        <p class="text-muted-foreground">
-          Your personal account. Workspace and project settings live under Workspace settings and Project settings.
-        </p>
+  <div data-testid="settings-page" :data-hydrated="isHydrated ? 'true' : 'false'" class="p-6">
+    <div class="mb-6">
+      <h1 class="text-3xl font-bold">Settings</h1>
+      <p class="text-muted-foreground">
+        Your personal account. Workspace and project settings live under Workspace settings and Project settings.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <!-- Settings Navigation -->
+      <div class="lg:col-span-1">
+        <nav class="bg-card rounded-lg border p-4">
+          <ul class="space-y-2">
+            <li v-for="tab in availableTabs" :key="tab.key">
+              <button
+                :data-testid="`settings-tab-${tab.key}`"
+                :aria-label="`${tab.label} settings`"
+                :class="[
+                  'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
+                  activeTab === tab.key
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-accent/50',
+                ]"
+                @click="setActiveTab(tab.key)"
+              >
+                <Icon :name="tab.icon" class="w-4 h-4 mr-2" />
+                {{ tab.label }}
+              </button>
+            </li>
+          </ul>
+        </nav>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <!-- Settings Navigation -->
-        <div class="lg:col-span-1">
-          <nav class="bg-card rounded-lg border p-4">
-            <ul class="space-y-2">
-              <li v-for="tab in availableTabs" :key="tab.key">
-                <button
-                  :data-testid="`settings-tab-${tab.key}`"
-                  :aria-label="`${tab.label} settings`"
-                  :class="[
-                    'w-full text-left px-3 py-2 rounded-md transition-colors flex items-center',
-                    activeTab === tab.key
-                      ? 'bg-accent text-accent-foreground font-medium'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab(tab.key)"
-                >
-                  <Icon :name="tab.icon" class="w-4 h-4 mr-2" />
-                  {{ tab.label }}
-                </button>
-              </li>
-            </ul>
-          </nav>
-        </div>
-
-        <!-- Settings Content -->
-        <div class="lg:col-span-3">
-          <component :is="currentComponent" />
-        </div>
+      <!-- Settings Content -->
+      <div class="lg:col-span-3">
+        <component :is="currentComponent" />
       </div>
     </div>
-  </NuxtLayout>
+  </div>
 </template>
 
 <script>

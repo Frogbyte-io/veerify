@@ -1,72 +1,70 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div data-testid="workspace-page" :data-hydrated="isHydrated ? 'true' : 'false'" class="p-6">
-      <div class="mb-6">
-        <h1 class="text-3xl font-bold">Workspace settings</h1>
-        <p class="text-muted-foreground">
-          Manage your workspace, its people and projects, and the keys shared by every project
-        </p>
+  <div data-testid="workspace-page" :data-hydrated="isHydrated ? 'true' : 'false'" class="p-6">
+    <div class="mb-6">
+      <h1 class="text-3xl font-bold">Workspace settings</h1>
+      <p class="text-muted-foreground">
+        Manage your workspace, its people and projects, and the keys shared by every project
+      </p>
+    </div>
+
+    <div v-if="isLoading" class="grid grid-cols-1 gap-6 lg:grid-cols-4">
+      <Skeleton class="h-64 w-full lg:col-span-1" />
+      <Skeleton class="h-64 w-full lg:col-span-3" />
+    </div>
+
+    <div v-else-if="error" class="py-10 text-center" data-testid="workspace-error">
+      <p class="mb-3 text-sm text-destructive">{{ error }}</p>
+      <Button variant="outline" @click="loadOrganization">Retry</Button>
+    </div>
+
+    <div v-else-if="!organization" class="py-10 text-center">
+      <p class="font-medium">No workspace yet</p>
+      <p class="mt-1 mb-4 text-sm text-muted-foreground">Create a workspace to manage projects and people.</p>
+      <Button as-child>
+        <NuxtLink to="/get-started">Create a workspace</NuxtLink>
+      </Button>
+    </div>
+
+    <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-4">
+      <div class="lg:col-span-1">
+        <nav class="rounded-lg border bg-card p-4">
+          <ul class="space-y-2">
+            <li v-for="tab in availableTabs" :key="tab.key">
+              <button
+                :data-testid="`workspace-tab-${tab.key}`"
+                :aria-label="`${tab.label} settings`"
+                :class="[
+                  'flex w-full items-center rounded-md px-3 py-2 text-left transition-colors',
+                  activeTab === tab.key
+                    ? 'bg-accent font-medium text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-accent/50',
+                ]"
+                @click="setActiveTab(tab.key)"
+              >
+                <Icon :name="tab.icon" class="mr-2 h-4 w-4" />
+                {{ tab.label }}
+              </button>
+            </li>
+          </ul>
+        </nav>
       </div>
 
-      <div v-if="isLoading" class="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        <Skeleton class="h-64 w-full lg:col-span-1" />
-        <Skeleton class="h-64 w-full lg:col-span-3" />
-      </div>
-
-      <div v-else-if="error" class="py-10 text-center" data-testid="workspace-error">
-        <p class="mb-3 text-sm text-destructive">{{ error }}</p>
-        <Button variant="outline" @click="loadOrganization">Retry</Button>
-      </div>
-
-      <div v-else-if="!organization" class="py-10 text-center">
-        <p class="font-medium">No workspace yet</p>
-        <p class="mt-1 mb-4 text-sm text-muted-foreground">Create a workspace to manage projects and people.</p>
-        <Button as-child>
-          <NuxtLink to="/get-started">Create a workspace</NuxtLink>
-        </Button>
-      </div>
-
-      <div v-else class="grid grid-cols-1 gap-6 lg:grid-cols-4">
-        <div class="lg:col-span-1">
-          <nav class="rounded-lg border bg-card p-4">
-            <ul class="space-y-2">
-              <li v-for="tab in availableTabs" :key="tab.key">
-                <button
-                  :data-testid="`workspace-tab-${tab.key}`"
-                  :aria-label="`${tab.label} settings`"
-                  :class="[
-                    'flex w-full items-center rounded-md px-3 py-2 text-left transition-colors',
-                    activeTab === tab.key
-                      ? 'bg-accent font-medium text-accent-foreground'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  ]"
-                  @click="setActiveTab(tab.key)"
-                >
-                  <Icon :name="tab.icon" class="mr-2 h-4 w-4" />
-                  {{ tab.label }}
-                </button>
-              </li>
-            </ul>
-          </nav>
-        </div>
-
-        <div class="lg:col-span-3">
-          <WorkspaceGeneral
-            v-if="activeTab === 'general'"
-            :organization="organization"
-            @updated="onOrganizationUpdated"
-          />
-          <WorkspaceMembers v-else-if="activeTab === 'members'" :organization="organization" />
-          <WorkspaceProjects v-else-if="activeTab === 'projects'" :can-create="canManage" />
-          <WorkspaceApiKeys v-else-if="activeTab === 'keys'" />
-          <WorkspaceIntegrations v-else-if="activeTab === 'integrations'" :can-manage="canManage" />
-          <WorkspaceDataPrivacy v-else-if="activeTab === 'privacy'" :can-manage="canManage" />
-          <WorkspaceBilling v-else-if="activeTab === 'billing'" />
-          <WorkspaceStatus v-else-if="activeTab === 'status'" />
-        </div>
+      <div class="lg:col-span-3">
+        <WorkspaceGeneral
+          v-if="activeTab === 'general'"
+          :organization="organization"
+          @updated="onOrganizationUpdated"
+        />
+        <WorkspaceMembers v-else-if="activeTab === 'members'" :organization="organization" />
+        <WorkspaceProjects v-else-if="activeTab === 'projects'" :can-create="canManage" />
+        <WorkspaceApiKeys v-else-if="activeTab === 'keys'" />
+        <WorkspaceIntegrations v-else-if="activeTab === 'integrations'" :can-manage="canManage" />
+        <WorkspaceDataPrivacy v-else-if="activeTab === 'privacy'" :can-manage="canManage" />
+        <WorkspaceBilling v-else-if="activeTab === 'billing'" />
+        <WorkspaceStatus v-else-if="activeTab === 'status'" />
       </div>
     </div>
-  </NuxtLayout>
+  </div>
 </template>
 
 <script>

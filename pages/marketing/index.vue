@@ -1,388 +1,381 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="p-6 max-w-5xl mx-auto space-y-6" data-testid="marketing-overview-page">
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing</h1>
-          <p class="text-muted-foreground mt-1">Get your project found by search engines, AI assistants and people</p>
+  <div class="p-6 max-w-5xl mx-auto space-y-6" data-testid="marketing-overview-page">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight text-foreground">Marketing</h1>
+        <p class="text-muted-foreground mt-1">Get your project found by search engines, AI assistants and people</p>
+      </div>
+      <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+    </div>
+
+    <p v-if="pickerError" class="text-sm text-muted-foreground" data-testid="marketing-picker-error">
+      The project could not be loaded. Use Retry above to try again.
+    </p>
+
+    <template v-else-if="pickerReady">
+      <Card v-if="!project">
+        <CardContent class="py-10 text-center">
+          <p class="font-medium mb-1">No project yet</p>
+          <p class="text-sm text-muted-foreground mb-4">Marketing works on a project. Create one to get started.</p>
+          <Button as-child variant="outline">
+            <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <MarketingDisabled v-else-if="disabledMessage !== null" :project="project" :message="disabledMessage" />
+
+      <div v-else-if="isLoading" class="space-y-6">
+        <Skeleton class="h-40 w-full" />
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Skeleton class="h-40" />
+          <Skeleton class="h-40" />
+          <Skeleton class="h-40" />
         </div>
-        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+        <Skeleton class="h-24 w-full" />
       </div>
 
-      <p v-if="pickerError" class="text-sm text-muted-foreground" data-testid="marketing-picker-error">
-        The project could not be loaded. Use Retry above to try again.
-      </p>
+      <Card v-else-if="error">
+        <CardContent class="text-center py-8">
+          <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
+          <p class="font-medium mb-2">Failed to load the marketing overview</p>
+          <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
+          <Button variant="outline" @click="load">
+            <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
+            Try again
+          </Button>
+        </CardContent>
+      </Card>
 
-      <template v-else-if="pickerReady">
-        <Card v-if="!project">
-          <CardContent class="py-10 text-center">
-            <p class="font-medium mb-1">No project yet</p>
-            <p class="text-sm text-muted-foreground mb-4">Marketing works on a project. Create one to get started.</p>
-            <Button as-child variant="outline">
-              <NuxtLink to="/workspace">Go to workspace settings</NuxtLink>
-            </Button>
+      <template v-else-if="overview">
+        <Card v-if="!setupComplete" data-testid="marketing-setup">
+          <CardHeader>
+            <CardTitle role="heading" aria-level="2">Get set up</CardTitle>
+            <CardDescription>{{ completedSteps }} of {{ steps.length }} steps done</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul class="space-y-2">
+              <li
+                v-for="step in steps"
+                :key="step.key"
+                class="flex items-start gap-3"
+                :data-testid="`setup-${step.key}`"
+              >
+                <Icon
+                  :name="step.done ? 'lucide:circle-check' : 'lucide:circle'"
+                  class="w-5 h-5 mt-0.5 shrink-0"
+                  :class="step.done ? 'text-green-600 dark:text-green-500' : 'text-muted-foreground'"
+                />
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium" :class="step.done ? 'text-muted-foreground' : ''">
+                    <span class="sr-only">{{ step.done ? 'Done: ' : 'To do: ' }}</span>
+                    {{ step.title }}
+                  </p>
+                  <p v-if="!step.done" class="text-xs text-muted-foreground">{{ step.hint }}</p>
+                </div>
+                <template v-if="!step.done">
+                  <span
+                    v-if="step.adminOnly && canManageSite === false"
+                    class="text-xs text-muted-foreground"
+                    :data-testid="`setup-${step.key}-admin-note`"
+                  >
+                    Ask a project admin
+                  </span>
+                  <Button v-else as-child size="sm" variant="outline">
+                    <NuxtLink :to="`${settingsLink}#${step.section}`">{{ step.action }}</NuxtLink>
+                  </Button>
+                </template>
+              </li>
+            </ul>
           </CardContent>
         </Card>
 
-        <MarketingDisabled v-else-if="disabledMessage !== null" :project="project" :message="disabledMessage" />
-
-        <div v-else-if="isLoading" class="space-y-6">
-          <Skeleton class="h-40 w-full" />
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Skeleton class="h-40" />
-            <Skeleton class="h-40" />
-            <Skeleton class="h-40" />
-          </div>
-          <Skeleton class="h-24 w-full" />
-        </div>
-
-        <Card v-else-if="error">
-          <CardContent class="text-center py-8">
-            <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
-            <p class="font-medium mb-2">Failed to load the marketing overview</p>
-            <p class="text-sm text-muted-foreground mb-4">{{ error }}</p>
-            <Button variant="outline" @click="load">
-              <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
-              Try again
-            </Button>
-          </CardContent>
-        </Card>
-
-        <template v-else-if="overview">
-          <Card v-if="!setupComplete" data-testid="marketing-setup">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Card data-testid="marketing-card-audit">
             <CardHeader>
-              <CardTitle role="heading" aria-level="2">Get set up</CardTitle>
-              <CardDescription>{{ completedSteps }} of {{ steps.length }} steps done</CardDescription>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:search-check" class="w-4 h-4" />
+                Site audit
+              </CardTitle>
             </CardHeader>
-            <CardContent>
-              <ul class="space-y-2">
-                <li
-                  v-for="step in steps"
-                  :key="step.key"
-                  class="flex items-start gap-3"
-                  :data-testid="`setup-${step.key}`"
-                >
-                  <Icon
-                    :name="step.done ? 'lucide:circle-check' : 'lucide:circle'"
-                    class="w-5 h-5 mt-0.5 shrink-0"
-                    :class="step.done ? 'text-green-600 dark:text-green-500' : 'text-muted-foreground'"
-                  />
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium" :class="step.done ? 'text-muted-foreground' : ''">
-                      <span class="sr-only">{{ step.done ? 'Done: ' : 'To do: ' }}</span>
-                      {{ step.title }}
-                    </p>
-                    <p v-if="!step.done" class="text-xs text-muted-foreground">{{ step.hint }}</p>
-                  </div>
-                  <template v-if="!step.done">
-                    <span
-                      v-if="step.adminOnly && canManageSite === false"
-                      class="text-xs text-muted-foreground"
-                      :data-testid="`setup-${step.key}-admin-note`"
-                    >
-                      Ask a project admin
-                    </span>
-                    <Button v-else as-child size="sm" variant="outline">
-                      <NuxtLink :to="`${settingsLink}#${step.section}`">{{ step.action }}</NuxtLink>
-                    </Button>
-                  </template>
-                </li>
-              </ul>
-            </CardContent>
-          </Card>
-
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Card data-testid="marketing-card-audit">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:search-check" class="w-4 h-4" />
-                  Site audit
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <template v-if="overview.latestAudit">
-                  <p class="text-3xl font-bold">
-                    {{ overview.latestAudit.score === null ? 'n/a' : overview.latestAudit.score }}
-                    <span
-                      v-if="overview.latestAudit.score !== null"
-                      class="text-base font-normal text-muted-foreground"
-                    >
-                      / 100
-                    </span>
-                  </p>
-                  <p class="text-xs text-muted-foreground">
-                    {{ auditSummary }}
-                  </p>
-                </template>
-                <p v-else class="text-sm text-muted-foreground">No audit yet.</p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/audit">Open audit</NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-visibility">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:sparkles" class="w-4 h-4" />
-                  AI visibility
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <template v-if="overview.latestVisibilityRun">
-                  <p class="text-3xl font-bold">
-                    {{ mentionRateLabel }}
-                  </p>
-                  <p class="text-xs text-muted-foreground">
-                    of sampled AI answers mention your brand.
-                    {{ runSummary }}
-                  </p>
-                </template>
-                <p v-else-if="!overview.setup.hasLlmKey" class="text-sm text-muted-foreground">
-                  Add an Anthropic, OpenAI, Gemini or Perplexity key to measure how AI assistants talk about you.
-                </p>
-                <p v-else class="text-sm text-muted-foreground">No run yet.</p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/ai-visibility">Open AI visibility</NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-mentions">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:at-sign" class="w-4 h-4" />
-                  Mentions
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <p class="text-3xl font-bold">{{ overview.newMentions ?? 0 }}</p>
-                <p class="text-xs text-muted-foreground">
-                  new {{ overview?.newMentions === 1 ? 'mention' : 'mentions' }}
-                </p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/mentions">Open mentions</NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-search">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:trending-up" class="w-4 h-4" />
-                  Search
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <template v-if="overview.search?.connected && overview.search.totals">
-                  <p class="text-3xl font-bold">{{ formatNumber(overview.search.totals.current.clicks) }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    clicks and {{ formatNumber(overview.search.totals.current.impressions) }} impressions, last
-                    {{ overview.search.totals.days }} days
-                  </p>
-                  <p v-if="searchDelta" class="text-xs" :class="searchDelta.className" data-testid="search-delta">
-                    {{ searchDelta.label }}
-                  </p>
-                </template>
-                <p v-else-if="overview.search?.connected" class="text-sm text-muted-foreground">
-                  Connected. Waiting for the first sync.
-                </p>
-                <p v-else class="text-sm text-muted-foreground">
-                  Connect Search Console to see clicks and impressions.
-                </p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/search">
-                    {{ overview.search?.connected ? 'Open search' : 'Connect Search Console' }}
-                  </NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-reviews">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:star" class="w-4 h-4" />
-                  Reviews
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <template v-if="overview.reviews?.enabled">
-                  <p class="text-3xl font-bold">{{ formatNumber(overview.reviews.requestsSent) }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    {{ overview.reviews.requestsSent === 1 ? 'request' : 'requests' }} sent in the last
-                    {{ overview.reviews.sinceDays }} days.
-                    {{ formatNumber(overview.reviews.pendingTestimonials) }} pending
-                    {{ overview.reviews.pendingTestimonials === 1 ? 'testimonial' : 'testimonials' }}.
-                  </p>
-                </template>
-                <p v-else class="text-sm text-muted-foreground">
-                  Review requests are off. Ask happy customers for reviews and testimonials.
-                </p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/reviews">
-                    {{ overview.reviews?.enabled ? 'Open reviews' : 'Turn on review requests' }}
-                  </NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-announcements">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:megaphone" class="w-4 h-4" />
-                  Announcements
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <template v-if="overview.announcements?.changelogEnabled">
-                  <p class="text-3xl font-bold">{{ formatNumber(overview.announcements.withoutDrafts) }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    published {{ overview.announcements.withoutDrafts === 1 ? 'entry' : 'entries' }} without drafts
-                  </p>
-                </template>
-                <p v-else class="text-sm text-muted-foreground">
-                  Changelog is off. Turn it on to draft announcements for what you ship.
-                </p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/announcements">Open announcements</NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-language">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:message-circle-heart" class="w-4 h-4" />
-                  Customer language
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <template v-if="overview.language?.lastRunAt">
-                  <p class="text-3xl font-bold">{{ formatDate(overview.language.lastRunAt) }}</p>
-                  <p class="text-xs text-muted-foreground">last analysis</p>
-                </template>
-                <p v-else-if="overview.language?.consented" class="text-sm text-muted-foreground">
-                  No analysis yet. Run one to see how customers describe you.
-                </p>
-                <p v-else class="text-sm text-muted-foreground">
-                  Give consent to analyse customer feedback and learn the words they use.
-                </p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/language">
-                    {{ overview.language?.consented ? 'Open customer language' : 'Give consent to analyse' }}
-                  </NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-changelog">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:newspaper" class="w-4 h-4" />
-                  Changelog
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <template v-if="overview.changelog?.latest">
-                  <p class="text-base font-semibold line-clamp-2">{{ overview.changelog.latest.title }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    Published {{ formatDate(overview.changelog.latest.publishedAt) }}
-                  </p>
-                </template>
-                <p v-else-if="overview.changelog?.enabled" class="text-sm text-muted-foreground">
-                  Nothing published yet.
-                </p>
-                <p v-else class="text-sm text-muted-foreground">Changelog is off for this project.</p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/dashboard/changelog">Open changelog</NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-competitors">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:binoculars" class="w-4 h-4" />
-                  Competitors
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <template v-if="overview.competitors?.watching || overview.competitors?.unseenChanges">
-                  <p class="text-2xl font-semibold">{{ overview.competitors.unseenChanges ?? 0 }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    unseen {{ overview.competitors.unseenChanges === 1 ? 'change' : 'changes' }} across
-                    {{ overview.competitors.watching ?? 0 }} watched
-                    {{ overview.competitors.watching === 1 ? 'page' : 'pages' }}
-                  </p>
-                </template>
-                <p v-else class="text-sm text-muted-foreground">
-                  Watch competitors' pricing and changelog pages for changes.
-                </p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/competitors">
-                    {{
-                      overview.competitors?.watching || overview.competitors?.unseenChanges
-                        ? 'Review changes'
-                        : 'Watch a competitor'
-                    }}
-                  </NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="marketing-card-launch-kit">
-              <CardHeader>
-                <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
-                  <Icon name="lucide:rocket" class="w-4 h-4" />
-                  Launch kit
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="space-y-3">
-                <p class="text-2xl font-semibold">
-                  {{ overview.launchKit?.live ?? 0 }}
-                  <span class="text-sm font-normal text-muted-foreground">
-                    / {{ overview.launchKit?.catalogSize ?? 0 }} live
+            <CardContent class="space-y-3">
+              <template v-if="overview.latestAudit">
+                <p class="text-3xl font-bold">
+                  {{ overview.latestAudit.score === null ? 'n/a' : overview.latestAudit.score }}
+                  <span v-if="overview.latestAudit.score !== null" class="text-base font-normal text-muted-foreground">
+                    / 100
                   </span>
                 </p>
                 <p class="text-xs text-muted-foreground">
-                  {{ overview.launchKit?.submitted ?? 0 }} submitted · {{ overview.launchKit?.inProgress ?? 0 }} in
-                  progress
+                  {{ auditSummary }}
                 </p>
-                <Button as-child variant="outline" size="sm">
-                  <NuxtLink to="/marketing/launch">Open launch kit</NuxtLink>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card data-testid="marketing-usage">
-            <CardHeader>
-              <CardTitle role="heading" aria-level="2" class="text-base">Usage this month</CardTitle>
-              <CardDescription
-                >Counted for your whole workspace. Provider invoices are the source of truth.</CardDescription
-              >
-            </CardHeader>
-            <CardContent>
-              <dl class="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <dt class="text-xs text-muted-foreground">AI tokens (input and output)</dt>
-                  <dd class="text-xl font-semibold">{{ formatNumber(llmTokens) }}</dd>
-                </div>
-                <div>
-                  <dt class="text-xs text-muted-foreground">Pages crawled</dt>
-                  <dd class="text-xl font-semibold">{{ formatNumber(crawledPages) }}</dd>
-                </div>
-                <div v-for="item in llmCosts" :key="item.provider" :data-testid="`usage-cost-${item.provider}`">
-                  <dt class="text-xs text-muted-foreground">Estimated cost, {{ item.provider }}</dt>
-                  <dd class="text-xl font-semibold">{{ item.label }}</dd>
-                </div>
-              </dl>
+              </template>
+              <p v-else class="text-sm text-muted-foreground">No audit yet.</p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/audit">Open audit</NuxtLink>
+              </Button>
             </CardContent>
           </Card>
-        </template>
+
+          <Card data-testid="marketing-card-visibility">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:sparkles" class="w-4 h-4" />
+                AI visibility
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <template v-if="overview.latestVisibilityRun">
+                <p class="text-3xl font-bold">
+                  {{ mentionRateLabel }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  of sampled AI answers mention your brand.
+                  {{ runSummary }}
+                </p>
+              </template>
+              <p v-else-if="!overview.setup.hasLlmKey" class="text-sm text-muted-foreground">
+                Add an Anthropic, OpenAI, Gemini or Perplexity key to measure how AI assistants talk about you.
+              </p>
+              <p v-else class="text-sm text-muted-foreground">No run yet.</p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/ai-visibility">Open AI visibility</NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="marketing-card-mentions">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:at-sign" class="w-4 h-4" />
+                Mentions
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <p class="text-3xl font-bold">{{ overview.newMentions ?? 0 }}</p>
+              <p class="text-xs text-muted-foreground">
+                new {{ overview?.newMentions === 1 ? 'mention' : 'mentions' }}
+              </p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/mentions">Open mentions</NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="marketing-card-search">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:trending-up" class="w-4 h-4" />
+                Search
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <template v-if="overview.search?.connected && overview.search.totals">
+                <p class="text-3xl font-bold">{{ formatNumber(overview.search.totals.current.clicks) }}</p>
+                <p class="text-xs text-muted-foreground">
+                  clicks and {{ formatNumber(overview.search.totals.current.impressions) }} impressions, last
+                  {{ overview.search.totals.days }} days
+                </p>
+                <p v-if="searchDelta" class="text-xs" :class="searchDelta.className" data-testid="search-delta">
+                  {{ searchDelta.label }}
+                </p>
+              </template>
+              <p v-else-if="overview.search?.connected" class="text-sm text-muted-foreground">
+                Connected. Waiting for the first sync.
+              </p>
+              <p v-else class="text-sm text-muted-foreground">Connect Search Console to see clicks and impressions.</p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/search">
+                  {{ overview.search?.connected ? 'Open search' : 'Connect Search Console' }}
+                </NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="marketing-card-reviews">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:star" class="w-4 h-4" />
+                Reviews
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <template v-if="overview.reviews?.enabled">
+                <p class="text-3xl font-bold">{{ formatNumber(overview.reviews.requestsSent) }}</p>
+                <p class="text-xs text-muted-foreground">
+                  {{ overview.reviews.requestsSent === 1 ? 'request' : 'requests' }} sent in the last
+                  {{ overview.reviews.sinceDays }} days.
+                  {{ formatNumber(overview.reviews.pendingTestimonials) }} pending
+                  {{ overview.reviews.pendingTestimonials === 1 ? 'testimonial' : 'testimonials' }}.
+                </p>
+              </template>
+              <p v-else class="text-sm text-muted-foreground">
+                Review requests are off. Ask happy customers for reviews and testimonials.
+              </p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/reviews">
+                  {{ overview.reviews?.enabled ? 'Open reviews' : 'Turn on review requests' }}
+                </NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="marketing-card-announcements">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:megaphone" class="w-4 h-4" />
+                Announcements
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <template v-if="overview.announcements?.changelogEnabled">
+                <p class="text-3xl font-bold">{{ formatNumber(overview.announcements.withoutDrafts) }}</p>
+                <p class="text-xs text-muted-foreground">
+                  published {{ overview.announcements.withoutDrafts === 1 ? 'entry' : 'entries' }} without drafts
+                </p>
+              </template>
+              <p v-else class="text-sm text-muted-foreground">
+                Changelog is off. Turn it on to draft announcements for what you ship.
+              </p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/announcements">Open announcements</NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="marketing-card-language">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:message-circle-heart" class="w-4 h-4" />
+                Customer language
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <template v-if="overview.language?.lastRunAt">
+                <p class="text-3xl font-bold">{{ formatDate(overview.language.lastRunAt) }}</p>
+                <p class="text-xs text-muted-foreground">last analysis</p>
+              </template>
+              <p v-else-if="overview.language?.consented" class="text-sm text-muted-foreground">
+                No analysis yet. Run one to see how customers describe you.
+              </p>
+              <p v-else class="text-sm text-muted-foreground">
+                Give consent to analyse customer feedback and learn the words they use.
+              </p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/language">
+                  {{ overview.language?.consented ? 'Open customer language' : 'Give consent to analyse' }}
+                </NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="marketing-card-changelog">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:newspaper" class="w-4 h-4" />
+                Changelog
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <template v-if="overview.changelog?.latest">
+                <p class="text-base font-semibold line-clamp-2">{{ overview.changelog.latest.title }}</p>
+                <p class="text-xs text-muted-foreground">
+                  Published {{ formatDate(overview.changelog.latest.publishedAt) }}
+                </p>
+              </template>
+              <p v-else-if="overview.changelog?.enabled" class="text-sm text-muted-foreground">
+                Nothing published yet.
+              </p>
+              <p v-else class="text-sm text-muted-foreground">Changelog is off for this project.</p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/dashboard/changelog">Open changelog</NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="marketing-card-competitors">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:binoculars" class="w-4 h-4" />
+                Competitors
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <template v-if="overview.competitors?.watching || overview.competitors?.unseenChanges">
+                <p class="text-2xl font-semibold">{{ overview.competitors.unseenChanges ?? 0 }}</p>
+                <p class="text-xs text-muted-foreground">
+                  unseen {{ overview.competitors.unseenChanges === 1 ? 'change' : 'changes' }} across
+                  {{ overview.competitors.watching ?? 0 }} watched
+                  {{ overview.competitors.watching === 1 ? 'page' : 'pages' }}
+                </p>
+              </template>
+              <p v-else class="text-sm text-muted-foreground">
+                Watch competitors' pricing and changelog pages for changes.
+              </p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/competitors">
+                  {{
+                    overview.competitors?.watching || overview.competitors?.unseenChanges
+                      ? 'Review changes'
+                      : 'Watch a competitor'
+                  }}
+                </NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="marketing-card-launch-kit">
+            <CardHeader>
+              <CardTitle role="heading" aria-level="2" class="flex items-center gap-2 text-base">
+                <Icon name="lucide:rocket" class="w-4 h-4" />
+                Launch kit
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <p class="text-2xl font-semibold">
+                {{ overview.launchKit?.live ?? 0 }}
+                <span class="text-sm font-normal text-muted-foreground">
+                  / {{ overview.launchKit?.catalogSize ?? 0 }} live
+                </span>
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {{ overview.launchKit?.submitted ?? 0 }} submitted · {{ overview.launchKit?.inProgress ?? 0 }} in
+                progress
+              </p>
+              <Button as-child variant="outline" size="sm">
+                <NuxtLink to="/marketing/launch">Open launch kit</NuxtLink>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card data-testid="marketing-usage">
+          <CardHeader>
+            <CardTitle role="heading" aria-level="2" class="text-base">Usage this month</CardTitle>
+            <CardDescription
+              >Counted for your whole workspace. Provider invoices are the source of truth.</CardDescription
+            >
+          </CardHeader>
+          <CardContent>
+            <dl class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <dt class="text-xs text-muted-foreground">AI tokens (input and output)</dt>
+                <dd class="text-xl font-semibold">{{ formatNumber(llmTokens) }}</dd>
+              </div>
+              <div>
+                <dt class="text-xs text-muted-foreground">Pages crawled</dt>
+                <dd class="text-xl font-semibold">{{ formatNumber(crawledPages) }}</dd>
+              </div>
+              <div v-for="item in llmCosts" :key="item.provider" :data-testid="`usage-cost-${item.provider}`">
+                <dt class="text-xs text-muted-foreground">Estimated cost, {{ item.provider }}</dt>
+                <dd class="text-xl font-semibold">{{ item.label }}</dd>
+              </div>
+            </dl>
+          </CardContent>
+        </Card>
       </template>
-    </div>
-  </NuxtLayout>
+    </template>
+  </div>
 </template>
 
 <script>

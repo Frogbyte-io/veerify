@@ -1,617 +1,611 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="px-4 pb-10 pt-6 sm:px-6 lg:px-10">
-      <div v-if="isLoading" class="mx-auto max-w-[1400px] space-y-6">
-        <Skeleton class="h-4 w-32" />
-        <Skeleton class="h-10 w-[min(30rem,90vw)]" />
-        <div class="grid gap-8 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.9fr)]">
-          <div class="space-y-6">
-            <div class="rounded-2xl border bg-card p-6 sm:p-8">
-              <Skeleton class="mb-4 h-6 w-40" />
-              <Skeleton class="h-10 w-3/4" />
-              <Skeleton class="mt-4 h-4 w-full" />
-              <Skeleton class="mt-2 h-4 w-[88%]" />
-            </div>
-            <div class="rounded-2xl border bg-card p-6 sm:p-8">
-              <Skeleton class="mb-4 h-6 w-32" />
-              <Skeleton class="h-24 w-full" />
-            </div>
+  <div class="px-4 pb-10 pt-6 sm:px-6 lg:px-10">
+    <div v-if="isLoading" class="mx-auto max-w-[1400px] space-y-6">
+      <Skeleton class="h-4 w-32" />
+      <Skeleton class="h-10 w-[min(30rem,90vw)]" />
+      <div class="grid gap-8 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.9fr)]">
+        <div class="space-y-6">
+          <div class="rounded-2xl border bg-card p-6 sm:p-8">
+            <Skeleton class="mb-4 h-6 w-40" />
+            <Skeleton class="h-10 w-3/4" />
+            <Skeleton class="mt-4 h-4 w-full" />
+            <Skeleton class="mt-2 h-4 w-[88%]" />
           </div>
-          <div class="space-y-6">
-            <div class="rounded-2xl border bg-card p-6">
-              <Skeleton class="mb-4 h-6 w-28" />
-              <Skeleton class="h-11 w-full" />
-            </div>
-            <div class="rounded-2xl border bg-card p-6">
-              <Skeleton class="mb-4 h-6 w-24" />
-              <Skeleton class="h-16 w-full" />
-            </div>
+          <div class="rounded-2xl border bg-card p-6 sm:p-8">
+            <Skeleton class="mb-4 h-6 w-32" />
+            <Skeleton class="h-24 w-full" />
           </div>
         </div>
-      </div>
-
-      <div
-        v-else-if="error"
-        class="mx-auto flex max-w-3xl flex-col items-center rounded-2xl border bg-card px-6 py-14 text-center"
-      >
-        <Icon name="lucide:alert-circle" class="mb-4 h-10 w-10 text-destructive" />
-        <h1 class="text-2xl font-semibold">Failed to load feedback</h1>
-        <p class="mt-3 text-sm text-muted-foreground">{{ error }}</p>
-        <div class="mt-6 flex flex-wrap gap-3">
-          <Button variant="outline" @click="$router.back()">Back</Button>
-          <Button @click="loadFeedback">Retry</Button>
-        </div>
-      </div>
-
-      <div v-else-if="item" data-testid="feedback-detail-page" class="mx-auto max-w-[1400px] space-y-8">
-        <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div class="space-y-4">
-            <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <NuxtLink to="/feedback" prefetch-on="interaction" class="hover:text-foreground">Feedback</NuxtLink>
-              <Icon name="lucide:chevron-right" class="h-4 w-4" />
-              <NuxtLink
-                v-if="showProductBreadcrumb"
-                :to="`/feedback?product=${item.product.slug}`"
-                prefetch-on="interaction"
-                class="hover:text-foreground"
-              >
-                {{ item.product.name }}
-              </NuxtLink>
-              <Icon v-if="showProductBreadcrumb" name="lucide:chevron-right" class="h-4 w-4" />
-              <span class="text-foreground">{{ item.title }}</span>
-            </div>
-            <Button variant="ghost" size="sm" class="-ml-2 w-fit" @click="$router.back()">
-              <Icon name="lucide:arrow-left" class="mr-2 h-4 w-4" />
-              Back
-            </Button>
-            <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">{{ item.title }}</h1>
+        <div class="space-y-6">
+          <div class="rounded-2xl border bg-card p-6">
+            <Skeleton class="mb-4 h-6 w-28" />
+            <Skeleton class="h-11 w-full" />
           </div>
-
-          <div class="flex flex-wrap items-center gap-3">
-            <Button v-if="canEditFeedback" data-testid="feedback-detail-edit" variant="outline" @click="openEditDialog">
-              <Icon name="lucide:pencil" class="mr-2 h-4 w-4" />
-              Edit feedback
-            </Button>
-            <Button
-              v-if="canDeleteFeedback"
-              data-testid="feedback-detail-delete"
-              variant="destructive"
-              @click="showDeleteDialog = true"
-            >
-              <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
-              Delete feedback
-            </Button>
+          <div class="rounded-2xl border bg-card p-6">
+            <Skeleton class="mb-4 h-6 w-24" />
+            <Skeleton class="h-16 w-full" />
           </div>
         </div>
-
-        <div class="grid gap-8 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.9fr)]">
-          <div data-testid="feedback-detail-main" class="space-y-6">
-            <section class="rounded-[28px] border bg-card p-6 shadow-sm sm:p-8">
-              <div class="mb-5 flex flex-wrap gap-2">
-                <Badge class="border-transparent" :style="statusPillStyle(item.status)">
-                  {{ formatStatus(item.status) }}
-                </Badge>
-                <Badge v-if="item.category" variant="outline">{{ item.category.name }}</Badge>
-                <Badge v-if="item.tag" variant="secondary">{{ feedbackTypeLabel(item.tag) || item.tag }}</Badge>
-                <Badge v-if="item.sourceLabel" variant="secondary" class="gap-1">
-                  <Icon name="lucide:app-window" class="h-3 w-3" />
-                  Added from {{ item.sourceLabel }}
-                </Badge>
-                <Badge v-if="item.isPinned" variant="outline">Pinned</Badge>
-                <Badge v-if="item.isHidden" variant="outline">Hidden</Badge>
-                <Badge v-if="item.isLocked" variant="outline">Comments locked</Badge>
-              </div>
-
-              <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
-                <div class="flex shrink-0 items-center gap-3 lg:w-[88px] lg:flex-col">
-                  <button
-                    class="flex h-12 w-12 items-center justify-center rounded-2xl border"
-                    :class="
-                      item.voteType === 'upvote'
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border text-muted-foreground'
-                    "
-                    :disabled="isVoting"
-                    @click="toggleVote('upvote')"
-                  >
-                    <Icon name="lucide:chevron-up" class="h-5 w-5" />
-                  </button>
-                  <div class="min-w-[3.5rem] text-center">
-                    <div class="text-2xl font-semibold">{{ item.voteCount }}</div>
-                    <div class="text-xs uppercase tracking-[0.2em] text-muted-foreground">Votes</div>
-                  </div>
-                  <button
-                    class="flex h-12 w-12 items-center justify-center rounded-2xl border"
-                    :class="
-                      item.voteType === 'downvote'
-                        ? 'border-destructive bg-destructive/10 text-destructive'
-                        : 'border-border text-muted-foreground'
-                    "
-                    :disabled="isVoting"
-                    @click="toggleVote('downvote')"
-                  >
-                    <Icon name="lucide:chevron-down" class="h-5 w-5" />
-                  </button>
-                </div>
-
-                <div class="flex-1 space-y-5">
-                  <p v-if="item.body" class="whitespace-pre-line text-sm leading-7 text-foreground/85">
-                    {{ item.body }}
-                  </p>
-                  <p v-else class="italic text-muted-foreground">No description provided.</p>
-
-                  <FeedbackAttachmentList :key="item.id" :feedback-id="item.id" />
-
-                  <div class="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <div class="rounded-xl bg-background/80 p-4">
-                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Author</div>
-                      <div class="mt-2 flex items-center gap-3">
-                        <Avatar class="h-9 w-9">
-                          <AvatarImage v-if="item.author?.image" :src="item.author.image" />
-                          <AvatarFallback class="text-xs">{{ authorInitials }}</AvatarFallback>
-                        </Avatar>
-                        <div class="min-w-0">
-                          <div class="truncate text-sm font-medium">{{ displayAuthorName }}</div>
-                          <div class="text-xs text-muted-foreground">
-                            {{ item.isOwn ? 'Your submission' : 'Submitted feedback' }}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    <div v-if="!hasMultipleProducts" class="rounded-xl bg-background/80 p-4">
-                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Project</div>
-                      <div class="mt-2 text-sm font-medium">{{ item.project?.name || 'Unknown' }}</div>
-                    </div>
-                    <div v-else class="rounded-xl bg-background/80 p-4" data-testid="feedback-detail-product">
-                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Product</div>
-                      <select
-                        v-if="canManageFeedback"
-                        :value="item.productId"
-                        :disabled="isMovingProduct"
-                        data-testid="feedback-detail-product-select"
-                        aria-label="Move to product"
-                        class="mt-2 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                        @change="moveToProduct($event.target.value)"
-                      >
-                        <option v-for="p in projectProducts" :key="p.id" :value="p.id">{{ p.name }}</option>
-                      </select>
-                      <div v-else class="mt-2 text-sm font-medium">{{ item.product?.name || 'Unknown' }}</div>
-                    </div>
-                    <div class="rounded-xl bg-background/80 p-4">
-                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Created</div>
-                      <div class="mt-2 text-sm font-medium">{{ formatDate(item.createdAt) }}</div>
-                    </div>
-                    <div class="rounded-xl bg-background/80 p-4">
-                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Updated</div>
-                      <div class="mt-2 text-sm font-medium">{{ formatDate(item.updatedAt) }}</div>
-                    </div>
-                    <div v-if="appVersionLabel" class="rounded-xl bg-background/80 p-4">
-                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">App version</div>
-                      <div class="mt-2 text-sm font-medium">{{ appVersionLabel }}</div>
-                    </div>
-                    <div v-if="osLabel" class="rounded-xl bg-background/80 p-4">
-                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">OS</div>
-                      <div class="mt-2 text-sm font-medium">{{ osLabel }}</div>
-                    </div>
-                    <div
-                      v-if="canManageFeedback && item.linkedConversationCount !== null"
-                      class="rounded-xl bg-background/80 p-4"
-                    >
-                      <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Support conversations</div>
-                      <div class="mt-2 flex items-center gap-2 text-sm font-medium">
-                        <Icon name="lucide:inbox" class="h-4 w-4 text-muted-foreground" />
-                        {{ item.linkedConversationCount }} linked
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="rounded-[28px] border bg-card p-6 shadow-sm sm:p-8">
-              <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 class="text-xl font-semibold">Conversation</h2>
-                  <p class="mt-1 text-sm text-muted-foreground">Public comments and internal notes live here.</p>
-                </div>
-                <div class="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1.5 text-sm">
-                  <Icon name="lucide:message-circle" class="h-4 w-4 text-muted-foreground" />
-                  <span class="font-medium">{{ comments.length }}</span>
-                  <span class="text-muted-foreground">comments</span>
-                </div>
-              </div>
-
-              <div v-if="isCommentsLoading" class="space-y-4">
-                <Skeleton class="h-24 w-full" />
-                <Skeleton class="h-24 w-full" />
-              </div>
-              <div v-else-if="commentsError" class="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
-                <p class="text-sm text-destructive">{{ commentsError }}</p>
-                <Button class="mt-4" size="sm" variant="outline" @click="loadComments">Retry comments</Button>
-              </div>
-              <div v-else-if="comments.length === 0" class="rounded-2xl border border-dashed p-10 text-center">
-                <p class="text-sm text-muted-foreground">No comments yet.</p>
-              </div>
-              <div v-else class="space-y-4">
-                <article
-                  v-for="comment in comments"
-                  :key="comment.id"
-                  :data-testid="`feedback-detail-comment-${comment.id}`"
-                  class="rounded-2xl border p-5"
-                  :class="
-                    comment.isInternal
-                      ? 'border-amber-200 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20'
-                      : 'bg-background/80'
-                  "
-                >
-                  <div class="flex items-start gap-4">
-                    <Avatar class="mt-0.5 h-10 w-10 shrink-0">
-                      <AvatarImage v-if="comment.author?.image" :src="comment.author.image" />
-                      <AvatarFallback class="text-xs">{{ commentAuthorInitials(comment) }}</AvatarFallback>
-                    </Avatar>
-                    <div class="min-w-0 flex-1">
-                      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div class="min-w-0">
-                          <div class="flex flex-wrap items-center gap-2">
-                            <span class="truncate text-sm font-medium">{{
-                              comment.authorName || comment.author?.name || 'Anonymous'
-                            }}</span>
-                            <Badge v-if="comment.isInternal" variant="outline">Internal</Badge>
-                            <span v-if="comment.isEdited" class="text-xs italic text-muted-foreground">(edited)</span>
-                          </div>
-                          <div class="mt-1 text-xs text-muted-foreground">{{ formatDate(comment.createdAt) }}</div>
-                        </div>
-                        <div v-if="comment.canEdit || comment.canDelete" class="flex items-center gap-2 self-start">
-                          <Button
-                            v-if="comment.canEdit"
-                            :data-testid="`comment-edit-btn-${comment.id}`"
-                            size="sm"
-                            variant="ghost"
-                            @click="startEditComment(comment)"
-                          >
-                            <Icon name="lucide:pencil" class="h-4 w-4" />
-                          </Button>
-                          <Button
-                            v-if="comment.canDelete"
-                            :data-testid="`comment-delete-btn-${comment.id}`"
-                            size="sm"
-                            variant="ghost"
-                            class="text-destructive hover:text-destructive"
-                            @click="deleteComment(comment)"
-                          >
-                            <Icon name="lucide:trash-2" class="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <template v-if="editingCommentId === comment.id">
-                        <div class="mt-4 space-y-3">
-                          <Textarea v-model="editingCommentBody" rows="4" :disabled="isSavingComment" />
-                          <div class="flex flex-wrap gap-3">
-                            <Button size="sm" variant="outline" :disabled="isSavingComment" @click="cancelEditComment"
-                              >Cancel</Button
-                            >
-                            <Button
-                              size="sm"
-                              :disabled="!editingCommentBody.trim() || isSavingComment"
-                              @click="saveEditComment(comment)"
-                            >
-                              <Icon v-if="isSavingComment" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
-                              Save comment
-                            </Button>
-                          </div>
-                        </div>
-                      </template>
-                      <p v-else class="mt-4 whitespace-pre-line text-sm leading-7 text-foreground/85">
-                        {{ comment.body }}
-                      </p>
-                    </div>
-                  </div>
-                </article>
-              </div>
-
-              <div class="mt-8 rounded-2xl border bg-muted/20 p-5 sm:p-6">
-                <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 class="text-base font-semibold">Add a comment</h3>
-                    <p class="mt-1 text-sm text-muted-foreground">
-                      {{
-                        item.isLocked
-                          ? 'Comments are locked for this feedback.'
-                          : 'Keep the discussion moving with public updates or internal notes.'
-                      }}
-                    </p>
-                  </div>
-                  <label
-                    v-if="canManageFeedback"
-                    class="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-sm text-muted-foreground"
-                  >
-                    <input v-model="isInternalComment" type="checkbox" class="rounded border-border" />
-                    <Icon name="lucide:lock" class="h-4 w-4" />
-                    Internal note
-                  </label>
-                </div>
-                <Textarea
-                  v-model="newComment"
-                  data-testid="feedback-detail-comment-input"
-                  rows="4"
-                  placeholder="Write a comment..."
-                  :disabled="isSubmittingComment || item.isLocked"
-                />
-                <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p v-if="detailCommentError" class="text-sm text-destructive">{{ detailCommentError }}</p>
-                  <div v-else-if="item.isLocked" class="text-sm text-muted-foreground">
-                    Unlock comments from the admin card to continue the thread.
-                  </div>
-                  <div v-else class="text-sm text-muted-foreground">
-                    {{
-                      canManageFeedback
-                        ? 'Workspace members can post public comments or internal notes.'
-                        : 'Your comment will be visible in the thread.'
-                    }}
-                  </div>
-                  <Button
-                    data-testid="feedback-detail-comment-submit"
-                    :disabled="!newComment.trim() || isSubmittingComment || item.isLocked"
-                    @click="submitComment"
-                  >
-                    <Icon v-if="isSubmittingComment" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
-                    Post comment
-                  </Button>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <aside data-testid="feedback-detail-sidebar" class="space-y-6 xl:sticky xl:top-6 xl:self-start">
-            <section class="rounded-[28px] border bg-card p-6 shadow-sm">
-              <h2 class="text-lg font-semibold">Workflow</h2>
-              <p class="mt-1 text-sm text-muted-foreground">Status, notifications, and public-board behavior.</p>
-              <div class="mt-5 space-y-5">
-                <div class="space-y-2">
-                  <div class="text-sm font-medium">Status</div>
-                  <select
-                    v-if="canManageFeedback"
-                    :value="item.status"
-                    data-testid="feedback-detail-status-select"
-                    class="flex h-11 w-full rounded-xl border border-input bg-background px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
-                    :disabled="isUpdatingStatus"
-                    @change="updateStatus($event.target.value)"
-                  >
-                    <option v-for="status in statusOptions" :key="status.value" :value="status.value">
-                      {{ status.name || formatStatus(status.value) }}
-                    </option>
-                  </select>
-                  <Badge v-else class="border-transparent" :style="statusPillStyle(item.status)">
-                    {{ formatStatus(item.status) }}
-                  </Badge>
-                </div>
-                <div class="rounded-2xl border bg-muted/20 p-4">
-                  <div class="flex items-center justify-between gap-4">
-                    <span class="text-sm font-medium">Visibility</span>
-                    <Badge variant="outline">{{ item.isHidden ? 'Hidden' : 'Visible' }}</Badge>
-                  </div>
-                  <div class="mt-3 flex items-center justify-between gap-4">
-                    <span class="text-sm font-medium">Comments</span>
-                    <Badge variant="outline">{{ item.isLocked ? 'Locked' : 'Open' }}</Badge>
-                  </div>
-                </div>
-                <div class="rounded-2xl border bg-muted/20 p-4">
-                  <div class="text-sm font-medium">Subscribe to updates</div>
-                  <p class="mt-1 text-sm text-muted-foreground">
-                    Get notified when the status changes or when new comments arrive.
-                  </p>
-                  <Button
-                    class="mt-4 w-full"
-                    :variant="item.isSubscribed ? 'default' : 'outline'"
-                    :disabled="detailSubscribeLoading"
-                    @click="toggleSubscription"
-                  >
-                    <Icon
-                      :name="
-                        detailSubscribeLoading
-                          ? 'lucide:loader-2'
-                          : item.isSubscribed
-                            ? 'lucide:bell-off'
-                            : 'lucide:bell'
-                      "
-                      class="mr-2 h-4 w-4"
-                      :class="detailSubscribeLoading ? 'animate-spin' : ''"
-                    />
-                    {{ item.isSubscribed ? 'Unsubscribe' : 'Get notified' }}
-                  </Button>
-                </div>
-              </div>
-            </section>
-
-            <section class="rounded-[28px] border bg-card p-6 shadow-sm">
-              <h2 class="text-lg font-semibold">Details</h2>
-              <p class="mt-1 text-sm text-muted-foreground">Keep useful context visible while you work the item.</p>
-              <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div class="rounded-2xl border bg-muted/20 p-4">
-                  <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Votes</div>
-                  <div class="mt-2 text-2xl font-semibold">{{ item.voteCount }}</div>
-                </div>
-                <div class="rounded-2xl border bg-muted/20 p-4">
-                  <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Comments</div>
-                  <div class="mt-2 text-2xl font-semibold">{{ item.commentCount }}</div>
-                </div>
-                <div class="rounded-2xl border bg-muted/20 p-4">
-                  <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Category</div>
-                  <div class="mt-2 text-sm font-medium">{{ item.category?.name || 'Uncategorized' }}</div>
-                </div>
-                <div class="rounded-2xl border bg-muted/20 p-4">
-                  <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Type</div>
-                  <div class="mt-2 text-sm font-medium">
-                    {{ feedbackTypeLabel(item.tag) || item.tag || 'Unspecified' }}
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section
-              v-if="canManageFeedback"
-              data-testid="feedback-detail-admin-card"
-              class="rounded-[28px] border bg-card p-6 shadow-sm"
-            >
-              <h2 class="text-lg font-semibold">Admin Controls</h2>
-              <p class="mt-1 text-sm text-muted-foreground">
-                Same moderation options as the public detail view, plus workspace controls.
-              </p>
-              <div class="mt-5 space-y-3">
-                <button
-                  data-testid="feedback-detail-pin"
-                  class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
-                  :disabled="adminAction === 'pin'"
-                  @click="togglePin"
-                >
-                  <div>
-                    <div class="font-medium">{{ item.isPinned ? 'Unpin feedback' : 'Pin feedback' }}</div>
-                    <div class="mt-1 text-sm text-muted-foreground">
-                      {{
-                        item.isPinned
-                          ? 'Remove this item from the top of lists.'
-                          : 'Keep this item at the top of boards and lists.'
-                      }}
-                    </div>
-                  </div>
-                  <Icon
-                    :name="adminAction === 'pin' ? 'lucide:loader-2' : item.isPinned ? 'lucide:pin-off' : 'lucide:pin'"
-                    class="h-5 w-5 shrink-0"
-                    :class="adminAction === 'pin' ? 'animate-spin' : ''"
-                  />
-                </button>
-                <button
-                  data-testid="feedback-detail-visibility"
-                  class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
-                  :disabled="adminAction === 'visibility'"
-                  @click="toggleVisibility"
-                >
-                  <div>
-                    <div class="font-medium">
-                      {{ item.isHidden ? 'Make feedback visible' : 'Hide from public board' }}
-                    </div>
-                    <div class="mt-1 text-sm text-muted-foreground">
-                      {{
-                        item.isHidden
-                          ? 'Return this item to the public board.'
-                          : 'Keep handling private while preserving the record.'
-                      }}
-                    </div>
-                  </div>
-                  <Icon
-                    :name="
-                      adminAction === 'visibility' ? 'lucide:loader-2' : item.isHidden ? 'lucide:eye' : 'lucide:eye-off'
-                    "
-                    class="h-5 w-5 shrink-0"
-                    :class="adminAction === 'visibility' ? 'animate-spin' : ''"
-                  />
-                </button>
-                <button
-                  data-testid="feedback-detail-lock"
-                  class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
-                  :disabled="adminAction === 'lock'"
-                  @click="toggleLock"
-                >
-                  <div>
-                    <div class="font-medium">{{ item.isLocked ? 'Unlock comments' : 'Lock comments' }}</div>
-                    <div class="mt-1 text-sm text-muted-foreground">
-                      {{
-                        item.isLocked
-                          ? 'Allow the thread to continue.'
-                          : 'Freeze new replies while the item is being resolved.'
-                      }}
-                    </div>
-                  </div>
-                  <Icon
-                    :name="adminAction === 'lock' ? 'lucide:loader-2' : item.isLocked ? 'lucide:unlock' : 'lucide:lock'"
-                    class="h-5 w-5 shrink-0"
-                    :class="adminAction === 'lock' ? 'animate-spin' : ''"
-                  />
-                </button>
-              </div>
-            </section>
-          </aside>
-        </div>
-
-        <Dialog :open="showEditDialog" @update:open="showEditDialog = $event">
-          <DialogContent class="sm:max-w-[640px]">
-            <DialogHeader>
-              <DialogTitle>Edit Feedback</DialogTitle>
-              <DialogDescription>Update the content and metadata for this feedback item.</DialogDescription>
-            </DialogHeader>
-            <div class="space-y-5 py-2">
-              <div class="space-y-2">
-                <Label for="feedback-title">Title</Label>
-                <Input id="feedback-title" v-model="editForm.title" data-testid="feedback-detail-edit-title" />
-              </div>
-              <div class="space-y-2">
-                <Label for="feedback-body">Description</Label>
-                <Textarea id="feedback-body" v-model="editForm.body" data-testid="feedback-detail-edit-body" rows="6" />
-              </div>
-              <div class="grid gap-5 sm:grid-cols-2">
-                <div v-if="canManageFeedback" class="space-y-2">
-                  <Label for="feedback-category">Category</Label>
-                  <select
-                    id="feedback-category"
-                    v-model="editForm.categoryId"
-                    class="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
-                  >
-                    <option value="">Uncategorized</option>
-                    <option v-for="category in categories" :key="category.id" :value="category.id">
-                      {{ category.name }}
-                    </option>
-                  </select>
-                </div>
-                <div class="space-y-2">
-                  <Label for="feedback-type">Type</Label>
-                  <select
-                    id="feedback-type"
-                    v-model="editForm.feedbackType"
-                    class="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
-                  >
-                    <option value="">Unspecified</option>
-                    <option v-for="option in feedbackTypeOptions" :key="option.value" :value="option.value">
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" :disabled="isSavingFeedback" @click="showEditDialog = false">Cancel</Button>
-              <Button
-                data-testid="feedback-detail-save"
-                :disabled="!editForm.title.trim() || !editForm.body.trim() || isSavingFeedback"
-                @click="saveFeedback"
-              >
-                <Icon v-if="isSavingFeedback" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
-                Save changes
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
-          <DialogContent class="sm:max-w-[420px]">
-            <DialogHeader>
-              <DialogTitle>Delete Feedback</DialogTitle>
-              <DialogDescription>
-                This permanently deletes "{{ item?.title }}". The feedback thread and comments cannot be recovered.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" :disabled="isDeleting" @click="showDeleteDialog = false">Cancel</Button>
-              <Button variant="destructive" :disabled="isDeleting" @click="deleteFeedback">
-                <Icon v-if="isDeleting" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
-                Delete feedback
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
-  </NuxtLayout>
+
+    <div
+      v-else-if="error"
+      class="mx-auto flex max-w-3xl flex-col items-center rounded-2xl border bg-card px-6 py-14 text-center"
+    >
+      <Icon name="lucide:alert-circle" class="mb-4 h-10 w-10 text-destructive" />
+      <h1 class="text-2xl font-semibold">Failed to load feedback</h1>
+      <p class="mt-3 text-sm text-muted-foreground">{{ error }}</p>
+      <div class="mt-6 flex flex-wrap gap-3">
+        <Button variant="outline" @click="$router.back()">Back</Button>
+        <Button @click="loadFeedback">Retry</Button>
+      </div>
+    </div>
+
+    <div v-else-if="item" data-testid="feedback-detail-page" class="mx-auto max-w-[1400px] space-y-8">
+      <div class="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div class="space-y-4">
+          <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <NuxtLink to="/feedback" prefetch-on="interaction" class="hover:text-foreground">Feedback</NuxtLink>
+            <Icon name="lucide:chevron-right" class="h-4 w-4" />
+            <NuxtLink
+              v-if="showProductBreadcrumb"
+              :to="`/feedback?product=${item.product.slug}`"
+              prefetch-on="interaction"
+              class="hover:text-foreground"
+            >
+              {{ item.product.name }}
+            </NuxtLink>
+            <Icon v-if="showProductBreadcrumb" name="lucide:chevron-right" class="h-4 w-4" />
+            <span class="text-foreground">{{ item.title }}</span>
+          </div>
+          <Button variant="ghost" size="sm" class="-ml-2 w-fit" @click="$router.back()">
+            <Icon name="lucide:arrow-left" class="mr-2 h-4 w-4" />
+            Back
+          </Button>
+          <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">{{ item.title }}</h1>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3">
+          <Button v-if="canEditFeedback" data-testid="feedback-detail-edit" variant="outline" @click="openEditDialog">
+            <Icon name="lucide:pencil" class="mr-2 h-4 w-4" />
+            Edit feedback
+          </Button>
+          <Button
+            v-if="canDeleteFeedback"
+            data-testid="feedback-detail-delete"
+            variant="destructive"
+            @click="showDeleteDialog = true"
+          >
+            <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
+            Delete feedback
+          </Button>
+        </div>
+      </div>
+
+      <div class="grid gap-8 xl:grid-cols-[minmax(0,1.8fr)_minmax(320px,0.9fr)]">
+        <div data-testid="feedback-detail-main" class="space-y-6">
+          <section class="rounded-[28px] border bg-card p-6 shadow-sm sm:p-8">
+            <div class="mb-5 flex flex-wrap gap-2">
+              <Badge class="border-transparent" :style="statusPillStyle(item.status)">
+                {{ formatStatus(item.status) }}
+              </Badge>
+              <Badge v-if="item.category" variant="outline">{{ item.category.name }}</Badge>
+              <Badge v-if="item.tag" variant="secondary">{{ feedbackTypeLabel(item.tag) || item.tag }}</Badge>
+              <Badge v-if="item.sourceLabel" variant="secondary" class="gap-1">
+                <Icon name="lucide:app-window" class="h-3 w-3" />
+                Added from {{ item.sourceLabel }}
+              </Badge>
+              <Badge v-if="item.isPinned" variant="outline">Pinned</Badge>
+              <Badge v-if="item.isHidden" variant="outline">Hidden</Badge>
+              <Badge v-if="item.isLocked" variant="outline">Comments locked</Badge>
+            </div>
+
+            <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
+              <div class="flex shrink-0 items-center gap-3 lg:w-[88px] lg:flex-col">
+                <button
+                  class="flex h-12 w-12 items-center justify-center rounded-2xl border"
+                  :class="
+                    item.voteType === 'upvote'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground'
+                  "
+                  :disabled="isVoting"
+                  @click="toggleVote('upvote')"
+                >
+                  <Icon name="lucide:chevron-up" class="h-5 w-5" />
+                </button>
+                <div class="min-w-[3.5rem] text-center">
+                  <div class="text-2xl font-semibold">{{ item.voteCount }}</div>
+                  <div class="text-xs uppercase tracking-[0.2em] text-muted-foreground">Votes</div>
+                </div>
+                <button
+                  class="flex h-12 w-12 items-center justify-center rounded-2xl border"
+                  :class="
+                    item.voteType === 'downvote'
+                      ? 'border-destructive bg-destructive/10 text-destructive'
+                      : 'border-border text-muted-foreground'
+                  "
+                  :disabled="isVoting"
+                  @click="toggleVote('downvote')"
+                >
+                  <Icon name="lucide:chevron-down" class="h-5 w-5" />
+                </button>
+              </div>
+
+              <div class="flex-1 space-y-5">
+                <p v-if="item.body" class="whitespace-pre-line text-sm leading-7 text-foreground/85">
+                  {{ item.body }}
+                </p>
+                <p v-else class="italic text-muted-foreground">No description provided.</p>
+
+                <FeedbackAttachmentList :key="item.id" :feedback-id="item.id" />
+
+                <div class="grid gap-3 rounded-2xl border bg-muted/20 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                  <div class="rounded-xl bg-background/80 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Author</div>
+                    <div class="mt-2 flex items-center gap-3">
+                      <Avatar class="h-9 w-9">
+                        <AvatarImage v-if="item.author?.image" :src="item.author.image" />
+                        <AvatarFallback class="text-xs">{{ authorInitials }}</AvatarFallback>
+                      </Avatar>
+                      <div class="min-w-0">
+                        <div class="truncate text-sm font-medium">{{ displayAuthorName }}</div>
+                        <div class="text-xs text-muted-foreground">
+                          {{ item.isOwn ? 'Your submission' : 'Submitted feedback' }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="!hasMultipleProducts" class="rounded-xl bg-background/80 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Project</div>
+                    <div class="mt-2 text-sm font-medium">{{ item.project?.name || 'Unknown' }}</div>
+                  </div>
+                  <div v-else class="rounded-xl bg-background/80 p-4" data-testid="feedback-detail-product">
+                    <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Product</div>
+                    <select
+                      v-if="canManageFeedback"
+                      :value="item.productId"
+                      :disabled="isMovingProduct"
+                      data-testid="feedback-detail-product-select"
+                      aria-label="Move to product"
+                      class="mt-2 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                      @change="moveToProduct($event.target.value)"
+                    >
+                      <option v-for="p in projectProducts" :key="p.id" :value="p.id">{{ p.name }}</option>
+                    </select>
+                    <div v-else class="mt-2 text-sm font-medium">{{ item.product?.name || 'Unknown' }}</div>
+                  </div>
+                  <div class="rounded-xl bg-background/80 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Created</div>
+                    <div class="mt-2 text-sm font-medium">{{ formatDate(item.createdAt) }}</div>
+                  </div>
+                  <div class="rounded-xl bg-background/80 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Updated</div>
+                    <div class="mt-2 text-sm font-medium">{{ formatDate(item.updatedAt) }}</div>
+                  </div>
+                  <div v-if="appVersionLabel" class="rounded-xl bg-background/80 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">App version</div>
+                    <div class="mt-2 text-sm font-medium">{{ appVersionLabel }}</div>
+                  </div>
+                  <div v-if="osLabel" class="rounded-xl bg-background/80 p-4">
+                    <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">OS</div>
+                    <div class="mt-2 text-sm font-medium">{{ osLabel }}</div>
+                  </div>
+                  <div
+                    v-if="canManageFeedback && item.linkedConversationCount !== null"
+                    class="rounded-xl bg-background/80 p-4"
+                  >
+                    <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Support conversations</div>
+                    <div class="mt-2 flex items-center gap-2 text-sm font-medium">
+                      <Icon name="lucide:inbox" class="h-4 w-4 text-muted-foreground" />
+                      {{ item.linkedConversationCount }} linked
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-[28px] border bg-card p-6 shadow-sm sm:p-8">
+            <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 class="text-xl font-semibold">Conversation</h2>
+                <p class="mt-1 text-sm text-muted-foreground">Public comments and internal notes live here.</p>
+              </div>
+              <div class="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1.5 text-sm">
+                <Icon name="lucide:message-circle" class="h-4 w-4 text-muted-foreground" />
+                <span class="font-medium">{{ comments.length }}</span>
+                <span class="text-muted-foreground">comments</span>
+              </div>
+            </div>
+
+            <div v-if="isCommentsLoading" class="space-y-4">
+              <Skeleton class="h-24 w-full" />
+              <Skeleton class="h-24 w-full" />
+            </div>
+            <div v-else-if="commentsError" class="rounded-2xl border border-destructive/30 bg-destructive/5 p-5">
+              <p class="text-sm text-destructive">{{ commentsError }}</p>
+              <Button class="mt-4" size="sm" variant="outline" @click="loadComments">Retry comments</Button>
+            </div>
+            <div v-else-if="comments.length === 0" class="rounded-2xl border border-dashed p-10 text-center">
+              <p class="text-sm text-muted-foreground">No comments yet.</p>
+            </div>
+            <div v-else class="space-y-4">
+              <article
+                v-for="comment in comments"
+                :key="comment.id"
+                :data-testid="`feedback-detail-comment-${comment.id}`"
+                class="rounded-2xl border p-5"
+                :class="
+                  comment.isInternal
+                    ? 'border-amber-200 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20'
+                    : 'bg-background/80'
+                "
+              >
+                <div class="flex items-start gap-4">
+                  <Avatar class="mt-0.5 h-10 w-10 shrink-0">
+                    <AvatarImage v-if="comment.author?.image" :src="comment.author.image" />
+                    <AvatarFallback class="text-xs">{{ commentAuthorInitials(comment) }}</AvatarFallback>
+                  </Avatar>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="truncate text-sm font-medium">{{
+                            comment.authorName || comment.author?.name || 'Anonymous'
+                          }}</span>
+                          <Badge v-if="comment.isInternal" variant="outline">Internal</Badge>
+                          <span v-if="comment.isEdited" class="text-xs italic text-muted-foreground">(edited)</span>
+                        </div>
+                        <div class="mt-1 text-xs text-muted-foreground">{{ formatDate(comment.createdAt) }}</div>
+                      </div>
+                      <div v-if="comment.canEdit || comment.canDelete" class="flex items-center gap-2 self-start">
+                        <Button
+                          v-if="comment.canEdit"
+                          :data-testid="`comment-edit-btn-${comment.id}`"
+                          size="sm"
+                          variant="ghost"
+                          @click="startEditComment(comment)"
+                        >
+                          <Icon name="lucide:pencil" class="h-4 w-4" />
+                        </Button>
+                        <Button
+                          v-if="comment.canDelete"
+                          :data-testid="`comment-delete-btn-${comment.id}`"
+                          size="sm"
+                          variant="ghost"
+                          class="text-destructive hover:text-destructive"
+                          @click="deleteComment(comment)"
+                        >
+                          <Icon name="lucide:trash-2" class="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <template v-if="editingCommentId === comment.id">
+                      <div class="mt-4 space-y-3">
+                        <Textarea v-model="editingCommentBody" rows="4" :disabled="isSavingComment" />
+                        <div class="flex flex-wrap gap-3">
+                          <Button size="sm" variant="outline" :disabled="isSavingComment" @click="cancelEditComment"
+                            >Cancel</Button
+                          >
+                          <Button
+                            size="sm"
+                            :disabled="!editingCommentBody.trim() || isSavingComment"
+                            @click="saveEditComment(comment)"
+                          >
+                            <Icon v-if="isSavingComment" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+                            Save comment
+                          </Button>
+                        </div>
+                      </div>
+                    </template>
+                    <p v-else class="mt-4 whitespace-pre-line text-sm leading-7 text-foreground/85">
+                      {{ comment.body }}
+                    </p>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="mt-8 rounded-2xl border bg-muted/20 p-5 sm:p-6">
+              <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 class="text-base font-semibold">Add a comment</h3>
+                  <p class="mt-1 text-sm text-muted-foreground">
+                    {{
+                      item.isLocked
+                        ? 'Comments are locked for this feedback.'
+                        : 'Keep the discussion moving with public updates or internal notes.'
+                    }}
+                  </p>
+                </div>
+                <label
+                  v-if="canManageFeedback"
+                  class="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-sm text-muted-foreground"
+                >
+                  <input v-model="isInternalComment" type="checkbox" class="rounded border-border" />
+                  <Icon name="lucide:lock" class="h-4 w-4" />
+                  Internal note
+                </label>
+              </div>
+              <Textarea
+                v-model="newComment"
+                data-testid="feedback-detail-comment-input"
+                rows="4"
+                placeholder="Write a comment..."
+                :disabled="isSubmittingComment || item.isLocked"
+              />
+              <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p v-if="detailCommentError" class="text-sm text-destructive">{{ detailCommentError }}</p>
+                <div v-else-if="item.isLocked" class="text-sm text-muted-foreground">
+                  Unlock comments from the admin card to continue the thread.
+                </div>
+                <div v-else class="text-sm text-muted-foreground">
+                  {{
+                    canManageFeedback
+                      ? 'Workspace members can post public comments or internal notes.'
+                      : 'Your comment will be visible in the thread.'
+                  }}
+                </div>
+                <Button
+                  data-testid="feedback-detail-comment-submit"
+                  :disabled="!newComment.trim() || isSubmittingComment || item.isLocked"
+                  @click="submitComment"
+                >
+                  <Icon v-if="isSubmittingComment" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+                  Post comment
+                </Button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside data-testid="feedback-detail-sidebar" class="space-y-6 xl:sticky xl:top-6 xl:self-start">
+          <section class="rounded-[28px] border bg-card p-6 shadow-sm">
+            <h2 class="text-lg font-semibold">Workflow</h2>
+            <p class="mt-1 text-sm text-muted-foreground">Status, notifications, and public-board behavior.</p>
+            <div class="mt-5 space-y-5">
+              <div class="space-y-2">
+                <div class="text-sm font-medium">Status</div>
+                <select
+                  v-if="canManageFeedback"
+                  :value="item.status"
+                  data-testid="feedback-detail-status-select"
+                  class="flex h-11 w-full rounded-xl border border-input bg-background px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
+                  :disabled="isUpdatingStatus"
+                  @change="updateStatus($event.target.value)"
+                >
+                  <option v-for="status in statusOptions" :key="status.value" :value="status.value">
+                    {{ status.name || formatStatus(status.value) }}
+                  </option>
+                </select>
+                <Badge v-else class="border-transparent" :style="statusPillStyle(item.status)">
+                  {{ formatStatus(item.status) }}
+                </Badge>
+              </div>
+              <div class="rounded-2xl border bg-muted/20 p-4">
+                <div class="flex items-center justify-between gap-4">
+                  <span class="text-sm font-medium">Visibility</span>
+                  <Badge variant="outline">{{ item.isHidden ? 'Hidden' : 'Visible' }}</Badge>
+                </div>
+                <div class="mt-3 flex items-center justify-between gap-4">
+                  <span class="text-sm font-medium">Comments</span>
+                  <Badge variant="outline">{{ item.isLocked ? 'Locked' : 'Open' }}</Badge>
+                </div>
+              </div>
+              <div class="rounded-2xl border bg-muted/20 p-4">
+                <div class="text-sm font-medium">Subscribe to updates</div>
+                <p class="mt-1 text-sm text-muted-foreground">
+                  Get notified when the status changes or when new comments arrive.
+                </p>
+                <Button
+                  class="mt-4 w-full"
+                  :variant="item.isSubscribed ? 'default' : 'outline'"
+                  :disabled="detailSubscribeLoading"
+                  @click="toggleSubscription"
+                >
+                  <Icon
+                    :name="
+                      detailSubscribeLoading ? 'lucide:loader-2' : item.isSubscribed ? 'lucide:bell-off' : 'lucide:bell'
+                    "
+                    class="mr-2 h-4 w-4"
+                    :class="detailSubscribeLoading ? 'animate-spin' : ''"
+                  />
+                  {{ item.isSubscribed ? 'Unsubscribe' : 'Get notified' }}
+                </Button>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-[28px] border bg-card p-6 shadow-sm">
+            <h2 class="text-lg font-semibold">Details</h2>
+            <p class="mt-1 text-sm text-muted-foreground">Keep useful context visible while you work the item.</p>
+            <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <div class="rounded-2xl border bg-muted/20 p-4">
+                <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Votes</div>
+                <div class="mt-2 text-2xl font-semibold">{{ item.voteCount }}</div>
+              </div>
+              <div class="rounded-2xl border bg-muted/20 p-4">
+                <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Comments</div>
+                <div class="mt-2 text-2xl font-semibold">{{ item.commentCount }}</div>
+              </div>
+              <div class="rounded-2xl border bg-muted/20 p-4">
+                <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Category</div>
+                <div class="mt-2 text-sm font-medium">{{ item.category?.name || 'Uncategorized' }}</div>
+              </div>
+              <div class="rounded-2xl border bg-muted/20 p-4">
+                <div class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Type</div>
+                <div class="mt-2 text-sm font-medium">
+                  {{ feedbackTypeLabel(item.tag) || item.tag || 'Unspecified' }}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section
+            v-if="canManageFeedback"
+            data-testid="feedback-detail-admin-card"
+            class="rounded-[28px] border bg-card p-6 shadow-sm"
+          >
+            <h2 class="text-lg font-semibold">Admin Controls</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Same moderation options as the public detail view, plus workspace controls.
+            </p>
+            <div class="mt-5 space-y-3">
+              <button
+                data-testid="feedback-detail-pin"
+                class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
+                :disabled="adminAction === 'pin'"
+                @click="togglePin"
+              >
+                <div>
+                  <div class="font-medium">{{ item.isPinned ? 'Unpin feedback' : 'Pin feedback' }}</div>
+                  <div class="mt-1 text-sm text-muted-foreground">
+                    {{
+                      item.isPinned
+                        ? 'Remove this item from the top of lists.'
+                        : 'Keep this item at the top of boards and lists.'
+                    }}
+                  </div>
+                </div>
+                <Icon
+                  :name="adminAction === 'pin' ? 'lucide:loader-2' : item.isPinned ? 'lucide:pin-off' : 'lucide:pin'"
+                  class="h-5 w-5 shrink-0"
+                  :class="adminAction === 'pin' ? 'animate-spin' : ''"
+                />
+              </button>
+              <button
+                data-testid="feedback-detail-visibility"
+                class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
+                :disabled="adminAction === 'visibility'"
+                @click="toggleVisibility"
+              >
+                <div>
+                  <div class="font-medium">
+                    {{ item.isHidden ? 'Make feedback visible' : 'Hide from public board' }}
+                  </div>
+                  <div class="mt-1 text-sm text-muted-foreground">
+                    {{
+                      item.isHidden
+                        ? 'Return this item to the public board.'
+                        : 'Keep handling private while preserving the record.'
+                    }}
+                  </div>
+                </div>
+                <Icon
+                  :name="
+                    adminAction === 'visibility' ? 'lucide:loader-2' : item.isHidden ? 'lucide:eye' : 'lucide:eye-off'
+                  "
+                  class="h-5 w-5 shrink-0"
+                  :class="adminAction === 'visibility' ? 'animate-spin' : ''"
+                />
+              </button>
+              <button
+                data-testid="feedback-detail-lock"
+                class="flex w-full items-start justify-between rounded-2xl border p-4 text-left transition hover:border-primary/40 hover:bg-muted/30"
+                :disabled="adminAction === 'lock'"
+                @click="toggleLock"
+              >
+                <div>
+                  <div class="font-medium">{{ item.isLocked ? 'Unlock comments' : 'Lock comments' }}</div>
+                  <div class="mt-1 text-sm text-muted-foreground">
+                    {{
+                      item.isLocked
+                        ? 'Allow the thread to continue.'
+                        : 'Freeze new replies while the item is being resolved.'
+                    }}
+                  </div>
+                </div>
+                <Icon
+                  :name="adminAction === 'lock' ? 'lucide:loader-2' : item.isLocked ? 'lucide:unlock' : 'lucide:lock'"
+                  class="h-5 w-5 shrink-0"
+                  :class="adminAction === 'lock' ? 'animate-spin' : ''"
+                />
+              </button>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <Dialog :open="showEditDialog" @update:open="showEditDialog = $event">
+        <DialogContent class="sm:max-w-[640px]">
+          <DialogHeader>
+            <DialogTitle>Edit Feedback</DialogTitle>
+            <DialogDescription>Update the content and metadata for this feedback item.</DialogDescription>
+          </DialogHeader>
+          <div class="space-y-5 py-2">
+            <div class="space-y-2">
+              <Label for="feedback-title">Title</Label>
+              <Input id="feedback-title" v-model="editForm.title" data-testid="feedback-detail-edit-title" />
+            </div>
+            <div class="space-y-2">
+              <Label for="feedback-body">Description</Label>
+              <Textarea id="feedback-body" v-model="editForm.body" data-testid="feedback-detail-edit-body" rows="6" />
+            </div>
+            <div class="grid gap-5 sm:grid-cols-2">
+              <div v-if="canManageFeedback" class="space-y-2">
+                <Label for="feedback-category">Category</Label>
+                <select
+                  id="feedback-category"
+                  v-model="editForm.categoryId"
+                  class="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
+                >
+                  <option value="">Uncategorized</option>
+                  <option v-for="category in categories" :key="category.id" :value="category.id">
+                    {{ category.name }}
+                  </option>
+                </select>
+              </div>
+              <div class="space-y-2">
+                <Label for="feedback-type">Type</Label>
+                <select
+                  id="feedback-type"
+                  v-model="editForm.feedbackType"
+                  class="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
+                >
+                  <option value="">Unspecified</option>
+                  <option v-for="option in feedbackTypeOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" :disabled="isSavingFeedback" @click="showEditDialog = false">Cancel</Button>
+            <Button
+              data-testid="feedback-detail-save"
+              :disabled="!editForm.title.trim() || !editForm.body.trim() || isSavingFeedback"
+              @click="saveFeedback"
+            >
+              <Icon v-if="isSavingFeedback" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+              Save changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog :open="showDeleteDialog" @update:open="showDeleteDialog = $event">
+        <DialogContent class="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Delete Feedback</DialogTitle>
+            <DialogDescription>
+              This permanently deletes "{{ item?.title }}". The feedback thread and comments cannot be recovered.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" :disabled="isDeleting" @click="showDeleteDialog = false">Cancel</Button>
+            <Button variant="destructive" :disabled="isDeleting" @click="deleteFeedback">
+              <Icon v-if="isDeleting" name="lucide:loader-2" class="mr-2 h-4 w-4 animate-spin" />
+              Delete feedback
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  </div>
 </template>
 
 <script>

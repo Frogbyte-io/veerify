@@ -1,98 +1,92 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="space-y-6 p-6" data-testid="marketing-language-page">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 class="text-3xl font-bold text-foreground">Customer language</h1>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Find the words your customers use, and turn them into terms and prompts to track.
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
-          <Button
-            v-if="showContent"
-            :disabled="!canRunNow"
-            :title="runDisabledReason"
-            data-testid="language-run"
-            @click="run"
-          >
-            <Icon
-              :name="running ? 'lucide:loader-circle' : 'lucide:sparkles'"
-              :class="['mr-2 h-4 w-4', running && 'animate-spin']"
-            />
-            {{ running ? 'Analyzing...' : 'Run analysis' }}
-          </Button>
-        </div>
-      </div>
-
-      <p
-        v-if="showContent && runDisabledReason"
-        class="text-sm text-muted-foreground"
-        data-testid="language-run-reason"
-      >
-        {{ runDisabledReason }}
-      </p>
-      <p v-if="runError" class="text-sm text-destructive" data-testid="language-run-error">{{ runError }}</p>
-
-      <div v-if="!pickerSettled" class="space-y-4">
-        <Skeleton class="h-40 w-full" />
-        <Skeleton class="h-64 w-full" />
-      </div>
-
-      <div v-else-if="pickerError" class="text-sm text-muted-foreground">
-        The project could not be loaded. Use Retry above to try again.
-      </div>
-
-      <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to analyze language.</div>
-
-      <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
-
-      <div v-else-if="isLoading" class="space-y-4">
-        <Skeleton class="h-48 w-full" />
-        <Skeleton class="h-64 w-full" />
-      </div>
-
-      <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
-        <span>{{ error }}</span>
-        <Button variant="outline" size="sm" @click="load">Retry</Button>
-      </div>
-
-      <div v-else-if="noSite" class="rounded-lg border border-border bg-card p-6" data-testid="language-no-site">
-        <h2 class="text-lg font-semibold">Add your site first</h2>
+  <div class="space-y-6 p-6" data-testid="marketing-language-page">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-3xl font-bold text-foreground">Customer language</h1>
         <p class="mt-1 text-sm text-muted-foreground">
-          Customer language results are stored with your marketing site. Add it in
-          <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
-          .
+          Find the words your customers use, and turn them into terms and prompts to track.
         </p>
       </div>
-
-      <div v-else class="grid gap-6 lg:grid-cols-[22rem_1fr]">
-        <MarketingLanguageConsent :consent="consent" :can-manage="consent.canManage" @changed="refresh" />
-
-        <div>
-          <div v-if="running" class="space-y-4">
-            <Skeleton class="h-40 w-full" />
-            <Skeleton class="h-48 w-full" />
-          </div>
-          <MarketingLanguageResults
-            v-else-if="insight"
-            :insight="insight"
-            :applying="applying"
-            :apply-error="applyError"
-            :selection-reset-key="selectionResetKey"
-            @apply="apply"
+      <div class="flex items-center gap-2">
+        <MarketingProjectLoader @change="onProjectChange" @error="onPickerError" />
+        <Button
+          v-if="showContent"
+          :disabled="!canRunNow"
+          :title="runDisabledReason"
+          data-testid="language-run"
+          @click="run"
+        >
+          <Icon
+            :name="running ? 'lucide:loader-circle' : 'lucide:sparkles'"
+            :class="['mr-2 h-4 w-4', running && 'animate-spin']"
           />
-          <div v-else class="rounded-lg border border-border bg-card p-6" data-testid="language-empty">
-            <h2 class="text-lg font-semibold">No analysis yet</h2>
-            <p class="mt-1 text-sm text-muted-foreground">
-              Allow a source on the left, then run an analysis. It needs at least 10 items from the last 90 days.
-            </p>
-          </div>
+          {{ running ? 'Analyzing...' : 'Run analysis' }}
+        </Button>
+      </div>
+    </div>
+
+    <p v-if="showContent && runDisabledReason" class="text-sm text-muted-foreground" data-testid="language-run-reason">
+      {{ runDisabledReason }}
+    </p>
+    <p v-if="runError" class="text-sm text-destructive" data-testid="language-run-error">{{ runError }}</p>
+
+    <div v-if="!pickerSettled" class="space-y-4">
+      <Skeleton class="h-40 w-full" />
+      <Skeleton class="h-64 w-full" />
+    </div>
+
+    <div v-else-if="pickerError" class="text-sm text-muted-foreground">
+      The project could not be loaded. Use Retry above to try again.
+    </div>
+
+    <div v-else-if="!project" class="text-sm text-muted-foreground">Create a project to analyze language.</div>
+
+    <MarketingDisabled v-else-if="marketingOff" :project="project" :message="disabledMessage" />
+
+    <div v-else-if="isLoading" class="space-y-4">
+      <Skeleton class="h-48 w-full" />
+      <Skeleton class="h-64 w-full" />
+    </div>
+
+    <div v-else-if="error" class="flex items-center gap-2 text-sm text-destructive">
+      <span>{{ error }}</span>
+      <Button variant="outline" size="sm" @click="load">Retry</Button>
+    </div>
+
+    <div v-else-if="noSite" class="rounded-lg border border-border bg-card p-6" data-testid="language-no-site">
+      <h2 class="text-lg font-semibold">Add your site first</h2>
+      <p class="mt-1 text-sm text-muted-foreground">
+        Customer language results are stored with your marketing site. Add it in
+        <NuxtLink to="/marketing/settings" class="underline">Marketing settings</NuxtLink>
+        .
+      </p>
+    </div>
+
+    <div v-else class="grid gap-6 lg:grid-cols-[22rem_1fr]">
+      <MarketingLanguageConsent :consent="consent" :can-manage="consent.canManage" @changed="refresh" />
+
+      <div>
+        <div v-if="running" class="space-y-4">
+          <Skeleton class="h-40 w-full" />
+          <Skeleton class="h-48 w-full" />
+        </div>
+        <MarketingLanguageResults
+          v-else-if="insight"
+          :insight="insight"
+          :applying="applying"
+          :apply-error="applyError"
+          :selection-reset-key="selectionResetKey"
+          @apply="apply"
+        />
+        <div v-else class="rounded-lg border border-border bg-card p-6" data-testid="language-empty">
+          <h2 class="text-lg font-semibold">No analysis yet</h2>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Allow a source on the left, then run an analysis. It needs at least 10 items from the last 90 days.
+          </p>
         </div>
       </div>
     </div>
-  </NuxtLayout>
+  </div>
 </template>
 
 <script>

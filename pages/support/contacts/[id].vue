@@ -1,5 +1,5 @@
 <template>
-  <NuxtLayout name="dashboard">
+  <div class="contents">
     <div class="p-6 max-w-4xl mx-auto space-y-6">
       <NuxtLink
         to="/support/contacts"
@@ -133,8 +133,8 @@
             </div>
 
             <!-- Deliberately distinct styling: possible matches are a heuristic
-                 suggestion, never a confirmed identity. Mixing this with the
-                 Linked section visually would misrepresent a guess as fact. -->
+               suggestion, never a confirmed identity. Mixing this with the
+               Linked section visually would misrepresent a guess as fact. -->
             <div
               v-if="probableFeedback.length > 0 || probableLoading || probableError"
               data-testid="probable-timeline-section"
@@ -238,7 +238,7 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </NuxtLayout>
+  </div>
 </template>
 
 <script>

@@ -1,41 +1,39 @@
 <template>
-  <NuxtLayout name="dashboard">
-    <div class="p-6 max-w-3xl mx-auto space-y-6" data-testid="changelog-entry-page">
-      <div class="flex items-center gap-3">
-        <Button as-child variant="ghost" size="sm">
-          <NuxtLink to="/dashboard/changelog">
-            <Icon name="lucide:arrow-left" class="w-4 h-4 mr-2" />
-            Changelog
-          </NuxtLink>
-        </Button>
-        <h1 class="text-2xl font-bold tracking-tight text-foreground">
-          {{ entryId === 'new' ? 'New entry' : 'Edit entry' }}
-        </h1>
-      </div>
-
-      <Skeleton v-if="isLoading" class="h-64 w-full" />
-
-      <Card v-else-if="error">
-        <CardContent class="text-center py-8">
-          <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
-          <p class="font-medium mb-2">{{ error }}</p>
-          <Button variant="outline" @click="loadProject">
-            <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
-            Try again
-          </Button>
-        </CardContent>
-      </Card>
-
-      <ChangelogEntryEditor
-        v-else-if="project"
-        :project="project"
-        :org-slug="orgSlug"
-        :products="products"
-        :initial-product-id="initialProductId"
-        :entry-id="entryId"
-      />
+  <div class="p-6 max-w-3xl mx-auto space-y-6" data-testid="changelog-entry-page">
+    <div class="flex items-center gap-3">
+      <Button as-child variant="ghost" size="sm">
+        <NuxtLink to="/dashboard/changelog">
+          <Icon name="lucide:arrow-left" class="w-4 h-4 mr-2" />
+          Changelog
+        </NuxtLink>
+      </Button>
+      <h1 class="text-2xl font-bold tracking-tight text-foreground">
+        {{ entryId === 'new' ? 'New entry' : 'Edit entry' }}
+      </h1>
     </div>
-  </NuxtLayout>
+
+    <Skeleton v-if="isLoading" class="h-64 w-full" />
+
+    <Card v-else-if="error">
+      <CardContent class="text-center py-8">
+        <Icon name="lucide:alert-circle" class="w-8 h-8 text-destructive mx-auto mb-3" />
+        <p class="font-medium mb-2">{{ error }}</p>
+        <Button variant="outline" @click="loadProject">
+          <Icon name="lucide:refresh-cw" class="w-4 h-4 mr-2" />
+          Try again
+        </Button>
+      </CardContent>
+    </Card>
+
+    <ChangelogEntryEditor
+      v-else-if="project"
+      :project="project"
+      :org-slug="orgSlug"
+      :products="products"
+      :initial-product-id="initialProductId"
+      :entry-id="entryId"
+    />
+  </div>
 </template>
 
 <script>
