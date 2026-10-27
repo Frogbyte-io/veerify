@@ -101,6 +101,25 @@ export async function scanOpenAPIRoutes(routeDir = DEFAULT_ROUTE_DIR): Promise<O
   return Object.fromEntries(Object.entries(paths).sort(([left], [right]) => left.localeCompare(right)))
 }
 
+export const OPENAPI_EXEMPT_PREFIXES = ['auth/', 'cron/', 'public/auth/', 'uploads/']
+export const OPENAPI_EXEMPT_FILES = ['openapi.json.get.ts', 'test.ts']
+
+/** Return sorted relative paths (forward slashes) of non-exempt route files lacking an `@openapi` block. */
+export async function findUndocumentedRoutes(routeDir = DEFAULT_ROUTE_DIR): Promise<string[]> {
+  const undocumented: string[] = []
+
+  for (const routeFile of await findRouteFiles(routeDir)) {
+    const relative = path.relative(routeDir, routeFile).split(path.sep).join('/')
+    if (OPENAPI_EXEMPT_FILES.includes(relative)) continue
+    if (OPENAPI_EXEMPT_PREFIXES.some((prefix) => relative.startsWith(prefix))) continue
+
+    const source = await readFile(routeFile, 'utf8')
+    if (!/@openapi\b/.test(source)) undocumented.push(relative)
+  }
+
+  return undocumented.sort()
+}
+
 export async function generateOpenAPIRoutes(
   options: {
     routeDir?: string
@@ -117,13 +136,33 @@ export async function generateOpenAPIRoutes(
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  generateOpenAPIRoutes()
-    .then((paths) => {
-      const operationCount = Object.values(paths).reduce((count, pathItem) => count + Object.keys(pathItem).length, 0)
-      console.log(`Generated OpenAPI routes: ${Object.keys(paths).length} paths, ${operationCount} operations`)
-    })
-    .catch((error) => {
-      console.error(error)
-      process.exitCode = 1
-    })
+  if (process.argv.includes('--check')) {
+    findUndocumentedRoutes()
+      .then((undocumented) => {
+        if (undocumented.length === 0) {
+          console.log('[openapi:check] 0 undocumented routes')
+          return
+        }
+        console.log(`[openapi:check] ${undocumented.length} undocumented routes:`)
+        for (const file of undocumented) console.log(file)
+        process.exitCode = 1
+      })
+      .catch((error) => {
+        console.error(error)
+        process.exitCode = 1
+      })
+  } else {
+    generateOpenAPIRoutes()
+      .then((paths) => {
+        const operationCount = Object.values(paths).reduce(
+          (count, pathItem) => count + Object.keys(pathItem).length,
+          0
+        )
+        console.log(`Generated OpenAPI routes: ${Object.keys(paths).length} paths, ${operationCount} operations`)
+      })
+      .catch((error) => {
+        console.error(error)
+        process.exitCode = 1
+      })
+  }
 }

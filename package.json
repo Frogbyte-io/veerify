@@ -8,6 +8,7 @@
     "dev": "nuxt dev",
     "generate": "yarn openapi:generate && nuxt generate",
     "openapi:generate": "tsx scripts/openapi-scanner.ts",
+    "openapi:check": "tsx scripts/openapi-scanner.ts --check",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "db:generate": "drizzle-kit generate",
