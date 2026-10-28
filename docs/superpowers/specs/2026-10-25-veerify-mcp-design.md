@@ -120,22 +120,25 @@ issued credential is a `vfy_usr_` personal key rather than a session. That keeps
 per-key context, self-protection, revocation in Settings, and `/mcp` accepting keys only. Better-Auth's
 `device-authorization` plugin issues login sessions instead, so the flow is implemented in Veerify.
 
-1. The agent calls `POST /api/device/code` with optional `{ clientName }`. No login is required, and the endpoint is
+1. The agent calls `POST /api/device/code` with optional `{ client_name }`. No login is required, and the endpoint is
    rate-limited. It returns `{ device_code, user_code, verification_uri, verification_uri_complete, expires_in: 600,
-interval: 5 }`. `user_code` looks like `WXYZ-1234`, drawn from an alphabet without look-alike characters.
+interval: 5 }`. `user_code` looks like `BCDF-GHJK`, drawn from an alphabet without look-alike characters.
    `verification_uri` is `<host>/device`.
 2. The agent shows the user the link.
-3. On `/device` the user signs in (browser session only; a key can't approve), confirms the code, sees "**<client>**
-   wants to act as you in Veerify", and chooses Allow or Deny.
+3. On `/device` the user signs in (browser session only; a key can't approve), confirms the code, sees "An agent calling
+   itself **<client>** wants to act as you in Veerify", and chooses Allow or Deny.
 4. The agent polls `POST /api/device/token` with `{ device_code }`. It gets RFC 8628 errors: `authorization_pending`,
    `slow_down`, `access_denied` or `expired_token`. Once the user approves, it gets
    `{ access_token: "vfy_usr_…", token_type: "Bearer" }`, exactly once.
 5. The key is named after the client, is marked as created by device login, and expires after 90 days (my call). It
-   shows in Settings → API keys and can be revoked there.
+   shows in Settings → API keys and can be revoked there. Issuing a key emails the user ("New API key created via
+   device login", with a link to revoke it). Device authorizations that expired more than a day ago are deleted by the
+   `device-login:cleanup` scheduled task (every 15 minutes) and opportunistically on create.
 
 Approval grants full access, the same as an API key (the user accepted the default; scoped approvals come later). The
 polling secret is stored only as a hash. Each code is single-use for both approval and redemption. User-code entry is
-rate-limited. Unauthenticated `/mcp` responses point to device login.
+rate-limited (`/api/device/token` allows 600 per 60 s per IP and maps overflow to `slow_down`). Unauthenticated `/mcp`
+responses point to device login.
 
 **OAuth login (later; not in Phase 3)**: Better-Auth's MCP/OAuth support (`mcp` / `oidcProvider` plugins ship in 1.5.0; a newer
 `oauth-provider` package may be the recommended path by build time — builder checks current Better-Auth docs and

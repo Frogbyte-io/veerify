@@ -205,8 +205,9 @@ without a valid key gets 401 with `error.details.hint` pointing here.
 HOST=https://<your-veerify-host>
 
 # 1. Start. client_name (max 60 characters) is shown to the user and becomes the key name.
-resp=$(curl -s -X POST "$HOST/api/device/code" -H 'content-type: application/json' -d '{"client_name":"My agent"}')
-device_code=$(echo "$resp" | jq -r .device_code)
+resp=$(curl -sf -X POST "$HOST/api/device/code" -H 'content-type: application/json' -d '{"client_name":"My agent"}') || { echo "device/code failed"; exit 1; }
+device_code=$(echo "$resp" | jq -r '.device_code // empty')
+[ -n "$device_code" ] || { echo "$resp"; exit 1; }
 interval=$(echo "$resp" | jq -r .interval)
 
 # 2. Show the user this link and wait for them to approve it.
@@ -215,8 +216,10 @@ echo "Open: $(echo "$resp" | jq -r .verification_uri_complete)"
 # 3. Poll every `interval` seconds.
 while true; do
   sleep "$interval"
+  # The token endpoint answers 400 for pending and slow_down, so no -f here; an empty body is an error.
   tok=$(curl -s -X POST "$HOST/api/device/token" -H 'content-type: application/json' \
     -d "{\"device_code\":\"$device_code\"}")
+  [ -n "$tok" ] || { echo "empty response from device/token"; exit 1; }
   err=$(echo "$tok" | jq -r '.error // empty')
   [ -z "$err" ] && break
   [ "$err" = "slow_down" ] && interval=$((interval + 5))
@@ -229,7 +232,7 @@ access_token=$(echo "$tok" | jq -r .access_token)
 
 `/api/device/code` is public, rate limited to 10 per 60 s per IP, and returns `device_code`, `user_code`,
 `verification_uri`, `verification_uri_complete`, `expires_in` (600 s) and `interval` (5 s). The user opens the link,
-signs in if needed, checks the client name and chooses Allow or Deny on the `/device` page.
+signs in if needed, checks that the code matches the one the agent showed, and chooses Allow or Deny on the `/device` page.
 
 `/api/device/token` accepts JSON or form-encoded `{ device_code, grant_type? }`. On success it returns 200
 `{ access_token: "vfy_usr_...", token_type: "Bearer", expires_in: 7776000 }`. Failures are 400
@@ -246,6 +249,7 @@ signs in if needed, checks the client name and chooses Allow or Deny on the `/de
 
 Security notes:
 
+- The user also gets an email when a key is issued this way, with a link to revoke it.
 - Only approve a request you started yourself. The page warns "Only approve if you started this request yourself."
 - The issued key has full access, the same as a key you create in Settings, and expires after 90 days.
 - It appears in Settings, then API keys, as "via device login", counts toward the 25-key cap and can be revoked there.
