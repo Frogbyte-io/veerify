@@ -279,14 +279,14 @@
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2 text-sm text-muted-foreground">
                   <Icon name="lucide:folder" class="w-4 h-4" />
-                  Projects in workspace
+                  Projects you can open
                 </div>
-                <span class="font-semibold">{{ stats.projectCount }}</span>
+                <span class="font-semibold">{{ projectCount }}</span>
               </div>
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2 text-sm text-muted-foreground">
                   <Icon name="lucide:users" class="w-4 h-4" />
-                  Workspace members
+                  People in this project
                 </div>
                 <span class="font-semibold">{{ stats.memberCount }}</span>
               </div>
@@ -325,6 +325,7 @@ export default {
       isLoading: true,
       hasOrganization: false,
       activeProject: null,
+      projectCount: 0,
       userName: '',
       recentSubmissions: [],
       submissionCount: 0,
@@ -398,6 +399,7 @@ export default {
       this.hasOrganization = Boolean(bootstrap?.projectContext?.activeOrganization)
       if (this.hasOrganization) {
         this.activeProject = bootstrap?.projectContext?.activeProject || null
+        this.projectCount = bootstrap?.projectContext?.projects?.length || 0
         if (bootstrap?.workspace?.stats) this.stats = bootstrap.workspace.stats
       } else {
         const personal = bootstrap?.personal || {}
