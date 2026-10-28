@@ -3,7 +3,7 @@
     <PageHeader :title="headerTitle" :description="headerDescription" />
 
     <!-- Loading state: shaped like the workspace dashboard (stat cards, then the content grid) -->
-    <template v-if="isLoading">
+    <div v-if="isLoading" key="loading" class="flex flex-col gap-6">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" data-testid="dashboard-loading">
         <Skeleton v-for="n in 4" :key="n" class="h-[90px] rounded-xl" />
       </div>
@@ -14,10 +14,10 @@
           <Skeleton class="h-40 rounded-xl" />
         </div>
       </div>
-    </template>
+    </div>
 
     <!-- Personal Dashboard (no workspace) -->
-    <template v-else-if="!hasOrganization">
+    <div v-else-if="!hasOrganization" key="personal" class="flex flex-col gap-6">
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Left column: submissions summary -->
         <div class="lg:col-span-2 space-y-6">
@@ -155,10 +155,10 @@
           </Card>
         </div>
       </div>
-    </template>
+    </div>
 
     <!-- Workspace Dashboard (has organization) -->
-    <template v-else>
+    <div v-else key="workspace" class="flex flex-col gap-6">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div class="bg-card p-6 rounded-lg border border-border">
           <div class="flex items-center">
@@ -310,7 +310,7 @@
           </Card>
         </div>
       </div>
-    </template>
+    </div>
   </PageContainer>
 </template>
 
